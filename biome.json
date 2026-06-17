@@ -1,0 +1,70 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
+  "organizeImports": {
+    "enabled": true
+  },
+  "formatter": {
+    "enabled": true,
+    "formatWithErrors": false,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 100,
+    "attributePosition": "auto"
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUnusedVariables": "error",
+        "useExhaustiveDependencies": "error",
+        "noUselessFragments": "error",
+        "noEmptyBlockStatements": "error",
+        "noEmptyPattern": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noSparseArrays": "error",
+        "noConfusingVoidExpression": "error",
+        "noMisleadingCharacterClass": "error",
+        "noUnreachableCode": "error",
+        "noUnsafeNegation": "error",
+        "useNamespaceKeyword": "error"
+      },
+      "performance": {
+        "noAccumulatingSpread": "error",
+        "noBarrelFile": "off",
+        "noConstantCondition": "error"
+      },
+      "style": {
+        "use_const": "error",
+        "useNamingConvention": "error",
+        "useSelfClosingElements": "error",
+        "useShorthandArrayType": "error",
+        "useSimplifiedLogicExpression": "error"
+      },
+      "security": {
+        "noArrayIndexKey": "error",
+        "noDangerouslySetInnerHtml": "error",
+        "noDocumentWrite": "error",
+        "noInnerHtml": "error"
+      }
+    }
+  },
+  "files": {
+    "include": [
+      "**/*.{ts,tsx,js,jsx,json}",
+      "!node_modules",
+      "!dist",
+      "!.pnpm-store"
+    ],
+    "ignore": [
+      "node_modules",
+      "dist",
+      ".pnpm-store",
+      "pnpm-lock.yaml",
+      "**/*.d.ts"
+    ]
+  }
+}

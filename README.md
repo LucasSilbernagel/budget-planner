@@ -110,7 +110,121 @@ Your product document can be used in several ways:
 ## Next Steps
 
 1. ✅ Project folder created
-2. ⏳ Upgrade Node.js to 20.12+
-3. ⏳ Install BMAD Method
-4. ⏳ Add your product document to the folder
-5. ⏳ Run `bmad-help` for personalized guidance
+2. ✅ Monorepo structure initialized (pnpm workspaces)
+3. ⏳ Upgrade Node.js to 20.12+
+4. ⏳ Install BMAD Method
+5. ⏳ Add your product document to the folder
+6. ⏳ Run `bmad-help` for personalized guidance
+
+---
+
+## Monorepo Structure (Implemented)
+
+This project now has a **monorepo structure with pnpm workspaces** as defined in Story 1.1.
+
+### Workspace Configuration
+
+```
+budget-planner/
+├── pnpm-workspace.yaml          # Workspace configuration
+├── package.json                 # Root package.json with scripts
+├── tsconfig.json                # Root TypeScript config
+├── .npmrc                       # pnpm configuration
+├── README.md                    # This file
+├── apps/
+│   └── web/                     # TanStack Start frontend
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           └── index.tsx
+└── packages/
+    ├── core/                    # Shared utilities & calculations
+    │   ├── package.json
+    │   ├── tsconfig.json
+    │   └── src/
+    │       └── index.ts
+    ├── db/                      # Database schema & ORM
+    │   ├── package.json
+    │   ├── tsconfig.json
+    │   └── src/
+    │       └── index.ts
+    └── config/                  # Centralized configuration
+        ├── package.json
+        ├── tsconfig.json
+        └── src/
+            └── index.ts
+```
+
+### Package Descriptions
+
+| Package | Purpose | Dependencies |
+|---------|---------|--------------|
+| `@budget-planner/web` | Frontend (TanStack Start + React 19) | React, TanStack, Zustand, Recharts, Radix |
+| `@budget-planner/db` | Database (Drizzle ORM + PostgreSQL) | Drizzle ORM, pg |
+| `@budget-planner/config` | Configuration (Zod validation) | Zod |
+| `@budget-planner/core` | Shared utilities & calculations | TypeScript types from db/config |
+
+### Available Scripts
+
+```bash
+# Install all dependencies
+pnpm install
+
+# Development
+pnpm dev              # Start frontend
+pnpm dev:web          # Start web app
+pnpm dev:db           # Start db package
+pnpm dev:config       # Start config package
+pnpm dev:core         # Start core package
+
+# Build
+pnpm build            # Build frontend
+pnpm build:all        # Build all packages
+
+# Quality Checks
+pnpm lint             # Run Biome linter
+pnpm lint:fix         # Fix linting issues
+pnpm type-check       # Type-check all packages
+
+# Testing
+pnpm test             # Run all tests
+pnpm test:unit        # Run unit tests
+pnpm test:e2e         # Run E2E tests
+```
+
+### Adding New Dependencies
+
+```bash
+# Add to a specific package
+pnpm --filter web add react-router-dom
+pnpm --filter db add drizzle-orm
+
+# Add shared dependency (hoisted to root)
+pnpm add -D typescript biome
+```
+
+### Verification
+
+To verify the monorepo setup works correctly:
+
+```bash
+# Test pnpm install
+pnpm install
+
+# Check workspace structure
+pnpm ls --depth -1
+
+# Test TypeScript compilation
+pnpm type-check
+```
+
+---
+
+## Implementation Status
+
+- ✅ **Story 1.1**: Monorepo structure with pnpm workspaces - **IN PROGRESS**
+- ⏳ **Story 1.2**: TanStack Start frontend initialization - Pending
+- ⏳ **Story 1.3**: Database schema for income/expense entities - Pending
+- ⏳ **Story 1.4**: Implement income source CRUD operations - Pending
+
+See `_bmad-output/implementation-artifacts/sprint-status.yaml` for complete sprint tracking.

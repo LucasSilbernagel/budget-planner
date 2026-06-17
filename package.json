@@ -1,0 +1,16 @@
+{
+  "name": "budget-planner",
+  "version": "0.0.1",
+  "description": "Budget Planner - Personal finance tracking application",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm biome check",
+    "type-check": "pnpm --filter web type-check"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "pnpm": {}
+}

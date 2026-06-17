@@ -1,0 +1,27 @@
+{
+  "name": "@budget-planner/core",
+  "version": "0.0.1",
+  "description": "Budget Planner - Shared TypeScript utilities and calculation engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'Core dev script (to be configured)'",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --apply"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "biome": "^0.3.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "pnpm": {}
+}

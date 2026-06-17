@@ -1,0 +1,27 @@
+{
+  "name": "@budget-planner/db",
+  "version": "0.0.1",
+  "description": "Budget Planner - Database schema and ORM (Drizzle ORM)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'DB dev script (to be configured)'",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --apply"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "drizzle-orm": "^0.30.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "biome": "^0.3.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "pnpm": {}
+}

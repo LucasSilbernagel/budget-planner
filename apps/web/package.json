@@ -1,0 +1,43 @@
+{
+  "name": "@budget-planner/web",
+  "version": "0.0.1",
+  "description": "Budget Planner - Frontend application (TanStack Start)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --apply",
+    "test": "vitest run",
+    "test:unit": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@budget-planner/config": "workspace:*",
+    "@budget-planner/core": "workspace:*",
+    "@budget-planner/db": "workspace:*",
+    "@radix-ui/react-slot": "^1.0.2",
+    "@tanstack/react": "latest",
+    "@tanstack/react-router": "latest",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "biome": "^0.3.3",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "pnpm": {}
+}

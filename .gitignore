@@ -1,5 +1,9 @@
 # Dependencies
 node_modules/
+.pnpm-store/
+
+# Lockfiles
+pnpm-lock.yaml
 
 # BMAD Output (generated artifacts - do not commit)
 _bmad-output/
