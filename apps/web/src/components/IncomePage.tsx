@@ -4,7 +4,7 @@ import {
   useIncomeSources,
   useTotalIncome,
 } from '../stores'
-import type { NewIncomeSource, Frequency } from '@budget-planner/db'
+import type { Frequency } from '@budget-planner/db'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -101,7 +101,7 @@ export function IncomePage() {
         return
       }
 
-      const newSource: NewIncomeSource = {
+      const newSource = {
         name: trimmedName,
         amount: amountInCents,
         frequency,
