@@ -9,7 +9,10 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "lint": "biome check .",
-    "lint:fix": "biome check . --apply"
+    "lint:fix": "biome check . --apply",
+    "db:generate": "drizzle-kit generate:pg",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,6 +20,10 @@
     "drizzle-orm": "^0.30.0"
   },
   "devDependencies": {
+    "@types/node": "^20.11.0",
+    "drizzle-kit": "^0.20.17",
+    "dotenv": "^16.3.1",
+    "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "biome": "^0.3.3"
   },

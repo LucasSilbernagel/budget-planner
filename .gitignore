@@ -33,6 +33,9 @@ npm-debug.log*
 dist/
 build/
 
+# Database migrations
+migrations/
+
 # OS generated files
 *.pid
 *.seed
