@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# BMAD Output (generated artifacts - do not commit)
+_bmad-output/
+
+# BMAD User Configuration (personal settings - do not commit)
+_bmad/config.user.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# OS generated files
+*.pid
+*.seed
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Test
+.coverage
+
+# Temporary files
+tmp/
+temp/
