@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import type { ClientBalanceTracking, BalanceTrackingWithTimeline } from '@budget-planner/core/services/balanceTracking'
 import { getTypeDisplayProperties, formatTimeline, calculateContributionProgress, formatProgress } from '@budget-planner/core/services/balanceTracking'
 import { useCurrencyPreferences } from '../stores/currencyStore'
@@ -10,7 +10,7 @@ import { formatCurrency } from '@budget-planner/core/format/currency'
 export interface BalanceEntryCardProps {
   entry: ClientBalanceTracking | BalanceTrackingWithTimeline
   onEdit: (entry: ClientBalanceTracking) => void
-  onDelete: (id: number) => void
+  onDeleteConfirm: (entry: ClientBalanceTracking | BalanceTrackingWithTimeline) => void
   isFreeTier?: boolean
 }
 
@@ -28,7 +28,7 @@ export interface BalanceEntryCardProps {
  * @param props.onDelete - Callback when delete button is clicked
  * @param props.isFreeTier - Whether this is free tier (affects UI text)
  */
-export function BalanceEntryCard({ entry, onEdit, onDelete, isFreeTier = true }: BalanceEntryCardProps) {
+export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = true }: BalanceEntryCardProps) {
   // Get currency preferences from store
   const { mode, currency } = useCurrencyPreferences()
 
@@ -38,12 +38,9 @@ export function BalanceEntryCard({ entry, onEdit, onDelete, isFreeTier = true }:
   // Get display properties based on type
   const typeProps = getTypeDisplayProperties(entry.type)
 
-  // State for delete confirmation dialog
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-
   // Calculate timeline and progress if not already present
   const monthsToLimit = 'monthsToLimit' in entry ? entry.monthsToLimit : null
-  const progress = entry.maxContributionLimit !== undefined
+  const progress = entry.maxContributionLimit !== undefined && entry.maxContributionLimit > 0
     ? calculateContributionProgress(entry.currentBalance, entry.maxContributionLimit)
     : null
 
@@ -105,7 +102,7 @@ export function BalanceEntryCard({ entry, onEdit, onDelete, isFreeTier = true }:
             Edit
           </button>
           <button
-            onClick={() => setShowDeleteConfirm(true)}
+            onClick={() => onDeleteConfirm(entry)}
             className="px-3 py-1.5 text-sm font-medium text-red-600 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-red-400 dark:bg-red-900/30 dark:hover:bg-red-900/50"
             aria-label={`Delete balance entry ${entry.name}`}
             data-testid={`balance-entry-delete-${entry.id}`}
@@ -180,39 +177,6 @@ export function BalanceEntryCard({ entry, onEdit, onDelete, isFreeTier = true }:
           </p>
         )}
       </div>
-
-      {/* Delete Confirmation Dialog */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full dark:bg-gray-800 dark:border dark:border-gray-700">
-            <h3 id="delete-confirm-title" className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Confirm Delete
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Are you sure you want to delete "{entry.name}"? This action cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                data-testid="delete-confirm-cancel"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  onDelete(entry.id)
-                  setShowDeleteConfirm(false)
-                }}
-                className="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-red-500 dark:hover:bg-red-600"
-                data-testid="delete-confirm-confirm"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
