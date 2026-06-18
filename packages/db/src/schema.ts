@@ -89,8 +89,8 @@ export const savingsGoals = pgTable('savingsGoals', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  // AC 4: targetAmount must be positive (savings goals cannot have negative targets)
-  sql`check (${table.targetAmount} >= 0)`.named('savings_goals_target_amount_positive'),
+  // AC 4: targetAmount must be positive (savings goals cannot have negative or zero targets)
+  sql`check (${table.targetAmount} > 0)`.named('savings_goals_target_amount_positive'),
 ])
 
 // Balance Tracking table - camelCase name per architecture
