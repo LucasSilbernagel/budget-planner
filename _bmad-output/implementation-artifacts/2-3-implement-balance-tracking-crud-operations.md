@@ -4,7 +4,7 @@ baseline_commit: 702378a
 
 # Story 2.3: Implement balance tracking CRUD operations
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
