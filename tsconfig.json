@@ -5,6 +5,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@budget-planner/web": ["apps/web/src"],
       "@budget-planner/db": ["packages/db/src"],
