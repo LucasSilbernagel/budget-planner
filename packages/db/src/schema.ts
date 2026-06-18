@@ -7,6 +7,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 // Type imports for Drizzle
 export type { InferModel, InferInsertModel } from 'drizzle-orm'
@@ -87,7 +88,10 @@ export const savingsGoals = pgTable('savingsGoals', {
   currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  // AC 4: targetAmount must be positive (savings goals cannot have negative targets)
+  sql`check (${table.targetAmount} >= 0)`.named('savings_goals_target_amount_positive'),
+])
 
 // Balance Tracking table - camelCase name per architecture
 export const balanceTracking = pgTable('balanceTracking', {
