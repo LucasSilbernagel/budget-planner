@@ -59,7 +59,7 @@ development_status:
   2-1-create-database-schema-for-savings-and-balance-tracking: done
   2-2-implement-savings-goal-crud-operations: done
   2-3-implement-balance-tracking-crud-operations: done
-  2-4-implement-frequency-normalization-engine: ready-for-dev
+  2-4-implement-frequency-normalization-engine: done
   2-5-implement-net-period-income-calculation: ready-for-dev
   2-6-implement-savings-capacity-percentage-calculation: ready-for-dev
   2-7-implement-maximum-dynamically-allocable-savings-calculation: ready-for-dev
