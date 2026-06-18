@@ -60,9 +60,9 @@ development_status:
   2-2-implement-savings-goal-crud-operations: done
   2-3-implement-balance-tracking-crud-operations: done
   2-4-implement-frequency-normalization-engine: done
-  2-5-implement-net-period-income-calculation: ready-for-dev
-  2-6-implement-savings-capacity-percentage-calculation: ready-for-dev
-  2-7-implement-maximum-dynamically-allocable-savings-calculation: ready-for-dev
+  2-5-implement-net-period-income-calculation: done
+  2-6-implement-savings-capacity-percentage-calculation: done
+  2-7-implement-maximum-dynamically-allocable-savings-calculation: done
   epic-2-retrospective: optional
 
   # Epic 3: Advanced Financial Intelligence

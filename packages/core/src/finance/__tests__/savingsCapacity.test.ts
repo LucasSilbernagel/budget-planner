@@ -16,7 +16,7 @@ import {
   calculateMaxDynamicallyAllocableSavings,
   calculateSavingsCapacityResult,
   type SavingsCapacityResult,
-} from '../savingsCapacity'
+} from '../savingsCapacity.js'
 
 describe('Savings Capacity Calculation', () => {
   describe('calculateMaxAllocableSavings', () => {
@@ -63,6 +63,16 @@ describe('Savings Capacity Calculation', () => {
     it('should handle empty arrays', () => {
       const result = calculateMaxAllocableSavings([], [])
       expect(result).toBe(0)
+    })
+
+    it('should return full income when no expenses', () => {
+      const incomeSources = [
+        { amount: 50000, frequency: 'monthly' as const },
+      ]
+      const result = calculateMaxAllocableSavings(incomeSources, [])
+      // grossIncome = 50000, totalExpenses = 0
+      // netPeriodIncome = 50000 - 0 = 50000
+      expect(result).toBe(50000)
     })
 
     it('should handle mixed frequencies', () => {
@@ -120,6 +130,17 @@ describe('Savings Capacity Calculation', () => {
     it('should handle empty arrays', () => {
       const result = calculateMaxDynamicallyAllocableSavings([], [])
       expect(result).toBe(0)
+    })
+
+    it('should return full income when no expenses', () => {
+      const incomeSources = [
+        { amount: 50000, frequency: 'monthly' as const },
+      ]
+      const result = calculateMaxDynamicallyAllocableSavings(incomeSources, [])
+      // grossIncome = 50000, totalExpenses = 0
+      // netPeriodIncome = 50000 - 0 = 50000
+      // max(0, 50000) = 50000
+      expect(result).toBe(50000)
     })
   })
 
@@ -208,6 +229,20 @@ describe('Savings Capacity Calculation', () => {
       // percentage = (5000 / 10000) * 100 = 50%
       expect(result).toBe(50)
     })
+
+    it('should return >100% when expenses exceed gross income (overspending)', () => {
+      const incomeSources = [
+        { amount: 50000, frequency: 'monthly' as const }, // $500
+      ]
+      const expenses = [
+        { amount: 75000, frequency: 'monthly' as const }, // $750
+      ]
+      
+      const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
+      // grossIncome = 50000, totalExpenses = 75000
+      // percentage = (75000 / 50000) * 100 = 150%
+      expect(result).toBe(150)
+    })
   })
 
   describe('calculateSavingsCapacityResult', () => {
@@ -244,6 +279,23 @@ describe('Savings Capacity Calculation', () => {
         netPeriodIncome: -30000,
         savingsCapacityPercentage: 0,
         maxAllocableSavings: -30000,
+      })
+    })
+
+    it('should return >100% percentage when overspending', () => {
+      const incomeSources = [
+        { amount: 50000, frequency: 'monthly' as const },
+      ]
+      const expenses = [
+        { amount: 75000, frequency: 'monthly' as const },
+      ]
+      
+      const result = calculateSavingsCapacityResult(incomeSources, expenses)
+      expect(result).toEqual<SavingsCapacityResult>({
+        grossIncome: 50000,
+        netPeriodIncome: -25000,
+        savingsCapacityPercentage: 150, // >100% for overspending
+        maxAllocableSavings: -25000,
       })
     })
 

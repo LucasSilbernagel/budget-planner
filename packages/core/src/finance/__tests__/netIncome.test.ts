@@ -18,7 +18,7 @@ import {
   calculateTotalPeriodExpenses,
   calculateNetIncomeResult,
   type NetIncomeResult,
-} from '../netIncome'
+} from '../netIncome.js'
 
 describe('Net Period Income Calculation', () => {
   describe('calculateGrossPeriodIncome', () => {
@@ -248,7 +248,7 @@ describe('Net Period Income Calculation', () => {
         grossIncome: 0,
         totalExpenses: 0,
         netIncome: 0,
-        isSurplus: true,
+        isSurplus: false, // 0 is break-even, not surplus (user decision)
       })
     })
   })
@@ -409,8 +409,7 @@ describe('Net Period Income Calculation', () => {
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      // TypeScript will coerce string to number, but this is a type error
-      // @ts-expect-error - intentional type error test
+      // Intentional runtime test with string amount coerced via any
       const result = calculateNetPeriodIncome(incomeSources, expenses)
       expect(result).toBe(30000)
     })
