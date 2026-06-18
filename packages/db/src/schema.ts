@@ -12,6 +12,12 @@ import { sql } from 'drizzle-orm'
 // Type imports for Drizzle
 export type { InferModel, InferInsertModel } from 'drizzle-orm'
 
+// VALIDATION STRATEGY:
+// - Database-level CHECK constraints provide the last line of defense for data integrity
+// - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
+// - All monetary amounts use integer type (cents) for precision
+// - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
+
 // Frequency enum for income and expense recurrence
 // Values use snake_case as per architecture: weekly, biweekly, monthly, annually
 export const frequencyEnum = pgEnum('frequency', [
@@ -62,7 +68,10 @@ export const incomeSources = pgTable('incomeSources', {
   frequency: frequencyEnum('frequency').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  // Consistency: ensure amount is positive across all monetary fields
+  sql`check (${table.amount} > 0)`.named('income_sources_amount_positive'),
+])
 
 // Expenses table - camelCase name per architecture
 export const expenses = pgTable('expenses', {
@@ -75,7 +84,10 @@ export const expenses = pgTable('expenses', {
   frequency: frequencyEnum('frequency').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  // Consistency: ensure amount is positive across all monetary fields
+  sql`check (${table.amount} > 0)`.named('expenses_amount_positive'),
+])
 
 // Savings Goals table - camelCase name per architecture
 export const savingsGoals = pgTable('savingsGoals', {
@@ -101,12 +113,15 @@ export const balanceTracking = pgTable('balanceTracking', {
     .notNull(),
   type: financeTypeEnum('type').notNull(), // investment or debt
   name: varchar('name', { length: 255 }).notNull(),
-  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
+  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt per AC 5)
   maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents
   monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  // Consistency: ensure optional limit is non-negative if provided
+  sql`check (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} >= 0)`.named('balance_tracking_limit_non_negative'),
+])
 
 // User Profiles table - camelCase name per architecture
 // Profiles allow users to organize their financial data for different purposes
@@ -161,3 +176,7 @@ export const allTables = {
   balanceTracking,
   userProfiles,
 }
+
+// NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)
+// Unit tests for schema validation will be added when database is configured
+// See: pnpm --filter db db:generate (requires DATABASE_URL)
