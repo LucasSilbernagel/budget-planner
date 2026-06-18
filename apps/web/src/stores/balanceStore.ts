@@ -1,146 +1,276 @@
+/**
+ * Balance Tracking Store
+ * 
+ * Zustand store for client-side balance tracking state management.
+ * Provides state, selectors, and actions for balance tracking entries.
+ * 
+ * Architecture:
+ * - Uses Zustand for state management
+ * - Persists to localStorage via persist middleware
+ * - Works with core service layer for business logic
+ * - Supports both free tier (client-side) and paid tier (server-side)
+ */
+
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type {
+  ClientBalanceTracking,
+  ClientNewBalanceTracking,
+  BalanceTrackingFilter,
+  BalanceTrackingWithTimeline,
+} from '@budget-planner/core/services/balanceTracking'
+import {
+  toClientBalanceTracking,
+  validateBalanceTracking,
+  withTimeline,
+  sortByCreationDate,
+  filterBalanceTracking,
+} from '@budget-planner/core/services/balanceTracking'
+import type { FinanceType } from '@budget-planner/db'
 
-// Finance type for balance tracking
-export type FinanceType = 'investment' | 'debt'
+// ============================================================================
+// State Definition
+// ============================================================================
 
-// Client-side type for balance tracking (with string timestamps for localStorage)
-// For free tier without auth, userId defaults to 0
-interface ClientBalanceTracking {
-  id: number
-  userId: number
-  type: FinanceType
-  name: string
-  currentBalance: number  // Amount in cents
-  maxContributionLimit: number | null  // Amount in cents (nullable)
-  monthlyContribution: number  // Amount in cents
-  createdAt: string  // ISO string for localStorage serialization
-  updatedAt: string  // ISO string for localStorage serialization
-}
-
-interface ClientNewBalanceTracking {
-  userId?: number  // Optional for free tier (no auth yet)
-  type: FinanceType
-  name: string
-  currentBalance: number  // Amount in cents
-  maxContributionLimit?: number | null  // Amount in cents (nullable)
-  monthlyContribution: number  // Amount in cents
-}
-
-// Define the type for our store state
+/**
+ * Balance store state
+ */
 interface BalanceState {
-  balanceEntries: ClientBalanceTracking[]
-  addBalanceEntry: (entry: ClientNewBalanceTracking) => void
-  updateBalanceEntry: (id: number, updates: Partial<ClientNewBalanceTracking>) => void
-  deleteBalanceEntry: (id: number) => void
-  getBalanceEntryById: (id: number) => ClientBalanceTracking | undefined
-  getTotalInvestments: () => number
-  getTotalDebts: () => number
-  getNetWorth: () => number
+  // Balance tracking entries (client-side storage)
+  entries: ClientBalanceTracking[]
+
+  // Filter state
+  filter: BalanceTrackingFilter
+
+  // Actions
+  addBalanceEntry: (data: ClientNewBalanceTracking) => ClientBalanceTracking | null
+  updateBalanceEntry: (id: number, data: Partial<ClientNewBalanceTracking>) => ClientBalanceTracking | null
+  deleteBalanceEntry: (id: number) => boolean
+  setFilter: (filter: BalanceTrackingFilter) => void
+  clearFilter: () => void
+  reset: () => void
 }
 
-// Helper to generate a temporary ID for client-side storage
-// Note: In production with backend, IDs will come from the database
-// Using negative IDs for temporary client-side entries to avoid conflicts
-// Start at -40000 to avoid conflicts with other IDs
-let balanceTempIdCounter = -40000
-const generateBalanceTempId = (): number => {
-  balanceTempIdCounter -= 1
-  return balanceTempIdCounter
-}
+// ============================================================================
+// Store Creation
+// ============================================================================
 
-// Convert ClientNewBalanceTracking to ClientBalanceTracking (add id, userId, and timestamps as ISO strings)
-// For free tier without auth, userId defaults to 0
-const toClientBalanceTracking = (newEntry: ClientNewBalanceTracking): ClientBalanceTracking => ({
-  ...newEntry,
-  userId: newEntry.userId ?? 0,  // Default to 0 for free tier (no auth)
-  id: generateBalanceTempId(),
-  maxContributionLimit: newEntry.maxContributionLimit ?? null,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-})
+/**
+ * Storage key for localStorage persistence
+ */
+const STORAGE_KEY = 'budget-planner:balance-tracking'
 
+/**
+ * Create balance store with persistence
+ */
 export const useBalanceStore = create<BalanceState>()(
   persist(
     (set, get) => ({
       // Initial state
-      balanceEntries: [],
+      entries: [],
+      filter: {},
 
       // Add a new balance entry
-      addBalanceEntry: (newEntry) => {
-        const entry = toClientBalanceTracking(newEntry)
+      addBalanceEntry: (data: ClientNewBalanceTracking): ClientBalanceTracking | null => {
+        // Validate input
+        const errors = validateBalanceTracking(data)
+        if (errors.length > 0) {
+          console.warn('Validation errors:', errors)
+          return null
+        }
+
+        // Convert to client entry with ID and timestamps
+        const newEntry = toClientBalanceTracking(data)
+
+        // Update state
         set((state) => ({
-          balanceEntries: [...state.balanceEntries, entry],
+          entries: sortByCreationDate([...state.entries, newEntry]),
         }))
+
+        return newEntry
       },
 
       // Update an existing balance entry
-      updateBalanceEntry: (id, updates) => {
+      updateBalanceEntry: (id: number, data: Partial<ClientNewBalanceTracking>): ClientBalanceTracking | null => {
+        // Validate input
+        const errors = validateBalanceTracking(data)
+        if (errors.length > 0) {
+          console.warn('Validation errors:', errors)
+          return null
+        }
+
+        // Find and update entry
+        const updatedEntries = get().entries.map((entry) => {
+          if (entry.id === id) {
+            return {
+              ...entry,
+              ...data,
+              updatedAt: new Date().toISOString(),
+            }
+          }
+          return entry
+        })
+
+        // Check if entry was found
+        const entryExists = get().entries.some((e) => e.id === id)
+        if (!entryExists) {
+          return null
+        }
+
+        // Update state
         set((state) => ({
-          balanceEntries: state.balanceEntries.map((entry) =>
-            entry.id === id
-              ? { ...entry, ...updates, updatedAt: new Date().toISOString() }
-              : entry
-          ),
+          entries: sortByCreationDate(updatedEntries),
         }))
+
+        // Return updated entry
+        const updatedEntry = updatedEntries.find((e) => e.id === id)
+        return updatedEntry || null
       },
 
       // Delete a balance entry
-      deleteBalanceEntry: (id) => {
+      deleteBalanceEntry: (id: number): boolean => {
+        const entryExists = get().entries.some((e) => e.id === id)
+        if (!entryExists) {
+          return false
+        }
+
+        // Filter out the deleted entry
         set((state) => ({
-          balanceEntries: state.balanceEntries.filter(
-            (entry) => entry.id !== id
-          ),
+          entries: state.entries.filter((e) => e.id !== id),
         }))
+
+        return true
       },
 
-      // Get balance entry by ID
-      getBalanceEntryById: (id) => {
-        return get().balanceEntries.find((entry) => entry.id === id)
+      // Set filter
+      setFilter: (filter: BalanceTrackingFilter) => {
+        set({ filter })
       },
 
-      // Calculate total investments (sum of all investment balances)
-      getTotalInvestments: () => {
-        return get().balanceEntries
-          .filter((entry) => entry.type === 'investment')
-          .reduce((sum, entry) => sum + entry.currentBalance, 0)
+      // Clear filter
+      clearFilter: () => {
+        set({ filter: {} })
       },
 
-      // Calculate total debts (sum of all debt balances)
-      getTotalDebts: () => {
-        return get().balanceEntries
-          .filter((entry) => entry.type === 'debt')
-          .reduce((sum, entry) => sum + entry.currentBalance, 0)
-      },
-
-      // Calculate net worth (investments - debts)
-      getNetWorth: () => {
-        return get().getTotalInvestments() - get().getTotalDebts()
+      // Reset store to initial state
+      reset: () => {
+        set({
+          entries: [],
+          filter: {},
+        })
       },
     }),
     {
-      name: 'budget-planner-balance-v1',
+      name: STORAGE_KEY,
       partialize: (state) => ({
-        balanceEntries: state.balanceEntries,
+        entries: state.entries,
       }),
     }
   )
 )
 
-// Selector hooks for better performance
-export const useBalanceEntries = () =>
-  useBalanceStore((state) => state.balanceEntries)
+// ============================================================================
+// Selectors
+// ============================================================================
 
-export const useTotalInvestments = () =>
-  useBalanceStore((state) => state.getTotalInvestments())
+/**
+ * Get all balance entries
+ */
+export const useBalanceEntries = (): ClientBalanceTracking[] =>
+  useBalanceStore((state) => state.entries)
 
-export const useTotalDebts = () =>
-  useBalanceStore((state) => state.getTotalDebts())
+/**
+ * Get balance entries with timeline calculations
+ */
+export const useBalanceEntriesWithTimeline = (): BalanceTrackingWithTimeline[] =>
+  useBalanceStore((state) => state.entries.map(withTimeline))
 
-export const useNetWorth = () =>
-  useBalanceStore((state) => state.getNetWorth())
+/**
+ * Get filtered balance entries with timeline
+ */
+export const useFilteredBalanceEntries = (): BalanceTrackingWithTimeline[] =>
+  useBalanceStore((state) => {
+    const entriesWithTimeline = state.entries.map(withTimeline)
+    return filterBalanceTracking(entriesWithTimeline, state.filter)
+  })
 
-// Client-side persistence enabled via Zustand persist middleware
-// Data persists in localStorage across page refreshes
-// Uses string timestamps for proper serialization
-// Note: These types are for client-side storage; db package types are for database
+/**
+ * Get entries by type (investment or debt)
+ */
+export const useBalanceEntriesByType = (type: FinanceType): BalanceTrackingWithTimeline[] =>
+  useBalanceStore((state) => {
+    const entriesWithTimeline = state.entries.map(withTimeline)
+    return entriesWithTimeline.filter((entry) => entry.type === type)
+  })
+
+/**
+ * Get investment entries
+ */
+export const useInvestmentEntries = (): BalanceTrackingWithTimeline[] =>
+  useBalanceEntriesByType('investment')
+
+/**
+ * Get debt entries
+ */
+export const useDebtEntries = (): BalanceTrackingWithTimeline[] =>
+  useBalanceEntriesByType('debt')
+
+/**
+ * Get total investment balance
+ */
+export const useTotalInvestmentBalance = (): number =>
+  useBalanceStore((state) =>
+    state.entries
+      .filter((e) => e.type === 'investment')
+      .reduce((sum, entry) => sum + entry.currentBalance, 0)
+  )
+
+/**
+ * Get total debt balance
+ */
+export const useTotalDebtBalance = (): number =>
+  useBalanceStore((state) =>
+    state.entries
+      .filter((e) => e.type === 'debt')
+      .reduce((sum, entry) => sum + entry.currentBalance, 0)
+  )
+
+/**
+ * Get net balance (investments - debts)
+ */
+export const useNetBalance = (): number =>
+  useBalanceStore((state) =>
+    state.entries.reduce((sum, entry) => {
+      // Investments add to balance, debts subtract
+      return sum + (entry.type === 'investment' ? entry.currentBalance : -entry.currentBalance)
+    }, 0)
+  )
+
+/**
+ * Get current filter
+ */
+export const useBalanceFilter = (): BalanceTrackingFilter =>
+  useBalanceStore((state) => state.filter)
+
+/**
+ * Get entry count
+ */
+export const useBalanceEntryCount = (): number =>
+  useBalanceStore((state) => state.entries.length)
+
+// ============================================================================
+// Action Hooks
+// ============================================================================
+
+/**
+ * Get all balance actions
+ */
+export const useBalanceActions = () =>
+  useBalanceStore((state) => ({
+    addBalanceEntry: state.addBalanceEntry,
+    updateBalanceEntry: state.updateBalanceEntry,
+    deleteBalanceEntry: state.deleteBalanceEntry,
+    setFilter: state.setFilter,
+    clearFilter: state.clearFilter,
+    reset: state.reset,
+  }))

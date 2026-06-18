@@ -1,0 +1,95 @@
+# generated: 2026-06-17
+# last_updated: 2026-06-17
+# project: budget-planner
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /Users/lucassilbernagel/Documents/development/side-projects/budget-planner/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-06-17
+last_updated: 2026-06-18
+baseline_commit: NO_VCS
+project: budget-planner
+project_key: NOKEY
+tracking_system: file-system
+story_location: /Users/lucassilbernagel/Documents/development/side-projects/budget-planner/_bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Foundation - Project Setup & Core Financial Tracking
+  epic-1: done
+  1-1-set-up-monorepo-project-structure-with-pnpm-workspaces: done
+  1-2-set-up-tanstack-start-frontend-application: done
+  1-3-create-database-schema-for-income-and-expense-entities: done
+  1-4-implement-income-source-crud-operations: done
+  1-5-implement-expense-crud-operations: done
+  1-6-implement-client-side-data-persistence-for-free-tier: done
+  1-7-implement-income-vs-expense-breakdown-chart: done
+  epic-1-retrospective: optional
+
+  # Epic 2: Extended Financial Management & Basic Insights
+  epic-2: in-progress
+  2-1-create-database-schema-for-savings-and-balance-tracking: done
+  2-2-implement-savings-goal-crud-operations: done
+  2-3-implement-balance-tracking-crud-operations: review
+  2-4-implement-frequency-normalization-engine: ready-for-dev
+  2-5-implement-net-period-income-calculation: ready-for-dev
+  2-6-implement-savings-capacity-percentage-calculation: ready-for-dev
+  2-7-implement-maximum-dynamically-allocable-savings-calculation: ready-for-dev
+  epic-2-retrospective: optional
+
+  # Epic 3: Advanced Financial Intelligence
+  epic-3: backlog
+  3-1-implement-retirement-modeler-with-safe-withdrawal-model: backlog
+  3-2-implement-forward-looking-net-worth-projection-visualization: backlog
+  3-3-enhance-income-vs-expense-visualization: backlog
+  3-4-set-up-tanstack-start-server-functions-for-calculations: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Premium Features & Display Customization
+  epic-4: backlog
+  4-1-implement-paddle-authentication-and-account-creation: backlog
+  4-2-create-database-schema-for-users-table: backlog
+  4-3-implement-multi-device-data-synchronization-for-paid-tier: backlog
+  4-4-implement-custom-user-profiles-for-paid-tier: backlog
+  4-5-implement-premium-forecasting-features: backlog
+  4-6-implement-currency-control-system-with-mode-toggle: backlog
+  4-7-implement-currency-display-with-intl-numberformat: backlog
+  4-8-display-application-version-in-ui-footer: backlog
+  4-9-add-integrated-github-issue-tracking-link: backlog
+  4-10-create-documentation-system-using-tanstack-router: backlog
+  4-11-implement-ethicalads-for-unauthenticated-users: backlog
+  4-12-implement-clean-url-string-injection-for-client-metadata-tracking: backlog
+  4-13-set-up-zustand-state-management: backlog
+  4-14-set-up-testing-infrastructure: backlog
+  4-15-set-up-ci-cd-pipeline-with-github-actions: backlog
+  4-16-deploy-to-netlify-with-western-europe-region: backlog
+  4-17-deploy-backend-to-scaleway-with-eu-postgresql: backlog
+  epic-4-retrospective: optional
