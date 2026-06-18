@@ -11,7 +11,7 @@
  */
 
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
-import { calculateProgress as calculateSavingsGoalProgress } from './utils/savingsGoalCalculations'
+import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
 
 // ============================================================================
 // Type Definitions
@@ -109,7 +109,7 @@ export interface SavingsGoalFilter {
  * Calculate progress percentage for a savings goal
  * Re-exports from savingsGoalCalculations for convenience
  */
-export { calculateSavingsGoalProgress as calculateProgress } from './utils/savingsGoalCalculations'
+export { calculateProgress } from '../utils/savingsGoalCalculations'
 
 /**
  * Determine status based on progress percentage
@@ -336,7 +336,7 @@ export function toClientSavingsGoal(
 // ============================================================================
 
 export {
-  calculateProgress as calculateSavingsGoalProgress,
+  calculateSavingsGoalProgress,
   getStatusFromProgress as getSavingsGoalStatus,
   withProgress as withSavingsGoalProgress,
 }

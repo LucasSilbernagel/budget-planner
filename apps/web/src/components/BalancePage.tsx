@@ -3,9 +3,9 @@ import type { FinanceType } from '../stores/balanceStore'
 import {
   useBalanceStore,
   useBalanceEntries,
-  useTotalInvestments,
-  useTotalDebts,
-  useNetWorth,
+  useTotalInvestmentBalance as useTotalInvestments,
+  useTotalDebtBalance as useTotalDebts,
+  useNetBalance as useNetWorth,
 } from '../stores'
 
 const FORMATTER = new Intl.NumberFormat('en-US', {
@@ -185,36 +185,36 @@ export function BalancePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="bg-gray-50 p-8 min-h-screen">
+      <div className="mx-auto max-w-4xl">
         <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Balance Tracking</h1>
-          <p className="text-gray-600 mt-2">
+          <h1 className="font-bold text-gray-900 text-3xl">Balance Tracking</h1>
+          <p className="mt-2 text-gray-600">
             Monitor your investments and debts
           </p>
         </header>
 
         <main className="space-y-6">
           {/* Stats Cards */}
-          <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+          <section className="bg-white shadow-md p-6 rounded-lg">
+            <h2 className="mb-4 font-semibold text-gray-800 text-xl">
               Financial Overview
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Total Investments</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">
+            <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-gray-500 text-sm">Total Investments</p>
+                <p className="mt-1 font-bold text-green-600 text-2xl">
                   {formatAmount(totalInvestments)}
                 </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Total Debts</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-gray-500 text-sm">Total Debts</p>
+                <p className="mt-1 font-bold text-red-600 text-2xl">
                   {formatAmount(totalDebts)}
                 </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Net Worth</p>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-gray-500 text-sm">Net Worth</p>
                 <p
                   className={`text-2xl font-bold mt-1 ${
                     netWorth >= 0 ? 'text-green-600' : 'text-red-600'
@@ -227,41 +227,41 @@ export function BalancePage() {
           </section>
 
           {/* Balance Entries List */}
-          <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6">
+          <section className="bg-white shadow-md p-6 rounded-lg">
+            <h2 className="mb-6 font-semibold text-gray-800 text-xl">
               Your Balance Entries
             </h2>
 
             {balanceEntries.length === 0 ? (
-              <div className="bg-gray-50 rounded-lg p-8 text-center">
-                <p className="text-gray-500 mb-4">
+              <div className="bg-gray-50 p-8 rounded-lg text-center">
+                <p className="mb-4 text-gray-500">
                   No balance entries recorded yet
                 </p>
-                <p className="text-sm text-gray-400">
+                <p className="text-gray-400 text-sm">
                   Click "Add Balance Entry" to get started
                 </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="divide-y divide-gray-200 min-w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
                         Type
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
                         Name
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
                         Current Balance
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
                         Max Contribution
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
                         Monthly Contribution
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-right uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
@@ -279,31 +279,31 @@ export function BalancePage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
+                            <div className="font-medium text-gray-900 text-sm">
                               {entry.name}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
+                            <div className="text-gray-500 text-sm">
                               {formatAmount(entry.currentBalance)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
+                            <div className="text-gray-500 text-sm">
                               {entry.maxContributionLimit !== null
                                 ? formatAmount(entry.maxContributionLimit)
                                 : 'None'}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
+                            <div className="text-gray-500 text-sm">
                               {formatAmount(entry.monthlyContribution)}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                          <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
                             <button
                               onClick={() => openEditModal(entry)}
-                              className="text-blue-600 hover:text-blue-900 mr-4"
+                              className="mr-4 text-blue-600 hover:text-blue-900"
                             >
                               Edit
                             </button>
@@ -326,10 +326,10 @@ export function BalancePage() {
 
         {/* Add/Edit Modal */}
         {isModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <div className="z-50 fixed inset-0 flex justify-center items-center bg-black bg-opacity-50 p-4">
+            <div className="bg-white shadow-xl p-6 rounded-lg w-full max-w-md">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="font-medium text-gray-900 text-lg">
                   {editingId !== null
                     ? 'Edit Balance Entry'
                     : 'Add Balance Entry'}
@@ -339,7 +339,7 @@ export function BalancePage() {
                   className="text-gray-400 hover:text-gray-600"
                   aria-label="Close"
                 >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -354,7 +354,7 @@ export function BalancePage() {
                 <div>
                   <label
                     htmlFor="type"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block mb-1 font-medium text-gray-700 text-sm"
                   >
                     Type *
                   </label>
@@ -362,7 +362,7 @@ export function BalancePage() {
                     id="type"
                     value={type}
                     onChange={(e) => setType(e.target.value as FinanceType)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                    className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                     required
                   >
                     {TYPE_OPTIONS.map((option) => (
@@ -376,7 +376,7 @@ export function BalancePage() {
                 <div>
                   <label
                     htmlFor="name"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block mb-1 font-medium text-gray-700 text-sm"
                   >
                     Name *
                   </label>
@@ -386,7 +386,7 @@ export function BalancePage() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g., 401k, Student Loan, Credit Card"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                    className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                     required
                   />
                 </div>
@@ -394,12 +394,12 @@ export function BalancePage() {
                 <div>
                   <label
                     htmlFor="currentBalance"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block mb-1 font-medium text-gray-700 text-sm"
                   >
                     Current Balance *
                   </label>
-                  <div className="relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <div className="relative shadow-sm rounded-md">
+                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
                       <span className="text-gray-500 text-sm">$</span>
                     </div>
                     <input
@@ -410,7 +410,7 @@ export function BalancePage() {
                       placeholder="0.00"
                       step="0.01"
                       min="0"
-                      className="w-full px-3 py-2 pl-7 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                      className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                       required
                     />
                   </div>
@@ -419,12 +419,12 @@ export function BalancePage() {
                 <div>
                   <label
                     htmlFor="maxContributionLimit"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block mb-1 font-medium text-gray-700 text-sm"
                   >
                     Max Contribution Limit (Optional)
                   </label>
-                  <div className="relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <div className="relative shadow-sm rounded-md">
+                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
                       <span className="text-gray-500 text-sm">$</span>
                     </div>
                     <input
@@ -435,7 +435,7 @@ export function BalancePage() {
                       placeholder="0.00"
                       step="0.01"
                       min="0"
-                      className="w-full px-3 py-2 pl-7 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                      className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                     />
                   </div>
                 </div>
@@ -443,12 +443,12 @@ export function BalancePage() {
                 <div>
                   <label
                     htmlFor="monthlyContribution"
-                    className="block text-sm font-medium text-gray-700 mb-1"
+                    className="block mb-1 font-medium text-gray-700 text-sm"
                   >
                     Monthly Contribution *
                   </label>
-                  <div className="relative rounded-md shadow-sm">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <div className="relative shadow-sm rounded-md">
+                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
                       <span className="text-gray-500 text-sm">$</span>
                     </div>
                     <input
@@ -459,7 +459,7 @@ export function BalancePage() {
                       placeholder="0.00"
                       step="0.01"
                       min="0"
-                      className="w-full px-3 py-2 pl-7 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                      className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                       required
                     />
                   </div>
@@ -469,14 +469,14 @@ export function BalancePage() {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    className="hover:bg-gray-50 px-4 py-2 border border-gray-300 rounded-md text-gray-700"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4 py-2 rounded-md text-white disabled:cursor-not-allowed"
                   >
                     {isSubmitting
                       ? 'Saving...'
@@ -502,28 +502,28 @@ export function BalancePage() {
         )}
 
         {/* Navigation */}
-        <div className="mt-8 flex gap-4">
+        <div className="flex gap-4 mt-8">
           <a
             href="/"
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
           >
             Back to Home
           </a>
           <a
             href="/income"
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
           >
             View Income
           </a>
           <a
             href="/expenses"
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
           >
             View Expenses
           </a>
           <a
             href="/savings"
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
           >
             View Savings
           </a>

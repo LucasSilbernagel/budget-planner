@@ -5,8 +5,8 @@
     "declarationMap": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "composite": true,
     "skipLibCheck": true
   },

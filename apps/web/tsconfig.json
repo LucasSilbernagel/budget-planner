@@ -9,7 +9,8 @@
     "allowSyntheticDefaultImports": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["react", "react-dom", "vitest/globals"]
+    "types": ["react", "react-dom", "vitest/globals"],
+    "composite": true
   },
   "include": [
     "src/**/*"
@@ -17,5 +18,10 @@
   "exclude": [
     "node_modules",
     "dist"
+  ],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/config" }
   ]
 }

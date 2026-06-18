@@ -274,3 +274,6 @@ export const useBalanceActions = () =>
     clearFilter: state.clearFilter,
     reset: state.reset,
   }))
+
+// Re-export types
+export type { FinanceType }

@@ -2,10 +2,9 @@
   "compilerOptions": {
     "target": "ES2021",
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
     "paths": {
       "@budget-planner/web": ["apps/web/src"],
       "@budget-planner/db": ["packages/db/src"],
@@ -30,7 +29,7 @@
     "allowUnusedLabels": false,
     "allowUnreachableCode": false,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "apps/**/*",

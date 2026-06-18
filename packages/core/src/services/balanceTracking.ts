@@ -15,12 +15,8 @@ import {
   calculateMonthsToLimit, 
   DebtSubType,
   calculateDebtMetrics,
-  DebtSubType as DebtSubTypeExport,
   DebtCalculationResult
-} from './utils/balanceCalculations'
-
-// Re-export for backward compatibility
-export { calculateMonthsToLimit as calculateBalanceTimeline }
+} from '../utils/balanceCalculations'
 
 // ============================================================================
 // Type Definitions
@@ -131,7 +127,7 @@ export interface BalanceTrackingFilter {
  * Calculate months to max contribution limit
  * Re-exports from balanceCalculations for convenience
  */
-export { calculateBalanceTimeline as calculateMonthsToLimit } from './utils/balanceCalculations'
+export { calculateMonthsToLimit } from '../utils/balanceCalculations'
 
 /**
  * Determine display type properties based on FinanceType
@@ -151,7 +147,13 @@ export function getTypeDisplayProperties(type: FinanceType): {
     return undefined
   }
   
-  const properties = {
+  const properties: Record<FinanceType, {
+    theme: 'success' | 'danger'
+    icon: string
+    label: string
+    colorClass: string
+    bgColorClass: string
+  }> = {
     investment: {
       theme: 'success' as const,
       icon: '↗',
@@ -518,6 +520,7 @@ export type { DebtSubType, DebtCalculationResult }
 export { calculateDebtMetrics }
 
 export {
-  calculateBalanceTimeline as calculateBalanceMonthsToLimit,
+  calculateMonthsToLimit as calculateBalanceTimeline,
+  calculateMonthsToLimit as calculateBalanceMonthsToLimit,
   withTimeline as withBalanceTrackingTimeline,
 }

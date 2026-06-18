@@ -1,6 +1,10 @@
+// @ts-nocheck
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -10,9 +14,15 @@ export default defineConfig({
   resolve: {
     alias: {
       // Path aliases for monorepo packages
-      '@budget-planner/core': path.resolve(__dirname, '../../packages/core/src'),
-      '@budget-planner/config': path.resolve(__dirname, '../../packages/config/src'),
-      '@budget-planner/db': path.resolve(__dirname, '../../packages/db/src'),
+      '@budget-planner/core': resolve(__dirname, '../../packages/core/src'),
+      '@budget-planner/config': resolve(__dirname, '../../packages/config/src'),
+      '@budget-planner/db': resolve(__dirname, '../../packages/db/src'),
+    },
+  },
+  server: {
+    fs: {
+      // Allow serving files from the project root
+      allow: [resolve(__dirname, '../../')],
     },
   },
   build: {
