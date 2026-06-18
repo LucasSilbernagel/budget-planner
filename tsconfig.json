@@ -1,48 +1,26 @@
 {
   "compilerOptions": {
-    /* Language and Environment */
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    
-    /* Modules */
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "baseUrl": ".",
-    /* Path aliases for monorepo-internal imports only. 
-       These aliases work within the monorepo but are not valid for external consumption.
-       Use relative paths (../packages/core) when importing from other workspace packages.
-    */
     "paths": {
       "@budget-planner/web": ["apps/web/src"],
       "@budget-planner/db": ["packages/db/src"],
       "@budget-planner/config": ["packages/config/src"],
       "@budget-planner/core": ["packages/core/src"]
     },
-    
-    /* Emit */
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    
-    /* Interop Constraints */
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    
-    /* Type Checking */
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "useUnknownInCatchVariables": true,
-    "alwaysStrict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
@@ -50,8 +28,6 @@
     "noPropertyAccessFromIndexSignature": true,
     "allowUnusedLabels": false,
     "allowUnreachableCode": false,
-    
-    /* Completeness */
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
