@@ -2,37 +2,8 @@ import React, { useState, useEffect } from 'react'
 import type { ClientBalanceTracking, ClientNewBalanceTracking, ValidationError } from '@budget-planner/core/services/balanceTracking'
 import { validateBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import { useCurrencyPreferences } from '../stores/currencyStore'
-import { formatCurrency, currencySymbol } from '@budget-planner/core/format/currency'
+import { formatCurrency, formatForInput, parseCurrencyToCents, currencySymbol } from '@budget-planner/core/format/currency'
 import type { FinanceType } from '@budget-planner/db'
-
-/**
- * Parse currency string to cents
- */
-function parseCurrencyToCents(value: string): number {
-  if (!value || value.trim() === '') return 0
-  
-  const cleaned = value.replace(/[^\d.-]/g, '')
-  if ((cleaned.match(/\./g) || []).length > 1) return 0
-  if (cleaned.includes('e') || cleaned.includes('E')) return 0
-  
-  const amount = parseFloat(cleaned)
-  if (isNaN(amount) || !isFinite(amount)) return 0
-  
-  if (cleaned.includes('.')) {
-    const [whole, decimal] = cleaned.split('.')
-    const paddedDecimal = decimal.padEnd(2, '0').slice(0, 2)
-    return parseInt(whole + paddedDecimal, 10) || 0
-  }
-  
-  return parseInt(cleaned + '00', 10) || 0
-}
-
-/**
- * Format cents to currency string for input display
- */
-function formatCentsToCurrency(cents: number): string {
-  return (cents / 100).toFixed(2)
-}
 
 /**
  * Props for EditBalanceEntryForm component
@@ -76,12 +47,12 @@ export function EditBalanceEntryForm({
   // Form state - pre-fill with existing entry data
   const [name, setName] = useState(entry.name)
   const [type, setType] = useState<FinanceType>(entry.type)
-  const [currentBalance, setCurrentBalance] = useState(formatCentsToCurrency(entry.currentBalance))
+  const [currentBalance, setCurrentBalance] = useState(formatForInput(entry.currentBalance))
   const [maxContributionLimit, setMaxContributionLimit] = useState(
-    entry.maxContributionLimit ? formatCentsToCurrency(entry.maxContributionLimit) : ''
+    entry.maxContributionLimit ? formatForInput(entry.maxContributionLimit) : ''
   )
   const [monthlyContribution, setMonthlyContribution] = useState(
-    formatCentsToCurrency(entry.monthlyContribution)
+    formatForInput(entry.monthlyContribution)
   )
 
   // Validation and error state
@@ -100,12 +71,12 @@ export function EditBalanceEntryForm({
         name,
         type,
         currentBalance: currentBalanceCents,
-        maxContributionLimit: maxContributionLimitCents || undefined,
+        maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
         monthlyContribution: monthlyContributionCents,
       })
       setErrors(newErrors)
     }
-  }, [name, type, currentBalance, maxContributionLimit, monthlyContribution, submitAttempted])
+  }, [name, type, currentBalance, maxContributionLimit, monthlyContribution, currentBalanceCents, maxContributionLimitCents, monthlyContributionCents, submitAttempted])
 
   /**
    * Handle form submission
@@ -118,7 +89,7 @@ export function EditBalanceEntryForm({
       name,
       type,
       currentBalance: currentBalanceCents,
-      maxContributionLimit: maxContributionLimitCents || undefined,
+      maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
       monthlyContribution: monthlyContributionCents,
     })
     setErrors(newErrors)
@@ -133,7 +104,7 @@ export function EditBalanceEntryForm({
       name: name.trim(),
       type,
       currentBalance: currentBalanceCents,
-      maxContributionLimit: maxContributionLimitCents || undefined,
+      maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
       monthlyContribution: monthlyContributionCents,
     })
   }
@@ -209,7 +180,12 @@ export function EditBalanceEntryForm({
         <select
           id="edit-balance-entry-type"
           value={type}
-          onChange={(e) => setType(e.target.value as FinanceType)}
+          onChange={(e) => {
+            const value = e.target.value as FinanceType
+            if (['investment', 'debt'].includes(value)) {
+              setType(value)
+            }
+          }}
           className={`w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600 ${
             hasFieldError('type')
               ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
@@ -377,7 +353,10 @@ export function EditBalanceEntryForm({
           <p className="text-sm text-blue-700 dark:text-blue-300">
             Timeline Preview:
             <span className="font-medium ml-1">
-              {Math.ceil((maxContributionLimitCents - currentBalanceCents) / monthlyContributionCents)} months to limit
+              {monthlyContributionCents !== 0
+                ? Math.max(0, Math.ceil((maxContributionLimitCents - currentBalanceCents) / monthlyContributionCents))
+                : 0}
+              months to limit
             </span>
           </p>
         </div>
@@ -426,7 +405,7 @@ export function EditBalanceEntryForm({
 
       {isFreeTier && (
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center pt-2 border-t border-gray-200 dark:border-gray-700">
-          * Changes are saved to your browser's local storage
+          * Balance entries are stored in your browser's local storage
         </p>
       )}
     </form>

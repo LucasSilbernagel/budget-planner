@@ -2,41 +2,8 @@ import React, { useState, useEffect } from 'react'
 import type { ClientNewBalanceTracking, ValidationError } from '@budget-planner/core/services/balanceTracking'
 import { validateBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import { useCurrencyPreferences } from '../stores/currencyStore'
-import { formatCurrency, currencySymbol } from '@budget-planner/core/format/currency'
+import { formatCurrency, formatForInput, parseCurrencyToCents, currencySymbol } from '@budget-planner/core/format/currency'
 import type { FinanceType } from '@budget-planner/db'
-
-/**
- * Parse currency string to cents
- * Removes $, commas, and multiplies by 100
- * Rejects negative values, multiple decimal points, and invalid inputs
- */
-function parseCurrencyToCents(value: string): number {
-  if (!value || value.trim() === '') return 0
-  
-  // Remove all non-numeric characters except decimal point and minus sign
-  const cleaned = value.replace(/[^\d.-]/g, '')
-  
-  // Reject if multiple decimal points
-  if ((cleaned.match(/\./g) || []).length > 1) return 0
-  
-  // Reject scientific notation
-  if (cleaned.includes('e') || cleaned.includes('E')) return 0
-  
-  const amount = parseFloat(cleaned)
-  
-  // Reject NaN, Infinity, or negative values
-  if (isNaN(amount) || !isFinite(amount)) return 0
-  
-  // Handle floating point precision by working with the string
-  // Convert to cents directly from string to avoid IEEE 754 issues
-  if (cleaned.includes('.')) {
-    const [whole, decimal] = cleaned.split('.')
-    const paddedDecimal = decimal.padEnd(2, '0').slice(0, 2)
-    return parseInt(whole + paddedDecimal, 10) || 0
-  }
-  
-  return parseInt(cleaned + '00', 10) || 0
-}
 
 /**
  * Props for AddBalanceEntryForm component
@@ -80,6 +47,9 @@ export function AddBalanceEntryForm({
   // Format amount using current currency preferences
   const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
 
+  // Valid finance types
+  const validTypes: FinanceType[] = ['investment', 'debt']
+
   // Form state
   const [name, setName] = useState('')
   const [type, setType] = useState<FinanceType>('investment')
@@ -104,12 +74,12 @@ export function AddBalanceEntryForm({
         name,
         type,
         currentBalance: currentBalanceCents,
-        maxContributionLimit: maxContributionLimitCents || undefined,
+        maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
         monthlyContribution: monthlyContributionCents,
       })
       setErrors(newErrors)
     }
-  }, [name, type, currentBalance, maxContributionLimit, monthlyContribution, submitAttempted])
+  }, [name, type, currentBalance, maxContributionLimit, monthlyContribution, currentBalanceCents, maxContributionLimitCents, monthlyContributionCents, submitAttempted])
 
   /**
    * Handle form submission
@@ -123,7 +93,7 @@ export function AddBalanceEntryForm({
       name,
       type,
       currentBalance: currentBalanceCents,
-      maxContributionLimit: maxContributionLimitCents || undefined,
+      maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
       monthlyContribution: monthlyContributionCents,
     })
     setErrors(newErrors)
@@ -137,7 +107,7 @@ export function AddBalanceEntryForm({
       name: name.trim(),
       type,
       currentBalance: currentBalanceCents,
-      maxContributionLimit: maxContributionLimitCents || undefined,
+      maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
       monthlyContribution: monthlyContributionCents,
     })
   }
@@ -213,7 +183,12 @@ export function AddBalanceEntryForm({
         <select
           id="balance-entry-type"
           value={type}
-          onChange={(e) => setType(e.target.value as FinanceType)}
+          onChange={(e) => {
+            const value = e.target.value as FinanceType
+            if (validTypes.includes(value)) {
+              setType(value)
+            }
+          }}
           className={`w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600 ${
             hasFieldError('type')
               ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
@@ -277,7 +252,7 @@ export function AddBalanceEntryForm({
         )}
         {currentBalanceCents !== 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            = {currencySymbolValue}{formatAmount(currentBalanceCents)}
+            = {formatAmount(currentBalanceCents)}
           </p>
         )}
       </div>
@@ -322,7 +297,7 @@ export function AddBalanceEntryForm({
         )}
         {maxContributionLimitCents > 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            = {currencySymbolValue}{formatAmount(maxContributionLimitCents)}
+            = {formatAmount(maxContributionLimitCents)}
           </p>
         )}
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -370,7 +345,7 @@ export function AddBalanceEntryForm({
         )}
         {monthlyContributionCents > 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            = {currencySymbolValue}{formatAmount(monthlyContributionCents)}
+            = {formatAmount(monthlyContributionCents)}
           </p>
         )}
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -384,7 +359,10 @@ export function AddBalanceEntryForm({
           <p className="text-sm text-blue-700 dark:text-blue-300">
             Timeline Preview:
             <span className="font-medium ml-1">
-              {Math.ceil((maxContributionLimitCents - currentBalanceCents) / monthlyContributionCents)} months to limit
+              {monthlyContributionCents !== 0
+                ? Math.max(0, Math.ceil((maxContributionLimitCents - currentBalanceCents) / monthlyContributionCents))
+                : 0}
+              months to limit
             </span>
           </p>
         </div>
@@ -433,7 +411,7 @@ export function AddBalanceEntryForm({
 
       {isFreeTier && (
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center pt-2 border-t border-gray-200 dark:border-gray-700">
-          * Balance entries are stored in your browser for free tier
+          * Balance entries are stored in your browser's local storage
         </p>
       )}
     </form>

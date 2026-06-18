@@ -11,7 +11,16 @@
  */
 
 import type { BalanceTracking as DbBalanceTracking, FinanceType } from '@budget-planner/db'
-import { calculateMonthsToLimit as calculateBalanceTimeline } from './utils/balanceCalculations'
+import { 
+  calculateMonthsToLimit, 
+  DebtSubType,
+  calculateDebtMetrics,
+  DebtSubType as DebtSubTypeExport,
+  DebtCalculationResult
+} from './utils/balanceCalculations'
+
+// Re-export for backward compatibility
+export { calculateMonthsToLimit as calculateBalanceTimeline }
 
 // ============================================================================
 // Type Definitions
@@ -33,6 +42,9 @@ export interface ClientBalanceTracking {
   updatedAt: string // ISO string for localStorage serialization
   // Optional UI display fields
   monthsToLimit?: number | null
+  // Debt-specific fields
+  debtSubType?: DebtSubType // Sub-type for debt entries (credit-card, mortgage, loan, other)
+  originalBalance?: number // Original loan amount in cents (for mortgage/loan progress calculation)
 }
 
 /**
@@ -44,6 +56,9 @@ export interface ClientNewBalanceTracking {
   currentBalance: number // In cents
   maxContributionLimit?: number // In cents, optional
   monthlyContribution: number // In cents (default 0)
+  // Debt-specific fields
+  debtSubType?: DebtSubType // Sub-type for debt entries
+  originalBalance?: number // Original loan amount in cents (for mortgage/loan)
 }
 
 /**
@@ -52,11 +67,17 @@ export interface ClientNewBalanceTracking {
  */
 export interface BalanceTrackingWithTimeline extends ClientBalanceTracking {
   monthsToLimit: number | null
+  // Debt-specific display fields
+  debtProgress?: number | null
+  debtProgressLabel?: string
+  debtTimeline?: number | null
+  debtTimelineLabel?: string
 }
 
 /**
  * Database Balance Tracking type (re-exported for convenience)
- * Uses serial IDs and Date objects
+ * Uses serial IDs (positive integers) from PostgreSQL sequence
+ * Note: Differs from ClientBalanceTracking which uses negative IDs for client-side storage
  */
 export type DatabaseBalanceTracking = DbBalanceTracking
 
@@ -116,7 +137,7 @@ export { calculateBalanceTimeline as calculateMonthsToLimit } from './utils/bala
  * Determine display type properties based on FinanceType
  * 
  * @param type - Finance type ('investment' or 'debt')
- * @returns Display properties for theming
+ * @returns Display properties for theming, or undefined if type is invalid
  */
 export function getTypeDisplayProperties(type: FinanceType): {
   theme: 'success' | 'danger'
@@ -124,7 +145,12 @@ export function getTypeDisplayProperties(type: FinanceType): {
   label: string
   colorClass: string
   bgColorClass: string
-} {
+} | undefined {
+  // Validate type parameter
+  if (type !== 'investment' && type !== 'debt') {
+    return undefined
+  }
+  
   const properties = {
     investment: {
       theme: 'success' as const,
@@ -146,19 +172,45 @@ export function getTypeDisplayProperties(type: FinanceType): {
 
 /**
  * Calculate months to limit and create display object
+ * For debts, also calculates debt-specific metrics based on debtSubType
  * 
  * @param entry - Balance tracking entry
  * @returns BalanceTrackingWithTimeline with calculated fields
  */
 export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithTimeline {
-  const monthsToLimit = calculateBalanceTimeline(
+  const monthsToLimit = calculateMonthsToLimit(
     entry.currentBalance,
     entry.maxContributionLimit,
     entry.monthlyContribution
   )
+  
+  // Calculate debt-specific metrics if this is a debt
+  let debtProgress: number | null = null
+  let debtProgressLabel: string = 'No limit'
+  let debtTimeline: number | null = null
+  let debtTimelineLabel: string = 'No payment set'
+  
+  if (entry.type === 'debt' && entry.debtSubType) {
+    const result = calculateDebtMetrics(
+      entry.currentBalance,
+      entry.maxContributionLimit,
+      entry.monthlyContribution,
+      entry.debtSubType,
+      entry.originalBalance
+    )
+    debtProgress = result.progress
+    debtProgressLabel = result.progressLabel
+    debtTimeline = result.timeline
+    debtTimelineLabel = result.timelineLabel
+  }
+  
   return {
     ...entry,
     monthsToLimit,
+    debtProgress,
+    debtProgressLabel,
+    debtTimeline,
+    debtTimelineLabel,
   }
 }
 
@@ -229,20 +281,32 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
       message: 'Current balance is required',
       value: input.currentBalance,
     })
-  } else if (typeof input.currentBalance !== 'number' || !Number.isInteger(input.currentBalance)) {
+  } else if (typeof input.currentBalance !== 'number' || !Number.isFinite(input.currentBalance)) {
     errors.push({
       field: 'currentBalance',
-      message: 'Current balance must be an integer (in cents)',
+      message: 'Current balance must be a finite number (in cents)',
+      value: input.currentBalance,
+    })
+  } else if (!Number.isInteger(input.currentBalance)) {
+    errors.push({
+      field: 'currentBalance',
+      message: 'Current balance must be an integer (in cents, not a float)',
       value: input.currentBalance,
     })
   }
 
   // Max contribution limit validation (optional)
   if (input.maxContributionLimit !== undefined && input.maxContributionLimit !== null) {
-    if (typeof input.maxContributionLimit !== 'number' || !Number.isInteger(input.maxContributionLimit)) {
+    if (typeof input.maxContributionLimit !== 'number' || !Number.isFinite(input.maxContributionLimit)) {
       errors.push({
         field: 'maxContributionLimit',
-        message: 'Max contribution limit must be an integer (in cents)',
+        message: 'Max contribution limit must be a finite number (in cents)',
+        value: input.maxContributionLimit,
+      })
+    } else if (!Number.isInteger(input.maxContributionLimit)) {
+      errors.push({
+        field: 'maxContributionLimit',
+        message: 'Max contribution limit must be an integer (in cents, not a float)',
         value: input.maxContributionLimit,
       })
     } else if (input.maxContributionLimit < 0) {
@@ -251,15 +315,27 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
         message: 'Max contribution limit cannot be negative',
         value: input.maxContributionLimit,
       })
+    } else if (Math.abs(input.maxContributionLimit) > Number.MAX_SAFE_INTEGER / 100) {
+      errors.push({
+        field: 'maxContributionLimit',
+        message: 'Max contribution limit exceeds safe integer bounds',
+        value: input.maxContributionLimit,
+      })
     }
   }
 
   // Monthly contribution validation
   if (input.monthlyContribution !== undefined && input.monthlyContribution !== null) {
-    if (typeof input.monthlyContribution !== 'number' || !Number.isInteger(input.monthlyContribution)) {
+    if (typeof input.monthlyContribution !== 'number' || !Number.isFinite(input.monthlyContribution)) {
       errors.push({
         field: 'monthlyContribution',
-        message: 'Monthly contribution must be an integer (in cents)',
+        message: 'Monthly contribution must be a finite number (in cents)',
+        value: input.monthlyContribution,
+      })
+    } else if (!Number.isInteger(input.monthlyContribution)) {
+      errors.push({
+        field: 'monthlyContribution',
+        message: 'Monthly contribution must be an integer (in cents, not a float)',
         value: input.monthlyContribution,
       })
     } else if (input.monthlyContribution < 0) {
@@ -268,7 +344,22 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
         message: 'Monthly contribution cannot be negative',
         value: input.monthlyContribution,
       })
+    } else if (Math.abs(input.monthlyContribution) > Number.MAX_SAFE_INTEGER / 100) {
+      errors.push({
+        field: 'monthlyContribution',
+        message: 'Monthly contribution exceeds safe integer bounds',
+        value: input.monthlyContribution,
+      })
     }
+  }
+  
+  // Bounds validation for currentBalance (already validated as integer above)
+  if (input.currentBalance !== undefined && Math.abs(input.currentBalance) > Number.MAX_SAFE_INTEGER / 100) {
+    errors.push({
+      field: 'currentBalance',
+      message: 'Current balance exceeds safe integer bounds',
+      value: input.currentBalance,
+    })
   }
 
   return errors
@@ -294,12 +385,23 @@ export function isValidBalanceTracking(input: Partial<ClientNewBalanceTracking>)
  * AC 2: When viewing the balance tracking list, all entries are displayed sorted by creation date (newest first)
  * 
  * @param entries - Array of balance tracking entries to sort
- * @returns New array sorted by createdAt (descending)
+ * @returns New array sorted by createdAt (descending), or empty array if entries is null/undefined
  */
 export function sortByCreationDate(entries: ClientBalanceTracking[]): ClientBalanceTracking[] {
+  // Handle null/undefined entries
+  if (!entries) {
+    return []
+  }
+  
   return [...entries].sort((a, b) => {
+    // Validate dates
     const dateA = new Date(a.createdAt).getTime()
     const dateB = new Date(b.createdAt).getTime()
+    
+    // Handle invalid dates - push to end
+    if (!Number.isFinite(dateA)) return 1
+    if (!Number.isFinite(dateB)) return -1
+    
     return dateB - dateA // Newest first
   })
 }
@@ -309,17 +411,23 @@ export function sortByCreationDate(entries: ClientBalanceTracking[]): ClientBala
  * 
  * @param entries - Array of balance tracking entries with timeline
  * @param filter - Filter options
- * @returns Filtered array of balance tracking entries
+ * @returns Filtered array of balance tracking entries, or empty array if entries is null/undefined
  */
 export function filterBalanceTracking(
   entries: BalanceTrackingWithTimeline[],
   filter: BalanceTrackingFilter
 ): BalanceTrackingWithTimeline[] {
+  // Handle null/undefined entries or filter
+  if (!entries || !filter) {
+    return []
+  }
+  
   return entries.filter((entry) => {
     if (filter.type && entry.type !== filter.type) return false
     if (filter.search) {
-      const searchLower = filter.search.toLowerCase()
-      if (!entry.name.toLowerCase().includes(searchLower)) return false
+      const searchLower = typeof filter.search === 'string' ? filter.search.toLowerCase() : ''
+      const entryName = typeof entry.name === 'string' ? entry.name.toLowerCase() : ''
+      if (!entryName.includes(searchLower)) return false
     }
     return true
   })
@@ -330,28 +438,55 @@ export function filterBalanceTracking(
 // ============================================================================
 
 /**
- * Temporary ID counter for client-side balance tracking
- * Note: In production with backend, IDs will come from the database
+ * Storage key for persisting the temporary ID counter
  * Using negative IDs to avoid conflicts with other entity types
  * Start at -30000 to avoid conflicts with income (-10000), expense, and savings goal IDs
  */
-let balanceTrackingTempIdCounter = -30000
+const BALANCE_TRACKING_ID_COUNTER_KEY = 'budget-planner:balance-tracking-id-counter'
+
+/**
+ * Get the current temporary ID counter value from localStorage
+ * Initializes to -30000 if not present
+ */
+function getTempIdCounter(): number {
+  const stored = localStorage.getItem(BALANCE_TRACKING_ID_COUNTER_KEY)
+  if (stored !== null) {
+    try {
+      return parseInt(stored, 10)
+    } catch {
+      // If parsing fails, reset to default
+      localStorage.setItem(BALANCE_TRACKING_ID_COUNTER_KEY, '-30000')
+      return -30000
+    }
+  }
+  return -30000
+}
+
+/**
+ * Set the temporary ID counter value in localStorage
+ */
+function setTempIdCounter(value: number): void {
+  localStorage.setItem(BALANCE_TRACKING_ID_COUNTER_KEY, value.toString())
+}
 
 /**
  * Generate a temporary ID for client-side balance tracking storage
+ * Persists counter in localStorage to prevent collisions across tabs/sessions
  * 
  * @returns Negative number ID for client-side use
  */
 export function generateBalanceTrackingTempId(): number {
-  balanceTrackingTempIdCounter -= 1
-  return balanceTrackingTempIdCounter
+  let counter = getTempIdCounter()
+  counter -= 1
+  setTempIdCounter(counter)
+  return counter
 }
 
 /**
  * Reset temporary ID counter (useful for testing)
  */
 export function resetBalanceTrackingTempId(): void {
-  balanceTrackingTempIdCounter = -30000
+  setTempIdCounter(-30000)
 }
 
 /**
@@ -377,6 +512,10 @@ export function toClientBalanceTracking(
 // ============================================================================
 // Exports
 // ============================================================================
+
+// Re-export debt calculation types
+export type { DebtSubType, DebtCalculationResult }
+export { calculateDebtMetrics }
 
 export {
   calculateBalanceTimeline as calculateBalanceMonthsToLimit,

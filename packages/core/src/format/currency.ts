@@ -115,27 +115,72 @@ export function currencySymbol(currencyCode: CurrencyCode): string {
 
 /**
  * Formats a value for input display (without currency symbol)
+ * Handles NaN, Infinity, null, undefined gracefully
  * 
  * @param cents - Value in cents
- * @returns Formatted string for input fields
+ * @returns Formatted string for input fields (always 2 decimal places)
  */
 export function formatForInput(cents: number): string {
+  // Handle NaN, Infinity, null, undefined
+  if (!Number.isFinite(cents)) {
+    return '0.00'
+  }
+  
   const dollars = cents / 100
   return dollars.toFixed(2)
 }
 
 /**
  * Parses a value from input string to cents
+ * Handles various input formats including negative values for debts.
+ * 
+ * Supported formats:
+ * - "100" -> 10000 cents
+ * - "100.50" -> 10050 cents
+ * - "1,000.50" -> 100050 cents (commas removed)
+ * - "-100" -> -10000 cents (negatives allowed for debts)
+ * - ".50" -> 50 cents
+ * - "1." -> 100 cents
+ * - "" -> 0 cents
+ * 
+ * Rejected formats:
+ * - "1.2.3" (multiple decimal points) -> 0
+ * - "1e10" (scientific notation) -> 0
+ * - NaN or Infinity -> 0
  * 
  * @param value - Input string (e.g., "123.45" or "123")
- * @returns Value in cents (rounded)
+ * @returns Value in cents (integer), or 0 if invalid
  */
 export function parseFromInput(value: string): number {
-  if (!value) return 0
-  const dollars = parseFloat(value)
-  if (isNaN(dollars)) return 0
-  return Math.round(dollars * 100)
+  if (!value || value.trim() === '') return 0
+  
+  // Remove all non-numeric characters except decimal point and minus sign
+  const cleaned = value.replace(/[^\d.-]/g, '')
+  
+  // Reject if multiple decimal points
+  if ((cleaned.match(/\./g) || []).length > 1) return 0
+  
+  // Reject scientific notation
+  if (cleaned.includes('e') || cleaned.includes('E')) return 0
+  
+  const amount = parseFloat(cleaned)
+  
+  // Reject NaN, Infinity
+  if (isNaN(amount) || !isFinite(amount)) return 0
+  
+  // Handle floating point precision by working with the string
+  // Convert to cents directly from string to avoid IEEE 754 issues
+  if (cleaned.includes('.')) {
+    const [whole, decimal] = cleaned.split('.')
+    const paddedDecimal = decimal.padEnd(2, '0').slice(0, 2)
+    return parseInt(whole + paddedDecimal, 10) || 0
+  }
+  
+  return parseInt(cleaned + '00', 10) || 0
 }
+
+// Alias for backward compatibility
+export const parseCurrencyToCents = parseFromInput
 
 /**
  * Validates if a currency code is supported

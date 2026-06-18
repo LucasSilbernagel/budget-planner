@@ -85,16 +85,26 @@ export function BalanceTrackingList({
         </p>
         {isFreeTier && (
           <p className="text-xs text-gray-500 dark:text-gray-500 mt-4">
-            Balance entries will be stored in your browser's local storage.
+            Balance entries are stored in your browser's local storage
           </p>
         )}
       </div>
     )
   }
 
+  // Sort entries by creation date (newest first) as per AC 2
+  const sortedEntries = [...entries].sort((a, b) => {
+    const dateA = new Date(a.createdAt).getTime()
+    const dateB = new Date(b.createdAt).getTime()
+    // Handle invalid dates by placing them at the end
+    if (isNaN(dateA)) return 1
+    if (isNaN(dateB)) return -1
+    return dateB - dateA // Newest first
+  })
+
   // Group entries by type: investments first, then debts
-  const investmentEntries = entries.filter((e) => e.type === 'investment')
-  const debtEntries = entries.filter((e) => e.type === 'debt')
+  const investmentEntries = sortedEntries.filter((e) => e.type === 'investment')
+  const debtEntries = sortedEntries.filter((e) => e.type === 'debt')
 
   return (
     <div

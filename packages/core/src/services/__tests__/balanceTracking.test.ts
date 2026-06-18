@@ -21,6 +21,14 @@ import {
   BalanceTrackingWithTimeline,
 } from '../balanceTracking'
 
+// AC references for test documentation
+// AC 1: Create Balance Entry
+// AC 2: Read Balance Entries
+// AC 3: Update Balance Entry
+// AC 4: Delete Balance Entry
+// AC 5: Type Display
+// AC 6: Contribution Tracking
+
 describe('validateBalanceTracking', () => {
   it('should pass validation for valid input', () => {
     const input: ClientNewBalanceTracking = {
@@ -389,5 +397,175 @@ describe('withTimeline', () => {
     const result = withTimeline(entry)
     
     expect(result.monthsToLimit).toBeNull()
+  })
+})
+
+// ============================================================================
+// Edge Case Tests - Addressing code review findings
+// ============================================================================
+
+describe('Edge Case Handling - Validation', () => {
+  beforeEach(() => {
+    resetBalanceTrackingTempId()
+  })
+
+  describe('NaN and Infinity validation', () => {
+    it('AC 2 - should reject NaN currentBalance', () => {
+      const input: Partial<ClientNewBalanceTracking> = {
+        type: 'investment',
+        name: 'Test',
+        currentBalance: NaN,
+        monthlyContribution: 50000,
+      }
+      const errors = validateBalanceTracking(input)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('finite'))).toBe(true)
+    })
+
+    it('AC 2 - should reject Infinity currentBalance', () => {
+      const input: Partial<ClientNewBalanceTracking> = {
+        type: 'investment',
+        name: 'Test',
+        currentBalance: Infinity,
+        monthlyContribution: 50000,
+      }
+      const errors = validateBalanceTracking(input)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('finite'))).toBe(true)
+    })
+
+    it('AC 2 - should reject NaN maxContributionLimit', () => {
+      const input: Partial<ClientNewBalanceTracking> = {
+        type: 'investment',
+        name: 'Test',
+        currentBalance: 100000,
+        maxContributionLimit: NaN,
+        monthlyContribution: 50000,
+      }
+      const errors = validateBalanceTracking(input)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('finite'))).toBe(true)
+    })
+
+    it('AC 2 - should reject Infinity maxContributionLimit', () => {
+      const input: Partial<ClientNewBalanceTracking> = {
+        type: 'investment',
+        name: 'Test',
+        currentBalance: 100000,
+        maxContributionLimit: Infinity,
+        monthlyContribution: 50000,
+      }
+      const errors = validateBalanceTracking(input)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('finite'))).toBe(true)
+    })
+  })
+
+  describe('Bounds validation', () => {
+    it('should reject currentBalance exceeding safe integer bounds', () => {
+      const input: Partial<ClientNewBalanceTracking> = {
+        type: 'investment',
+        name: 'Test',
+        currentBalance: Number.MAX_SAFE_INTEGER,
+        monthlyContribution: 50000,
+      }
+      const errors = validateBalanceTracking(input)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('bounds'))).toBe(true)
+    })
+
+    it('should reject maxContributionLimit exceeding safe integer bounds', () => {
+      const input: Partial<ClientNewBalanceTracking> = {
+        type: 'investment',
+        name: 'Test',
+        currentBalance: 100000,
+        maxContributionLimit: Number.MAX_SAFE_INTEGER,
+        monthlyContribution: 50000,
+      }
+      const errors = validateBalanceTracking(input)
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('bounds'))).toBe(true)
+    })
+  })
+
+  describe('Type validation for getTypeDisplayProperties', () => {
+    it('should return undefined for invalid type', () => {
+      const result = getTypeDisplayProperties('invalid' as FinanceType)
+      expect(result).toBeUndefined()
+    })
+
+    it('should return investment properties for valid investment type', () => {
+      const result = getTypeDisplayProperties('investment')
+      expect(result).toBeDefined()
+      expect(result?.theme).toBe('success')
+      expect(result?.icon).toBe('↗')
+    })
+
+    it('should return debt properties for valid debt type', () => {
+      const result = getTypeDisplayProperties('debt')
+      expect(result).toBeDefined()
+      expect(result?.theme).toBe('danger')
+      expect(result?.icon).toBe('↓')
+    })
+  })
+})
+
+describe('Edge Case Handling - Sorting and Filtering', () => {
+  describe('sortByCreationDate with edge cases', () => {
+    it('should handle null entries', () => {
+      const result = sortByCreationDate(null as unknown as ClientBalanceTracking[])
+      expect(result).toEqual([])
+    })
+
+    it('should handle undefined entries', () => {
+      const result = sortByCreationDate(undefined as unknown as ClientBalanceTracking[])
+      expect(result).toEqual([])
+    })
+
+    it('should handle invalid date strings', () => {
+      const entries: ClientBalanceTracking[] = [
+        { id: 1, type: 'investment', name: 'Valid', currentBalance: 100, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+        { id: 2, type: 'investment', name: 'Invalid Date', currentBalance: 200, createdAt: 'invalid-date', updatedAt: '2024-01-01T00:00:00Z' },
+        { id: 3, type: 'investment', name: 'Another Valid', currentBalance: 300, createdAt: '2024-03-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+      ]
+      const result = sortByCreationDate(entries)
+      // Invalid date should be pushed to end
+      expect(result.length).toBe(3)
+      expect(result[0].name).toBe('Another Valid')
+      expect(result[1].name).toBe('Valid')
+    })
+
+    it('should handle empty array', () => {
+      const result = sortByCreationDate([])
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('filterBalanceTracking with edge cases', () => {
+    const entries: BalanceTrackingWithTimeline[] = [
+      { id: 1, type: 'investment', name: 'Investment 1', currentBalance: 100, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+      { id: 2, type: 'debt', name: 'Debt 1', currentBalance: -100, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+    ]
+
+    it('should handle null entries', () => {
+      const result = filterBalanceTracking(null as unknown as BalanceTrackingWithTimeline[], { type: 'investment' })
+      expect(result).toEqual([])
+    })
+
+    it('should handle undefined filter', () => {
+      const result = filterBalanceTracking(entries, undefined as unknown as BalanceTrackingFilter)
+      expect(result).toEqual([])
+    })
+
+    it('should handle non-string search', () => {
+      const result = filterBalanceTracking(entries, { search: 123 as unknown as string })
+      expect(result).toEqual([])
+    })
+
+    it('should handle non-string entry name', () => {
+      const badEntries = [{ ...entries[0], name: 123 }] as unknown as BalanceTrackingWithTimeline[]
+      const result = filterBalanceTracking(badEntries, { search: 'test' })
+      expect(result).toEqual([])
+    })
   })
 })
