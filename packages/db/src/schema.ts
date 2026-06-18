@@ -4,6 +4,7 @@ import {
   pgTable,
   serial,
   timestamp,
+  uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
 
@@ -19,10 +20,32 @@ export const frequencyEnum = pgEnum('frequency', [
   'annually',
 ])
 
+// Finance type enum for balance tracking
+// Values use snake_case as per architecture
+export const financeTypeEnum = pgEnum('financeType', [
+  'investment',
+  'debt',
+])
+
+// Subscription status enum for user accounts
+// Values use snake_case as per architecture
+export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
+  'free',
+  'active',
+  'cancelled',
+  'past_due',
+  'unpaid',
+])
+
 // Users table - referenced by incomeSources and expenses
+// Note: Using integer IDs for now to maintain compatibility with existing foreign keys
+// Future migration to UUID can be done when needed
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
-  // Additional user fields will be added in future stories (auth, profiles, etc.)
+  email: varchar('email', { length: 255 }).unique().notNull(),
+  paddleId: varchar('paddleId', { length: 255 }), // Paddle customer ID, nullable for free tier
+  subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
+  currency: varchar('currency', { length: 3 }).default('NONE'), // ISO currency code or 'NONE'
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
@@ -53,6 +76,50 @@ export const expenses = pgTable('expenses', {
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
+// Savings Goals table - camelCase name per architecture
+export const savingsGoals = pgTable('savingsGoals', {
+  id: serial('id').primaryKey(),
+  userId: integer('userId')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  targetAmount: integer('targetAmount').notNull(), // Target amount in cents
+  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+})
+
+// Balance Tracking table - camelCase name per architecture
+export const balanceTracking = pgTable('balanceTracking', {
+  id: serial('id').primaryKey(),
+  userId: integer('userId')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  type: financeTypeEnum('type').notNull(), // investment or debt
+  name: varchar('name', { length: 255 }).notNull(),
+  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
+  maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents
+  monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+})
+
+// User Profiles table - camelCase name per architecture
+// Profiles allow users to organize their financial data for different purposes
+// Only available for paid tier users
+export const userProfiles = pgTable('userProfiles', {
+  id: serial('id').primaryKey(),
+  userId: integer('userId')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: varchar('description', { length: 500 }),
+  isDefault: boolean('isDefault').default(false).notNull(),
+  currency: varchar('currency', { length: 3 }).default('NONE'), // ISO currency code or 'NONE'
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+})
+
 // Type exports for TypeScript type safety
 export type User = InferModel<typeof users>
 export type NewUser = InferInsertModel<typeof users>
@@ -63,12 +130,30 @@ export type NewIncomeSource = InferInsertModel<typeof incomeSources>
 export type Expense = InferModel<typeof expenses>
 export type NewExpense = InferInsertModel<typeof expenses>
 
+export type SavingsGoal = InferModel<typeof savingsGoals>
+export type NewSavingsGoal = InferInsertModel<typeof savingsGoals>
+
+export type BalanceTracking = InferModel<typeof balanceTracking>
+export type NewBalanceTracking = InferInsertModel<typeof balanceTracking>
+
+export type UserProfile = InferModel<typeof userProfiles>
+export type NewUserProfile = InferInsertModel<typeof userProfiles>
+
 // Frequency enum type
 export type Frequency = (typeof frequencyEnum.enumValues)[number]
+
+// Finance type enum type
+export type FinanceType = (typeof financeTypeEnum.enumValues)[number]
+
+// Subscription status enum type
+export type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[number]
 
 // Export all tables for use in migrations and queries
 export const allTables = {
   users,
   incomeSources,
   expenses,
+  savingsGoals,
+  balanceTracking,
+  userProfiles,
 }

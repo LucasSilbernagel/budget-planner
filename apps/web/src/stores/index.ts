@@ -3,5 +3,6 @@
 
 export * from './incomeStore'
 export * from './expenseStore'
-// Future: export * from './savingsStore'
-// Future: export * from './balanceStore'
+export * from './savingsStore'
+export * from './balanceStore'
+export * from './currencyStore'

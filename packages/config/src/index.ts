@@ -11,4 +11,4 @@
  * Architecture: Zod schema validation with runtime loading
  */
 
-export {};
+export * from './schema';

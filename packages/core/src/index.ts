@@ -11,4 +11,20 @@
  * Architecture: Pure TypeScript functions, no side effects
  */
 
-export {};
+// Frequency normalization
+export * from './finance/normalization'
+
+// Net income calculation
+export * from './finance/netIncome'
+
+// Savings capacity calculation
+export * from './finance/savingsCapacity'
+
+// Retirement modeler
+export * from './finance/retirement'
+
+// Premium forecasting
+export * from './finance/forecasting'
+
+// Currency formatting
+export * from './format/currency';
