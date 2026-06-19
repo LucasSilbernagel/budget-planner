@@ -8,7 +8,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "composite": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["vitest/globals"]
   },
   "include": [
     "src/**/*"
