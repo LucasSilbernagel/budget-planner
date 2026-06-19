@@ -2,16 +2,17 @@
  * Net Worth Projection Page
  * 
  * Main page for viewing forward-looking net worth projections.
+ * Supports multiple scenarios for comparison.
  * Uses TanStack Start file-based routing (route: /net-worth-projection)
  * 
  * AC Coverage: AC-1 (via NetWorthChart)
  * AC Coverage: AC-2 (via hasInsufficientData check)
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { createNetWorthProjection, type NetWorthProjectionInput, type NetWorthProjectionResult } from '@budget-planner/core';
-import { NetWorthChart, hasInsufficientData } from '../components/net-worth/net-worth-chart';
-import { ScenarioControls } from '../components/net-worth/scenario-controls';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { createNetWorthProjection, type NetWorthProjectionInput, type NetWorthProjectionResult, type TimeHorizon } from '@budget-planner/core';
+import { NetWorthChart, hasInsufficientData as checkInsufficientData } from '../components/net-worth/net-worth-chart';
+import { ScenarioControls, DEFAULT_SCENARIOS, type Scenario } from '../components/net-worth/scenario-controls';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 // ============================================================================
@@ -19,60 +20,102 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 // ============================================================================
 
 /**
- * Default input values for the projection
+ * Combined scenario with its projection result
  */
-const DEFAULT_INPUT: NetWorthProjectionInput = {
-  currentAssetsCents: 10000000, // $100,000
-  currentLiabilitiesCents: 0,
-  monthlyNetIncomeCents: 500000, // $5,000
-  assetReturnRate: 0.07, // 7% annual return
-  incomeGrowthRate: 0.03, // 3% annual income growth
-  timeHorizon: '10y',
-  customYears: undefined,
-};
+interface ScenarioWithProjection {
+  scenario: Scenario;
+  projection: NetWorthProjectionResult;
+}
+
+/**
+ * Save/load scenario presets
+ */
+interface ScenarioPreset {
+  id: string;
+  name: string;
+  scenarios: Scenario[];
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Generate a unique ID for presets
+ */
+function generatePresetId(): string {
+  return `preset-${Date.now()}`;
+}
+
+/**
+ * Create default scenarios with projections
+ */
+function createDefaultScenariosWithProjection(): ScenarioWithProjection[] {
+  return DEFAULT_SCENARIOS.map(scenario => ({
+    scenario,
+    projection: createNetWorthProjection(scenario.input),
+  }));
+}
 
 // ============================================================================
 // Main Component
 // ============================================================================
 
 export function NetWorthProjectionPage() {
-  const [input, setInput] = useState<NetWorthProjectionInput>(DEFAULT_INPUT);
-  const [projection, setProjection] = useState<NetWorthProjectionResult | null>(null);
+  // State for scenarios
+  const [scenarios, setScenarios] = useState<Scenario[]>(DEFAULT_SCENARIOS);
+  const [activeScenarioIndex, setActiveScenarioIndex] = useState(0);
+  
+  // State for projections and UI
+  const [scenariosWithProjection, setScenariosWithProjection] = useState<ScenarioWithProjection[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Calculate projection whenever input changes
+  // Calculate all projections whenever scenarios change
   useEffect(() => {
-    const calculateProjection = async () => {
+    const calculateAllProjections = async () => {
       setIsCalculating(true);
       setError(null);
       
       try {
-        // Small delay to prevent rapid recalculations during slider adjustments
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Small delay to prevent rapid recalculations
+        await new Promise(resolve => setTimeout(resolve, 50));
         
-        const result = createNetWorthProjection(input);
-        setProjection(result);
+        const newScenariosWithProjection = scenarios.map(scenario => ({
+          scenario,
+          projection: createNetWorthProjection(scenario.input),
+        }));
+        
+        setScenariosWithProjection(newScenariosWithProjection);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error occurred');
-        setProjection(null);
       } finally {
         setIsCalculating(false);
       }
     };
 
-    calculateProjection();
-  }, [input]);
+    calculateAllProjections();
+  }, [scenarios]);
 
-  // Check if data is insufficient
-  const showInsufficientData = useMemo(() => {
-    if (!projection) return false;
-    return hasInsufficientData(projection);
-  }, [projection]);
+  // Check if all data is insufficient
+  const allInsufficientData = useMemo(() => {
+    return checkInsufficientData(scenariosWithProjection);
+  }, [scenariosWithProjection]);
 
-  const handleInputChange = (updatedInput: NetWorthProjectionInput) => {
-    setInput(updatedInput);
-  };
+  // Handle scenarios change
+  const handleScenariosChange = useCallback((newScenarios: Scenario[]) => {
+    setScenarios(newScenarios);
+  }, []);
+
+  // Handle active scenario change
+  const handleActiveScenarioChange = useCallback((index: number) => {
+    setActiveScenarioIndex(index);
+  }, []);
+
+  // Get visible scenarios with their projections
+  const visibleScenarios = useMemo(() => {
+    return scenariosWithProjection.filter(s => s.scenario.isVisible);
+  }, [scenariosWithProjection]);
 
   return (
     <ErrorBoundary>
@@ -86,7 +129,7 @@ export function NetWorthProjectionPage() {
                   Net Worth Projection
                 </h1>
                 <p className="text-xl text-gray-600 mt-2">
-                  Visualize your financial future based on your current data
+                  Compare multiple financial scenarios side-by-side
                 </p>
               </div>
               
@@ -118,22 +161,37 @@ export function NetWorthProjectionPage() {
             </div>
           )}
 
+          {/* Calculating indicator */}
+          {isCalculating && (
+            <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-700 flex items-center">
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Calculating projections...
+              </p>
+            </div>
+          )}
+
           {/* Main Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column - Controls */}
             <div className="lg:col-span-1">
               <ScenarioControls
-                input={input}
-                onInputChange={handleInputChange}
+                scenarios={scenarios}
+                activeScenarioIndex={activeScenarioIndex}
+                onScenariosChange={handleScenariosChange}
+                onActiveScenarioChange={handleActiveScenarioChange}
                 isCalculating={isCalculating}
               />
             </div>
 
             {/* Right Column - Chart */}
             <div className="lg:col-span-2">
-              {projection && (
+              {scenariosWithProjection.length > 0 && (
                 <NetWorthChart
-                  projection={projection}
+                  scenarios={scenariosWithProjection}
                   height={450}
                   showBrush={true}
                 />
@@ -141,33 +199,59 @@ export function NetWorthProjectionPage() {
             </div>
           </div>
 
+          {/* Empty State */}
+          {allInsufficientData && scenariosWithProjection.length > 0 && (
+            <div className="mt-8">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-yellow-700 text-sm">
+                  ⚠️ All scenarios have insufficient data. Please adjust the parameters to see projections.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Explanation Section */}
           <div className="mt-12 bg-white rounded-xl shadow-lg p-8">
             <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-              How It Works
+              How Scenario Comparison Works
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">
-                  The Projection Formula
+                  Multiple Scenarios
                 </h3>
                 <p className="text-gray-600 mb-3">
-                  Your net worth is projected month-by-month using compound interest calculations.
-                  Each month, your assets grow by the specified return rate, and new income is added.
+                  Create multiple scenarios to compare different financial futures.
+                  Each scenario can have its own assumptions about returns, growth, and time horizons.
                 </p>
-                <p className="text-gray-600">
-                  <strong>Formula:</strong> Future Value = Present Value × (1 + rate)<sup>periods</sup>
-                </p>
+                <ul className="space-y-1 text-gray-600 text-sm">
+                  <li>• Click "+ Add" to create a new scenario</li>
+                  <li>• Click on a scenario tab to edit it</li>
+                  <li>• Use the eye icon to show/hide scenarios</li>
+                  <li>• Click × to remove a scenario</li>
+                </ul>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">
-                  Key Assumptions
+                  Use Cases
                 </h3>
                 <ul className="space-y-2 text-gray-600">
-                  <li>• Monthly compounding of returns</li>
-                  <li>• Net income grows at the specified rate each year</li>
-                  <li>• Liabilities remain constant (not growing)</li>
-                  <li>• All values in today's dollars (no inflation adjustment)</li>
+                  <li className="flex items-start">
+                    <span className="text-green-600 mr-2">●</span>
+                    Compare conservative vs. optimistic returns
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-blue-600 mr-2">●</span>
+                    Model different savings rates
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-purple-600 mr-2">●</span>
+                    Test early retirement scenarios
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-orange-600 mr-2">●</span>
+                    Plan for major life events
+                  </li>
                 </ul>
               </div>
             </div>
@@ -177,11 +261,10 @@ export function NetWorthProjectionPage() {
                 Tips for Better Projections
               </h3>
               <ul className="space-y-2 text-gray-600">
-                <li>• Use realistic return rates based on your investment mix</li>
-                <li>• Consider your expected career income growth</li>
-                <li>• Include all assets: investments, savings, real estate, etc.</li>
-                <li>• Include all liabilities: mortgages, loans, credit cards, etc.</li>
-                <li>• Adjust parameters to model different life scenarios</li>
+                <li>• Use the "Sync Time Horizon" button to align all scenarios to the same period</li>
+                <li>• Hide scenarios temporarily to focus on specific comparisons</li>
+                <li>• Use the brush tool to zoom in on specific time periods</li>
+                <li>• Rename scenarios to reflect their purpose (e.g., "Early Retirement", "College Fund")</li>
               </ul>
             </div>
           </div>

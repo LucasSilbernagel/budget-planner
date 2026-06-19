@@ -2,6 +2,7 @@
  * Net Worth Chart Component
  * 
  * Interactive Recharts line chart for visualizing net worth projections.
+ * Supports multiple scenarios for comparison.
  * Displays projection timeline with assets, liabilities, and net worth.
  */
 
@@ -18,7 +19,8 @@ import {
   ReferenceLine,
   Brush,
 } from 'recharts';
-import type { NetWorthProjectionResult, ProjectionPoint } from '@budget-planner/core';
+import type { NetWorthProjectionResult, ProjectionPoint, TimeHorizon } from '@budget-planner/core';
+import type { Scenario } from './scenario-controls';
 
 // ============================================================================
 // Types
@@ -28,8 +30,11 @@ import type { NetWorthProjectionResult, ProjectionPoint } from '@budget-planner/
  * Props for NetWorthChart component
  */
 export interface NetWorthChartProps {
-  /** Projection result to visualize */
-  projection: NetWorthProjectionResult;
+  /** Array of scenarios with their projections */
+  scenarios: {
+    scenario: Scenario;
+    projection: NetWorthProjectionResult;
+  }[];
   
   /** Height of the chart in pixels */
   height?: number;
@@ -43,11 +48,22 @@ export interface NetWorthChartProps {
  */
 interface ChartDataPoint {
   name: string; // Year.Month format
-  assets: number;
-  liabilities: number;
-  netWorth: number;
   month: number;
   year: number;
+  // Dynamic keys for each scenario's net worth
+  [key: string]: string | number;
+}
+
+/**
+ * Scenario line configuration
+ */
+interface ScenarioLineConfig {
+  scenarioId: string;
+  name: string;
+  color: string;
+  dataKey: string;
+  strokeWidth: number;
+  strokeDasharray?: string;
 }
 
 // ============================================================================
@@ -55,9 +71,6 @@ interface ChartDataPoint {
 // ============================================================================
 
 const COLORS = {
-  assets: '#10b981', // Emerald/Green
-  liabilities: '#ef4444', // Red
-  netWorth: '#3b82f6', // Blue
   grid: '#e5e7eb', // Gray-200
   text: '#374151', // Gray-700
   textMuted: '#6b7280', // Gray-500
@@ -89,64 +102,166 @@ const formatShortCurrency = (value: number): string => {
 // ============================================================================
 
 /**
- * Convert projection timeline to chart data format
+ * Convert projection timeline to chart data format for multiple scenarios
  */
-function convertToChartData(timeline: ProjectionPoint[]): ChartDataPoint[] {
-  return timeline.map((point) => ({
-    name: `${point.year}.${String(point.month % 12).padStart(2, '0')}`, // e.g., "5.06" for year 5, month 6
-    assets: point.assetsCents / 100, // Convert to dollars
-    liabilities: point.liabilitiesCents / 100,
-    netWorth: point.netWorthCents / 100,
-    month: point.month,
-    year: point.year,
-  }));
+function convertToChartData(
+  scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[]
+): ChartDataPoint[] {
+  // Find the maximum timeline length across all scenarios
+  const maxLength = Math.max(
+    ...scenarios.map(s => s.projection.timeline.length)
+  );
+  
+  // Create array of data points
+  const data: ChartDataPoint[] = [];
+  
+  for (let i = 0; i < maxLength; i++) {
+    const point: ChartDataPoint = {
+      name: '',
+      month: i,
+      year: 0,
+    };
+    
+    // Set name and year from first scenario that has this point
+    if (scenarios[0]?.projection.timeline[i]) {
+      const p = scenarios[0].projection.timeline[i];
+      point.name = `${p.year}.${String(p.month % 12).padStart(2, '0')}`;
+      point.year = p.year;
+    }
+    
+    // Add net worth for each visible scenario
+    scenarios.forEach((s, scenarioIndex) => {
+      if (s.scenario.isVisible && s.projection.timeline[i]) {
+        const p = s.projection.timeline[i];
+        const dataKey = `scenario-${scenarioIndex}-netWorth`;
+        point[dataKey] = p.netWorthCents;
+        
+        // Also add assets and liabilities for tooltip
+        point[`scenario-${scenarioIndex}-assets`] = p.assetsCents;
+        point[`scenario-${scenarioIndex}-liabilities`] = p.liabilitiesCents;
+        point[`scenario-${scenarioIndex}-monthlyIncome`] = p.monthlyNetIncomeCents;
+      }
+    });
+    
+    data.push(point);
+  }
+  
+  return data;
 }
 
 /**
- * Custom tooltip component
+ * Get scenario line configurations
  */
-function CustomTooltip({ active, payload, label }: any) {
+function getScenarioLines(
+  scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[]
+): ScenarioLineConfig[] {
+  return scenarios
+    .filter(s => s.scenario.isVisible)
+    .map((s, index) => ({
+      scenarioId: s.scenario.id,
+      name: s.scenario.name,
+      color: s.scenario.color,
+      dataKey: `scenario-${scenarios.indexOf(s)}-netWorth`,
+      strokeWidth: 3,
+    }));
+}
+
+/**
+ * Get the starting net worth for the first visible scenario
+ */
+function getStartingNetWorth(
+  scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[]
+): number {
+  const firstVisible = scenarios.find(s => s.scenario.isVisible);
+  return firstVisible?.projection.timeline[0]?.netWorthCents ?? 0;
+}
+
+/**
+ * Custom tooltip component for multiple scenarios
+ */
+function CustomTooltip({
+  active,
+  payload,
+  label,
+  scenarios,
+}: any & { scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[] }) {
   if (!active || !payload || payload.length === 0) {
     return null;
   }
 
-  const data = payload[0].payload;
-  
+  // Find the month index from the label
+  const monthMatch = label?.match(/^(\d+)\.(\d+)$/);
+  const monthIndex = monthMatch ? parseInt(monthMatch[1], 10) * 12 + parseInt(monthMatch[2], 10) : 0;
+
   return (
-    <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-      <p className="text-sm font-medium text-gray-600">
-        Year {data.year}, Month {data.month % 12 + 1}
+    <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg min-w-[280px]">
+      <p className="text-sm font-medium text-gray-600 mb-2">
+        Year {payload[0]?.payload?.year ?? 0}, Month {monthIndex % 12 + 1}
       </p>
-      <div className="mt-2 space-y-1">
-        {payload.map((entry: any) => (
-          <p key={entry.dataKey} className="text-sm">
-            <span
-              className="inline-block w-2 h-2 rounded-full mr-2"
-              style={{ backgroundColor: entry.color }}
-            />
-            <span className="font-medium">{entry.name}:</span> {formatCurrency(entry.value * 100)}
-          </p>
-        ))}
+      <div className="mt-2 space-y-1 max-h-[300px] overflow-y-auto">
+        {scenarios
+          .filter(s => s.scenario.isVisible)
+          .map((s, scenarioIndex) => {
+            const scenarioDataKey = `scenario-${scenarios.indexOf(s)}-netWorth`;
+            const dataPoint = payload.find((p: any) => p.dataKey === scenarioDataKey);
+            
+            if (!dataPoint) return null;
+            
+            const netWorthCents = dataPoint.value as number;
+            const assetsCents = payload.find((p: any) => p.dataKey === `scenario-${scenarios.indexOf(s)}-assets`)?.value as number;
+            const liabilitiesCents = payload.find((p: any) => p.dataKey === `scenario-${scenarios.indexOf(s)}-liabilities`)?.value as number;
+            
+            return (
+              <div key={s.scenario.id} className="mb-3 pb-2 border-b border-gray-100 last:border-0 last:mb-0">
+                <p className="text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full mr-2"
+                    style={{ backgroundColor: s.scenario.color }}
+                  />
+                  {s.scenario.name}
+                </p>
+                <p className="text-xs">
+                  <span className="text-gray-500">Net Worth:</span> {formatCurrency(netWorthCents)}
+                </p>
+                <p className="text-xs">
+                  <span className="text-gray-500">Assets:</span> {formatCurrency(assetsCents)}
+                </p>
+                <p className="text-xs">
+                  <span className="text-gray-500">Liabilities:</span> {formatCurrency(liabilitiesCents)}
+                </p>
+              </div>
+            );
+          })}
       </div>
     </div>
   );
 }
 
 /**
- * Custom legend component
+ * Custom legend component for multiple scenarios
  */
-function CustomLegend({ payload }: any) {
+function CustomLegend({
+  payload,
+  onVisibilityToggle,
+}: any & { onVisibilityToggle?: (scenarioId: string) => void }) {
   return (
-    <div className="flex justify-center space-x-6 pb-4">
-      {payload.map((entry: any) => (
-        <div key={entry.value} className="flex items-center">
-          <span
-            className="inline-block w-3 h-3 rounded-full mr-2"
-            style={{ backgroundColor: entry.color }}
-          />
-          <span className="text-sm text-gray-700">{entry.value}</span>
-        </div>
-      ))}
+    <div className="flex flex-wrap justify-center gap-4 pb-4">
+      {payload.map((entry: any) => {
+        // Extract scenario index from dataKey
+        const match = entry.dataKey.match(/scenario-(\d+)-netWorth/);
+        const scenarioIndex = match ? parseInt(match[1], 10) : 0;
+        
+        return (
+          <div key={entry.dataKey} className="flex items-center">
+            <span
+              className="inline-block w-3 h-3 rounded-full mr-2 cursor-pointer"
+              style={{ backgroundColor: entry.color }}
+              onClick={() => onVisibilityToggle?.(entry.dataKey)}
+            />
+            <span className="text-sm text-gray-700">{entry.value}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -155,7 +270,7 @@ function CustomLegend({ payload }: any) {
  * Format Y-axis tick values
  */
 function formatYAxisTick(value: number): string {
-  return formatShortCurrency(value * 100); // Convert back to cents for formatting
+  return formatShortCurrency(value);
 }
 
 /**
@@ -210,24 +325,52 @@ export function NetWorthChartEmptyState() {
 }
 
 /**
- * Check if projection has insufficient data
+ * Check if all scenarios have insufficient data
  */
-export function hasInsufficientData(projection: NetWorthProjectionResult): boolean {
-  const { currentAssetsCents, currentLiabilitiesCents, monthlyNetIncomeCents } = projection.input;
+export function hasInsufficientData(
+  scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[]
+): boolean {
+  if (scenarios.length === 0) return true;
   
-  // Check if all values are zero
-  const allZero = 
-    currentAssetsCents === 0 &&
-    currentLiabilitiesCents === 0 &&
-    monthlyNetIncomeCents === 0;
-  
-  // Also check if the projection has no growth potential
-  const noGrowth = 
-    projection.input.assetReturnRate === 0 &&
-    projection.input.incomeGrowthRate === 0 &&
-    monthlyNetIncomeCents === 0;
-  
-  return allZero || noGrowth;
+  // Check if all scenarios have insufficient data
+  return scenarios.every(s => {
+    const { currentAssetsCents, currentLiabilitiesCents, monthlyNetIncomeCents } = s.projection.input;
+    
+    const allZero = 
+      currentAssetsCents === 0 &&
+      currentLiabilitiesCents === 0 &&
+      monthlyNetIncomeCents === 0;
+    
+    const noGrowth = 
+      s.projection.input.assetReturnRate === 0 &&
+      s.projection.input.incomeGrowthRate === 0 &&
+      monthlyNetIncomeCents === 0;
+    
+    return allZero || noGrowth;
+  });
+}
+
+/**
+ * Check if any single scenario has insufficient data
+ */
+export function hasAnyInsufficientData(
+  scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[]
+): boolean {
+  return scenarios.some(s => {
+    const { currentAssetsCents, currentLiabilitiesCents, monthlyNetIncomeCents } = s.projection.input;
+    
+    const allZero = 
+      currentAssetsCents === 0 &&
+      currentLiabilitiesCents === 0 &&
+      monthlyNetIncomeCents === 0;
+    
+    const noGrowth = 
+      s.projection.input.assetReturnRate === 0 &&
+      s.projection.input.incomeGrowthRate === 0 &&
+      monthlyNetIncomeCents === 0;
+    
+    return allZero || noGrowth;
+  });
 }
 
 // ============================================================================
@@ -235,29 +378,45 @@ export function hasInsufficientData(projection: NetWorthProjectionResult): boole
 // ============================================================================
 
 export function NetWorthChart({
-  projection,
+  scenarios,
   height = 400,
   showBrush = true,
 }: NetWorthChartProps) {
   // Check for insufficient data
-  if (hasInsufficientData(projection)) {
+  if (hasInsufficientData(scenarios)) {
     return <NetWorthChartEmptyState />;
   }
 
-  // Convert timeline to chart data
-  const chartData = convertToChartData(projection.timeline);
+  // Convert timelines to chart data
+  const chartData = convertToChartData(scenarios);
   
-  // Find max value for Y-axis domain
-  const maxAssets = Math.max(...chartData.map(d => d.assets)) * 1.1; // Add 10% padding
-  const minValue = Math.min(
-    0,
-    ...chartData.map(d => Math.min(d.assets, d.liabilities, d.netWorth))
-  ) * 1.1;
+  if (chartData.length === 0) {
+    return <NetWorthChartEmptyState />;
+  }
 
-  // Get starting and ending values
-  const startNetWorth = chartData[0].netWorth;
-  const endNetWorth = chartData[chartData.length - 1].netWorth;
-  const growthPercentage = projection.summary.growthPercentage;
+  // Get scenario lines configuration
+  const scenarioLines = getScenarioLines(scenarios);
+  
+  // Find max and min values for Y-axis
+  const allNetWorthValues = scenarios.flatMap(s =>
+    s.projection.timeline.map(p => p.netWorthCents)
+  );
+  const maxNetWorth = Math.max(...allNetWorthValues) / 100 * 1.1; // Add 10% padding
+  const minNetWorth = Math.min(...allNetWorthValues) / 100 * 1.1;
+
+  // Get starting net worth from first visible scenario
+  const startNetWorth = getStartingNetWorth(scenarios) / 100;
+
+  // Calculate summary statistics
+  const firstVisibleScenario = scenarios.find(s => s.scenario.isVisible);
+  const totalMonths = firstVisibleScenario?.projection.summary.totalMonths ?? 0;
+  
+  // Calculate average growth across visible scenarios
+  const visibleScenarios = scenarios.filter(s => s.scenario.isVisible);
+  const avgGrowthPercentage = visibleScenarios.reduce(
+    (sum, s) => sum + s.projection.summary.growthPercentage,
+    0
+  ) / visibleScenarios.length;
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
@@ -267,17 +426,17 @@ export function NetWorthChart({
         </h2>
         <div className="flex space-x-4 text-sm">
           <div>
+            <span className="text-gray-500">Time Period:</span> 
+            <span className="font-medium text-gray-800">{totalMonths / 12} years</span>
+          </div>
+          <div>
             <span className="text-gray-500">Starting:</span> 
-            <span className="font-medium text-gray-800">{formatCurrency(chartData[0].netWorth * 100)}</span>
+            <span className="font-medium text-gray-800">{formatCurrency(startNetWorth * 100)}</span>
           </div>
           <div>
-            <span className="text-gray-500">Projected:</span> 
-            <span className="font-medium text-gray-800">{formatCurrency(endNetWorth * 100)}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Growth:</span> 
-            <span className={`font-medium ${growthPercentage > 100 ? 'text-green-600' : growthPercentage < 100 ? 'text-red-600' : 'text-gray-800'}`}>
-              {growthPercentage > 100 ? '+' : ''}{(growthPercentage - 100).toFixed(1)}%
+            <span className="text-gray-500">Avg Growth:</span> 
+            <span className={`font-medium ${avgGrowthPercentage > 100 ? 'text-green-600' : avgGrowthPercentage < 100 ? 'text-red-600' : 'text-gray-800'}`}>
+              {avgGrowthPercentage > 100 ? '+' : ''}{(avgGrowthPercentage - 100).toFixed(1)}%
             </span>
           </div>
         </div>
@@ -301,15 +460,18 @@ export function NetWorthChart({
               tick={{ fill: COLORS.textMuted, fontSize: 12 }}
               tickLine={false}
               axisLine={true}
-              domain={[minValue, maxAssets]}
+              domain={[minNetWorth, maxNetWorth]}
               tickCount={6}
             />
             
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip
+              content={<CustomTooltip scenarios={scenarios} />}
+              contentStyle={{ border: 'none', borderRadius: '0.5rem' }}
+            />
             
             <Legend content={<CustomLegend />} />
             
-            {/* Reference line at current net worth (start) */}
+            {/* Reference line at starting net worth */}
             <ReferenceLine
               y={startNetWorth}
               stroke={COLORS.textMuted}
@@ -321,42 +483,22 @@ export function NetWorthChart({
               }}
             />
             
-            {/* Net Worth Line */}
-            <Line
-              type="monotone"
-              dataKey="netWorth"
-              name="Net Worth"
-              stroke={COLORS.netWorth}
-              strokeWidth={3}
-              dot={false}
-              activeDot={{ r: 8, fill: COLORS.netWorth }}
-              animationDuration={500}
-            />
+            {/* Render a line for each visible scenario */}
+            {scenarioLines.map((line) => (
+              <Line
+                key={line.scenarioId}
+                type="monotone"
+                dataKey={line.dataKey}
+                name={line.name}
+                stroke={line.color}
+                strokeWidth={line.strokeWidth}
+                dot={false}
+                activeDot={{ r: 8, fill: line.color }}
+                animationDuration={500}
+              />
+            ))}
             
-            {/* Assets Line */}
-            <Line
-              type="monotone"
-              dataKey="assets"
-              name="Assets"
-              stroke={COLORS.assets}
-              strokeWidth={2}
-              dot={false}
-              strokeDasharray="5 5"
-              animationDuration={500}
-            />
-            
-            {/* Liabilities Line */}
-            <Line
-              type="monotone"
-              dataKey="liabilities"
-              name="Liabilities"
-              stroke={COLORS.liabilities}
-              strokeWidth={2}
-              dot={false}
-              animationDuration={500}
-            />
-            
-            {showBrush && (
+            {showBrush && scenarios.length > 1 && (
               <Brush
                 dataKey="name"
                 height={30}
@@ -369,33 +511,82 @@ export function NetWorthChart({
         </ResponsiveContainer>
       </div>
 
-      {/* Summary Statistics */}
-      <div className="mt-6 pt-4 border-t border-gray-200 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-sm text-gray-500">Time Period</p>
-          <p className="text-lg font-semibold text-gray-800">
-            {projection.summary.totalMonths / 12} years
-          </p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-sm text-gray-500">Total Growth</p>
-          <p className="text-lg font-semibold text-green-600">
-            {formatCurrency(projection.summary.totalGrowthCents)}
-          </p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-sm text-gray-500">Avg Monthly</p>
-          <p className="text-lg font-semibold text-gray-800">
-            {formatCurrency(projection.summary.averageMonthlyGrowthCents)}
-          </p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-sm text-gray-500">Final Value</p>
-          <p className="text-lg font-semibold text-blue-600">
-            {formatCurrency(projection.summary.endingNetWorthCents)}
-          </p>
+      {/* Summary Statistics for each scenario */}
+      <div className="mt-6 pt-4 border-t border-gray-200">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">
+          Scenario Comparison
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {scenarios
+            .filter(s => s.scenario.isVisible)
+            .map((s) => (
+              <div
+                key={s.scenario.id}
+                className="bg-gray-50 rounded-lg p-3"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-gray-700">{s.scenario.name}</h4>
+                  <span
+                    className="inline-block w-2 h-2 rounded-full"
+                    style={{ backgroundColor: s.scenario.color }}
+                  />
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Starting:</span>
+                    <span className="font-medium">{formatShortCurrency(s.projection.summary.startingNetWorthCents)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Projected:</span>
+                    <span className="font-medium">{formatShortCurrency(s.projection.summary.endingNetWorthCents)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Growth:</span>
+                    <span className="font-medium">
+                      {s.projection.summary.growthPercentage > 100 ? '+' : ''}
+                      {(s.projection.summary.growthPercentage - 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
         </div>
       </div>
+
+      {hasAnyInsufficientData(scenarios) && (
+        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-700">
+            ⚠️ Some scenarios have insufficient data and are not displayed
+          </p>
+        </div>
+      )}
     </div>
+  );
+}
+
+// Export backwards-compatible single projection version
+export function SingleNetWorthChart({
+  projection,
+  height,
+  showBrush,
+}: {
+  projection: NetWorthProjectionResult;
+  height?: number;
+  showBrush?: boolean;
+}) {
+  const scenario: Scenario = {
+    id: 'single',
+    name: 'Projection',
+    input: projection.input,
+    color: '#3b82f6',
+    isVisible: true,
+  };
+  
+  return (
+    <NetWorthChart
+      scenarios={[{ scenario, projection }]}
+      height={height}
+      showBrush={showBrush}
+    />
   );
 }
