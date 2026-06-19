@@ -23,6 +23,9 @@ export * from './finance/savingsCapacity'
 // Retirement modeler
 export * from './finance/retirement'
 
+// Net worth projection
+export * from './finance/projection'
+
 // Premium forecasting
 export * from './finance/forecasting'
 
