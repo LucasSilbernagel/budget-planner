@@ -57,10 +57,10 @@ const PRESET_ORDER: TimePeriodPreset[] = [
 // ============================================================================
 
 /**
- * Format date for display
+ * Format date for display using browser's locale
  */
 function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -129,7 +129,7 @@ export function TimePeriodFilter({
           type="button"
           className={`inline-flex justify-between items-center w-full rounded-md border border-gray-300 bg-white shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${getSizeClasses()}`}
           id="time-period-menu"
-          aria-expanded="false"
+          aria-expanded={isExpanded}
           aria-haspopup="true"
           onClick={() => setIsExpanded(!isExpanded)}
         >
@@ -198,12 +198,12 @@ export function TimePeriodFilter({
             <input
               type="date"
               id="start-date"
-              value={customRange?.startDate ? customRange.startDate.toISOString().split('T')[0] : ''}
+              value={customRange?.startDate && !isNaN(customRange.startDate.getTime()) ? customRange.startDate.toISOString().split('T')[0] : ''}
               onChange={(e) => {
-                if (customRange) {
-                  const newStart = new Date(e.target.value)
+                const newStart = new Date(e.target.value)
+                if (!isNaN(newStart.getTime())) {
                   onTimePeriodChange('custom', {
-                    ...customRange,
+                    ...(customRange || getDateRangeForPreset('last-month')),
                     startDate: newStart,
                   })
                 }
@@ -218,12 +218,12 @@ export function TimePeriodFilter({
             <input
               type="date"
               id="end-date"
-              value={customRange?.endDate ? customRange.endDate.toISOString().split('T')[0] : ''}
+              value={customRange?.endDate && !isNaN(customRange.endDate.getTime()) ? customRange.endDate.toISOString().split('T')[0] : ''}
               onChange={(e) => {
-                if (customRange) {
-                  const newEnd = new Date(e.target.value)
+                const newEnd = new Date(e.target.value)
+                if (!isNaN(newEnd.getTime())) {
                   onTimePeriodChange('custom', {
-                    ...customRange,
+                    ...(customRange || getDateRangeForPreset('last-month')),
                     endDate: newEnd,
                   })
                 }

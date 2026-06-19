@@ -20,11 +20,7 @@ import {
   aggregateByCategory,
   toPieChartData,
   generateColorMap,
-  DEFAULT_COLORS,
-  CATEGORY_COLORS
 } from '@budget-planner/core/finance/visualization'
-import { useFormattedAmount } from '../../stores/currencyStore'
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -198,7 +194,6 @@ export function CategoryDrillDown({
   maxDepth = DEFAULT_MAX_DEPTH,
   children,
 }: CategoryDrillDownProps & { children: DrillDownRenderFunction }) {
-  const formatAmount = useFormattedAmount()
   const [state, setState] = useState<DrillDownState>(initialState || createDrillDownState())
   
   // Get data for current drill-down level
@@ -273,15 +268,18 @@ export function CategoryDrillDown({
               if (index === -1) {
                 handleReset()
               } else {
-                // Navigate to specific level
-                const newState = drillToRoot()
-                for (let i = 0; i <= index; i++) {
-                  const entry = state.path[i]
-                  const [type, category] = entry.split(':')
-                  if (category && type) {
-                    setState(drillDownToCategory(newState, category, type as 'income' | 'expense'))
+                // Navigate to specific level - batch all updates into single setState
+                setState(prevState => {
+                  let newState = drillToRoot()
+                  for (let i = 0; i <= index; i++) {
+                    const entry = prevState.path[i]
+                    const [type, category] = entry.split(':')
+                    if (category && type) {
+                      newState = drillDownToCategory(newState, category, type as 'income' | 'expense')
+                    }
                   }
-                }
+                  return newState
+                })
               }
             }}
           />
@@ -314,7 +312,6 @@ export function useCategoryDrillDown(
   }
 ) {
   const { maxDepth = DEFAULT_MAX_DEPTH, customColorMap = {} } = options || {}
-  const formatAmount = useFormattedAmount()
   
   const [state, setState] = useState<DrillDownState>(createDrillDownState())
   

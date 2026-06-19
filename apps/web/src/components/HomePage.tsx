@@ -27,7 +27,7 @@ import {
   DEFAULT_COLORS,
   CATEGORY_COLORS
 } from '@budget-planner/core/finance/visualization'
-import type { TimePeriodPreset, DateRange, FinancialDataPoint } from '@budget-planner/core/finance/visualization'
+import type { TimePeriodPreset, DateRange, FinancialDataPoint, RechartsDataItem } from '@budget-planner/core/finance/visualization'
 import { TimePeriodFilter } from './finance/time-period-filter'
 import { CategoryDrillDown, useCategoryDrillDown } from './finance/category-drill-down'
 
@@ -147,10 +147,13 @@ export function HomePage() {
     // Add income sources
     for (const source of incomeSources) {
       // Validate required fields per project context (zero tolerance for invalid financial data)
-      if (!source?.id || !source?.name || typeof source?.amount !== 'number' || !source?.frequency) {
+      if (!source?.id || !source?.name || typeof source?.amount !== 'number' || !Number.isFinite(source?.amount) || !source?.frequency) {
         console.warn('Invalid income source, skipping:', source)
         continue
       }
+      // Parse createdAt date if available
+      const sourceDate = source.createdAt ? new Date(source.createdAt) : undefined
+      
       data.push({
         id: source.id,
         name: source.name,
@@ -158,17 +161,20 @@ export function HomePage() {
         frequency: source.frequency,
         category: source.category ?? source.name, // Use explicit category if available, fallback to name
         type: 'income' as const,
-        // No date for now (would need createdAt parsing)
+        date: sourceDate,
       })
     }
     
     // Add expenses
     for (const expense of expenses) {
       // Validate required fields per project context (zero tolerance for invalid financial data)
-      if (!expense?.id || !expense?.name || typeof expense?.amount !== 'number' || !expense?.frequency) {
+      if (!expense?.id || !expense?.name || typeof expense?.amount !== 'number' || !Number.isFinite(expense?.amount) || !expense?.frequency) {
         console.warn('Invalid expense, skipping:', expense)
         continue
       }
+      // Parse createdAt date if available
+      const expenseDate = expense.createdAt ? new Date(expense.createdAt) : undefined
+      
       data.push({
         id: expense.id,
         name: expense.name,
@@ -176,7 +182,7 @@ export function HomePage() {
         frequency: expense.frequency,
         category: expense.category ?? expense.name, // Use explicit category if available, fallback to name
         type: 'expense' as const,
-        // No date for now
+        date: expenseDate,
       })
     }
     
@@ -222,6 +228,11 @@ export function HomePage() {
   const aggregatedData = useMemo(() => {
     return aggregateByCategoryAndType(displayData)
   }, [displayData])
+  
+  // Calculate total amount for pie chart (memoized to avoid O(n^2) recalculation)
+  const totalChartAmount = useMemo(() => (
+    allCategoryData.reduce((sum, item) => sum.value + item.value, 0)
+  ), [allCategoryData])
   
   // Generate color map for categories
   const categoryColors = useMemo(() => {
@@ -460,18 +471,17 @@ export function HomePage() {
                             const clickedItem = allCategoryData[index]
                             if (clickedItem && clickedItem.name) {
                               // Extract type from the data or use a default
-                              const itemType = (clickedItem as any).type || 'expense'
-                              drillDown(clickedItem.name, itemType as 'income' | 'expense')
+                              const itemType = clickedItem.type ?? 'expense'
+                              drillDown(clickedItem.name, itemType)
                             }
                           }}
                         >
                           {allCategoryData.map((entry, index) => {
-                            const totalAmount = allCategoryData.reduce((sum, item) => sum.value + item.value, 0)
-                            const percentage = totalAmount > 0 ? ((entry.value / totalAmount) * 100).toFixed(1) : '0'
+                            const percentage = totalChartAmount > 0 ? ((entry.value / totalChartAmount) * 100).toFixed(1) : '0'
                             return (
                               <Cell
                                 key={`cell-${index}`}
-                                fill={entry.fill || entry.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length]!}
+                                fill={entry.fill || entry.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length]} // CATEGORY_COLORS is a const array with 16 colors
                                 stroke="#fff"
                                 strokeWidth={2}
                                 aria-label={`${entry.name}: ${formatAmount(entry.value)} (${percentage}%)`}
@@ -481,19 +491,18 @@ export function HomePage() {
                           })}
                         </Pie>
                         <Tooltip
-                          formatter={(value: number, name: string, payload: any) => {
+                          formatter={(value: number, name: string, payload: { payload: RechartsDataItem & { originalAmount?: number, count?: number } }) => {
                             if (payload && payload.payload) {
                               const data = payload.payload
-                              const amount = data.originalAmount || value
-                              const total = allCategoryData.reduce((sum, item) => sum.value + item.value, 0)
+                              const amount = data.originalAmount ?? value
                               return [
                                 `${name}: ${formatAmount(amount)}`,
-                                `Type: ${data.type || 'N/A'}`,
-                                `Count: ${data.count || 1}`,
-                                `Percentage: ${total > 0 ? ((value / total) * 100).toFixed(1) : '0'}%`
+                                `Type: ${data.type ?? 'N/A'}`,
+                                `Count: ${data.count ?? 1}`,
+                                `Percentage: ${totalChartAmount > 0 ? ((value / totalChartAmount) * 100).toFixed(1) : '0'}%`
                               ]
                             }
-                            return [formatAmount(value as number), name]
+                            return [formatAmount(value), name]
                           }}
                         />
                         <Legend 

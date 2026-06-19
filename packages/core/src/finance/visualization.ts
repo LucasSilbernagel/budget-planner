@@ -115,7 +115,7 @@ const CATEGORY_COLORS = [
   '#F43F5E', // Rose
   '#1E40AF', // Dark Blue
   '#059669', // Dark Green
-]
+] as const
 
 /**
  * Default colors for income and expenses
@@ -137,7 +137,7 @@ const DEFAULT_COLORS = {
  * Uses UTC to ensure consistent timezone handling across browsers
  */
 function getDateRangeForPreset(preset: TimePeriodPreset, customRange?: DateRange): DateRange {
-  // Use UTC to avoid timezone inconsistencies
+  // Use UTC to avoid timezone inconsistencies - create new Date objects for immutability
   const now = new Date()
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   
@@ -145,31 +145,31 @@ function getDateRangeForPreset(preset: TimePeriodPreset, customRange?: DateRange
     case 'last-month':
       return {
         startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 1, todayUTC.getUTCDate())),
-        endDate: todayUTC,
+        endDate: new Date(todayUTC), // Clone to prevent mutation
       }
       
     case 'last-3-months':
       return {
         startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 3, todayUTC.getUTCDate())),
-        endDate: todayUTC,
+        endDate: new Date(todayUTC), // Clone to prevent mutation
       }
       
     case 'last-6-months':
       return {
         startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 6, todayUTC.getUTCDate())),
-        endDate: todayUTC,
+        endDate: new Date(todayUTC), // Clone to prevent mutation
       }
       
     case 'year-to-date':
       return {
         startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), 0, 1)),
-        endDate: todayUTC,
+        endDate: new Date(todayUTC), // Clone to prevent mutation
       }
       
     case 'last-year':
       return {
         startDate: new Date(Date.UTC(todayUTC.getUTCFullYear() - 1, todayUTC.getUTCMonth(), todayUTC.getUTCDate())),
-        endDate: todayUTC,
+        endDate: new Date(todayUTC), // Clone to prevent mutation
       }
       
     case 'custom':
@@ -203,7 +203,7 @@ function filterByDateRange(
   range: DateRange
 ): FinancialDataPoint[] {
   return data.filter(item => {
-    if (!item.date) return true // Include items without dates
+    if (!item.date) return false // Exclude items without dates from date-filtered results
     return isDateInRange(item.date, range)
   })
 }
@@ -236,9 +236,11 @@ function aggregateByCategory(
       })
     }
     
-    const aggregate = categoryMap.get(key)!
-    aggregate.amount += item.amount
-    aggregate.count += 1
+    const aggregate = categoryMap.get(key)
+    if (aggregate) {
+      aggregate.amount += item.amount
+      aggregate.count += 1
+    }
   }
   
   return Array.from(categoryMap.values())
@@ -272,9 +274,11 @@ function aggregateByCategoryAndType(
       })
     }
     
-    const aggregate = categoryMap.get(mapKey)!
-    aggregate.amount += item.amount
-    aggregate.count += 1
+    const aggregate = categoryMap.get(mapKey)
+    if (aggregate) {
+      aggregate.amount += item.amount
+      aggregate.count += 1
+    }
   }
   
   // Separate by type
@@ -321,7 +325,7 @@ function groupSmallCategories(
   
   if (otherTotal > 0 && (otherTotal / totalAmount) >= otherThreshold) {
     // Find the first expense category to determine type for "Other"
-    const firstOtherType = otherItems[0]?.type || 'expense'
+    const firstOtherType = otherItems[0]?.type ?? 'expense'
     topItems.push({
       category: 'Other',
       amount: firstOtherType === 'income' ? otherTotal : -otherTotal,
@@ -349,7 +353,7 @@ function toPieChartData(
     value: Math.abs(agg.amount), // Use absolute value for charting
     type: agg.type,
     category: agg.category,
-    fill: colorMap[agg.category] || CATEGORY_COLORS[index % CATEGORY_COLORS.length]!, // Non-null: CATEGORY_COLORS has 16 colors
+    fill: colorMap[agg.category] || CATEGORY_COLORS[index % CATEGORY_COLORS.length], // CATEGORY_COLORS is a const array with 16 colors
     // Store original amount for tooltip
     originalAmount: agg.amount,
     count: agg.count,
@@ -367,7 +371,7 @@ function toBarChartData(
   const categoryMap = new Map<string, RechartsDataItem>()
   
   for (const item of data) {
-    const category = item.category || item.name
+    const category = item.category ?? item.name
     
     if (!categoryMap.has(category)) {
       categoryMap.set(category, {
@@ -375,12 +379,14 @@ function toBarChartData(
         value: 0,
         type: item.type,
         category,
-        fill: CATEGORY_COLORS[categoryMap.size % CATEGORY_COLORS.length]!, // Non-null: CATEGORY_COLORS has 16 colors
+        fill: CATEGORY_COLORS[categoryMap.size % CATEGORY_COLORS.length], // CATEGORY_COLORS is a const array with 16 colors
       })
     }
     
-    const chartItem = categoryMap.get(category)!
-    chartItem.value += Math.abs(item.amount)
+    const chartItem = categoryMap.get(category)
+    if (chartItem) {
+      chartItem.value += Math.abs(item.amount)
+    }
   }
   
   const result = Array.from(categoryMap.values())
@@ -415,17 +421,19 @@ function toStackedBarChartData(
   const categoryMap = new Map<string, { income: number; expense: number }>()
   
   for (const item of data) {
-    const category = item.category || item.name
+    const category = item.category ?? item.name
     
     if (!categoryMap.has(category)) {
       categoryMap.set(category, { income: 0, expense: 0 })
     }
     
-    const categoryData = categoryMap.get(category)!
-    if (item.type === 'income') {
-      categoryData.income += item.amount
-    } else {
-      categoryData.expense += Math.abs(item.amount)
+    const categoryData = categoryMap.get(category)
+    if (categoryData) {
+      if (item.type === 'income') {
+        categoryData.income += Math.abs(item.amount)
+      } else {
+        categoryData.expense += Math.abs(item.amount)
+      }
     }
   }
   
@@ -512,7 +520,7 @@ function getDataForDrillDownLevel(
   for (const pathEntry of state.path) {
     const [type, category] = pathEntry.split(':')
     filteredData = filteredData.filter(item => 
-      item.type === type && (item.category || item.name) === category
+      item.type === type && (item.category ?? item.name) === category
     )
   }
   
@@ -547,7 +555,7 @@ function getPercentageOfTotal(
 
 /**
  * Get color for a financial type
- * Note: This function ignores category and index parameters - uses type-based colors only
+ * Note: This function currently uses type-based colors only
  */
 function getColorForCategory(
   _category: string,
@@ -555,7 +563,7 @@ function getColorForCategory(
   _index: number
 ): string {
   // Use type-based colors (category-specific colors handled by generateColorMap)
-  return type === 'income' ? DEFAULT_COLORS.income : DEFAULT_COLORS.expense
+  return DEFAULT_COLORS[type]
 }
 
 /**
@@ -567,9 +575,8 @@ function generateColorMap(categories: string[]): Record<string, string> {
   for (let i = 0; i < categories.length; i++) {
     const category = categories[i]
     // Get color using modulo to cycle through the palette
-    // CATEGORY_COLORS is defined above with 16 colors, so this is always safe
+    // CATEGORY_COLORS is a const array with 16 colors, modulo guarantees valid index
     const colorIndex = i % CATEGORY_COLORS.length
-    // @ts-expect-error CATEGORY_COLORS is non-empty (16 colors), modulo guarantees valid index
     colorMap[category] = CATEGORY_COLORS[colorIndex]
   }
   
@@ -585,8 +592,11 @@ function generateColorMap(categories: string[]): Record<string, string> {
  */
 function validateFinancialData(data: FinancialDataPoint[]): boolean {
   return data.every(item => 
-    typeof item.amount === 'number' && 
-    Number.isFinite(item.amount) &&
+    typeof item?.id === 'string' && 
+    typeof item?.name === 'string' && 
+    typeof item?.amount === 'number' && 
+    Number.isFinite(item?.amount) &&
+    typeof item?.frequency === 'string' &&
     (item.type === 'income' || item.type === 'expense')
   )
 }
@@ -596,8 +606,11 @@ function validateFinancialData(data: FinancialDataPoint[]): boolean {
  */
 function sanitizeFinancialData(data: FinancialDataPoint[]): FinancialDataPoint[] {
   return data.filter(item => 
-    typeof item.amount === 'number' && 
-    Number.isFinite(item.amount) &&
+    typeof item?.id === 'string' && 
+    typeof item?.name === 'string' && 
+    typeof item?.amount === 'number' && 
+    Number.isFinite(item?.amount) &&
+    typeof item?.frequency === 'string' &&
     (item.type === 'income' || item.type === 'expense')
   )
 }
