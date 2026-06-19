@@ -7,10 +7,20 @@
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
     "lint": "pnpm biome check",
-    "type-check": "pnpm --filter web type-check"
+    "type-check": "pnpm --filter web type-check",
+    "type-check:all": "pnpm -r type-check",
+    "tsc": "tsc",
+    "tsc:web": "pnpm --filter web tsc --noEmit",
+    "tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
+    "tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
+    "tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
+    "validate:tsconfig": "node scripts/validate-tsconfig.js"
   },
   "engines": {
     "node": ">=16.0.0"
   },
-  "pnpm": {}
+  "pnpm": {},
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
 }
