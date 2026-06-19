@@ -1,5 +1,5 @@
 # generated: 2026-06-18
-# last_updated: 2026-06-18
+# last_updated: 2026-06-19
 # project: budget-planner
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-18
-last_updated: 2026-06-18
+last_updated: 2026-06-19
 baseline_commit: NO_VCS
 project: budget-planner
 project_key: NOKEY
@@ -69,7 +69,7 @@ development_status:
   epic-3: in-progress
   3-1-implement-retirement-modeler-with-safe-withdrawal-model: done
   3-2-implement-forward-looking-net-worth-projection-visualization: done
-  3-3-enhance-income-vs-expense-visualization: ready-for-dev
+  3-3-enhance-income-vs-expense-visualization: review
   3-4-set-up-tanstack-start-server-functions-for-calculations: ready-for-dev
   epic-3-retrospective: optional
 
