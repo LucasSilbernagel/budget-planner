@@ -139,32 +139,7 @@ export function HomePage() {
   // Time period filtering state
   const [timePeriodPreset, setTimePeriodPreset] = useState<TimePeriodPreset>('last-month')
   const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined)
-  
-  // Drill-down state for category navigation
-  const {
-    state: drillDownState,
-    currentData: drillDownCurrentData,
-    aggregatedData: drillDownAggregatedData,
-    chartData: drillDownChartData,
-    colors: drillDownColors,
-    breadcrumb,
-    drillDown,
-    drillUp,
-    reset: resetDrillDown,
-    isActive: isDrillDownActive,
-  } = useCategoryDrillDown(financialData)
-  
-  // Handle time period change
-  const handleTimePeriodChange = useCallback((preset: TimePeriodPreset, customRange?: DateRange) => {
-    setTimePeriodPreset(preset)
-    setCustomDateRange(customRange)
-  }, [])
-  
-  // Get current date range
-  const currentDateRange = useMemo(() => {
-    return customDateRange || getDateRangeForPreset(timePeriodPreset)
-  }, [timePeriodPreset, customDateRange])
-  
+
   // Convert stores data to FinancialDataPoint format for visualization utilities
   const financialData = useMemo<FinancialDataPoint[]>(() => {
     const data: FinancialDataPoint[] = []
@@ -207,6 +182,31 @@ export function HomePage() {
     
     return data
   }, [incomeSources, expenses])
+
+  // Drill-down state for category navigation
+  const {
+    state: drillDownState,
+    currentData: drillDownCurrentData,
+    aggregatedData: drillDownAggregatedData,
+    chartData: drillDownChartData,
+    colors: drillDownColors,
+    breadcrumb,
+    drillDown,
+    drillUp,
+    reset: resetDrillDown,
+    isActive: isDrillDownActive,
+  } = useCategoryDrillDown(financialData)
+  
+  // Handle time period change
+  const handleTimePeriodChange = useCallback((preset: TimePeriodPreset, customRange?: DateRange) => {
+    setTimePeriodPreset(preset)
+    setCustomDateRange(customRange)
+  }, [])
+  
+  // Get current date range
+  const currentDateRange = useMemo(() => {
+    return customDateRange || getDateRangeForPreset(timePeriodPreset)
+  }, [timePeriodPreset, customDateRange])
   
   // Filter data by date range (currently all data since we don't have dates)
   const filteredData = useMemo(() => {
