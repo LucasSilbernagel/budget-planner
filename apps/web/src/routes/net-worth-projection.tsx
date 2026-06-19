@@ -73,13 +73,19 @@ export function NetWorthProjectionPage() {
 
   // Calculate all projections whenever scenarios change
   useEffect(() => {
+    let isMounted = true;
+    
     const calculateAllProjections = async () => {
+      if (!isMounted) return;
+      
       setIsCalculating(true);
       setError(null);
       
       try {
         // Small delay to prevent rapid recalculations
         await new Promise(resolve => setTimeout(resolve, 50));
+        
+        if (!isMounted) return;
         
         const newScenariosWithProjection = scenarios.map(scenario => ({
           scenario,
@@ -88,13 +94,20 @@ export function NetWorthProjectionPage() {
         
         setScenariosWithProjection(newScenariosWithProjection);
       } catch (err) {
+        if (!isMounted) return;
         setError(err instanceof Error ? err.message : 'Unknown error occurred');
       } finally {
+        if (!isMounted) return;
         setIsCalculating(false);
       }
     };
 
     calculateAllProjections();
+    
+    // Cleanup function to prevent memory leaks
+    return () => { 
+      isMounted = false; 
+    };
   }, [scenarios]);
 
   // Check if all data is insufficient

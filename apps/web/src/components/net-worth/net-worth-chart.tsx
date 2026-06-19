@@ -21,6 +21,7 @@ import {
 } from 'recharts';
 import type { NetWorthProjectionResult, ProjectionPoint, TimeHorizon } from '@budget-planner/core';
 import type { Scenario } from './scenario-controls';
+import { useCurrencyPreferences, useFormattedAmount, useFormattedAmountWithOptions } from '../../stores/currencyStore';
 
 // ============================================================================
 // Types
@@ -76,26 +77,8 @@ const COLORS = {
   textMuted: '#6b7280', // Gray-500
 };
 
-// Format currency for display
-const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value / 100);
-};
-
-// Format short currency for compact display (e.g., $1.5M)
-const formatShortCurrency = (value: number): string => {
-  const absValue = Math.abs(value) / 100;
-  if (absValue >= 1_000_000) {
-    return `$${(absValue / 1_000_000).toFixed(1)}M`;
-  }
-  if (absValue >= 1_000) {
-    return `$${(absValue / 1_000).toFixed(0)}K`;
-  }
-  return formatCurrency(value);
-};
+// Currency formatting functions that use user preferences
+// These are created inside the component to have access to hooks
 
 // ============================================================================
 // Helper Functions
@@ -184,10 +167,20 @@ function CustomTooltip({
   payload,
   label,
   scenarios,
-}: any & { scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[] }) {
+  formatAmount,
+}: any & { 
+  scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[];
+  formatAmount: (cents: number) => string;
+}) {
   if (!active || !payload || payload.length === 0) {
     return null;
   }
+  
+  // Fallback for formatAmount in case of undefined prop
+  const safeFormat = formatAmount || ((cents: number) => {
+    if (!Number.isFinite(cents)) return '0';
+    return (cents / 100).toFixed(2);
+  });
 
   // Find the month index from the label
   const monthMatch = label?.match(/^(\d+)\.(\d+)$/);
@@ -221,13 +214,13 @@ function CustomTooltip({
                   {s.scenario.name}
                 </p>
                 <p className="text-xs">
-                  <span className="text-gray-500">Net Worth:</span> {formatCurrency(netWorthCents)}
+                  <span className="text-gray-500">Net Worth:</span> {safeFormat(netWorthCents)}
                 </p>
                 <p className="text-xs">
-                  <span className="text-gray-500">Assets:</span> {formatCurrency(assetsCents)}
+                  <span className="text-gray-500">Assets:</span> {safeFormat(assetsCents)}
                 </p>
                 <p className="text-xs">
-                  <span className="text-gray-500">Liabilities:</span> {formatCurrency(liabilitiesCents)}
+                  <span className="text-gray-500">Liabilities:</span> {safeFormat(liabilitiesCents)}
                 </p>
               </div>
             );
@@ -266,12 +259,7 @@ function CustomLegend({
   );
 }
 
-/**
- * Format Y-axis tick values
- */
-function formatYAxisTick(value: number): string {
-  return formatShortCurrency(value);
-}
+
 
 /**
  * Format X-axis tick values
@@ -382,6 +370,21 @@ export function NetWorthChart({
   height = 400,
   showBrush = true,
 }: NetWorthChartProps) {
+  // Get user currency preferences
+  const formatAmount = useFormattedAmount();
+  const formatShortAmount = useFormattedAmountWithOptions({ abbreviate: true });
+  
+  // Safe formatting helpers that guard against NaN/Infinity
+  const safeFormatAmount = (cents: number): string => {
+    if (!Number.isFinite(cents)) return '0';
+    return formatAmount(cents);
+  };
+  
+  const safeFormatShortAmount = (cents: number): string => {
+    if (!Number.isFinite(cents)) return '0';
+    return formatShortAmount(cents);
+  };
+
   // Check for insufficient data
   if (hasInsufficientData(scenarios)) {
     return <NetWorthChartEmptyState />;
@@ -431,7 +434,7 @@ export function NetWorthChart({
           </div>
           <div>
             <span className="text-gray-500">Starting:</span> 
-            <span className="font-medium text-gray-800">{formatCurrency(startNetWorth * 100)}</span>
+            <span className="font-medium text-gray-800">{safeFormatAmount(Math.round(startNetWorth * 100))}</span>
           </div>
           <div>
             <span className="text-gray-500">Avg Growth:</span> 
@@ -456,7 +459,7 @@ export function NetWorthChart({
             />
             
             <YAxis
-              tickFormatter={formatYAxisTick}
+              tickFormatter={(value) => safeFormatShortAmount(Math.round(value * 100))}
               tick={{ fill: COLORS.textMuted, fontSize: 12 }}
               tickLine={false}
               axisLine={true}
@@ -465,7 +468,7 @@ export function NetWorthChart({
             />
             
             <Tooltip
-              content={<CustomTooltip scenarios={scenarios} />}
+              content={<CustomTooltip scenarios={scenarios} formatAmount={formatAmount} />}
               contentStyle={{ border: 'none', borderRadius: '0.5rem' }}
             />
             
@@ -477,7 +480,7 @@ export function NetWorthChart({
               stroke={COLORS.textMuted}
               strokeDasharray="3 3"
               label={{ 
-                value: `Start: ${formatShortCurrency(startNetWorth * 100)}`,
+                value: `Start: ${safeFormatShortAmount(Math.round(startNetWorth * 100))}`,
                 fill: COLORS.textMuted,
                 fontSize: 11,
               }}
@@ -534,11 +537,11 @@ export function NetWorthChart({
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span className="text-gray-500">Starting:</span>
-                    <span className="font-medium">{formatShortCurrency(s.projection.summary.startingNetWorthCents)}</span>
+                    <span className="font-medium">{safeFormatShortAmount(s.projection.summary.startingNetWorthCents)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">Projected:</span>
-                    <span className="font-medium">{formatShortCurrency(s.projection.summary.endingNetWorthCents)}</span>
+                    <span className="font-medium">{safeFormatShortAmount(s.projection.summary.endingNetWorthCents)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">Growth:</span>
