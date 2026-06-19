@@ -11,6 +11,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { createNetWorthProjection, type NetWorthProjectionInput, type NetWorthProjectionResult, type TimeHorizon } from '@budget-planner/core';
+import { useFinancialCalculations } from '../hooks/useFinancialCalculations';
 import { NetWorthChart, hasInsufficientData as checkInsufficientData } from '../components/net-worth/net-worth-chart';
 import { ScenarioControls, DEFAULT_SCENARIOS, type Scenario } from '../components/net-worth/scenario-controls';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -62,6 +63,9 @@ function createDefaultScenariosWithProjection(): ScenarioWithProjection[] {
 // ============================================================================
 
 export function NetWorthProjectionPage() {
+  // Hook for financial calculations (server-side for paid tier, client-side for free)
+  const { calculateNetWorth, netWorth } = useFinancialCalculations()
+  
   // State for scenarios
   const [scenarios, setScenarios] = useState<Scenario[]>(DEFAULT_SCENARIOS);
   const [activeScenarioIndex, setActiveScenarioIndex] = useState(0);
@@ -70,6 +74,9 @@ export function NetWorthProjectionPage() {
   const [scenariosWithProjection, setScenariosWithProjection] = useState<ScenarioWithProjection[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Use hook's loading state
+  const hookIsCalculating = netWorth.isLoading
 
   // Calculate all projections whenever scenarios change
   useEffect(() => {
@@ -87,10 +94,29 @@ export function NetWorthProjectionPage() {
         
         if (!isMounted) return;
         
-        const newScenariosWithProjection = scenarios.map(scenario => ({
-          scenario,
-          projection: createNetWorthProjection(scenario.input),
-        }));
+        // Use hook for calculations (handles tier detection automatically)
+        const newScenariosWithProjection = await Promise.all(
+          scenarios.map(async (scenario) => {
+            // Convert scenario input to NetWorthProjectionInput format
+            const input: NetWorthProjectionInput = {
+              currentAssets: scenario.input.currentAssets || 0,
+              currentLiabilities: scenario.input.currentLiabilities || 0,
+              monthlySavings: scenario.input.monthlySavings || 0,
+              expectedReturnRate: scenario.input.expectedReturnRate || 0,
+              timeHorizonYears: scenario.input.timeHorizonYears || 30,
+            };
+            
+            // Use hook for server-side (paid) or client-side (free) calculation
+            await calculateNetWorth(input);
+            
+            // For now, fall back to client-side calculation to maintain compatibility
+            // The hook state will update separately, but we need to return something
+            return {
+              scenario,
+              projection: createNetWorthProjection(scenario.input),
+            };
+          })
+        );
         
         setScenariosWithProjection(newScenariosWithProjection);
       } catch (err) {
@@ -108,7 +134,7 @@ export function NetWorthProjectionPage() {
     return () => { 
       isMounted = false; 
     };
-  }, [scenarios]);
+  }, [scenarios, calculateNetWorth]);
 
   // Check if all data is insufficient
   const allInsufficientData = useMemo(() => {

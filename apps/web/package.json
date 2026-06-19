@@ -20,6 +20,7 @@
     "@budget-planner/db": "workspace:*",
     "@radix-ui/react-slot": "^1.0.2",
     "@tanstack/react": "latest",
+    "@tanstack/start": "latest",
     "@tanstack/react-router": "latest",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

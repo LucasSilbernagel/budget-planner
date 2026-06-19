@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { calculateRequiredAssets } from '@budget-planner/core/finance/retirement'
 import { formatCurrency } from '@budget-planner/core/format/currency'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { useBalanceStore } from '../stores/balanceStore'
 import { useIncomeStore } from '../stores/incomeStore'
+import { useFinancialCalculations } from '../hooks/useFinancialCalculations'
 import { ErrorBoundary } from './ErrorBoundary'
 
 /**
@@ -150,12 +151,14 @@ function parseCurrencyToCents(value: string): number {
  * - Input for desired monthly retirement income
  * - Input for annual return rate (as percentage)
  * - Real-time calculation of required assets
+ * - Server-side calculations for paid tier, client-side for free tier
  * - Clear result display
  * - Accessible form with proper labels
  * - Mobile-responsive layout
  */
 function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savingsRate = 0.5 }: RetirementFormProps) {
   const { mode, currency } = useCurrencyPreferences()
+  const { calculateRetirement, retirement } = useFinancialCalculations()
   
   // Access existing financial data from stores
   const balanceEntries = useBalanceStore((state) => state.entries)
@@ -201,6 +204,18 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
   // Result state
   const [requiredAssets, setRequiredAssets] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const isLoading = retirement.isLoading
+  
+  // Sync hook result to local state
+  useEffect(() => {
+    if (retirement.isSuccess && retirement.data) {
+      setRequiredAssets(retirement.data.requiredAssets)
+      setError(null)
+    } else if (retirement.error) {
+      setError(retirement.error)
+      setRequiredAssets(null)
+    }
+  }, [retirement])
   
   // Configurable savings rate for time-to-goal calculation
   // Passed via props with default of 0.5 (50% of income saved annually)
@@ -352,7 +367,10 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
     return userFriendlyMessages[error.message] || 'An error occurred during calculation. Please check your inputs.'
   }
 
-  // Calculate required assets
+  // Track previous inputs for onCalculate callback
+  const prevInputsRef = useRef<{ monthlyIncome: number; returnRate: number } | null>(null)
+  
+  // Calculate required assets using hook (server-side for paid, client-side for free)
   const calculate = useCallback(() => {
     setError(null)
     
@@ -387,16 +405,32 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
         return
       }
       
-      const result = calculateRequiredAssets(monthlyIncomeCents, annualReturnRate)
-      setRequiredAssets(result)
-      onCalculate?.(result, monthlyIncomeCents, annualReturnRate)
+      // Store inputs for callback
+      prevInputsRef.current = { monthlyIncome: monthlyIncomeCents, returnRate: annualReturnRate }
+      
+      // Use hook for calculation (handles tier detection automatically)
+      // For free tier: uses client-side calculateRequiredAssets
+      // For paid tier: calls server function
+      void calculateRetirement({ desiredMonthlyIncome: monthlyIncomeCents, annualReturnRate })
+      
     } catch (e) {
       // Sanitize error message for display (Decision A - strict validation, no silent defaults)
       const errorMessage = sanitizeDisplayError(e)
       setError(errorMessage)
       setRequiredAssets(null)
     }
-  }, [monthlyIncomeInput, annualReturnRateInput, onCalculate])
+  }, [monthlyIncomeInput, annualReturnRateInput, calculateRetirement])
+  
+  // Trigger onCalculate when hook succeeds
+  useEffect(() => {
+    if (retirement.isSuccess && retirement.data && prevInputsRef.current && onCalculate) {
+      onCalculate(
+        retirement.data.requiredAssets,
+        prevInputsRef.current.monthlyIncome,
+        prevInputsRef.current.returnRate
+      )
+    }
+  }, [retirement, onCalculate])
   
   // Handle form submission
   const handleSubmit = useCallback((e: React.FormEvent) => {
@@ -440,6 +474,7 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
               className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
               aria-required="true"
               aria-label="Desired monthly retirement income"
+              disabled={isLoading}
             />
           </div>
           <p className="text-sm text-gray-500 mt-1">
@@ -468,6 +503,7 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
               className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
               aria-required="true"
               aria-label="Expected annual return rate"
+              disabled={isLoading}
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">%</span>
           </div>
@@ -553,9 +589,17 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
         {/* Submit Button */}
         <button
           type="submit"
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isLoading}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          Calculate
+          {isLoading ? (
+            <>
+              <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+              Calculating...
+            </>
+          ) : (
+            'Calculate Required Assets'
+          )}
         </button>
       </div>
     </form>
