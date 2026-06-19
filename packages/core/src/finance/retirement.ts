@@ -6,7 +6,7 @@
  * 
  * Where:
  * - FV = Future Value (required assets at retirement)
- * - Ir = Desired retirement income (monthly)
+ * - Ir = Desired monthly retirement income (monthly)
  * - r = Annual rate of return (as decimal, e.g., 0.06 for 6%)
  * 
  * This formula determines how much you need in retirement assets to safely
@@ -18,6 +18,14 @@
  * 
  * Architecture Requirement: FR8 - Retirement modeler
  */
+
+import { formatCurrency, type CurrencyOptions } from '../format/currency'
+
+/**
+ * Minimum annual return rate to prevent precision issues
+ * Rates below this threshold produce extremely large required assets
+ */
+const MIN_ANNUAL_RETURN_RATE = 0.001 // 0.1%
 
 /**
  * Input parameters for retirement calculation
@@ -44,16 +52,25 @@ export interface RetirementResult {
  * Formula: FV = Ir × (12 / r)
  * 
  * @param input - Retirement input parameters
+ * @param currencyOptions - Optional currency formatting options
  * @returns Retirement calculation result
- * @throws Error if annualReturnRate is 0 or negative
+ * @throws Error if annualReturnRate is <= 0 or below minimum threshold (division by zero protection)
  */
 export function calculateRetirementRequirement(
-  input: RetirementInput
+  input: RetirementInput,
+  currencyOptions: Partial<CurrencyOptions> = {}
 ): RetirementResult {
-  // Validate input
+  // Validate input - check for positive rate
   if (input.annualReturnRate <= 0) {
     throw new Error(
-      'Annual return rate must be positive (greater than 0)'
+      'Annual return rate must be positive (greater than 0). Safe Withdrawal Model requires positive return rate.'
+    )
+  }
+  
+  // Check for very small rates that cause precision issues
+  if (input.annualReturnRate < MIN_ANNUAL_RETURN_RATE) {
+    throw new Error(
+      `Annual return rate must be at least ${MIN_ANNUAL_RETURN_RATE * 100}% to avoid precision issues in calculations.`
     )
   }
 
@@ -62,54 +79,80 @@ export function calculateRetirementRequirement(
 
   // Calculate required assets using Safe Withdrawal Model
   // FV = Ir × (12 / r)
+  // Use high-precision calculation
   const requiredAssetsDollars = monthlyIncomeDollars * (12 / input.annualReturnRate)
 
-  // Convert back to cents
+  // Convert back to cents with overflow check
   const requiredAssets = Math.round(requiredAssetsDollars * 100)
+  
+  // Check for overflow
+  if (!Number.isSafeInteger(requiredAssets)) {
+    throw new Error(
+      'Calculation overflow: Required assets exceeds safe integer limit. Try a smaller income or higher return rate.'
+    )
+  }
 
   return {
     requiredAssets,
-    requiredAssetsFormatted: formatCurrency(requiredAssets),
+    requiredAssetsFormatted: formatCurrency(requiredAssets, currencyOptions),
     monthlyIncome: input.monthlyIncome,
-    monthlyIncomeFormatted: formatCurrency(input.monthlyIncome),
+    monthlyIncomeFormatted: formatCurrency(input.monthlyIncome, currencyOptions),
     annualReturnRate: input.annualReturnRate,
     annualReturnRatePercentage: input.annualReturnRate * 100,
   }
 }
 
 /**
- * Calculates the required future value directly
+ * Calculates the required future value directly using Safe Withdrawal Model
+ * Formula: FV = Ir × (12 / r)
  * 
  * @param monthlyIncome - Desired monthly retirement income in cents
- * @param annualReturnRate - Annual rate of return as decimal
+ * @param annualReturnRate - Annual rate of return as decimal (e.g., 0.06 for 6%)
  * @returns Required assets in cents
+ * @throws Error if annualReturnRate is <= 0 or below minimum threshold (division by zero protection)
  */
 export function calculateRequiredAssets(
   monthlyIncome: number,
   annualReturnRate: number
 ): number {
+  // Validate inputs are finite numbers
+  if (!Number.isFinite(monthlyIncome)) {
+    throw new Error('Monthly income must be a finite number')
+  }
+  
+  if (!Number.isFinite(annualReturnRate)) {
+    throw new Error('Annual return rate must be a finite number')
+  }
+  
+  // Validate rate
   if (annualReturnRate <= 0) {
     throw new Error(
-      'Annual return rate must be positive (greater than 0)'
+      'Annual return rate must be positive (greater than 0). Safe Withdrawal Model requires positive return rate.'
+    )
+  }
+  
+  // Prevent precision issues with very small rates
+  if (annualReturnRate < MIN_ANNUAL_RETURN_RATE) {
+    throw new Error(
+      `Annual return rate must be at least ${MIN_ANNUAL_RETURN_RATE * 100}% to avoid precision issues in calculations.`
     )
   }
 
   const monthlyIncomeDollars = monthlyIncome / 100
   const requiredAssetsDollars = monthlyIncomeDollars * (12 / annualReturnRate)
-  return Math.round(requiredAssetsDollars * 100)
+  const requiredAssets = Math.round(requiredAssetsDollars * 100)
+  
+  // Overflow check
+  if (!Number.isSafeInteger(requiredAssets)) {
+    throw new Error(
+      'Calculation overflow: Required assets exceeds safe integer limit.'
+    )
+  }
+  
+  return requiredAssets
 }
 
-/**
- * Formats a value in cents as currency
- * @param cents - Value in cents
- * @returns Formatted currency string
- */
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(cents / 100)
-}
+
 
 /**
  * Calculates how much monthly income can be safely withdrawn from a given asset value
@@ -118,20 +161,47 @@ function formatCurrency(cents: number): string {
  * @param assets - Current assets in cents
  * @param annualReturnRate - Annual rate of return as decimal
  * @returns Safe monthly withdrawal amount in cents
+ * @throws Error if annualReturnRate is <= 0 or below minimum threshold
  */
 export function calculateSafeMonthlyWithdrawal(
   assets: number,
   annualReturnRate: number
 ): number {
+  // Validate inputs are finite numbers
+  if (!Number.isFinite(assets)) {
+    throw new Error('Assets must be a finite number')
+  }
+  
+  if (!Number.isFinite(annualReturnRate)) {
+    throw new Error('Annual return rate must be a finite number')
+  }
+  
+  // Validate rate
   if (annualReturnRate <= 0) {
     throw new Error(
-      'Annual return rate must be positive (greater than 0)'
+      'Annual return rate must be positive (greater than 0). Safe Withdrawal Model requires positive return rate.'
+    )
+  }
+  
+  // Prevent precision issues with very small rates
+  if (annualReturnRate < MIN_ANNUAL_RETURN_RATE) {
+    throw new Error(
+      `Annual return rate must be at least ${MIN_ANNUAL_RETURN_RATE * 100}% to avoid precision issues in calculations.`
     )
   }
 
   const assetsDollars = assets / 100
   const monthlyWithdrawalDollars = assetsDollars * (annualReturnRate / 12)
-  return Math.round(monthlyWithdrawalDollars * 100)
+  const result = Math.round(monthlyWithdrawalDollars * 100)
+  
+  // Overflow check
+  if (!Number.isSafeInteger(result)) {
+    throw new Error(
+      'Calculation overflow: Withdrawal amount exceeds safe integer limit.'
+    )
+  }
+  
+  return result
 }
 
 /**
@@ -155,41 +225,103 @@ export interface YearlyProjection {
 }
 
 /**
+ * Maximum years for projection to prevent performance issues and overflow
+ */
+const MAX_PROJECTION_YEARS = 100
+
+/**
  * Calculates compound growth projection over multiple years
  * Formula: FV = P × (1 + r)^n + C × [((1 + r)^n - 1) / r]
  * Where P = principal, r = annual return, n = years, C = annual contribution
  * 
+ * Handles edge cases:
+ * - Validates that annualReturnRate is positive
+ * - Validates that years is non-negative and within safe limits
+ * - Handles zero contribution scenarios (treats as 0)
+ * - Handles zero principal scenarios (starts from 0)
+ * - Prevents floating point precision issues by rounding intermediate results
+ * - Prevents overflow by checking safe integer limits
+ * 
  * @param input - Compounding projection input
  * @returns Array of yearly projections
+ * @throws Error if annualReturnRate is <= 0, years is < 0, or years > MAX_PROJECTION_YEARS
  */
 export function calculateCompoundingProjection(
   input: CompoundingInput
 ): YearlyProjection[] {
   const { principal, annualContribution, annualReturnRate, years } = input
 
+  // Validate inputs are finite numbers
+  if (!Number.isFinite(principal)) {
+    throw new Error('Principal must be a finite number')
+  }
+  
+  if (!Number.isFinite(annualContribution)) {
+    throw new Error('Annual contribution must be a finite number')
+  }
+  
+  if (!Number.isFinite(annualReturnRate)) {
+    throw new Error('Annual return rate must be a finite number')
+  }
+  
+  if (!Number.isFinite(years)) {
+    throw new Error('Number of years must be a finite number')
+  }
+
+  // Validate inputs
   if (annualReturnRate <= 0) {
     throw new Error('Annual return rate must be positive (greater than 0)')
   }
+  
+  if (annualReturnRate < MIN_ANNUAL_RETURN_RATE) {
+    throw new Error(
+      `Annual return rate must be at least ${MIN_ANNUAL_RETURN_RATE * 100}% to avoid precision issues.`
+    )
+  }
+  
   if (years < 0) {
     throw new Error('Number of years must be non-negative')
+  }
+  
+  // Handle edge case: if years is 0, return empty array
+  if (years === 0) {
+    return []
+  }
+  
+  // Prevent excessively long projections that cause performance issues and overflow
+  if (years > MAX_PROJECTION_YEARS) {
+    throw new Error(
+      `Number of years must not exceed ${MAX_PROJECTION_YEARS} to prevent performance issues and calculation overflow.`
+    )
   }
 
   const projections: YearlyProjection[] = []
   let currentBalance = principal
+  
+  // Ensure non-negative contribution (negative contributions are treated as 0)
+  const safeContribution = annualContribution >= 0 ? annualContribution : 0
 
   for (let year = 1; year <= years; year++) {
     const startingBalance = currentBalance
-    const contribution = annualContribution
-
-    // Calculate growth: startingBalance * (1 + r)
-    const growth = startingBalance * (1 + annualReturnRate)
+    
+    // Calculate growth with rounding to prevent floating point accumulation
+    // Round intermediate result to prevent precision loss over many iterations
+    const growth = Math.round(startingBalance * (1 + annualReturnRate) * 100) / 100
+    
     // Add contribution
-    currentBalance = growth + contribution
+    currentBalance = growth + safeContribution
+    
+    // Check for overflow before storing
+    if (!Number.isSafeInteger(Math.round(currentBalance))) {
+      throw new Error(
+        `Projection overflow at year ${year}: Result exceeds safe integer limit. Try smaller values or fewer years.`
+      )
+    }
 
     projections.push({
       year,
       startingBalance,
-      annualContribution: contribution,
+      annualContribution: safeContribution,
       endingBalance: Math.round(currentBalance),
     })
   }

@@ -25,6 +25,11 @@ export interface CurrencyOptions {
   mode: CurrencyMode
   currency: CurrencyCode
   locale?: string
+  /**
+   * Enable abbreviated format for large values (e.g., $1K, $1M, $1B)
+   * Default: false
+   */
+  abbreviate?: boolean
 }
 
 /**
@@ -37,6 +42,15 @@ export const DEFAULT_CURRENCY_OPTIONS: CurrencyOptions = {
 }
 
 /**
+ * Currency formatting thresholds for abbreviation
+ */
+export const CURRENCY_ABBREVIATION_THRESHOLDS = {
+  BILLION: 1000000000,
+  MILLION: 1000000,
+  THOUSAND: 1000,
+} as const
+
+/**
  * Formats a value in cents as currency or raw number
  * 
  * @param cents - Value in cents
@@ -47,7 +61,7 @@ export function formatCurrency(
   cents: number,
   options: Partial<CurrencyOptions> = {}
 ): string {
-  const { mode = 'symbol', currency = 'USD', locale = 'en-US' } = options
+  const { mode = 'symbol', currency = 'USD', locale = 'en-US', abbreviate = false } = options
 
   // Convert cents to dollars
   const dollars = cents / 100
@@ -55,6 +69,27 @@ export function formatCurrency(
   if (mode === 'none' || currency === 'NONE') {
     // Currency-less mode: return raw number
     return dollars.toFixed(2)
+  }
+
+  // Abbreviated format for large values
+  if (abbreviate) {
+    const absDollars = Math.abs(dollars)
+    const currencySymbolValue = currencySymbol(currency)
+    
+    if (absDollars >= CURRENCY_ABBREVIATION_THRESHOLDS.BILLION) {
+      const value = dollars / CURRENCY_ABBREVIATION_THRESHOLDS.BILLION
+      return `${currencySymbolValue}${value.toFixed(1)}B`
+    }
+    
+    if (absDollars >= CURRENCY_ABBREVIATION_THRESHOLDS.MILLION) {
+      const value = dollars / CURRENCY_ABBREVIATION_THRESHOLDS.MILLION
+      return `${currencySymbolValue}${value.toFixed(1)}M`
+    }
+    
+    if (absDollars >= CURRENCY_ABBREVIATION_THRESHOLDS.THOUSAND) {
+      const value = dollars / CURRENCY_ABBREVIATION_THRESHOLDS.THOUSAND
+      return `${currencySymbolValue}${value.toFixed(0)}K`
+    }
   }
 
   try {
