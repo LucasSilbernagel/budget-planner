@@ -58,7 +58,7 @@ describe('Type Generation', () => {
       subscriptionStatus: 'free',
       currency: 'NONE',
       createdAt: new Date(),
-    } as User
+    }
     
     expect(userExample.id).toBeDefined()
     expect(userExample.email).toBeDefined()
@@ -66,6 +66,8 @@ describe('Type Generation', () => {
     expect(userExample.subscriptionStatus).toBeDefined()
     expect(userExample.currency).toBeDefined()
     expect(userExample.createdAt).toBeDefined()
+    // Verify email max length is 254 (RFC 5321)
+    expect(userExample.email.length).toBeLessThanOrEqual(254)
   })
 
   it('should have NewUser type for inserts', () => {

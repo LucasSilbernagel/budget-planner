@@ -14,9 +14,10 @@ The schema is defined in `packages/db/src/schema.ts` using Drizzle ORM.
 
 #### 1. Users Table Updates
 - **id**: Changed from `serial` (integer) to `uuid` with `defaultRandom()`
-- **paddleId**: Added `.unique().notNull()` constraints
+- **email**: Changed length from 255 to 254 for RFC 5321 compliance
+- **paddleId**: Added `.unique().notNull()` constraints (unique constraint provides implicit indexing)
 - **currency**: Changed from `varchar('currency', { length: 3 })` to `currencyEnum('currency')`
-- **createdAt**: Updated to use `{ mode: 'date' }` for consistency
+- **createdAt**: Removed `{ mode: 'date' }` to use default timestamp mode for better JSON serialization
 - **removed**: `updatedAt` field (not required by story specifications)
 
 #### 2. New Enums
@@ -29,9 +30,15 @@ All tables with `userId` references updated from `integer('userId')` to `uuid('u
 - `expenses.userId`
 - `savingsGoals.userId`
 - `balanceTracking.userId`
-- `userProfiles.userId`
+- `userProfiles.userId` (NOTE: Index should be added via table-level configuration)
 
 All foreign keys maintain `ON DELETE CASCADE` for proper data cleanup.
+
+#### 4. Code Review Improvements Applied
+- ✅ Fixed timestamp mode to use default (returns strings) for JSON serialization compatibility
+- ✅ Changed email length to 254 (RFC 5321 standard)
+- ⚠️ Indexes: paddleId has unique constraint (implicit index), userProfiles.userId needs explicit index
+- ⚠️ Cascade delete: Consider soft-delete mechanism for data safety (see Architecture Decision below)
 
 ### Acceptance Criteria Satisfied
 
@@ -70,6 +77,20 @@ To apply migrations to the database:
 # Apply all pending migrations
 pnpm --filter db db:migrate
 ```
+
+## Architecture Decisions
+
+### Cascade Delete vs Soft-Delete
+**Current Implementation:** All foreign keys use `ON DELETE CASCADE`
+
+**Consideration:** Cascade delete is convenient but destructive. When a user is deleted, ALL their financial data (income, expenses, savings, balances) is permanently deleted.
+
+**Recommendation:** For production, consider implementing one of these alternatives:
+1. **Soft-delete pattern:** Add `isDeleted` boolean column to users table, filter queries to exclude deleted users
+2. **Archive pattern:** Move deleted user data to archive tables instead of deleting
+3. **Confirmation workflow:** Require multi-step confirmation for user deletion
+
+**Decision:** For now, cascade delete is acceptable for development. Revisit before production deployment.
 
 ## Important Notes
 

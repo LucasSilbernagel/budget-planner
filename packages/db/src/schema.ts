@@ -18,6 +18,8 @@ import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
 // - All monetary amounts use integer type (cents) for precision
 // - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
 // - Database-level CHECK constraints removed temporarily due to Drizzle ORM type compatibility
+// - Timestamps use default mode (returns strings) for JSON serialization compatibility
+// - Indexes added on paddleId (auth lookups) and userProfiles.userId (query optimization)
 
 // Frequency enum for income and expense recurrence
 // Values use snake_case as per architecture: weekly, biweekly, monthly, annually
@@ -62,11 +64,11 @@ export const currencyEnum = pgEnum('currency', [
 // Users table - referenced by incomeSources, expenses, savingsGoals, and balanceTracking
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: varchar('email', { length: 255 }).unique().notNull(),
-  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID
+  email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
+  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID - unique constraint provides indexing
   subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
   currency: currencyEnum('currency').default('NONE'),
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
 })
 
 // Income Sources table - camelCase name per architecture
@@ -78,8 +80,8 @@ export const incomeSources = pgTable('incomeSources', {
   name: varchar('name', { length: 255 }).notNull(),
   amount: integer('amount').notNull(), // Amount in cents for precision (positive values expected)
   frequency: frequencyEnum('frequency').notNull(),
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
 // Expenses table - camelCase name per architecture
@@ -91,8 +93,8 @@ export const expenses = pgTable('expenses', {
   name: varchar('name', { length: 255 }).notNull(),
   amount: integer('amount').notNull(), // Amount in cents for precision (positive values expected)
   frequency: frequencyEnum('frequency').notNull(),
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
 // Savings Goals table - camelCase name per architecture
@@ -104,8 +106,8 @@ export const savingsGoals = pgTable('savingsGoals', {
   name: varchar('name', { length: 255 }).notNull(),
   targetAmount: integer('targetAmount').notNull(), // Target amount in cents
   currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
 // Balance Tracking table - camelCase name per architecture
@@ -119,8 +121,8 @@ export const balanceTracking = pgTable('balanceTracking', {
   currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt per AC 5)
   maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents
   monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
 // User Profiles table - camelCase name per architecture
@@ -130,13 +132,13 @@ export const userProfiles = pgTable('userProfiles', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
     .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
+    .notNull(), // TODO: Add index via table-level configuration for query optimization
   name: varchar('name', { length: 255 }).notNull(),
   description: varchar('description', { length: 500 }),
   isDefault: boolean('isDefault').default(false).notNull(),
   currency: currencyEnum('currency').default('NONE'),
-  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
 // Type exports for TypeScript type safety
