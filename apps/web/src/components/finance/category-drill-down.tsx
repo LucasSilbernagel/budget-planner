@@ -19,6 +19,7 @@ import {
   isDrillDownActive,
   aggregateByCategory,
   toPieChartData,
+  toIndividualItemPieChartData,
   generateColorMap,
 } from '@budget-planner/core/finance/visualization'
 // ============================================================================
@@ -194,6 +195,9 @@ export function CategoryDrillDown({
   maxDepth = DEFAULT_MAX_DEPTH,
   children,
 }: CategoryDrillDownProps & { children: DrillDownRenderFunction }) {
+  // Validate maxDepth to prevent infinite loops or broken navigation
+  const validatedMaxDepth = Math.max(0, Math.floor(maxDepth))
+  
   const [state, setState] = useState<DrillDownState>(initialState || createDrillDownState())
   
   // Get data for current drill-down level
@@ -201,22 +205,46 @@ export function CategoryDrillDown({
     return getDataForDrillDownLevel(data, state)
   }, [data, state])
   
-  // Aggregate current data by category
-  const aggregatedData = useMemo(() => {
-    return aggregateByCategory(currentData)
-  }, [currentData])
+  // Determine if we're at the deepest level (show individual items)
+  const isDeepestLevel = useMemo(() => {
+    return state.level >= validatedMaxDepth
+  }, [state.level, validatedMaxDepth])
   
-  // Generate color map for current categories
-  const colors = useMemo(() => {
+  // Aggregate current data by category (only at intermediate levels)
+  const aggregatedData = useMemo(() => {
+    if (isDeepestLevel) {
+      // At deepest level, return empty array as we'll use individual items
+      return []
+    }
+    return aggregateByCategory(currentData)
+  }, [currentData, isDeepestLevel])
+  
+  // Generate color map for current categories or items
+  // Split into separate memos to avoid over-specified dependencies
+  const categoryColors = useMemo(() => {
     const categories = aggregatedData.map(d => d.category)
     const generated = generateColorMap(categories)
     return { ...generated, ...customColorMap }
   }, [aggregatedData, customColorMap])
   
+  const itemColors = useMemo(() => {
+    const validItems = currentData.filter(Boolean) as FinancialDataPoint[]
+    const itemIds = validItems.map((d, idx) => String(d.id ?? d.name ?? `item-${idx}`))
+    const generated = generateColorMap(itemIds)
+    return { ...generated, ...customColorMap }
+  }, [currentData, customColorMap])
+  
+  const colors = isDeepestLevel ? itemColors : categoryColors
+  
   // Format data for charting
   const chartData = useMemo(() => {
+    if (isDeepestLevel) {
+      // At deepest level, show individual items
+      return toIndividualItemPieChartData(currentData, colors)
+    }
+    // At intermediate levels, show aggregated data
     return toPieChartData(aggregatedData, colors)
-  }, [aggregatedData, colors])
+  }, [currentData, aggregatedData, colors, isDeepestLevel])
   
   // Get breadcrumb path from state
   const breadcrumb = useMemo(() => {
@@ -228,9 +256,9 @@ export function CategoryDrillDown({
   
   // Handle drill-down
   const handleDrillDown = useCallback((category: string, type: 'income' | 'expense') => {
-    if (state.level >= maxDepth) return
+    if (state.level >= validatedMaxDepth) return
     setState(drillDownToCategory(state, category, type))
-  }, [state, maxDepth])
+  }, [state, validatedMaxDepth])
   
   // Handle drill-up
   const handleDrillUp = useCallback(() => {
@@ -313,6 +341,9 @@ export function useCategoryDrillDown(
 ) {
   const { maxDepth = DEFAULT_MAX_DEPTH, customColorMap = {} } = options || {}
   
+  // Validate maxDepth to prevent infinite loops or broken navigation
+  const validatedMaxDepth = Math.max(0, Math.floor(maxDepth))
+  
   const [state, setState] = useState<DrillDownState>(createDrillDownState())
   
   // Get data for current drill-down level
@@ -320,22 +351,46 @@ export function useCategoryDrillDown(
     return getDataForDrillDownLevel(data, state)
   }, [data, state])
   
-  // Aggregate current data by category
-  const aggregatedData = useMemo(() => {
-    return aggregateByCategory(currentData)
-  }, [currentData])
+  // Determine if we're at the deepest level (show individual items)
+  const isDeepestLevel = useMemo(() => {
+    return state.level >= validatedMaxDepth
+  }, [state.level, validatedMaxDepth])
   
-  // Generate color map for current categories
-  const colors = useMemo(() => {
+  // Aggregate current data by category (only at intermediate levels)
+  const aggregatedData = useMemo(() => {
+    if (isDeepestLevel) {
+      // At deepest level, return empty array as we'll use individual items
+      return []
+    }
+    return aggregateByCategory(currentData)
+  }, [currentData, isDeepestLevel])
+  
+  // Generate color map for current categories or items
+  // Split into separate memos to avoid over-specified dependencies
+  const categoryColors = useMemo(() => {
     const categories = aggregatedData.map(d => d.category)
     const generated = generateColorMap(categories)
     return { ...generated, ...customColorMap }
   }, [aggregatedData, customColorMap])
   
+  const itemColors = useMemo(() => {
+    const validItems = currentData.filter(Boolean) as FinancialDataPoint[]
+    const itemIds = validItems.map((d, idx) => String(d.id ?? d.name ?? `item-${idx}`))
+    const generated = generateColorMap(itemIds)
+    return { ...generated, ...customColorMap }
+  }, [currentData, customColorMap])
+  
+  const colors = isDeepestLevel ? itemColors : categoryColors
+  
   // Format data for charting
   const chartData = useMemo(() => {
+    if (isDeepestLevel) {
+      // At deepest level, show individual items
+      return toIndividualItemPieChartData(currentData, colors)
+    }
+    // At intermediate levels, show aggregated data
     return toPieChartData(aggregatedData, colors)
-  }, [aggregatedData, colors])
+  }, [currentData, aggregatedData, colors, isDeepestLevel])
   
   // Get breadcrumb path from state
   const breadcrumb = useMemo(() => {
@@ -347,9 +402,9 @@ export function useCategoryDrillDown(
   
   // Handle drill-down
   const drillDown = useCallback((category: string, type: 'income' | 'expense') => {
-    if (state.level >= maxDepth) return
+    if (state.level >= validatedMaxDepth) return
     setState(drillDownToCategory(state, category, type))
-  }, [state, maxDepth])
+  }, [state, validatedMaxDepth])
   
   // Handle drill-up
   const drillUp = useCallback(() => {

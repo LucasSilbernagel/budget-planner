@@ -65,6 +65,10 @@ interface RechartsDataItem {
   type?: 'income' | 'expense'
   category?: string
   fill?: string
+  id?: string | number
+  frequency?: Frequency
+  count?: number
+  originalAmount?: number
 }
 
 /**
@@ -361,6 +365,58 @@ function toPieChartData(
 }
 
 /**
+ * Transform financial data points to Recharts pie chart format for individual items
+ * Used at deepest drill-down level to show transaction-level details
+ */
+function toIndividualItemPieChartData(
+  items: FinancialDataPoint[],
+  colorMap: Record<string, string> = {}
+): RechartsDataItem[] {
+  if (!items) {
+    return []
+  }
+  
+  // Filter out null/undefined items first for efficiency
+  const validItems = items.filter(Boolean) as FinancialDataPoint[]
+  
+  return validItems.map((item, index) => {
+    const name = item.name || `Item ${index}`
+    const amount = typeof item.amount === 'number' && Number.isFinite(item.amount) ? item.amount : 0
+    const category = item.category || ''
+    const type = item.type || 'expense'
+    const id = item.id
+    const frequency = item.frequency
+    
+    // Look up color: use stable identifier (id) for consistent coloring across renders
+    // Try: item.id -> item.name -> item.category (non-empty) -> fallback to index
+    let fill = item.id !== undefined && item.id !== null ? colorMap[String(item.id)] : undefined
+    if (!fill) {
+      fill = colorMap[name]
+    }
+    if (!fill && category) {
+      fill = colorMap[category]
+    }
+    if (!fill) {
+      // Use consistent hash based on id for stable color assignment
+      const colorIndex = typeof item.id === 'number' ? item.id : index
+      fill = CATEGORY_COLORS[Math.abs(colorIndex) % CATEGORY_COLORS.length]
+    }
+    
+    return {
+      name,
+      value: Math.abs(amount),
+      type,
+      category: category || undefined,
+      fill,
+      originalAmount: amount,
+      id,
+      frequency,
+      count: 1,
+    }
+  })
+}
+
+/**
  * Transform financial data to Recharts bar chart format
  */
 function toBarChartData(
@@ -574,10 +630,14 @@ function generateColorMap(categories: string[]): Record<string, string> {
   
   for (let i = 0; i < categories.length; i++) {
     const category = categories[i]
+    // Ensure category is a valid non-empty string for use as index
+    if (typeof category !== 'string' || category === '' || category === undefined || category === null) {
+      continue
+    }
     // Get color using modulo to cycle through the palette
     // CATEGORY_COLORS is a const array with 16 colors, modulo guarantees valid index
     const colorIndex = i % CATEGORY_COLORS.length
-    colorMap[category] = CATEGORY_COLORS[colorIndex]
+    colorMap[category] = CATEGORY_COLORS[colorIndex]!
   }
   
   return colorMap
@@ -638,6 +698,7 @@ export {
   getTopCategories,
   groupSmallCategories,
   toPieChartData,
+  toIndividualItemPieChartData,
   toBarChartData,
   toStackedBarChartData,
   createDrillDownState,
