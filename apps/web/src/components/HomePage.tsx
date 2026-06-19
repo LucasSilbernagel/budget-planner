@@ -615,6 +615,7 @@ export function HomePage() {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                    </ErrorBoundary>
                   </div>
                 ) : (
                   <div className="bg-gray-50 rounded-lg p-8 text-center">
