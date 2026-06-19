@@ -229,11 +229,6 @@ export function HomePage() {
     return aggregateByCategoryAndType(displayData)
   }, [displayData])
   
-  // Calculate total amount for pie chart (memoized to avoid O(n^2) recalculation)
-  const totalChartAmount = useMemo(() => (
-    allCategoryData.reduce((sum, item) => sum.value + item.value, 0)
-  ), [allCategoryData])
-  
   // Generate color map for categories
   const categoryColors = useMemo(() => {
     const allCategories = [
@@ -270,6 +265,11 @@ export function HomePage() {
   const allCategoryData = useMemo(() => {
     return [...incomeData, ...expenseData]
   }, [incomeData, expenseData])
+
+  // Calculate total amount for pie chart (memoized to avoid O(n^2) recalculation)
+  const totalChartAmount = useMemo(() => (
+    allCategoryData.reduce((sum, item) => sum.value + item.value, 0)
+  ), [allCategoryData])
 
   // Prepare data for the asset breakdown pie chart
   const assetBreakdownData = [
