@@ -367,8 +367,9 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
     return userFriendlyMessages[error.message] || 'An error occurred during calculation. Please check your inputs.'
   }
 
-  // Track previous inputs for onCalculate callback
-  const prevInputsRef = useRef<{ monthlyIncome: number; returnRate: number } | null>(null)
+  // Track the latest calculation inputs to prevent race conditions
+  // Uses unique calculation ID to reliably match results with inputs
+  const calculationInputsRef = useRef<{ id: string; monthlyIncome: number; returnRate: number } | null>(null)
   
   // Calculate required assets using hook (server-side for paid, client-side for free)
   const calculate = useCallback(() => {
@@ -405,13 +406,30 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
         return
       }
       
-      // Store inputs for callback
-      prevInputsRef.current = { monthlyIncome: monthlyIncomeCents, returnRate: annualReturnRate }
+      // Generate unique ID for this calculation to track it reliably
+      const calculationId = Math.random().toString(36).substring(2, 11)
+      
+      // Store inputs with calculation ID for reliable matching
+      calculationInputsRef.current = { 
+        id: calculationId,
+        monthlyIncome: monthlyIncomeCents, 
+        returnRate: annualReturnRate 
+      }
       
       // Use hook for calculation (handles tier detection automatically)
       // For free tier: uses client-side calculateRequiredAssets
       // For paid tier: calls server function
       void calculateRetirement({ desiredMonthlyIncome: monthlyIncomeCents, annualReturnRate })
+        .then(() => {
+          // When calculation completes, check if this is still the latest calculation
+          if (calculationInputsRef.current?.id === calculationId && onCalculate) {
+            onCalculate(
+              retirement.data?.requiredAssets ?? 0,
+              calculationInputsRef.current.monthlyIncome,
+              calculationInputsRef.current.returnRate
+            )
+          }
+        })
       
     } catch (e) {
       // Sanitize error message for display (Decision A - strict validation, no silent defaults)
@@ -419,15 +437,15 @@ function RetirementFormInner({ onCalculate, preFillFromExistingData = true, savi
       setError(errorMessage)
       setRequiredAssets(null)
     }
-  }, [monthlyIncomeInput, annualReturnRateInput, calculateRetirement])
+  }, [monthlyIncomeInput, annualReturnRateInput, calculateRetirement, onCalculate, retirement.data])
   
-  // Trigger onCalculate when hook succeeds
+  // Trigger onCalculate when hook succeeds (fallback for cases where promise doesn't resolve)
   useEffect(() => {
-    if (retirement.isSuccess && retirement.data && prevInputsRef.current && onCalculate) {
+    if (retirement.isSuccess && retirement.data && calculationInputsRef.current && onCalculate) {
       onCalculate(
         retirement.data.requiredAssets,
-        prevInputsRef.current.monthlyIncome,
-        prevInputsRef.current.returnRate
+        calculationInputsRef.current.monthlyIncome,
+        calculationInputsRef.current.returnRate
       )
     }
   }, [retirement, onCalculate])

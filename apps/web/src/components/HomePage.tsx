@@ -269,7 +269,7 @@ export function HomePage() {
   // Calculate total amount for pie chart (memoized to avoid O(n^2) recalculation)
   const totalChartAmount = useMemo(() => (
     allCategoryData.reduce((sum, item) => sum.value + item.value, 0)
-  ), [allCategoryData])
+  ), [incomeData, expenseData])
 
   // Prepare data for the asset breakdown pie chart
   const assetBreakdownData = [

@@ -143,11 +143,18 @@ export async function retirementCalculation(
   }
   
   try {
-    // Validate input
-    if (!input.desiredMonthlyIncome || !input.annualReturnRate) {
+    // Validate input - check for undefined/null first
+    if (input.desiredMonthlyIncome === undefined || input.annualReturnRate === undefined) {
       return {
         success: false,
         error: 'Missing required parameters: desiredMonthlyIncome and annualReturnRate',
+      }
+    }
+    
+    if (input.desiredMonthlyIncome === null || input.annualReturnRate === null) {
+      return {
+        success: false,
+        error: 'Parameters cannot be null: desiredMonthlyIncome and annualReturnRate',
       }
     }
     
@@ -206,15 +213,29 @@ export async function safeWithdrawalCalculation(
   }
   
   try {
-    // Validate input
-    if (assets <= 0) {
+    // Validate input - check for undefined/null first
+    if (assets === undefined || annualReturnRate === undefined) {
       return {
         success: false,
-        error: 'Asset value must be positive',
+        error: 'Missing required parameters: assets and annualReturnRate',
       }
     }
     
-    if (annualReturnRate <= 0 || annualReturnRate >= 1) {
+    if (assets === null || annualReturnRate === null) {
+      return {
+        success: false,
+        error: 'Parameters cannot be null: assets and annualReturnRate',
+      }
+    }
+    
+    if (assets < 0) {
+      return {
+        success: false,
+        error: 'Asset value cannot be negative',
+      }
+    }
+    
+    if (annualReturnRate < 0 || annualReturnRate >= 1) {
       return {
         success: false,
         error: 'Annual return rate must be between 0 and 1 (exclusive)',
@@ -260,11 +281,18 @@ export async function compoundingProjection(
   }
   
   try {
-    // Validate input
-    if (!input.principal || !input.annualReturnRate || !input.years) {
+    // Validate input - check for undefined/null first
+    if (input.principal === undefined || input.annualReturnRate === undefined || input.years === undefined) {
       return {
         success: false,
         error: 'Missing required parameters: principal, annualReturnRate, and years',
+      }
+    }
+    
+    if (input.principal === null || input.annualReturnRate === null || input.years === null) {
+      return {
+        success: false,
+        error: 'Parameters cannot be null: principal, annualReturnRate, and years',
       }
     }
     
@@ -328,7 +356,25 @@ export async function netWorthProjection(
   }
   
   try {
-    // Validate input
+    // Validate input - check for undefined/null first
+    if (input.currentAssets === undefined || input.currentLiabilities === undefined || 
+        input.monthlySavings === undefined || input.expectedReturnRate === undefined || 
+        input.timeHorizonYears === undefined) {
+      return {
+        success: false,
+        error: 'Missing required parameters: currentAssets, currentLiabilities, monthlySavings, expectedReturnRate, timeHorizonYears',
+      }
+    }
+    
+    if (input.currentAssets === null || input.currentLiabilities === null || 
+        input.monthlySavings === null || input.expectedReturnRate === null || 
+        input.timeHorizonYears === null) {
+      return {
+        success: false,
+        error: 'Parameters cannot be null',
+      }
+    }
+    
     if (input.timeHorizonYears <= 0) {
       return {
         success: false,
@@ -343,32 +389,41 @@ export async function netWorthProjection(
       }
     }
     
-    // Convert cents to dollars for calculation, then back to cents
-    const currentAssetsDollars = input.currentAssets / 100
-    const currentLiabilitiesDollars = input.currentLiabilities / 100
-    const monthlySavingsDollars = input.monthlySavings / 100
+    // Work directly in cents to avoid precision loss from conversion
+    // Inputs are already in cents per the interface definition
+    const currentAssetsCents = input.currentAssets
+    const currentLiabilitiesCents = input.currentLiabilities
+    const monthlySavingsCents = input.monthlySavings
     
     // Calculate yearly projections
     const yearlyProjections: YearlyNetWorthProjection[] = []
-    let assets = currentAssetsDollars
-    let liabilities = currentLiabilitiesDollars
+    let assetsCents = currentAssetsCents
+    let liabilitiesCents = currentLiabilitiesCents
     
-    for (let year = 0; year <= input.timeHorizonYears; year++) {
+    // Add initial state (year 0) before starting projections
+    yearlyProjections.push({
+      year: 0,
+      assets: assetsCents,
+      liabilities: liabilitiesCents,
+      netWorth: assetsCents - liabilitiesCents,
+    })
+    
+    for (let year = 1; year <= input.timeHorizonYears; year++) {
+      // Grow assets with compound interest
+      assetsCents = Math.round(assetsCents * (1 + input.expectedReturnRate))
+      
+      // Add monthly savings (converted to yearly)
+      assetsCents += Math.round(monthlySavingsCents * 12)
+      
       // Calculate net worth at the beginning of the year
-      const netWorthDollars = assets - liabilities
+      const netWorthCents = assetsCents - liabilitiesCents
       
       yearlyProjections.push({
         year,
-        assets: Math.round(assets * 100),
-        liabilities: Math.round(liabilities * 100),
-        netWorth: Math.round(netWorthDollars * 100),
+        assets: assetsCents,
+        liabilities: liabilitiesCents,
+        netWorth: netWorthCents,
       })
-      
-      // Grow assets with compound interest
-      assets *= (1 + input.expectedReturnRate)
-      
-      // Add monthly savings (converted to yearly)
-      assets += monthlySavingsDollars * 12
       
       // For simplicity, assume liabilities stay constant (or could add logic for debt paydown)
       // This is a simplified model - could be enhanced
@@ -415,8 +470,29 @@ export async function complexAggregation(
   }
   
   try {
-    // Validate input
-    if (!input.values || input.values.length === 0) {
+    // Validate input - check type first, then undefined/null, then content
+    if (!Array.isArray(input.values)) {
+      return {
+        success: false,
+        error: 'Values must be an array',
+      }
+    }
+    
+    if (input.values === undefined || input.operation === undefined) {
+      return {
+        success: false,
+        error: 'Missing required parameters: values and operation',
+      }
+    }
+    
+    if (input.values === null || input.operation === null) {
+      return {
+        success: false,
+        error: 'Parameters cannot be null: values and operation',
+      }
+    }
+    
+    if (input.values.length === 0) {
       return {
         success: false,
         error: 'Values array must not be empty',
@@ -427,6 +503,14 @@ export async function complexAggregation(
       return {
         success: false,
         error: 'Invalid operation. Must be one of: sum, average, median, max, min',
+      }
+    }
+    
+    // Validate that all values are numbers
+    if (!input.values.every(v => typeof v === 'number' && !isNaN(v))) {
+      return {
+        success: false,
+        error: 'All values must be valid numbers',
       }
     }
     

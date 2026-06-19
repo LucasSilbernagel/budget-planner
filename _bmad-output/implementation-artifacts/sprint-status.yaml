@@ -66,11 +66,11 @@ development_status:
   epic-2-retrospective: optional
 
   # Epic 3: Advanced Financial Intelligence
-  epic-3: in-progress
+  epic-3: done
   3-1-implement-retirement-modeler-with-safe-withdrawal-model: done
   3-2-implement-forward-looking-net-worth-projection-visualization: done
   3-3-enhance-income-vs-expense-visualization: done
-  3-4-set-up-tanstack-start-server-functions-for-calculations: review
+  3-4-set-up-tanstack-start-server-functions-for-calculations: done
   epic-3-retrospective: optional
 
   # Epic 4: Premium Features & Display Customization

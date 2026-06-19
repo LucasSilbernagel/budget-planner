@@ -100,23 +100,29 @@ export interface UseFinancialCalculationsResult {
  * In production, this would integrate with the authentication system
  */
 function detectUserTier(): UserTier {
+  // SSR guard: only access localStorage on the client
+  if (typeof window === 'undefined') {
+    return 'unknown'
+  }
+  
   // Check for user session in localStorage (for client-side detection)
-  if (typeof window !== 'undefined') {
-    try {
-      const userSession = localStorage.getItem('paddle_user_session')
-      const userData = userSession ? JSON.parse(userSession) : null
-      
-      if (userData && userData.subscriptionStatus === 'active') {
-        return 'paid'
-      }
-      
-      // If there's a user but no active subscription, it's free tier
-      if (userData) {
-        return 'free'
-      }
-    } catch {
-      // Ignore errors in localStorage access
+  try {
+    const userSession = localStorage.getItem('paddle_user_session')
+    
+    // SSR guard: JSON.parse can throw if userSession is malformed
+    const userData = userSession ? JSON.parse(userSession) : null
+    
+    if (userData && userData.subscriptionStatus === 'active') {
+      return 'paid'
     }
+    
+    // If there's a user but no active subscription, it's free tier
+    if (userData) {
+      return 'free'
+    }
+  } catch (error) {
+    // Ignore errors in localStorage access or JSON parsing
+    // Note: In production, consider using a proper logger
   }
   
   return 'unknown'
@@ -221,9 +227,6 @@ function calculateAggregationClient(input: AggregationInput): AggregationResult 
  * Call retirement calculation server function
  */
 async function callRetirementServer(input: RetirementInput): Promise<RetirementResult> {
-  const { retirementCalculation } = await import('../server/functions/financial')
-  // Note: In TanStack Start, we need to create a mock Request for server-side calls
-  // For now, we'll use the client wrapper which handles this
   const { calculateRetirement } = await import('../features/api/client')
   return calculateRetirement(input)
 }
@@ -246,22 +249,18 @@ async function callProjectionServer(input: CompoundingInput): Promise<YearlyProj
 
 /**
  * Call net worth calculation server function
- * Note: This is a new function, so we need to add it to the client API
  */
 async function callNetWorthServer(input: NetWorthProjectionInput): Promise<NetWorthProjectionResult> {
-  // For now, use client-side calculation as fallback
-  // Will be updated when server function is properly integrated
-  return calculateNetWorthClient(input)
+  const { calculateNetWorth } = await import('../features/api/client')
+  return calculateNetWorth(input)
 }
 
 /**
  * Call aggregation calculation server function
- * Note: This is a new function, so we need to add it to the client API
  */
 async function callAggregationServer(input: AggregationInput): Promise<AggregationResult> {
-  // For now, use client-side calculation as fallback
-  // Will be updated when server function is properly integrated
-  return calculateAggregationClient(input)
+  const { calculateAggregation } = await import('../features/api/client')
+  return calculateAggregation(input)
 }
 
 // ============================================================================

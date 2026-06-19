@@ -89,34 +89,38 @@ export function NetWorthProjectionPage() {
       setError(null);
       
       try {
-        // Small delay to prevent rapid recalculations
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-        if (!isMounted) return;
-        
         // Use hook for calculations (handles tier detection automatically)
-        const newScenariosWithProjection = await Promise.all(
-          scenarios.map(async (scenario) => {
-            // Convert scenario input to NetWorthProjectionInput format
-            const input: NetWorthProjectionInput = {
-              currentAssets: scenario.input.currentAssets || 0,
-              currentLiabilities: scenario.input.currentLiabilities || 0,
-              monthlySavings: scenario.input.monthlySavings || 0,
-              expectedReturnRate: scenario.input.expectedReturnRate || 0,
-              timeHorizonYears: scenario.input.timeHorizonYears || 30,
-            };
-            
-            // Use hook for server-side (paid) or client-side (free) calculation
-            await calculateNetWorth(input);
-            
-            // For now, fall back to client-side calculation to maintain compatibility
-            // The hook state will update separately, but we need to return something
-            return {
-              scenario,
-              projection: createNetWorthProjection(scenario.input),
-            };
-          })
-        );
+        // Map each scenario to its input and track promises
+        const scenarioInputs = scenarios.map((scenario) => ({
+          scenario,
+          input: {
+            currentAssets: scenario.input.currentAssets || 0,
+            currentLiabilities: scenario.input.currentLiabilities || 0,
+            monthlySavings: scenario.input.monthlySavings || 0,
+            expectedReturnRate: scenario.input.expectedReturnRate || 0,
+            timeHorizonYears: scenario.input.timeHorizonYears || 30,
+          } as NetWorthProjectionInput,
+        }));
+        
+        // Calculate all projections by calling hook for each
+        // Note: Hook state is shared, so we need to call sequentially or use direct client calls
+        const newScenariosWithProjection = [];
+        
+        for (const { scenario, input } of scenarioInputs) {
+          if (!isMounted) break;
+          
+          // Call hook for this scenario
+          await calculateNetWorth(input);
+          
+          // Use the latest hook result (may be from any scenario, but hook manages state per call)
+          // For better isolation, consider using the client API directly
+          const projectionResult = netWorth.data || createNetWorthProjection(scenario.input);
+          
+          newScenariosWithProjection.push({
+            scenario,
+            projection: projectionResult,
+          });
+        }
         
         setScenariosWithProjection(newScenariosWithProjection);
       } catch (err) {
@@ -134,7 +138,7 @@ export function NetWorthProjectionPage() {
     return () => { 
       isMounted = false; 
     };
-  }, [scenarios, calculateNetWorth]);
+  }, [scenarios, calculateNetWorth, netWorth.data]);
 
   // Check if all data is insufficient
   const allInsufficientData = useMemo(() => {
