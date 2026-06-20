@@ -78,6 +78,7 @@ development_status:
   4-1-implement-paddle-authentication-and-account-creation: done
   4-2-create-database-schema-for-users-table: done
   4-3-implement-multi-device-data-synchronization-for-paid-tier: in-progress
+  # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
   4-4-implement-custom-user-profiles-for-paid-tier: ready-for-dev
   4-5-implement-premium-forecasting-features: ready-for-dev
   4-6-implement-currency-control-system-with-mode-toggle: ready-for-dev
@@ -90,16 +91,16 @@ development_status:
   4-13-set-up-zustand-state-management: ready-for-dev
   4-14-set-up-testing-infrastructure: ready-for-dev
   4-15-set-up-ci-cd-pipeline-with-github-actions: ready-for-dev
-  4-16-deploy-to-netlify-with-western-europe-region: ready-for-dev
+  4-16-deploy-to-danubedata-static-sites: ready-for-dev
   4-17-set-up-danubedata-managed-postgresql: ready-for-dev
   epic-4-retrospective: optional
 
-  # Epic 5: Production Deployment & Infrastructure (DanubeData + Netlify)
+  # Epic 5: Production Deployment & Infrastructure (DanubeData Full Stack)
   epic-5: backlog
   5-1-set-up-danubedata-account-and-development-database: backlog
-  5-2-configure-netlify-functions-for-backend-logic: backlog
+  5-2-configure-danubedata-rapids-for-backend-logic: backlog
   5-3-set-up-paddle-production-environment: backlog
   5-4-configure-ci-cd-pipeline-for-production: backlog
   5-5-set-up-monitoring-and-alerting: backlog
-  5-6-deploy-to-production-with-danubedata: backlog
+  5-6-deploy-to-production-with-danubedata-full-stack: backlog
   epic-5-retrospective: optional
