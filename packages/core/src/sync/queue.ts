@@ -65,26 +65,18 @@ export class SyncQueue {
   private queue: SyncOperation[] = []
   private readonly userId: string
   private readonly storage: SyncQueueStorage
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private readonly maxQueueSize: number
 
   /**
    * Create a new SyncQueue instance
    * @param userId - The user ID for this queue
    * @param storage - Optional persistent storage for the queue
-   * @param maxQueueSize - DEPRECATED: Maximum number of operations to keep in queue
-   *   Note: Queue truncation is disabled to comply with NFR: Zero tolerance for data loss
    */
   constructor(
     userId: string,
-    storage?: SyncQueueStorage,
-    maxQueueSize: number = 1000
+    storage?: SyncQueueStorage
   ) {
     this.userId = userId
     this.storage = storage ?? new LocalStorageSyncQueueStorage()
-    this.maxQueueSize = maxQueueSize
-    // Note: maxQueueSize is kept for backward compatibility but not enforced
-    // Queue truncation violates NFR: Zero tolerance for data loss
   }
 
   /**
@@ -286,13 +278,11 @@ export class SyncQueue {
 /**
  * Create a sync queue with localStorage persistence
  * @param userId - The user ID for this queue
- * @param maxQueueSize - Maximum number of operations to keep in queue
  */
 export function createSyncQueue(
-  userId: string,
-  maxQueueSize?: number
+  userId: string
 ): SyncQueue {
-  return new SyncQueue(userId, undefined, maxQueueSize)
+  return new SyncQueue(userId, undefined)
 }
 
 export { LocalStorageSyncQueueStorage }

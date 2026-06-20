@@ -460,9 +460,11 @@ async function checkConflict(
     }
 
     return { hasConflict: false }
-  } catch {
-    // If we can't check, assume no conflict to avoid blocking
-    return { hasConflict: false }
+  } catch (error) {
+    // If we can't check server state, be conservative and assume conflict
+    // This prevents data resurrection from stale updates
+    console.error('Error checking conflict:', error)
+    return { hasConflict: true, conflictType: 'server-check-failed' }
   }
 }
 

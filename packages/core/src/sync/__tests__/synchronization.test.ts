@@ -221,6 +221,121 @@ describe('Synchronization Service', () => {
       expect(resolved.data).toEqual({ name: 'Local', value: 100, other: 200 })
       serviceWithStrategy.destroy()
     })
+
+    it('should merge create+create conflicts with merge strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'merge',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({
+        type: 'create',
+        data: { name: 'Local', value: 100 },
+        timestamp: 1000,
+      })
+      const serverOp = createTestOperation({
+        type: 'create',
+        data: { name: 'Server', other: 200 },
+        timestamp: 2000,
+      })
+
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved.type).toBe('create')
+      expect(resolved.data).toEqual({ name: 'Local', value: 100, other: 200 })
+      serviceWithStrategy.destroy()
+    })
+
+    it('should handle delete+create conflicts with merge strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'merge',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({
+        type: 'delete',
+        data: {},
+        timestamp: 1000,
+      })
+      const serverOp = createTestOperation({
+        type: 'create',
+        data: { name: 'Server', value: 200 },
+        timestamp: 2000,
+      })
+
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved.type).toBe('create')
+      expect(resolved.data).toEqual({ name: 'Server', value: 200 })
+      serviceWithStrategy.destroy()
+    })
+
+    it('should handle create+delete conflicts with merge strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'merge',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({
+        type: 'create',
+        data: { name: 'Local', value: 100 },
+        timestamp: 2000,
+      })
+      const serverOp = createTestOperation({
+        type: 'delete',
+        data: {},
+        timestamp: 1000,
+      })
+
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved.type).toBe('create')
+      expect(resolved.data).toEqual({ name: 'Local', value: 100 })
+      serviceWithStrategy.destroy()
+    })
+
+    it('should handle delete+update conflicts with merge strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'merge',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({
+        type: 'delete',
+        data: {},
+        timestamp: 2000,
+      })
+      const serverOp = createTestOperation({
+        type: 'update',
+        data: { name: 'Server', value: 200 },
+        timestamp: 1000,
+      })
+
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved.type).toBe('update')
+      expect(resolved.data).toEqual({ name: 'Server', value: 200 })
+      serviceWithStrategy.destroy()
+    })
+
+    it('should handle update+delete conflicts with merge strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'merge',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({
+        type: 'update',
+        data: { name: 'Local', value: 100 },
+        timestamp: 2000,
+      })
+      const serverOp = createTestOperation({
+        type: 'delete',
+        data: {},
+        timestamp: 1000,
+      })
+
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved.type).toBe('update')
+      expect(resolved.data).toEqual({ name: 'Local', value: 100 })
+      serviceWithStrategy.destroy()
+    })
   })
 
   describe('Sync State', () => {

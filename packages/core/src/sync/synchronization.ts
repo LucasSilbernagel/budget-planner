@@ -110,6 +110,7 @@ export class SynchronizationService {
   // Store bound event handlers to enable proper cleanup
   private boundHandleOnline: (() => void) | null = null
   private boundHandleOffline: (() => void) | null = null
+  private boundHandleVisibilityChange: (() => void) | null = null
 
   /**
    * Create a new SynchronizationService instance
@@ -117,8 +118,32 @@ export class SynchronizationService {
    * @param config - Optional configuration overrides
    */
   constructor(userId: string, config: Partial<SyncConfig> = {}) {
+    // Validate userId is not empty
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new Error('Invalid userId: must be a non-empty string')
+    }
+    
+    // Validate configuration
+    const mergedConfig = { ...DEFAULT_CONFIG, ...config }
+    
+    if (mergedConfig.maxRetries < 0) {
+      throw new Error('Invalid maxRetries: must be non-negative')
+    }
+    
+    if (mergedConfig.retryDelay < 0) {
+      throw new Error('Invalid retryDelay: must be non-negative')
+    }
+    
+    if (mergedConfig.batchSize <= 0) {
+      throw new Error('Invalid batchSize: must be positive')
+    }
+    
+    if (mergedConfig.autoSyncInterval < 0) {
+      throw new Error('Invalid autoSyncInterval: must be non-negative')
+    }
+    
     this.deviceId = generateDeviceId()
-    this.config = { ...DEFAULT_CONFIG, ...config }
+    this.config = mergedConfig
     this.queue = createSyncQueue(userId)
     this.state = this.createInitialState()
   }
@@ -133,8 +158,47 @@ export class SynchronizationService {
       pendingOperations: [],
       failedOperations: [],
       conflictOperations: [],
-      isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+      isOnline: typeof navigator !== 'undefined' ? navigator.onLine : false,
       retryCount: 0,
+    }
+  }
+
+  /**
+   * Check if the device is actually online (not just navigator.onLine)
+   * Handles captive portals and other false positives
+   */
+  private async checkRealConnectivity(): Promise<boolean> {
+    // If navigator is not available (SSR), return false
+    if (typeof navigator === 'undefined') {
+      return false
+    }
+    
+    // First check navigator.onLine
+    if (!navigator.onLine) {
+      return false
+    }
+    
+    // Additional check for captive portals
+    // Try to fetch a small resource to verify actual connectivity
+    try {
+      // Use a lightweight endpoint that should be fast
+      // In production, this could be a health check endpoint
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
+      
+      const response = await fetch('https://httpbin.org/get', {
+        method: 'GET',
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      
+      clearTimeout(timeoutId)
+      
+      // If we get a successful response, we're truly online
+      return response.ok
+    } catch {
+      // If fetch fails (timeout, network error, etc.), assume we're not truly online
+      return false
     }
   }
 
@@ -152,14 +216,35 @@ export class SynchronizationService {
     // Set up online/offline event listeners if in browser
     if (typeof window !== 'undefined') {
       // Bind handlers once and store for proper cleanup
-      this.boundHandleOnline = this.handleOnline.bind(this)
+      this.boundHandleOnline = async () => {
+        try {
+          await this.handleOnline()
+        } catch (error) {
+          this.log('Error in handleOnline:', error)
+        }
+      }
       this.boundHandleOffline = this.handleOffline.bind(this)
+      
+      // Set up visibility change handler to pause sync in background tabs
+      this.boundHandleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          // Tab became visible, check if we should sync
+          if (this.state.isOnline && this.queue.getCount() > 0 && !this.isProcessing) {
+            this.sync().catch((error) => {
+              this.log('Visibility sync error:', error)
+            })
+          }
+        }
+        // When tab is hidden/backgrounded, don't do anything special
+        // The auto-sync timer will continue but we won't process in background
+      }
       
       window.addEventListener('online', this.boundHandleOnline)
       window.addEventListener('offline', this.boundHandleOffline)
+      window.addEventListener('visibilitychange', this.boundHandleVisibilityChange)
       
-      // Check initial online status
-      this.state.isOnline = navigator.onLine
+      // Check initial online status with real connectivity check
+      this.state.isOnline = await this.checkRealConnectivity()
     }
 
     // Start auto-sync if enabled
@@ -220,6 +305,10 @@ export class SynchronizationService {
         window.removeEventListener('offline', this.boundHandleOffline)
         this.boundHandleOffline = null
       }
+      if (this.boundHandleVisibilityChange) {
+        window.removeEventListener('visibilitychange', this.boundHandleVisibilityChange)
+        this.boundHandleVisibilityChange = null
+      }
     }
 
     this.statusCallbacks.clear()
@@ -229,7 +318,15 @@ export class SynchronizationService {
   /**
    * Handle coming online
    */
-  private handleOnline(): void {
+  private async handleOnline(): Promise<void> {
+    // Verify real connectivity before marking as online
+    const isReallyOnline = await this.checkRealConnectivity()
+    
+    if (!isReallyOnline) {
+      this.log('Device reports online but connectivity check failed')
+      return
+    }
+    
     this.state.isOnline = true
     this.log('Device is now online')
     
@@ -423,12 +520,34 @@ export class SynchronizationService {
     if (localOp.entityType !== serverOp.entityType || localOp.entityId !== serverOp.entityId) {
       return { hasConflict: false }
     }
+    
+    // Check if operations are from the same device - not a conflict
+    if (localOp.deviceId === serverOp.deviceId) {
+      return { hasConflict: false }
+    }
+    
+    // Check if operations have the same ID - not a conflict
+    if (localOp.id === serverOp.id) {
+      return { hasConflict: false }
+    }
 
     // Check if operations are the same type
     if (localOp.type === serverOp.type) {
       // Same type of operation on same entity - generally not a conflict
-      // unless it's an update with different data
+      // unless it's an update with different data or version mismatch
       if (localOp.type === 'update') {
+        // Check version numbers first if both operations have versions
+        if (localOp.version !== undefined && serverOp.version !== undefined) {
+          if (localOp.version !== serverOp.version) {
+            return {
+              hasConflict: true,
+              conflictType: 'version-mismatch',
+              localOperation: localOp,
+              serverOperation: serverOp,
+            }
+          }
+        }
+        
         // Check if the data is different
         const localDataStr = JSON.stringify(localOp.data)
         const serverDataStr = JSON.stringify(serverOp.data)
@@ -497,8 +616,15 @@ export class SynchronizationService {
       case 'last-write-wins':
       default:
         // Last write wins based on timestamp
-        // If timestamps are equal, prefer local operation
-        return localOp.timestamp >= serverOp.timestamp ? localOp : serverOp
+        // If timestamps are equal, use deviceId as deterministic tiebreaker
+        if (localOp.timestamp > serverOp.timestamp) {
+          return localOp
+        }
+        if (localOp.timestamp < serverOp.timestamp) {
+          return serverOp
+        }
+        // Timestamps are equal, use deviceId as tiebreaker
+        return localOp.deviceId > serverOp.deviceId ? localOp : serverOp
       
       case 'manual':
         // For manual resolution, we mark the conflict and let the user decide
@@ -510,15 +636,53 @@ export class SynchronizationService {
         return localOp
       
       case 'merge':
-        // Attempt to merge changes (only works for updates)
+        // Attempt to merge changes based on operation types
         if (localOp.type === 'update' && serverOp.type === 'update') {
+          // Both are updates: merge the data
           return {
             ...localOp,
             data: { ...serverOp.data, ...localOp.data },
           }
         }
-        // Fall back to last-write-wins for non-mergeable conflicts
-        return localOp.timestamp >= serverOp.timestamp ? localOp : serverOp
+        
+        // For create+create: merge the data from both
+        if (localOp.type === 'create' && serverOp.type === 'create') {
+          return {
+            ...localOp,
+            data: { ...serverOp.data, ...localOp.data },
+          }
+        }
+        
+        // For create+delete: prefer create (the entity exists)
+        if (localOp.type === 'create' && serverOp.type === 'delete') {
+          return localOp
+        }
+        
+        // For delete+create: prefer create (the entity exists)
+        if (localOp.type === 'delete' && serverOp.type === 'create') {
+          return serverOp
+        }
+        
+        // For update+delete: prefer update (keep the data)
+        if (localOp.type === 'update' && serverOp.type === 'delete') {
+          return localOp
+        }
+        
+        // For delete+update: prefer update (keep the data)
+        if (localOp.type === 'delete' && serverOp.type === 'update') {
+          return serverOp
+        }
+        
+        // Fall back to last-write-wins for any other combinations
+        // If timestamps are equal, use deviceId as deterministic tiebreaker
+        if (localOp.timestamp > serverOp.timestamp) {
+          return localOp
+        }
+        if (localOp.timestamp < serverOp.timestamp) {
+          return serverOp
+        }
+        // Timestamps are equal, use deviceId as tiebreaker
+        return localOp.deviceId > serverOp.deviceId ? localOp : serverOp
     }
   }
 

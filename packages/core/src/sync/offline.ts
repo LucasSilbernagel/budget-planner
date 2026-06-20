@@ -268,11 +268,17 @@ export class OfflineQueueManager {
    * Create a new OfflineQueueManager
    * @param userId - The user ID for this queue
    * @param config - Configuration options
+   * @param externalQueue - Optional external SyncQueue instance to use (for coordination with SynchronizationService)
    */
-  constructor(userId: string, config: OfflineQueueConfig = {}) {
+  constructor(
+    userId: string,
+    config: OfflineQueueConfig = {},
+    externalQueue?: SyncQueue
+  ) {
     this.config = { ...DEFAULT_CONFIG, ...config }
-    this.isOffline = typeof navigator !== 'undefined' ? !navigator.onLine : false
-    this.queue = new SyncQueue(userId, this.config.storage)
+    this.isOffline = typeof navigator !== 'undefined' ? !navigator.onLine : true
+    // Use external queue if provided, otherwise create a new one
+    this.queue = externalQueue ?? new SyncQueue(userId, this.config.storage)
   }
 
   /**
@@ -601,12 +607,16 @@ export class OfflineQueueManager {
 
 /**
  * Create an offline queue manager with default configuration
+ * @param userId - The user ID for this queue manager
+ * @param config - Optional configuration options
+ * @param externalQueue - Optional external SyncQueue instance for coordination
  */
 export function createOfflineQueueManager(
   userId: string,
-  config?: OfflineQueueConfig
+  config?: OfflineQueueConfig,
+  externalQueue?: SyncQueue
 ): OfflineQueueManager {
-  return new OfflineQueueManager(userId, config)
+  return new OfflineQueueManager(userId, config, externalQueue)
 }
 
 // ============================================================================
