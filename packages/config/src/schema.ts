@@ -16,7 +16,8 @@ export const envSchema = z.object({
   // Application
   PORT: z.coerce.number().default(3000),
 
-  // Paddle Configuration
+  // Paddle Configuration (UK-based - CLOUD Act compliant)
+  PADDLE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
   PADDLE_VENDOR_ID: z.string().optional(),
   PADDLE_API_KEY: z.string().optional(),
   PADDLE_PUBLIC_KEY: z.string().optional(),
@@ -59,6 +60,7 @@ export function resetConfig(): void {
 
 // Paddle-specific configuration
 export interface PaddleConfig {
+  environment: 'sandbox' | 'production'
   vendorId: string | undefined
   apiKey: string | undefined
   publicKey: string | undefined
@@ -77,6 +79,7 @@ export function getPaddleConfig(): PaddleConfig {
     !!env.PADDLE_PUBLIC_KEY
 
   return {
+    environment: env.PADDLE_ENVIRONMENT,
     vendorId: env.PADDLE_VENDOR_ID,
     apiKey: env.PADDLE_API_KEY,
     publicKey: env.PADDLE_PUBLIC_KEY,
@@ -96,12 +99,12 @@ export const APP_CONFIG = {
 } as const
 
 // Subscription status constants
+// Note: 'canceled' spelling used (not 'cancelled') to match database schema
 export const SUBSCRIPTION_STATUS = {
   FREE: 'free',
   ACTIVE: 'active',
-  CANCELLED: 'cancelled',
+  CANCELED: 'canceled',
   PAST_DUE: 'past_due',
-  UNPAID: 'unpaid',
 } as const
 
 // Currency constants

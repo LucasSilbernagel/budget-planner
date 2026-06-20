@@ -5,14 +5,14 @@
  * Implements the Paddle authentication flow for account creation and login.
  * 
  * Architecture: TanStack Start Server Functions with Paddle OAuth
- * 
- * Note: This is a placeholder implementation. Actual Paddle integration requires:
- * - Paddle SDK v3
- * - Paddle OAuth configuration
- * - Webhook handling for subscription status updates
+ * Data Sovereignty: All data stored in Scaleway EU region (NFR1, NFR2)
+ * Security: No US data residency, Paddle is UK-based
  */
 
 import { getPaddleConfig, type PaddleConfig } from '@budget-planner/config'
+import { db } from '@budget-planner/db'
+import { users } from '@budget-planner/db/src/schema'
+import { eq } from 'drizzle-orm'
 
 /**
  * Result type for API responses
@@ -34,12 +34,13 @@ export interface PaddleUser {
 
 /**
  * User session information
+ * userId matches the UUID type from database schema (Story 4-2)
  */
 export interface UserSession {
-  userId: number
+  userId: string
   email: string
   paddleId: string
-  subscriptionStatus: string
+  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled'
   currency: string
   isAuthenticated: boolean
 }
@@ -278,24 +279,49 @@ async function getPaddleUser(
 
 /**
  * Create or update user in database
+ * Uses Drizzle ORM with Scaleway PostgreSQL (EU region only)
  */
 async function createOrUpdateUser(
   paddleUser: PaddleUser
 ): Promise<UserSession> {
-  // Placeholder - implement actual database operations
-  // This would:
-  // 1. Check if user with paddleId exists
-  // 2. Create new user if not exists
-  // 3. Update existing user if needed
-  // 4. Return session information
+  // Check if user with this paddleId already exists
+  const existingUsers = await db
+    .select()
+    .from(users)
+    .where(eq(users.paddleId, paddleUser.id))
+    .limit(1)
   
-  // Simulate database operation
+  const existingUser = existingUsers[0]
+  
+  if (existingUser) {
+    // User already exists - return existing session
+    return {
+      userId: existingUser.id,
+      email: existingUser.email,
+      paddleId: existingUser.paddleId,
+      subscriptionStatus: existingUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
+      currency: existingUser.currency,
+      isAuthenticated: true,
+    }
+  }
+  
+  // Create new user with UUID
+  const [newUser] = await db
+    .insert(users)
+    .values({
+      email: paddleUser.email,
+      paddleId: paddleUser.id,
+      subscriptionStatus: 'free',
+      currency: 'NONE',
+    })
+    .returning()
+  
   return {
-    userId: 1, // In production, use actual database ID
-    email: paddleUser.email,
-    paddleId: paddleUser.id,
-    subscriptionStatus: 'free',
-    currency: 'USD',
+    userId: newUser.id,
+    email: newUser.email,
+    paddleId: newUser.paddleId,
+    subscriptionStatus: newUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
+    currency: newUser.currency,
     isAuthenticated: true,
   }
 }

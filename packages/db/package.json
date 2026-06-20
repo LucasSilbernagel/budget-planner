@@ -19,7 +19,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "drizzle-orm": "^0.30.0"
+    "@budget-planner/config": "workspace:*",
+    "drizzle-orm": "^0.30.0",
+    "pg": "^8.11.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
