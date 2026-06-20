@@ -33,6 +33,10 @@ npm-debug.log*
 dist/
 build/
 
+# TypeScript build cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
 # Database migrations
 migrations/
 
