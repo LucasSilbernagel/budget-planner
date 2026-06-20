@@ -102,14 +102,14 @@ pnpm --filter db db:migrate
   2. Update all foreign key references
 
 ### Data Sovereignty
-⚠️ **CRITICAL**: All database operations MUST use Scaleway PostgreSQL in EU region (Paris or Amsterdam)
+⚠️ **CRITICAL**: All database operations MUST use DanubeData PostgreSQL in EU region (Germany)
 - Zero US data residency (NFR1, NFR2)
 - Full CLOUD Act immunity
 
 ### Production Deployment
-For production, use the Scaleway connection string:
+For production, use the DanubeData connection string:
 ```bash
-SCALEWAY_DATABASE_URL=postgresql://user:password@host:port/database
+DANUBEDATA_DATABASE_URL=postgresql://user:password@host:port/database
 ```
 
 ## Testing

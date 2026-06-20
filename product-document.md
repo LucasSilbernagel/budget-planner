@@ -27,13 +27,13 @@ Budget Planner is a comprehensive financial management application designed to h
 | Tier | Features | Data Storage | Authentication |
 |------|----------|--------------|----------------|
 | **Free Tier** | Core budget tracking, local calculations | Client-side only (localStorage / IndexedDB) | ❌ Not required |
-| **Paid Tier** | Multi-device sync, custom profiles, premium forecasting | Server-side (Scaleway PostgreSQL) | ✅ Required |
+| **Paid Tier** | Multi-device sync, custom profiles, premium forecasting | Server-side (DanubeData PostgreSQL) | ✅ Required |
 
 ### 🛡️ Privacy & Legal Architecture
 
 #### Hosting & Compute
-- **Requirement:** All services, servers, and databases must be hosted on **Scaleway**
-- **Location:** European data centers (Paris or Amsterdam regions)
+- **Requirement:** All services, servers, and databases must be hosted on **DanubeData**
+- **Location:** European data centers (Germany)
 - **Purpose:** Full immunity from the US CLOUD Act
 - **Compliance:** US-sovereignty avoidance
 
@@ -61,7 +61,7 @@ budget-planner/
 ├── apps/
 │   └── web/                 # TanStack Start App (Frontend & Server Functions)
 ├── packages/
-│   ├── db/                  # Drizzle Schema, migrations, Scaleway DB client
+│   ├── db/                  # Drizzle Schema, migrations, DanubeData DB client
 │   └── config/              # Centralized Biome, Tailwind, TypeScript configs
 ├── pnpm-workspace.yaml
 └── package.json
@@ -88,7 +88,7 @@ budget-planner/
 | **API Layer** | Lightweight TypeScript service | Authenticated state syncing |
 | **Runtime** | Node.js / Bun | Fast execution |
 | **Database** | PostgreSQL | Relational data storage |
-| **Hosting** | Scaleway | European data centers |
+| **Hosting** | DanubeData | European data centers |
 | **ORM** | Drizzle ORM | TypeScript-first, lightweight SQL generation |
 
 ---
@@ -280,7 +280,7 @@ Target: FV × (r / 12) = Ir
 # 1. Install all monorepo dependencies
 pnpm install
 
-# 2. Spin up local Scaleway-compatible Postgres instance via Docker
+# 2. Spin up local DanubeData-compatible Postgres instance via Docker
 docker run --name budget-db \
   -e POSTGRES_PASSWORD=local_secret \
   -p 5432:1234 \
@@ -346,7 +346,7 @@ pnpm --filter web dev
 
 | Service | Provider | Region | Purpose |
 |---------|----------|--------|---------|
-| **Hosting** | Scaleway | EU (Paris/Amsterdam) | Database & Compute |
+| **Hosting** | DanubeData | EU (Germany) | Database & Compute |
 | **Payments** | Paddle | UK | Billing & Taxes |
 | **Ads** | EthicalAds | Germany/EU | Privacy-respecting ads |
 | **Frontend Host** | Netlify | Western Europe | Static hosting |
@@ -377,10 +377,10 @@ pnpm --filter web dev
 >
 > - **Architecture:** Monorepo with pnpm workspaces
 > - **Tech Stack:** TanStack Start, React 19, TypeScript, Drizzle ORM, PostgreSQL
-> - **Privacy:** Client-side only for free tier, Scaleway-hosted for paid tier
-> - **Compliance:** US-sovereignty avoidance (Scaleway EU, Paddle UK)
+> - **Privacy:** Client-side only for free tier, DanubeData-hosted for paid tier
+> - **Compliance:** US-sovereignty avoidance (DanubeData EU, Paddle UK)
 > - **Testing:** Vitest (unit), MSW (mock), Playwright (E2E)
-> - **Deployment:** Netlify (frontend), Scaleway (backend)
+> - **Deployment:** Netlify (frontend), DanubeData (backend)
 
 ---
 

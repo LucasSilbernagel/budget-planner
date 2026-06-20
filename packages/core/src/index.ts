@@ -31,3 +31,6 @@ export * from './finance/forecasting'
 
 // Currency formatting
 export * from './format/currency';
+
+// Synchronization service
+export * from './sync/index';

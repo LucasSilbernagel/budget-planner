@@ -169,7 +169,7 @@ So that I can monitor my investment and debt balances.
 **Backend Layer (for paid tier):**
 - **Server Functions:** TanStack Start Server Functions
 - **Service Layer:** Lightweight TypeScript service
-- **Database:** Scaleway PostgreSQL via Drizzle ORM
+- **Database:** DanubeData PostgreSQL via Drizzle ORM
 
 **Free Tier:**
 - Client-side only using localStorage and IndexedDB

@@ -6,3 +6,4 @@
  */
 
 export * from './useFinancialCalculations'
+export * from './useSync'

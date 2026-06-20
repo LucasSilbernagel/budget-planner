@@ -1,0 +1,317 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+  SynchronizationService,
+  createSynchronizationService,
+  SyncQueue,
+  createSyncQueue,
+  SyncStatus,
+} from '../index'
+import type { SyncOperation } from '../types'
+
+// Helper to generate test operations
+function createTestOperation(
+  overrides: Partial<SyncOperation> = {}
+): SyncOperation {
+  return {
+    id: `test-op-${Date.now()}`,
+    type: 'create',
+    entityType: 'incomeSource',
+    entityId: 'test-id',
+    data: { name: 'Test', amount: 1000 },
+    timestamp: Date.now(),
+    deviceId: 'test-device',
+    userId: 'test-user',
+    ...overrides,
+  }
+}
+
+describe('Synchronization Service', () => {
+  let service: SynchronizationService
+  const testUserId = 'test-user-123'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    service = createSynchronizationService(testUserId, {
+      autoSync: false,
+      debug: false,
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    service.destroy()
+  })
+
+  describe('Initialization', () => {
+    it('should create service with default configuration', () => {
+      const config = service.getConfig()
+      expect(config.conflictResolutionStrategy).toBe('last-write-wins')
+      expect(config.maxRetries).toBe(3)
+      expect(config.batchSize).toBe(50)
+    })
+
+    it('should generate a device ID', () => {
+      const deviceId = service.getDeviceId()
+      expect(deviceId).toBeTruthy()
+      expect(typeof deviceId).toBe('string')
+      expect(deviceId.startsWith('device-')).toBe(true)
+    })
+
+    it('should initialize with PENDING status', () => {
+      const state = service.getState()
+      expect(state.status).toBe(SyncStatus.PENDING)
+      expect(state.pendingOperations).toHaveLength(0)
+    })
+  })
+
+  describe('Sync Queue Operations', () => {
+    it('should queue create operation', async () => {
+      const operation = await service.queueCreate(
+        'incomeSource',
+        'income-1',
+        { name: 'Test Income', amount: 1000 },
+        testUserId
+      )
+
+      expect(operation.type).toBe('create')
+      expect(operation.entityType).toBe('incomeSource')
+      expect(operation.entityId).toBe('income-1')
+
+      const state = service.getState()
+      expect(state.pendingOperations).toHaveLength(1)
+    })
+
+    it('should queue update operation', async () => {
+      const operation = await service.queueUpdate(
+        'expense',
+        'expense-1',
+        { name: 'Updated Expense', amount: 500 },
+        testUserId,
+        1
+      )
+
+      expect(operation.type).toBe('update')
+      expect(operation.version).toBe(1)
+
+      const state = service.getState()
+      expect(state.pendingOperations).toHaveLength(1)
+    })
+
+    it('should queue delete operation', async () => {
+      const operation = await service.queueDelete(
+        'savingsGoal',
+        'goal-1',
+        testUserId
+      )
+
+      expect(operation.type).toBe('delete')
+      expect(operation.data).toEqual({})
+
+      const state = service.getState()
+      expect(state.pendingOperations).toHaveLength(1)
+    })
+  })
+
+  describe('Conflict Detection', () => {
+    it('should detect conflict between update and delete on same entity', () => {
+      const localOp = createTestOperation({
+        type: 'update',
+        entityType: 'expense',
+        entityId: 'expense-1',
+      })
+      
+      const serverOp = createTestOperation({
+        type: 'delete',
+        entityType: 'expense',
+        entityId: 'expense-1',
+      })
+
+      const result = service.detectConflict(localOp, serverOp)
+      expect(result.hasConflict).toBe(true)
+      expect(result.conflictType).toBe('update-delete')
+    })
+
+    it('should detect conflict when updates have different data', () => {
+      const localOp = createTestOperation({
+        type: 'update',
+        entityType: 'balanceTracking',
+        entityId: 'balance-1',
+        data: { name: 'Local Balance', amount: 1000 },
+      })
+      
+      const serverOp = createTestOperation({
+        type: 'update',
+        entityType: 'balanceTracking',
+        entityId: 'balance-1',
+        data: { name: 'Server Balance', amount: 2000 },
+      })
+
+      const result = service.detectConflict(localOp, serverOp)
+      expect(result.hasConflict).toBe(true)
+      expect(result.conflictType).toBe('version-mismatch')
+    })
+
+    it('should NOT detect conflict for different entities', () => {
+      const localOp = createTestOperation({ entityId: 'income-1' })
+      const serverOp = createTestOperation({ entityId: 'income-2' })
+      const result = service.detectConflict(localOp, serverOp)
+      expect(result.hasConflict).toBe(false)
+    })
+
+    it('should NOT detect conflict for different entity types', () => {
+      const localOp = createTestOperation({ entityType: 'incomeSource', entityId: '1' })
+      const serverOp = createTestOperation({ entityType: 'expense', entityId: '1' })
+      const result = service.detectConflict(localOp, serverOp)
+      expect(result.hasConflict).toBe(false)
+    })
+  })
+
+  describe('Conflict Resolution', () => {
+    it('should resolve with last-write-wins strategy (local newer)', () => {
+      const localOp = createTestOperation({ type: 'update', timestamp: 2000 })
+      const serverOp = createTestOperation({ type: 'delete', timestamp: 1000 })
+      const resolved = service.resolveConflict(localOp, serverOp)
+      expect(resolved).toEqual(localOp)
+    })
+
+    it('should resolve with server-wins strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'server-wins',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({ type: 'update', timestamp: 3000 })
+      const serverOp = createTestOperation({ type: 'delete', timestamp: 1000 })
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved).toEqual(serverOp)
+      serviceWithStrategy.destroy()
+    })
+
+    it('should resolve with client-wins strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'client-wins',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({ type: 'update', timestamp: 1000 })
+      const serverOp = createTestOperation({ type: 'delete', timestamp: 3000 })
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved).toEqual(localOp)
+      serviceWithStrategy.destroy()
+    })
+
+    it('should merge conflicts when using merge strategy', () => {
+      const serviceWithStrategy = createSynchronizationService(testUserId, {
+        conflictResolutionStrategy: 'merge',
+        autoSync: false,
+      })
+
+      const localOp = createTestOperation({
+        type: 'update',
+        data: { name: 'Local', value: 100 },
+        timestamp: 1000,
+      })
+      const serverOp = createTestOperation({
+        type: 'update',
+        data: { name: 'Server', other: 200 },
+        timestamp: 2000,
+      })
+
+      const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
+      expect(resolved.data).toEqual({ name: 'Local', value: 100, other: 200 })
+      serviceWithStrategy.destroy()
+    })
+  })
+
+  describe('Sync State', () => {
+    it('should return current state', () => {
+      const state = service.getState()
+      expect(state).toHaveProperty('status')
+      expect(state).toHaveProperty('isOnline')
+      expect(state).toHaveProperty('pendingOperations')
+    })
+
+    it('should update state when operations are queued', async () => {
+      await service.queueCreate('incomeSource', '1', {}, testUserId)
+      await service.queueCreate('incomeSource', '2', {}, testUserId)
+      const state = service.getState()
+      expect(state.pendingOperations).toHaveLength(2)
+    })
+  })
+
+  describe('SyncQueue', () => {
+    it('should add operations to queue', async () => {
+      const queue = createSyncQueue(testUserId)
+      const operation = createTestOperation()
+      await queue.add(operation)
+      expect(queue.getAll()).toHaveLength(1)
+    })
+
+    it('should add multiple operations', async () => {
+      const queue = createSyncQueue(testUserId)
+      const op1 = createTestOperation({ id: 'op-1' })
+      const op2 = createTestOperation({ id: 'op-2' })
+      await queue.addBatch([op1, op2])
+      expect(queue.getAll()).toHaveLength(2)
+    })
+
+    it('should remove operations by ID', async () => {
+      const queue = createSyncQueue(testUserId)
+      const operation = createTestOperation({ id: 'op-to-remove' })
+      await queue.add(operation)
+      expect(queue.getCount()).toBe(1)
+      const removed = await queue.remove('op-to-remove')
+      expect(removed).toBe(true)
+      expect(queue.getCount()).toBe(0)
+    })
+
+    it('should clear all operations', async () => {
+      const queue = createSyncQueue(testUserId)
+      await queue.add(createTestOperation({ id: 'op-1' }))
+      await queue.add(createTestOperation({ id: 'op-2' }))
+      await queue.clear()
+      expect(queue.getCount()).toBe(0)
+    })
+
+    it('should get operations by entity type', async () => {
+      const queue = createSyncQueue(testUserId)
+      await queue.add(createTestOperation({ entityType: 'incomeSource' }))
+      await queue.add(createTestOperation({ entityType: 'expense' }))
+      await queue.add(createTestOperation({ entityType: 'incomeSource' }))
+      const incomeOps = queue.getByEntityType('incomeSource')
+      expect(incomeOps).toHaveLength(2)
+    })
+
+    it('should check if queue is empty', async () => {
+      const queue = createSyncQueue(testUserId)
+      expect(queue.isEmpty()).toBe(true)
+      await queue.add(createTestOperation())
+      expect(queue.isEmpty()).toBe(false)
+    })
+
+    it('should dequeue operations (FIFO)', async () => {
+      const queue = createSyncQueue(testUserId)
+      const op1 = createTestOperation({ id: 'op-1' })
+      const op2 = createTestOperation({ id: 'op-2' })
+      await queue.addBatch([op1, op2])
+      const dequeued1 = await queue.dequeue()
+      expect(dequeued1?.id).toBe('op-1')
+      expect(queue.getCount()).toBe(1)
+      const dequeued2 = await queue.dequeue()
+      expect(dequeued2?.id).toBe('op-2')
+      expect(queue.getCount()).toBe(0)
+    })
+
+    it('should get ready operations sorted by timestamp', async () => {
+      const queue = createSyncQueue(testUserId)
+      await queue.add(createTestOperation({ timestamp: 3000 }))
+      await queue.add(createTestOperation({ timestamp: 1000 }))
+      await queue.add(createTestOperation({ timestamp: 2000 }))
+      const ready = queue.getReadyOperations()
+      expect(ready).toHaveLength(3)
+      expect(ready[0].timestamp).toBe(1000)
+      expect(ready[1].timestamp).toBe(2000)
+      expect(ready[2].timestamp).toBe(3000)
+    })
+  })
+})
