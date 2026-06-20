@@ -19,12 +19,14 @@ import type {
   SyncState,
   SyncStatus,
   SyncResult,
+  ProcessOperationFn,
 } from '@budget-planner/core/sync'
 import {
   SynchronizationService,
   createSynchronizationService,
   SyncStatus as SyncStatusEnum,
 } from '@budget-planner/core/sync'
+import { processSyncOperation } from '../server/functions/sync'
 
 // ============================================================================
 // Types
@@ -233,9 +235,11 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
 
   // Initialize sync service on first render
   useEffect(() => {
-    // Create the synchronization service
+    // Create the synchronization service with custom processOperation
+    // that calls the server sync function
     syncServiceRef.current = createSynchronizationService(userId, {
       autoSync: false, // We'll handle auto-sync ourselves
+      processOperation: processSyncOperation as ProcessOperationFn,
       ...syncConfig,
     })
 

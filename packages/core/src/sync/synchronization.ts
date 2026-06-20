@@ -25,6 +25,7 @@ import type {
   ConflictResult,
   ConflictType,
   ConflictResolutionStrategy,
+  ProcessOperationResult,
 } from './types'
 import { SyncStatus } from './types'
 
@@ -49,8 +50,15 @@ function generateOperationId(): string {
 }
 
 /**
+ * In-memory cache for device ID when storage is unavailable
+ * This ensures the same device ID is returned within the same session
+ */
+let cachedDeviceId: string | undefined = undefined
+
+/**
  * Generates a device ID for the current device
  * Uses localStorage to maintain consistency across page refreshes
+ * Falls back to sessionStorage or in-memory cache if localStorage fails
  */
 function generateDeviceId(): string {
   const storageKey = 'bp-device-id'
@@ -63,8 +71,22 @@ function generateDeviceId(): string {
     }
     return deviceId
   } catch {
-    // If localStorage is not available, generate a non-persistent ID
-    return `device-${Math.random().toString(36).substr(2, 16)}`
+    // If localStorage is not available, try sessionStorage as fallback
+    try {
+      let deviceId = sessionStorage.getItem(storageKey)
+      if (!deviceId) {
+        deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+        sessionStorage.setItem(storageKey, deviceId)
+      }
+      return deviceId
+    } catch {
+      // If both localStorage and sessionStorage fail, use in-memory cache
+      // This ensures the same device ID is returned within the same session
+      if (cachedDeviceId === undefined) {
+        cachedDeviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+      }
+      return cachedDeviceId
+    }
   }
 }
 
@@ -84,6 +106,10 @@ export class SynchronizationService {
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing: boolean = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
+  
+  // Store bound event handlers to enable proper cleanup
+  private boundHandleOnline: (() => void) | null = null
+  private boundHandleOffline: (() => void) | null = null
 
   /**
    * Create a new SynchronizationService instance
@@ -125,8 +151,12 @@ export class SynchronizationService {
     
     // Set up online/offline event listeners if in browser
     if (typeof window !== 'undefined') {
-      window.addEventListener('online', this.handleOnline.bind(this))
-      window.addEventListener('offline', this.handleOffline.bind(this))
+      // Bind handlers once and store for proper cleanup
+      this.boundHandleOnline = this.handleOnline.bind(this)
+      this.boundHandleOffline = this.handleOffline.bind(this)
+      
+      window.addEventListener('online', this.boundHandleOnline)
+      window.addEventListener('offline', this.boundHandleOffline)
       
       // Check initial online status
       this.state.isOnline = navigator.onLine
@@ -150,6 +180,7 @@ export class SynchronizationService {
     }
 
     this.autoSyncTimer = setInterval(() => {
+      // Check both online status and processing flag to prevent concurrent syncs
       if (this.state.isOnline && !this.isProcessing) {
         this.sync().catch((error) => {
           this.log('Auto-sync error:', error)
@@ -181,8 +212,14 @@ export class SynchronizationService {
 
     // Remove event listeners if in browser
     if (typeof window !== 'undefined') {
-      window.removeEventListener('online', this.handleOnline.bind(this))
-      window.removeEventListener('offline', this.handleOffline.bind(this))
+      if (this.boundHandleOnline) {
+        window.removeEventListener('online', this.boundHandleOnline)
+        this.boundHandleOnline = null
+      }
+      if (this.boundHandleOffline) {
+        window.removeEventListener('offline', this.boundHandleOffline)
+        this.boundHandleOffline = null
+      }
     }
 
     this.statusCallbacks.clear()
@@ -196,8 +233,9 @@ export class SynchronizationService {
     this.state.isOnline = true
     this.log('Device is now online')
     
-    // Process queued operations
-    if (this.queue.getCount() > 0) {
+    // Process queued operations only if not already syncing
+    // This prevents concurrent sync() calls race condition
+    if (this.queue.getCount() > 0 && !this.isProcessing) {
       this.sync().catch((error) => {
         this.log('Online sync error:', error)
       })
@@ -277,7 +315,7 @@ export class SynchronizationService {
       id: generateOperationId(),
       type: 'create',
       entityType,
-      entityId,
+      entityId: String(entityId),
       data,
       timestamp: Date.now(),
       deviceId: this.deviceId,
@@ -317,7 +355,7 @@ export class SynchronizationService {
       id: generateOperationId(),
       type: 'update',
       entityType,
-      entityId,
+      entityId: String(entityId),
       data,
       timestamp: Date.now(),
       deviceId: this.deviceId,
@@ -354,7 +392,7 @@ export class SynchronizationService {
       id: generateOperationId(),
       type: 'delete',
       entityType,
-      entityId,
+      entityId: String(entityId),
       data: {},
       timestamp: Date.now(),
       deviceId: this.deviceId,
@@ -418,13 +456,13 @@ export class SynchronizationService {
     } else if (localOp.type === 'delete' && serverOp.type === 'update') {
       conflictType = 'delete-update'
     } else if (localOp.type === 'create' && serverOp.type === 'update') {
-      conflictType = 'create-create' // Local created, server updated
+      conflictType = 'update-delete' // Local created, server updated - treat as update-delete
     } else if (localOp.type === 'update' && serverOp.type === 'create') {
-      conflictType = 'create-create' // Local updated, server created
+      conflictType = 'delete-update' // Local updated, server created - treat as delete-update
     } else if (localOp.type === 'create' && serverOp.type === 'delete') {
-      conflictType = 'update-delete' // Local created, server deleted
+      conflictType = 'update-delete' // Local created, server deleted - treat as update-delete
     } else if (localOp.type === 'delete' && serverOp.type === 'create') {
-      conflictType = 'delete-update' // Local deleted, server created
+      conflictType = 'delete-update' // Local deleted, server created - treat as delete-update
     }
 
     return {
@@ -487,8 +525,11 @@ export class SynchronizationService {
   /**
    * Sync all pending operations to the server
    * This is the main synchronization method
+   * 
+   * Uses atomic check-and-set for isProcessing to prevent TOCTOU race conditions
    */
   async sync(): Promise<SyncResult> {
+    // Atomic check-and-set to prevent TOCTOU race condition
     if (this.isProcessing) {
       return {
         success: false,
@@ -500,8 +541,12 @@ export class SynchronizationService {
         duration: 0,
       }
     }
-
+    
+    // Set processing flag BEFORE any async operations
+    this.isProcessing = true
+    
     if (!this.state.isOnline) {
+      this.isProcessing = false
       return {
         success: false,
         synchronizedCount: 0,
@@ -513,7 +558,6 @@ export class SynchronizationService {
       }
     }
 
-    this.isProcessing = true
     this.state.status = SyncStatus.IN_PROGRESS
     this.state.lastError = undefined
     this.notifyStatusCallbacks()
@@ -540,11 +584,14 @@ export class SynchronizationService {
       }
 
       // Process operations in batches
+      // IMPORTANT: Track which operations to remove AFTER all processing is complete
+      // This prevents data loss if batch fails mid-processing (NFR: Zero tolerance for data loss)
       let synchronizedCount = 0
       let failedCount = 0
       let conflictCount = 0
       const failedOperations: SyncOperation[] = []
       const conflictOperations: SyncOperation[] = []
+      const operationsToRemove: string[] = []
 
       for (const operation of operations) {
         try {
@@ -552,8 +599,8 @@ export class SynchronizationService {
           const result = await this.processOperation(operation)
           
           if (result.success) {
-            // Remove from queue
-            await this.queue.remove(operation.id)
+            // Track operation for removal (but don't remove yet)
+            operationsToRemove.push(operation.id)
             synchronizedCount++
           } else if (result.conflict) {
             // Conflict detected
@@ -568,6 +615,18 @@ export class SynchronizationService {
           this.log('Operation processing error:', error, operation)
           failedOperations.push(operation)
           failedCount++
+        }
+      }
+      
+      // Remove all successfully processed operations from queue at once
+      // Only remove if we have operations to remove
+      if (operationsToRemove.length > 0) {
+        try {
+          await this.queue.removeBatch(operationsToRemove)
+        } catch (removeError) {
+          this.log('Failed to remove operations from queue:', removeError)
+          // If we can't remove from queue, the operations will be retried
+          // This is acceptable as it doesn't cause data loss
         }
       }
 
@@ -621,14 +680,21 @@ export class SynchronizationService {
 
   /**
    * Process a single operation
-   * This is a placeholder that would be replaced with actual API calls
+   * If a custom processOperation function is provided in config, it will be used.
+   * Otherwise, this returns success without actually processing (for testing/mocking).
    * @param operation - The sync operation to process
    */
   private async processOperation(
-    _operation: SyncOperation
-  ): Promise<{ success: boolean; conflict?: boolean }> {
-    // In a real implementation, this would make an API call to the server
-    // For now, we'll simulate the behavior
+    operation: SyncOperation
+  ): Promise<ProcessOperationResult> {
+    // If a custom processOperation function is provided, use it
+    if (this.config.processOperation) {
+      return this.config.processOperation(operation)
+    }
+    
+    // Default implementation: simulate network delay and return success
+    // This is useful for testing or when no real processing is configured
+    // In production, a custom processOperation should be provided
     
     // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 100))

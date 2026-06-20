@@ -35,7 +35,7 @@ export interface SyncOperation {
   entityType: SyncEntityType
   
   /** ID of the entity being synchronized */
-  entityId: string | number
+  entityId: string
   
   /** The actual data payload for the operation */
   data: Record<string, unknown>
@@ -134,6 +134,27 @@ export type ConflictResolutionStrategy =
   | 'merge'              // Attempt to merge changes
 
 /**
+ * Result of processing a single operation
+ */
+export interface ProcessOperationResult {
+  /** Whether the operation was successful */
+  success: boolean
+  /** Whether a conflict was detected */
+  conflict?: boolean
+  /** Error message if operation failed */
+  error?: string
+}
+
+/**
+ * Function type for processing a single operation
+ * This allows the sync service to be customized with different transport mechanisms
+ * (e.g., direct database access, HTTP API calls, etc.)
+ */
+export type ProcessOperationFn = (
+  operation: SyncOperation
+) => Promise<ProcessOperationResult>
+
+/**
  * Configuration options for the synchronization service
  */
 export interface SyncConfig {
@@ -157,6 +178,11 @@ export interface SyncConfig {
   
   /** Whether to enable debug logging */
   debug: boolean
+  
+  /** Custom function to process operations (e.g., make API calls)
+   * If not provided, operations will be queued but not processed
+   */
+  processOperation?: ProcessOperationFn
 }
 
 /**

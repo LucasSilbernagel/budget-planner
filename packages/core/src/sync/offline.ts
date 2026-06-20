@@ -128,7 +128,9 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
   async loadQueue(userId: string): Promise<SyncOperation[]> {
     try {
       if (!this.dbPromise) {
-        return []
+        // IndexedDB not available, try localStorage
+        const storage = new LocalStorageSyncQueueStorage()
+        return storage.loadQueue(userId)
       }
 
       const db = await this.dbPromise
@@ -146,16 +148,27 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
           reject(request.error)
         }
       })
-    } catch {
-      // Fallback to localStorage if IndexedDB fails
-      const storage = new LocalStorageSyncQueueStorage()
-      return storage.loadQueue(userId)
+    } catch (error) {
+      // Try localStorage fallback
+      try {
+        const storage = new LocalStorageSyncQueueStorage()
+        return storage.loadQueue(userId)
+      } catch (localStorageError) {
+        // Both storage mechanisms failed - DO NOT silently lose data
+        // Throw error so caller can handle appropriately
+        throw new Error(
+          `Failed to load sync queue from both IndexedDB and localStorage: ${error}, ${localStorageError}`
+        )
+      }
     }
   }
 
   async saveQueue(userId: string, queue: SyncOperation[]): Promise<void> {
     try {
       if (!this.dbPromise) {
+        // IndexedDB not available, try localStorage
+        const storage = new LocalStorageSyncQueueStorage()
+        await storage.saveQueue(userId, queue)
         return
       }
 
@@ -174,16 +187,27 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
           reject(request.error)
         }
       })
-    } catch {
-      // Fallback to localStorage if IndexedDB fails
-      const storage = new LocalStorageSyncQueueStorage()
-      await storage.saveQueue(userId, queue)
+    } catch (error) {
+      // Try localStorage fallback
+      try {
+        const storage = new LocalStorageSyncQueueStorage()
+        await storage.saveQueue(userId, queue)
+      } catch (localStorageError) {
+        // Both storage mechanisms failed - DO NOT silently lose data
+        // Throw error so caller can handle appropriately
+        throw new Error(
+          `Failed to save sync queue to both IndexedDB and localStorage: ${error}, ${localStorageError}`
+        )
+      }
     }
   }
 
   async clearQueue(userId: string): Promise<void> {
     try {
       if (!this.dbPromise) {
+        // IndexedDB not available, try localStorage
+        const storage = new LocalStorageSyncQueueStorage()
+        await storage.clearQueue(userId)
         return
       }
 
@@ -202,10 +226,17 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
           reject(request.error)
         }
       })
-    } catch {
-      // Fallback to localStorage if IndexedDB fails
-      const storage = new LocalStorageSyncQueueStorage()
-      await storage.clearQueue(userId)
+    } catch (error) {
+      // Try localStorage fallback
+      try {
+        const storage = new LocalStorageSyncQueueStorage()
+        await storage.clearQueue(userId)
+      } catch (localStorageError) {
+        // Log error but don't throw - clearing is less critical
+        console.error(
+          `Failed to clear sync queue from both IndexedDB and localStorage: ${error}, ${localStorageError}`
+        )
+      }
     }
   }
 }
@@ -228,6 +259,10 @@ export class OfflineQueueManager {
   private statusCallbacks: Set<OfflineStatusCallback> = new Set()
   private processingCallbacks: Set<QueueProcessingCallback> = new Set()
   private notificationCallbacks: Set<SyncNotificationCallback> = new Set()
+  
+  // Store bound event handlers to enable proper cleanup
+  private boundHandleOnline: (() => void) | null = null
+  private boundHandleOffline: (() => void) | null = null
 
   /**
    * Create a new OfflineQueueManager
@@ -250,8 +285,12 @@ export class OfflineQueueManager {
 
     // Set up online/offline event listeners if in browser
     if (typeof window !== 'undefined') {
-      window.addEventListener('online', this.handleOnline.bind(this))
-      window.addEventListener('offline', this.handleOffline.bind(this))
+      // Bind handlers once and store for proper cleanup
+      this.boundHandleOnline = this.handleOnline.bind(this)
+      this.boundHandleOffline = this.handleOffline.bind(this)
+      
+      window.addEventListener('online', this.boundHandleOnline)
+      window.addEventListener('offline', this.boundHandleOffline)
       
       // Check initial online status
       this.isOffline = !navigator.onLine
@@ -272,8 +311,14 @@ export class OfflineQueueManager {
     }
 
     if (typeof window !== 'undefined') {
-      window.removeEventListener('online', this.handleOnline.bind(this))
-      window.removeEventListener('offline', this.handleOffline.bind(this))
+      if (this.boundHandleOnline) {
+        window.removeEventListener('online', this.boundHandleOnline)
+        this.boundHandleOnline = null
+      }
+      if (this.boundHandleOffline) {
+        window.removeEventListener('offline', this.boundHandleOffline)
+        this.boundHandleOffline = null
+      }
     }
 
     this.statusCallbacks.clear()
@@ -308,12 +353,14 @@ export class OfflineQueueManager {
 
   /**
    * Process the queue when online
+   * Uses atomic check-and-set for processing flag to prevent TOCTOU race
    */
   async processQueue(): Promise<void> {
     if (this.isOffline || this.processing) {
       return
     }
-
+    
+    // Set processing flag BEFORE any async operations to prevent TOCTOU
     this.processing = true
     this.retryCount = 0
     this.notifyProcessingCallbacks()
@@ -366,17 +413,26 @@ export class OfflineQueueManager {
   }
 
   /**
-   * Simulate sync operation (placeholder for actual API call)
-   * @param _operation - The sync operation (unused in simulation)
+   * Process a sync operation
+   * This method should be overridden or configured with a real implementation
+   * that makes API calls to the server.
+   * 
+   * Currently throws an error as the stub implementation violates NFR requirements.
+   * 
+   * @param _operation - The sync operation to process
+   * @throws Error - Always throws as this is a stub that needs real implementation
    */
   private async simulateSyncOperation(_operation: SyncOperation): Promise<void> {
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // This is a STUB that needs to be replaced with real API calls
+    // The current implementation violates:
+    // - AC-1, AC-2, AC-3 (data must be saved to DanubeData PostgreSQL)
+    // - NFR1, NFR2 (Zero US data residency)
+    // - FR16 (Paid tier requires server-side sync)
     
-    // Simulate random failures for testing retry logic
-    if (Math.random() < 0.1) { // 10% failure rate for testing
-      throw new Error('Simulated sync failure')
-    }
+    throw new Error(
+      'simulateSyncOperation is a stub and must be replaced with real API calls to DanubeData PostgreSQL. ' +
+      'This violates NFR: Zero tolerance for data loss and Zero US data residency.'
+    )
   }
 
   /**

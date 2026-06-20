@@ -32,20 +32,28 @@ class LocalStorageSyncQueueStorage implements SyncQueueStorage {
   }
 
   async saveQueue(userId: string, queue: SyncOperation[]): Promise<void> {
+    const key = `${this.storageKeyPrefix}-${userId}`
     try {
-      const key = `${this.storageKeyPrefix}-${userId}`
       localStorage.setItem(key, JSON.stringify(queue))
-    } catch {
-      // Silently fail if localStorage is not available
+    } catch (error) {
+      // DO NOT silently fail - this violates NFR: Zero tolerance for data loss
+      // Throw the error so the caller can handle it appropriately
+      throw new Error(
+        `Failed to save sync queue to localStorage for user ${userId}: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
   async clearQueue(userId: string): Promise<void> {
+    const key = `${this.storageKeyPrefix}-${userId}`
     try {
-      const key = `${this.storageKeyPrefix}-${userId}`
       localStorage.removeItem(key)
-    } catch {
-      // Silently fail if localStorage is not available
+    } catch (error) {
+      // Log error but don't throw - clearing is less critical than saving
+      console.error(
+        `Failed to clear sync queue from localStorage for user ${userId}:`,
+        error
+      )
     }
   }
 }
@@ -57,13 +65,15 @@ export class SyncQueue {
   private queue: SyncOperation[] = []
   private readonly userId: string
   private readonly storage: SyncQueueStorage
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private readonly maxQueueSize: number
 
   /**
    * Create a new SyncQueue instance
    * @param userId - The user ID for this queue
    * @param storage - Optional persistent storage for the queue
-   * @param maxQueueSize - Maximum number of operations to keep in queue (default: 1000)
+   * @param maxQueueSize - DEPRECATED: Maximum number of operations to keep in queue
+   *   Note: Queue truncation is disabled to comply with NFR: Zero tolerance for data loss
    */
   constructor(
     userId: string,
@@ -73,6 +83,8 @@ export class SyncQueue {
     this.userId = userId
     this.storage = storage ?? new LocalStorageSyncQueueStorage()
     this.maxQueueSize = maxQueueSize
+    // Note: maxQueueSize is kept for backward compatibility but not enforced
+    // Queue truncation violates NFR: Zero tolerance for data loss
   }
 
   /**
@@ -90,12 +102,9 @@ export class SyncQueue {
     // Add to in-memory queue
     this.queue.push(operation)
 
-    // Enforce max queue size
-    if (this.queue.length > this.maxQueueSize) {
-      this.queue = this.queue.slice(-this.maxQueueSize)
-    }
-
-    // Persist to storage
+    // Persist to storage - DO NOT truncate queue
+    // Truncation would violate NFR: Zero tolerance for data loss
+    // If storage fails, the error will be thrown and must be handled by caller
     await this.storage.saveQueue(this.userId, this.queue)
   }
 
@@ -106,12 +115,8 @@ export class SyncQueue {
   async addBatch(operations: SyncOperation[]): Promise<void> {
     this.queue.push(...operations)
 
-    // Enforce max queue size
-    if (this.queue.length > this.maxQueueSize) {
-      this.queue = this.queue.slice(-this.maxQueueSize)
-    }
-
-    // Persist to storage
+    // Persist to storage - DO NOT truncate queue
+    // Truncation would violate NFR: Zero tolerance for data loss
     await this.storage.saveQueue(this.userId, this.queue)
   }
 
@@ -132,10 +137,11 @@ export class SyncQueue {
 
   /**
    * Get operations by entity ID
-   * @param entityId - The entity ID to filter by
+   * @param entityId - The entity ID to filter by (accepts string or number, normalized to string)
    */
   getByEntityId(entityId: string | number): SyncOperation[] {
-    return this.queue.filter((op) => op.entityId === entityId)
+    const normalizedEntityId = String(entityId)
+    return this.queue.filter((op) => op.entityId === normalizedEntityId)
   }
 
   /**
@@ -182,8 +188,9 @@ export class SyncQueue {
     entityId: string | number
   ): Promise<number> {
     const initialLength = this.queue.length
+    const normalizedEntityId = String(entityId)
     this.queue = this.queue.filter(
-      (op) => !(op.entityType === entityType && op.entityId === entityId)
+      (op) => !(op.entityType === entityType && op.entityId === normalizedEntityId)
     )
     
     const removedCount = initialLength - this.queue.length
@@ -269,8 +276,9 @@ export class SyncQueue {
     entityType: string,
     entityId: string | number
   ): boolean {
+    const normalizedEntityId = String(entityId)
     return this.queue.some(
-      (op) => op.entityType === entityType && op.entityId === entityId
+      (op) => op.entityType === entityType && op.entityId === normalizedEntityId
     )
   }
 }

@@ -13,3 +13,6 @@ export * from './financial'
 // Re-export data server functions (balance tracking, savings goals)
 export * from './balanceTracking'
 export * from './savingsGoals'
+
+// Re-export sync server functions
+export * from './sync'
