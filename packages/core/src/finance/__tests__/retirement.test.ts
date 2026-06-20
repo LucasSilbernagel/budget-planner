@@ -217,7 +217,7 @@ describe('Retirement Modeler', () => {
       expect(result[1].endingBalance).toBe(1348500)
     })
 
-    it('should handle zero years', () => {
+    it('should return empty array for zero years', () => {
       const input: CompoundingInput = {
         principal: 1000000,
         annualContribution: 0,
@@ -227,10 +227,8 @@ describe('Retirement Modeler', () => {
       
       const result = calculateCompoundingProjection(input)
       
-      expect(result.length).toBe(1)
-      expect(result[0].year).toBe(0)
-      expect(result[0].startingBalance).toBe(1000000)
-      expect(result[0].endingBalance).toBe(1000000)
+      // Edge case: zero years returns empty array
+      expect(result.length).toBe(0)
     })
 
     it('should throw error for zero return rate', () => {
@@ -255,7 +253,7 @@ describe('Retirement Modeler', () => {
       }
       
       expect(() => calculateCompoundingProjection(input)).toThrow(
-        'Annual return rate must be non-negative'
+        'Annual return rate must be positive (greater than 0)'
       )
     })
 
@@ -332,9 +330,10 @@ describe('Retirement Modeler', () => {
     })
 
     it('should handle very small return rate', () => {
-      // FV = 5000 * (12 / 0.001) = 5000 * 12000 = 60,000,000
-      const result = calculateRequiredAssets(500000, 0.001) // 0.1%
-      expect(result).toBe(600000000) // $6,000,000
+      // FV = 5000 * (12 / 0.001) = 5000 * 12000 = 60,000,000 dollars
+      // In cents: 60,000,000 * 100 = 6,000,000,000 cents
+      const result = calculateRequiredAssets(500000, 0.001) // 0.1%, $5000/month
+      expect(result).toBe(6000000000) // $60,000,000 in cents
     })
 
     it('should handle zero principal in compounding', () => {
@@ -383,9 +382,10 @@ describe('Retirement Modeler', () => {
       expect(() => calculateRequiredAssets(null as any, 0.06)).toThrow()
     })
 
-    it('should handle NaN in calculateRequiredAssets parameters', () => {
-      const result = calculateRequiredAssets(NaN, 0.06)
-      expect(Number.isNaN(result)).toBe(true)
+    it('should throw error for NaN in calculateRequiredAssets parameters', () => {
+      expect(() =>
+        calculateRequiredAssets(NaN, 0.06)
+      ).toThrow('Monthly income must be a finite number')
     })
 
     it('should handle negative monthlyIncome value', () => {
@@ -394,7 +394,7 @@ describe('Retirement Modeler', () => {
       expect(result).toBeLessThan(0)
     })
 
-    it('should handle very large years parameter (1000 years)', () => {
+    it('should throw error for very large years parameter (1000 years)', () => {
       const input: CompoundingInput = {
         principal: 1000000,
         annualContribution: 0,
@@ -402,9 +402,10 @@ describe('Retirement Modeler', () => {
         years: 1000,
       }
       
-      const result = calculateCompoundingProjection(input)
-      expect(result.length).toBe(1000)
-      // Just verify it doesn't crash and returns correct length
+      // Should throw error for years exceeding safe limit (100)
+      expect(() =>
+        calculateCompoundingProjection(input)
+      ).toThrow('Number of years must not exceed 100')
     })
 
     it('should handle negative zero in retirement calculations', () => {

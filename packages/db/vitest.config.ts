@@ -6,6 +6,7 @@ export default defineConfig({
     // environment: 'node', // Default for non-DOM tests
     globals: true,
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
+    setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

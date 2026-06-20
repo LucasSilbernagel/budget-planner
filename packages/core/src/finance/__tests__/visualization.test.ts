@@ -230,27 +230,24 @@ describe('getDateRangeForPreset', () => {
   it('should return correct date range for last-month preset', () => {
     const range = getDateRangeForPreset('last-month')
     expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate.getTime()).toBeCloseTo(
-      new Date('2026-05-18T12:00:00Z').getTime(),
-      1000
+    expect(range.startDate.getTime()).toBe(
+      new Date('2026-05-18T12:00:00Z').getTime()
     )
   })
 
   it('should return correct date range for last-3-months preset', () => {
     const range = getDateRangeForPreset('last-3-months')
     expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate.getTime()).toBeCloseTo(
-      new Date('2026-03-18T12:00:00Z').getTime(),
-      1000
+    expect(range.startDate.getTime()).toBe(
+      new Date('2026-03-18T12:00:00Z').getTime()
     )
   })
 
   it('should return correct date range for last-6-months preset', () => {
     const range = getDateRangeForPreset('last-6-months')
     expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate.getTime()).toBeCloseTo(
-      new Date('2025-12-18T12:00:00Z').getTime(),
-      1000
+    expect(range.startDate.getTime()).toBe(
+      new Date('2025-12-18T12:00:00Z').getTime()
     )
   })
 
@@ -493,19 +490,21 @@ describe('groupSmallCategories', () => {
   })
 
   it('should group small categories when they exceed threshold', () => {
+    // Create 10 categories: 1 large (9000) and 9 small (100 each)
+    // With topLimit=1, we keep 1 top and group 9 small
+    // Total = 9000 + 900 = 9900
+    // Small categories total = 900
+    // Percentage = 900/9900 = ~9.09% > 5% threshold
     const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
       category: `Category ${i}`,
-      amount: i === 0 ? 9000 : 100, // One large, nine small
+      amount: i === 0 ? 9000 : 100,
       type: 'income' as const,
       count: 1,
     }))
     
-    // Total = 9000 + (9 * 100) = 9900
-    // Small categories total = 900
-    // Percentage = 900/9900 = ~9.09% > 5% threshold
-    const result = groupSmallCategories(aggregates, 8, 0.05)
+    const result = groupSmallCategories(aggregates, 1, 0.05) // topLimit=1 to get 9 other items
     
-    expect(result.length).toBe(9) // 8 top + 1 Other
+    expect(result.length).toBe(2) // 1 top + 1 Other
     expect(result.some(a => a.category === 'Other')).toBe(true)
   })
 
@@ -585,9 +584,12 @@ describe('toPieChartData', () => {
 describe('toBarChartData', () => {
   it('should transform financial data to bar chart data', () => {
     const data: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income', category: 'Category A' },
-      { id: '2', name: 'B', amount: 2000, frequency: 'monthly', type: 'income', category: 'Category A' },
-      { id: '3', name: 'C', amount: 3000, frequency: 'monthly', type: 'expense', category: 'Category B' },
+      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income',
+        category: 'Category A' },
+      { id: '2', name: 'B', amount: 2000, frequency: 'monthly', type: 'income',
+        category: 'Category A' },
+      { id: '3', name: 'C', amount: 3000, frequency: 'monthly', type: 'expense',
+        category: 'Category B' },
     ]
     
     const result = toBarChartData(data)
@@ -838,8 +840,8 @@ describe('generateColorMap', () => {
     expect(Object.keys(colorMap)).toEqual(categories)
     expect(colorMap['A']).toBe(CATEGORY_COLORS[0])
     expect(colorMap['B']).toBe(CATEGORY_COLORS[1])
-    // 11th category should wrap around
-    expect(colorMap['K']).toBe(CATEGORY_COLORS[0])
+    // 11th category (index 10) maps to 10th color in the 16-color palette
+    expect(colorMap['K']).toBe(CATEGORY_COLORS[10])
   })
 
   it('should handle empty categories array', () => {

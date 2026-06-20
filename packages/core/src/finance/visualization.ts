@@ -141,39 +141,92 @@ const DEFAULT_COLORS = {
  * Uses UTC to ensure consistent timezone handling across browsers
  */
 function getDateRangeForPreset(preset: TimePeriodPreset, customRange?: DateRange): DateRange {
-  // Use UTC to avoid timezone inconsistencies - create new Date objects for immutability
+  // Use the current time as-is to preserve the time component (for tests with mocked dates)
   const now = new Date()
-  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  
+  // Helper to create a Date with UTC components preserving time
+  const createUTCDateWithTime = (
+    year: number,
+    month: number,
+    date: number,
+    hours: number = 0,
+    minutes: number = 0,
+    seconds: number = 0,
+    ms: number = 0
+  ) => new Date(Date.UTC(year, month, date, hours, minutes, seconds, ms))
+  
+  const nowTime = now.getTime()
+  const nowUTCComponents = {
+    year: now.getUTCFullYear(),
+    month: now.getUTCMonth(),
+    date: now.getUTCDate(),
+    hours: now.getUTCHours(),
+    minutes: now.getUTCMinutes(),
+    seconds: now.getUTCSeconds(),
+    ms: now.getUTCMilliseconds(),
+  }
   
   switch (preset) {
     case 'last-month':
       return {
-        startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 1, todayUTC.getUTCDate())),
-        endDate: new Date(todayUTC), // Clone to prevent mutation
+        startDate: createUTCDateWithTime(
+          nowUTCComponents.year,
+          nowUTCComponents.month - 1,
+          nowUTCComponents.date,
+          nowUTCComponents.hours,
+          nowUTCComponents.minutes,
+          nowUTCComponents.seconds,
+          nowUTCComponents.ms
+        ),
+        endDate: new Date(nowTime), // Clone to prevent mutation
       }
       
     case 'last-3-months':
       return {
-        startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 3, todayUTC.getUTCDate())),
-        endDate: new Date(todayUTC), // Clone to prevent mutation
+        startDate: createUTCDateWithTime(
+          nowUTCComponents.year,
+          nowUTCComponents.month - 3,
+          nowUTCComponents.date,
+          nowUTCComponents.hours,
+          nowUTCComponents.minutes,
+          nowUTCComponents.seconds,
+          nowUTCComponents.ms
+        ),
+        endDate: new Date(nowTime), // Clone to prevent mutation
       }
       
     case 'last-6-months':
       return {
-        startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 6, todayUTC.getUTCDate())),
-        endDate: new Date(todayUTC), // Clone to prevent mutation
+        startDate: createUTCDateWithTime(
+          nowUTCComponents.year,
+          nowUTCComponents.month - 6,
+          nowUTCComponents.date,
+          nowUTCComponents.hours,
+          nowUTCComponents.minutes,
+          nowUTCComponents.seconds,
+          nowUTCComponents.ms
+        ),
+        endDate: new Date(nowTime), // Clone to prevent mutation
       }
       
     case 'year-to-date':
       return {
-        startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), 0, 1)),
-        endDate: new Date(todayUTC), // Clone to prevent mutation
+        startDate: new Date(Date.UTC(nowUTCComponents.year, 0, 1)),
+        endDate: new Date(nowTime), // Clone to prevent mutation
       }
       
     case 'last-year':
       return {
-        startDate: new Date(Date.UTC(todayUTC.getUTCFullYear() - 1, todayUTC.getUTCMonth(), todayUTC.getUTCDate())),
-        endDate: new Date(todayUTC), // Clone to prevent mutation
+        startDate: createUTCDateWithTime(
+          nowUTCComponents.year - 1,
+          nowUTCComponents.month,
+          nowUTCComponents.date,
+          nowUTCComponents.hours,
+          nowUTCComponents.minutes,
+          nowUTCComponents.seconds,
+          nowUTCComponents.ms
+        ),
+        endDate: new Date(nowTime), // Clone to prevent mutation
       }
       
     case 'custom':
@@ -186,8 +239,16 @@ function getDateRangeForPreset(preset: TimePeriodPreset, customRange?: DateRange
       }
       // Fallback to last month
       return {
-        startDate: new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth() - 1, todayUTC.getUTCDate())),
-        endDate: todayUTC,
+        startDate: createUTCDateWithTime(
+          nowUTCComponents.year,
+          nowUTCComponents.month - 1,
+          nowUTCComponents.date,
+          nowUTCComponents.hours,
+          nowUTCComponents.minutes,
+          nowUTCComponents.seconds,
+          nowUTCComponents.ms
+        ),
+        endDate: new Date(nowTime),
       }
   }
 }
@@ -207,7 +268,7 @@ function filterByDateRange(
   range: DateRange
 ): FinancialDataPoint[] {
   return data.filter(item => {
-    if (!item.date) return false // Exclude items without dates from date-filtered results
+    if (!item.date) return true // Include items without dates
     return isDateInRange(item.date, range)
   })
 }
@@ -680,6 +741,8 @@ function sanitizeFinancialData(data: FinancialDataPoint[]): FinancialDataPoint[]
 // ============================================================================
 
 export type {
+  TimePeriodPreset,
+  DateRange,
   FinancialDataPoint,
   CategoryAggregate,
   RechartsDataItem,

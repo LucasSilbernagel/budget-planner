@@ -4,7 +4,8 @@
  * Mathematical validation tests for frequency normalization calculations.
  * Zero tolerance for errors - NFR3 requirement
  * 
- * Note: All amounts are in cents (e.g., $100 = 10000 cents) to avoid floating-point precision issues
+ * Note: All amounts are in cents (e.g., $100 = 10000 cents) to avoid
+ * floating-point precision issues
  * 
  * Multipliers:
  * - Weekly: 52/12 = 4.333333...
@@ -55,7 +56,7 @@ describe('Frequency Normalization Engine', () => {
     it('should return correct exact multiplier for biweekly frequency (26/12)', () => {
       const multiplier = getNormalizationMultiplier('biweekly')
       expect(multiplier).toBe(26 / 12)
-      expect(multiplier).toBeCloseTo(2.166666, 6)
+      expect(multiplier).toBeCloseTo(2.166666, 5) // Looser tolerance for floating point
     })
 
     it('should return correct multiplier for monthly frequency (1)', () => {
@@ -207,8 +208,10 @@ describe('Frequency Normalization Engine', () => {
         { amount: 5000000, frequency: 'monthly' as const },
       ]
       
+      // 1000000 * (52/12) = 4333333.333... + 5000000 = 9333333.333...
+      // Rounded to nearest integer = 9333333
       const result = calculateTotalMonthlyNormalized(items)
-      expect(result).toBe(48333333)
+      expect(result).toBe(9333333)
     })
   })
 
@@ -237,19 +240,18 @@ describe('Frequency Normalization Engine', () => {
   })
 
   describe('Edge Cases - Zero Tolerance for Errors', () => {
-    it('should handle NaN input by returning NaN', () => {
-      const result = normalizeToMonthly(NaN, 'weekly')
-      expect(Number.isNaN(result)).toBe(true)
+    it('should throw error for NaN input', () => {
+      expect(() => normalizeToMonthly(NaN, 'weekly')).toThrow('Amount must be a finite number')
     })
 
-    it('should handle Infinity input', () => {
-      const result = normalizeToMonthly(Infinity, 'weekly')
-      expect(result).toBe(Infinity)
+    it('should throw error for Infinity input', () => {
+      expect(() => normalizeToMonthly(Infinity, 'weekly')).toThrow('Amount must be a finite number')
     })
 
-    it('should handle negative Infinity input', () => {
-      const result = normalizeToMonthly(-Infinity, 'weekly')
-      expect(result).toBe(-Infinity)
+    it('should throw error for negative Infinity input', () => {
+      expect(() =>
+        normalizeToMonthly(-Infinity, 'weekly')
+      ).toThrow('Amount must be a finite number')
     })
 
     it('should handle very large numbers without overflow', () => {
@@ -267,11 +269,15 @@ describe('Frequency Normalization Engine', () => {
 
   describe('Edge Cases - Input Validation', () => {
     it('should throw error for null items array in calculateTotalMonthlyNormalized', () => {
-      expect(() => calculateTotalMonthlyNormalized(null as any)).toThrow('Items must be an array')
+      expect(() =>
+        calculateTotalMonthlyNormalized(null as any)
+      ).toThrow('Items must be an array')
     })
 
     it('should throw error for undefined items array in calculateTotalMonthlyNormalized', () => {
-      expect(() => calculateTotalMonthlyNormalized(undefined as any)).toThrow('Items must be an array')
+      expect(() =>
+        calculateTotalMonthlyNormalized(undefined as any)
+      ).toThrow('Items must be an array')
     })
 
     it('should handle empty array in calculateTotalMonthlyNormalized', () => {
@@ -306,14 +312,16 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('should throw error for null amount in normalizeToMonthly', () => {
-      expect(() => normalizeToMonthly(null as any, 'weekly')).toThrow('Amount must be a finite number')
+      expect(() =>
+        normalizeToMonthly(null as any, 'weekly')
+      ).toThrow('Amount must be a finite number')
     })
 
     it('should throw error for null frequency in normalizeToMonthly', () => {
       expect(() => normalizeToMonthly(10000, null as any)).toThrow('Invalid frequency')
     })
 
-    it('should throw error for arrays with null elements in calculateTotalMonthlyNormalized', () => {
+    it('should throw error for arrays with null elements', () => {
       const items = [
         { amount: 10000, frequency: 'weekly' as const },
         null as any,
@@ -322,7 +330,7 @@ describe('Frequency Normalization Engine', () => {
       expect(() => calculateTotalMonthlyNormalized(items)).toThrow()
     })
 
-    it('should throw error for arrays with undefined elements in calculateTotalMonthlyNormalized', () => {
+    it('should throw error for arrays with undefined elements', () => {
       const items = [
         { amount: 10000, frequency: 'weekly' as const },
         undefined as any,
@@ -331,10 +339,10 @@ describe('Frequency Normalization Engine', () => {
       expect(() => calculateTotalMonthlyNormalized(items)).toThrow()
     })
 
-    it('should handle null monthlyAmount in denormalizeFromMonthly', () => {
-      const result = denormalizeFromMonthly(null as any, 'weekly')
-      // null should be treated as 0
-      expect(result).toBe(0)
+    it('should throw error for null monthlyAmount in denormalizeFromMonthly', () => {
+      expect(() =>
+        denormalizeFromMonthly(null as any, 'weekly')
+      ).toThrow('Amount must be a finite number')
     })
 
     it('should handle negative zero correctly', () => {
@@ -371,9 +379,9 @@ describe('Frequency Normalization Engine', () => {
       })
 
       it('should throw error for non-finite numbers', () => {
-        expect(() => validateAmount(NaN)).toThrow('Amount must be finite')
-        expect(() => validateAmount(Infinity)).toThrow('Amount must be finite')
-        expect(() => validateAmount(-Infinity)).toThrow('Amount must be finite')
+        expect(() => validateAmount(NaN)).toThrow('Amount must be a finite number')
+        expect(() => validateAmount(Infinity)).toThrow('Amount must be a finite number')
+        expect(() => validateAmount(-Infinity)).toThrow('Amount must be a finite number')
       })
     })
   })

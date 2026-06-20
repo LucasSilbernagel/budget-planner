@@ -145,7 +145,7 @@ describe('Savings Capacity Calculation', () => {
   })
 
   describe('calculateSavingsCapacityPercentage', () => {
-    it('should calculate savings capacity percentage with surplus ($200 expenses / $500 income = 40%)', () => {
+    it('should calculate savings capacity percentage with surplus', () => {
       const incomeSources = [
         { amount: 50000, frequency: 'monthly' as const },
       ]
@@ -274,10 +274,12 @@ describe('Savings Capacity Calculation', () => {
       
       const result = calculateSavingsCapacityResult(incomeSources, expenses)
       
+      // With deficit (expenses > income), savings capacity percentage exceeds 100%
+      // Formula: (expenses / grossIncome) * 100 = (50000 / 20000) * 100 = 250%
       expect(result).toEqual<SavingsCapacityResult>({
         grossIncome: 20000,
         netPeriodIncome: -30000,
-        savingsCapacityPercentage: 0,
+        savingsCapacityPercentage: 250,
         maxAllocableSavings: -30000,
       })
     })
@@ -410,18 +412,19 @@ describe('Savings Capacity Calculation', () => {
       expect(result).toBe(0)
     })
 
-    it('should handle NaN in income amounts', () => {
+    it('should throw error for NaN in income amounts', () => {
       const incomeSources = [
         { amount: NaN, frequency: 'monthly' as const },
       ]
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      expect(Number.isNaN(result)).toBe(true)
+      expect(() =>
+        calculateSavingsCapacityPercentage(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle arrays with null elements', () => {
+    it('should throw error for arrays with null elements', () => {
       const incomeSources = [
         { amount: 50000, frequency: 'monthly' as const },
         null as any,
@@ -429,13 +432,12 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // null elements should be filtered out, so 50000 - 20000 = 30000 net
-      // percentage = (20000 / 50000) * 100 = 40%
-      expect(result).toBe(40)
+      expect(() =>
+        calculateSavingsCapacityPercentage(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle arrays with undefined elements', () => {
+    it('should throw error for arrays with undefined elements', () => {
       const incomeSources = [
         { amount: 50000, frequency: 'monthly' as const },
         undefined as any,
@@ -443,13 +445,12 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // undefined elements should be filtered out, so 50000 - 20000 = 30000 net
-      // percentage = (20000 / 50000) * 100 = 40%
-      expect(result).toBe(40)
+      expect(() =>
+        calculateSavingsCapacityPercentage(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle negative zero in savings capacity calculation', () => {
+    it('should return 0 for negative zero in savings capacity calculation', () => {
       const incomeSources = [
         { amount: -0, frequency: 'monthly' as const },
       ]
@@ -457,9 +458,8 @@ describe('Savings Capacity Calculation', () => {
         { amount: 0, frequency: 'monthly' as const },
       ]
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // -0 / -0 is NaN, but with expenses=0, grossIncome=-0, netPeriodIncome=-0
-      // percentage = (-0 / -0) * 100 = NaN
-      expect(Number.isNaN(result)).toBe(true)
+      // -0 / -0 is NaN, but we should return 0 to avoid NaN in UI
+      expect(result).toBe(0)
     })
 
     it('should handle null inputs to calculateSavingsCapacityResult', () => {

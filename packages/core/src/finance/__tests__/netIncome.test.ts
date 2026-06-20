@@ -31,7 +31,7 @@ describe('Net Period Income Calculation', () => {
       expect(result).toBe(50000)
     })
 
-    it('should calculate gross income from weekly source ($100/week → $433.33 = 43333 cents)', () => {
+    it('should calculate gross income from weekly source ($100/week)', () => {
       const incomeSources = [
         { amount: 10000, frequency: 'weekly' as const },
       ]
@@ -77,7 +77,7 @@ describe('Net Period Income Calculation', () => {
       expect(result).toBe(20000)
     })
 
-    it('should calculate total expenses from weekly expense ($50/week → $216.67 = 21667 cents)', () => {
+    it('should calculate total expenses from weekly expense ($50/week)', () => {
       const expenses = [
         { amount: 5000, frequency: 'weekly' as const },
       ]
@@ -89,9 +89,9 @@ describe('Net Period Income Calculation', () => {
 
     it('should calculate total expenses from multiple expenses with different frequencies', () => {
       const expenses = [
-        { amount: 10000, frequency: 'weekly' as const },    // $100/week → $433.33 = 43333 cents
-        { amount: 5000, frequency: 'biweekly' as const },   // $50/biweekly → $108.33 = 10833 cents
-        { amount: 20000, frequency: 'monthly' as const },  // $200/month → $200.00 = 20000 cents
+        { amount: 10000, frequency: 'weekly' as const },    // $100/week
+        { amount: 5000, frequency: 'biweekly' as const },   // $50/biweekly
+        { amount: 20000, frequency: 'monthly' as const },
       ]
       
       const result = calculateTotalPeriodExpenses(expenses)
@@ -352,7 +352,7 @@ describe('Net Period Income Calculation', () => {
       expect(result).toBe(0)
     })
 
-    it('should handle arrays with null elements', () => {
+    it('should throw error for arrays with null elements', () => {
       const incomeSources = [
         { amount: 50000, frequency: 'monthly' as const },
         null as any,
@@ -360,12 +360,13 @@ describe('Net Period Income Calculation', () => {
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // null elements should be filtered out, so 50000 - 20000 = 30000
-      expect(result).toBe(30000)
+      // Validation should throw error for null elements
+      expect(() =>
+        calculateNetPeriodIncome(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle arrays with undefined elements', () => {
+    it('should throw error for arrays with undefined elements', () => {
       const incomeSources = [
         { amount: 50000, frequency: 'monthly' as const },
         undefined as any,
@@ -373,45 +374,49 @@ describe('Net Period Income Calculation', () => {
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // undefined elements should be filtered out, so 50000 - 20000 = 30000
-      expect(result).toBe(30000)
+      // Validation should throw error for undefined elements
+      expect(() =>
+        calculateNetPeriodIncome(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle NaN in income amounts', () => {
+    it('should throw error for NaN in income amounts', () => {
       const incomeSources = [
         { amount: NaN, frequency: 'monthly' as const },
       ]
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // NaN in income should result in NaN
-      expect(Number.isNaN(result)).toBe(true)
+      // Validation should throw error for NaN
+      expect(() =>
+        calculateNetPeriodIncome(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle Infinity in income amounts', () => {
+    it('should throw error for Infinity in income amounts', () => {
       const incomeSources = [
         { amount: Infinity, frequency: 'monthly' as const },
       ]
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // Infinity - finite = Infinity
-      expect(result).toBe(Infinity)
+      // Validation should throw error for Infinity
+      expect(() =>
+        calculateNetPeriodIncome(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
 
-    it('should handle string numbers (type coercion)', () => {
+    it('should throw error for string numbers (type coercion)', () => {
       const incomeSources = [
         { amount: '50000' as any, frequency: 'monthly' as const },
       ]
       const expenses = [
         { amount: 20000, frequency: 'monthly' as const },
       ]
-      // Intentional runtime test with string amount coerced via any
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      expect(result).toBe(30000)
+      // Validation should throw error for string amounts
+      expect(() =>
+        calculateNetPeriodIncome(incomeSources, expenses)
+      ).toThrow('Amount must be a finite number')
     })
   })
 })

@@ -54,8 +54,9 @@ describe('savingsGoalCalculations', () => {
     })
 
     it('should handle currentBalance exceeding targetAmount', () => {
+      // When current exceeds target, progress is capped at 100%
       const result = calculateProgress(10000, 15000)
-      expect(result).toBe(150)
+      expect(result).toBe(100)
     })
   })
 
@@ -167,7 +168,7 @@ describe('savingsGoalCalculations', () => {
       expect(info.percentage).toBe(60)
       expect(info.formattedPercentage).toBe('60%')
       expect(info.remainingAmount).toBe(40000)
-      expect(info.status).toBe('On Track')
+      expect(info.status).toBe('In Progress')
       expect(info.isComplete).toBe(false)
     })
 

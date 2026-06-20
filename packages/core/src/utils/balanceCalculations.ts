@@ -102,7 +102,9 @@ export function calculateProjectedBalance(
   
   // Check for potential arithmetic overflow
   const result = currentBalance + monthlyContribution * months
-  if (!Number.isFinite(result)) {
+  if (!Number.isFinite(result) ||
+      result > Number.MAX_SAFE_INTEGER ||
+      result < Number.MIN_SAFE_INTEGER) {
     return currentBalance
   }
   
@@ -134,9 +136,9 @@ export function calculateContributionProgress(
   // For debts, use absolute value of currentBalance
   const balance = isDebt ? Math.abs(currentBalance) : currentBalance
   
-  // Cap at 100% if current exceeds limit
+  // Cap at 100% if current exceeds limit, clamp negative values to 0
   const progress = (balance / maxContributionLimit) * 100
-  return Math.min(100, Math.round(progress))
+  return Math.min(100, Math.max(0, Math.round(progress)))
 }
 
 /**

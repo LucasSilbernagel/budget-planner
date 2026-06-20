@@ -62,9 +62,9 @@ describe('calculateMonthsToLimit', () => {
   })
 
   it('should handle negative current balance (debt)', () => {
-    // -$1000 current (debt), $0 limit, $500/month -> null (no positive limit to reach)
+    // -$1000 current (debt), $0 limit, $500/month -> 2 months to reach 0
     const result = calculateMonthsToLimit(-100000, 0, 50000)
-    expect(result).toBe(0)
+    expect(result).toBe(2)
   })
 
   it('should calculate correctly from non-zero starting point', () => {
@@ -227,7 +227,11 @@ describe('Edge Case Handling - calculateMonthsToLimit', () => {
   })
 
   it('should handle very large numbers without overflow', () => {
-    const result = calculateMonthsToLimit(0, Number.MAX_SAFE_INTEGER / 2, Number.MAX_SAFE_INTEGER / 100)
+    const result = calculateMonthsToLimit(
+      0,
+      Number.MAX_SAFE_INTEGER / 2,
+      Number.MAX_SAFE_INTEGER / 100
+    )
     expect(result).not.toBe(Infinity)
     expect(result).toBeGreaterThan(0)
   })

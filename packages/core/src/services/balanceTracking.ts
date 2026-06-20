@@ -427,7 +427,9 @@ export function filterBalanceTracking(
   return entries.filter((entry) => {
     if (filter.type && entry.type !== filter.type) return false
     if (filter.search) {
-      const searchLower = typeof filter.search === 'string' ? filter.search.toLowerCase() : ''
+      // If search is not a string, return false (exclude entry)
+      if (typeof filter.search !== 'string') return false
+      const searchLower = filter.search.toLowerCase()
       const entryName = typeof entry.name === 'string' ? entry.name.toLowerCase() : ''
       if (!entryName.includes(searchLower)) return false
     }
@@ -478,9 +480,9 @@ function setTempIdCounter(value: number): void {
  * @returns Negative number ID for client-side use
  */
 export function generateBalanceTrackingTempId(): number {
-  let counter = getTempIdCounter()
-  counter -= 1
-  setTempIdCounter(counter)
+  const counter = getTempIdCounter()
+  const newCounter = counter - 1
+  setTempIdCounter(newCounter)
   return counter
 }
 
@@ -495,12 +497,10 @@ export function resetBalanceTrackingTempId(): void {
  * Convert new balance tracking input to client balance tracking (add ID and timestamps)
  * 
  * @param input - New balance tracking input
- * @param userId - Optional user ID (0 for free tier)
  * @returns Client balance tracking with ID and timestamps
  */
 export function toClientBalanceTracking(
-  input: ClientNewBalanceTracking,
-  userId?: number
+  input: ClientNewBalanceTracking
 ): ClientBalanceTracking {
   const now = new Date().toISOString()
   return {
