@@ -9,7 +9,7 @@
  */
 
 import type { Request } from '@tanstack/start'
-import { getUserContext } from '../api/auth/paddle'
+import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
 import {
   calculateRetirementRequirement,
@@ -92,7 +92,7 @@ export interface AggregationResult {
  * Returns user if authenticated and has active subscription, otherwise returns error
  */
 async function getAuthenticatedUser(request: Request): Promise<ApiResult<any>> {
-  const userResult = await getUserContext(request)
+  const userResult = await getCurrentUserSession(request)
   
   if (!userResult.success) {
     return userResult

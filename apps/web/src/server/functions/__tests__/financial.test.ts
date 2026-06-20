@@ -12,7 +12,7 @@ import type { Request } from '@tanstack/start'
 
 // Mock the authentication function
 vi.mock('../api/auth/paddle', () => ({
-  getUserContext: vi.fn(),
+  getCurrentUserSession: vi.fn(),
 }))
 
 // Mock the core calculation functions
@@ -24,7 +24,7 @@ vi.mock('@budget-planner/core', () => ({
 
 // Import after mocking
 import {
-  getUserContext,
+  getCurrentUserSession,
 } from '../api/auth/paddle'
 import {
   calculateRetirementRequirement,
@@ -52,14 +52,14 @@ function createMockRequest(userData: any = null): Request {
     headers: new Headers(),
   } as unknown as Request
   
-  // Mock getUserContext based on userData
+  // Mock getCurrentUserSession based on userData
   if (userData) {
-    ;(getUserContext as vi.Mock).mockResolvedValue({
+    ;(getCurrentUserSession as vi.Mock).mockResolvedValue({
       success: true,
       data: userData,
     })
   } else {
-    ;(getUserContext as vi.Mock).mockResolvedValue({
+    ;(getCurrentUserSession as vi.Mock).mockResolvedValue({
       success: false,
       error: 'No user session',
     })
