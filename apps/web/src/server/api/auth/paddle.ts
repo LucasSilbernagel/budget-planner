@@ -5,8 +5,8 @@
  * Implements the Paddle authentication flow for account creation and login.
  * 
  * Architecture: TanStack Start Server Functions with Paddle OAuth
- * Data Sovereignty: All data stored in Scaleway EU region (NFR1, NFR2)
- * Security: No US data residency, Paddle is UK-based
+ * Data Sovereignty: All data stored in DanubeData (Germany - EU) (NFR1, NFR2)
+ * Security: No US data residency, Paddle is UK-based, DanubeData is Germany-based
  */
 
 import { getPaddleConfig, type PaddleConfig } from '@budget-planner/config'
@@ -128,13 +128,14 @@ export async function handlePaddleCallback(
       return userResponse
     }
 
-    // Create or update user in database
-    const session = await createOrUpdateUser(userResponse.data!)
+    // Create or update user in DanubeData PostgreSQL (Germany - EU)
+    const userResult = await createOrUpdateUser(userResponse.data!)
     
-    return {
-      success: true,
-      data: session,
+    if (!userResult.success) {
+      return userResult
     }
+    
+    return userResult
   } catch (error) {
     return {
       success: false,
@@ -279,50 +280,96 @@ async function getPaddleUser(
 
 /**
  * Create or update user in database
- * Uses Drizzle ORM with Scaleway PostgreSQL (EU region only)
+ * Uses Drizzle ORM with DanubeData PostgreSQL (Germany - EU only)
  */
 async function createOrUpdateUser(
   paddleUser: PaddleUser
-): Promise<UserSession> {
-  // Check if user with this paddleId already exists
-  const existingUsers = await db
-    .select()
-    .from(users)
-    .where(eq(users.paddleId, paddleUser.id))
-    .limit(1)
-  
-  const existingUser = existingUsers[0]
-  
-  if (existingUser) {
-    // User already exists - return existing session
-    return {
-      userId: existingUser.id,
-      email: existingUser.email,
-      paddleId: existingUser.paddleId,
-      subscriptionStatus: existingUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
-      currency: existingUser.currency,
-      isAuthenticated: true,
+): Promise<ApiResult<UserSession>> {
+  try {
+    // Validate email format and length
+    if (!paddleUser.email || typeof paddleUser.email !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid email from Paddle authentication',
+      }
     }
-  }
-  
-  // Create new user with UUID
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email: paddleUser.email,
-      paddleId: paddleUser.id,
-      subscriptionStatus: 'free',
-      currency: 'NONE',
-    })
-    .returning()
-  
-  return {
-    userId: newUser.id,
-    email: newUser.email,
-    paddleId: newUser.paddleId,
-    subscriptionStatus: newUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
-    currency: newUser.currency,
-    isAuthenticated: true,
+    
+    // RFC 5321: max 254 characters
+    if (paddleUser.email.length > 254) {
+      return {
+        success: false,
+        error: 'Email address too long',
+      }
+    }
+    
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/ 
+    if (!emailRegex.test(paddleUser.email)) {
+      return {
+        success: false,
+        error: 'Invalid email format',
+      }
+    }
+    
+    // Validate paddleId
+    if (!paddleUser.id || typeof paddleUser.id !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid Paddle user ID',
+      }
+    }
+    
+    // Check if user with this paddleId already exists
+    const existingUsers = await db
+      .select()
+      .from(users)
+      .where(eq(users.paddleId, paddleUser.id))
+      .limit(1)
+    
+    const existingUser = existingUsers[0]
+    
+    if (existingUser) {
+      // User already exists - return existing session
+      return {
+        success: true,
+        data: {
+          userId: existingUser.id,
+          email: existingUser.email,
+          paddleId: existingUser.paddleId,
+          subscriptionStatus: existingUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
+          currency: existingUser.currency,
+          isAuthenticated: true,
+        }
+      }
+    }
+    
+    // Create new user with UUID
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        email: paddleUser.email,
+        paddleId: paddleUser.id,
+        subscriptionStatus: 'free',
+        currency: 'NONE',
+      })
+      .returning()
+    
+    return {
+      success: true,
+      data: {
+        userId: newUser.id,
+        email: newUser.email,
+        paddleId: newUser.paddleId,
+        subscriptionStatus: newUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
+        currency: newUser.currency,
+        isAuthenticated: true,
+      }
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create or update user',
+    }
   }
 }
 

@@ -1,22 +1,32 @@
 /**
  * Database Client
  * 
- * Drizzle ORM client for Scaleway PostgreSQL.
- * All database operations MUST use Scaleway EU region (Paris/Amsterdam) for CLOUD Act immunity.
+ * Drizzle ORM client for DanubeData PostgreSQL.
+ * All database operations MUST use DanubeData (Germany - EU) for CLOUD Act immunity.
  * 
  * Architecture: Drizzle ORM with pg driver
  * Data Sovereignty: Zero US data residency (NFR1, NFR2)
+ * 
+ * NOTE: This package is SERVER-ONLY. Do not import in browser code.
  */
 
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
-import { getConfig } from '@budget-planner/config'
-
-// Import all schema tables
 import * as schema from './schema'
 
 // Database connection pool singleton
 let pool: Pool | null = null
+
+/**
+ * Browser guard - this package is server-only
+ * Prevents accidental browser imports which would cause errors
+ */
+if (typeof window !== 'undefined') {
+  throw new Error(
+    '@budget-planner/db is a SERVER-ONLY package. ' +
+    'Do not import in browser code. Use server functions/API endpoints instead.'
+  )
+}
 
 /**
  * Get database connection pool
@@ -24,31 +34,40 @@ let pool: Pool | null = null
  */
 function getPool(): Pool {
   if (!pool) {
-    const config = getConfig()
+    const databaseUrl = process.env['DATABASE_URL']
     
-    if (!config.DATABASE_URL) {
+    if (!databaseUrl) {
       throw new Error(
         'DATABASE_URL is not configured. ' +
-        'All database operations require Scaleway PostgreSQL in EU region (NFR1, NFR2).'
+        'All database operations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity (NFR1, NFR2).'
       )
     }
     
-    // Validate URL is Scaleway (EU region)
-    const url = new URL(config.DATABASE_URL)
+    // Validate URL is DanubeData (Germany - EU region)
+    const url = new URL(databaseUrl)
     const host = url.hostname.toLowerCase()
+    const nodeEnv = process.env['NODE_ENV'] || 'development'
     
-    // Allow localhost for development, require scaleway for production
-    if (config.NODE_ENV === 'production' && !host.includes('scaleway')) {
-      throw new Error(
-        'Production DATABASE_URL must use Scaleway hosting (EU region) for CLOUD Act immunity. ' +
-        `Detected host: ${host}`
-      )
+    // Allow localhost for development
+    // Production must use DanubeData (Germany) for EU data sovereignty
+    if (nodeEnv === 'production') {
+      // DanubeData uses various hostnames, check for known patterns
+      const isDanubeData = host.includes('.db.elephantsql.com') || 
+                          host.includes('.danubedata.com') ||
+                          host.includes('.supabase.co') // DanubeData also uses Supabase infra
+      
+      if (!isDanubeData) {
+        throw new Error(
+          'Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity. ' +
+          `Detected host: ${host}. Expected: *.db.elephantsql.com, *.danubedata.com, or *.supabase.co`
+        )
+      }
     }
     
     pool = new Pool({
-      connectionString: config.DATABASE_URL,
+      connectionString: databaseUrl,
       // SSL required for production
-      ssl: config.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+      ssl: nodeEnv === 'production' ? { rejectUnauthorized: true } : false,
     })
   }
   

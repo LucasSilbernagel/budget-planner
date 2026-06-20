@@ -6,7 +6,7 @@
  * 
  * Endpoint: POST /api/webhooks/paddle
  * 
- * Data Sovereignty: Processes webhooks and updates Scaleway PostgreSQL (EU region)
+ * Data Sovereignty: Processes webhooks and updates DanubeData PostgreSQL (Germany - EU)
  * Security: Verifies webhook signatures to prevent spoofing
  */
 
@@ -20,6 +20,9 @@ import { json } from '@tanstack/start'
 /**
  * Verify Paddle webhook signature
  * Prevents unauthorized webhook requests
+ * 
+ * Paddle webhook signature format: v1,{timestamp},{hmac}
+ * The HMAC is computed as: hmac_sha256(timestamp + '.' + payload)
  */
 function verifyWebhookSignature(
   payload: string,
@@ -30,17 +33,24 @@ function verifyWebhookSignature(
     return false
   }
   
-  // Paddle webhook signature format: v1,{timestamp},{hmac}
-  const expectedSignature = `v1,${Date.now()},${crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex')}`
-  
-  // Use timing-safe comparison
   try {
+    // Parse signature: v1,{timestamp},{hmac}
+    const [version, timestamp, receivedHmac] = signature.split(',')
+    
+    if (version !== 'v1' || !timestamp || !receivedHmac) {
+      return false
+    }
+    
+    // Compute expected HMAC: hmac_sha256(timestamp + '.' + payload)
+    const expectedHmac = crypto
+      .createHmac('sha256', secret)
+      .update(`${timestamp}.${payload}`)
+      .digest('hex')
+    
+    // Use timing-safe comparison to prevent timing attacks
     return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
+      Buffer.from(receivedHmac, 'hex'),
+      Buffer.from(expectedHmac, 'hex')
     )
   } catch {
     return false
@@ -49,16 +59,23 @@ function verifyWebhookSignature(
 
 /**
  * Handle subscription status update from Paddle webhook
+ * Updates user subscription status in DanubeData PostgreSQL
  */
 async function handleSubscriptionStatusUpdate(
-  userId: string,
+  paddleUserId: string,
   subscriptionStatus: string
-) {
-  // Update user subscription status in database
-  await db
-    .update(users)
-    .set({ subscriptionStatus: subscriptionStatus as any })
-    .where(eq(users.paddleId, userId))
+): Promise<boolean> {
+  try {
+    // Update user subscription status in DanubeData PostgreSQL
+    await db
+      .update(users)
+      .set({ subscriptionStatus: subscriptionStatus as any })
+      .where(eq(users.paddleId, paddleUserId))
+    return true
+  } catch (error) {
+    console.error(`Failed to update subscription status for user ${paddleUserId}:`, error)
+    return false
+  }
 }
 
 /**
