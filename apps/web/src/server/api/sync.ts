@@ -26,8 +26,9 @@ import {
   savingsGoals,
   balanceTracking,
   userProfiles,
+  rateLimits,
 } from '@budget-planner/db'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, gt, lte } from 'drizzle-orm'
 
 // ============================================================================
 // Types
@@ -146,18 +147,95 @@ export interface SyncAuditLog {
 // ============================================================================
 
 /**
+ * Zod schemas for entity-specific data validation
+ * These ensure data structure matches expected format for each entity type
+ */
+const incomeSourceSchema = z.object({
+  name: z.string().min(1).max(255),
+  amount: z.number().int(),
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  userId: z.string().uuid(),
+})
+
+const expenseSchema = z.object({
+  name: z.string().min(1).max(255),
+  amount: z.number().int(),
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  userId: z.string().uuid(),
+})
+
+const savingsGoalSchema = z.object({
+  name: z.string().min(1).max(255),
+  targetAmount: z.number().int(),
+  currentBalance: z.number().int().default(0),
+  userId: z.string().uuid(),
+})
+
+const balanceTrackingSchema = z.object({
+  type: z.enum(['investment', 'debt']),
+  name: z.string().min(1).max(255),
+  currentBalance: z.number().int().default(0),
+  maxContributionLimit: z.number().int().optional(),
+  monthlyContribution: z.number().int().default(0),
+  userId: z.string().uuid(),
+})
+
+const userProfileSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(500).optional(),
+  isDefault: z.boolean().default(false),
+  currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']),
+  userId: z.string().uuid(),
+})
+
+/**
  * Zod schema for sync operation validation
+ * Uses discriminated union to validate data based on entityType
  */
 export const syncOperationSchema = z.object({
   id: z.string(),
   type: z.enum(['create', 'update', 'delete']),
   entityType: z.enum(['incomeSource', 'expense', 'savingsGoal', 'balanceTracking', 'userProfile']),
-  entityId: z.union([z.string(), z.number()]),
-  data: z.record(z.unknown()),
+  entityId: z.string(),
+  data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
   timestamp: z.number(),
   deviceId: z.string(),
   userId: z.string(),
   version: z.number().optional(),
+}).superRefine((data, ctx) => {
+  // Validate data structure based on entityType
+  const { entityType, data: entityData, type } = data
+  
+  // For delete operations, data may be minimal
+  if (type === 'delete') {
+    // Delete operations only need userId in data
+    if (!entityData.userId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Delete operations require userId in data',
+      })
+    }
+    return
+  }
+  
+  // For create/update, validate full structure based on entityType
+  switch (entityType) {
+    case 'incomeSource':
+      incomeSourceSchema.parse(entityData)
+      break
+    case 'expense':
+      expenseSchema.parse(entityData)
+      break
+    case 'savingsGoal':
+      savingsGoalSchema.parse(entityData)
+      break
+    case 'balanceTracking':
+      balanceTrackingSchema.parse(entityData)
+      break
+    case 'userProfile':
+      userProfileSchema.parse(entityData)
+      break
+  }
 })
 
 /**
@@ -201,7 +279,7 @@ function getTable<T extends keyof EntityTableMap>(entityType: T) {
 }
 
 // ============================================================================
-// Rate Limiting Configuration
+// Rate Limiting Configuration (Database-backed for data sovereignty)
 // ============================================================================
 
 const RATE_LIMIT_CONFIG = {
@@ -210,9 +288,93 @@ const RATE_LIMIT_CONFIG = {
 }
 
 /**
- * Rate limiting storage - using in-memory for rate limiting is acceptable
- * as it's not persistently storing user data, just request counts
+ * Check rate limit for a user using DanubeData PostgreSQL
+ * This ensures rate limiting persists across server restarts (NFR1, NFR2)
  */
+async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remaining: number }> {
+  const now = Date.now()
+  const windowStart = new Date(now - RATE_LIMIT_CONFIG.windowMs)
+
+  try {
+    // Get or create rate limit entry for this user
+    const existing = await db
+      .select()
+      .from(rateLimits)
+      .where(
+        and(
+          eq(rateLimits.userId, userId),
+          gt(rateLimits.windowStart, windowStart)
+        )
+      )
+      .limit(1)
+
+    let requestCount = 0
+    let rateLimitId: number | undefined
+
+    if (existing.length > 0) {
+      requestCount = existing[0].requestCount
+      rateLimitId = existing[0].id
+    }
+
+    // Check if limit exceeded
+    if (requestCount >= RATE_LIMIT_CONFIG.maxRequests) {
+      return { allowed: false, remaining: 0 }
+    }
+
+    // Increment or create the rate limit entry
+    const newCount = requestCount + 1
+    
+    if (rateLimitId) {
+      // Update existing entry
+      await db
+        .update(rateLimits)
+        .set({
+          requestCount: newCount,
+          updatedAt: new Date(now),
+        })
+        .where(eq(rateLimits.id, rateLimitId))
+    } else {
+      // Create new entry
+      await db.insert(rateLimits).values({
+        userId,
+        requestCount: 1,
+        windowStart: new Date(now),
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      })
+    }
+
+    return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - newCount }
+  } catch (error) {
+    // If database fails, fall back to in-memory rate limiting
+    // This ensures the feature still works even if rateLimits table is not available
+    // Sanitize error to avoid exposing sensitive database information
+    const sanitizedError = error instanceof Error ? error.message : String(error)
+    console.error('[RateLimit] Database error, falling back to in-memory:', sanitizedError)
+    
+    // In-memory fallback
+    const validEntries = rateLimitStore.filter((entry) => entry.resetTime > now)
+    rateLimitStore.length = 0
+    rateLimitStore.push(...validEntries)
+
+    const userRequests = validEntries.filter((entry) => entry.userId === userId)
+    const requestCount = userRequests.length
+
+    if (requestCount >= RATE_LIMIT_CONFIG.maxRequests) {
+      return { allowed: false, remaining: 0 }
+    }
+
+    rateLimitStore.push({
+      userId,
+      count: requestCount + 1,
+      resetTime: now + RATE_LIMIT_CONFIG.windowMs,
+    })
+
+    return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - requestCount - 1 }
+  }
+}
+
+// Fallback in-memory store for when database is unavailable
 interface RateLimitEntry {
   userId: string
   count: number
@@ -220,35 +382,6 @@ interface RateLimitEntry {
 }
 
 const rateLimitStore: RateLimitEntry[] = []
-
-/**
- * Check rate limit for a user
- */
-function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now()
-
-  // Remove expired entries
-  const validEntries = rateLimitStore.filter((entry) => entry.resetTime > now)
-  rateLimitStore.length = 0
-  rateLimitStore.push(...validEntries)
-
-  // Count requests for this user
-  const userRequests = validEntries.filter((entry) => entry.userId === userId)
-  const requestCount = userRequests.length
-
-  if (requestCount >= RATE_LIMIT_CONFIG.maxRequests) {
-    return { allowed: false, remaining: 0 }
-  }
-
-  // Add new entry
-  rateLimitStore.push({
-    userId,
-    count: requestCount + 1,
-    resetTime: now + RATE_LIMIT_CONFIG.windowMs,
-  })
-
-  return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - requestCount - 1 }
-}
 
 // ============================================================================
 // Database Operations (DanubeData PostgreSQL)
@@ -259,7 +392,7 @@ function checkRateLimit(userId: string): { allowed: boolean; remaining: number }
  */
 async function getEntity(
   entityType: keyof EntityTableMap,
-  entityId: string | number,
+  entityId: string,
   userId: string
 ): Promise<Record<string, unknown> | null> {
   try {
@@ -274,8 +407,10 @@ async function getEntity(
     
     return result[0] || null
   } catch (error) {
-    console.error(`[DB Error] Failed to get entity ${entityType}:${entityId}:`, error)
-    throw error
+    // Sanitize error to avoid exposing sensitive database information
+    const sanitizedError = error instanceof Error ? error.message : String(error)
+    console.error(`[DB Error] Failed to get entity ${entityType}:${entityId}:`, sanitizedError)
+    throw new Error(`Failed to get entity: ${sanitizedError}`)
   }
 }
 
@@ -284,7 +419,7 @@ async function getEntity(
  */
 async function entityExists(
   entityType: keyof EntityTableMap,
-  entityId: string | number,
+  entityId: string,
   userId: string
 ): Promise<boolean> {
   try {
@@ -320,7 +455,7 @@ async function createEntity(
  */
 async function updateEntity(
   entityType: keyof EntityTableMap,
-  entityId: string | number,
+  entityId: string,
   data: Record<string, unknown>,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
@@ -347,7 +482,7 @@ async function updateEntity(
  */
 async function deleteEntity(
   entityType: keyof EntityTableMap,
-  entityId: string | number,
+  entityId: string,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
@@ -463,7 +598,9 @@ async function checkConflict(
   } catch (error) {
     // If we can't check server state, be conservative and assume conflict
     // This prevents data resurrection from stale updates
-    console.error('Error checking conflict:', error)
+    // Sanitize error to avoid exposing sensitive database information
+    const sanitizedError = error instanceof Error ? error.message : String(error)
+    console.error('[Conflict Check Error]:', sanitizedError)
     return { hasConflict: true, conflictType: 'server-check-failed' }
   }
 }
@@ -483,7 +620,7 @@ async function logAudit(
   userId: string,
   operationId: string,
   entityType: string,
-  entityId: string | number,
+  entityId: string,
   operationType: 'create' | 'update' | 'delete',
   success: boolean,
   error?: string,
@@ -502,7 +639,7 @@ async function logAudit(
       userId,
       operationId,
       entityType,
-      String(entityId),
+      entityId,
       operationType,
       Date.now(),
       success,
@@ -512,7 +649,9 @@ async function logAudit(
     ])
   } catch (dbError) {
     // Fallback to console log if database fails
-    console.log('[Audit]', {
+    // Sanitize error to avoid exposing sensitive database information
+    const sanitizedError = dbError instanceof Error ? dbError.message : String(dbError)
+    console.error('[Audit DB Error]', {
       id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       userId,
       operationId,
@@ -521,7 +660,7 @@ async function logAudit(
       operationType,
       timestamp: Date.now(),
       success,
-      error,
+      error: sanitizedError,
       ipAddress,
       userAgent,
     })
@@ -582,6 +721,8 @@ async function recordSyncHistory(
     return historyEntry
   } catch (dbError) {
     // Fallback to console log if database fails
+    // Sanitize error to avoid exposing sensitive database information
+    const sanitizedError = dbError instanceof Error ? dbError.message : String(dbError)
     const historyEntry: SyncHistoryEntry = {
       id: `sync-history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       userId,
@@ -592,9 +733,9 @@ async function recordSyncHistory(
       conflictCount,
       failureCount,
       status,
-      error,
+      error: `DB Error: ${sanitizedError}`,
     }
-    console.log('[SyncHistory]', historyEntry)
+    console.error('[SyncHistory DB Error]', historyEntry)
     return historyEntry
   }
 }
@@ -641,23 +782,7 @@ export async function processBatchSync(
 
   const { operations, clientTimestamp, deviceId } = validationResult.data
 
-  // Check rate limit
-  const rateLimit = checkRateLimit(user.id)
-  if (!rateLimit.allowed) {
-    return {
-      success: false,
-      processedCount: 0,
-      failedCount: 0,
-      conflictCount: 0,
-      conflicts: [],
-      failedOperationIds: [],
-      serverTimestamp: Date.now(),
-      status: SyncStatusEnum.FAILED,
-      error: 'Rate limit exceeded',
-    }
-  }
-
-  // Verify all operations belong to this user
+  // Verify all operations belong to this user first (fail fast on auth)
   for (const operation of operations) {
     if (operation.userId !== user.id) {
       return {
@@ -671,6 +796,22 @@ export async function processBatchSync(
         status: SyncStatusEnum.FAILED,
         error: 'Unauthorized: Operation user ID mismatch',
       }
+    }
+  }
+
+  // Check rate limit (only after user validation succeeds)
+  const rateLimit = await checkRateLimit(user.id)
+  if (!rateLimit.allowed) {
+    return {
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: Date.now(),
+      status: SyncStatusEnum.FAILED,
+      error: 'Rate limit exceeded',
     }
   }
 
@@ -696,16 +837,14 @@ export async function processBatchSync(
         conflictType: conflictCheck.conflictType || 'unknown',
       })
 
-      failedOperationIds.push(operation.id)
-
-      // Log the conflict
+      // Log the conflict (success: true because conflicts are expected scenarios)
       await logAudit(
         user.id,
         operation.id,
         operation.entityType,
         operation.entityId,
         operation.type,
-        false,
+        true,
         `Conflict: ${conflictCheck.conflictType}`,
         ipAddress,
         userAgent
@@ -755,11 +894,16 @@ export async function processBatchSync(
 
   // Determine final status
   let status: SyncStatus = SyncStatusEnum.COMPLETED
-  if (failedCount > 0 || conflictCount > 0) {
+  if (failedCount > 0) {
     status = SyncStatusEnum.FAILED
+  } else if (conflictCount > 0) {
+    status = SyncStatusEnum.PARTIAL
   }
 
   // Record sync history to database
+  const errorMessage = failedCount > 0 ? 'Sync completed with errors' :
+    conflictCount > 0 ? 'Sync completed with conflicts' : undefined
+  
   await recordSyncHistory(
     user.id,
     deviceId,
@@ -769,11 +913,11 @@ export async function processBatchSync(
     conflictCount,
     failedCount,
     status,
-    status === SyncStatusEnum.FAILED ? 'Sync completed with errors' : undefined
+    errorMessage
   )
 
   return {
-    success: failedCount === 0 && conflictCount === 0,
+    success: failedCount === 0, // Success if no failures (conflicts are OK)
     processedCount,
     failedCount,
     conflictCount,
