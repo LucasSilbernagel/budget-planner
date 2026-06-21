@@ -141,6 +141,19 @@ export const userProfiles = pgTable('userProfiles', {
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
+// Rate Limit table - for server-side rate limiting
+// Stores request counts per user for rate limiting purposes
+export const rateLimits = pgTable('rateLimits', {
+  id: serial('id').primaryKey(),
+  userId: uuid('userId')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  requestCount: integer('requestCount').default(0).notNull(),
+  windowStart: timestamp('windowStart').defaultNow().notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+})
+
 // Type exports for TypeScript type safety
 // Note: Using InferSelectModel instead of deprecated InferModel
 export type User = InferSelectModel<typeof users>
@@ -181,7 +194,11 @@ export const allTables = {
   savingsGoals,
   balanceTracking,
   userProfiles,
+  rateLimits,
 }
+
+export type RateLimit = InferSelectModel<typeof rateLimits>
+export type NewRateLimit = InferInsertModel<typeof rateLimits>
 
 // NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)
 // Unit tests for schema validation will be added when database is configured
