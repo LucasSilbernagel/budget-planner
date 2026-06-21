@@ -182,11 +182,11 @@ export class SynchronizationService {
     // Try to fetch a small resource to verify actual connectivity
     try {
       // Use a lightweight endpoint that should be fast
-      // In production, this could be a health check endpoint
+      // Using same-origin health check to maintain data sovereignty (NFR1, NFR2)
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
       
-      const response = await fetch('https://httpbin.org/get', {
+      const response = await fetch('/api/health', {
         method: 'GET',
         signal: controller.signal,
         cache: 'no-store',
@@ -229,7 +229,8 @@ export class SynchronizationService {
       this.boundHandleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
           // Tab became visible, check if we should sync
-          if (this.state.isOnline && this.queue.getCount() > 0 && !this.isProcessing) {
+          // sync() will handle the isProcessing check atomically
+          if (this.state.isOnline && this.queue.getCount() > 0) {
             this.sync().catch((error) => {
               this.log('Visibility sync error:', error)
             })
@@ -265,8 +266,8 @@ export class SynchronizationService {
     }
 
     this.autoSyncTimer = setInterval(() => {
-      // Check both online status and processing flag to prevent concurrent syncs
-      if (this.state.isOnline && !this.isProcessing) {
+      // Check online status - sync() will handle the processing flag atomically
+      if (this.state.isOnline) {
         this.sync().catch((error) => {
           this.log('Auto-sync error:', error)
         })
@@ -330,9 +331,9 @@ export class SynchronizationService {
     this.state.isOnline = true
     this.log('Device is now online')
     
-    // Process queued operations only if not already syncing
-    // This prevents concurrent sync() calls race condition
-    if (this.queue.getCount() > 0 && !this.isProcessing) {
+    // Process queued operations only if there are any
+    // sync() will handle the isProcessing check atomically
+    if (this.queue.getCount() > 0) {
       this.sync().catch((error) => {
         this.log('Online sync error:', error)
       })
@@ -424,7 +425,8 @@ export class SynchronizationService {
     this.notifyStatusCallbacks()
 
     // If online and auto-sync is enabled, trigger sync
-    if (this.state.isOnline && this.config.autoSync && !this.isProcessing) {
+    // sync() will handle the isProcessing check atomically
+    if (this.state.isOnline && this.config.autoSync) {
       this.sync().catch((error) => {
         this.log('Create queue sync error:', error)
       })
@@ -465,7 +467,8 @@ export class SynchronizationService {
     this.notifyStatusCallbacks()
 
     // If online and auto-sync is enabled, trigger sync
-    if (this.state.isOnline && this.config.autoSync && !this.isProcessing) {
+    // sync() will handle the isProcessing check atomically
+    if (this.state.isOnline && this.config.autoSync) {
       this.sync().catch((error) => {
         this.log('Update queue sync error:', error)
       })
@@ -501,7 +504,8 @@ export class SynchronizationService {
     this.notifyStatusCallbacks()
 
     // If online and auto-sync is enabled, trigger sync
-    if (this.state.isOnline && this.config.autoSync && !this.isProcessing) {
+    // sync() will handle the isProcessing check atomically
+    if (this.state.isOnline && this.config.autoSync) {
       this.sync().catch((error) => {
         this.log('Delete queue sync error:', error)
       })
@@ -566,22 +570,28 @@ export class SynchronizationService {
     }
 
     // Different operation types on same entity - this is a conflict
-    let conflictType: ConflictType = 'version-mismatch'
+    let conflictType: ConflictType
     
     if (localOp.type === 'create' && serverOp.type === 'create') {
       conflictType = 'create-create'
+    } else if (localOp.type === 'create' && serverOp.type === 'update') {
+      conflictType = 'create-update'
+    } else if (localOp.type === 'create' && serverOp.type === 'delete') {
+      conflictType = 'create-delete'
+    } else if (localOp.type === 'update' && serverOp.type === 'create') {
+      conflictType = 'update-create'
+    } else if (localOp.type === 'update' && serverOp.type === 'update') {
+      conflictType = 'update-update'
     } else if (localOp.type === 'update' && serverOp.type === 'delete') {
       conflictType = 'update-delete'
+    } else if (localOp.type === 'delete' && serverOp.type === 'create') {
+      conflictType = 'delete-create'
     } else if (localOp.type === 'delete' && serverOp.type === 'update') {
       conflictType = 'delete-update'
-    } else if (localOp.type === 'create' && serverOp.type === 'update') {
-      conflictType = 'update-delete' // Local created, server updated - treat as update-delete
-    } else if (localOp.type === 'update' && serverOp.type === 'create') {
-      conflictType = 'delete-update' // Local updated, server created - treat as delete-update
-    } else if (localOp.type === 'create' && serverOp.type === 'delete') {
-      conflictType = 'update-delete' // Local created, server deleted - treat as update-delete
-    } else if (localOp.type === 'delete' && serverOp.type === 'create') {
-      conflictType = 'delete-update' // Local deleted, server created - treat as delete-update
+    } else if (localOp.type === 'delete' && serverOp.type === 'delete') {
+      conflictType = 'delete-delete'
+    } else {
+      conflictType = 'version-mismatch'
     }
 
     return {

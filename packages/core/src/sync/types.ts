@@ -59,9 +59,10 @@ export interface SyncOperation {
 export enum SyncStatus {
   PENDING = 'PENDING',           // Sync has not started or is queued
   IN_PROGRESS = 'IN_PROGRESS',   // Sync is currently in progress
-  COMPLETED = 'COMPLETED',       // Sync completed successfully
+  COMPLETED = 'COMPLETED',       // Sync completed successfully with no conflicts or failures
   FAILED = 'FAILED',             // Sync failed with errors
   CONFLICT = 'CONFLICT',         // Sync detected conflicts that need resolution
+  PARTIAL = 'PARTIAL',           // Sync completed with some conflicts but no failures
   OFFLINE = 'OFFLINE',           // Device is offline, operations are queued
 }
 
@@ -118,9 +119,15 @@ export interface ConflictResult {
  * Types of conflicts that can occur during synchronization
  */
 export type ConflictType = 
-  | 'update-delete'      // Local update conflicts with server delete
-  | 'delete-update'      // Local delete conflicts with server update
   | 'create-create'      // Both local and server created same entity
+  | 'create-update'      // Local create conflicts with server update
+  | 'create-delete'      // Local create conflicts with server delete
+  | 'update-create'      // Local update conflicts with server create
+  | 'update-update'      // Both local and server updated same entity
+  | 'update-delete'      // Local update conflicts with server delete
+  | 'delete-create'      // Local delete conflicts with server create
+  | 'delete-update'      // Local delete conflicts with server update
+  | 'delete-delete'      // Both local and server deleted same entity
   | 'version-mismatch'  // Version numbers don't match
 
 /**
