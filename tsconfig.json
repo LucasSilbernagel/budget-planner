@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "baseUrl": ".",
+    "rootDir": ".",
     "paths": {
       "@budget-planner/web": ["apps/web/src"],
       "@budget-planner/db": ["packages/db/src"],

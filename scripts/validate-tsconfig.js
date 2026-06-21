@@ -46,6 +46,28 @@ function validateTsConfig(filePath) {
     const content = fs.readFileSync(filePath, 'utf8');
     const config = JSON.parse(content);
     
+    // Check for formatting issues
+    if (content.includes('\r\n')) {
+      errors.push('Contains CRLF line endings (should be LF)');
+    }
+    
+    if (content.includes('\t')) {
+      errors.push('Contains tabs (should use spaces for indentation)');
+    }
+    
+    if (!content.endsWith('\n')) {
+      warnings.push('Missing trailing newline');
+    }
+    
+    // Check for trailing whitespace on any line
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trimEnd() !== lines[i] && lines[i].trim() !== '') {
+        errors.push(`Trailing whitespace on line ${i + 1}`);
+        break; // Report once to avoid spam
+      }
+    }
+    
     // Check moduleResolution
     const moduleResolution = config.compilerOptions?.moduleResolution;
     if (moduleResolution && !validModuleResolutions.includes(moduleResolution)) {
@@ -73,6 +95,32 @@ function validateTsConfig(filePath) {
     // Check include/exclude (skip for base configs that only extend)
     if (!config.include && !config.files && !config.extends) {
       warnings.push('No include pattern or files specified');
+    }
+    
+    // Check for rootDir in configs with include/files
+    if (config.compilerOptions) {
+      const opts = config.compilerOptions;
+      if ((config.include || config.files) && !opts.rootDir) {
+        if (!config.extends) {
+          warnings.push('Missing rootDir in compilerOptions (recommended for proper module resolution)');
+        } else {
+          // Check if parent provides rootDir
+          warnings.push('compilerOptions has include but no explicit rootDir (may be inherited)');
+        }
+      }
+    }
+    
+    // Check for consistent test file excludes
+    if (config.include && config.exclude) {
+      const hasTestExcludes = config.exclude.some(pattern => 
+        pattern.includes('.test.ts') || 
+        pattern.includes('.test.tsx') || 
+        pattern.includes('.spec.ts') || 
+        pattern.includes('.spec.tsx')
+      );
+      if (!hasTestExcludes) {
+        warnings.push('Has include but no test file excludes (recommended for consistency)');
+      }
     }
     
     return { errors, warnings, filePath };
