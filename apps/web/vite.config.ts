@@ -17,6 +17,8 @@ export default defineConfig({
       '@budget-planner/core': resolve(__dirname, '../../packages/core/src'),
       '@budget-planner/config': resolve(__dirname, '../../packages/config/src'),
       '@budget-planner/db': resolve(__dirname, '../../packages/db/src'),
+      // Path alias for project-relative imports
+      '@': resolve(__dirname, './src'),
     },
   },
   server: {

@@ -2,8 +2,8 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // Use jsdom or happy-dom for DOM testing if needed
-    // environment: 'node', // Default for non-DOM tests
+    // Use node environment for non-DOM tests (schema validation)
+    environment: 'node',
     globals: true,
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
     setupFiles: ['./vitest.setup.ts'],

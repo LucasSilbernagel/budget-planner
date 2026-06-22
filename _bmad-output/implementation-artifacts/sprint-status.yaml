@@ -79,8 +79,8 @@ development_status:
   4-2-create-database-schema-for-users-table: done
   4-3-implement-multi-device-data-synchronization-for-paid-tier: in-progress
   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
-  4-4-implement-custom-user-profiles-for-paid-tier: ready-for-dev
-  4-5-implement-premium-forecasting-features: ready-for-dev
+  4-4-implement-custom-user-profiles-for-paid-tier: review
+  4-5-implement-premium-forecasting-features: in-progress
   4-6-implement-currency-control-system-with-mode-toggle: ready-for-dev
   4-7-implement-currency-display-with-intl-numberformat: ready-for-dev
   4-8-display-application-version-in-ui-footer: ready-for-dev

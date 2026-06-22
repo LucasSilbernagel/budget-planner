@@ -1,0 +1,323 @@
+/**
+ * Premium Prompt Component
+ * 
+ * Displays an upgrade prompt for users attempting to access premium features.
+ * Shows the value proposition and provides a call-to-action to upgrade.
+ * 
+ * Architecture: React Component with Tailwind CSS
+ * Usage: Shown when non-premium users try to access premium features
+ */
+
+import React from 'react'
+import { Link } from '@tanstack/react-router'
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/**
+ * Props for PremiumPrompt component
+ */
+export interface PremiumPromptProps {
+  /** The premium feature name the user is trying to access */
+  featureName?: string
+  /** Custom message to display */
+  message?: string
+  /** Whether to show as a dialog/modal */
+  asDialog?: boolean
+  /** Callback when user clicks upgrade */
+  onUpgradeClick?: () => void
+  /** Callback when user clicks close/dismiss */
+  onClose?: () => void
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const PREMIUM_FEATURES = [
+  'Advanced Forecasting Tools',
+  'Multi-Device Data Sync',
+  'Custom User Profiles',
+  'Scenario Modeling',
+  'Save & Load Forecasts',
+  'Priority Support',
+]
+
+const DEFAULT_MESSAGE = 'This is a premium feature. Please upgrade to access advanced financial tools and insights.'
+
+// ============================================================================
+// Main Component
+// ============================================================================
+
+/**
+ * Premium Prompt Component
+ * 
+ * Displays information about premium features and prompts user to upgrade.
+ * 
+ * @param props - Component props
+ * @returns JSX Element
+ * 
+ * @example
+ * ```tsx
+ * <PremiumPrompt featureName="Advanced Forecasting" />
+ * 
+ * // As a dialog
+ * <PremiumPrompt asDialog onClose={() => setShowPrompt(false)} />
+ * ```
+ */
+export function PremiumPrompt({
+  featureName,
+  message = DEFAULT_MESSAGE,
+  asDialog = false,
+  onUpgradeClick,
+  onClose,
+}: PremiumPromptProps): React.ReactElement {
+  const handleUpgradeClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    onUpgradeClick?.()
+    // In production, this would redirect to Paddle checkout
+    // For now, we'll just show a message
+  }
+
+  const handleClose = (e: React.MouseEvent) => {
+    e.preventDefault()
+    onClose?.()
+  }
+
+  if (asDialog) {
+    return (
+      <DialogContainer onClose={handleClose}>
+        <PremiumPromptContent
+          featureName={featureName}
+          message={message}
+          onUpgradeClick={handleUpgradeClick}
+          onClose={handleClose}
+        />
+      </DialogContainer>
+    )
+  }
+
+  return (
+    <PremiumPromptContent
+      featureName={featureName}
+      message={message}
+      onUpgradeClick={handleUpgradeClick}
+      onClose={handleClose}
+    />
+  )
+}
+
+// ============================================================================
+// Content Component
+// ============================================================================
+
+interface PremiumPromptContentProps {
+  featureName?: string
+  message: string
+  onUpgradeClick: (e: React.MouseEvent) => void
+  onClose: (e: React.MouseEvent) => void
+}
+
+function PremiumPromptContent({
+  featureName,
+  message,
+  onUpgradeClick,
+  onClose,
+}: PremiumPromptContentProps): React.ReactElement {
+  return (
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 p-6 max-w-md mx-auto w-full">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center">
+          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
+            <CrownIcon className="w-6 h-6 text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800">Go Premium</h2>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors"
+            aria-label="Close"
+          >
+            <CloseIcon className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+
+      {/* Message */}
+      <div className="mb-4">
+        {featureName && (
+          <p className="text-gray-700 mb-2">
+            You need a premium subscription to access
+            <span className="font-semibold text-blue-600 ml-1">"{featureName}"</span>.
+          </p>
+        )}
+        <p className="text-gray-600 text-sm">{message}</p>
+      </div>
+
+      {/* Features List */}
+      <div className="mb-6">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">What you get:</h3>
+        <ul className="space-y-2">
+          {PREMIUM_FEATURES.slice(0, 4).map((feature, index) => (
+            <li key={feature} className="flex items-center text-sm text-gray-600">
+              <CheckIcon className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+              {feature}
+            </li>
+          ))}
+          <li className="flex items-center text-sm text-gray-500">
+            <span className="w-4 h-4 mr-2 flex-shrink-0" />
+            + more features coming soon
+          </li>
+        </ul>
+      </div>
+
+      {/* CTA Button */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Link
+          to="/login"
+          className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow hover:bg-blue-700 transition-colors text-center"
+          onClick={onUpgradeClick}
+        >
+          <SparklesIcon className="w-4 h-4 mr-2" />
+          Upgrade to Premium
+        </Link>
+        <button
+          type="button"
+          onClick={onClose || (() => {})}
+          className="inline-flex items-center justify-center px-4 py-2 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors text-center"
+          disabled={!onClose}
+        >
+          Maybe Later
+        </button>
+      </div>
+
+      {/* Footer */}
+      <p className="mt-4 text-xs text-center text-gray-400">
+        All data stored in Germany (EU) • CLOUD Act compliant
+      </p>
+    </div>
+  )
+}
+
+// ============================================================================
+// Dialog Container
+// ============================================================================
+
+interface DialogContainerProps {
+  children: React.ReactNode
+  onClose: (e: React.MouseEvent) => void
+}
+
+function DialogContainer({ children, onClose }: DialogContainerProps): React.ReactElement {
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="premium-prompt-title"
+    >
+      <div
+        className="relative w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// Icon Components
+// ============================================================================
+
+/**
+ * Crown Icon - Represents premium features
+ */
+function CrownIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 18V6a2 2 0 012-2h10a2 2 0 012 2v12M9 18h6M9 18h6M9 18V8m6 10V8m-6 10a2 2 0 002 2h2a2 2 0 002-2M9 18a2 2 0 00-2-2h2a2 2 0 002 2"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Check Icon - For feature list items
+ */
+function CheckIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 13l4 4L19 7"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Close Icon - For dialog close button
+ */
+function CloseIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M6 18L18 6M6 6l12 12"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Sparkles Icon - For upgrade button
+ */
+function SparklesIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+      />
+    </svg>
+  )
+}

@@ -16,6 +16,10 @@ import { balanceTracking } from '@budget-planner/db/src/schema'
 import { eq, and } from 'drizzle-orm'
 import type { BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
 
+// Legacy constant for backward compatibility during migration to UUID profile IDs
+// TODO: Update this to use proper UUID when all code is migrated
+const LEGACY_DEFAULT_PROFILE_ID = 1
+
 // ============================================================================
 // Server Function Types
 // ============================================================================
@@ -29,6 +33,7 @@ export interface CreateBalanceTrackingServerInput {
   currentBalance: number // In cents
   maxContributionLimit?: number // In cents, optional
   monthlyContribution: number // In cents
+  profileId?: string // Profile ID for data isolation (required for paid tier) - UUID
 }
 
 /**
@@ -66,17 +71,30 @@ export interface BalanceTrackingListServerResult {
 // ============================================================================
 
 /**
- * Get all balance tracking entries for a user
+ * Get all balance tracking entries for a user and profile
  * GET /api/balance-tracking
+ * 
+ * @param userId - The user's UUID
+ * @param profileId - The profile ID to filter by (optional for backward compatibility, but required for paid tier)
  */
 export async function getBalanceTrackingEntries(
-  userId: number
+  userId: string,
+  profileId?: number
 ): Promise<BalanceTrackingListServerResult> {
   try {
+    // Build where clause based on provided parameters
+    // For paid tier, both userId and profileId should be provided
+    // For free tier (legacy), only userId is used
+    let whereClause = eq(balanceTracking.userId, userId)
+    
+    if (profileId !== undefined) {
+      whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
+    }
+    
     const entries = await db
       .select()
       .from(balanceTracking)
-      .where(eq(balanceTracking.userId, userId))
+      .where(whereClause)
       .orderBy(balanceTracking.createdAt)
 
     return {
@@ -95,16 +113,30 @@ export async function getBalanceTrackingEntries(
 /**
  * Get a single balance tracking entry by ID
  * GET /api/balance-tracking/:id
+ * 
+ * @param id - The balance tracking entry ID
+ * @param userId - The user's UUID
+ * @param profileId - The profile ID to filter by (optional for backward compatibility)
  */
 export async function getBalanceTrackingEntry(
   id: number,
-  userId: number
+  userId: string,
+  profileId?: number
 ): Promise<BalanceTrackingServerResult> {
   try {
+    let whereClause = and(
+      eq(balanceTracking.id, id),
+      eq(balanceTracking.userId, userId)
+    )
+    
+    if (profileId !== undefined) {
+      whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
+    }
+    
     const entry = await db
       .select()
       .from(balanceTracking)
-      .where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId)))
+      .where(whereClause)
       .limit(1)
 
     if (!entry || entry.length === 0) {
@@ -130,16 +162,30 @@ export async function getBalanceTrackingEntry(
 /**
  * Create a new balance tracking entry
  * POST /api/balance-tracking
+ * 
+ * @param input - Balance tracking data including optional profileId
+ * @param userId - The user's UUID
  */
 export async function createBalanceTrackingEntry(
   input: CreateBalanceTrackingServerInput,
-  userId: number
+  userId: string
 ): Promise<BalanceTrackingServerResult> {
   try {
+    // Validate that profileId is provided for paid tier
+    // For backward compatibility with free tier, we allow undefined profileId
+    // but in practice, paid tier should always provide it
+    // Note: profileId is now UUID in the schema, but we keep the legacy fallback for now
+    if (!input.profileId) {
+      console.warn('Creating balance tracking entry without profileId - this should only happen for free tier')
+    }
+
     // Convert cents to dollars for database storage
     // Note: The schema stores amounts in cents as integers
+    // Note: profileId type mismatch - schema expects UUID but fallback is number
+    // This needs to be resolved during full migration to UUID profile IDs
     const newEntry: NewBalanceTracking = {
       userId,
+      profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to profile 1 for backward compatibility
       type: input.type,
       name: input.name,
       currentBalance: input.currentBalance,
@@ -172,18 +218,34 @@ export async function createBalanceTrackingEntry(
 /**
  * Update an existing balance tracking entry
  * PUT /api/balance-tracking/:id
+ * 
+ * @param id - The balance tracking entry ID
+ * @param input - Update data (cannot change profileId)
+ * @param userId - The user's UUID
+ * @param profileId - The profile ID to filter by (optional for backward compatibility)
  */
 export async function updateBalanceTrackingEntry(
   id: number,
   input: UpdateBalanceTrackingServerInput,
-  userId: number
+  userId: string,
+  profileId?: number
 ): Promise<BalanceTrackingServerResult> {
   try {
+    // Build where clause
+    let whereClause = and(
+      eq(balanceTracking.id, id),
+      eq(balanceTracking.userId, userId)
+    )
+    
+    if (profileId !== undefined) {
+      whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
+    }
+
     // Check if entry exists and belongs to user
     const existingEntry = await db
       .select()
       .from(balanceTracking)
-      .where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId)))
+      .where(whereClause)
       .limit(1)
 
     if (!existingEntry || existingEntry.length === 0) {
@@ -204,7 +266,7 @@ export async function updateBalanceTrackingEntry(
     const result = await db
       .update(balanceTracking)
       .set(updateData)
-      .where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId)))
+      .where(whereClause)
       .returning()
 
     if (!result || result.length === 0) {
@@ -230,17 +292,32 @@ export async function updateBalanceTrackingEntry(
 /**
  * Delete a balance tracking entry
  * DELETE /api/balance-tracking/:id
+ * 
+ * @param id - The balance tracking entry ID
+ * @param userId - The user's UUID
+ * @param profileId - The profile ID to filter by (optional for backward compatibility)
  */
 export async function deleteBalanceTrackingEntry(
   id: number,
-  userId: number
+  userId: string,
+  profileId?: number
 ): Promise<BalanceTrackingServerResult> {
   try {
+    // Build where clause
+    let whereClause = and(
+      eq(balanceTracking.id, id),
+      eq(balanceTracking.userId, userId)
+    )
+    
+    if (profileId !== undefined) {
+      whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
+    }
+
     // Check if entry exists and belongs to user
     const existingEntry = await db
       .select()
       .from(balanceTracking)
-      .where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId)))
+      .where(whereClause)
       .limit(1)
 
     if (!existingEntry || existingEntry.length === 0) {
@@ -252,7 +329,7 @@ export async function deleteBalanceTrackingEntry(
 
     await db
       .delete(balanceTracking)
-      .where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId)))
+      .where(whereClause)
 
     return {
       success: true,

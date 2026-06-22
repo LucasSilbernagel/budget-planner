@@ -1,0 +1,235 @@
+/**
+ * Profile Store
+ * 
+ * Zustand store for managing user profiles in the Budget Planner application.
+ * Handles active profile state, profile switching, and profile data.
+ * 
+ * Architecture: Zustand with persistence middleware
+ * Data Sovereignty: Profile data stored client-side for free tier, synced to DanubeData for paid tier
+ */
+
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+// Profile type definition
+// Matches the userProfiles table structure from packages/db/src/schema.ts
+export interface Profile {
+  id: number
+  userId: string
+  name: string
+  description?: string
+  isDefault: boolean
+  currency: string
+  createdAt: string
+  updatedAt: string
+}
+
+// Simplified profile for client-side storage (without sensitive data)
+export interface ClientProfile {
+  id: number
+  userId: string
+  name: string
+  description?: string
+  isDefault: boolean
+  currency: string
+}
+
+// Profile state interface
+export interface ProfileState {
+  // Array of profiles for the current user
+  profiles: ClientProfile[]
+  
+  // Currently active profile ID
+  activeProfileId: number | null
+  
+  // Loading state
+  isLoading: boolean
+  
+  // Error state
+  error: string | null
+  
+  // Actions
+  setProfiles: (profiles: ClientProfile[]) => void
+  setActiveProfileId: (profileId: number | null) => void
+  addProfile: (profile: ClientProfile) => void
+  updateProfile: (profileId: number, updates: Partial<ClientProfile>) => void
+  removeProfile: (profileId: number) => void
+  switchProfile: (profileId: number) => void
+  setLoading: (isLoading: boolean) => void
+  setError: (error: string | null) => void
+  reset: () => void
+}
+
+// Default profile for new users
+const DEFAULT_PROFILE: ClientProfile = {
+  id: 1,
+  userId: '',
+  name: 'Main Profile',
+  description: 'Your primary financial profile',
+  isDefault: true,
+  currency: 'NONE',
+}
+
+// Create the profile store
+export const useProfileStore = create<ProfileState>()(
+  persist(
+    (set) => ({
+      // Initial state
+      profiles: [DEFAULT_PROFILE],
+      activeProfileId: DEFAULT_PROFILE.id,
+      isLoading: false,
+      error: null,
+
+      // Set all profiles for the user
+      setProfiles: (profiles) => {
+        set({
+          profiles,
+          // If active profile is not in the new list, set to first profile or null
+          activeProfileId: profiles.length > 0 ? profiles[0].id : null,
+          isLoading: false,
+          error: null,
+        })
+      },
+
+      // Set the active profile ID
+      setActiveProfileId: (profileId) => {
+        set({ activeProfileId: profileId })
+      },
+
+      // Add a new profile
+      addProfile: (profile) => {
+        set((state) => {
+          // Check if profile already exists (by ID)
+          const existingIndex = state.profiles.findIndex(p => p.id === profile.id)
+          
+          if (existingIndex >= 0) {
+            // Update existing profile
+            const updatedProfiles = [...state.profiles]
+            updatedProfiles[existingIndex] = { ...updatedProfiles[existingIndex], ...profile }
+            return { profiles: updatedProfiles }
+          }
+          
+          // Add new profile
+          return { profiles: [...state.profiles, profile] }
+        })
+      },
+
+      // Update an existing profile
+      updateProfile: (profileId, updates) => {
+        set((state) => ({
+          profiles: state.profiles.map((profile) =>
+            profile.id === profileId ? { ...profile, ...updates } : profile
+          ),
+        }))
+      },
+
+      // Remove a profile
+      removeProfile: (profileId) => {
+        set((state) => {
+          // Prevent deletion of the last profile
+          if (state.profiles.length <= 1) {
+            return {
+              error: 'Cannot delete the last profile. Create a new profile first.',
+            }
+          }
+          
+          // Prevent deletion of the default profile
+          const profileToDelete = state.profiles.find(p => p.id === profileId)
+          if (profileToDelete?.isDefault) {
+            return {
+              error: 'Cannot delete the default profile.',
+            }
+          }
+          
+          // Remove the profile
+          const newProfiles = state.profiles.filter((profile) => profile.id !== profileId)
+          
+          // If the deleted profile was active, switch to the first remaining profile
+          let newActiveProfileId = state.activeProfileId
+          if (state.activeProfileId === profileId && newProfiles.length > 0) {
+            newActiveProfileId = newProfiles[0].id
+          }
+          
+          return {
+            profiles: newProfiles,
+            activeProfileId: newActiveProfileId,
+            error: null,
+          }
+        })
+      },
+
+      // Switch to a different profile
+      switchProfile: (profileId) => {
+        set((state) => {
+          // Check if profile exists
+          const profileExists = state.profiles.some(p => p.id === profileId)
+          
+          if (!profileExists) {
+            return { error: 'Profile not found.' }
+          }
+          
+          return {
+            activeProfileId: profileId,
+            error: null,
+          }
+        })
+      },
+
+      // Set loading state
+      setLoading: (isLoading) => {
+        set({ isLoading })
+      },
+
+      // Set error state
+      setError: (error) => {
+        set({ error })
+      },
+
+      // Reset store to initial state
+      reset: () => {
+        set({
+          profiles: [DEFAULT_PROFILE],
+          activeProfileId: DEFAULT_PROFILE.id,
+          isLoading: false,
+          error: null,
+        })
+      },
+    }),
+    {
+      name: 'budget-planner-profiles-v1',
+      partialize: (state) => ({
+        profiles: state.profiles,
+        activeProfileId: state.activeProfileId,
+      }),
+    }
+  )
+)
+
+// Selector hooks for better performance
+export const useProfiles = () =>
+  useProfileStore((state) => state.profiles)
+
+export const useActiveProfileId = () =>
+  useProfileStore((state) => state.activeProfileId)
+
+export const useActiveProfile = (): ClientProfile | null =>
+  useProfileStore((state) => {
+    if (state.activeProfileId === null) return null
+    return state.profiles.find(p => p.id === state.activeProfileId) ?? null
+  })
+
+export const useIsLoadingProfiles = () =>
+  useProfileStore((state) => state.isLoading)
+
+export const useProfileError = () =>
+  useProfileStore((state) => state.error)
+
+// Helper hooks
+export const useProfileCount = () =>
+  useProfileStore((state) => state.profiles.length)
+
+export const useHasMultipleProfiles = () =>
+  useProfileStore((state) => state.profiles.length > 1)
+
+// Export types for use in components
+export type { Profile as ProfileType, ClientProfile as ClientProfileType }

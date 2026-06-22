@@ -14,5 +14,8 @@ export * from './financial'
 export * from './balanceTracking'
 export * from './savingsGoals'
 
+// Re-export forecasting profile server functions (premium feature)
+export * from './forecastingProfiles'
+
 // Re-export sync server functions
 export * from './sync'

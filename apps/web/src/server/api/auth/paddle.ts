@@ -13,6 +13,7 @@ import { getPaddleConfig, type PaddleConfig } from '@budget-planner/config'
 import { db } from '@budget-planner/db'
 import { users } from '@budget-planner/db/src/schema'
 import { eq } from 'drizzle-orm'
+import { createDefaultProfileForUser } from '../../functions/profiles'
 
 /**
  * Result type for API responses
@@ -155,11 +156,29 @@ export async function getCurrentUserSession(
   request: Request
 ): Promise<ApiResult<UserSession | null>> {
   try {
-    // Check for session cookie or JWT token
-    // This is a placeholder - implement actual session management
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
+    // Check for session cookie
+    // Session is stored in 'session' cookie as JSON string
+    const cookieHeader = request.headers.get('cookie')
     
-    if (!token) {
+    if (!cookieHeader) {
+      return {
+        success: true,
+        data: null,
+      }
+    }
+
+    // Parse cookies from header
+    const cookies: Record<string, string> = {}
+    cookieHeader.split(';').forEach((cookie) => {
+      const [name, ...rest] = cookie.trim().split('=')
+      if (name && rest.length > 0) {
+        cookies[name] = rest.join('=')
+      }
+    })
+
+    const sessionToken = cookies.session
+    
+    if (!sessionToken) {
       return {
         success: true,
         data: null,
@@ -167,7 +186,7 @@ export async function getCurrentUserSession(
     }
 
     // Validate token and get user session
-    const session = await validateSessionToken(token)
+    const session = await validateSessionToken(sessionToken)
     
     if (!session) {
       return {
@@ -354,6 +373,14 @@ async function createOrUpdateUser(
       })
       .returning()
     
+    // Create default profile for the new user
+    const defaultProfileResult = await createDefaultProfileForUser(newUser.id)
+    
+    // Log any profile creation errors but don't fail user creation
+    if (!defaultProfileResult.success) {
+      console.error('Failed to create default profile:', defaultProfileResult.error)
+    }
+    
     return {
       success: true,
       data: {
@@ -375,27 +402,47 @@ async function createOrUpdateUser(
 
 /**
  * Validate session token and return user session
+ * Session token is a JSON string containing user information
  */
 async function validateSessionToken(
   token: string
 ): Promise<UserSession | null> {
-  // Placeholder - implement actual JWT validation
-  // This would:
-  // 1. Decode and verify JWT signature
-  // 2. Check token expiration
-  // 3. Return user session if valid
-  
-  // Simulate validation
-  if (token === 'valid-token') {
+  try {
+    // Session token is stored as URL-encoded JSON in the cookie
+    // Decode the URI component first, then parse the JSON
+    const decodedToken = decodeURIComponent(token)
+    const sessionData = JSON.parse(decodedToken) as {
+      userId?: string
+      paddleId?: string
+      email?: string
+      subscriptionStatus?: 'free' | 'active' | 'past_due' | 'canceled'
+      currency?: string
+    }
+
+    // Validate required fields
+    if (!sessionData.userId || !sessionData.paddleId || !sessionData.email) {
+      console.error('Invalid session token: missing required fields')
+      return null
+    }
+
+    // Ensure userId is a valid UUID format
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidPattern.test(sessionData.userId)) {
+      console.error('Invalid session token: userId is not a valid UUID')
+      return null
+    }
+
+    // Return the user session
     return {
-      userId: 1,
-      email: 'user@example.com',
-      paddleId: 'paddle-user-id',
-      subscriptionStatus: 'free',
-      currency: 'USD',
+      userId: sessionData.userId,
+      email: sessionData.email,
+      paddleId: sessionData.paddleId,
+      subscriptionStatus: sessionData.subscriptionStatus || 'free',
+      currency: sessionData.currency || 'NONE',
       isAuthenticated: true,
     }
+  } catch (error) {
+    console.error('Failed to validate session token:', error)
+    return null
   }
-  
-  return null
 }

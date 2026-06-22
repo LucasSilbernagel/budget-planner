@@ -3,7 +3,9 @@ import {
   integer,
   pgEnum,
   pgTable,
+  pgIndex,
   serial,
+  text,
   timestamp,
   uuid,
   varchar,
@@ -77,12 +79,17 @@ export const incomeSources = pgTable('incomeSources', {
   userId: uuid('userId')
     .references(() => users.id, { onDelete: 'cascade' })
     .notNull(),
+  profileId: uuid('profileId')
+    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   amount: integer('amount').notNull(), // Amount in cents for precision (positive values expected)
   frequency: frequencyEnum('frequency').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  pgIndex('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
+])
 
 // Expenses table - camelCase name per architecture
 export const expenses = pgTable('expenses', {
@@ -90,12 +97,17 @@ export const expenses = pgTable('expenses', {
   userId: uuid('userId')
     .references(() => users.id, { onDelete: 'cascade' })
     .notNull(),
+  profileId: uuid('profileId')
+    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   amount: integer('amount').notNull(), // Amount in cents for precision (positive values expected)
   frequency: frequencyEnum('frequency').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  pgIndex('expenses_userId_profileId_idx').on(table.userId, table.profileId),
+])
 
 // Savings Goals table - camelCase name per architecture
 export const savingsGoals = pgTable('savingsGoals', {
@@ -103,18 +115,26 @@ export const savingsGoals = pgTable('savingsGoals', {
   userId: uuid('userId')
     .references(() => users.id, { onDelete: 'cascade' })
     .notNull(),
+  profileId: uuid('profileId')
+    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   targetAmount: integer('targetAmount').notNull(), // Target amount in cents
   currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  pgIndex('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
+])
 
 // Balance Tracking table - camelCase name per architecture
 export const balanceTracking = pgTable('balanceTracking', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
     .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  profileId: uuid('profileId')
+    .references(() => userProfiles.id, { onDelete: 'cascade' })
     .notNull(),
   type: financeTypeEnum('type').notNull(), // investment or debt
   name: varchar('name', { length: 255 }).notNull(),
@@ -123,23 +143,27 @@ export const balanceTracking = pgTable('balanceTracking', {
   monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  pgIndex('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
+])
 
 // User Profiles table - camelCase name per architecture
 // Profiles allow users to organize their financial data for different purposes
 // Only available for paid tier users
 export const userProfiles = pgTable('userProfiles', {
-  id: serial('id').primaryKey(),
+  id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('userId')
     .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(), // TODO: Add index via table-level configuration for query optimization
+    .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  description: varchar('description', { length: 500 }),
+  description: text('description'),
   isDefault: boolean('isDefault').default(false).notNull(),
   currency: currencyEnum('currency').default('NONE'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  pgIndex('userProfiles_userId_idx').on(table.userId),
+])
 
 // Rate Limit table - for server-side rate limiting
 // Stores request counts per user for rate limiting purposes
@@ -153,6 +177,30 @@ export const rateLimits = pgTable('rateLimits', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
+
+// Forecasting Profiles table - for saving premium forecasting scenarios
+// Only available for paid tier users
+// Allows users to save, load, and manage their forecasting scenarios
+export const forecastingProfiles = pgTable('forecastingProfiles', {
+  id: serial('id').primaryKey(),
+  userId: uuid('userId')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  profileId: uuid('profileId')
+    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  // Serialized forecasting scenario data
+  scenarioData: text('scenarioData').notNull(), // JSON string
+  // Version for schema evolution
+  version: integer('version').default(1).notNull(),
+  isDefault: boolean('isDefault').default(false).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+}, (table) => [
+  pgIndex('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
+])
 
 // Type exports for TypeScript type safety
 // Note: Using InferSelectModel instead of deprecated InferModel
@@ -173,6 +221,12 @@ export type NewBalanceTracking = InferInsertModel<typeof balanceTracking>
 
 export type UserProfile = InferSelectModel<typeof userProfiles>
 export type NewUserProfile = InferInsertModel<typeof userProfiles>
+
+export type RateLimit = InferSelectModel<typeof rateLimits>
+export type NewRateLimit = InferInsertModel<typeof rateLimits>
+
+export type ForecastingProfile = InferSelectModel<typeof forecastingProfiles>
+export type NewForecastingProfile = InferInsertModel<typeof forecastingProfiles>
 
 // Frequency enum type
 export type Frequency = (typeof frequencyEnum.enumValues)[number]
@@ -195,10 +249,8 @@ export const allTables = {
   balanceTracking,
   userProfiles,
   rateLimits,
+  forecastingProfiles,
 }
-
-export type RateLimit = InferSelectModel<typeof rateLimits>
-export type NewRateLimit = InferInsertModel<typeof rateLimits>
 
 // NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)
 // Unit tests for schema validation will be added when database is configured
