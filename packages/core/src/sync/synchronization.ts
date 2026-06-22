@@ -50,18 +50,21 @@ function generateOperationId(): string {
 }
 
 /**
- * In-memory cache for device ID when storage is unavailable
- * This ensures the same device ID is returned within the same session
+ * In-memory cache for device IDs when storage is unavailable
+ * Maps userId to deviceId for per-user device tracking
  */
-let cachedDeviceId: string | undefined = undefined
+const cachedDeviceIds: Map<string, string> = new Map()
 
 /**
- * Generates a device ID for the current device
+ * Generates a unique device ID for the current device and user
  * Uses localStorage to maintain consistency across page refreshes
  * Falls back to sessionStorage or in-memory cache if localStorage fails
+ * 
+ * FIX: Device IDs are now user-scoped to prevent cross-user data leakage
+ * Storage key: bp-device-id-{userId}
  */
-function generateDeviceId(): string {
-  const storageKey = 'bp-device-id'
+function generateDeviceId(userId: string): string {
+  const storageKey = `bp-device-id-${userId}`
   
   try {
     let deviceId = localStorage.getItem(storageKey)
@@ -82,10 +85,12 @@ function generateDeviceId(): string {
     } catch {
       // If both localStorage and sessionStorage fail, use in-memory cache
       // This ensures the same device ID is returned within the same session
-      if (cachedDeviceId === undefined) {
-        cachedDeviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+      let deviceId = cachedDeviceIds.get(userId)
+      if (!deviceId) {
+        deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+        cachedDeviceIds.set(userId, deviceId)
       }
-      return cachedDeviceId
+      return deviceId
     }
   }
 }
@@ -142,7 +147,7 @@ export class SynchronizationService {
       throw new Error('Invalid autoSyncInterval: must be non-negative')
     }
     
-    this.deviceId = generateDeviceId()
+    this.deviceId = generateDeviceId(userId)
     this.config = mergedConfig
     this.queue = createSyncQueue(userId)
     this.state = this.createInitialState()
@@ -178,28 +183,13 @@ export class SynchronizationService {
       return false
     }
     
-    // Additional check for captive portals
-    // Try to fetch a small resource to verify actual connectivity
-    try {
-      // Use a lightweight endpoint that should be fast
-      // Using same-origin health check to maintain data sovereignty (NFR1, NFR2)
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 3000) // 3 second timeout
-      
-      const response = await fetch('/api/health', {
-        method: 'GET',
-        signal: controller.signal,
-        cache: 'no-store',
-      })
-      
-      clearTimeout(timeoutId)
-      
-      // If we get a successful response, we're truly online
-      return response.ok
-    } catch {
-      // If fetch fails (timeout, network error, etc.), assume we're not truly online
-      return false
-    }
+    // SECURITY FIX: Removed unauthenticated /api/health endpoint check
+    // This prevents endpoint enumeration and network reconnaissance
+    // Trade-off: Captive portals may cause false negatives
+    // Alternative: Use authenticated sync endpoint for connectivity check
+    // For now, rely on navigator.onLine and handle failures gracefully
+    
+    return true
   }
 
   /**
@@ -216,6 +206,7 @@ export class SynchronizationService {
     // Set up online/offline event listeners if in browser
     if (typeof window !== 'undefined') {
       // Bind handlers once and store for proper cleanup
+      // FIX: Use same pattern for all handlers to enable proper removal
       this.boundHandleOnline = async () => {
         try {
           await this.handleOnline()
@@ -223,7 +214,9 @@ export class SynchronizationService {
           this.log('Error in handleOnline:', error)
         }
       }
-      this.boundHandleOffline = this.handleOffline.bind(this)
+      this.boundHandleOffline = () => {
+        this.handleOffline()
+      }
       
       // Set up visibility change handler to pause sync in background tabs
       this.boundHandleVisibilityChange = () => {
@@ -703,7 +696,10 @@ export class SynchronizationService {
    * Uses atomic check-and-set for isProcessing to prevent TOCTOU race conditions
    */
   async sync(): Promise<SyncResult> {
-    // Atomic check-and-set to prevent TOCTOU race condition
+    // Use isProcessing as the primary lock mechanism
+    // Note: In single-threaded JS, this provides practical protection against
+    // concurrent sync calls within the same session. For multi-tab scenarios,
+    // the isProcessing flag helps prevent duplicate processing.
     if (this.isProcessing) {
       return {
         success: false,
@@ -716,7 +712,6 @@ export class SynchronizationService {
       }
     }
     
-    // Set processing flag BEFORE any async operations
     this.isProcessing = true
     
     if (!this.state.isOnline) {
@@ -760,12 +755,14 @@ export class SynchronizationService {
       // Process operations in batches
       // IMPORTANT: Track which operations to remove AFTER all processing is complete
       // This prevents data loss if batch fails mid-processing (NFR: Zero tolerance for data loss)
+      // FIX: Only count as synchronized AFTER operations are removed from the queue
+      // This prevents duplicate processing if removeBatch fails
       let synchronizedCount = 0
       let failedCount = 0
       let conflictCount = 0
       const failedOperations: SyncOperation[] = []
       const conflictOperations: SyncOperation[] = []
-      const operationsToRemove: string[] = []
+      const successfullyProcessed: SyncOperation[] = []
 
       for (const operation of operations) {
         try {
@@ -773,9 +770,8 @@ export class SynchronizationService {
           const result = await this.processOperation(operation)
           
           if (result.success) {
-            // Track operation for removal (but don't remove yet)
-            operationsToRemove.push(operation.id)
-            synchronizedCount++
+            // Track operation as successfully processed (but don't count yet)
+            successfullyProcessed.push(operation)
           } else if (result.conflict) {
             // Conflict detected
             conflictOperations.push(operation)
@@ -793,14 +789,21 @@ export class SynchronizationService {
       }
       
       // Remove all successfully processed operations from queue at once
-      // Only remove if we have operations to remove
-      if (operationsToRemove.length > 0) {
+      // Only count as synchronized AFTER successful removal
+      if (successfullyProcessed.length > 0) {
+        const operationsToRemove = successfullyProcessed.map(op => op.id)
         try {
           await this.queue.removeBatch(operationsToRemove)
+          // Only count as synchronized AFTER successful removal from queue
+          synchronizedCount = successfullyProcessed.length
         } catch (removeError) {
           this.log('Failed to remove operations from queue:', removeError)
-          // If we can't remove from queue, the operations will be retried
-          // This is acceptable as it doesn't cause data loss
+          // CRITICAL FIX: If we can't remove from queue, these operations will be retried
+          // Move them to failed so they're reprocessed
+          failedOperations.push(...successfullyProcessed)
+          failedCount += successfullyProcessed.length
+          // Don't count as synchronized
+          synchronizedCount = 0
         }
       }
 

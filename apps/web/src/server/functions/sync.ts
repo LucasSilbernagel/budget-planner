@@ -12,6 +12,8 @@ import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
 import { processBatchSync, getSyncHistory, getSyncAuditLogs, getSyncStatus } from '../api/sync'
 import type { User } from '@budget-planner/db'
+import type { Request } from '@tanstack/start'
+import { getUserContext } from '../api/data/financialData'
 
 /**
  * Server Function: Process a batch of sync operations
@@ -23,13 +25,28 @@ import type { User } from '@budget-planner/db'
  * @returns Promise resolving to the batch sync response
  */
 export async function syncBatch(
-  request: BatchSyncRequest
+  request: Request
 ): Promise<BatchSyncResponse> {
-  // Get the current user from the request context
-  // In TanStack Start, this is automatically injected
-  const user: User | null = null // This will be populated by TanStack Start's auth
+  // Get the current user from the request context using Paddle auth
+  let userResult
+  try {
+    userResult = await getUserContext(request)
+  } catch (error) {
+    // Handle errors from getUserContext (malformed request, etc.)
+    return {
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: Date.now(),
+      status: SyncStatusEnum.FAILED,
+      error: `Authentication error: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
   
-  if (!user) {
+  if (!userResult.success || !userResult.data) {
     return {
       success: false,
       processedCount: 0,
@@ -43,47 +60,114 @@ export async function syncBatch(
     }
   }
 
-  // Get client IP and user agent from request
-  // In TanStack Start, these are available in the request context
-  const ipAddress = '' // Will be populated by TanStack Start
-  const userAgent = '' // Will be populated by TanStack Start
+  const user = userResult.data
+  let data: BatchSyncRequest
+  
+  // SECURITY: Limit request body size to prevent DoS
+  const contentLength = request.headers.get('content-length')
+  const MAX_REQUEST_SIZE = 1024 * 1024 // 1MB
+  if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
+    return {
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: Date.now(),
+      status: SyncStatusEnum.FAILED,
+      error: 'Request too large',
+    }
+  }
+  
+  try {
+    data = await request.json()
+  } catch (error) {
+    return {
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: Date.now(),
+      status: SyncStatusEnum.FAILED,
+      error: `Invalid request: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
 
-  return processBatchSync(request, user, ipAddress, userAgent)
+  // Get client IP and user agent from request
+  // SECURITY: x-forwarded-for can be spoofed; use with caution
+  // In production, consider using connection.socket.remoteAddress for more reliable IP
+  const forwardedFor = request.headers.get('x-forwarded-for') || ''
+  const ipAddress = forwardedFor.split(',').pop()?.trim() || ''
+  const userAgent = request.headers.get('user-agent')?.slice(0, 500) || '' // Limit length
+
+  return processBatchSync(data, user, ipAddress, userAgent)
 }
 
 /**
  * Server Function: Get sync history for the current user
  */
-export async function syncGetHistory(): Promise<ReturnType<typeof getSyncHistory>> {
-  const user: User | null = null // Will be populated by TanStack Start
+export async function syncGetHistory(request?: Request): Promise<ReturnType<typeof getSyncHistory>> {
+  let userResult = { success: false, data: null as User | null }
+  if (request) {
+    try {
+      userResult = await getUserContext(request)
+    } catch {
+      // Authentication error - return empty array (no history for unauthenticated)
+      return []
+    }
+  }
   
-  if (!user) {
+  if (!userResult.success || !userResult.data) {
     return []
   }
   
-  return getSyncHistory(user.id)
+  return getSyncHistory(userResult.data.id)
 }
 
 /**
  * Server Function: Get sync audit logs for the current user
  */
-export async function syncGetAuditLogs(): Promise<ReturnType<typeof getSyncAuditLogs>> {
-  const user: User | null = null // Will be populated by TanStack Start
+export async function syncGetAuditLogs(request?: Request): Promise<ReturnType<typeof getSyncAuditLogs>> {
+  let userResult = { success: false, data: null as User | null }
+  if (request) {
+    try {
+      userResult = await getUserContext(request)
+    } catch {
+      // Authentication error - return empty array (no audit logs for unauthenticated)
+      return []
+    }
+  }
   
-  if (!user) {
+  if (!userResult.success || !userResult.data) {
     return []
   }
   
-  return getSyncAuditLogs(user.id)
+  return getSyncAuditLogs(userResult.data.id)
 }
 
 /**
  * Server Function: Get current sync status for the current user
  */
-export async function syncGetStatus(): Promise<ReturnType<typeof getSyncStatus>> {
-  const user: User | null = null // Will be populated by TanStack Start
+export async function syncGetStatus(request?: Request): Promise<ReturnType<typeof getSyncStatus>> {
+  let userResult = { success: false, data: null as User | null }
+  if (request) {
+    try {
+      userResult = await getUserContext(request)
+    } catch {
+      // Authentication error - return pending status for unauthenticated
+      return {
+        pendingCount: 0,
+        conflictCount: 0,
+        lastSyncTimestamp: null,
+        status: SyncStatusEnum.PENDING,
+      }
+    }
+  }
   
-  if (!user) {
+  if (!userResult.success || !userResult.data) {
     return {
       pendingCount: 0,
       conflictCount: 0,
@@ -92,7 +176,7 @@ export async function syncGetStatus(): Promise<ReturnType<typeof getSyncStatus>>
     }
   }
   
-  return getSyncStatus(user.id)
+  return getSyncStatus(userResult.data.id)
 }
 
 /**

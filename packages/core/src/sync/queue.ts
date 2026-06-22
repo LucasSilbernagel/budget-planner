@@ -11,6 +11,13 @@ import type {
 } from './types'
 
 /**
+ * Maximum number of operations allowed in the queue
+ * Prevents unbounded growth and potential DoS via storage exhaustion
+ * (NFR: Zero tolerance for data loss - this is a safety limit, not a data loss mechanism)
+ */
+const MAX_QUEUE_SIZE = 10000
+
+/**
  * Default storage implementation using localStorage
  * This provides persistence across page refreshes
  */
@@ -91,6 +98,14 @@ export class SyncQueue {
    * @param operation - The sync operation to add
    */
   async add(operation: SyncOperation): Promise<void> {
+    // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
+    if (this.queue.length >= MAX_QUEUE_SIZE) {
+      throw new Error(
+        `Queue size limit (${MAX_QUEUE_SIZE}) exceeded. ` +
+        'Please sync existing operations before adding more.'
+      )
+    }
+
     // Add to in-memory queue
     this.queue.push(operation)
 
@@ -105,6 +120,15 @@ export class SyncQueue {
    * @param operations - Array of sync operations to add
    */
   async addBatch(operations: SyncOperation[]): Promise<void> {
+    // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
+    if (this.queue.length + operations.length > MAX_QUEUE_SIZE) {
+      throw new Error(
+        `Queue size limit (${MAX_QUEUE_SIZE}) would be exceeded. ` +
+        `Current: ${this.queue.length}, Adding: ${operations.length}. ` +
+        'Please sync existing operations before adding more.'
+      )
+    }
+
     this.queue.push(...operations)
 
     // Persist to storage - DO NOT truncate queue
