@@ -19,9 +19,9 @@ import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
 // - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
 // - All monetary amounts use integer type (cents) for precision
 // - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
-// - Database-level CHECK constraints removed temporarily due to Drizzle ORM type compatibility
+// - Database-level CHECK constraints: Will be added via migrations for positive amount validation
 // - Timestamps use default mode (returns strings) for JSON serialization compatibility
-// - Indexes added on paddleId (auth lookups) and userProfiles.userId (query optimization)
+// - Indexes: paddleId has implicit index via unique constraint, explicit indexes added on userProfiles.userId, rateLimits.userId, forecastingProfiles
 
 // Frequency enum for income and expense recurrence
 // Values use snake_case as per architecture: weekly, biweekly, monthly, annually
@@ -61,16 +61,27 @@ export const currencyEnum = pgEnum('currency', [
   'CNY',
   'SEK',
   'NZD',
+  'INR',
+  'BRL',
+  'MXN',
+  'KRW',
+  'SGD',
+  'HKD',
+  'NOK',
+  'DKK',
+  'PLN',
+  'TRY',
 ])
 
 // Users table - referenced by incomeSources, expenses, savingsGoals, and balanceTracking
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
-  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID - unique constraint provides indexing
+  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID - TODO: Add validation to prevent empty strings
   subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
   currency: currencyEnum('currency').default('NONE'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
 
 // Income Sources table - camelCase name per architecture
@@ -176,7 +187,9 @@ export const rateLimits = pgTable('rateLimits', {
   windowStart: timestamp('windowStart').defaultNow().notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  pgIndex('rateLimits_userId_idx').on(table.userId),
+])
 
 // Forecasting Profiles table - for saving premium forecasting scenarios
 // Only available for paid tier users
@@ -199,6 +212,8 @@ export const forecastingProfiles = pgTable('forecastingProfiles', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
+  pgIndex('forecastingProfiles_userId_idx').on(table.userId),
+  pgIndex('forecastingProfiles_profileId_idx').on(table.profileId),
   pgIndex('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
 ])
 

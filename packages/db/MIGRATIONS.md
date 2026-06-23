@@ -16,9 +16,9 @@ The schema is defined in `packages/db/src/schema.ts` using Drizzle ORM.
 - **id**: Changed from `serial` (integer) to `uuid` with `defaultRandom()`
 - **email**: Changed length from 255 to 254 for RFC 5321 compliance
 - **paddleId**: Added `.unique().notNull()` constraints (unique constraint provides implicit indexing)
-- **currency**: Changed from `varchar('currency', { length: 3 })` to `currencyEnum('currency')`
+- **currency**: Changed from `varchar('currency', { length: 3 })` to `currencyEnum('currency')` with extended currency support
 - **createdAt**: Removed `{ mode: 'date' }` to use default timestamp mode for better JSON serialization
-- **removed**: `updatedAt` field (not required by story specifications)
+- **updatedAt**: Re-added field for tracking user record modifications
 
 #### 2. New Enums
 - **currencyEnum**: Created with values: NONE, USD, EUR, GBP, JPY, CAD, AUD, CHF, CNY, SEK, NZD
@@ -30,9 +30,17 @@ All tables with `userId` references updated from `integer('userId')` to `uuid('u
 - `expenses.userId`
 - `savingsGoals.userId`
 - `balanceTracking.userId`
-- `userProfiles.userId` (NOTE: Index should be added via table-level configuration)
+- `userProfiles.userId`
+- `rateLimits.userId` (with explicit index)
+- `forecastingProfiles.userId` (with explicit index)
 
 All foreign keys maintain `ON DELETE CASCADE` for proper data cleanup.
+
+#### 4. New Indexes Added
+- `userProfiles.userId` - Explicit index for query optimization
+- `rateLimits.userId` - Explicit index for rate limiting queries
+- `forecastingProfiles.userId` - Individual index for user filtering
+- `forecastingProfiles.profileId` - Individual index for profile filtering
 
 #### 4. Code Review Improvements Applied
 - ✅ Fixed timestamp mode to use default (returns strings) for JSON serialization compatibility
@@ -44,11 +52,12 @@ All foreign keys maintain `ON DELETE CASCADE` for proper data cleanup.
 
 #### AC-1: Users Table Schema
 ✅ **id**: uuid, primary key, default gen_random_uuid()
-✅ **email**: varchar(255), unique, not null
+✅ **email**: varchar(254), unique, not null (RFC 5321 compliant)
 ✅ **paddleId**: varchar(255), unique, not null
 ✅ **subscriptionStatus**: varchar (via enum), default 'free'
 ✅ **currency**: varchar (via enum), default 'NONE'
 ✅ **createdAt**: timestamp with time zone, default now()
+✅ **updatedAt**: timestamp with time zone, default now()
 
 #### AC-2: User Record Creation
 ✅ Schema supports user record creation via Paddle auth
