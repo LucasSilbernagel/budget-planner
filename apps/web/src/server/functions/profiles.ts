@@ -6,29 +6,27 @@
  * 
  * Architecture: TanStack Start Server Functions
  * Database: Drizzle ORM with DanubeData PostgreSQL (Germany - EU only)
- * Authentication: Requires valid user session
+ * Authentication: Requires valid user session via Paddle
  */
 
 import { db } from '@budget-planner/db'
 import { userProfiles, users } from '@budget-planner/db/src/schema'
 import { eq, and } from 'drizzle-orm'
 import type { UserProfile, NewUserProfile } from '@budget-planner/db'
+import type { Request } from '@tanstack/start'
+import { getCurrentUserSession } from '../api/auth/paddle'
+import type { UserSession, ApiResult } from '../api/auth/paddle'
 
 // Type definitions for API requests
-interface CreateProfileInput {
+// Note: These extend the base ApiResult from paddle auth for consistency
+export interface CreateProfileInput {
   name: string
   description?: string
   currency?: string
 }
 
-interface UpdateProfileInput extends Partial<CreateProfileInput> {
-  id: number
-}
-
-interface ApiResult<T> {
-  success: boolean
-  data?: T
-  error?: string
+export interface UpdateProfileInput extends Partial<CreateProfileInput> {
+  id: string // Changed from number to string (UUID)
 }
 
 /**
@@ -39,16 +37,17 @@ export async function createProfile(
   input: CreateProfileInput
 ): Promise<ApiResult<UserProfile>> {
   try {
-    // In production, extract userId from authenticated session
-    // For now, this is a placeholder - authentication will be added in Story 4-1
-    const userId = '' // Would come from session
+    // Extract userId from authenticated session
+    const sessionResult = await getCurrentUserSession(request)
     
-    if (!userId) {
+    if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
-        error: 'Authentication required',
+        error: sessionResult.error || 'Authentication required',
       }
     }
+    
+    const userId = sessionResult.data.userId
 
     // Validate input
     if (!input.name || typeof input.name !== 'string') {
@@ -116,15 +115,17 @@ export async function createProfile(
  */
 export async function getProfiles(request: Request): Promise<ApiResult<UserProfile[]>> {
   try {
-    // In production, extract userId from authenticated session
-    const userId = '' // Would come from session
+    // Extract userId from authenticated session
+    const sessionResult = await getCurrentUserSession(request)
     
-    if (!userId) {
+    if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
-        error: 'Authentication required',
+        error: sessionResult.error || 'Authentication required',
       }
     }
+    
+    const userId = sessionResult.data.userId
 
     const profiles = await db
       .select()
@@ -149,18 +150,20 @@ export async function getProfiles(request: Request): Promise<ApiResult<UserProfi
  */
 export async function getProfile(
   request: Request,
-  profileId: number
+  profileId: string
 ): Promise<ApiResult<UserProfile>> {
   try {
-    // In production, extract userId from authenticated session
-    const userId = '' // Would come from session
+    // Extract userId from authenticated session
+    const sessionResult = await getCurrentUserSession(request)
     
-    if (!userId) {
+    if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
-        error: 'Authentication required',
+        error: sessionResult.error || 'Authentication required',
       }
     }
+    
+    const userId = sessionResult.data.userId
 
     const [profile] = await db
       .select()
@@ -200,15 +203,17 @@ export async function updateProfile(
   input: UpdateProfileInput
 ): Promise<ApiResult<UserProfile>> {
   try {
-    // In production, extract userId from authenticated session
-    const userId = '' // Would come from session
+    // Extract userId from authenticated session
+    const sessionResult = await getCurrentUserSession(request)
     
-    if (!userId) {
+    if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
-        error: 'Authentication required',
+        error: sessionResult.error || 'Authentication required',
       }
     }
+    
+    const userId = sessionResult.data.userId
 
     // Validate input
     if (!input.id) {
@@ -288,18 +293,20 @@ export async function updateProfile(
  */
 export async function deleteProfile(
   request: Request,
-  profileId: number
+  profileId: string
 ): Promise<ApiResult<void>> {
   try {
-    // In production, extract userId from authenticated session
-    const userId = '' // Would come from session
+    // Extract userId from authenticated session
+    const sessionResult = await getCurrentUserSession(request)
     
-    if (!userId) {
+    if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
-        error: 'Authentication required',
+        error: sessionResult.error || 'Authentication required',
       }
     }
+    
+    const userId = sessionResult.data.userId
 
     // Check if profile exists and belongs to user
     const [existingProfile] = await db
@@ -362,18 +369,20 @@ export async function deleteProfile(
  */
 export async function setDefaultProfile(
   request: Request,
-  profileId: number
+  profileId: string
 ): Promise<ApiResult<void>> {
   try {
-    // In production, extract userId from authenticated session
-    const userId = '' // Would come from session
+    // Extract userId from authenticated session
+    const sessionResult = await getCurrentUserSession(request)
     
-    if (!userId) {
+    if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
-        error: 'Authentication required',
+        error: sessionResult.error || 'Authentication required',
       }
     }
+    
+    const userId = sessionResult.data.userId
 
     // First, unset default flag from all profiles
     await db

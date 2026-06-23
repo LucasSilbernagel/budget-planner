@@ -14,7 +14,7 @@ import { persist } from 'zustand/middleware'
 // Profile type definition
 // Matches the userProfiles table structure from packages/db/src/schema.ts
 export interface Profile {
-  id: number
+  id: string
   userId: string
   name: string
   description?: string
@@ -26,7 +26,7 @@ export interface Profile {
 
 // Simplified profile for client-side storage (without sensitive data)
 export interface ClientProfile {
-  id: number
+  id: string
   userId: string
   name: string
   description?: string
@@ -40,7 +40,7 @@ export interface ProfileState {
   profiles: ClientProfile[]
   
   // Currently active profile ID
-  activeProfileId: number | null
+  activeProfileId: string | null
   
   // Loading state
   isLoading: boolean
@@ -50,19 +50,20 @@ export interface ProfileState {
   
   // Actions
   setProfiles: (profiles: ClientProfile[]) => void
-  setActiveProfileId: (profileId: number | null) => void
+  setActiveProfileId: (profileId: string | null) => void
   addProfile: (profile: ClientProfile) => void
-  updateProfile: (profileId: number, updates: Partial<ClientProfile>) => void
-  removeProfile: (profileId: number) => void
-  switchProfile: (profileId: number) => void
+  updateProfile: (profileId: string, updates: Partial<ClientProfile>) => void
+  removeProfile: (profileId: string) => void
+  switchProfile: (profileId: string) => void
   setLoading: (isLoading: boolean) => void
   setError: (error: string | null) => void
   reset: () => void
 }
 
 // Default profile for new users
+// Note: For client-side only. Server will assign actual UUID when synced.
 const DEFAULT_PROFILE: ClientProfile = {
-  id: 1,
+  id: crypto.randomUUID(),
   userId: '',
   name: 'Main Profile',
   description: 'Your primary financial profile',
@@ -124,7 +125,7 @@ export const useProfileStore = create<ProfileState>()(
       },
 
       // Remove a profile
-      removeProfile: (profileId) => {
+      removeProfile: (profileId: string) => {
         set((state) => {
           // Prevent deletion of the last profile
           if (state.profiles.length <= 1) {
@@ -159,7 +160,7 @@ export const useProfileStore = create<ProfileState>()(
       },
 
       // Switch to a different profile
-      switchProfile: (profileId) => {
+      switchProfile: (profileId: string) => {
         set((state) => {
           // Check if profile exists
           const profileExists = state.profiles.some(p => p.id === profileId)

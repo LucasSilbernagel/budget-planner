@@ -393,16 +393,29 @@ const rateLimitStore: RateLimitEntry[] = []
 async function getEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
-  userId: string
+  userId: string,
+  profileId?: string
 ): Promise<Record<string, unknown> | null> {
   try {
     const table = getTable(entityType)
+    let whereClause = and(
+      // @ts-expect-error - Dynamic column access
+      eq(table.userId, userId),
+      // @ts-expect-error - Dynamic column access
+      eq(table.id, entityId)
+    )
+    
+    // Add profileId filter if provided and table has profileId column
+    if (profileId && table.profileId) {
+      // @ts-expect-error - Dynamic column access
+      whereClause = and(whereClause, eq(table.profileId, profileId))
+    }
+    
     // @ts-expect-error - Dynamic table access
     const result = await db
       .select()
       .from(table)
-      // @ts-expect-error - Dynamic column access
-      .where(and(eq(table.userId, userId), eq(table.id, entityId)))
+      .where(whereClause)
       .limit(1)
     
     return result[0] || null
@@ -420,10 +433,11 @@ async function getEntity(
 async function entityExists(
   entityType: keyof EntityTableMap,
   entityId: string,
-  userId: string
+  userId: string,
+  profileId?: string
 ): Promise<boolean> {
   try {
-    const entity = await getEntity(entityType, entityId, userId)
+    const entity = await getEntity(entityType, entityId, userId, profileId)
     return !!entity
   } catch {
     return false
@@ -435,12 +449,14 @@ async function entityExists(
  */
 async function createEntity(
   entityType: keyof EntityTableMap,
-  data: Record<string, unknown> & { userId: string }
+  data: Record<string, unknown> & { userId: string; profileId?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const table = getTable(entityType)
+    // Ensure profileId is included in data if available
+    const insertData = data
     // @ts-expect-error - Dynamic table insert
-    await db.insert(table).values(data)
+    await db.insert(table).values(insertData)
     return { success: true }
   } catch (error) {
     return { 
@@ -457,17 +473,30 @@ async function updateEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
   data: Record<string, unknown>,
-  userId: string
+  userId: string,
+  profileId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const table = getTable(entityType)
+    let whereClause = and(
+      // @ts-expect-error - Dynamic column access
+      eq(table.userId, userId),
+      // @ts-expect-error - Dynamic column access
+      eq(table.id, entityId)
+    )
+    
+    // Add profileId filter if provided and table has profileId column
+    if (profileId && table.profileId) {
+      // @ts-expect-error - Dynamic column access
+      whereClause = and(whereClause, eq(table.profileId, profileId))
+    }
+    
     // @ts-expect-error - Dynamic table update
     await db
       .update(table)
       // @ts-expect-error - Dynamic column access
       .set(data)
-      // @ts-expect-error - Dynamic column access
-      .where(and(eq(table.userId, userId), eq(table.id, entityId)))
+      .where(whereClause)
     return { success: true }
   } catch (error) {
     return { 
@@ -483,15 +512,28 @@ async function updateEntity(
 async function deleteEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
-  userId: string
+  userId: string,
+  profileId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const table = getTable(entityType)
+    let whereClause = and(
+      // @ts-expect-error - Dynamic column access
+      eq(table.userId, userId),
+      // @ts-expect-error - Dynamic column access
+      eq(table.id, entityId)
+    )
+    
+    // Add profileId filter if provided and table has profileId column
+    if (profileId && table.profileId) {
+      // @ts-expect-error - Dynamic column access
+      whereClause = and(whereClause, eq(table.profileId, profileId))
+    }
+    
     // @ts-expect-error - Dynamic table delete
     await db
       .delete(table)
-      // @ts-expect-error - Dynamic column access
-      .where(and(eq(table.userId, userId), eq(table.id, entityId)))
+      .where(whereClause)
     return { success: true }
   } catch (error) {
     return { 
@@ -510,6 +552,7 @@ async function applyOperation(
   const entityType = operation.entityType as keyof EntityTableMap
   const entityId = operation.entityId
   const userId = operation.userId
+  const profileId = operation.profileId
   
   // Validate userId is not empty
   if (!userId) {
@@ -520,28 +563,28 @@ async function applyOperation(
     switch (operation.type) {
       case 'create':
         // Check if entity already exists
-        const exists = await entityExists(entityType, entityId, userId)
+        const exists = await entityExists(entityType, entityId, userId, profileId)
         if (exists) {
           return { success: false, error: 'Entity already exists' }
         }
         // @ts-expect-error - Data may not have userId
-        return createEntity(entityType, { ...operation.data, userId })
+        return createEntity(entityType, { ...operation.data, userId, profileId })
 
       case 'update':
         // Check if entity exists
-        const entityExistsForUpdate = await entityExists(entityType, entityId, userId)
+        const entityExistsForUpdate = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForUpdate) {
           return { success: false, error: 'Entity not found' }
         }
-        return updateEntity(entityType, entityId, operation.data, userId)
+        return updateEntity(entityType, entityId, operation.data, userId, profileId)
 
       case 'delete':
         // Check if entity exists
-        const entityExistsForDelete = await entityExists(entityType, entityId, userId)
+        const entityExistsForDelete = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForDelete) {
           return { success: false, error: 'Entity not found' }
         }
-        return deleteEntity(entityType, entityId, userId)
+        return deleteEntity(entityType, entityId, userId, profileId)
     }
   } catch (error) {
     return { 
@@ -560,6 +603,7 @@ async function checkConflict(
   const entityType = operation.entityType as keyof EntityTableMap
   const entityId = operation.entityId
   const userId = operation.userId
+  const profileId = operation.profileId
   
   // Validate userId is not empty
   if (!userId) {
@@ -570,16 +614,16 @@ async function checkConflict(
     switch (operation.type) {
       case 'create':
         // Conflict if entity already exists on server
-        const exists = await entityExists(entityType, entityId, userId)
+        const exists = await entityExists(entityType, entityId, userId, profileId)
         if (exists) {
-          const serverData = await getEntity(entityType, entityId, userId)
+          const serverData = await getEntity(entityType, entityId, userId, profileId)
           return { hasConflict: true, conflictType: 'create-create', serverData: serverData || undefined }
         }
         break
 
       case 'update':
         // Conflict if entity doesn't exist on server
-        const existsForUpdate = await entityExists(entityType, entityId, userId)
+        const existsForUpdate = await entityExists(entityType, entityId, userId, profileId)
         if (!existsForUpdate) {
           return { hasConflict: true, conflictType: 'update-delete', serverData: undefined }
         }
@@ -587,7 +631,7 @@ async function checkConflict(
 
       case 'delete':
         // Conflict if entity doesn't exist on server
-        const existsForDelete = await entityExists(entityType, entityId, userId)
+        const existsForDelete = await entityExists(entityType, entityId, userId, profileId)
         if (!existsForDelete) {
           return { hasConflict: true, conflictType: 'delete-update', serverData: undefined }
         }

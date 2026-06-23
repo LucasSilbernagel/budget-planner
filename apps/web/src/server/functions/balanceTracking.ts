@@ -17,8 +17,8 @@ import { eq, and } from 'drizzle-orm'
 import type { BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
 
 // Legacy constant for backward compatibility during migration to UUID profile IDs
-// TODO: Update this to use proper UUID when all code is migrated
-const LEGACY_DEFAULT_PROFILE_ID = 1
+// TODO: Remove this once all code is migrated to UUID
+const LEGACY_DEFAULT_PROFILE_ID = '00000000-0000-0000-0000-000000000000'
 
 // ============================================================================
 // Server Function Types
@@ -79,7 +79,7 @@ export interface BalanceTrackingListServerResult {
  */
 export async function getBalanceTrackingEntries(
   userId: string,
-  profileId?: number
+  profileId?: string
 ): Promise<BalanceTrackingListServerResult> {
   try {
     // Build where clause based on provided parameters
@@ -121,7 +121,7 @@ export async function getBalanceTrackingEntries(
 export async function getBalanceTrackingEntry(
   id: number,
   userId: string,
-  profileId?: number
+  profileId?: string
 ): Promise<BalanceTrackingServerResult> {
   try {
     let whereClause = and(
@@ -174,18 +174,15 @@ export async function createBalanceTrackingEntry(
     // Validate that profileId is provided for paid tier
     // For backward compatibility with free tier, we allow undefined profileId
     // but in practice, paid tier should always provide it
-    // Note: profileId is now UUID in the schema, but we keep the legacy fallback for now
     if (!input.profileId) {
       console.warn('Creating balance tracking entry without profileId - this should only happen for free tier')
     }
 
     // Convert cents to dollars for database storage
     // Note: The schema stores amounts in cents as integers
-    // Note: profileId type mismatch - schema expects UUID but fallback is number
-    // This needs to be resolved during full migration to UUID profile IDs
     const newEntry: NewBalanceTracking = {
       userId,
-      profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to profile 1 for backward compatibility
+      profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to legacy UUID for backward compatibility
       type: input.type,
       name: input.name,
       currentBalance: input.currentBalance,
@@ -228,7 +225,7 @@ export async function updateBalanceTrackingEntry(
   id: number,
   input: UpdateBalanceTrackingServerInput,
   userId: string,
-  profileId?: number
+  profileId?: string
 ): Promise<BalanceTrackingServerResult> {
   try {
     // Build where clause
@@ -300,7 +297,7 @@ export async function updateBalanceTrackingEntry(
 export async function deleteBalanceTrackingEntry(
   id: number,
   userId: string,
-  profileId?: number
+  profileId?: string
 ): Promise<BalanceTrackingServerResult> {
   try {
     // Build where clause

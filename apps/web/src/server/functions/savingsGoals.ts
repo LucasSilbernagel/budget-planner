@@ -17,8 +17,8 @@ import { savingsGoals } from '@budget-planner/db/src/schema'
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
 
 // Legacy constant for backward compatibility during migration to UUID profile IDs
-// TODO: Update this to use proper UUID when all code is migrated
-const LEGACY_DEFAULT_PROFILE_ID = 1
+// TODO: Remove this once all code is migrated to UUID
+const LEGACY_DEFAULT_PROFILE_ID = '00000000-0000-0000-0000-000000000000'
 
 // ============================================================================
 // Type Definitions
@@ -41,7 +41,7 @@ export interface CreateSavingsGoalInput {
   targetAmount: number // In cents
   currentBalance: number // In cents
   userId: string // Required for paid tier (from users table)
-  profileId?: number // Profile ID for data isolation (required for paid tier) - TODO: migrate to UUID
+  profileId?: string // Profile ID for data isolation (required for paid tier) - UUID
 }
 
 /**
@@ -109,7 +109,7 @@ function withProgress(goal: DbSavingsGoal): SavingsGoalOutput {
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Array of savings goals with progress information
  */
-export async function getSavingsGoals(userId: string, profileId?: number): Promise<ApiResult<SavingsGoalOutput[]>> {
+export async function getSavingsGoals(userId: string, profileId?: string): Promise<ApiResult<SavingsGoalOutput[]>> {
   try {
     // Build where clause
     let whereClause = eq(savingsGoals.userId, userId)
@@ -150,7 +150,7 @@ export async function getSavingsGoals(userId: string, profileId?: number): Promi
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Single savings goal with progress information
  */
-export async function getSavingsGoal(id: number, userId: string, profileId?: number): Promise<ApiResult<SavingsGoalOutput>> {
+export async function getSavingsGoal(id: number, userId: string, profileId?: string): Promise<ApiResult<SavingsGoalOutput>> {
   try {
     let whereClause = and(
       eq(savingsGoals.id, id),
@@ -227,13 +227,11 @@ export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<
     }
 
     // Insert into database
-    // Note: profileId type mismatch - schema expects UUID but input is number
-    // This needs to be resolved during full migration to UUID profile IDs
     const [newGoal] = await db
       .insert(savingsGoals)
       .values({
         userId: input.userId,
-        profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to profile 1 for backward compatibility
+        profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to legacy UUID for backward compatibility
         name: input.name.trim(),
         targetAmount: input.targetAmount,
         currentBalance: input.currentBalance ?? 0,
@@ -262,7 +260,7 @@ export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Updated savings goal with progress information
  */
-export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: string, profileId?: number): Promise<ApiResult<SavingsGoalOutput>> {
+export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: string, profileId?: string): Promise<ApiResult<SavingsGoalOutput>> {
   try {
     // Validate input
     if (!input.id) {
@@ -362,7 +360,7 @@ export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: s
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Success/failure result
  */
-export async function deleteSavingsGoal(id: number, userId: string, profileId?: number): Promise<ApiResult<void>> {
+export async function deleteSavingsGoal(id: number, userId: string, profileId?: string): Promise<ApiResult<void>> {
   try {
     // Build where clause
     let whereClause = and(

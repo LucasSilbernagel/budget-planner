@@ -37,10 +37,10 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   const { profiles, activeProfile, activeProfileId } = useProfilesWithActive()
   const { deleteProfile } = useProfileManager()
   const hasMultipleProfiles = useHasMultipleProfiles()
-  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Handle profile deletion
-  const handleDelete = async (profileId: number) => {
+  const handleDelete = async (profileId: string) => {
     if (deletingId) return // Prevent multiple simultaneous deletions
     
     setDeletingId(profileId)
@@ -53,14 +53,26 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     }, 300)
   }
 
-  // Get color for a profile (consistent based on ID)
-  const getProfileColor = (profileId: number) => {
-    return PROFILE_COLORS[profileId % PROFILE_COLORS.length]
+  // Get color for a profile (consistent based on ID hash)
+  const getProfileColor = (profileId: string) => {
+    // Use a simple hash of the UUID to get a consistent index
+    let hash = 0
+    for (let i = 0; i < profileId.length; i++) {
+      hash = (hash << 5) - hash + profileId.charCodeAt(i)
+      hash |= 0 // Convert to 32-bit integer
+    }
+    return PROFILE_COLORS[Math.abs(hash) % PROFILE_COLORS.length]
   }
 
-  // Get icon for a profile (consistent based on ID)
-  const getProfileIcon = (profileId: number) => {
-    return PROFILE_ICONS[profileId % PROFILE_ICONS.length]
+  // Get icon for a profile (consistent based on ID hash)
+  const getProfileIcon = (profileId: string) => {
+    // Use a simple hash of the UUID to get a consistent index
+    let hash = 0
+    for (let i = 0; i < profileId.length; i++) {
+      hash = (hash << 5) - hash + profileId.charCodeAt(i)
+      hash |= 0 // Convert to 32-bit integer
+    }
+    return PROFILE_ICONS[Math.abs(hash) % PROFILE_ICONS.length]
   }
 
   // Format date for display

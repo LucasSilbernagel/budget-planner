@@ -49,6 +49,9 @@ export interface SyncOperation {
   /** User ID who owns the data */
   userId: string
   
+  /** Profile ID for data isolation (UUID) - required for profile-scoped entities */
+  profileId?: string
+  
   /** Optional version number for optimistic concurrency control */
   version?: number
 }

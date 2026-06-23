@@ -49,7 +49,7 @@ export function useActiveProfile(): ClientProfile | null {
 export function useProfilesWithActive(): {
   profiles: ClientProfile[]
   activeProfile: ClientProfile | null
-  activeProfileId: number | null
+  activeProfileId: string | null
 } {
   const profiles = useProfiles()
   const activeProfileId = useActiveProfileId()
@@ -71,7 +71,7 @@ export function useProfileSwitcher() {
   /**
    * Switch to a specific profile by ID
    */
-  const switchToProfile = (profileId: number) => {
+  const switchToProfile = (profileId: string) => {
     switchProfile(profileId)
   }
   
@@ -116,11 +116,11 @@ export function useProfileManager() {
    * Create a new profile
    */
   const createProfile = (profileData: Omit<ClientProfile, 'id' | 'userId'> & { userId: string }) => {
-    // Generate a temporary client-side ID
-    // Server will assign the real ID when synced for paid tier
+    // Generate a temporary client-side UUID
+    // Server will assign the real UUID when synced for paid tier
     const newProfile: ClientProfile = {
       ...profileData,
-      id: Date.now(), // Temporary client-side ID
+      id: crypto.randomUUID(), // Temporary client-side UUID
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
@@ -132,7 +132,7 @@ export function useProfileManager() {
   /**
    * Update an existing profile
    */
-  const modifyProfile = (profileId: number, updates: Omit<Partial<ClientProfile>, 'createdAt' | 'updatedAt'>) => {
+  const modifyProfile = (profileId: string, updates: Omit<Partial<ClientProfile>, 'createdAt' | 'updatedAt'>) => {
     const timestamp = new Date().toISOString()
     updateProfile(profileId, { 
       ...updates, 
@@ -143,7 +143,7 @@ export function useProfileManager() {
   /**
    * Delete a profile
    */
-  const deleteProfile = (profileId: number) => {
+  const deleteProfile = (profileId: string) => {
     return removeProfile(profileId)
   }
   
@@ -173,7 +173,7 @@ export function useProfileManager() {
 /**
  * Hook to get profile by ID
  */
-export function useProfileById(profileId: number | null): ClientProfile | null {
+export function useProfileById(profileId: string | null): ClientProfile | null {
   const profiles = useProfiles()
   
   if (profileId === null) return null
@@ -184,7 +184,7 @@ export function useProfileById(profileId: number | null): ClientProfile | null {
 /**
  * Hook to check if a specific profile is active
  */
-export function useIsProfileActive(profileId: number): boolean {
+export function useIsProfileActive(profileId: string): boolean {
   const activeProfileId = useActiveProfileId()
   return activeProfileId === profileId
 }
