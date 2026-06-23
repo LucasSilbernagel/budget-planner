@@ -14,10 +14,13 @@
     "tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
     "tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
     "tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
-    "validate:tsconfig": "node scripts/validate-tsconfig.js"
+    "validate:tsconfig": "node scripts/validate-tsconfig.js",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r test:unit",
+    "test:watch": "pnpm -r test:watch"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=20.12.0"
   },
   "pnpm": {},
   "devDependencies": {
