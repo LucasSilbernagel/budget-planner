@@ -9,6 +9,7 @@ import {
   timestamp,
   uuid,
   varchar,
+  sql,
 } from 'drizzle-orm/pg-core'
 
 // Type imports for Drizzle
@@ -19,9 +20,10 @@ import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
 // - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
 // - All monetary amounts use integer type (cents) for precision
 // - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
-// - Database-level CHECK constraints: Will be added via migrations for positive amount validation
+// - Database-level CHECK constraints: Added directly in schema for positive amount validation
 // - Timestamps use default mode (returns strings) for JSON serialization compatibility
 // - Indexes: paddleId has implicit index via unique constraint, explicit indexes added on userProfiles.userId, rateLimits.userId, forecastingProfiles
+// - Soft-delete: Users table has isDeleted flag; all foreign keys use RESTRICT (no CASCADE) to prevent accidental data loss
 
 // Frequency enum for income and expense recurrence
 // Values use snake_case as per architecture: weekly, biweekly, monthly, annually
@@ -80,6 +82,7 @@ export const users = pgTable('users', {
   paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID - TODO: Add validation to prevent empty strings
   subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
   currency: currencyEnum('currency').default('NONE'),
+  isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 })
@@ -88,74 +91,84 @@ export const users = pgTable('users', {
 export const incomeSources = pgTable('incomeSources', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   profileId: uuid('profileId')
-    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .references(() => userProfiles.id)
     .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  amount: integer('amount').notNull(), // Amount in cents for precision (positive values expected)
+  amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
   frequency: frequencyEnum('frequency').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
   pgIndex('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
+  // CHECK constraint: amount must be positive (> 0)
+  sql`CHECK (${table.amount} > 0)`,
 ])
 
 // Expenses table - camelCase name per architecture
 export const expenses = pgTable('expenses', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   profileId: uuid('profileId')
-    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .references(() => userProfiles.id)
     .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  amount: integer('amount').notNull(), // Amount in cents for precision (positive values expected)
+  amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
   frequency: frequencyEnum('frequency').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
   pgIndex('expenses_userId_profileId_idx').on(table.userId, table.profileId),
+  // CHECK constraint: amount must be positive (> 0)
+  sql`CHECK (${table.amount} > 0)`,
 ])
 
 // Savings Goals table - camelCase name per architecture
 export const savingsGoals = pgTable('savingsGoals', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   profileId: uuid('profileId')
-    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .references(() => userProfiles.id)
     .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
-  targetAmount: integer('targetAmount').notNull(), // Target amount in cents
-  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents
+  targetAmount: integer('targetAmount').notNull(), // Target amount in cents (> 0 required)
+  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
   pgIndex('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
+  // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
+  sql`CHECK (${table.targetAmount} > 0)`,
+  sql`CHECK (${table.currentBalance} >= 0)`,
 ])
 
 // Balance Tracking table - camelCase name per architecture
 export const balanceTracking = pgTable('balanceTracking', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   profileId: uuid('profileId')
-    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .references(() => userProfiles.id)
     .notNull(),
   type: financeTypeEnum('type').notNull(), // investment or debt
   name: varchar('name', { length: 255 }).notNull(),
-  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt per AC 5)
-  maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents
-  monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents
+  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
+  maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)
+  monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents (>= 0 required)
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
   pgIndex('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
+  // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
+  sql`CHECK (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0)`,
+  sql`CHECK (${table.monthlyContribution} >= 0)`,
 ])
 
 // User Profiles table - camelCase name per architecture
@@ -164,7 +177,7 @@ export const balanceTracking = pgTable('balanceTracking', {
 export const userProfiles = pgTable('userProfiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
@@ -181,7 +194,7 @@ export const userProfiles = pgTable('userProfiles', {
 export const rateLimits = pgTable('rateLimits', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   requestCount: integer('requestCount').default(0).notNull(),
   windowStart: timestamp('windowStart').defaultNow().notNull(),
@@ -197,10 +210,10 @@ export const rateLimits = pgTable('rateLimits', {
 export const forecastingProfiles = pgTable('forecastingProfiles', {
   id: serial('id').primaryKey(),
   userId: uuid('userId')
-    .references(() => users.id, { onDelete: 'cascade' })
+    .references(() => users.id)
     .notNull(),
   profileId: uuid('profileId')
-    .references(() => userProfiles.id, { onDelete: 'cascade' })
+    .references(() => userProfiles.id)
     .notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),

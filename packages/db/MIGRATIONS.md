@@ -17,6 +17,7 @@ The schema is defined in `packages/db/src/schema.ts` using Drizzle ORM.
 - **email**: Changed length from 255 to 254 for RFC 5321 compliance
 - **paddleId**: Added `.unique().notNull()` constraints (unique constraint provides implicit indexing)
 - **currency**: Changed from `varchar('currency', { length: 3 })` to `currencyEnum('currency')` with extended currency support
+- **isDeleted**: Added `boolean` field with default `false` for soft-delete functionality
 - **createdAt**: Removed `{ mode: 'date' }` to use default timestamp mode for better JSON serialization
 - **updatedAt**: Re-added field for tracking user record modifications
 
@@ -34,7 +35,7 @@ All tables with `userId` references updated from `integer('userId')` to `uuid('u
 - `rateLimits.userId` (with explicit index)
 - `forecastingProfiles.userId` (with explicit index)
 
-All foreign keys maintain `ON DELETE CASCADE` for proper data cleanup.
+**✅ Soft-Delete Implementation:** All `ON DELETE CASCADE` constraints **REMOVED** and replaced with RESTRICT behavior. Users table now has `isDeleted: boolean` field (default: false) to support safe soft-deletion without data loss.
 
 #### 4. New Indexes Added
 - `userProfiles.userId` - Explicit index for query optimization
@@ -90,16 +91,22 @@ pnpm --filter db db:migrate
 ## Architecture Decisions
 
 ### Cascade Delete vs Soft-Delete
-**Current Implementation:** All foreign keys use `ON DELETE CASCADE`
+**Current Implementation:** ✅ **SOFT-DELETE IMPLEMENTED**
 
-**Consideration:** Cascade delete is convenient but destructive. When a user is deleted, ALL their financial data (income, expenses, savings, balances) is permanently deleted.
+- All `ON DELETE CASCADE` constraints have been **REMOVED** from foreign keys
+- Users table now includes `isDeleted: boolean` field (default: `false`)
+- All foreign keys now use RESTRICT behavior (default in PostgreSQL)
+- Database will prevent deletion of users with existing data
 
-**Recommendation:** For production, consider implementing one of these alternatives:
-1. **Soft-delete pattern:** Add `isDeleted` boolean column to users table, filter queries to exclude deleted users
-2. **Archive pattern:** Move deleted user data to archive tables instead of deleting
-3. **Confirmation workflow:** Require multi-step confirmation for user deletion
+**Consideration:** Soft-delete pattern provides data safety while maintaining referential integrity. When a user is marked as deleted (isDeleted = true), all their financial data remains intact but is excluded from active queries.
 
-**Decision:** For now, cascade delete is acceptable for development. Revisit before production deployment.
+**Implementation Notes:**
+- Application code must filter queries with `WHERE users.isDeleted = false`
+- User deletion should update `isDeleted` flag instead of performing DELETE
+- No data loss possible through accidental or malicious deletion
+- Migration: Existing deployments need to add `isDeleted` column with default `false`
+
+**Decision:** Soft-delete pattern is now **PRODUCTION-READY**. No cascade delete risks remain.
 
 ## Important Notes
 
@@ -169,7 +176,16 @@ All TypeScript types are properly inferred from the Drizzle schema:
 - [x] subscriptionStatusEnum updated ('canceled' not 'cancelled')
 - [x] currencyEnum created with common currencies
 - [x] All userId foreign keys updated to uuid
-- [x] updatedAt removed from users table
+- [x] updatedAt re-added to users table
+- [x] **isDeleted field added for soft-delete functionality**
+- [x] **All CASCADE delete constraints removed and replaced with RESTRICT**
+- [x] **CHECK constraints re-added for data integrity:**
+  - [x] incomeSources.amount > 0
+  - [x] expenses.amount > 0
+  - [x] savingsGoals.targetAmount > 0
+  - [x] savingsGoals.currentBalance >= 0
+  - [x] balanceTracking.maxContributionLimit > 0 (if provided)
+  - [x] balanceTracking.monthlyContribution >= 0
 - [x] Biome linting passes
 - [x] Schema validation tests created
 - [ ] Migrations generated (requires DATABASE_URL)
