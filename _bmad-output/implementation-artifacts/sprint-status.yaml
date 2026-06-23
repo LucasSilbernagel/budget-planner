@@ -82,7 +82,7 @@ development_status:
   epic-4: in-progress
   4-1-implement-paddle-authentication-and-account-creation: done
   4-2-create-database-schema-for-users-table: done
-  4-3-implement-multi-device-data-synchronization-for-paid-tier: in-progress
+  4-3-implement-multi-device-data-synchronization-for-paid-tier: ready-for-dev  # Re-scoped 2026-06-23 (Correct Course): push/persist only; pull split to 4-18
   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
   4-4-implement-custom-user-profiles-for-paid-tier: in-progress  # Code review: 19/21 patches applied, 2 deferred (SQL injection refactor, rate limiting)
   4-5-implement-premium-forecasting-features: in-progress
@@ -98,6 +98,7 @@ development_status:
   4-15-set-up-ci-cd-pipeline-with-github-actions: ready-for-dev
   4-16-deploy-to-danubedata-static-sites: ready-for-dev
   4-17-set-up-danubedata-managed-postgresql: ready-for-dev
+  4-18-implement-server-to-client-data-pull-for-multi-device-sync: backlog  # Added 2026-06-23 (Correct Course): owns cross-device pull / former AC-2
   epic-4-retrospective: optional
 
   # Epic 5: Production Deployment & Infrastructure (DanubeData Full Stack)
