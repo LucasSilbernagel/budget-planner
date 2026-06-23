@@ -3,14 +3,14 @@ import {
   integer,
   pgEnum,
   pgTable,
-  pgIndex,
+  index,
   serial,
   text,
   timestamp,
   uuid,
   varchar,
-  sql,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 // Type imports for Drizzle
 // Note: Using InferSelectModel and InferInsertModel (InferModel is deprecated)
@@ -106,7 +106,7 @@ export const incomeSources = pgTable('incomeSources', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
+  index('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
   // CHECK constraint: amount must be positive (> 0)
   sql`CHECK (${table.amount} > 0)`,
 ])
@@ -126,7 +126,7 @@ export const expenses = pgTable('expenses', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('expenses_userId_profileId_idx').on(table.userId, table.profileId),
+  index('expenses_userId_profileId_idx').on(table.userId, table.profileId),
   // CHECK constraint: amount must be positive (> 0)
   sql`CHECK (${table.amount} > 0)`,
 ])
@@ -146,7 +146,7 @@ export const savingsGoals = pgTable('savingsGoals', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
+  index('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
   // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
   sql`CHECK (${table.targetAmount} > 0)`,
   sql`CHECK (${table.currentBalance} >= 0)`,
@@ -169,7 +169,7 @@ export const balanceTracking = pgTable('balanceTracking', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
+  index('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
   // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
   sql`CHECK (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0)`,
   sql`CHECK (${table.monthlyContribution} >= 0)`,
@@ -190,7 +190,7 @@ export const userProfiles = pgTable('userProfiles', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('userProfiles_userId_idx').on(table.userId),
+  index('userProfiles_userId_idx').on(table.userId),
 ])
 
 // Rate Limit table - for server-side rate limiting
@@ -205,7 +205,7 @@ export const rateLimits = pgTable('rateLimits', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('rateLimits_userId_idx').on(table.userId),
+  index('rateLimits_userId_idx').on(table.userId),
 ])
 
 // Forecasting Profiles table - for saving premium forecasting scenarios
@@ -229,9 +229,9 @@ export const forecastingProfiles = pgTable('forecastingProfiles', {
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 }, (table) => [
-  pgIndex('forecastingProfiles_userId_idx').on(table.userId),
-  pgIndex('forecastingProfiles_profileId_idx').on(table.profileId),
-  pgIndex('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
+  index('forecastingProfiles_userId_idx').on(table.userId),
+  index('forecastingProfiles_profileId_idx').on(table.profileId),
+  index('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
 ])
 
 // Type exports for TypeScript type safety
