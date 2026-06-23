@@ -281,8 +281,19 @@ async function exchangeCodeForToken(
 }
 
 /**
+ * Max retry attempts for Paddle API calls
+ */
+const MAX_RETRY_ATTEMPTS = 3
+
+/**
+ * Retry delay in milliseconds
+ */
+const RETRY_DELAY_MS = 1000
+
+/**
  * Get user information from Paddle
  * Uses Paddle API to fetch user details including subscription status
+ * Includes retry logic for transient failures
  * 
  * Paddle API Endpoint: GET /users/me
  * Returns: User details including subscription information
@@ -291,70 +302,111 @@ async function getPaddleUser(
   accessToken: string,
   paddleConfig: PaddleConfig
 ): Promise<ApiResult<PaddleUser>> {
-  try {
-    if (!paddleConfig.apiKey || !paddleConfig.vendorId) {
+  // Validate credentials first
+  if (!paddleConfig.apiKey || !paddleConfig.vendorId) {
+    return {
+      success: false,
+      error: 'Paddle API credentials not configured',
+    }
+  }
+
+  // Determine API base URL based on environment
+  const apiBaseUrl = paddleConfig.environment === 'sandbox'
+    ? 'https://sandbox-vendors.paddle.com'
+    : 'https://vendors.paddle.com'
+
+  let lastError: Error | undefined
+  
+  for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      // Get user information from Paddle API
+      // Paddle API v2: GET /users/me returns authenticated user details
+      const response = await fetch(`${apiBaseUrl}/api/2.0/users/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${paddleConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        lastError = new Error(
+          errorData.error?.message || `Paddle API error: ${response.status}`
+        )
+        
+        // Retry on 429 (rate limit) and 5xx errors
+        if (response.status === 429 || response.status >= 500) {
+          console.error(`Paddle API attempt ${attempt} failed: ${lastError.message}. Retrying...`)
+          if (attempt < MAX_RETRY_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt))
+            continue
+          }
+        }
+        
+        return {
+          success: false,
+          error: lastError.message,
+        }
+      }
+
+      const userData = await response.json()
+
+      // Validate required fields
+      if (!userData.id && !userData.user_id) {
+        return {
+          success: false,
+          error: 'Paddle user ID is missing from API response',
+        }
+      }
+      
+      if (!userData.email) {
+        return {
+          success: false,
+          error: 'Paddle user email is missing from API response',
+        }
+      }
+
+      // Map Paddle response to our PaddleUser interface
+      // Paddle API returns user details with subscription information
+      const paddleUser: PaddleUser = {
+        id: userData.id || userData.user_id,
+        email: userData.email,
+        name: userData.name,
+        // Extract subscription status from Paddle user data
+        // Paddle user objects include a 'subscriptions' array
+        // For users with active subscriptions, status will be 'active'
+        subscriptionStatus: mapPaddleSubscriptionStatus(userData),
+        currency: userData.currency_code || userData.currency,
+      }
+
+      return {
+        success: true,
+        data: paddleUser,
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      console.error(`Paddle API attempt ${attempt} failed: ${lastError.message}`)
+      
+      // Retry on network errors
+      if (attempt < MAX_RETRY_ATTEMPTS) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt))
+        continue
+      }
+      
+      // After all retries, fail - do NOT return placeholder user in production
+      console.error('Paddle API: All retry attempts failed')
       return {
         success: false,
-        error: 'Paddle API credentials not configured',
+        error: `Paddle API unavailable after ${MAX_RETRY_ATTEMPTS} attempts: ${lastError.message}`,
       }
     }
-
-    // Determine API base URL based on environment
-    const apiBaseUrl = paddleConfig.environment === 'sandbox'
-      ? 'https://sandbox-vendors.paddle.com'
-      : 'https://vendors.paddle.com'
-
-    // Get user information from Paddle API
-    // Paddle API v2: GET /users/me returns authenticated user details
-    const response = await fetch(`${apiBaseUrl}/api/2.0/users/me`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${paddleConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return {
-        success: false,
-        error: errorData.error?.message || `Paddle API error: ${response.status}`,
-      }
-    }
-
-    const userData = await response.json()
-
-    // Map Paddle response to our PaddleUser interface
-    // Paddle API returns user details with subscription information
-    const paddleUser: PaddleUser = {
-      id: userData.id || userData.user_id,
-      email: userData.email,
-      name: userData.name,
-      // Extract subscription status from Paddle user data
-      // Paddle user objects include a 'subscriptions' array
-      // For users with active subscriptions, status will be 'active'
-      subscriptionStatus: mapPaddleSubscriptionStatus(userData),
-      currency: userData.currency_code || userData.currency,
-    }
-
-    return {
-      success: true,
-      data: paddleUser,
-    }
-  } catch (error) {
-    console.error('Failed to get Paddle user:', error)
-    // Fallback to placeholder for development
-    // In production, this should fail or retry
-    return {
-      success: true,
-      data: {
-        id: 'paddle-user-id',
-        email: 'user@example.com',
-        name: 'John Doe',
-        subscriptionStatus: 'active', // Default to active for Paddle users
-        currency: 'USD',
-      },
-    }
+  }
+  
+  // This should never be reached, but just in case
+  return {
+    success: false,
+    error: 'Paddle API request failed',
   }
 }
 
@@ -375,25 +427,35 @@ function mapPaddleSubscriptionStatus(userData: any): 'free' | 'active' | 'past_d
     return 'free'
   }
 
-  // Find the primary/first subscription
-  const primarySubscription = subscriptions[0]
-  const status = primarySubscription.status?.toLowerCase()
-
-  // Map Paddle status to our enum
-  // Paddle uses: active, past_due, canceled, trialing
-  switch (status) {
-    case 'active':
-    case 'trialing':
-      return 'active'
-    case 'past_due':
-      return 'past_due'
-    case 'canceled':
-    case 'cancelled':
-      return 'canceled'
-    default:
-      // Unknown status - default to free
-      return 'free'
+  // Find the first valid subscription with a status
+  for (const subscription of subscriptions) {
+    if (subscription && typeof subscription === 'object') {
+      const status = subscription.status?.toLowerCase()
+      
+      if (!status) {
+        continue // Skip subscriptions without status
+      }
+      
+      // Map Paddle status to our enum
+      // Paddle uses: active, past_due, canceled, trialing
+      switch (status) {
+        case 'active':
+        case 'trialing':
+          return 'active'
+        case 'past_due':
+          return 'past_due'
+        case 'canceled':
+        case 'cancelled':
+          return 'canceled'
+        default:
+          // Unknown status - continue to next subscription
+          continue
+      }
+    }
   }
+  
+  // If no valid subscription found, default to free
+  return 'free'
 }
 
 /**
@@ -447,16 +509,27 @@ async function createOrUpdateUser(
     const existingUser = existingUsers[0]
     
     if (existingUser) {
-      // User already exists - return existing session
-      // Note: subscriptionStatus may need updating via webhook if user's subscription changed
+      // User already exists - update subscriptionStatus and currency from Paddle if they differ
+      // This ensures we have the latest subscription data from Paddle
+      if (existingUser.subscriptionStatus !== paddleUser.subscriptionStatus ||
+          existingUser.currency !== paddleUser.currency) {
+        await db
+          .update(users)
+          .set({
+            subscriptionStatus: paddleUser.subscriptionStatus || existingUser.subscriptionStatus,
+            currency: paddleUser.currency || existingUser.currency,
+          })
+          .where(eq(users.paddleId, paddleUser.id))
+      }
+      
       return {
         success: true,
         data: {
           userId: existingUser.id,
           email: existingUser.email,
           paddleId: existingUser.paddleId,
-          subscriptionStatus: existingUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
-          currency: existingUser.currency,
+          subscriptionStatus: (paddleUser.subscriptionStatus || existingUser.subscriptionStatus) as 'free' | 'active' | 'past_due' | 'canceled',
+          currency: paddleUser.currency || existingUser.currency,
           isAuthenticated: true,
           name: paddleUser.name,
         }
@@ -491,7 +564,7 @@ async function createOrUpdateUser(
         userId: newUser.id,
         email: newUser.email,
         paddleId: newUser.paddleId,
-        subscriptionStatus: newUser.subscriptionStatus as 'free' | 'active' | 'past_due' | 'canceled',
+        subscriptionStatus: newUser.subscriptionStatus,
         currency: newUser.currency,
         isAuthenticated: true,
         name: paddleUser.name,
