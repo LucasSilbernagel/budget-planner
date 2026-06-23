@@ -59,18 +59,37 @@ function verifyWebhookSignature(
 
 /**
  * Handle subscription status update from Paddle webhook
- * Updates user subscription status in DanubeData PostgreSQL
+ * Updates or creates user subscription status in DanubeData PostgreSQL
+ * 
+ * For subscription_created events, this may be the first time we see this user
+ * if the OAuth flow didn't complete properly, so we create the user record.
  */
 async function handleSubscriptionStatusUpdate(
   paddleUserId: string,
-  subscriptionStatus: string
+  subscriptionStatus: string,
+  email?: string,
+  currency?: string
 ): Promise<boolean> {
   try {
-    // Update user subscription status in DanubeData PostgreSQL
-    await db
+    // First, try to update existing user
+    const result = await db
       .update(users)
       .set({ subscriptionStatus: subscriptionStatus as any })
       .where(eq(users.paddleId, paddleUserId))
+    
+    // If no rows were updated, the user doesn't exist yet
+    // This can happen if the OAuth flow didn't complete but subscription was created
+    if (result.rowCount === 0 && email) {
+      // Create the user record with subscription information
+      await db.insert(users).values({
+        paddleId: paddleUserId,
+        email: email,
+        subscriptionStatus: subscriptionStatus as any,
+        currency: currency || 'NONE',
+      })
+      console.log(`Created new user ${paddleUserId} from subscription webhook`)
+    }
+    
     return true
   } catch (error) {
     console.error(`Failed to update subscription status for user ${paddleUserId}:`, error)
@@ -127,9 +146,11 @@ export async function POST(request: Request) {
         {
           const userId = data?.data?.user_id
           const subscriptionStatus = data?.data?.status
+          const email = data?.data?.email
+          const currency = data?.data?.currency_code || data?.data?.currency
           
           if (userId && subscriptionStatus) {
-            await handleSubscriptionStatusUpdate(userId, subscriptionStatus)
+            await handleSubscriptionStatusUpdate(userId, subscriptionStatus, email, currency)
           }
         }
         break

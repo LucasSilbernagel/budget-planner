@@ -79,13 +79,17 @@ export const currencyEnum = pgEnum('currency', [
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
-  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID - TODO: Add validation to prevent empty strings
+  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID
   subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
   currency: currencyEnum('currency').default('NONE'),
   isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-})
+}, (table) => [
+  // CHECK constraints: Prevent empty strings for required fields
+  sql`CHECK (${table.email} <> '')`,
+  sql`CHECK (${table.paddleId} <> '')`,
+])
 
 // Income Sources table - camelCase name per architecture
 export const incomeSources = pgTable('incomeSources', {
