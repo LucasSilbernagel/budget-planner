@@ -45,17 +45,19 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     
     setDeletingId(profileId)
     
-    // Simulate async deletion
-    // In production, this would call the server API for paid tier
-    setTimeout(() => {
-      deleteProfile(profileId)
+    try {
+      await deleteProfile(profileId)
+    } finally {
       setDeletingId(null)
-    }, 300)
+    }
   }
 
   // Get color for a profile (consistent based on ID hash)
   const getProfileColor = (profileId: string) => {
     // Use a simple hash of the UUID to get a consistent index
+    // Handle empty profileId gracefully
+    if (!profileId) return PROFILE_COLORS[0]
+    
     let hash = 0
     for (let i = 0; i < profileId.length; i++) {
       hash = (hash << 5) - hash + profileId.charCodeAt(i)
@@ -67,6 +69,9 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   // Get icon for a profile (consistent based on ID hash)
   const getProfileIcon = (profileId: string) => {
     // Use a simple hash of the UUID to get a consistent index
+    // Handle empty profileId gracefully
+    if (!profileId) return PROFILE_ICONS[0]
+    
     let hash = 0
     for (let i = 0; i < profileId.length; i++) {
       hash = (hash << 5) - hash + profileId.charCodeAt(i)
@@ -77,7 +82,13 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
 
   // Format date for display
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    // Validate date string before parsing
+    if (!dateString) return 'Invalid date'
+    
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'Invalid date'
+    
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -99,8 +110,9 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
         <div className="text-center py-12">
           <p className="text-gray-500 mb-4">No profiles yet</p>
           <button
-            onClick={onCreateNewProfile}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={onCreateNewProfile ? onCreateNewProfile : () => {}}
+            disabled={!onCreateNewProfile}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create Your First Profile
           </button>

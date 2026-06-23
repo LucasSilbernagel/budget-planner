@@ -60,10 +60,24 @@ export interface ProfileState {
   reset: () => void
 }
 
+// Helper to generate UUID with fallback
+const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // Fallback for environments without crypto.randomUUID
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 // Default profile for new users
 // Note: For client-side only. Server will assign actual UUID when synced.
+// userId is populated when the user is authenticated
 const DEFAULT_PROFILE: ClientProfile = {
-  id: crypto.randomUUID(),
+  id: generateUUID(),
   userId: '',
   name: 'Main Profile',
   description: 'Your primary financial profile',
@@ -166,9 +180,11 @@ export const useProfileStore = create<ProfileState>()(
           const profileExists = state.profiles.some(p => p.id === profileId)
           
           if (!profileExists) {
+            console.error(`[profileStore] Profile ${profileId} not found`)
             return { error: 'Profile not found.' }
           }
           
+          // Clear any previous error on successful switch
           return {
             activeProfileId: profileId,
             error: null,

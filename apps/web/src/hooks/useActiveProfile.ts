@@ -72,6 +72,15 @@ export function useProfileSwitcher() {
    * Switch to a specific profile by ID
    */
   const switchToProfile = (profileId: string) => {
+    // Get fresh state to check if profile exists
+    const state = useProfileStore.getState()
+    const profileExists = state.profiles.some(p => p.id === profileId)
+    
+    if (!profileExists) {
+      console.error(`[useActiveProfile] Profile ${profileId} not found`)
+      return
+    }
+    
     switchProfile(profileId)
   }
   
@@ -79,7 +88,8 @@ export function useProfileSwitcher() {
    * Switch to the next profile in the list
    */
   const switchToNextProfile = () => {
-    const profiles = useProfileStore.getState().profiles
+    const state = useProfileStore.getState()
+    const profiles = state.profiles
     if (profiles.length <= 1) return
     
     const currentIndex = profiles.findIndex(p => p.id === activeProfileId)
@@ -91,7 +101,8 @@ export function useProfileSwitcher() {
    * Switch to the previous profile in the list
    */
   const switchToPreviousProfile = () => {
-    const profiles = useProfileStore.getState().profiles
+    const state = useProfileStore.getState()
+    const profiles = state.profiles
     if (profiles.length <= 1) return
     
     const currentIndex = profiles.findIndex(p => p.id === activeProfileId)
@@ -118,9 +129,23 @@ export function useProfileManager() {
   const createProfile = (profileData: Omit<ClientProfile, 'id' | 'userId'> & { userId: string }) => {
     // Generate a temporary client-side UUID
     // Server will assign the real UUID when synced for paid tier
+    // Use crypto.randomUUID with fallback for compatibility
+    const generateUUID = (): string => {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID()
+      }
+      // Fallback for environments without crypto.randomUUID
+      // This is a simplified UUID v4 generator
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0
+        const v = c === 'x' ? r : (r & 0x3) | 0x8
+        return v.toString(16)
+      })
+    }
+    
     const newProfile: ClientProfile = {
       ...profileData,
-      id: crypto.randomUUID(), // Temporary client-side UUID
+      id: generateUUID(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }

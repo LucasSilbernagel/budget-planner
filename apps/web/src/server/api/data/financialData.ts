@@ -31,69 +31,76 @@ export interface FinancialApiResult<T> {
 
 /**
  * Input for creating an income source (with profile context)
+ * For paid tier: profileId is required
  */
 export interface CreateIncomeSourceInput {
   name: string
   amount: number
   frequency: 'weekly' | 'biweekly' | 'monthly' | 'annually'
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for updating an income source
+ * For paid tier: profileId is required
  */
 export interface UpdateIncomeSourceInput {
   id: number
   name?: string
   amount?: number
   frequency?: 'weekly' | 'biweekly' | 'monthly' | 'annually'
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for creating an expense (with profile context)
+ * For paid tier: profileId is required
  */
 export interface CreateExpenseInput {
   name: string
   amount: number
   frequency: 'weekly' | 'biweekly' | 'monthly' | 'annually'
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for updating an expense
+ * For paid tier: profileId is required
  */
 export interface UpdateExpenseInput {
   id: number
   name?: string
   amount?: number
   frequency?: 'weekly' | 'biweekly' | 'monthly' | 'annually'
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for creating a savings goal (with profile context)
+ * For paid tier: profileId is required
  */
 export interface CreateSavingsGoalInput {
   name: string
   targetAmount: number
   currentBalance: number
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for updating a savings goal
+ * For paid tier: profileId is required
  */
 export interface UpdateSavingsGoalInput {
   id: number
   name?: string
   targetAmount?: number
   currentBalance?: number
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for creating balance tracking (with profile context)
+ * For paid tier: profileId is required
  */
 export interface CreateBalanceTrackingInput {
   type: 'investment' | 'debt'
@@ -101,11 +108,12 @@ export interface CreateBalanceTrackingInput {
   currentBalance: number
   maxContributionLimit?: number | null
   monthlyContribution: number
-  profileId?: string
+  profileId: string
 }
 
 /**
  * Input for updating balance tracking
+ * For paid tier: profileId is required
  */
 export interface UpdateBalanceTrackingInput {
   id: number
@@ -114,7 +122,7 @@ export interface UpdateBalanceTrackingInput {
   currentBalance?: number
   maxContributionLimit?: number | null
   monthlyContribution?: number
-  profileId?: string
+  profileId: string
 }
 
 // ============================================================================
@@ -141,7 +149,7 @@ async function getAuthenticatedUserContext(request: Request): Promise<{
 
 export async function getIncomeSources(
   request: Request,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<IncomeSource[]>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
@@ -149,10 +157,13 @@ export async function getIncomeSources(
       return { success: false, error: ctx.error || 'Authentication required' }
     }
     const activeProfileId = profileId || ctx.profileId
-    let whereClause = eq(incomeSources.userId, ctx.userId)
-    if (activeProfileId) {
-      whereClause = and(whereClause, eq(incomeSources.profileId, activeProfileId))
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
+    const whereClause = and(
+      eq(incomeSources.userId, ctx.userId),
+      eq(incomeSources.profileId, activeProfileId)
+    )
     const sources = await db.select().from(incomeSources).where(whereClause).orderBy(incomeSources.createdAt)
     return { success: true, data: sources }
   } catch (error) {
@@ -169,12 +180,16 @@ export async function createIncomeSource(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
+    // For paid tier, profileId is required in the input
+    const activeProfileId = data.profileId
     if (!activeProfileId) {
-      return { success: false, error: 'Profile ID required' }
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
     if (!data.name || !data.amount || !data.frequency) {
       return { success: false, error: 'Name, amount, and frequency are required' }
+    }
+    if (data.amount < 0) {
+      return { success: false, error: 'Amount cannot be negative' }
     }
     const [newSource] = await db.insert(incomeSources).values({
       userId: ctx.userId,
@@ -184,7 +199,7 @@ export async function createIncomeSource(
       frequency: data.frequency,
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as NewIncomeSource).returning()
+    }).returning()
     return { success: true, data: newSource }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create income source' }
@@ -201,13 +216,39 @@ export async function updateIncomeSource(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
-    const [existing] = await db.select().from(incomeSources).where(and(eq(incomeSources.id, id), eq(incomeSources.userId, ctx.userId), activeProfileId ? eq(incomeSources.profileId, activeProfileId) : undefined)).limit(1)
+    // For paid tier, profileId is required
+    const activeProfileId = data.profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    
+    // Validate numeric fields
+    if (data.amount !== undefined && data.amount < 0) {
+      return { success: false, error: 'Amount cannot be negative' }
+    }
+    
+    const [existing] = await db.select().from(incomeSources).where(
+      and(
+        eq(incomeSources.id, id),
+        eq(incomeSources.userId, ctx.userId),
+        eq(incomeSources.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Income source not found or not authorized' }
     }
-    const updateObj: Partial<NewIncomeSource> = { ...data, updatedAt: new Date() }
-    const [updated] = await db.update(incomeSources).set(updateObj).where(and(eq(incomeSources.id, id), eq(incomeSources.userId, ctx.userId))).returning()
+    const updateObj = { 
+      ...data, 
+      updatedAt: new Date(),
+      id: undefined // Don't update the ID
+    }
+    const [updated] = await db.update(incomeSources).set(updateObj).where(
+      and(
+        eq(incomeSources.id, id),
+        eq(incomeSources.userId, ctx.userId),
+        eq(incomeSources.profileId, activeProfileId)
+      )
+    ).returning()
     return { success: true, data: updated }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to update income source' }
@@ -217,19 +258,34 @@ export async function updateIncomeSource(
 export async function deleteIncomeSource(
   request: Request,
   id: number,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = profileId || ctx.profileId
-    const [existing] = await db.select().from(incomeSources).where(and(eq(incomeSources.id, id), eq(incomeSources.userId, ctx.userId), activeProfileId ? eq(incomeSources.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    const [existing] = await db.select().from(incomeSources).where(
+      and(
+        eq(incomeSources.id, id),
+        eq(incomeSources.userId, ctx.userId),
+        eq(incomeSources.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Income source not found or not authorized' }
     }
-    await db.delete(incomeSources).where(and(eq(incomeSources.id, id), eq(incomeSources.userId, ctx.userId)))
+    await db.delete(incomeSources).where(
+      and(
+        eq(incomeSources.id, id),
+        eq(incomeSources.userId, ctx.userId),
+        eq(incomeSources.profileId, activeProfileId)
+      )
+    )
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to delete income source' }
@@ -242,7 +298,7 @@ export async function deleteIncomeSource(
 
 export async function getExpenses(
   request: Request,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<Expense[]>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
@@ -250,10 +306,13 @@ export async function getExpenses(
       return { success: false, error: ctx.error || 'Authentication required' }
     }
     const activeProfileId = profileId || ctx.profileId
-    let whereClause = eq(expenses.userId, ctx.userId)
-    if (activeProfileId) {
-      whereClause = and(whereClause, eq(expenses.profileId, activeProfileId))
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
+    const whereClause = and(
+      eq(expenses.userId, ctx.userId),
+      eq(expenses.profileId, activeProfileId)
+    )
     const list = await db.select().from(expenses).where(whereClause).orderBy(expenses.createdAt)
     return { success: true, data: list }
   } catch (error) {
@@ -270,12 +329,15 @@ export async function createExpense(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
+    const activeProfileId = data.profileId
     if (!activeProfileId) {
-      return { success: false, error: 'Profile ID required' }
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
     if (!data.name || !data.amount || !data.frequency) {
       return { success: false, error: 'Name, amount, and frequency are required' }
+    }
+    if (data.amount < 0) {
+      return { success: false, error: 'Amount cannot be negative' }
     }
     const [newExpense] = await db.insert(expenses).values({
       userId: ctx.userId,
@@ -285,7 +347,7 @@ export async function createExpense(
       frequency: data.frequency,
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as NewExpense).returning()
+    }).returning()
     return { success: true, data: newExpense }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create expense' }
@@ -302,13 +364,38 @@ export async function updateExpense(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
-    const [existing] = await db.select().from(expenses).where(and(eq(expenses.id, id), eq(expenses.userId, ctx.userId), activeProfileId ? eq(expenses.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = data.profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    
+    // Validate numeric fields
+    if (data.amount !== undefined && data.amount < 0) {
+      return { success: false, error: 'Amount cannot be negative' }
+    }
+    
+    const [existing] = await db.select().from(expenses).where(
+      and(
+        eq(expenses.id, id),
+        eq(expenses.userId, ctx.userId),
+        eq(expenses.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Expense not found or not authorized' }
     }
-    const updateObj: Partial<NewExpense> = { ...data, updatedAt: new Date() }
-    const [updated] = await db.update(expenses).set(updateObj).where(and(eq(expenses.id, id), eq(expenses.userId, ctx.userId))).returning()
+    const updateObj = { 
+      ...data, 
+      updatedAt: new Date(),
+      id: undefined
+    }
+    const [updated] = await db.update(expenses).set(updateObj).where(
+      and(
+        eq(expenses.id, id),
+        eq(expenses.userId, ctx.userId),
+        eq(expenses.profileId, activeProfileId)
+      )
+    ).returning()
     return { success: true, data: updated }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to update expense' }
@@ -318,19 +405,34 @@ export async function updateExpense(
 export async function deleteExpense(
   request: Request,
   id: number,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = profileId || ctx.profileId
-    const [existing] = await db.select().from(expenses).where(and(eq(expenses.id, id), eq(expenses.userId, ctx.userId), activeProfileId ? eq(expenses.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    const [existing] = await db.select().from(expenses).where(
+      and(
+        eq(expenses.id, id),
+        eq(expenses.userId, ctx.userId),
+        eq(expenses.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Expense not found or not authorized' }
     }
-    await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.userId, ctx.userId)))
+    await db.delete(expenses).where(
+      and(
+        eq(expenses.id, id),
+        eq(expenses.userId, ctx.userId),
+        eq(expenses.profileId, activeProfileId)
+      )
+    )
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to delete expense' }
@@ -343,7 +445,7 @@ export async function deleteExpense(
 
 export async function getSavingsGoals(
   request: Request,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<SavingsGoal[]>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
@@ -351,10 +453,13 @@ export async function getSavingsGoals(
       return { success: false, error: ctx.error || 'Authentication required' }
     }
     const activeProfileId = profileId || ctx.profileId
-    let whereClause = eq(savingsGoals.userId, ctx.userId)
-    if (activeProfileId) {
-      whereClause = and(whereClause, eq(savingsGoals.profileId, activeProfileId))
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
+    const whereClause = and(
+      eq(savingsGoals.userId, ctx.userId),
+      eq(savingsGoals.profileId, activeProfileId)
+    )
     const goals = await db.select().from(savingsGoals).where(whereClause).orderBy(savingsGoals.createdAt)
     return { success: true, data: goals }
   } catch (error) {
@@ -371,12 +476,18 @@ export async function createSavingsGoal(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
+    const activeProfileId = data.profileId
     if (!activeProfileId) {
-      return { success: false, error: 'Profile ID required' }
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
     if (!data.name || !data.targetAmount) {
       return { success: false, error: 'Name and target amount are required' }
+    }
+    if (data.targetAmount < 0) {
+      return { success: false, error: 'Target amount cannot be negative' }
+    }
+    if (data.currentBalance !== undefined && data.currentBalance < 0) {
+      return { success: false, error: 'Current balance cannot be negative' }
     }
     const [newGoal] = await db.insert(savingsGoals).values({
       userId: ctx.userId,
@@ -386,7 +497,7 @@ export async function createSavingsGoal(
       currentBalance: data.currentBalance || 0,
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as NewSavingsGoal).returning()
+    }).returning()
     return { success: true, data: newGoal }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create savings goal' }
@@ -403,13 +514,41 @@ export async function updateSavingsGoal(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
-    const [existing] = await db.select().from(savingsGoals).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, ctx.userId), activeProfileId ? eq(savingsGoals.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = data.profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    
+    // Validate numeric fields
+    if (data.targetAmount !== undefined && data.targetAmount < 0) {
+      return { success: false, error: 'Target amount cannot be negative' }
+    }
+    if (data.currentBalance !== undefined && data.currentBalance < 0) {
+      return { success: false, error: 'Current balance cannot be negative' }
+    }
+    
+    const [existing] = await db.select().from(savingsGoals).where(
+      and(
+        eq(savingsGoals.id, id),
+        eq(savingsGoals.userId, ctx.userId),
+        eq(savingsGoals.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Savings goal not found or not authorized' }
     }
-    const updateObj: Partial<NewSavingsGoal> = { ...data, updatedAt: new Date() }
-    const [updated] = await db.update(savingsGoals).set(updateObj).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, ctx.userId))).returning()
+    const updateObj = { 
+      ...data, 
+      updatedAt: new Date(),
+      id: undefined
+    }
+    const [updated] = await db.update(savingsGoals).set(updateObj).where(
+      and(
+        eq(savingsGoals.id, id),
+        eq(savingsGoals.userId, ctx.userId),
+        eq(savingsGoals.profileId, activeProfileId)
+      )
+    ).returning()
     return { success: true, data: updated }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to update savings goal' }
@@ -419,19 +558,34 @@ export async function updateSavingsGoal(
 export async function deleteSavingsGoal(
   request: Request,
   id: number,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = profileId || ctx.profileId
-    const [existing] = await db.select().from(savingsGoals).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, ctx.userId), activeProfileId ? eq(savingsGoals.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    const [existing] = await db.select().from(savingsGoals).where(
+      and(
+        eq(savingsGoals.id, id),
+        eq(savingsGoals.userId, ctx.userId),
+        eq(savingsGoals.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Savings goal not found or not authorized' }
     }
-    await db.delete(savingsGoals).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, ctx.userId)))
+    await db.delete(savingsGoals).where(
+      and(
+        eq(savingsGoals.id, id),
+        eq(savingsGoals.userId, ctx.userId),
+        eq(savingsGoals.profileId, activeProfileId)
+      )
+    )
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to delete savings goal' }
@@ -444,7 +598,7 @@ export async function deleteSavingsGoal(
 
 export async function getBalanceTracking(
   request: Request,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<BalanceTracking[]>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
@@ -452,10 +606,13 @@ export async function getBalanceTracking(
       return { success: false, error: ctx.error || 'Authentication required' }
     }
     const activeProfileId = profileId || ctx.profileId
-    let whereClause = eq(balanceTracking.userId, ctx.userId)
-    if (activeProfileId) {
-      whereClause = and(whereClause, eq(balanceTracking.profileId, activeProfileId))
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
+    const whereClause = and(
+      eq(balanceTracking.userId, ctx.userId),
+      eq(balanceTracking.profileId, activeProfileId)
+    )
     const entries = await db.select().from(balanceTracking).where(whereClause).orderBy(balanceTracking.createdAt)
     return { success: true, data: entries }
   } catch (error) {
@@ -472,12 +629,21 @@ export async function createBalanceTracking(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
+    const activeProfileId = data.profileId
     if (!activeProfileId) {
-      return { success: false, error: 'Profile ID required' }
+      return { success: false, error: 'Profile ID required for paid tier' }
     }
-    if (!data.name || !data.type || !data.currentBalance) {
+    if (!data.name || !data.type || data.currentBalance === undefined) {
       return { success: false, error: 'Name, type, and current balance are required' }
+    }
+    if (data.currentBalance < 0) {
+      return { success: false, error: 'Current balance cannot be negative' }
+    }
+    if (data.monthlyContribution !== undefined && data.monthlyContribution < 0) {
+      return { success: false, error: 'Monthly contribution cannot be negative' }
+    }
+    if (data.maxContributionLimit !== undefined && data.maxContributionLimit !== null && data.maxContributionLimit < 0) {
+      return { success: false, error: 'Max contribution limit cannot be negative' }
     }
     const [newEntry] = await db.insert(balanceTracking).values({
       userId: ctx.userId,
@@ -489,7 +655,7 @@ export async function createBalanceTracking(
       monthlyContribution: data.monthlyContribution ?? 0,
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as NewBalanceTracking).returning()
+    }).returning()
     return { success: true, data: newEntry }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to create balance tracking' }
@@ -506,13 +672,44 @@ export async function updateBalanceTracking(
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = data.profileId || ctx.profileId
-    const [existing] = await db.select().from(balanceTracking).where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, ctx.userId), activeProfileId ? eq(balanceTracking.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = data.profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    
+    // Validate numeric fields
+    if (data.currentBalance !== undefined && data.currentBalance < 0) {
+      return { success: false, error: 'Current balance cannot be negative' }
+    }
+    if (data.monthlyContribution !== undefined && data.monthlyContribution < 0) {
+      return { success: false, error: 'Monthly contribution cannot be negative' }
+    }
+    if (data.maxContributionLimit !== undefined && data.maxContributionLimit !== null && data.maxContributionLimit < 0) {
+      return { success: false, error: 'Max contribution limit cannot be negative' }
+    }
+    
+    const [existing] = await db.select().from(balanceTracking).where(
+      and(
+        eq(balanceTracking.id, id),
+        eq(balanceTracking.userId, ctx.userId),
+        eq(balanceTracking.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Balance tracking entry not found or not authorized' }
     }
-    const updateObj: Partial<NewBalanceTracking> = { ...data, updatedAt: new Date() }
-    const [updated] = await db.update(balanceTracking).set(updateObj).where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, ctx.userId))).returning()
+    const updateObj = { 
+      ...data, 
+      updatedAt: new Date(),
+      id: undefined
+    }
+    const [updated] = await db.update(balanceTracking).set(updateObj).where(
+      and(
+        eq(balanceTracking.id, id),
+        eq(balanceTracking.userId, ctx.userId),
+        eq(balanceTracking.profileId, activeProfileId)
+      )
+    ).returning()
     return { success: true, data: updated }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to update balance tracking' }
@@ -522,19 +719,34 @@ export async function updateBalanceTracking(
 export async function deleteBalanceTracking(
   request: Request,
   id: number,
-  profileId?: string
+  profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
     if (!ctx.success || !ctx.userId) {
       return { success: false, error: ctx.error || 'Authentication required' }
     }
-    const activeProfileId = profileId || ctx.profileId
-    const [existing] = await db.select().from(balanceTracking).where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, ctx.userId), activeProfileId ? eq(balanceTracking.profileId, activeProfileId) : undefined)).limit(1)
+    const activeProfileId = profileId
+    if (!activeProfileId) {
+      return { success: false, error: 'Profile ID required for paid tier' }
+    }
+    const [existing] = await db.select().from(balanceTracking).where(
+      and(
+        eq(balanceTracking.id, id),
+        eq(balanceTracking.userId, ctx.userId),
+        eq(balanceTracking.profileId, activeProfileId)
+      )
+    ).limit(1)
     if (!existing) {
       return { success: false, error: 'Balance tracking entry not found or not authorized' }
     }
-    await db.delete(balanceTracking).where(and(eq(balanceTracking.id, id), eq(balanceTracking.userId, ctx.userId)))
+    await db.delete(balanceTracking).where(
+      and(
+        eq(balanceTracking.id, id),
+        eq(balanceTracking.userId, ctx.userId),
+        eq(balanceTracking.profileId, activeProfileId)
+      )
+    )
     return { success: true }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Failed to delete balance tracking' }

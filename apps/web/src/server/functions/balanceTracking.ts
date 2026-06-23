@@ -16,16 +16,13 @@ import { balanceTracking } from '@budget-planner/db/src/schema'
 import { eq, and } from 'drizzle-orm'
 import type { BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
 
-// Legacy constant for backward compatibility during migration to UUID profile IDs
-// TODO: Remove this once all code is migrated to UUID
-const LEGACY_DEFAULT_PROFILE_ID = '00000000-0000-0000-0000-000000000000'
-
 // ============================================================================
 // Server Function Types
 // ============================================================================
 
 /**
  * Input for creating a new balance tracking entry
+ * For paid tier: profileId is required
  */
 export interface CreateBalanceTrackingServerInput {
   type: 'investment' | 'debt'
@@ -33,7 +30,7 @@ export interface CreateBalanceTrackingServerInput {
   currentBalance: number // In cents
   maxContributionLimit?: number // In cents, optional
   monthlyContribution: number // In cents
-  profileId?: string // Profile ID for data isolation (required for paid tier) - UUID
+  profileId: string // Profile ID for data isolation (required for paid tier) - UUID
 }
 
 /**
@@ -171,18 +168,19 @@ export async function createBalanceTrackingEntry(
   userId: string
 ): Promise<BalanceTrackingServerResult> {
   try {
-    // Validate that profileId is provided for paid tier
-    // For backward compatibility with free tier, we allow undefined profileId
-    // but in practice, paid tier should always provide it
+    // For paid tier, profileId is required
     if (!input.profileId) {
-      console.warn('Creating balance tracking entry without profileId - this should only happen for free tier')
+      return {
+        success: false,
+        error: 'Profile ID required for paid tier',
+      }
     }
 
     // Convert cents to dollars for database storage
     // Note: The schema stores amounts in cents as integers
     const newEntry: NewBalanceTracking = {
       userId,
-      profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to legacy UUID for backward compatibility
+      profileId: input.profileId,
       type: input.type,
       name: input.name,
       currentBalance: input.currentBalance,

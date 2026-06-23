@@ -16,10 +16,6 @@ import { db } from '@budget-planner/db'
 import { savingsGoals } from '@budget-planner/db/src/schema'
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
 
-// Legacy constant for backward compatibility during migration to UUID profile IDs
-// TODO: Remove this once all code is migrated to UUID
-const LEGACY_DEFAULT_PROFILE_ID = '00000000-0000-0000-0000-000000000000'
-
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -35,13 +31,14 @@ export interface ApiResult<T> {
 
 /**
  * Input type for creating a savings goal
+ * For paid tier: profileId is required
  */
 export interface CreateSavingsGoalInput {
   name: string
   targetAmount: number // In cents
   currentBalance: number // In cents
   userId: string // Required for paid tier (from users table)
-  profileId?: string // Profile ID for data isolation (required for paid tier) - UUID
+  profileId: string // Profile ID for data isolation (required for paid tier) - UUID
 }
 
 /**
@@ -203,6 +200,14 @@ export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<
         error: 'Name is required',
       }
     }
+    
+    // For paid tier, profileId is required
+    if (!input.profileId) {
+      return {
+        success: false,
+        error: 'Profile ID required for paid tier',
+      }
+    }
 
     if (!input.targetAmount || input.targetAmount <= 0) {
       return {
@@ -231,7 +236,7 @@ export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<
       .insert(savingsGoals)
       .values({
         userId: input.userId,
-        profileId: input.profileId || LEGACY_DEFAULT_PROFILE_ID, // Default to legacy UUID for backward compatibility
+        profileId: input.profileId,
         name: input.name.trim(),
         targetAmount: input.targetAmount,
         currentBalance: input.currentBalance ?? 0,

@@ -11,7 +11,7 @@
 
 import { db } from '@budget-planner/db'
 import { userProfiles, users } from '@budget-planner/db/src/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, neq } from 'drizzle-orm'
 import type { UserProfile, NewUserProfile } from '@budget-planner/db'
 import type { Request } from '@tanstack/start'
 import { getCurrentUserSession } from '../api/auth/paddle'
@@ -251,7 +251,7 @@ export async function updateProfile(
           and(
             eq(userProfiles.name, input.name),
             eq(userProfiles.userId, userId),
-            eq(userProfiles.id, input.id) // Exclude current profile
+            neq(userProfiles.id, input.id) // Exclude current profile
           )
         )
         .limit(1)
@@ -349,9 +349,12 @@ export async function deleteProfile(
     }
 
     // Delete the profile (cascade will delete related financial data)
-    await db
-      .delete(userProfiles)
-      .where(eq(userProfiles.id, profileId))
+    // Wrap in transaction to ensure atomicity
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(userProfiles)
+        .where(eq(userProfiles.id, profileId))
+    })
 
     return {
       success: true,
