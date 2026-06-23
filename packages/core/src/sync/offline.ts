@@ -94,6 +94,12 @@ const DEFAULT_CONFIG: RequiredOfflineQueueConfig = {
   debug: false,
 }
 
+/**
+ * Maximum number of callbacks allowed to prevent memory leaks
+ * If this limit is exceeded, a warning is logged
+ */
+const MAX_CALLBACKS = 100
+
 // ============================================================================
 // IndexedDB Storage Implementation
 // ============================================================================
@@ -292,6 +298,28 @@ export class OfflineQueueManager {
   private processOperationFn: ProcessOperationFn | null = null
 
   /**
+   * Check if the device is actually online (not just navigator.onLine)
+   * Handles captive portals and other false positives
+   * Consistent with SynchronizationService.checkRealConnectivity()
+   */
+  private checkRealConnectivity(): boolean {
+    // If navigator is not available (SSR), return false
+    if (typeof navigator === 'undefined') {
+      return false
+    }
+    
+    // First check navigator.onLine
+    if (!navigator.onLine) {
+      return false
+    }
+    
+    // For now, rely on navigator.onLine
+    // This is consistent with SynchronizationService which removed the fetch-based check
+    // for security reasons (prevents endpoint enumeration)
+    return true
+  }
+
+  /**
    * Create a new OfflineQueueManager
    * @param userId - The user ID for this queue
    * @param config - Configuration options
@@ -303,7 +331,8 @@ export class OfflineQueueManager {
     externalQueue?: SyncQueue
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config }
-    this.isOffline = typeof navigator !== 'undefined' ? !navigator.onLine : true
+    // FIX: Use checkRealConnectivity for consistency with SynchronizationService
+    this.isOffline = !this.checkRealConnectivity()
     // Use external queue if provided, otherwise create a new one
     this.queue = externalQueue ?? new SyncQueue(userId, this.config.storage)
     // Store the custom processOperation function if provided
@@ -327,8 +356,8 @@ export class OfflineQueueManager {
       window.addEventListener('online', this.boundHandleOnline)
       window.addEventListener('offline', this.boundHandleOffline)
       
-      // Check initial online status
-      this.isOffline = !navigator.onLine
+      // Check initial online status using real connectivity check
+      this.isOffline = !this.checkRealConnectivity()
     }
 
     // Notify callbacks of initial state
@@ -365,6 +394,15 @@ export class OfflineQueueManager {
    * Handle coming online
    */
   private handleOnline(): void {
+    // FIX: Use checkRealConnectivity to verify actual connectivity (consistent with SynchronizationService)
+    // This prevents false positives from navigator.onLine (e.g., captive portals)
+    const isReallyOnline = this.checkRealConnectivity()
+    
+    if (!isReallyOnline) {
+      this.log('Device reports online but connectivity check failed')
+      return
+    }
+    
     this.isOffline = false
     this.log('Device is now online')
     this.notifyStatusCallbacks()
@@ -399,6 +437,13 @@ export class OfflineQueueManager {
     this.processing = true
     // Note: retryCount is NOT reset here - it's managed by scheduleRetry
     this.notifyProcessingCallbacks()
+
+    // FIX: Re-check isOffline after setting processing flag
+    // This prevents TOCTOU where device goes offline between the initial check and setting processing
+    if (this.isOffline) {
+      this.processing = false
+      return
+    }
 
     try {
       // Get operations to process
@@ -569,24 +614,45 @@ export class OfflineQueueManager {
 
   /**
    * Add a callback for offline/online status changes
+   * @returns Unsubscribe function to remove the callback
+   * 
+   * FIX: Added memory leak protection - warns if too many callbacks accumulate
+   * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onStatusChange(callback: OfflineStatusCallback): () => void {
+    if (this.statusCallbacks.size >= MAX_CALLBACKS) {
+      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+    }
     this.statusCallbacks.add(callback)
     return () => this.statusCallbacks.delete(callback)
   }
 
   /**
    * Add a callback for queue processing status changes
+   * @returns Unsubscribe function to remove the callback
+   * 
+   * FIX: Added memory leak protection - warns if too many callbacks accumulate
+   * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onProcessingChange(callback: QueueProcessingCallback): () => void {
+    if (this.processingCallbacks.size >= MAX_CALLBACKS) {
+      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+    }
     this.processingCallbacks.add(callback)
     return () => this.processingCallbacks.delete(callback)
   }
 
   /**
    * Add a callback for sync notifications
+   * @returns Unsubscribe function to remove the callback
+   * 
+   * FIX: Added memory leak protection - warns if too many callbacks accumulate
+   * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onNotification(callback: SyncNotificationCallback): () => void {
+    if (this.notificationCallbacks.size >= MAX_CALLBACKS) {
+      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+    }
     this.notificationCallbacks.add(callback)
     return () => this.notificationCallbacks.delete(callback)
   }

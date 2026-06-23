@@ -5,6 +5,73 @@
  * multi-device data synchronization in the paid tier.
  */
 
+import { z } from 'zod'
+
+// ============================================================================
+// Entity Validation Schemas
+// ============================================================================
+
+/**
+ * Zod schemas for validating entity data payloads
+ * These ensure data structure matches expected format for each entity type
+ */
+export const incomeSourceSchema = z.object({
+  name: z.string().min(1).max(255),
+  amount: z.number().int(),
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  userId: z.string().uuid(),
+})
+
+export const expenseSchema = z.object({
+  name: z.string().min(1).max(255),
+  amount: z.number().int(),
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  userId: z.string().uuid(),
+})
+
+export const savingsGoalSchema = z.object({
+  name: z.string().min(1).max(255),
+  targetAmount: z.number().int(),
+  currentBalance: z.number().int().default(0),
+  userId: z.string().uuid(),
+})
+
+export const balanceTrackingSchema = z.object({
+  type: z.enum(['investment', 'debt']),
+  name: z.string().min(1).max(255),
+  currentBalance: z.number().int().default(0),
+  maxContributionLimit: z.number().int().optional(),
+  monthlyContribution: z.number().int().default(0),
+  userId: z.string().uuid(),
+})
+
+export const userProfileSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(500).optional(),
+  isDefault: z.boolean().default(false),
+  currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']),
+  userId: z.string().uuid(),
+})
+
+/**
+ * Schema for sync operation data validation
+ * Validates data structure based on entityType
+ */
+export const syncOperationDataSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  amount: z.number().int().optional(),
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).optional(),
+  targetAmount: z.number().int().optional(),
+  currentBalance: z.number().int().optional(),
+  type: z.enum(['investment', 'debt']).optional(),
+  maxContributionLimit: z.number().int().optional(),
+  monthlyContribution: z.number().int().optional(),
+  description: z.string().max(500).optional(),
+  isDefault: z.boolean().optional(),
+  currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']).optional(),
+  userId: z.string().uuid().optional(),
+})
+
 /**
  * Supported entity types that can be synchronized
  */

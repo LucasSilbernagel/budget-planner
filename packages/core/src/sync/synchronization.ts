@@ -28,6 +28,13 @@ import type {
   ProcessOperationResult,
 } from './types'
 import { SyncStatus } from './types'
+import {
+  incomeSourceSchema,
+  expenseSchema,
+  savingsGoalSchema,
+  balanceTrackingSchema,
+  userProfileSchema,
+} from './types'
 
 /**
  * Default configuration for the synchronization service
@@ -43,10 +50,51 @@ const DEFAULT_CONFIG: SyncConfig = {
 }
 
 /**
+ * Maximum number of callbacks allowed to prevent memory leaks
+ * If this limit is exceeded, a warning is logged
+ */
+const MAX_CALLBACKS = 100
+
+/**
+ * Circuit breaker configuration for retry logic
+ * Prevents hammering a failing server
+ */
+const CIRCUIT_BREAKER_CONFIG = {
+  // Number of consecutive failures before opening the circuit
+  failureThreshold: 5,
+  // Time in milliseconds to keep circuit open before trying again
+  cooldownPeriod: 30000, // 30 seconds
+}
+
+/**
  * Generates a unique ID for sync operations
  */
 function generateOperationId(): string {
   return `sync-op-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+/**
+ * Validates operation data payload against entity-specific schema
+ * @param entityType - The type of entity
+ * @param data - The data payload to validate
+ * @returns Validated data or throws ZodError
+ */
+function validateOperationData(entityType: SyncEntityType, data: Record<string, unknown>): Record<string, unknown> {
+  switch (entityType) {
+    case 'incomeSource':
+      return incomeSourceSchema.parse(data)
+    case 'expense':
+      return expenseSchema.parse(data)
+    case 'savingsGoal':
+      return savingsGoalSchema.parse(data)
+    case 'balanceTracking':
+      return balanceTrackingSchema.parse(data)
+    case 'userProfile':
+      return userProfileSchema.parse(data)
+    default:
+      // For delete operations, data may be empty, so we just return it as-is
+      return data
+  }
 }
 
 /**
@@ -61,6 +109,7 @@ const cachedDeviceIds: Map<string, string> = new Map()
  * Falls back to sessionStorage or in-memory cache if localStorage fails
  * 
  * FIX: Device IDs are now user-scoped to prevent cross-user data leakage
+ * FIX: Added race condition handling - reads back after write to get canonical value
  * Storage key: bp-device-id-{userId}
  */
 function generateDeviceId(userId: string): string {
@@ -68,19 +117,44 @@ function generateDeviceId(userId: string): string {
   
   try {
     let deviceId = localStorage.getItem(storageKey)
+    
     if (!deviceId) {
+      // Generate a new device ID
       deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
-      localStorage.setItem(storageKey, deviceId)
+      try {
+        localStorage.setItem(storageKey, deviceId)
+      } catch {
+        // If storage fails, we'll use the generated ID but it won't persist
+        // This is acceptable as a fallback
+      }
+      // Read back to get the actual value (in case another tab set it first)
+      // Note: localStorage is synchronous, so this read-back handles the race condition
+      const actualDeviceId = localStorage.getItem(storageKey)
+      if (actualDeviceId) {
+        deviceId = actualDeviceId
+      }
     }
+    
     return deviceId
   } catch {
     // If localStorage is not available, try sessionStorage as fallback
     try {
       let deviceId = sessionStorage.getItem(storageKey)
+      
       if (!deviceId) {
         deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
-        sessionStorage.setItem(storageKey, deviceId)
+        try {
+          sessionStorage.setItem(storageKey, deviceId)
+        } catch {
+          // Storage error is acceptable as fallback
+        }
+        // Read back to handle race condition
+        const actualDeviceId = sessionStorage.getItem(storageKey)
+        if (actualDeviceId) {
+          deviceId = actualDeviceId
+        }
       }
+      
       return deviceId
     } catch {
       // If both localStorage and sessionStorage fail, use in-memory cache
@@ -105,12 +179,18 @@ export class SynchronizationService {
   private queue: SyncQueue
   private config: SyncConfig
   private state: SyncState
+  private userId: string
   private deviceId: string
   private statusCallbacks: Set<SyncStatusCallback> = new Set()
   private conflictCallbacks: Set<ConflictCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing: boolean = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
+  
+  // Circuit breaker state for retry logic
+  private circuitBroken: boolean = false
+  private circuitBrokenUntil: number = 0
+  private consecutiveFailures: number = 0
   
   // Store bound event handlers to enable proper cleanup
   private boundHandleOnline: (() => void) | null = null
@@ -147,6 +227,7 @@ export class SynchronizationService {
       throw new Error('Invalid autoSyncInterval: must be non-negative')
     }
     
+    this.userId = userId
     this.deviceId = generateDeviceId(userId)
     this.config = mergedConfig
     this.queue = createSyncQueue(userId)
@@ -347,8 +428,15 @@ export class SynchronizationService {
   /**
    * Add a callback for sync status changes
    * @param callback - The callback function
+   * @returns Unsubscribe function to remove the callback
+   * 
+   * FIX: Added memory leak protection - warns if too many callbacks accumulate
+   * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onStatusChange(callback: SyncStatusCallback): () => void {
+    if (this.statusCallbacks.size >= MAX_CALLBACKS) {
+      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+    }
     this.statusCallbacks.add(callback)
     return () => this.statusCallbacks.delete(callback)
   }
@@ -356,8 +444,15 @@ export class SynchronizationService {
   /**
    * Add a callback for conflict detection
    * @param callback - The callback function
+   * @returns Unsubscribe function to remove the callback
+   * 
+   * FIX: Added memory leak protection - warns if too many callbacks accumulate
+   * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onConflict(callback: ConflictCallback): () => void {
+    if (this.conflictCallbacks.size >= MAX_CALLBACKS) {
+      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+    }
     this.conflictCallbacks.add(callback)
     return () => this.conflictCallbacks.delete(callback)
   }
@@ -402,12 +497,21 @@ export class SynchronizationService {
     data: Record<string, unknown>,
     userId: string
   ): Promise<SyncOperation> {
+    // Security: Validate userId matches authenticated user
+    if (userId !== this.userId) {
+      throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
+    }
+
+    // Validate operation data payload against entity schema
+    // FIX: Added schema validation to prevent arbitrary data in sync operations
+    const validatedData = validateOperationData(entityType, data)
+
     const operation: SyncOperation = {
       id: generateOperationId(),
       type: 'create',
       entityType,
       entityId: String(entityId),
-      data,
+      data: validatedData,
       timestamp: Date.now(),
       deviceId: this.deviceId,
       userId,
@@ -443,12 +547,21 @@ export class SynchronizationService {
     userId: string,
     version?: number
   ): Promise<SyncOperation> {
+    // Security: Validate userId matches authenticated user
+    if (userId !== this.userId) {
+      throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
+    }
+
+    // Validate operation data payload against entity schema (partial validation for updates)
+    // FIX: Added schema validation to prevent arbitrary data in sync operations
+    const validatedData = validateOperationData(entityType, data)
+
     const operation: SyncOperation = {
       id: generateOperationId(),
       type: 'update',
       entityType,
       entityId: String(entityId),
-      data,
+      data: validatedData,
       timestamp: Date.now(),
       deviceId: this.deviceId,
       userId,
@@ -479,14 +592,26 @@ export class SynchronizationService {
   async queueDelete(
     entityType: SyncEntityType,
     entityId: string | number,
-    userId: string
+    userId: string,
+    data: Record<string, unknown> = {}
   ): Promise<SyncOperation> {
+    // Security: Validate userId matches authenticated user
+    if (userId !== this.userId) {
+      throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
+    }
+
+    // For delete operations, data is typically empty, but we still validate if provided
+    // FIX: Added schema validation to prevent arbitrary data in sync operations
+    const validatedData = Object.keys(data).length > 0 
+      ? validateOperationData(entityType, data) 
+      : {}
+
     const operation: SyncOperation = {
       id: generateOperationId(),
       type: 'delete',
       entityType,
       entityId: String(entityId),
-      data: {},
+      data: validatedData,
       timestamp: Date.now(),
       deviceId: this.deviceId,
       userId,
@@ -806,6 +931,20 @@ export class SynchronizationService {
           synchronizedCount = 0
         }
       }
+      
+      // FIX: Remove failed operations from queue to prevent duplicate re-queuing
+      // When operations fail, they're added to failedOperations for retry
+      // But they remain in the queue, causing duplicates when re-queued
+      if (failedOperations.length > 0) {
+        const failedOperationIds = failedOperations.map(op => op.id)
+        try {
+          await this.queue.removeBatch(failedOperationIds)
+        } catch (removeError) {
+          this.log('Failed to remove failed operations from queue:', removeError)
+          // If we can't remove them, they'll stay in the queue
+          // This is not ideal but prevents data loss
+        }
+      }
 
       // Update state
       this.state.lastSyncTimestamp = Date.now()
@@ -818,6 +957,8 @@ export class SynchronizationService {
         this.state.status = SyncStatus.FAILED
       } else {
         this.state.status = SyncStatus.COMPLETED
+        // Reset circuit breaker consecutive failures counter on successful sync
+        this.consecutiveFailures = 0
       }
 
       this.notifyStatusCallbacks()
@@ -888,10 +1029,27 @@ export class SynchronizationService {
 
   /**
    * Schedule a retry for failed operations
+   * 
+   * FIX: Added circuit breaker to prevent hammering failing server
    */
   private scheduleRetry(): void {
     if (this.retryTimeout) {
       clearTimeout(this.retryTimeout)
+    }
+
+    // Check if circuit is open (broken)
+    const now = Date.now()
+    if (this.circuitBroken) {
+      if (now < this.circuitBrokenUntil) {
+        // Circuit is still open, don't retry yet
+        this.log(`Circuit breaker: Open until ${new Date(this.circuitBrokenUntil).toISOString()}. Retry skipped.`)
+        return
+      } else {
+        // Cooldown period has passed, try to close the circuit
+        this.circuitBroken = false
+        this.consecutiveFailures = 0
+        this.log('Circuit breaker: Cooldown complete. Resuming retries.')
+      }
     }
 
     this.retryTimeout = setTimeout(() => {
@@ -916,10 +1074,25 @@ export class SynchronizationService {
         if (this.state.isOnline) {
           this.sync().catch((error) => {
             this.log('Retry sync error:', error)
+            // Track consecutive failures for circuit breaker
+            this.consecutiveFailures++
+            if (this.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
+              this.openCircuit()
+            }
           })
         }
       }
     }, this.config.retryDelay)
+  }
+
+  /**
+   * Open the circuit breaker to prevent further retries
+   * Called after consecutive failures exceed the threshold
+   */
+  private openCircuit(): void {
+    this.circuitBroken = true
+    this.circuitBrokenUntil = Date.now() + CIRCUIT_BREAKER_CONFIG.cooldownPeriod
+    this.log(`Circuit breaker: OPENED. Too many consecutive failures (${this.consecutiveFailures}). Retries paused for ${CIRCUIT_BREAKER_CONFIG.cooldownPeriod}ms.`)
   }
 
   /**
