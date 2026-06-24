@@ -1,5 +1,5 @@
 # generated: 2026-06-18
-# last_updated: 2026-06-22
+# last_updated: 2026-06-23 (code review of 4-14)
 # project: budget-planner
 # project_key: NOKEY
 # tracking_system: file-system
@@ -82,7 +82,7 @@ development_status:
   epic-4: in-progress
   4-1-implement-paddle-authentication-and-account-creation: done
   4-2-create-database-schema-for-users-table: done
-  4-3-implement-multi-device-data-synchronization-for-paid-tier: ready-for-dev  # Re-scoped 2026-06-23 (Correct Course): push/persist only; pull split to 4-18
+  4-3-implement-multi-device-data-synchronization-for-paid-tier: ready-for-dev  # Re-scoped 2026-06-23 (push/persist only); cross-device pull split to 4-18 — see sprint-change-proposal-2026-06-23.md
   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
   4-4-implement-custom-user-profiles-for-paid-tier: in-progress  # Code review: 19/21 patches applied, 2 deferred (SQL injection refactor, rate limiting)
   4-5-implement-premium-forecasting-features: in-progress
@@ -94,11 +94,11 @@ development_status:
   4-11-implement-ethicalads-for-unauthenticated-users: ready-for-dev
   4-12-implement-clean-url-string-injection-for-client-metadata-tracking: ready-for-dev
   4-13-set-up-zustand-state-management: ready-for-dev
-  4-14-set-up-testing-infrastructure: ready-for-dev
+  4-14-set-up-testing-infrastructure: done
   4-15-set-up-ci-cd-pipeline-with-github-actions: ready-for-dev
   4-16-deploy-to-danubedata-static-sites: ready-for-dev
   4-17-set-up-danubedata-managed-postgresql: ready-for-dev
-  4-18-implement-server-to-client-data-pull-for-multi-device-sync: backlog  # Added 2026-06-23 (Correct Course): owns cross-device pull / former AC-2
+  4-18-implement-server-to-client-data-pull-for-multi-device-sync: backlog  # Added 2026-06-23 — owns cross-device visibility (former 4-3 AC-2); depends on 4-3 + 4-2
   epic-4-retrospective: optional
 
   # Epic 5: Production Deployment & Infrastructure (DanubeData Full Stack)

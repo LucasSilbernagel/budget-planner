@@ -11,6 +11,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check . --apply",
     "test": "vitest run",
+    "test:unit": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate:pg",
     "db:migrate": "drizzle-kit migrate",
