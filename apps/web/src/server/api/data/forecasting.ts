@@ -205,8 +205,11 @@ export async function checkPremiumAccessServer(
 /**
  * Get user context from request
  * Extracts user session from request headers/cookies
+ *
+ * Exported so server functions (e.g. sync) can resolve the authenticated user
+ * through the same path used by the data API.
  */
-async function getUserContext(request: Request): Promise<ApiResult<UserSession | null>> {
+export async function getUserContext(request: Request): Promise<ApiResult<UserSession | null>> {
   const { getCurrentUserSession } = await import('../auth/paddle')
   return getCurrentUserSession(request)
 }

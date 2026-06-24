@@ -3,9 +3,8 @@
  * Verifies that failed operations are removed from queue before re-queuing
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { SynchronizationService, createSyncQueue } from '../synchronization'
-import { LocalStorageSyncQueueStorage } from '../queue'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { SynchronizationService } from '../synchronization'
 
 describe('SynchronizationService Retry Logic Fix', () => {
   let service: SynchronizationService
@@ -20,6 +19,9 @@ describe('SynchronizationService Retry Logic Fix', () => {
         operations.push(op)
       }),
       getAll: vi.fn(() => [...operations]),
+      // sync() pulls the batch to process via getReadyOperations; the mock must
+      // implement it or sync() throws before any operation is processed.
+      getReadyOperations: vi.fn((_batchSize?: number) => [...operations]),
       removeBatch: vi.fn(async (ids: string[]) => {
         const indices = operations.map((op: any, i: number) => ids.includes(op.id) ? i : -1).filter(i => i !== -1)
         indices.reverse().forEach(i => operations.splice(i, 1))
@@ -27,7 +29,7 @@ describe('SynchronizationService Retry Logic Fix', () => {
     }
 
     // Mock processOperation that always fails
-    mockProcessOperation = vi.fn(async (op: any) => ({
+    mockProcessOperation = vi.fn(async (_op: any) => ({
       success: false,
       conflict: false,
     }))
@@ -37,10 +39,19 @@ describe('SynchronizationService Retry Logic Fix', () => {
       autoSync: false,
       processOperation: mockProcessOperation,
     })
-    
+
     // Replace the queue with our mock
     // @ts-expect-error - accessing private property for testing
     service.queue = mockQueue
+    // The node test environment has no `navigator`, so the service initializes
+    // offline and sync() would early-return. Force online to exercise the retry path.
+    // @ts-expect-error - accessing private property for testing
+    service.state.isOnline = true
+  })
+
+  afterEach(() => {
+    // Clear the pending retry timer scheduled by sync() on failure.
+    service.destroy()
   })
 
   describe('Failed operations handling', () => {

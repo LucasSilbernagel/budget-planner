@@ -826,6 +826,24 @@ export async function processBatchSync(
 
   const { operations, clientTimestamp, deviceId } = validationResult.data
 
+  // Tier gating: server-side sync is a paid-tier feature. Free (and canceled)
+  // users must not be able to persist data to the server even with a valid
+  // session. Only subscriptions with active access may sync.
+  const PAID_SYNC_STATUSES = ['active', 'past_due']
+  if (!PAID_SYNC_STATUSES.includes(user.subscriptionStatus)) {
+    return {
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: Date.now(),
+      status: SyncStatusEnum.FAILED,
+      error: 'Forbidden: server sync requires an active paid subscription',
+    }
+  }
+
   // Verify all operations belong to this user first (fail fast on auth)
   for (const operation of operations) {
     if (operation.userId !== user.id) {

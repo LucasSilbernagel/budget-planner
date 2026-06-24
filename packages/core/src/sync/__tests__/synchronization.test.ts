@@ -8,12 +8,17 @@ import {
 } from '../index'
 import type { SyncOperation } from '../types'
 
-// Helper to generate test operations
+// Monotonic counter so each generated operation gets a unique id even when
+// fake timers freeze Date.now(). Two operations sharing an id are treated as
+// the same operation by conflict detection, which would mask real conflicts.
+let opCounter = 0
+
+// Helper to generate a local test operation (originates on this device)
 function createTestOperation(
   overrides: Partial<SyncOperation> = {}
 ): SyncOperation {
   return {
-    id: `test-op-${Date.now()}`,
+    id: `test-op-${Date.now()}-${++opCounter}`,
     type: 'create',
     entityType: 'incomeSource',
     entityId: 'test-id',
@@ -25,6 +30,15 @@ function createTestOperation(
   }
 }
 
+// Helper to generate a server-side operation (originates on a *different*
+// device). Conflicts only arise between operations from different devices, so
+// cross-device fixtures are required to exercise conflict detection/resolution.
+function createServerOperation(
+  overrides: Partial<SyncOperation> = {}
+): SyncOperation {
+  return createTestOperation({ deviceId: 'server-device', ...overrides })
+}
+
 describe('Synchronization Service', () => {
   let service: SynchronizationService
   const testUserId = 'test-user-123'
@@ -34,6 +48,9 @@ describe('Synchronization Service', () => {
     service = createSynchronizationService(testUserId, {
       autoSync: false,
       debug: false,
+      // A transport must be provided: the default processOperation now throws
+      // (rather than silently faking success) to avoid silent data loss.
+      processOperation: async () => ({ success: true }),
     })
   })
 
@@ -119,8 +136,8 @@ describe('Synchronization Service', () => {
         entityType: 'expense',
         entityId: 'expense-1',
       })
-      
-      const serverOp = createTestOperation({
+
+      const serverOp = createServerOperation({
         type: 'delete',
         entityType: 'expense',
         entityId: 'expense-1',
@@ -138,8 +155,8 @@ describe('Synchronization Service', () => {
         entityId: 'balance-1',
         data: { name: 'Local Balance', amount: 1000 },
       })
-      
-      const serverOp = createTestOperation({
+
+      const serverOp = createServerOperation({
         type: 'update',
         entityType: 'balanceTracking',
         entityId: 'balance-1',
@@ -151,16 +168,23 @@ describe('Synchronization Service', () => {
       expect(result.conflictType).toBe('version-mismatch')
     })
 
+    it('should NOT detect conflict for operations from the same device', () => {
+      const localOp = createTestOperation({ type: 'update', entityId: 'income-1' })
+      const serverOp = createTestOperation({ type: 'delete', entityId: 'income-1' })
+      const result = service.detectConflict(localOp, serverOp)
+      expect(result.hasConflict).toBe(false)
+    })
+
     it('should NOT detect conflict for different entities', () => {
       const localOp = createTestOperation({ entityId: 'income-1' })
-      const serverOp = createTestOperation({ entityId: 'income-2' })
+      const serverOp = createServerOperation({ entityId: 'income-2' })
       const result = service.detectConflict(localOp, serverOp)
       expect(result.hasConflict).toBe(false)
     })
 
     it('should NOT detect conflict for different entity types', () => {
       const localOp = createTestOperation({ entityType: 'incomeSource', entityId: '1' })
-      const serverOp = createTestOperation({ entityType: 'expense', entityId: '1' })
+      const serverOp = createServerOperation({ entityType: 'expense', entityId: '1' })
       const result = service.detectConflict(localOp, serverOp)
       expect(result.hasConflict).toBe(false)
     })
@@ -169,7 +193,7 @@ describe('Synchronization Service', () => {
   describe('Conflict Resolution', () => {
     it('should resolve with last-write-wins strategy (local newer)', () => {
       const localOp = createTestOperation({ type: 'update', timestamp: 2000 })
-      const serverOp = createTestOperation({ type: 'delete', timestamp: 1000 })
+      const serverOp = createServerOperation({ type: 'delete', timestamp: 1000 })
       const resolved = service.resolveConflict(localOp, serverOp)
       expect(resolved).toEqual(localOp)
     })
@@ -181,7 +205,7 @@ describe('Synchronization Service', () => {
       })
 
       const localOp = createTestOperation({ type: 'update', timestamp: 3000 })
-      const serverOp = createTestOperation({ type: 'delete', timestamp: 1000 })
+      const serverOp = createServerOperation({ type: 'delete', timestamp: 1000 })
       const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
       expect(resolved).toEqual(serverOp)
       serviceWithStrategy.destroy()
@@ -194,7 +218,7 @@ describe('Synchronization Service', () => {
       })
 
       const localOp = createTestOperation({ type: 'update', timestamp: 1000 })
-      const serverOp = createTestOperation({ type: 'delete', timestamp: 3000 })
+      const serverOp = createServerOperation({ type: 'delete', timestamp: 3000 })
       const resolved = serviceWithStrategy.resolveConflict(localOp, serverOp)
       expect(resolved).toEqual(localOp)
       serviceWithStrategy.destroy()
@@ -211,7 +235,7 @@ describe('Synchronization Service', () => {
         data: { name: 'Local', value: 100 },
         timestamp: 1000,
       })
-      const serverOp = createTestOperation({
+      const serverOp = createServerOperation({
         type: 'update',
         data: { name: 'Server', other: 200 },
         timestamp: 2000,
@@ -233,7 +257,7 @@ describe('Synchronization Service', () => {
         data: { name: 'Local', value: 100 },
         timestamp: 1000,
       })
-      const serverOp = createTestOperation({
+      const serverOp = createServerOperation({
         type: 'create',
         data: { name: 'Server', other: 200 },
         timestamp: 2000,
@@ -256,7 +280,7 @@ describe('Synchronization Service', () => {
         data: {},
         timestamp: 1000,
       })
-      const serverOp = createTestOperation({
+      const serverOp = createServerOperation({
         type: 'create',
         data: { name: 'Server', value: 200 },
         timestamp: 2000,
@@ -279,7 +303,7 @@ describe('Synchronization Service', () => {
         data: { name: 'Local', value: 100 },
         timestamp: 2000,
       })
-      const serverOp = createTestOperation({
+      const serverOp = createServerOperation({
         type: 'delete',
         data: {},
         timestamp: 1000,
@@ -302,7 +326,7 @@ describe('Synchronization Service', () => {
         data: {},
         timestamp: 2000,
       })
-      const serverOp = createTestOperation({
+      const serverOp = createServerOperation({
         type: 'update',
         data: { name: 'Server', value: 200 },
         timestamp: 1000,
@@ -325,7 +349,7 @@ describe('Synchronization Service', () => {
         data: { name: 'Local', value: 100 },
         timestamp: 2000,
       })
-      const serverOp = createTestOperation({
+      const serverOp = createServerOperation({
         type: 'delete',
         data: {},
         timestamp: 1000,

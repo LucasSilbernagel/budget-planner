@@ -1,0 +1,1261 @@
+##### TRACKED CHANGES (git diff HEAD, excluding pnpm-lock.yaml) #####
+diff --git a/.gitignore b/.gitignore
+index ab29fe5..2ddd7a0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -33,6 +33,12 @@ npm-debug.log*
+ dist/
+ build/
+ 
++# Compiled artifacts accidentally emitted into package source (all source is .ts)
++packages/*/src/**/*.js
++packages/*/src/**/*.js.map
++packages/*/src/**/*.d.ts
++packages/*/src/**/*.d.ts.map
++
+ # TypeScript build cache
+ *.tsbuildinfo
+ tsconfig.tsbuildinfo
+diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
+index d0724cf..b763d4d 100644
+--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
+@@ -1,5 +1,5 @@
+ # generated: 2026-06-18
+-# last_updated: 2026-06-22
++# last_updated: 2026-06-23
+ # project: budget-planner
+ # project_key: NOKEY
+ # tracking_system: file-system
+@@ -82,7 +82,7 @@ development_status:
+   epic-4: in-progress
+   4-1-implement-paddle-authentication-and-account-creation: done
+   4-2-create-database-schema-for-users-table: done
+-  4-3-implement-multi-device-data-synchronization-for-paid-tier: in-progress
++  4-3-implement-multi-device-data-synchronization-for-paid-tier: ready-for-dev  # Re-scoped 2026-06-23 (push/persist only); cross-device pull split to 4-18 — see sprint-change-proposal-2026-06-23.md
+   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
+   4-4-implement-custom-user-profiles-for-paid-tier: in-progress  # Code review: 19/21 patches applied, 2 deferred (SQL injection refactor, rate limiting)
+   4-5-implement-premium-forecasting-features: in-progress
+@@ -94,10 +94,11 @@ development_status:
+   4-11-implement-ethicalads-for-unauthenticated-users: ready-for-dev
+   4-12-implement-clean-url-string-injection-for-client-metadata-tracking: ready-for-dev
+   4-13-set-up-zustand-state-management: ready-for-dev
+-  4-14-set-up-testing-infrastructure: ready-for-dev
++  4-14-set-up-testing-infrastructure: review
+   4-15-set-up-ci-cd-pipeline-with-github-actions: ready-for-dev
+   4-16-deploy-to-danubedata-static-sites: ready-for-dev
+   4-17-set-up-danubedata-managed-postgresql: ready-for-dev
++  4-18-implement-server-to-client-data-pull-for-multi-device-sync: backlog  # Added 2026-06-23 — owns cross-device visibility (former 4-3 AC-2); depends on 4-3 + 4-2
+   epic-4-retrospective: optional
+ 
+   # Epic 5: Production Deployment & Infrastructure (DanubeData Full Stack)
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 9d2f8c1..98157b3 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -11,8 +11,12 @@
+     "type-check": "tsc --noEmit",
+     "lint": "biome check .",
+     "lint:fix": "biome check . --apply",
+-    "test": "vitest run",
+-    "test:unit": "vitest run --config vitest.config.ts"
++    "test": "vitest run --config vitest.config.ts",
++    "test:unit": "vitest run --config vitest.config.ts",
++    "test:watch": "vitest --config vitest.config.ts",
++    "test:coverage": "vitest run --config vitest.config.ts --coverage",
++    "test:e2e": "playwright test",
++    "test:e2e:install": "playwright install chromium"
+   },
+   "dependencies": {
+     "@budget-planner/config": "workspace:*",
+@@ -21,19 +25,27 @@
+     "@paddle/paddle-js": "^1.6.4",
+     "@radix-ui/react-slot": "^1.0.2",
+     "@tanstack/react": "latest",
+-    "@tanstack/start": "latest",
+     "@tanstack/react-router": "latest",
++    "@tanstack/start": "latest",
+     "react": "^19.0.0",
+     "react-dom": "^19.0.0",
+     "recharts": "^2.15.3",
+     "zustand": "^4.4.7"
+   },
+   "devDependencies": {
++    "@playwright/test": "^1.61.1",
++    "@testing-library/dom": "^10.4.1",
++    "@testing-library/jest-dom": "^6.9.1",
++    "@testing-library/react": "^16.3.2",
++    "@testing-library/user-event": "^14.6.1",
+     "@types/react": "^19.0.0",
+     "@types/react-dom": "^19.0.0",
+     "@vitejs/plugin-react": "^4.2.1",
++    "@vitest/coverage-v8": "^1.6.1",
+     "autoprefixer": "^10.4.17",
+     "biome": "^0.3.3",
++    "jsdom": "^24.1.3",
++    "msw": "^2.14.6",
+     "postcss": "^8.4.35",
+     "tailwindcss": "^3.4.1",
+     "typescript": "^5.3.3",
+diff --git a/package.json b/package.json
+index 05c067f..5af7087 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,10 @@
+     "tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
+     "tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
+     "tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
+-    "validate:tsconfig": "node scripts/validate-tsconfig.js"
++    "validate:tsconfig": "node scripts/validate-tsconfig.js",
++    "test": "pnpm -r run test:unit",
++    "test:unit": "pnpm -r run test:unit",
++    "test:e2e": "pnpm --filter @budget-planner/web test:e2e"
+   },
+   "engines": {
+     "node": ">=16.0.0"
+diff --git a/packages/db/package.json b/packages/db/package.json
+index 33b076b..457507f 100644
+--- a/packages/db/package.json
++++ b/packages/db/package.json
+@@ -11,6 +11,7 @@
+     "lint": "biome check .",
+     "lint:fix": "biome check . --apply",
+     "test": "vitest run",
++    "test:unit": "vitest run",
+     "test:watch": "vitest",
+     "db:generate": "drizzle-kit generate:pg",
+     "db:migrate": "drizzle-kit migrate",
+diff --git a/packages/db/src/index.d.ts b/packages/db/src/index.d.ts
+deleted file mode 100644
+index 081121b..0000000
+--- a/packages/db/src/index.d.ts
++++ /dev/null
+@@ -1,9 +0,0 @@
+-/**
+- * Budget Planner - Database Package
+- *
+- * Drizzle ORM schema and database utilities.
+- *
+- * Architecture: Drizzle ORM + Scaleway PostgreSQL (EU region only)
+- */
+-export * from './schema';
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/packages/db/src/index.d.ts.map b/packages/db/src/index.d.ts.map
+deleted file mode 100644
+index 2099e12..0000000
+--- a/packages/db/src/index.d.ts.map
++++ /dev/null
+@@ -1 +0,0 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["index.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,cAAc,UAAU,CAAC"}
+\ No newline at end of file
+diff --git a/packages/db/src/index.js b/packages/db/src/index.js
+deleted file mode 100644
+index 3693586..0000000
+--- a/packages/db/src/index.js
++++ /dev/null
+@@ -1,9 +0,0 @@
+-/**
+- * Budget Planner - Database Package
+- *
+- * Drizzle ORM schema and database utilities.
+- *
+- * Architecture: Drizzle ORM + Scaleway PostgreSQL (EU region only)
+- */
+-export * from './schema';
+-//# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/packages/db/src/index.js.map b/packages/db/src/index.js.map
+deleted file mode 100644
+index 5865703..0000000
+--- a/packages/db/src/index.js.map
++++ /dev/null
+@@ -1 +0,0 @@
+-{"version":3,"file":"index.js","sourceRoot":"","sources":["index.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,cAAc,UAAU,CAAC"}
+\ No newline at end of file
+diff --git a/packages/db/src/schema.js b/packages/db/src/schema.js
+deleted file mode 100644
+index 54071ff..0000000
+--- a/packages/db/src/schema.js
++++ /dev/null
+@@ -1,132 +0,0 @@
+-import { integer, pgEnum, pgTable, serial, timestamp, varchar, } from 'drizzle-orm/pg-core';
+-import { sql } from 'drizzle-orm';
+-// VALIDATION STRATEGY:
+-// - Database-level CHECK constraints provide the last line of defense for data integrity
+-// - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
+-// - All monetary amounts use integer type (cents) for precision
+-// - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
+-// Frequency enum for income and expense recurrence
+-// Values use snake_case as per architecture: weekly, biweekly, monthly, annually
+-export const frequencyEnum = pgEnum('frequency', [
+-    'weekly',
+-    'biweekly',
+-    'monthly',
+-    'annually',
+-]);
+-// Finance type enum for balance tracking
+-// Values use snake_case as per architecture
+-export const financeTypeEnum = pgEnum('financeType', [
+-    'investment',
+-    'debt',
+-]);
+-// Subscription status enum for user accounts
+-// Values use snake_case as per architecture
+-export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
+-    'free',
+-    'active',
+-    'cancelled',
+-    'past_due',
+-    'unpaid',
+-]);
+-// Users table - referenced by incomeSources and expenses
+-// Note: Using integer IDs for now to maintain compatibility with existing foreign keys
+-// Future migration to UUID can be done when needed
+-export const users = pgTable('users', {
+-    id: serial('id').primaryKey(),
+-    email: varchar('email', { length: 255 }).unique().notNull(),
+-    paddleId: varchar('paddleId', { length: 255 }),
+-    subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
+-    currency: varchar('currency', { length: 3 }).default('NONE'),
+-    createdAt: timestamp('createdAt').defaultNow().notNull(),
+-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+-});
+-// Income Sources table - camelCase name per architecture
+-export const incomeSources = pgTable('incomeSources', {
+-    id: serial('id').primaryKey(),
+-    userId: integer('userId')
+-        .references(() => users.id, { onDelete: 'cascade' })
+-        .notNull(),
+-    name: varchar('name', { length: 255 }).notNull(),
+-    amount: integer('amount').notNull(),
+-    frequency: frequencyEnum('frequency').notNull(),
+-    createdAt: timestamp('createdAt').defaultNow().notNull(),
+-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+-}, (table) => [
+-    // Consistency: ensure amount is positive across all monetary fields
+-    sql `check (${table.amount} > 0)`.named('income_sources_amount_positive'),
+-]);
+-// Expenses table - camelCase name per architecture
+-export const expenses = pgTable('expenses', {
+-    id: serial('id').primaryKey(),
+-    userId: integer('userId')
+-        .references(() => users.id, { onDelete: 'cascade' })
+-        .notNull(),
+-    name: varchar('name', { length: 255 }).notNull(),
+-    amount: integer('amount').notNull(),
+-    frequency: frequencyEnum('frequency').notNull(),
+-    createdAt: timestamp('createdAt').defaultNow().notNull(),
+-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+-}, (table) => [
+-    // Consistency: ensure amount is positive across all monetary fields
+-    sql `check (${table.amount} > 0)`.named('expenses_amount_positive'),
+-]);
+-// Savings Goals table - camelCase name per architecture
+-export const savingsGoals = pgTable('savingsGoals', {
+-    id: serial('id').primaryKey(),
+-    userId: integer('userId')
+-        .references(() => users.id, { onDelete: 'cascade' })
+-        .notNull(),
+-    name: varchar('name', { length: 255 }).notNull(),
+-    targetAmount: integer('targetAmount').notNull(),
+-    currentBalance: integer('currentBalance').notNull().default(0),
+-    createdAt: timestamp('createdAt').defaultNow().notNull(),
+-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+-}, (table) => [
+-    // AC 4: targetAmount must be positive (savings goals cannot have negative or zero targets)
+-    sql `check (${table.targetAmount} > 0)`.named('savings_goals_target_amount_positive'),
+-]);
+-// Balance Tracking table - camelCase name per architecture
+-export const balanceTracking = pgTable('balanceTracking', {
+-    id: serial('id').primaryKey(),
+-    userId: integer('userId')
+-        .references(() => users.id, { onDelete: 'cascade' })
+-        .notNull(),
+-    type: financeTypeEnum('type').notNull(),
+-    name: varchar('name', { length: 255 }).notNull(),
+-    currentBalance: integer('currentBalance').notNull().default(0),
+-    maxContributionLimit: integer('maxContributionLimit'),
+-    monthlyContribution: integer('monthlyContribution').notNull().default(0),
+-    createdAt: timestamp('createdAt').defaultNow().notNull(),
+-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+-}, (table) => [
+-    // Consistency: ensure optional limit is non-negative if provided
+-    sql `check (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} >= 0)`.named('balance_tracking_limit_non_negative'),
+-]);
+-// User Profiles table - camelCase name per architecture
+-// Profiles allow users to organize their financial data for different purposes
+-// Only available for paid tier users
+-export const userProfiles = pgTable('userProfiles', {
+-    id: serial('id').primaryKey(),
+-    userId: integer('userId')
+-        .references(() => users.id, { onDelete: 'cascade' })
+-        .notNull(),
+-    name: varchar('name', { length: 255 }).notNull(),
+-    description: varchar('description', { length: 500 }),
+-    isDefault: boolean('isDefault').default(false).notNull(),
+-    currency: varchar('currency', { length: 3 }).default('NONE'),
+-    createdAt: timestamp('createdAt').defaultNow().notNull(),
+-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+-});
+-// Export all tables for use in migrations and queries
+-export const allTables = {
+-    users,
+-    incomeSources,
+-    expenses,
+-    savingsGoals,
+-    balanceTracking,
+-    userProfiles,
+-};
+-// NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)
+-// Unit tests for schema validation will be added when database is configured
+-// See: pnpm --filter db db:generate (requires DATABASE_URL)
+-//# sourceMappingURL=schema.js.map
+\ No newline at end of file
+diff --git a/packages/db/src/schema.js.map b/packages/db/src/schema.js.map
+deleted file mode 100644
+index cb58402..0000000
+--- a/packages/db/src/schema.js.map
++++ /dev/null
+@@ -1 +0,0 @@
+-{"version":3,"file":"schema.js","sourceRoot":"","sources":["schema.ts"],"names":[],"mappings":"AAAA,OAAO,EACL,OAAO,EACP,MAAM,EACN,OAAO,EACP,MAAM,EACN,SAAS,EAET,OAAO,GACR,MAAM,qBAAqB,CAAA;AAC5B,OAAO,EAAE,GAAG,EAAE,MAAM,aAAa,CAAA;AAKjC,uBAAuB;AACvB,yFAAyF;AACzF,uGAAuG;AACvG,gEAAgE;AAChE,wGAAwG;AAExG,mDAAmD;AACnD,iFAAiF;AACjF,MAAM,CAAC,MAAM,aAAa,GAAG,MAAM,CAAC,WAAW,EAAE;IAC/C,QAAQ;IACR,UAAU;IACV,SAAS;IACT,UAAU;CACX,CAAC,CAAA;AAEF,yCAAyC;AACzC,4CAA4C;AAC5C,MAAM,CAAC,MAAM,eAAe,GAAG,MAAM,CAAC,aAAa,EAAE;IACnD,YAAY;IACZ,MAAM;CACP,CAAC,CAAA;AAEF,6CAA6C;AAC7C,4CAA4C;AAC5C,MAAM,CAAC,MAAM,sBAAsB,GAAG,MAAM,CAAC,oBAAoB,EAAE;IACjE,MAAM;IACN,QAAQ;IACR,WAAW;IACX,UAAU;IACV,QAAQ;CACT,CAAC,CAAA;AAEF,yDAAyD;AACzD,uFAAuF;AACvF,mDAAmD;AACnD,MAAM,CAAC,MAAM,KAAK,GAAG,OAAO,CAAC,OAAO,EAAE;IACpC,EAAE,EAAE,MAAM,CAAC,IAAI,CAAC,CAAC,UAAU,EAAE;IAC7B,KAAK,EAAE,OAAO,CAAC,OAAO,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,CAAC,MAAM,EAAE,CAAC,OAAO,EAAE;IAC3D,QAAQ,EAAE,OAAO,CAAC,UAAU,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC;IAC9C,kBAAkB,EAAE,sBAAsB,CAAC,oBAAoB,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,OAAO,EAAE;IAC1F,QAAQ,EAAE,OAAO,CAAC,UAAU,EAAE,EAAE,MAAM,EAAE,CAAC,EAAE,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC;IAC5D,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;IACxD,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;CACzD,CAAC,CAAA;AAEF,yDAAyD;AACzD,MAAM,CAAC,MAAM,aAAa,GAAG,OAAO,CAAC,eAAe,EAAE;IACpD,EAAE,EAAE,MAAM,CAAC,IAAI,CAAC,CAAC,UAAU,EAAE;IAC7B,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC;SACtB,UAAU,CAAC,GAAG,EAAE,CAAC,KAAK,CAAC,EAAE,EAAE,EAAE,QAAQ,EAAE,SAAS,EAAE,CAAC;SACnD,OAAO,EAAE;IACZ,IAAI,EAAE,OAAO,CAAC,MAAM,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,CAAC,OAAO,EAAE;IAChD,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC,CAAC,OAAO,EAAE;IACnC,SAAS,EAAE,aAAa,CAAC,WAAW,CAAC,CAAC,OAAO,EAAE;IAC/C,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;IACxD,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;CACzD,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC;IACZ,oEAAoE;IACpE,GAAG,CAAA,UAAU,KAAK,CAAC,MAAM,OAAO,CAAC,KAAK,CAAC,gCAAgC,CAAC;CACzE,CAAC,CAAA;AAEF,mDAAmD;AACnD,MAAM,CAAC,MAAM,QAAQ,GAAG,OAAO,CAAC,UAAU,EAAE;IAC1C,EAAE,EAAE,MAAM,CAAC,IAAI,CAAC,CAAC,UAAU,EAAE;IAC7B,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC;SACtB,UAAU,CAAC,GAAG,EAAE,CAAC,KAAK,CAAC,EAAE,EAAE,EAAE,QAAQ,EAAE,SAAS,EAAE,CAAC;SACnD,OAAO,EAAE;IACZ,IAAI,EAAE,OAAO,CAAC,MAAM,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,CAAC,OAAO,EAAE;IAChD,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC,CAAC,OAAO,EAAE;IACnC,SAAS,EAAE,aAAa,CAAC,WAAW,CAAC,CAAC,OAAO,EAAE;IAC/C,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;IACxD,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;CACzD,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC;IACZ,oEAAoE;IACpE,GAAG,CAAA,UAAU,KAAK,CAAC,MAAM,OAAO,CAAC,KAAK,CAAC,0BAA0B,CAAC;CACnE,CAAC,CAAA;AAEF,wDAAwD;AACxD,MAAM,CAAC,MAAM,YAAY,GAAG,OAAO,CAAC,cAAc,EAAE;IAClD,EAAE,EAAE,MAAM,CAAC,IAAI,CAAC,CAAC,UAAU,EAAE;IAC7B,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC;SACtB,UAAU,CAAC,GAAG,EAAE,CAAC,KAAK,CAAC,EAAE,EAAE,EAAE,QAAQ,EAAE,SAAS,EAAE,CAAC;SACnD,OAAO,EAAE;IACZ,IAAI,EAAE,OAAO,CAAC,MAAM,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,CAAC,OAAO,EAAE;IAChD,YAAY,EAAE,OAAO,CAAC,cAAc,CAAC,CAAC,OAAO,EAAE;IAC/C,cAAc,EAAE,OAAO,CAAC,gBAAgB,CAAC,CAAC,OAAO,EAAE,CAAC,OAAO,CAAC,CAAC,CAAC;IAC9D,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;IACxD,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;CACzD,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC;IACZ,2FAA2F;IAC3F,GAAG,CAAA,UAAU,KAAK,CAAC,YAAY,OAAO,CAAC,KAAK,CAAC,sCAAsC,CAAC;CACrF,CAAC,CAAA;AAEF,2DAA2D;AAC3D,MAAM,CAAC,MAAM,eAAe,GAAG,OAAO,CAAC,iBAAiB,EAAE;IACxD,EAAE,EAAE,MAAM,CAAC,IAAI,CAAC,CAAC,UAAU,EAAE;IAC7B,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC;SACtB,UAAU,CAAC,GAAG,EAAE,CAAC,KAAK,CAAC,EAAE,EAAE,EAAE,QAAQ,EAAE,SAAS,EAAE,CAAC;SACnD,OAAO,EAAE;IACZ,IAAI,EAAE,eAAe,CAAC,MAAM,CAAC,CAAC,OAAO,EAAE;IACvC,IAAI,EAAE,OAAO,CAAC,MAAM,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,CAAC,OAAO,EAAE;IAChD,cAAc,EAAE,OAAO,CAAC,gBAAgB,CAAC,CAAC,OAAO,EAAE,CAAC,OAAO,CAAC,CAAC,CAAC;IAC9D,oBAAoB,EAAE,OAAO,CAAC,sBAAsB,CAAC;IACrD,mBAAmB,EAAE,OAAO,CAAC,qBAAqB,CAAC,CAAC,OAAO,EAAE,CAAC,OAAO,CAAC,CAAC,CAAC;IACxE,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;IACxD,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;CACzD,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC;IACZ,iEAAiE;IACjE,GAAG,CAAA,UAAU,KAAK,CAAC,oBAAoB,eAAe,KAAK,CAAC,oBAAoB,QAAQ,CAAC,KAAK,CAAC,qCAAqC,CAAC;CACtI,CAAC,CAAA;AAEF,wDAAwD;AACxD,+EAA+E;AAC/E,qCAAqC;AACrC,MAAM,CAAC,MAAM,YAAY,GAAG,OAAO,CAAC,cAAc,EAAE;IAClD,EAAE,EAAE,MAAM,CAAC,IAAI,CAAC,CAAC,UAAU,EAAE;IAC7B,MAAM,EAAE,OAAO,CAAC,QAAQ,CAAC;SACtB,UAAU,CAAC,GAAG,EAAE,CAAC,KAAK,CAAC,EAAE,EAAE,EAAE,QAAQ,EAAE,SAAS,EAAE,CAAC;SACnD,OAAO,EAAE;IACZ,IAAI,EAAE,OAAO,CAAC,MAAM,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,CAAC,OAAO,EAAE;IAChD,WAAW,EAAE,OAAO,CAAC,aAAa,EAAE,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC;IACpD,SAAS,EAAE,OAAO,CAAC,WAAW,CAAC,CAAC,OAAO,CAAC,KAAK,CAAC,CAAC,OAAO,EAAE;IACxD,QAAQ,EAAE,OAAO,CAAC,UAAU,EAAE,EAAE,MAAM,EAAE,CAAC,EAAE,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC;IAC5D,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;IACxD,SAAS,EAAE,SAAS,CAAC,WAAW,CAAC,CAAC,UAAU,EAAE,CAAC,OAAO,EAAE;CACzD,CAAC,CAAA;AA8BF,sDAAsD;AACtD,MAAM,CAAC,MAAM,SAAS,GAAG;IACvB,KAAK;IACL,aAAa;IACb,QAAQ;IACR,YAAY;IACZ,eAAe;IACf,YAAY;CACb,CAAA;AAED,yFAAyF;AACzF,6EAA6E;AAC7E,4DAA4D"}
+\ No newline at end of file
+diff --git a/packages/db/src/schema.ts b/packages/db/src/schema.ts
+index 351c3c1..518620f 100644
+--- a/packages/db/src/schema.ts
++++ b/packages/db/src/schema.ts
+@@ -3,15 +3,19 @@ import {
+   integer,
+   pgEnum,
+   pgTable,
+-  pgIndex,
++  index,
+   serial,
+   text,
+   timestamp,
+   uuid,
+   varchar,
+-  sql,
+ } from 'drizzle-orm/pg-core'
+ 
++// `sql` is exported from the drizzle-orm package root (NOT pg-core) in
++// drizzle-orm 0.30.x; importing it from pg-core yields undefined and throws
++// "sql is not a function" when drizzle() walks the schema's CHECK constraints.
++import { sql } from 'drizzle-orm'
++
+ // Type imports for Drizzle
+ // Note: Using InferSelectModel and InferInsertModel (InferModel is deprecated)
+ import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
+@@ -106,7 +110,7 @@ export const incomeSources = pgTable('incomeSources', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
++  index('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
+   // CHECK constraint: amount must be positive (> 0)
+   sql`CHECK (${table.amount} > 0)`,
+ ])
+@@ -126,7 +130,7 @@ export const expenses = pgTable('expenses', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('expenses_userId_profileId_idx').on(table.userId, table.profileId),
++  index('expenses_userId_profileId_idx').on(table.userId, table.profileId),
+   // CHECK constraint: amount must be positive (> 0)
+   sql`CHECK (${table.amount} > 0)`,
+ ])
+@@ -146,7 +150,7 @@ export const savingsGoals = pgTable('savingsGoals', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
++  index('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
+   // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
+   sql`CHECK (${table.targetAmount} > 0)`,
+   sql`CHECK (${table.currentBalance} >= 0)`,
+@@ -169,7 +173,7 @@ export const balanceTracking = pgTable('balanceTracking', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
++  index('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
+   // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
+   sql`CHECK (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0)`,
+   sql`CHECK (${table.monthlyContribution} >= 0)`,
+@@ -190,7 +194,7 @@ export const userProfiles = pgTable('userProfiles', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('userProfiles_userId_idx').on(table.userId),
++  index('userProfiles_userId_idx').on(table.userId),
+ ])
+ 
+ // Rate Limit table - for server-side rate limiting
+@@ -205,7 +209,7 @@ export const rateLimits = pgTable('rateLimits', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('rateLimits_userId_idx').on(table.userId),
++  index('rateLimits_userId_idx').on(table.userId),
+ ])
+ 
+ // Forecasting Profiles table - for saving premium forecasting scenarios
+@@ -229,9 +233,9 @@ export const forecastingProfiles = pgTable('forecastingProfiles', {
+   createdAt: timestamp('createdAt').defaultNow().notNull(),
+   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+ }, (table) => [
+-  pgIndex('forecastingProfiles_userId_idx').on(table.userId),
+-  pgIndex('forecastingProfiles_profileId_idx').on(table.profileId),
+-  pgIndex('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
++  index('forecastingProfiles_userId_idx').on(table.userId),
++  index('forecastingProfiles_profileId_idx').on(table.profileId),
++  index('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
+ ])
+ 
+ // Type exports for TypeScript type safety
+
+##### UNTRACKED NEW FILES #####
+===== NEW FILE: .agents/skills/bmad-code-review/diff-story-4-14.txt =====
+index 0000000..6df0290
+--- /dev/null
++++ b/.agents/skills/bmad-code-review/diff-story-4-14.txt
+@@ -0,0 +1,418 @@
++##### TRACKED CHANGES (git diff HEAD, excluding pnpm-lock.yaml) #####
++diff --git a/.gitignore b/.gitignore
++index ab29fe5..2ddd7a0 100644
++--- a/.gitignore
+++++ b/.gitignore
++@@ -33,6 +33,12 @@ npm-debug.log*
++ dist/
++ build/
++ 
+++# Compiled artifacts accidentally emitted into package source (all source is .ts)
+++packages/*/src/**/*.js
+++packages/*/src/**/*.js.map
+++packages/*/src/**/*.d.ts
+++packages/*/src/**/*.d.ts.map
+++
++ # TypeScript build cache
++ *.tsbuildinfo
++ tsconfig.tsbuildinfo
++diff --git a/_bmad-output/implementation-artifacts/sprint-status.yaml b/_bmad-output/implementation-artifacts/sprint-status.yaml
++index d0724cf..b763d4d 100644
++--- a/_bmad-output/implementation-artifacts/sprint-status.yaml
+++++ b/_bmad-output/implementation-artifacts/sprint-status.yaml
++@@ -1,5 +1,5 @@
++ # generated: 2026-06-18
++-# last_updated: 2026-06-22
+++# last_updated: 2026-06-23
++ # project: budget-planner
++ # project_key: NOKEY
++ # tracking_system: file-system
++@@ -82,7 +82,7 @@ development_status:
++   epic-4: in-progress
++   4-1-implement-paddle-authentication-and-account-creation: done
++   4-2-create-database-schema-for-users-table: done
++-  4-3-implement-multi-device-data-synchronization-for-paid-tier: in-progress
+++  4-3-implement-multi-device-data-synchronization-for-paid-tier: ready-for-dev  # Re-scoped 2026-06-23 (push/persist only); cross-device pull split to 4-18 — see sprint-change-proposal-2026-06-23.md
++   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
++   4-4-implement-custom-user-profiles-for-paid-tier: in-progress  # Code review: 19/21 patches applied, 2 deferred (SQL injection refactor, rate limiting)
++   4-5-implement-premium-forecasting-features: in-progress
++@@ -94,10 +94,11 @@ development_status:
++   4-11-implement-ethicalads-for-unauthenticated-users: ready-for-dev
++   4-12-implement-clean-url-string-injection-for-client-metadata-tracking: ready-for-dev
++   4-13-set-up-zustand-state-management: ready-for-dev
++-  4-14-set-up-testing-infrastructure: ready-for-dev
+++  4-14-set-up-testing-infrastructure: review
++   4-15-set-up-ci-cd-pipeline-with-github-actions: ready-for-dev
++   4-16-deploy-to-danubedata-static-sites: ready-for-dev
++   4-17-set-up-danubedata-managed-postgresql: ready-for-dev
+++  4-18-implement-server-to-client-data-pull-for-multi-device-sync: backlog  # Added 2026-06-23 — owns cross-device visibility (former 4-3 AC-2); depends on 4-3 + 4-2
++   epic-4-retrospective: optional
++ 
++   # Epic 5: Production Deployment & Infrastructure (DanubeData Full Stack)
++diff --git a/apps/web/package.json b/apps/web/package.json
++index 9d2f8c1..98157b3 100644
++--- a/apps/web/package.json
+++++ b/apps/web/package.json
++@@ -11,8 +11,12 @@
++     "type-check": "tsc --noEmit",
++     "lint": "biome check .",
++     "lint:fix": "biome check . --apply",
++-    "test": "vitest run",
++-    "test:unit": "vitest run --config vitest.config.ts"
+++    "test": "vitest run --config vitest.config.ts",
+++    "test:unit": "vitest run --config vitest.config.ts",
+++    "test:watch": "vitest --config vitest.config.ts",
+++    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+++    "test:e2e": "playwright test",
+++    "test:e2e:install": "playwright install chromium"
++   },
++   "dependencies": {
++     "@budget-planner/config": "workspace:*",
++@@ -21,19 +25,27 @@
++     "@paddle/paddle-js": "^1.6.4",
++     "@radix-ui/react-slot": "^1.0.2",
++     "@tanstack/react": "latest",
++-    "@tanstack/start": "latest",
++     "@tanstack/react-router": "latest",
+++    "@tanstack/start": "latest",
++     "react": "^19.0.0",
++     "react-dom": "^19.0.0",
++     "recharts": "^2.15.3",
++     "zustand": "^4.4.7"
++   },
++   "devDependencies": {
+++    "@playwright/test": "^1.61.1",
+++    "@testing-library/dom": "^10.4.1",
+++    "@testing-library/jest-dom": "^6.9.1",
+++    "@testing-library/react": "^16.3.2",
+++    "@testing-library/user-event": "^14.6.1",
++     "@types/react": "^19.0.0",
++     "@types/react-dom": "^19.0.0",
++     "@vitejs/plugin-react": "^4.2.1",
+++    "@vitest/coverage-v8": "^1.6.1",
++     "autoprefixer": "^10.4.17",
++     "biome": "^0.3.3",
+++    "jsdom": "^24.1.3",
+++    "msw": "^2.14.6",
++     "postcss": "^8.4.35",
++     "tailwindcss": "^3.4.1",
++     "typescript": "^5.3.3",
++diff --git a/package.json b/package.json
++index 05c067f..5af7087 100644
++--- a/package.json
+++++ b/package.json
++@@ -14,7 +14,10 @@
++     "tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
++     "tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
++     "tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
++-    "validate:tsconfig": "node scripts/validate-tsconfig.js"
+++    "validate:tsconfig": "node scripts/validate-tsconfig.js",
+++    "test": "pnpm -r run test:unit",
+++    "test:unit": "pnpm -r run test:unit",
+++    "test:e2e": "pnpm --filter @budget-planner/web test:e2e"
++   },
++   "engines": {
++     "node": ">=16.0.0"
++diff --git a/packages/db/package.json b/packages/db/package.json
++index 33b076b..457507f 100644
++--- a/packages/db/package.json
+++++ b/packages/db/package.json
++@@ -11,6 +11,7 @@
++     "lint": "biome check .",
++     "lint:fix": "biome check . --apply",
++     "test": "vitest run",
+++    "test:unit": "vitest run",
++     "test:watch": "vitest",
++     "db:generate": "drizzle-kit generate:pg",
++     "db:migrate": "drizzle-kit migrate",
++diff --git a/packages/db/src/index.d.ts b/packages/db/src/index.d.ts
++deleted file mode 100644
++index 081121b..0000000
++--- a/packages/db/src/index.d.ts
+++++ /dev/null
++@@ -1,9 +0,0 @@
++-/**
++- * Budget Planner - Database Package
++- *
++- * Drizzle ORM schema and database utilities.
++- *
++- * Architecture: Drizzle ORM + Scaleway PostgreSQL (EU region only)
++- */
++-export * from './schema';
++-//# sourceMappingURL=index.d.ts.map
++\ No newline at end of file
++diff --git a/packages/db/src/index.d.ts.map b/packages/db/src/index.d.ts.map
++deleted file mode 100644
++index 2099e12..0000000
++--- a/packages/db/src/index.d.ts.map
+++++ /dev/null
++@@ -1 +0,0 @@
++-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["index.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,cAAc,UAAU,CAAC"}
++\ No newline at end of file
++diff --git a/packages/db/src/index.js b/packages/db/src/index.js
++deleted file mode 100644
++index 3693586..0000000
++--- a/packages/db/src/index.js
+++++ /dev/null
++@@ -1,9 +0,0 @@
++-/**
++- * Budget Planner - Database Package
++- *
++- * Drizzle ORM schema and database utilities.
++- *
++- * Architecture: Drizzle ORM + Scaleway PostgreSQL (EU region only)
++- */
++-export * from './schema';
++-//# sourceMappingURL=index.js.map
++\ No newline at end of file
++diff --git a/packages/db/src/index.js.map b/packages/db/src/index.js.map
++deleted file mode 100644
++index 5865703..0000000
++--- a/packages/db/src/index.js.map
+++++ /dev/null
++@@ -1 +0,0 @@
++-{"version":3,"file":"index.js","sourceRoot":"","sources":["index.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,cAAc,UAAU,CAAC"}
++\ No newline at end of file
++diff --git a/packages/db/src/schema.js b/packages/db/src/schema.js
++deleted file mode 100644
++index 54071ff..0000000
++--- a/packages/db/src/schema.js
+++++ /dev/null
++@@ -1,132 +0,0 @@
++-import { integer, pgEnum, pgTable, serial, timestamp, varchar, } from 'drizzle-orm/pg-core';
++-import { sql } from 'drizzle-orm';
++-// VALIDATION STRATEGY:
++-// - Database-level CHECK constraints provide the last line of defense for data integrity
++-// - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
++-// - All monetary amounts use integer type (cents) for precision
++-// - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
++-// Frequency enum for income and expense recurrence
++-// Values use snake_case as per architecture: weekly, biweekly, monthly, annually
++-export const frequencyEnum = pgEnum('frequency', [
++-    'weekly',
++-    'biweekly',
++-    'monthly',
++-    'annually',
++-]);
++-// Finance type enum for balance tracking
++-// Values use snake_case as per architecture
++-export const financeTypeEnum = pgEnum('financeType', [
++-    'investment',
++-    'debt',
++-]);
++-// Subscription status enum for user accounts
++-// Values use snake_case as per architecture
++-export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
++-    'free',
++-    'active',
++-    'cancelled',
++-    'past_due',
++-    'unpaid',
++-]);
++-// Users table - referenced by incomeSources and expenses
++-// Note: Using integer IDs for now to maintain compatibility with existing foreign keys
++-// Future migration to UUID can be done when needed
++-export const users = pgTable('users', {
++-    id: serial('id').primaryKey(),
++-    email: varchar('email', { length: 255 }).unique().notNull(),
++-    paddleId: varchar('paddleId', { length: 255 }),
++-    subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
++-    currency: varchar('currency', { length: 3 }).default('NONE'),
++-    createdAt: timestamp('createdAt').defaultNow().notNull(),
++-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++-});
++-// Income Sources table - camelCase name per architecture
++-export const incomeSources = pgTable('incomeSources', {
++-    id: serial('id').primaryKey(),
++-    userId: integer('userId')
++-        .references(() => users.id, { onDelete: 'cascade' })
++-        .notNull(),
++-    name: varchar('name', { length: 255 }).notNull(),
++-    amount: integer('amount').notNull(),
++-    frequency: frequencyEnum('frequency').notNull(),
++-    createdAt: timestamp('createdAt').defaultNow().notNull(),
++-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++-}, (table) => [
++-    // Consistency: ensure amount is positive across all monetary fields
++-    sql `check (${table.amount} > 0)`.named('income_sources_amount_positive'),
++-]);
++-// Expenses table - camelCase name per architecture
++-export const expenses = pgTable('expenses', {
++-    id: serial('id').primaryKey(),
++-    userId: integer('userId')
++-        .references(() => users.id, { onDelete: 'cascade' })
++-        .notNull(),
++-    name: varchar('name', { length: 255 }).notNull(),
++-    amount: integer('amount').notNull(),
++-    frequency: frequencyEnum('frequency').notNull(),
++-    createdAt: timestamp('createdAt').defaultNow().notNull(),
++-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++-}, (table) => [
++-    // Consistency: ensure amount is positive across all monetary fields
++-    sql `check (${table.amount} > 0)`.named('expenses_amount_positive'),
++-]);
++-// Savings Goals table - camelCase name per architecture
++-export const savingsGoals = pgTable('savingsGoals', {
++-    id: serial('id').primaryKey(),
++-    userId: integer('userId')
++-        .references(() => users.id, { onDelete: 'cascade' })
++-        .notNull(),
++-    name: varchar('name', { length: 255 }).notNull(),
++-    targetAmount: integer('targetAmount').notNull(),
++-    currentBalance: integer('currentBalance').notNull().default(0),
++-    createdAt: timestamp('createdAt').defaultNow().notNull(),
++-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++-}, (table) => [
++-    // AC 4: targetAmount must be positive (savings goals cannot have negative or zero targets)
++-    sql `check (${table.targetAmount} > 0)`.named('savings_goals_target_amount_positive'),
++-]);
++-// Balance Tracking table - camelCase name per architecture
++-export const balanceTracking = pgTable('balanceTracking', {
++-    id: serial('id').primaryKey(),
++-    userId: integer('userId')
++-        .references(() => users.id, { onDelete: 'cascade' })
++-        .notNull(),
++-    type: financeTypeEnum('type').notNull(),
++-    name: varchar('name', { length: 255 }).notNull(),
++-    currentBalance: integer('currentBalance').notNull().default(0),
++-    maxContributionLimit: integer('maxContributionLimit'),
++-    monthlyContribution: integer('monthlyContribution').notNull().default(0),
++-    createdAt: timestamp('createdAt').defaultNow().notNull(),
++-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++-}, (table) => [
++-    // Consistency: ensure optional limit is non-negative if provided
++-    sql `check (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} >= 0)`.named('balance_tracking_limit_non_negative'),
++-]);
++-// User Profiles table - camelCase name per architecture
++-// Profiles allow users to organize their financial data for different purposes
++-// Only available for paid tier users
++-export const userProfiles = pgTable('userProfiles', {
++-    id: serial('id').primaryKey(),
++-    userId: integer('userId')
++-        .references(() => users.id, { onDelete: 'cascade' })
++-        .notNull(),
++-    name: varchar('name', { length: 255 }).notNull(),
++-    description: varchar('description', { length: 500 }),
++-    isDefault: boolean('isDefault').default(false).notNull(),
++-    currency: varchar('currency', { length: 3 }).default('NONE'),
++-    createdAt: timestamp('createdAt').defaultNow().notNull(),
++-    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++-});
++-// Export all tables for use in migrations and queries
++-export const allTables = {
++-    users,
++-    incomeSources,
++-    expenses,
++-    savingsGoals,
++-    balanceTracking,
++-    userProfiles,
++-};
++-// NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)
++-// Unit tests for schema validation will be added when database is configured
++-// See: pnpm --filter db db:generate (requires DATABASE_URL)
++-//# sourceMappingURL=schema.js.map
++\ No newline at end of file
++diff --git a/packages/db/src/schema.js.map b/packages/db/src/schema.js.map
++deleted file mode 100644
++index cb58402..0000000
++--- a/packages/db/src/schema.js.map
+++++ /dev/null
++@@ -1 +0,0 @@
++-{"version":3,"file":"schema.js","sourceRoot":"","sources":["schema.ts"],"names":[],"mappings":"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"}
++\ No newline at end of file
++diff --git a/packages/db/src/schema.ts b/packages/db/src/schema.ts
++index 351c3c1..518620f 100644
++--- a/packages/db/src/schema.ts
+++++ b/packages/db/src/schema.ts
++@@ -3,15 +3,19 @@ import {
++   integer,
++   pgEnum,
++   pgTable,
++-  pgIndex,
+++  index,
++   serial,
++   text,
++   timestamp,
++   uuid,
++   varchar,
++-  sql,
++ } from 'drizzle-orm/pg-core'
++ 
+++// `sql` is exported from the drizzle-orm package root (NOT pg-core) in
+++// drizzle-orm 0.30.x; importing it from pg-core yields undefined and throws
+++// "sql is not a function" when drizzle() walks the schema's CHECK constraints.
+++import { sql } from 'drizzle-orm'
+++
++ // Type imports for Drizzle
++ // Note: Using InferSelectModel and InferInsertModel (InferModel is deprecated)
++ import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
++@@ -106,7 +110,7 @@ export const incomeSources = pgTable('incomeSources', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
+++  index('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
++   // CHECK constraint: amount must be positive (> 0)
++   sql`CHECK (${table.amount} > 0)`,
++ ])
++@@ -126,7 +130,7 @@ export const expenses = pgTable('expenses', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('expenses_userId_profileId_idx').on(table.userId, table.profileId),
+++  index('expenses_userId_profileId_idx').on(table.userId, table.profileId),
++   // CHECK constraint: amount must be positive (> 0)
++   sql`CHECK (${table.amount} > 0)`,
++ ])
++@@ -146,7 +150,7 @@ export const savingsGoals = pgTable('savingsGoals', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
+++  index('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
++   // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
++   sql`CHECK (${table.targetAmount} > 0)`,
++   sql`CHECK (${table.currentBalance} >= 0)`,
++@@ -169,7 +173,7 @@ export const balanceTracking = pgTable('balanceTracking', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
+++  index('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
++   // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
++   sql`CHECK (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0)`,
++   sql`CHECK (${table.monthlyContribution} >= 0)`,
++@@ -190,7 +194,7 @@ export const userProfiles = pgTable('userProfiles', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('userProfiles_userId_idx').on(table.userId),
+++  index('userProfiles_userId_idx').on(table.userId),
++ ])
++ 
++ // Rate Limit table - for server-side rate limiting
++@@ -205,7 +209,7 @@ export const rateLimits = pgTable('rateLimits', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('rateLimits_userId_idx').on(table.userId),
+++  index('rateLimits_userId_idx').on(table.userId),
++ ])
++ 
++ // Forecasting Profiles table - for saving premium forecasting scenarios
++@@ -229,9 +233,9 @@ export const forecastingProfiles = pgTable('forecastingProfiles', {
++   createdAt: timestamp('createdAt').defaultNow().notNull(),
++   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
++ }, (table) => [
++-  pgIndex('forecastingProfiles_userId_idx').on(table.userId),
++-  pgIndex('forecastingProfiles_profileId_idx').on(table.profileId),
++-  pgIndex('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
+++  index('forecastingProfiles_userId_idx').on(table.userId),
+++  index('forecastingProfiles_profileId_idx').on(table.profileId),
+++  index('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
++ ])
++ 
++ // Type exports for TypeScript type safety
++
++##### UNTRACKED NEW FILES #####
++===== NEW FILE: .agents/skills/bmad-code-review/diff-story-4-14.txt =====
+===== NEW FILE: apps/web/e2e/smoke.spec.ts =====
+index 0000000..112ef93
+--- /dev/null
++++ b/apps/web/e2e/smoke.spec.ts
+@@ -0,0 +1,18 @@
++import { test, expect } from '@playwright/test'
++
++/**
++ * Smoke E2E test — verifies the app boots and serves a document.
++ *
++ * This is intentionally minimal scaffolding to prove the Playwright pipeline
++ * works end to end. Expand with real user-flow coverage (auth, CRUD, sync) as
++ * features stabilise.
++ *
++ * Requires browser binaries:
++ *   pnpm --filter @budget-planner/web exec playwright install chromium
++ */
++test('app serves the home page', async ({ page }) => {
++  const response = await page.goto('/')
++  expect(response?.ok()).toBeTruthy()
++  // The document renders a body element (sanity check the app mounted).
++  await expect(page.locator('body')).toBeVisible()
++})
+===== NEW FILE: apps/web/playwright.config.ts =====
+index 0000000..b8bbfd4
+--- /dev/null
++++ b/apps/web/playwright.config.ts
+@@ -0,0 +1,40 @@
++import { defineConfig, devices } from '@playwright/test'
++
++/**
++ * Playwright E2E configuration for @budget-planner/web.
++ *
++ * Browser binaries are NOT installed by `pnpm install`. Before the first run:
++ *   pnpm --filter @budget-planner/web exec playwright install chromium
++ *
++ * By default Playwright boots the Vite dev server (port 5173). Point it at an
++ * already-running instance with PLAYWRIGHT_BASE_URL to skip that.
++ */
++const baseURL = process.env['PLAYWRIGHT_BASE_URL'] || 'http://localhost:5173'
++
++export default defineConfig({
++  testDir: './e2e',
++  fullyParallel: true,
++  forbidOnly: !!process.env['CI'],
++  retries: process.env['CI'] ? 2 : 0,
++  workers: process.env['CI'] ? 1 : undefined,
++  reporter: 'html',
++  use: {
++    baseURL,
++    trace: 'on-first-retry',
++  },
++  projects: [
++    {
++      name: 'chromium',
++      use: { ...devices['Desktop Chrome'] },
++    },
++  ],
++  // Auto-start the dev server unless an external base URL was provided.
++  webServer: process.env['PLAYWRIGHT_BASE_URL']
++    ? undefined
++    : {
++        command: 'pnpm dev',
++        url: baseURL,
++        reuseExistingServer: !process.env['CI'],
++        timeout: 120_000,
++      },
++})
+===== NEW FILE: apps/web/src/mocks/__tests__/handlers.test.ts =====
+index 0000000..90f78d7
+--- /dev/null
++++ b/apps/web/src/mocks/__tests__/handlers.test.ts
+@@ -0,0 +1,26 @@
++import { describe, it, expect } from 'vitest'
++
++/**
++ * Verifies MSW intercepts all external service calls (AC-3, NFR8).
++ * `onUnhandledRequest: 'error'` (vitest.setup.ts) guarantees any un-mocked
++ * request would fail the suite, so a passing test proves interception works.
++ */
++describe('MSW external-service interception', () => {
++  it('mocks Paddle API requests', async () => {
++    const res = await fetch('https://api.paddle.com/transactions')
++    expect(res.ok).toBe(true)
++    await expect(res.json()).resolves.toMatchObject({ mocked: true })
++  })
++
++  it('mocks Paddle sandbox requests', async () => {
++    const res = await fetch('https://sandbox-api.paddle.com/customers')
++    await expect(res.json()).resolves.toMatchObject({ mocked: true })
++  })
++
++  it('mocks EthicalAds decision requests', async () => {
++    const res = await fetch(
++      'https://server.ethicalads.io/api/v1/decision/?publisher=budget-planner',
++    )
++    await expect(res.json()).resolves.toMatchObject({ id: 'msw-mock-ad' })
++  })
++})
+===== NEW FILE: apps/web/src/mocks/handlers.ts =====
+index 0000000..5962a40
+--- /dev/null
++++ b/apps/web/src/mocks/handlers.ts
+@@ -0,0 +1,38 @@
++/**
++ * MSW request handlers.
++ *
++ * All external service calls MUST be intercepted in tests — no real network
++ * requests are permitted (NFR8). These handlers cover the two third-party
++ * services the app talks to:
++ *   - Paddle  (billing / checkout / subscription APIs) — UK
++ *   - EthicalAds (ad decision endpoint) — Germany/EU
++ *
++ * Handlers use RegExp matchers so both production and sandbox hosts are
++ * covered without enumerating every path.
++ */
++
++import { http, HttpResponse } from 'msw'
++
++export const handlers = [
++  // --- Paddle: api.paddle.com, sandbox-api.paddle.com, cdn.paddle.com ---
++  http.all(/paddle\.com/, () =>
++    HttpResponse.json({
++      mocked: true,
++      data: {},
++      meta: { request_id: 'msw-mock-request' },
++    }),
++  ),
++
++  // --- EthicalAds: ad decision endpoint ---
++  http.get(/ethicalads\.io\/api\/v1\/decision/, () =>
++    HttpResponse.json({
++      id: 'msw-mock-ad',
++      text: 'Mocked ad — no real ad request was made.',
++      body: 'Mocked ad — no real ad request was made.',
++      image: null,
++      link: 'https://example.test/mock-ad',
++      view_url: 'https://example.test/mock-view',
++      nonce: 'msw-mock-nonce',
++    }),
++  ),
++]
+===== NEW FILE: apps/web/src/mocks/server.ts =====
+index 0000000..8e69e02
+--- /dev/null
++++ b/apps/web/src/mocks/server.ts
+@@ -0,0 +1,12 @@
++/**
++ * MSW server for the Node/Vitest test environment.
++ *
++ * `setupServer` intercepts requests made from both the `node` and `jsdom`
++ * Vitest environments. Lifecycle wiring (listen/resetHandlers/close) lives in
++ * `vitest.setup.ts` so every test file shares one server instance.
++ */
++
++import { setupServer } from 'msw/node'
++import { handlers } from './handlers'
++
++export const server = setupServer(...handlers)
+===== NEW FILE: apps/web/src/test/__tests__/infrastructure.dom.test.tsx =====
+index 0000000..bd28311
+--- /dev/null
++++ b/apps/web/src/test/__tests__/infrastructure.dom.test.tsx
+@@ -0,0 +1,34 @@
++import { describe, it, expect } from 'vitest'
++import { renderWithProviders, screen, makeIncomeSource } from '@/test/utils'
++
++/**
++ * Verifies the component-testing pipeline (AC-1): jsdom environment +
++ * React Testing Library + @testing-library/jest-dom matchers + the shared
++ * `renderWithProviders` helper and data factories.
++ */
++function IncomeBadge({ name, amount }: { name: string; amount: number }) {
++  return (
++    <span data-testid="income-badge">
++      {name}: {amount}
++    </span>
++  )
++}
++
++describe('component test infrastructure', () => {
++  it('renders a component in jsdom and applies jest-dom matchers', () => {
++    const income = makeIncomeSource({ name: 'Salary', amount: 5000 })
++
++    renderWithProviders(
++      <IncomeBadge name={income.name} amount={income.amount} />,
++    )
++
++    const badge = screen.getByTestId('income-badge')
++    expect(badge).toBeInTheDocument()
++    expect(badge).toHaveTextContent('Salary: 5000')
++  })
++
++  it('produces overridable fixtures from factories', () => {
++    expect(makeIncomeSource().frequency).toBe('monthly')
++    expect(makeIncomeSource({ frequency: 'weekly' }).frequency).toBe('weekly')
++  })
++})
+===== NEW FILE: apps/web/src/test/utils.ts =====
+index 0000000..4238580
+--- /dev/null
++++ b/apps/web/src/test/utils.ts
+@@ -0,0 +1,104 @@
++/**
++ * Shared test utilities.
++ *
++ * - `renderWithProviders` is the canonical way to render components under test.
++ *   It is intentionally thin today; wrap app-wide providers (Zustand stores,
++ *   the TanStack Router, etc.) here as they are introduced so every test picks
++ *   them up automatically.
++ * - Test data factories build valid domain objects with sensible defaults and
++ *   shallow overrides, so tests only specify the fields they care about.
++ *
++ * Re-exports everything from @testing-library/react so tests import a single
++ * module: `import { renderWithProviders, screen, makeIncomeSource } from '@/test/utils'`.
++ */
++
++import type { ReactElement } from 'react'
++import { render, type RenderOptions } from '@testing-library/react'
++
++export * from '@testing-library/react'
++export { default as userEvent } from '@testing-library/user-event'
++
++/**
++ * Render a component with all app-wide providers applied.
++ * Extend the wrapper as global providers are added to the app.
++ */
++export function renderWithProviders(
++  ui: ReactElement,
++  options?: Omit<RenderOptions, 'wrapper'>,
++) {
++  return render(ui, { ...options })
++}
++
++// ---------------------------------------------------------------------------
++// Test data factories
++// ---------------------------------------------------------------------------
++
++export type Frequency = 'weekly' | 'biweekly' | 'monthly' | 'annually'
++
++export interface IncomeSourceLike {
++  id: string
++  userId: string
++  name: string
++  amount: number
++  frequency: Frequency
++}
++
++export interface ExpenseLike {
++  id: string
++  userId: string
++  name: string
++  amount: number
++  frequency: Frequency
++}
++
++export interface SavingsGoalLike {
++  id: string
++  userId: string
++  name: string
++  targetAmount: number
++  currentBalance: number
++}
++
++let idCounter = 0
++/** Deterministic, collision-free id for test fixtures. */
++export function testId(prefix = 'test'): string {
++  idCounter += 1
++  return `${prefix}-${idCounter}`
++}
++
++export function makeIncomeSource(
++  overrides: Partial<IncomeSourceLike> = {},
++): IncomeSourceLike {
++  return {
++    id: testId('income'),
++    userId: testId('user'),
++    name: 'Salary',
++    amount: 5000,
++    frequency: 'monthly',
++    ...overrides,
++  }
++}
++
++export function makeExpense(overrides: Partial<ExpenseLike> = {}): ExpenseLike {
++  return {
++    id: testId('expense'),
++    userId: testId('user'),
++    name: 'Rent',
++    amount: 1500,
++    frequency: 'monthly',
++    ...overrides,
++  }
++}
++
++export function makeSavingsGoal(
++  overrides: Partial<SavingsGoalLike> = {},
++): SavingsGoalLike {
++  return {
++    id: testId('goal'),
++    userId: testId('user'),
++    name: 'Emergency Fund',
++    targetAmount: 10000,
++    currentBalance: 2500,
++    ...overrides,
++  }
++}
+===== NEW FILE: apps/web/vitest.config.ts =====
+index 0000000..0874aac
+--- /dev/null
++++ b/apps/web/vitest.config.ts
+@@ -0,0 +1,77 @@
++import { defineConfig } from 'vitest/config'
++import react from '@vitejs/plugin-react'
++import { resolve, dirname } from 'path'
++import { fileURLToPath } from 'url'
++
++const __dirname = dirname(fileURLToPath(import.meta.url))
++
++// Vitest config for @budget-planner/web.
++//
++// Default environment is `node` so that server-only modules (e.g.
++// @budget-planner/db, which throws when `window` is defined) can be imported
++// by server-function tests. Component tests opt into `jsdom` via
++// `environmentMatchGlobs` (any *.tsx test, anything under a `components`
++// folder, or a *.dom.test.ts file).
++export default defineConfig({
++  plugins: [react()],
++  resolve: {
++    // Resolve workspace packages to their TypeScript source (never the compiled
++    // output) so tests run against the latest code. Array form + regex is used
++    // so ordering is deterministic: the app mixes two deep-import conventions —
++    // core deep imports omit `/src` (`@budget-planner/core/finance`) while db
++    // deep imports include it (`@budget-planner/db/src/schema`). The explicit
++    // `/src` db rule must precede the bare-package db rule, otherwise the bare
++    // rule would rewrite `.../db/src/schema` into a doubled `.../db/src/src/...`.
++    alias: [
++      {
++        find: /^@budget-planner\/core/,
++        replacement: resolve(__dirname, '../../packages/core/src'),
++      },
++      {
++        find: /^@budget-planner\/config/,
++        replacement: resolve(__dirname, '../../packages/config/src'),
++      },
++      {
++        find: /^@budget-planner\/db\/src/,
++        replacement: resolve(__dirname, '../../packages/db/src'),
++      },
++      {
++        find: /^@budget-planner\/db/,
++        replacement: resolve(__dirname, '../../packages/db/src'),
++      },
++      { find: '@', replacement: resolve(__dirname, './src') },
++    ],
++  },
++  test: {
++    globals: true,
++    environment: 'node',
++    environmentMatchGlobs: [
++      ['src/**/*.{tsx,jsx}', 'jsdom'],
++      ['src/**/components/**', 'jsdom'],
++      ['**/*.dom.test.{ts,tsx}', 'jsdom'],
++    ],
++    setupFiles: ['./vitest.setup.ts'],
++    include: ['src/**/*.{test,spec}.{ts,tsx}'],
++    // Playwright specs live in e2e/ and use @playwright/test, which is
++    // incompatible with the Vitest runner.
++    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
++    // Provide a dummy DATABASE_URL so the server-only db client's
++    // import-time `getDb()` does not throw. pg.Pool connects lazily, so no
++    // real database connection is opened during unit tests (NFR8).
++    env: {
++      DATABASE_URL: 'postgres://test:test@localhost:5432/budget_planner_test',
++      NODE_ENV: 'test',
++    },
++    coverage: {
++      provider: 'v8',
++      reporter: ['text', 'json', 'html'],
++      include: ['src/**/*.{ts,tsx}'],
++      exclude: [
++        'src/**/*.{test,spec}.{ts,tsx}',
++        'src/**/__tests__/**',
++        'src/mocks/**',
++        'src/test/**',
++      ],
++    },
++  },
++})
+===== NEW FILE: apps/web/vitest.setup.ts =====
+index 0000000..24eb93b
+--- /dev/null
++++ b/apps/web/vitest.setup.ts
+@@ -0,0 +1,27 @@
++/**
++ * Global Vitest setup for @budget-planner/web.
++ *
++ * - Registers @testing-library/jest-dom custom matchers (toBeInTheDocument, …)
++ * - Starts the MSW server so all external calls (Paddle, EthicalAds) are mocked
++ * - Cleans up the React Testing Library DOM after each test (jsdom only)
++ *
++ * This file runs for every test regardless of environment, so the RTL cleanup
++ * is guarded for `node`-environment tests where `document` is undefined.
++ */
++
++import '@testing-library/jest-dom/vitest'
++import { cleanup } from '@testing-library/react'
++import { afterAll, afterEach, beforeAll } from 'vitest'
++import { server } from './src/mocks/server'
++
++// Fail loudly if a test triggers a request we have not mocked.
++beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
++
++afterEach(() => {
++  server.resetHandlers()
++  if (typeof document !== 'undefined') {
++    cleanup()
++  }
++})
++
++afterAll(() => server.close())

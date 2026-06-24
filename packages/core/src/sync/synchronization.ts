@@ -28,13 +28,7 @@ import type {
   ProcessOperationResult,
 } from './types'
 import { SyncStatus } from './types'
-import {
-  incomeSourceSchema,
-  expenseSchema,
-  savingsGoalSchema,
-  balanceTrackingSchema,
-  userProfileSchema,
-} from './types'
+import { syncOperationDataSchema } from './types'
 
 /**
  * Default configuration for the synchronization service
@@ -67,34 +61,57 @@ const CIRCUIT_BREAKER_CONFIG = {
 }
 
 /**
- * Generates a unique ID for sync operations
+ * Generates a unique ID for sync operations.
+ *
+ * Uses `crypto.randomUUID()` when available to guarantee uniqueness — the
+ * previous `Date.now()` + `Math.random()` scheme could collide under coarse or
+ * frozen clocks (e.g. fake timers, rapid same-tick calls), and operation-id
+ * collisions corrupt dedup/conflict detection and batch removal.
  */
 function generateOperationId(): string {
-  return `sync-op-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `sync-op-${crypto.randomUUID()}`
+  }
+  // Fallback for environments without crypto.randomUUID
+  return `sync-op-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
 /**
- * Validates operation data payload against entity-specific schema
- * @param entityType - The type of entity
- * @param data - The data payload to validate
- * @returns Validated data or throws ZodError
+ * Deterministically serializes an object with sorted keys so that two payloads
+ * with the same content but different key insertion order compare as equal.
+ * Used for conflict detection to avoid false positives from `JSON.stringify`
+ * being sensitive to key order.
  */
-function validateOperationData(entityType: SyncEntityType, data: Record<string, unknown>): Record<string, unknown> {
-  switch (entityType) {
-    case 'incomeSource':
-      return incomeSourceSchema.parse(data)
-    case 'expense':
-      return expenseSchema.parse(data)
-    case 'savingsGoal':
-      return savingsGoalSchema.parse(data)
-    case 'balanceTracking':
-      return balanceTrackingSchema.parse(data)
-    case 'userProfile':
-      return userProfileSchema.parse(data)
-    default:
-      // For delete operations, data may be empty, so we just return it as-is
-      return data
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value)
   }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  }
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record).sort()
+  return `{${keys
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+    .join(',')}}`
+}
+
+/**
+ * Validates an operation's data payload before it enters the sync queue.
+ *
+ * Uses a permissive schema in which every entity field is optional: partial
+ * payloads (e.g. an update that touches a single field, or an empty delete
+ * payload) are valid, and the owning userId travels on the SyncOperation
+ * itself rather than inside the data payload. Known fields are type-checked
+ * and unknown keys are stripped, which prevents arbitrary/malformed data from
+ * being persisted while still supporting create, update, and delete operations.
+ *
+ * @param data - The data payload to validate
+ * @returns The validated (and sanitized) data
+ * @throws ZodError if a known field has the wrong type
+ */
+function validateOperationData(data: Record<string, unknown>): Record<string, unknown> {
+  return syncOperationDataSchema.parse(data)
 }
 
 /**
@@ -120,7 +137,7 @@ function generateDeviceId(userId: string): string {
     
     if (!deviceId) {
       // Generate a new device ID
-      deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+      deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
       try {
         localStorage.setItem(storageKey, deviceId)
       } catch {
@@ -142,7 +159,7 @@ function generateDeviceId(userId: string): string {
       let deviceId = sessionStorage.getItem(storageKey)
       
       if (!deviceId) {
-        deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+        deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
         try {
           sessionStorage.setItem(storageKey, deviceId)
         } catch {
@@ -161,7 +178,7 @@ function generateDeviceId(userId: string): string {
       // This ensures the same device ID is returned within the same session
       let deviceId = cachedDeviceIds.get(userId)
       if (!deviceId) {
-        deviceId = `device-${Math.random().toString(36).substr(2, 16)}`
+        deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
         cachedDeviceIds.set(userId, deviceId)
       }
       return deviceId
@@ -185,6 +202,10 @@ export class SynchronizationService {
   private conflictCallbacks: Set<ConflictCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing: boolean = false
+  // Set when a sync trigger (e.g. coming back online) arrives while a sync is
+  // already in progress, so we run one more pass after the current one finishes
+  // instead of dropping the trigger.
+  private pendingResync: boolean = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
   
   // Circuit breaker state for retry logic
@@ -404,13 +425,19 @@ export class SynchronizationService {
     
     this.state.isOnline = true
     this.log('Device is now online')
-    
+
     // Process queued operations only if there are any
-    // sync() will handle the isProcessing check atomically
     if (this.queue.getCount() > 0) {
-      this.sync().catch((error) => {
-        this.log('Online sync error:', error)
-      })
+      if (this.isProcessing) {
+        // A sync is already running; the isProcessing guard would make this
+        // call a no-op and the reconnect trigger would be lost. Mark that a
+        // follow-up sync is needed once the current one finishes.
+        this.pendingResync = true
+      } else {
+        this.sync().catch((error) => {
+          this.log('Online sync error:', error)
+        })
+      }
     }
 
     this.notifyStatusCallbacks()
@@ -502,9 +529,9 @@ export class SynchronizationService {
       throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
     }
 
-    // Validate operation data payload against entity schema
+    // Validate operation data payload against the sync operation schema
     // FIX: Added schema validation to prevent arbitrary data in sync operations
-    const validatedData = validateOperationData(entityType, data)
+    const validatedData = validateOperationData(data)
 
     const operation: SyncOperation = {
       id: generateOperationId(),
@@ -515,6 +542,9 @@ export class SynchronizationService {
       timestamp: Date.now(),
       deviceId: this.deviceId,
       userId,
+      // Stamp the active profile so profile-scoped entities satisfy the
+      // server's `profileId NOT NULL` requirement (DN2: service-level config).
+      profileId: this.config.profileId,
     }
 
     await this.queue.add(operation)
@@ -552,9 +582,9 @@ export class SynchronizationService {
       throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
     }
 
-    // Validate operation data payload against entity schema (partial validation for updates)
+    // Validate operation data payload against the sync operation schema
     // FIX: Added schema validation to prevent arbitrary data in sync operations
-    const validatedData = validateOperationData(entityType, data)
+    const validatedData = validateOperationData(data)
 
     const operation: SyncOperation = {
       id: generateOperationId(),
@@ -566,6 +596,8 @@ export class SynchronizationService {
       deviceId: this.deviceId,
       userId,
       version,
+      // Stamp the active profile (DN2: service-level config).
+      profileId: this.config.profileId,
     }
 
     await this.queue.add(operation)
@@ -600,11 +632,10 @@ export class SynchronizationService {
       throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
     }
 
-    // For delete operations, data is typically empty, but we still validate if provided
+    // For delete operations, data is typically empty; the permissive schema
+    // accepts an empty payload and still rejects malformed data when provided.
     // FIX: Added schema validation to prevent arbitrary data in sync operations
-    const validatedData = Object.keys(data).length > 0 
-      ? validateOperationData(entityType, data) 
-      : {}
+    const validatedData = validateOperationData(data)
 
     const operation: SyncOperation = {
       id: generateOperationId(),
@@ -615,6 +646,9 @@ export class SynchronizationService {
       timestamp: Date.now(),
       deviceId: this.deviceId,
       userId,
+      // Stamp the active profile so profile-scoped entities satisfy the
+      // server's `profileId NOT NULL` requirement (DN2: service-level config).
+      profileId: this.config.profileId,
     }
 
     await this.queue.add(operation)
@@ -653,37 +687,44 @@ export class SynchronizationService {
       return { hasConflict: false }
     }
 
-    // Check if operations are the same type
+    // Same operation type on the same entity.
+    // (Same device and same operation id were already excluded above.)
     if (localOp.type === serverOp.type) {
-      // Same type of operation on same entity - generally not a conflict
-      // unless it's an update with different data or version mismatch
-      if (localOp.type === 'update') {
-        // Check version numbers first if both operations have versions
-        if (localOp.version !== undefined && serverOp.version !== undefined) {
-          if (localOp.version !== serverOp.version) {
-            return {
-              hasConflict: true,
-              conflictType: 'version-mismatch',
-              localOperation: localOp,
-              serverOperation: serverOp,
-            }
-          }
-        }
-        
-        // Check if the data is different
-        const localDataStr = JSON.stringify(localOp.data)
-        const serverDataStr = JSON.stringify(serverOp.data)
-        
-        if (localDataStr !== serverDataStr) {
-          return {
-            hasConflict: true,
-            conflictType: 'version-mismatch',
-            localOperation: localOp,
-            serverOperation: serverOp,
-          }
+      // Two deletes of the same entity are idempotent - not a conflict.
+      if (localOp.type === 'delete') {
+        return { hasConflict: false }
+      }
+
+      // For updates, a version mismatch is a conflict regardless of payload.
+      // A one-sided version (one op carries a version, the other does not) is
+      // also a mismatch — treating it as "no conflict" would silently accept a
+      // stale optimistic-concurrency write.
+      if (
+        localOp.type === 'update' &&
+        (localOp.version !== undefined || serverOp.version !== undefined) &&
+        localOp.version !== serverOp.version
+      ) {
+        return {
+          hasConflict: true,
+          conflictType: 'version-mismatch',
+          localOperation: localOp,
+          serverOperation: serverOp,
         }
       }
-      
+
+      // For create+create and update+update, differing payloads are a conflict.
+      // Use a key-order-independent comparison to avoid false positives from
+      // JSON.stringify being sensitive to property insertion order.
+      if (stableStringify(localOp.data) !== stableStringify(serverOp.data)) {
+        return {
+          hasConflict: true,
+          conflictType:
+            localOp.type === 'create' ? 'create-create' : 'version-mismatch',
+          localOperation: localOp,
+          serverOperation: serverOp,
+        }
+      }
+
       return { hasConflict: false }
     }
 
@@ -742,17 +783,24 @@ export class SynchronizationService {
         return localOp
       
       case 'last-write-wins':
-      default:
-        // Last write wins based on timestamp
-        // If timestamps are equal, use deviceId as deterministic tiebreaker
+      default: {
+        // Last write wins based on timestamp.
+        // If timestamps are equal, use deviceId as deterministic tiebreaker.
+        // Notify conflict callbacks so an auto-resolved conflict (which may
+        // discard one side's write — e.g. an equal-timestamp tie) is observable
+        // rather than silently losing data.
+        let winner: SyncOperation
         if (localOp.timestamp > serverOp.timestamp) {
-          return localOp
+          winner = localOp
+        } else if (localOp.timestamp < serverOp.timestamp) {
+          winner = serverOp
+        } else {
+          // Timestamps are equal, use deviceId as tiebreaker
+          winner = localOp.deviceId > serverOp.deviceId ? localOp : serverOp
         }
-        if (localOp.timestamp < serverOp.timestamp) {
-          return serverOp
-        }
-        // Timestamps are equal, use deviceId as tiebreaker
-        return localOp.deviceId > serverOp.deviceId ? localOp : serverOp
+        this.notifyConflictCallbacks({ ...conflictResult, resolution: winner })
+        return winner
+      }
       
       case 'manual':
         // For manual resolution, we mark the conflict and let the user decide
@@ -885,15 +933,28 @@ export class SynchronizationService {
       let synchronizedCount = 0
       let failedCount = 0
       let conflictCount = 0
+      // Retryable (transient/5xx) failures — eligible for retry/re-queue.
       const failedOperations: SyncOperation[] = []
+      // Non-retryable (auth/4xx) failures — must NOT be retried; left in the
+      // queue and the circuit is opened so we stop hammering until conditions
+      // change (e.g. re-authentication).
+      const nonRetryableOperations: SyncOperation[] = []
       const conflictOperations: SyncOperation[] = []
       const successfullyProcessed: SyncOperation[] = []
 
       for (const operation of operations) {
+        // Re-check connectivity before each operation: if the device went
+        // offline mid-batch, stop sending. Remaining operations stay in the
+        // queue (they are only removed after success) and are not wrongly
+        // marked failed or charged against the retry budget.
+        if (!this.state.isOnline) {
+          this.log('Device went offline during sync; stopping batch early')
+          break
+        }
+
         try {
-          // Simulate sending to server (this would be replaced with actual API call)
           const result = await this.processOperation(operation)
-          
+
           if (result.success) {
             // Track operation as successfully processed (but don't count yet)
             successfullyProcessed.push(operation)
@@ -901,8 +962,13 @@ export class SynchronizationService {
             // Conflict detected
             conflictOperations.push(operation)
             conflictCount++
+          } else if (result.retryable === false) {
+            // Non-retryable failure (e.g. auth/validation). Do not retry.
+            nonRetryableOperations.push(operation)
+            failedCount++
+            this.state.lastError = result.error ?? 'Non-retryable sync failure'
           } else {
-            // Failed
+            // Retryable failure
             failedOperations.push(operation)
             failedCount++
           }
@@ -912,7 +978,7 @@ export class SynchronizationService {
           failedCount++
         }
       }
-      
+
       // Remove all successfully processed operations from queue at once
       // Only count as synchronized AFTER successful removal
       if (successfullyProcessed.length > 0) {
@@ -931,41 +997,74 @@ export class SynchronizationService {
           synchronizedCount = 0
         }
       }
-      
-      // FIX: Remove failed operations from queue to prevent duplicate re-queuing
-      // When operations fail, they're added to failedOperations for retry
-      // But they remain in the queue, causing duplicates when re-queued
+
+      // Remove retryable failed operations from the queue so scheduleRetry can
+      // re-queue them without creating duplicate-id entries. Only the ones we
+      // actually removed are tracked in state.failedOperations — if removal
+      // fails they stay in the queue and must NOT also be re-queued (which
+      // would duplicate them).
+      let requeuableFailedOps = failedOperations
       if (failedOperations.length > 0) {
         const failedOperationIds = failedOperations.map(op => op.id)
         try {
           await this.queue.removeBatch(failedOperationIds)
         } catch (removeError) {
           this.log('Failed to remove failed operations from queue:', removeError)
-          // If we can't remove them, they'll stay in the queue
-          // This is not ideal but prevents data loss
+          // Could not remove them — they remain queued and will be retried
+          // naturally on the next sync. Don't track them for re-queue.
+          requeuableFailedOps = []
         }
       }
 
       // Update state
       this.state.lastSyncTimestamp = Date.now()
       this.state.pendingOperations = this.queue.getAll()
-      this.state.failedOperations = [...this.state.failedOperations, ...failedOperations]
+      this.state.failedOperations = [...this.state.failedOperations, ...requeuableFailedOps]
       this.state.conflictOperations = [...this.state.conflictOperations, ...conflictOperations]
-      
+
       // Determine final status
       if (failedCount > 0 || conflictCount > 0) {
         this.state.status = SyncStatus.FAILED
+        // Count this sync as a consecutive failure for the circuit breaker.
+        // Previously the breaker only tripped when a retry-triggered sync threw,
+        // so a server returning { success: false } indefinitely never opened it.
+        this.consecutiveFailures++
+        if (this.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
+          this.openCircuit()
+        }
       } else {
         this.state.status = SyncStatus.COMPLETED
-        // Reset circuit breaker consecutive failures counter on successful sync
+        // Reset circuit breaker + retry budget on a fully successful sync so
+        // future transient failures get a fresh set of retry attempts.
         this.consecutiveFailures = 0
+        this.state.retryCount = 0
       }
 
       this.notifyStatusCallbacks()
 
-      // Schedule retry for failed operations if retries remain
-      if (failedCount > 0 && this.state.retryCount < this.config.maxRetries) {
+      // Non-retryable failures: open the circuit to stop auto-retrying an
+      // operation that cannot succeed without external change (e.g. re-auth).
+      if (nonRetryableOperations.length > 0) {
+        this.openCircuit()
+      } else if (
+        // Schedule retry only for retryable failures and only if retries remain.
+        requeuableFailedOps.length > 0 &&
+        this.state.retryCount < this.config.maxRetries
+      ) {
         this.scheduleRetry()
+      } else if (
+        // Drain remaining batches: a fully successful batch may have left more
+        // operations queued (queue size > batchSize). Trigger another sync on
+        // the next tick so the whole backlog drains instead of one batch per
+        // external trigger.
+        this.state.isOnline &&
+        failedCount === 0 &&
+        conflictCount === 0 &&
+        this.queue.getCount() > 0
+      ) {
+        setTimeout(() => {
+          this.sync().catch((error) => this.log('Drain sync error:', error))
+        }, 0)
       }
 
       return {
@@ -993,6 +1092,17 @@ export class SynchronizationService {
       }
     } finally {
       this.isProcessing = false
+
+      // If a sync trigger arrived while we were processing (e.g. reconnect),
+      // run one more pass now that the lock is released.
+      if (this.pendingResync && this.state.isOnline && this.queue.getCount() > 0) {
+        this.pendingResync = false
+        setTimeout(() => {
+          this.sync().catch((error) => this.log('Pending resync error:', error))
+        }, 0)
+      } else {
+        this.pendingResync = false
+      }
     }
   }
 
@@ -1009,22 +1119,16 @@ export class SynchronizationService {
     if (this.config.processOperation) {
       return this.config.processOperation(operation)
     }
-    
-    // Default implementation: simulate network delay and return success
-    // This is useful for testing or when no real processing is configured
-    // In production, a custom processOperation should be provided
-    
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    
-    // For testing purposes, we'll assume success
-    // In a real implementation, this would:
-    // 1. Send the operation to the server
-    // 2. Check for conflicts
-    // 3. Apply conflict resolution if needed
-    // 4. Return the result
-    
-    return { success: true }
+
+    // No transport configured. Throwing (rather than returning success) is
+    // deliberate: returning { success: true } here would make sync() delete the
+    // operation from the queue as "synchronized" even though nothing was ever
+    // sent to the server — silent data loss. Callers MUST provide a
+    // processOperation (the client hook wires the server function).
+    throw new Error(
+      'No processOperation configured: refusing to mark operations as synced ' +
+      'to avoid silent data loss. Provide config.processOperation.'
+    )
   }
 
   /**
@@ -1053,36 +1157,61 @@ export class SynchronizationService {
     }
 
     this.retryTimeout = setTimeout(() => {
-      this.state.retryCount++
-      this.log(`Retry attempt ${this.state.retryCount}`)
-      
-      // Re-queue failed operations
-      if (this.state.failedOperations.length > 0) {
-        const failedOps = [...this.state.failedOperations]
-        this.state.failedOperations = []
-        
-        failedOps.forEach((op) => {
-          this.queue.add(op).catch((error) => {
-            this.log('Failed to re-queue operation:', error)
-          })
-        })
-        
-        this.state.pendingOperations = this.queue.getAll()
-        this.notifyStatusCallbacks()
-        
-        // Trigger sync
-        if (this.state.isOnline) {
-          this.sync().catch((error) => {
-            this.log('Retry sync error:', error)
-            // Track consecutive failures for circuit breaker
-            this.consecutiveFailures++
-            if (this.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
-              this.openCircuit()
-            }
-          })
+      // Run the async re-queue work in a properly-awaited handler so a failed
+      // re-add does not silently drop operations (zero tolerance for data loss).
+      void this.runRetry()
+    }, this.config.retryDelay)
+  }
+
+  /**
+   * Re-queue failed operations and trigger a sync. Each re-add is awaited so
+   * that if persistence fails the operation is restored to failedOperations
+   * rather than being lost (the previous fire-and-forget forEach cleared
+   * failedOperations before the async adds resolved).
+   */
+  private async runRetry(): Promise<void> {
+    this.state.retryCount++
+    this.log(`Retry attempt ${this.state.retryCount}`)
+
+    if (this.state.failedOperations.length === 0) {
+      return
+    }
+
+    const failedOps = [...this.state.failedOperations]
+    this.state.failedOperations = []
+    const couldNotRequeue: SyncOperation[] = []
+
+    for (const op of failedOps) {
+      try {
+        await this.queue.add(op)
+      } catch (error) {
+        this.log('Failed to re-queue operation:', error)
+        // Restore so the operation is retried on a later attempt instead of
+        // being lost from both the queue and failedOperations.
+        couldNotRequeue.push(op)
+      }
+    }
+
+    if (couldNotRequeue.length > 0) {
+      this.state.failedOperations = [...this.state.failedOperations, ...couldNotRequeue]
+    }
+
+    this.state.pendingOperations = this.queue.getAll()
+    this.notifyStatusCallbacks()
+
+    // Trigger sync only after all re-adds have settled.
+    if (this.state.isOnline) {
+      try {
+        await this.sync()
+      } catch (error) {
+        this.log('Retry sync error:', error)
+        // Track consecutive failures for circuit breaker
+        this.consecutiveFailures++
+        if (this.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
+          this.openCircuit()
         }
       }
-    }, this.config.retryDelay)
+    }
   }
 
   /**

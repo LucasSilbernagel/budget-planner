@@ -106,13 +106,12 @@ export class SyncQueue {
       )
     }
 
-    // Add to in-memory queue
-    this.queue.push(operation)
-
-    // Persist to storage - DO NOT truncate queue
-    // Truncation would violate NFR: Zero tolerance for data loss
-    // If storage fails, the error will be thrown and must be handled by caller
-    await this.storage.saveQueue(this.userId, this.queue)
+    // Persist BEFORE mutating in-memory state so a storage failure does not
+    // leave the in-memory queue diverged from what is persisted (which would
+    // cause the operation to be lost or duplicated on the next reload).
+    const newQueue = [...this.queue, operation]
+    await this.storage.saveQueue(this.userId, newQueue)
+    this.queue = newQueue
   }
 
   /**
@@ -129,11 +128,10 @@ export class SyncQueue {
       )
     }
 
-    this.queue.push(...operations)
-
-    // Persist to storage - DO NOT truncate queue
-    // Truncation would violate NFR: Zero tolerance for data loss
-    await this.storage.saveQueue(this.userId, this.queue)
+    // Persist BEFORE mutating in-memory state (see add() for rationale).
+    const newQueue = [...this.queue, ...operations]
+    await this.storage.saveQueue(this.userId, newQueue)
+    this.queue = newQueue
   }
 
   /**
@@ -165,14 +163,16 @@ export class SyncQueue {
    * @param operationId - The ID of the operation to remove
    */
   async remove(operationId: string): Promise<boolean> {
-    const initialLength = this.queue.length
-    this.queue = this.queue.filter((op) => op.id !== operationId)
-    
-    if (this.queue.length < initialLength) {
-      await this.storage.saveQueue(this.userId, this.queue)
+    const filtered = this.queue.filter((op) => op.id !== operationId)
+
+    if (filtered.length < this.queue.length) {
+      // Persist BEFORE mutating in-memory state so a save failure leaves the
+      // in-memory and persisted queues consistent (no divergence on reload).
+      await this.storage.saveQueue(this.userId, filtered)
+      this.queue = filtered
       return true
     }
-    
+
     return false
   }
 
@@ -182,15 +182,16 @@ export class SyncQueue {
    */
   async removeBatch(operationIds: string[]): Promise<number> {
     const idsSet = new Set(operationIds)
-    const initialLength = this.queue.length
-    this.queue = this.queue.filter((op) => !idsSet.has(op.id))
-    
-    const removedCount = initialLength - this.queue.length
-    
+    const filtered = this.queue.filter((op) => !idsSet.has(op.id))
+
+    const removedCount = this.queue.length - filtered.length
+
     if (removedCount > 0) {
-      await this.storage.saveQueue(this.userId, this.queue)
+      // Persist BEFORE mutating in-memory state (see remove() for rationale).
+      await this.storage.saveQueue(this.userId, filtered)
+      this.queue = filtered
     }
-    
+
     return removedCount
   }
 
@@ -203,18 +204,19 @@ export class SyncQueue {
     entityType: string,
     entityId: string | number
   ): Promise<number> {
-    const initialLength = this.queue.length
     const normalizedEntityId = String(entityId)
-    this.queue = this.queue.filter(
+    const filtered = this.queue.filter(
       (op) => !(op.entityType === entityType && op.entityId === normalizedEntityId)
     )
-    
-    const removedCount = initialLength - this.queue.length
-    
+
+    const removedCount = this.queue.length - filtered.length
+
     if (removedCount > 0) {
-      await this.storage.saveQueue(this.userId, this.queue)
+      // Persist BEFORE mutating in-memory state (see remove() for rationale).
+      await this.storage.saveQueue(this.userId, filtered)
+      this.queue = filtered
     }
-    
+
     return removedCount
   }
 
@@ -251,12 +253,17 @@ export class SyncQueue {
    * Remove and return the next operation in the queue (FIFO)
    */
   async dequeue(): Promise<SyncOperation | undefined> {
-    const operation = this.queue.shift()
-    
-    if (operation) {
-      await this.storage.saveQueue(this.userId, this.queue)
+    if (this.queue.length === 0) {
+      return undefined
     }
-    
+
+    const operation = this.queue[0]
+    const remaining = this.queue.slice(1)
+    // Persist BEFORE mutating in-memory state so a save failure does not drop
+    // the dequeued operation from memory while leaving it persisted.
+    await this.storage.saveQueue(this.userId, remaining)
+    this.queue = remaining
+
     return operation
   }
 
@@ -267,11 +274,14 @@ export class SyncQueue {
   getReadyOperations(limit?: number): SyncOperation[] {
     // Sort by timestamp (oldest first)
     const sorted = [...this.queue].sort((a, b) => a.timestamp - b.timestamp)
-    
-    if (limit) {
-      return sorted.slice(0, limit)
+
+    // Only apply a limit when one is explicitly provided. `limit === 0` must
+    // return an empty batch, not the whole queue (the previous `if (limit)`
+    // check treated 0 as "no limit").
+    if (limit !== undefined) {
+      return sorted.slice(0, Math.max(0, limit))
     }
-    
+
     return sorted
   }
 

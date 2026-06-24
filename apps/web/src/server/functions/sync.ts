@@ -13,7 +13,7 @@ import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
 import { processBatchSync, getSyncHistory, getSyncAuditLogs, getSyncStatus } from '../api/sync'
 import type { User } from '@budget-planner/db'
 import type { Request } from '@tanstack/start'
-import { getUserContext } from '../api/data/financialData'
+import { getUserContext } from '../api/data/forecasting'
 
 /**
  * Server Function: Process a batch of sync operations

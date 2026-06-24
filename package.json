@@ -15,9 +15,10 @@
     "tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
     "tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
     "validate:tsconfig": "node scripts/validate-tsconfig.js",
-    "test": "pnpm -r test",
-    "test:unit": "pnpm -r test:unit",
-    "test:watch": "pnpm -r test:watch"
+    "test": "pnpm -r run test:unit",
+    "test:unit": "pnpm -r run test:unit",
+    "test:watch": "pnpm -r run test:watch",
+    "test:e2e": "pnpm --filter @budget-planner/web test:e2e"
   },
   "engines": {
     "node": ">=20.12.0"

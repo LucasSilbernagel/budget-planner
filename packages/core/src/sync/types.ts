@@ -54,18 +54,33 @@ export const userProfileSchema = z.object({
 })
 
 /**
+ * PostgreSQL 32-bit `integer` bounds. Monetary fields are stored as `integer`
+ * (cents), so client-side validation must reject values the DB cannot store to
+ * avoid "integer out of range" failures that would otherwise only surface at
+ * persistence time and be retried forever.
+ */
+const PG_INT32_MAX = 2_147_483_647
+const PG_INT32_MIN = -2_147_483_648
+
+/**
  * Schema for sync operation data validation
  * Validates data structure based on entityType
+ *
+ * Numeric bounds mirror the database CHECK constraints (see packages/db/schema.ts)
+ * so invalid amounts are rejected client-side instead of failing the INSERT/UPDATE:
+ * - amount / targetAmount / maxContributionLimit: must be > 0
+ * - monthlyContribution: must be >= 0
+ * - currentBalance: may be negative (debt balances) but must fit in int32
  */
 export const syncOperationDataSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  amount: z.number().int().optional(),
+  amount: z.number().int().positive().max(PG_INT32_MAX).optional(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).optional(),
-  targetAmount: z.number().int().optional(),
-  currentBalance: z.number().int().optional(),
+  targetAmount: z.number().int().positive().max(PG_INT32_MAX).optional(),
+  currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX).optional(),
   type: z.enum(['investment', 'debt']).optional(),
-  maxContributionLimit: z.number().int().optional(),
-  monthlyContribution: z.number().int().optional(),
+  maxContributionLimit: z.number().int().positive().max(PG_INT32_MAX).optional(),
+  monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX).optional(),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().optional(),
   currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']).optional(),
@@ -220,6 +235,15 @@ export interface ProcessOperationResult {
   conflict?: boolean
   /** Error message if operation failed */
   error?: string
+  /**
+   * Whether a failed operation should be retried. Transient failures
+   * (network/5xx) are retryable; auth/validation failures (4xx) are not and
+   * must abort rather than be hammered. When omitted, the failure is treated
+   * as retryable for backwards compatibility.
+   */
+  retryable?: boolean
+  /** Optional HTTP-style status code from the transport, used to classify failures. */
+  statusCode?: number
 }
 
 /**
@@ -260,6 +284,14 @@ export interface SyncConfig {
    * If not provided, operations will be queued but not processed
    */
   processOperation?: ProcessOperationFn
+
+  /**
+   * Active profile ID (UUID) for the session. Profile-scoped entities
+   * (incomeSource, expense, savingsGoal, balanceTracking) require a
+   * `profileId NOT NULL` server-side, so every queued operation is stamped
+   * with this value. Required for those entity types when syncing the paid tier.
+   */
+  profileId?: string
 }
 
 /**
