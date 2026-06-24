@@ -68,6 +68,10 @@ function getPool(): Pool {
       connectionString: databaseUrl,
       // SSL required for production
       ssl: nodeEnv === 'production' ? { rejectUnauthorized: true } : false,
+      // Connection pooling tuned for development (AC-4); pg defaults to max 10
+      max: 10,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 10000,
     })
   }
   

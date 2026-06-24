@@ -103,7 +103,7 @@ development_status:
 
   # Epic 5: Production Deployment & Infrastructure (DanubeData Full Stack)
   epic-5: in-progress
-  5-1-set-up-local-postgresql-for-development: review
+  5-1-set-up-local-postgresql-for-development: done  # Code review 2026-06-24: 9 patches applied (doc accuracy + AC-4 pooling), 8 deferred (pre-existing client.ts security/sovereignty — substring host allowlist, *.supabase.co region, NODE_ENV fail-open, eager db init) tracked in deferred-work.md for Epic 5.
   5-2-configure-danubedata-rapids-for-backend-logic: backlog
   5-3-set-up-paddle-production-environment: backlog
   5-4-configure-ci-cd-pipeline-for-production: backlog

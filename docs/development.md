@@ -45,6 +45,10 @@ docker run --name budget-planner-db \
 docker ps
 ```
 
+> **Note (AC-2):** Docker's `POSTGRES_USER` is created as a superuser. For closer
+> parity with production (dedicated, minimal-permission role), prefer the Homebrew or
+> native options below, or create a separate non-superuser role inside the container.
+
 **Option B: Homebrew (macOS)**
 
 ```bash
@@ -52,9 +56,9 @@ docker ps
 brew install postgresql@15
 brew services start postgresql@15
 
-# Create database and user
-createuser -P budget-planner-user
-createdb -O budget-planner-user budget-planner-dev
+# Create database and user (UTF-8 encoding per AC-2)
+createuser -P budget-planner-user   # when prompted, answer "no" to superuser
+createdb -O budget-planner-user -E UTF8 -T template0 budget-planner-dev
 ```
 
 **Option C: Native Installation (Linux/Ubuntu/Debian)**
@@ -64,9 +68,9 @@ createdb -O budget-planner-user budget-planner-dev
 sudo apt update
 sudo apt install postgresql-15
 
-# Create user and database
-sudo -u postgres createuser -P budget-planner-user
-sudo -u postgres createdb -O budget-planner-user budget-planner-dev
+# Create user and database (UTF-8 encoding per AC-2)
+sudo -u postgres createuser -P budget-planner-user   # answer "no" to superuser
+sudo -u postgres createdb -O budget-planner-user -E UTF8 -T template0 budget-planner-dev
 ```
 
 **Verify Installation**
@@ -96,7 +100,8 @@ NODE_ENV=development
 
 **⚠️ IMPORTANT:** Always replace `CHANGE_ME_TO_YOUR_PASSWORD` with your actual PostgreSQL password. Never commit this file to version control.
 
-For database migrations, also configure `packages/db/.env`:
+Database migrations read the **project-root `.env`** (see `packages/db/drizzle.config.ts`,
+which loads `../../.env`). Ensure the root `.env` contains the same `DATABASE_URL`:
 
 ```
 DATABASE_URL=postgresql://budget-planner-user:CHANGE_ME_TO_YOUR_PASSWORD@localhost:5432/budget-planner-dev
@@ -106,21 +111,17 @@ DATABASE_URL=postgresql://budget-planner-user:CHANGE_ME_TO_YOUR_PASSWORD@localho
 
 ### 5. Apply Database Migrations
 
+Use Drizzle's migrator — it reads `migrations/meta/_journal.json` and applies every
+migration in the correct order. Do **not** hand-apply individual `.sql` files with
+`psql`: the `migrations/` directory contains several files, and applying them manually
+bypasses Drizzle's journal, leaving the schema inconsistent and unrecorded.
+
 ```bash
 # Navigate to db package
 cd packages/db
 
-# Apply migrations to local database
-DATABASE_URL=postgresql://budget-planner-user:CHANGE_ME_TO_YOUR_PASSWORD@localhost:5432/budget-planner-dev pnpm db:migrate
-
-# Or manually apply SQL files
-psql -h localhost -U budget-planner-user -d budget-planner-dev -f migrations/0000_rare_johnny_storm.sql
-psql -h localhost -U budget-planner-user -d budget-planner-dev -f migrations/0001_add_rate_limits_table.sql
-```
-
-**Note:** If you're using Homebrew PostgreSQL, you may need to use the full path to psql:
-```bash
-/opt/homebrew/opt/postgresql@15/bin/psql -h localhost -U budget-planner-user -d budget-planner-dev -f migrations/0000_rare_johnny_storm.sql
+# Apply all migrations to the local database (reads root .env DATABASE_URL)
+pnpm db:migrate
 ```
 
 ### 6. Verify Database Setup
@@ -172,7 +173,7 @@ These features require the PostgreSQL database:
 - Premium forecasting
 - Custom user profiles
 
-**Note:** For local development of paid tier features, use your local PostgreSQL database. For production, the application will use DanubeData PostgreSQL (Germany - EU) per [ADR-001](./planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md).
+**Note:** For local development of paid tier features, use your local PostgreSQL database. For production, the application will use DanubeData PostgreSQL (Germany - EU) per [ADR-001](../_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md).
 
 ### Database Seeding (Optional)
 
@@ -238,8 +239,8 @@ pnpm --filter web dev
 # Build for production
 pnpm --filter web build
 
-# Start production server
-pnpm --filter web start
+# Preview the production build locally
+pnpm --filter web preview
 ```
 
 ## Troubleshooting
@@ -336,9 +337,10 @@ pnpm --filter web start
    psql -h localhost -U budget-planner-user -d budget-planner-dev -c "SELECT * FROM drizzle_migrations;"
    ```
 2. If the migration table doesn't exist, the migrations haven't been applied yet
-3. If you need to reset, drop all tables and reapply:
+3. If you need to reset, drop and recreate the public schema, then re-run migrations:
    ```bash
-   psql -h localhost -U budget-planner-user -d budget-planner-dev -f migrations/reset.sql
+   psql -h localhost -U budget-planner-user -d budget-planner-dev -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+   cd packages/db && pnpm db:migrate
    ```
 
 ## Architecture Overview
