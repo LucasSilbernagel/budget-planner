@@ -40,7 +40,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-06-23
+last_updated: 2026-06-24
 baseline_commit: 46396f0
 project: budget-planner
 project_key: NOKEY
@@ -82,10 +82,10 @@ development_status:
   epic-4: in-progress
   4-1-implement-paddle-authentication-and-account-creation: done
   4-2-create-database-schema-for-users-table: done
-  4-3-implement-multi-device-data-synchronization-for-paid-tier: in-progress  # Re-scoped 2026-06-23 (push/persist only); cross-device pull split to 4-18. Code review 2026-06-23: 21/24 patches applied (core sync module green, 528 tests pass), 3 held (DN1 uuid PK migration, P3 server-fn transport, P20 audit tables).
+  4-3-implement-multi-device-data-synchronization-for-paid-tier: done  # Re-scoped 2026-06-23 (push/persist only); cross-device pull split to 4-18. Code review 2026-06-23: 21/24 patches applied (core sync module green, 528 tests pass), 3 held (DN1 uuid PK migration, P3 server-fn transport, P20 audit tables) — tracked in deferred-work.md. Closed 2026-06-24.
   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
-  4-4-implement-custom-user-profiles-for-paid-tier: in-progress  # Code review: 19/21 patches applied, 2 deferred (SQL injection refactor, rate limiting)
-  4-5-implement-premium-forecasting-features: in-progress
+  4-4-implement-custom-user-profiles-for-paid-tier: done  # Code review: 19/21 patches applied, 2 deferred (SQL injection refactor, rate limiting) — tracked in deferred-work.md. Closed 2026-06-24.
+  4-5-implement-premium-forecasting-features: in-progress  # UNBLOCKED 2026-06-24: 3 decision_needed items resolved (D1 already uuid in schema; D2 no backfill — fresh-DB approach, but regenerate stale migrations; P2 no app-level encryption — see ADR-002). Remaining dev work: regenerate Drizzle migrations + verify/apply 23 'patch' findings from triage-report-4-5.md, then dev-story → code-review.
   4-6-implement-currency-control-system-with-mode-toggle: ready-for-dev
   4-7-implement-currency-display-with-intl-numberformat: ready-for-dev
   4-8-display-application-version-in-ui-footer: ready-for-dev
