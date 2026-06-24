@@ -333,7 +333,7 @@ export function ForecastList({
                       {truncate(forecast.name, 40)}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      v{forecast.result.scenario.version || 1}
+                      v{forecast.version ?? 1}
                     </div>
                   </td>
 
@@ -364,17 +364,19 @@ export function ForecastList({
                   {/* Actions */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleLoad(forecast)
-                        }}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Load"
-                      >
-                        <LoadIcon className="w-4 h-4" />
-                      </button>
+                      {onLoad && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleLoad(forecast)
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Load"
+                        >
+                          <LoadIcon className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => handleDelete(forecast.id, e)}

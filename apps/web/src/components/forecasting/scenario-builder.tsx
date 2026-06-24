@@ -47,13 +47,16 @@ export interface OneTimeEvent {
  * Props for ScenarioBuilder component
  */
 export interface ScenarioBuilderProps {
-  /** Callback when user saves a forecast */
+  /**
+   * Callback when user saves a forecast. May return a result so the builder can
+   * surface a save failure (e.g. duplicate name) back to the user.
+   */
   onSave: (data: {
     name: string
     description?: string
     scenario: ForecastingScenario
     result: ForecastingResult
-  }) => void
+  }) => void | Promise<{ success: boolean; error?: string } | void>
 }
 
 /**
@@ -178,6 +181,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
   // State for results
   const [result, setResult] = useState<ForecastingResult | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -382,9 +386,14 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
   /**
    * Handle save
    */
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!result) {
       setError('No forecast calculated yet')
+      return
+    }
+    // Guard against double-submit: a second concurrent save would race the
+    // first and spuriously trip the unique-name constraint.
+    if (isSaving) {
       return
     }
 
@@ -405,13 +414,23 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       scenario.oneTimeEvents = oneTimeEvents.map(({ id, ...rest }) => rest)
     }
 
-    onSave({
-      name: formData.name,
-      description: formData.description || undefined,
-      scenario,
-      result,
-    })
-  }, [result, formData, incomeItems, expenseItems, oneTimeEvents, onSave])
+    setIsSaving(true)
+    try {
+      const saveResult = await onSave({
+        name: formData.name,
+        description: formData.description || undefined,
+        scenario,
+        result,
+      })
+      if (saveResult && !saveResult.success) {
+        setError(saveResult.error || 'Failed to save forecast')
+      } else {
+        setError(null)
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }, [result, isSaving, formData, incomeItems, expenseItems, oneTimeEvents, onSave])
 
   // Calculate summary statistics
   const summary = useMemo(() => {
@@ -640,10 +659,10 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
             <button
               type="button"
               onClick={handleSave}
-              className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              disabled={isCalculating}
+              className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isCalculating || isSaving}
             >
-              {isCalculating ? 'Calculating...' : 'Save Forecast'}
+              {isCalculating ? 'Calculating...' : isSaving ? 'Saving...' : 'Save Forecast'}
             </button>
           </div>
         </section>
