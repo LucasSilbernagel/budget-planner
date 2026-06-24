@@ -234,6 +234,11 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
 
   async clearQueue(userId: string): Promise<void> {
     try {
+      // Ensure initialization is complete before reading dbPromise, otherwise
+      // a clear issued before initialize() finishes would wrongly fall back to
+      // localStorage and orphan the IndexedDB data (consistent with load/save).
+      await this.initPromise
+
       if (!this.dbPromise) {
         // IndexedDB not available, try localStorage
         const storage = new LocalStorageSyncQueueStorage()

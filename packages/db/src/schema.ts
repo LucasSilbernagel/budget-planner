@@ -10,8 +10,6 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
-import { sql } from 'drizzle-orm'
-
 // `sql` is exported from the drizzle-orm package root (NOT pg-core) in
 // drizzle-orm 0.30.x; importing it from pg-core yields undefined and throws
 // "sql is not a function" when drizzle() walks the schema's CHECK constraints.
