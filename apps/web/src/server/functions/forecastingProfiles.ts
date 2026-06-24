@@ -11,7 +11,7 @@
 
 import { db } from '@budget-planner/db'
 import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
-import { eq, and, desc, orderBy } from 'drizzle-orm'
+import { eq, and, desc, neq, inArray } from 'drizzle-orm'
 import type { ForecastingProfile, NewForecastingProfile, UserProfile } from '@budget-planner/db'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
@@ -59,26 +59,24 @@ export interface ForecastingProfileOutput extends ForecastingProfile {
  * Validate that scenarioData is valid JSON (or a string that can be JSON.stringify'd)
  */
 function validateScenarioData(data: unknown): string {
+  // Only accept a plain object or a string that is already valid JSON. Anything
+  // else is rejected (throws) rather than stored, so the database can never hold
+  // malformed scenarioData — a corrupt row would otherwise crash the client when
+  // the saved-forecast list deserializes and renders it.
   if (typeof data === 'string') {
-    // Already a string - validate it's valid JSON by trying to parse it
     try {
       JSON.parse(data)
       return data
     } catch {
-      // If it's not valid JSON, we'll still store it as a string
-      // but this might indicate data corruption
-      console.warn('ScenarioData is not valid JSON, but storing as string')
-      return data
+      throw new Error('scenarioData must be valid JSON')
     }
   }
-  
-  // If it's an object, stringify it
+
   if (typeof data === 'object' && data !== null) {
     return JSON.stringify(data)
   }
-  
-  // For other types, convert to string
-  return String(data)
+
+  throw new Error('scenarioData must be a JSON object or a valid JSON string')
 }
 
 /**
@@ -114,13 +112,21 @@ async function ensureSingleDefault(
     .where(and(
       eq(forecastingProfiles.userId, userId),
       eq(forecastingProfiles.profileId, profileId),
-      excludeId ? ne(forecastingProfiles.id, excludeId) : undefined
+      excludeId ? neq(forecastingProfiles.id, excludeId) : undefined
     ))
 }
 
-// Helper for NOT EQUALS - Drizzle doesn't have a built-in ne function
-function ne(column: any, value: any) {
-  return { column, op: '!=' as const, value }
+/**
+ * Detect a Postgres unique-constraint violation (SQLSTATE 23505) so callers can
+ * return a friendly message instead of the raw driver error text.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === '23505'
+  )
 }
 
 // ============================================================================
@@ -225,6 +231,12 @@ export async function createForecastingProfile(
       },
     }
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      return {
+        success: false,
+        error: 'A forecast with this name already exists for this profile.',
+      }
+    }
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create forecasting profile',
@@ -260,13 +272,8 @@ export async function getForecastingProfiles(
       }
     }
     
-    // Build query
-    let query = db
-      .select()
-      .from(forecastingProfiles)
-      .where(eq(forecastingProfiles.userId, user.userId))
-    
-    // Filter by profileId if provided
+    // Build the where condition once. Filter by profileId if provided.
+    let whereCondition = eq(forecastingProfiles.userId, user.userId)
     if (profileId) {
       const profileOwned = await validateProfileOwnership(profileId, user.userId)
       if (!profileOwned) {
@@ -275,25 +282,31 @@ export async function getForecastingProfiles(
           error: 'Invalid profile ID or profile does not belong to current user',
         }
       }
-      query = query.where(and(
+      whereCondition = and(
         eq(forecastingProfiles.userId, user.userId),
         eq(forecastingProfiles.profileId, profileId)
-      ))
+      )!
     }
-    
+
     // Order by createdAt descending
-    const profiles = await query.orderBy(desc(forecastingProfiles.createdAt))
-    
+    const profiles = await db
+      .select()
+      .from(forecastingProfiles)
+      .where(whereCondition)
+      .orderBy(desc(forecastingProfiles.createdAt))
+
     // Get profile names for each forecasting profile
     const profileIds = [...new Set(profiles.map(p => p.profileId))]
-    const profileNames = await db
-      .select({ id: userProfiles.id, name: userProfiles.name })
-      .from(userProfiles)
-      .where(and(
-        eq(userProfiles.userId, user.userId),
-        profileIds.length > 0 ? { id: { in: profileIds } } : undefined
-      ))
-    
+    const profileNames = profileIds.length > 0
+      ? await db
+          .select({ id: userProfiles.id, name: userProfiles.name })
+          .from(userProfiles)
+          .where(and(
+            eq(userProfiles.userId, user.userId),
+            inArray(userProfiles.id, profileIds)
+          ))
+      : []
+
     const profileNameMap = new Map(profileNames.map(p => [p.id, p.name]))
     
     const output: ForecastingProfileOutput[] = profiles.map(profile => ({

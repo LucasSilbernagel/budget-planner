@@ -7,6 +7,7 @@ import {
   serial,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
@@ -235,6 +236,12 @@ export const forecastingProfiles = pgTable('forecastingProfiles', {
   index('forecastingProfiles_userId_idx').on(table.userId),
   index('forecastingProfiles_profileId_idx').on(table.profileId),
   index('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
+  // Prevent duplicate forecast names within the same user/profile (P6)
+  unique('forecastingProfiles_userId_profileId_name_unique').on(
+    table.userId,
+    table.profileId,
+    table.name,
+  ),
 ])
 
 // Type exports for TypeScript type safety

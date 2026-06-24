@@ -72,8 +72,45 @@ export interface SavedForecast {
   description?: string
   scenario: ForecastingScenario
   result: ForecastingResult
+  /** Schema/model version from the persisted forecastingProfiles row. */
+  version?: number
   createdAt: string
   updatedAt: string
+}
+
+/**
+ * Map a server-side forecasting profile to the client SavedForecast shape.
+ * scenarioData is a JSON string of { scenario, result }; returns null if it
+ * cannot be parsed into the expected shape so a corrupt row can't crash the UI.
+ */
+function mapToSavedForecast(
+  profile: ForecastingProfileOutput
+): SavedForecast | null {
+  try {
+    const parsed = JSON.parse(profile.scenarioData) as {
+      scenario?: ForecastingScenario
+      result?: ForecastingResult
+    }
+    // Validate the nested shape the saved-list UI actually dereferences
+    // (result.summary.endingNetWorth / totalGrowth). A row that parses but is
+    // missing scenario/result/summary is treated as corrupt and skipped so it
+    // can't crash the list.
+    if (!parsed?.scenario || !parsed?.result || !parsed.result.summary) {
+      return null
+    }
+    return {
+      id: String(profile.id),
+      name: profile.name,
+      description: profile.description ?? undefined,
+      scenario: parsed.scenario,
+      result: parsed.result,
+      version: profile.version,
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+    }
+  } catch {
+    return null
+  }
 }
 
 // ============================================================================
@@ -109,35 +146,48 @@ export function ForecastingPage(): React.ReactElement {
   // State for server-side forecasts
   const [isLoadingForecasts, setIsLoadingForecasts] = useState(false)
   const [serverForecasts, setServerForecasts] = useState<ForecastingProfileOutput[]>([])
+  // The user profile that newly-saved forecasts are attached to. Forecasting
+  // profiles require a real userProfiles UUID, so resolve the user's default
+  // profile up front rather than guessing an ID at save time.
+  const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null)
 
-  // Load forecasts from server on mount
+  // Load the user's default profile and saved forecasts from the server on mount
   useEffect(() => {
-    const loadForecasts = async () => {
-      if (status.hasAccess && status.isAuthenticated) {
-        try {
-          setIsLoadingForecasts(true)
-          // Import server function dynamically
-          const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-          
-          // Create a mock request for client-side call
-          // In TanStack Start, this would be handled by the framework
-          const request = new Request(window.location.href)
-          
-          const result = await getForecastingProfiles(request)
-          
-          if (result.success && result.data) {
-            setServerForecasts(result.data)
-          }
-        } catch (error) {
-          console.error('Failed to load forecasting profiles:', error)
-        } finally {
-          setIsLoadingForecasts(false)
+    const loadData = async () => {
+      try {
+        setIsLoadingForecasts(true)
+        // In TanStack Start, the framework supplies the request context; for
+        // client-side calls we pass the current location as the request.
+        const request = new Request(window.location.href)
+
+        // Resolve the user's default profile (or first profile) so saves have a
+        // valid profileId to attach to.
+        const { getProfiles } = await import('../server/functions/profiles')
+        const profilesResult = await getProfiles(request)
+        let resolvedProfileId: string | null = null
+        if (profilesResult.success && profilesResult.data && profilesResult.data.length > 0) {
+          const defaultProfile =
+            profilesResult.data.find((p) => p.isDefault) ?? profilesResult.data[0]
+          resolvedProfileId = defaultProfile.id
+          setDefaultProfileId(resolvedProfileId)
         }
+
+        // Load saved forecasts scoped to the same profile saves target, so the
+        // "My Forecasts" list and the save destination stay consistent.
+        const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
+        const result = await getForecastingProfiles(request, resolvedProfileId ?? undefined)
+        if (result.success && result.data) {
+          setServerForecasts(result.data)
+        }
+      } catch (error) {
+        console.error('Failed to load forecasting data:', error)
+      } finally {
+        setIsLoadingForecasts(false)
       }
     }
-    
+
     if (status.hasAccess && status.isAuthenticated) {
-      loadForecasts()
+      loadData()
     }
   }, [status.hasAccess, status.isAuthenticated])
 
@@ -147,40 +197,53 @@ export function ForecastingPage(): React.ReactElement {
     description?: string
     scenario: ForecastingScenario
     result: ForecastingResult
-  }) => {
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!defaultProfileId) {
+      const error =
+        'No financial profile found. Create a profile before saving forecasts.'
+      console.error('Cannot save forecast:', error)
+      return { success: false, error }
+    }
     try {
       // Import server function dynamically
       const { createForecastingProfile } = await import('../server/functions/forecastingProfiles')
-      
+
       // Create request
       const request = new Request(window.location.href)
-      
+
       // Convert forecast to input format
       const input = {
         name: forecast.name,
         description: forecast.description,
         scenarioData: { scenario: forecast.scenario, result: forecast.result },
-        profileId: 'default-profile-id', // TODO: Get actual profile ID from user context
+        profileId: defaultProfileId,
       }
-      
+
       const result = await createForecastingProfile(request, input)
-      
+
       if (result.success && result.data) {
-        // Reload forecasts to get updated list
+        // Reload forecasts (scoped to the same profile) to get the updated list
         const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-        const getResult = await getForecastingProfiles(request)
-        
+        const getResult = await getForecastingProfiles(request, defaultProfileId)
+
         if (getResult.success && getResult.data) {
           setServerForecasts(getResult.data)
         }
         setActiveTab('saved')
-      } else {
-        console.error('Failed to save forecast:', result.error)
+        return { success: true }
       }
-    } catch (error) {
+
+      // A failed save (e.g. duplicate name hitting the unique constraint) must
+      // be surfaced to the user, not silently swallowed.
+      const error = result.error || 'Failed to save forecast'
       console.error('Failed to save forecast:', error)
+      return { success: false, error }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save forecast'
+      console.error('Failed to save forecast:', error)
+      return { success: false, error: message }
     }
-  }, [])
+  }, [defaultProfileId])
 
   // Handle deleting a forecast - uses server function
   const handleDeleteForecast = useCallback(async (id: string) => {
@@ -192,12 +255,12 @@ export function ForecastingPage(): React.ReactElement {
       const request = new Request(window.location.href)
       
       const result = await deleteForecastingProfile(request, parseInt(id))
-      
+
       if (result.success) {
-        // Reload forecasts to get updated list
+        // Reload forecasts (scoped to the same profile) to get the updated list
         const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-        const getResult = await getForecastingProfiles(request)
-        
+        const getResult = await getForecastingProfiles(request, defaultProfileId ?? undefined)
+
         if (getResult.success && getResult.data) {
           setServerForecasts(getResult.data)
         }
@@ -207,7 +270,7 @@ export function ForecastingPage(): React.ReactElement {
     } catch (error) {
       console.error('Failed to delete forecast:', error)
     }
-  }, [])
+  }, [defaultProfileId])
 
   // Show loading state
   if (isLoading) {
@@ -259,9 +322,9 @@ export function ForecastingPage(): React.ReactElement {
           
           {activeTab === 'saved' && (
             <ForecastList
-              // TODO: Map serverForecasts to SavedForecast type
-              // For now, use empty array - full integration requires data transformation
-              forecasts={[]}
+              forecasts={serverForecasts
+                .map(mapToSavedForecast)
+                .filter((f): f is SavedForecast => f !== null)}
               onDelete={handleDeleteForecast}
             />
           )}
