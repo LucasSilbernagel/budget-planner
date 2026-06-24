@@ -1,9 +1,9 @@
 /**
  * Balance Tracking Server Functions
- * 
+ *
  * Server functions for balance tracking operations (paid tier).
  * Provides backend API endpoints for CRUD operations on balance tracking entries.
- * 
+ *
  * Architecture:
  * - TanStack Start Server Functions
  * - Works with Scaleway PostgreSQL via Drizzle ORM
@@ -12,9 +12,9 @@
  */
 
 import { db } from '@budget-planner/db'
-import { balanceTracking } from '@budget-planner/db/src/schema'
-import { eq, and } from 'drizzle-orm'
 import type { BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
+import { balanceTracking } from '@budget-planner/db/src/schema'
+import { and, eq } from 'drizzle-orm'
 
 // ============================================================================
 // Server Function Types
@@ -70,7 +70,7 @@ export interface BalanceTrackingListServerResult {
 /**
  * Get all balance tracking entries for a user and profile
  * GET /api/balance-tracking
- * 
+ *
  * @param userId - The user's UUID
  * @param profileId - The profile ID to filter by (optional for backward compatibility, but required for paid tier)
  */
@@ -83,11 +83,11 @@ export async function getBalanceTrackingEntries(
     // For paid tier, both userId and profileId should be provided
     // For free tier (legacy), only userId is used
     let whereClause = eq(balanceTracking.userId, userId)
-    
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
     }
-    
+
     const entries = await db
       .select()
       .from(balanceTracking)
@@ -110,7 +110,7 @@ export async function getBalanceTrackingEntries(
 /**
  * Get a single balance tracking entry by ID
  * GET /api/balance-tracking/:id
- * 
+ *
  * @param id - The balance tracking entry ID
  * @param userId - The user's UUID
  * @param profileId - The profile ID to filter by (optional for backward compatibility)
@@ -121,20 +121,13 @@ export async function getBalanceTrackingEntry(
   profileId?: string
 ): Promise<BalanceTrackingServerResult> {
   try {
-    let whereClause = and(
-      eq(balanceTracking.id, id),
-      eq(balanceTracking.userId, userId)
-    )
-    
+    let whereClause = and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId))
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
     }
-    
-    const entry = await db
-      .select()
-      .from(balanceTracking)
-      .where(whereClause)
-      .limit(1)
+
+    const entry = await db.select().from(balanceTracking).where(whereClause).limit(1)
 
     if (!entry || entry.length === 0) {
       return {
@@ -159,7 +152,7 @@ export async function getBalanceTrackingEntry(
 /**
  * Create a new balance tracking entry
  * POST /api/balance-tracking
- * 
+ *
  * @param input - Balance tracking data including optional profileId
  * @param userId - The user's UUID
  */
@@ -213,7 +206,7 @@ export async function createBalanceTrackingEntry(
 /**
  * Update an existing balance tracking entry
  * PUT /api/balance-tracking/:id
- * 
+ *
  * @param id - The balance tracking entry ID
  * @param input - Update data (cannot change profileId)
  * @param userId - The user's UUID
@@ -227,21 +220,14 @@ export async function updateBalanceTrackingEntry(
 ): Promise<BalanceTrackingServerResult> {
   try {
     // Build where clause
-    let whereClause = and(
-      eq(balanceTracking.id, id),
-      eq(balanceTracking.userId, userId)
-    )
-    
+    let whereClause = and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId))
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
     }
 
     // Check if entry exists and belongs to user
-    const existingEntry = await db
-      .select()
-      .from(balanceTracking)
-      .where(whereClause)
-      .limit(1)
+    const existingEntry = await db.select().from(balanceTracking).where(whereClause).limit(1)
 
     if (!existingEntry || existingEntry.length === 0) {
       return {
@@ -255,14 +241,12 @@ export async function updateBalanceTrackingEntry(
     if (input.type !== undefined) updateData.type = input.type
     if (input.name !== undefined) updateData.name = input.name
     if (input.currentBalance !== undefined) updateData.currentBalance = input.currentBalance
-    if (input.maxContributionLimit !== undefined) updateData.maxContributionLimit = input.maxContributionLimit
-    if (input.monthlyContribution !== undefined) updateData.monthlyContribution = input.monthlyContribution
+    if (input.maxContributionLimit !== undefined)
+      updateData.maxContributionLimit = input.maxContributionLimit
+    if (input.monthlyContribution !== undefined)
+      updateData.monthlyContribution = input.monthlyContribution
 
-    const result = await db
-      .update(balanceTracking)
-      .set(updateData)
-      .where(whereClause)
-      .returning()
+    const result = await db.update(balanceTracking).set(updateData).where(whereClause).returning()
 
     if (!result || result.length === 0) {
       return {
@@ -287,7 +271,7 @@ export async function updateBalanceTrackingEntry(
 /**
  * Delete a balance tracking entry
  * DELETE /api/balance-tracking/:id
- * 
+ *
  * @param id - The balance tracking entry ID
  * @param userId - The user's UUID
  * @param profileId - The profile ID to filter by (optional for backward compatibility)
@@ -299,21 +283,14 @@ export async function deleteBalanceTrackingEntry(
 ): Promise<BalanceTrackingServerResult> {
   try {
     // Build where clause
-    let whereClause = and(
-      eq(balanceTracking.id, id),
-      eq(balanceTracking.userId, userId)
-    )
-    
+    let whereClause = and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId))
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
     }
 
     // Check if entry exists and belongs to user
-    const existingEntry = await db
-      .select()
-      .from(balanceTracking)
-      .where(whereClause)
-      .limit(1)
+    const existingEntry = await db.select().from(balanceTracking).where(whereClause).limit(1)
 
     if (!existingEntry || existingEntry.length === 0) {
       return {
@@ -322,9 +299,7 @@ export async function deleteBalanceTrackingEntry(
       }
     }
 
-    await db
-      .delete(balanceTracking)
-      .where(whereClause)
+    await db.delete(balanceTracking).where(whereClause)
 
     return {
       success: true,

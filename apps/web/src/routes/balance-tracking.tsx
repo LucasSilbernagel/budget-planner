@@ -1,26 +1,29 @@
+import { currencySymbol, formatCurrency } from '@budget-planner/core/format/currency'
+import type {
+  ClientBalanceTracking,
+  ClientNewBalanceTracking,
+} from '@budget-planner/core/services/balanceTracking'
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import BalanceTrackingList from '../components/BalanceTrackingList'
 import AddBalanceEntryForm from '../components/AddBalanceEntryForm'
+import BalanceTrackingList from '../components/BalanceTrackingList'
 import EditBalanceEntryForm from '../components/EditBalanceEntryForm'
-import type { ClientBalanceTracking, ClientNewBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import {
-  useBalanceEntriesWithTimeline,
-  useInvestmentEntries,
-  useDebtEntries,
-  useTotalInvestmentBalance,
-  useTotalDebtBalance,
-  useNetBalance,
   useBalanceActions,
+  useBalanceEntriesWithTimeline,
+  useDebtEntries,
+  useInvestmentEntries,
+  useNetBalance,
+  useTotalDebtBalance,
+  useTotalInvestmentBalance,
 } from '../stores/balanceStore'
 import { useCurrencyPreferences } from '../stores/currencyStore'
-import { formatCurrency, currencySymbol } from '@budget-planner/core/format/currency'
 
 /**
  * Balance Tracking Page
- * 
+ *
  * Main page for managing balance tracking entries.
  * Uses TanStack Start file-based routing (route: /balance-tracking)
- * 
+ *
  * Features:
  * - List of balance entries with timeline display
  * - Add new balance entry form
@@ -29,7 +32,7 @@ import { formatCurrency, currencySymbol } from '@budget-planner/core/format/curr
  * - Loading states
  * - Full accessibility compliance
  * - Grouped display by type (investments vs debts)
- * 
+ *
  * AC 2: When viewing the balance tracking list, all entries are displayed sorted by creation date (newest first)
  * AC 2: Entries are grouped by type (investments vs debts)
  * AC 5: Investment entries displayed with positive growth indicators, debt entries with negative balance indicators
@@ -77,7 +80,10 @@ export function BalanceTrackingPage() {
 
   // Loading/submitting states
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error'
+    message: string
+  } | null>(null)
 
   // Timer ref for cleanup
   const notificationTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -126,7 +132,7 @@ export function BalanceTrackingPage() {
       } else {
         showNotification('error', 'Failed to create balance entry - validation error')
       }
-    } catch (error) {
+    } catch (_error) {
       showNotification('error', 'Failed to create balance entry')
     } finally {
       setIsSubmitting(false)
@@ -151,7 +157,7 @@ export function BalanceTrackingPage() {
       } else {
         showNotification('error', 'Failed to update balance entry - not found')
       }
-    } catch (error) {
+    } catch (_error) {
       showNotification('error', 'Failed to update balance entry')
     } finally {
       setIsSubmitting(false)
@@ -160,7 +166,9 @@ export function BalanceTrackingPage() {
 
   // Handle delete balance entry
   const handleDeleteBalanceEntry = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this balance entry? This action cannot be undone.')) {
+    if (
+      !confirm('Are you sure you want to delete this balance entry? This action cannot be undone.')
+    ) {
       return
     }
 
@@ -171,28 +179,27 @@ export function BalanceTrackingPage() {
       } else {
         showNotification('error', 'Failed to delete balance entry - not found')
       }
-    } catch (error) {
+    } catch (_error) {
       showNotification('error', 'Failed to delete balance entry')
     }
   }
 
   return (
-    <div
-      className="min-h-screen bg-gray-50 dark:bg-gray-900"
-      data-testid="balance-tracking-page"
-    >
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900" data-testid="balance-tracking-page">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Notification */}
         {notification && (
           <div
-            className={`mb-6 p-4 rounded-md ${notification.type === 'success' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'}`}
+            className={`mb-6 p-4 rounded-md ${
+              notification.type === 'success'
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+            }`}
             role="alert"
             aria-live="polite"
             data-testid="balance-tracking-notification"
           >
-            <span className="font-medium">
-              {notification.type === 'success' ? '✓ ' : '✗ '}
-            </span>
+            <span className="font-medium">{notification.type === 'success' ? '✓ ' : '✗ '}</span>
             {notification.message}
           </div>
         )}
@@ -222,17 +229,17 @@ export function BalanceTrackingPage() {
                 Total Investments
               </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {currencySymbolValue}{formatAmount(totalInvestmentBalance)}
+                {currencySymbolValue}
+                {formatAmount(totalInvestmentBalance)}
               </p>
             </div>
 
             {/* Total Debts */}
             <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
-              <p className="text-sm text-red-600 dark:text-red-400 font-medium mb-1">
-                Total Debts
-              </p>
+              <p className="text-sm text-red-600 dark:text-red-400 font-medium mb-1">Total Debts</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {currencySymbolValue}{formatAmount(totalDebtBalance)}
+                {currencySymbolValue}
+                {formatAmount(totalDebtBalance)}
               </p>
             </div>
 
@@ -242,7 +249,8 @@ export function BalanceTrackingPage() {
                 Net Balance
               </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {currencySymbolValue}{formatAmount(netBalance)}
+                {currencySymbolValue}
+                {formatAmount(netBalance)}
               </p>
             </div>
           </div>
@@ -285,7 +293,7 @@ export function BalanceTrackingPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             {investmentEntries.length} investments, {debtEntries.length} debts
           </p>
-          
+
           <BalanceTrackingList
             entries={balanceEntriesWithTimeline}
             onEdit={openEditModal}
@@ -352,7 +360,12 @@ export function BalanceTrackingPage() {
                 data-testid="add-balance-entry-close"
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -395,7 +408,12 @@ export function BalanceTrackingPage() {
                 data-testid="edit-balance-entry-close"
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>

@@ -3,7 +3,7 @@
  * Verifies that failed operations are removed from queue before re-queuing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
 
 describe('SynchronizationService Retry Logic Fix', () => {
@@ -23,8 +23,10 @@ describe('SynchronizationService Retry Logic Fix', () => {
       // implement it or sync() throws before any operation is processed.
       getReadyOperations: vi.fn((_batchSize?: number) => [...operations]),
       removeBatch: vi.fn(async (ids: string[]) => {
-        const indices = operations.map((op: any, i: number) => ids.includes(op.id) ? i : -1).filter(i => i !== -1)
-        indices.reverse().forEach(i => operations.splice(i, 1))
+        const indices = operations
+          .map((op: any, i: number) => (ids.includes(op.id) ? i : -1))
+          .filter((i) => i !== -1)
+        indices.reverse().forEach((i) => operations.splice(i, 1))
       }),
     }
 
@@ -69,7 +71,7 @@ describe('SynchronizationService Retry Logic Fix', () => {
 
       // Check that queue.removeBatch was called with failed operation IDs
       expect(mockQueue.removeBatch).toHaveBeenCalled()
-      
+
       // The queue should now be empty (operations removed)
       // @ts-expect-error - accessing private property for testing
       expect(service.queue.getAll().length).toBe(0)
@@ -77,9 +79,14 @@ describe('SynchronizationService Retry Logic Fix', () => {
 
     it('should not create duplicate operation IDs when retrying', async () => {
       // This test verifies the fix for: "scheduleRetry re-queues failed operations creating duplicate operation IDs"
-      
+
       // Add an operation
-      const op = { id: 'op-unique-123', type: 'create', entityType: 'incomeSource', userId: 'user-123' }
+      const op = {
+        id: 'op-unique-123',
+        type: 'create',
+        entityType: 'incomeSource',
+        userId: 'user-123',
+      }
       await service.queue.add(op)
 
       // Trigger sync which will fail

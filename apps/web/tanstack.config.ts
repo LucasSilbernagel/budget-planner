@@ -1,12 +1,12 @@
-import { defineConfig } from '@tanstack/start/config'
 import type { ServerFunction } from '@tanstack/start'
+import { defineConfig } from '@tanstack/start/config'
 
 /**
  * TanStack Start Configuration
- * 
+ *
  * Configuration file for TanStack Start Server Functions.
  * Defines server-side routes, middleware, and SSR settings.
- * 
+ *
  * Project: Budget Planner
  * Module: Financial Calculations Server Functions
  */
@@ -63,7 +63,7 @@ export default defineConfig({
           const functions = await import('./src/server/functions/balanceTracking')
           const body = await request.json()
           const { action, data } = body
-          
+
           switch (action) {
             case 'create':
               return functions.createBalanceTrackingEntry(request, data)
@@ -85,7 +85,7 @@ export default defineConfig({
           const functions = await import('./src/server/functions/savingsGoals')
           const body = await request.json()
           const { action, data } = body
-          
+
           switch (action) {
             case 'create':
               return functions.createSavingsGoalServer(request, data)
@@ -101,30 +101,30 @@ export default defineConfig({
         },
       },
     },
-    
+
     // Server-side middleware for all routes
-    middleware: async (request: Request, next: () => Promise<Response>) => {
+    middleware: async (_request: Request, next: () => Promise<Response>) => {
       // Add security headers
       const response = await next()
-      
+
       // Clone response to modify headers
       const modifiedResponse = new Response(response.body, response)
-      
+
       // Add security headers
       modifiedResponse.headers.set('X-Content-Type-Options', 'nosniff')
       modifiedResponse.headers.set('X-Frame-Options', 'DENY')
       modifiedResponse.headers.set('X-XSS-Protection', '1; mode=block')
-      
+
       // Add CORS headers for development
       if (process.env.NODE_ENV === 'development') {
         modifiedResponse.headers.set('Access-Control-Allow-Origin', '*')
         modifiedResponse.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
         modifiedResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type')
       }
-      
+
       return modifiedResponse
     },
-    
+
     // Server-side context available to all handlers
     context: {
       // Database connection (lazy-loaded)
@@ -133,7 +133,7 @@ export default defineConfig({
       },
     },
   },
-  
+
   // Client-side configuration
   client: {
     // Hydration strategy for SSR
@@ -142,32 +142,32 @@ export default defineConfig({
       strategy: 'fine-grained',
     },
   },
-  
+
   // Build configuration
   build: {
     // Output directory for server build
     outDir: 'dist/server',
-    
+
     // Enable source maps for debugging
     sourcemap: true,
-    
+
     // Minification settings
     minify: process.env.NODE_ENV === 'production',
-    
+
     // Tree-shaking for smaller bundles
     rollup: {
       treeshake: true,
     },
   },
-  
+
   // Development server configuration
   dev: {
     // Port for development server
     port: 3000,
-    
+
     // Enable HMR
     hmr: true,
-    
+
     // Open browser on startup
     open: false,
   },

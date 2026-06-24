@@ -1,9 +1,9 @@
 /**
  * Get Current User
- * 
+ *
  * TanStack Start Server Function
  * Returns current authenticated user session
- * 
+ *
  * Endpoint: GET /api/auth/me
  */
 
@@ -12,19 +12,16 @@ import { json } from '@tanstack/start'
 
 export async function GET(request: Request) {
   const result = await getCurrentUserSession(request)
-  
+
   if (!result.success) {
-    return json(
-      { success: false, error: result.error },
-      { status: 401 }
-    )
+    return json({ success: false, error: result.error }, { status: 401 })
   }
-  
+
   // Return null if not authenticated
   if (!result.data) {
     return json({ user: null })
   }
-  
+
   // Return user session (sanitize if needed)
   return json({
     user: {

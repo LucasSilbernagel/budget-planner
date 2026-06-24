@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import {
-  useSavingsStore,
-  useSavingsGoals,
-  useTotalSavings,
-} from '../stores'
+import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores'
 
 const FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -24,12 +20,8 @@ function formatAmountForInput(cents: number): string {
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
   const totalSavings = useTotalSavings()
-  const {
-    addSavingsGoal,
-    updateSavingsGoal,
-    deleteSavingsGoal,
-    getSavingsProgress,
-  } = useSavingsStore()
+  const { addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsProgress } =
+    useSavingsStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -58,7 +50,12 @@ export function SavingsPage() {
   }
 
   // Open modal for editing existing savings goal
-  const openEditModal = (goal: { id: number; name: string; targetAmount: number; currentBalance: number }) => {
+  const openEditModal = (goal: {
+    id: number
+    name: string
+    targetAmount: number
+    currentBalance: number
+  }) => {
     setEditingId(goal.id)
     setName(goal.name)
     setTargetAmount(formatAmountForInput(goal.targetAmount))
@@ -82,7 +79,7 @@ export function SavingsPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
-    
+
     try {
       // Validate name
       const trimmedName = name.trim()
@@ -93,14 +90,14 @@ export function SavingsPage() {
 
       // Validate target amount
       const targetInCents = Math.round(parseFloat(targetAmount) * 100)
-      if (isNaN(targetInCents) || targetInCents <= 0) {
+      if (Number.isNaN(targetInCents) || targetInCents <= 0) {
         alert('Please enter a valid positive target amount')
         return
       }
 
       // Validate current balance
       const balanceInCents = Math.round(parseFloat(currentBalance || '0') * 100)
-      if (isNaN(balanceInCents) || balanceInCents < 0) {
+      if (Number.isNaN(balanceInCents) || balanceInCents < 0) {
         alert('Please enter a valid non-negative current balance')
         return
       }
@@ -135,9 +132,7 @@ export function SavingsPage() {
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Savings Goals</h1>
-          <p className="text-gray-600 mt-2">
-            Track and manage your savings targets
-          </p>
+          <p className="text-gray-600 mt-2">Track and manage your savings targets</p>
         </header>
 
         <main className="space-y-6">
@@ -145,9 +140,7 @@ export function SavingsPage() {
           <section className="bg-white rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Total Savings
-                </h2>
+                <h2 className="text-xl font-semibold text-gray-800">Total Savings</h2>
                 <p className="text-3xl font-bold text-purple-600 mt-2">
                   {formatAmount(totalSavings)}
                 </p>
@@ -163,16 +156,12 @@ export function SavingsPage() {
 
           {/* Savings Goals List */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6">
-              Your Savings Goals
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-6">Your Savings Goals</h2>
 
             {savingsGoals.length === 0 ? (
               <div className="bg-gray-50 rounded-lg p-8 text-center">
                 <p className="text-gray-500 mb-4">No savings goals recorded yet</p>
-                <p className="text-sm text-gray-400">
-                  Click "Add Savings Goal" to get started
-                </p>
+                <p className="text-sm text-gray-400">Click "Add Savings Goal" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -202,9 +191,7 @@ export function SavingsPage() {
                       return (
                         <tr key={goal.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {goal.name}
-                            </div>
+                            <div className="text-sm font-medium text-gray-900">{goal.name}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-500">
@@ -265,7 +252,12 @@ export function SavingsPage() {
                   aria-label="Close"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
@@ -287,7 +279,10 @@ export function SavingsPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="targetAmount" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="targetAmount"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Target Amount *
                   </label>
                   <div className="relative rounded-md shadow-sm">
@@ -309,7 +304,10 @@ export function SavingsPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="currentBalance" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="currentBalance"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Current Balance
                   </label>
                   <div className="relative rounded-md shadow-sm">
@@ -342,7 +340,11 @@ export function SavingsPage() {
                     disabled={isSubmitting}
                     className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSubmitting ? 'Saving...' : editingId !== null ? 'Save Changes' : 'Add Savings Goal'}
+                    {isSubmitting
+                      ? 'Saving...'
+                      : editingId !== null
+                        ? 'Save Changes'
+                        : 'Add Savings Goal'}
                   </button>
                 </div>
               </form>

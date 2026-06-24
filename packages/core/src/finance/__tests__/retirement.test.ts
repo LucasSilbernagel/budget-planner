@@ -1,23 +1,23 @@
 /**
  * Retirement Modeler Tests
- * 
+ *
  * Mathematical validation tests for retirement calculations.
  * Zero tolerance for errors - NFR3 requirement
- * 
+ *
  * Uses Safe Withdrawal Model: FV = Ir × (12 / r)
  * Where FV = Future Value, Ir = monthly income, r = annual return rate
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  calculateRetirementRequirement,
-  calculateRequiredAssets,
-  calculateSafeMonthlyWithdrawal,
-  calculateCompoundingProjection,
-  type RetirementResult,
-  type RetirementInput,
   type CompoundingInput,
+  type RetirementInput,
+  type RetirementResult,
   type YearlyProjection,
+  calculateCompoundingProjection,
+  calculateRequiredAssets,
+  calculateRetirementRequirement,
+  calculateSafeMonthlyWithdrawal,
 } from '../retirement'
 
 describe('Retirement Modeler', () => {
@@ -29,9 +29,9 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 500000, // $5000/month in cents
         annualReturnRate: 0.06, // 6%
       }
-      
+
       const result = calculateRetirementRequirement(input)
-      
+
       expect(result.requiredAssets).toBe(100000000) // $1,000,000
       expect(result.monthlyIncome).toBe(500000)
       expect(result.annualReturnRate).toBe(0.06)
@@ -47,9 +47,9 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 100000, // $1000/month in cents
         annualReturnRate: 0.04, // 4%
       }
-      
+
       const result = calculateRetirementRequirement(input)
-      
+
       expect(result.requiredAssets).toBe(30000000) // $300,000
       expect(result.requiredAssetsFormatted).toContain('$300,000')
     })
@@ -61,9 +61,9 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 250000, // $2500/month in cents
         annualReturnRate: 0.05, // 5%
       }
-      
+
       const result = calculateRetirementRequirement(input)
-      
+
       expect(result.requiredAssets).toBe(60000000) // $600,000
       expect(result.annualReturnRatePercentage).toBe(5)
     })
@@ -73,7 +73,7 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 500000,
         annualReturnRate: 0,
       }
-      
+
       expect(() => calculateRetirementRequirement(input)).toThrow(
         'Annual return rate must be positive (greater than 0)'
       )
@@ -84,7 +84,7 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 500000,
         annualReturnRate: -0.05,
       }
-      
+
       expect(() => calculateRetirementRequirement(input)).toThrow(
         'Annual return rate must be positive (greater than 0)'
       )
@@ -96,9 +96,9 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 500000, // $5000/month
         annualReturnRate: 0.12, // 12%
       }
-      
+
       const result = calculateRetirementRequirement(input)
-      
+
       expect(result.requiredAssets).toBe(50000000) // $500,000
     })
 
@@ -108,9 +108,9 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 500000, // $5000/month
         annualReturnRate: 0.01, // 1%
       }
-      
+
       const result = calculateRetirementRequirement(input)
-      
+
       expect(result.requiredAssets).toBe(600000000) // $6,000,000
     })
   })
@@ -160,10 +160,10 @@ describe('Retirement Modeler', () => {
     it('should verify round-trip calculation: income → assets → income', () => {
       const monthlyIncome = 500000 // $5000
       const returnRate = 0.06
-      
+
       const requiredAssets = calculateRequiredAssets(monthlyIncome, returnRate)
       const withdrawal = calculateSafeMonthlyWithdrawal(requiredAssets, returnRate)
-      
+
       // Due to rounding, these should be equal
       expect(withdrawal).toBe(monthlyIncome)
     })
@@ -177,9 +177,9 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05, // 5%
         years: 1,
       }
-      
+
       const result = calculateCompoundingProjection(input)
-      
+
       expect(result.length).toBe(1) // Year 1 only
       expect(result[0].year).toBe(1)
       expect(result[0].startingBalance).toBe(1000000)
@@ -195,11 +195,11 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05, // 5%
         years: 2,
       }
-      
+
       const result = calculateCompoundingProjection(input)
-      
+
       expect(result.length).toBe(2) // Year 1, 2
-      
+
       // Year 1: principal grows + contribution
       // Growth: 1000000 * 1.05 = 1050000
       // + contribution: 1050000 + 120000 = 1170000
@@ -207,7 +207,7 @@ describe('Retirement Modeler', () => {
       expect(result[0].startingBalance).toBe(1000000)
       expect(result[0].annualContribution).toBe(120000)
       expect(result[0].endingBalance).toBe(1170000)
-      
+
       // Year 2: previous balance grows + contribution
       // Growth: 1170000 * 1.05 = 1228500
       // + contribution: 1228500 + 120000 = 1348500
@@ -224,9 +224,9 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05,
         years: 0,
       }
-      
+
       const result = calculateCompoundingProjection(input)
-      
+
       // Edge case: zero years returns empty array
       expect(result.length).toBe(0)
     })
@@ -238,7 +238,7 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0,
         years: 2,
       }
-      
+
       expect(() => calculateCompoundingProjection(input)).toThrow(
         'Annual return rate must be positive (greater than 0)'
       )
@@ -251,7 +251,7 @@ describe('Retirement Modeler', () => {
         annualReturnRate: -0.05,
         years: 1,
       }
-      
+
       expect(() => calculateCompoundingProjection(input)).toThrow(
         'Annual return rate must be positive (greater than 0)'
       )
@@ -264,7 +264,7 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05,
         years: -1,
       }
-      
+
       expect(() => calculateCompoundingProjection(input)).toThrow(
         'Number of years must be non-negative'
       )
@@ -280,7 +280,7 @@ describe('Retirement Modeler', () => {
         monthlyIncome: 400000, // $4000/month
         annualReturnRate: 0.06,
       }
-      
+
       const result = calculateRetirementRequirement(input)
       expect(result.requiredAssets).toBe(80000000) // $800,000
     })
@@ -297,10 +297,10 @@ describe('Retirement Modeler', () => {
       const input: CompoundingInput = {
         principal: 1000000,
         annualContribution: 0,
-        annualReturnRate: 0.10, // 10%
+        annualReturnRate: 0.1, // 10%
         years: 2,
       }
-      
+
       const result = calculateCompoundingProjection(input)
       expect(result.length).toBe(2)
       expect(result[1].endingBalance).toBe(1210000)
@@ -312,10 +312,10 @@ describe('Retirement Modeler', () => {
       const input: CompoundingInput = {
         principal: 1000000,
         annualContribution: 100000,
-        annualReturnRate: 0.10,
+        annualReturnRate: 0.1,
         years: 2,
       }
-      
+
       const result = calculateCompoundingProjection(input)
       expect(result.length).toBe(2)
       expect(result[0].endingBalance).toBe(1200000)
@@ -343,7 +343,7 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05,
         years: 1,
       }
-      
+
       const result = calculateCompoundingProjection(input)
       expect(result[0].endingBalance).toBe(100000)
     })
@@ -355,7 +355,7 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05,
         years: 1,
       }
-      
+
       const result = calculateCompoundingProjection(input)
       expect(result[0].endingBalance).toBe(1050000)
     })
@@ -383,9 +383,9 @@ describe('Retirement Modeler', () => {
     })
 
     it('should throw error for NaN in calculateRequiredAssets parameters', () => {
-      expect(() =>
-        calculateRequiredAssets(NaN, 0.06)
-      ).toThrow('Monthly income must be a finite number')
+      expect(() => calculateRequiredAssets(NaN, 0.06)).toThrow(
+        'Monthly income must be a finite number'
+      )
     })
 
     it('should handle negative monthlyIncome value', () => {
@@ -401,11 +401,11 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.05,
         years: 1000,
       }
-      
+
       // Should throw error for years exceeding safe limit (100)
-      expect(() =>
-        calculateCompoundingProjection(input)
-      ).toThrow('Number of years must not exceed 100')
+      expect(() => calculateCompoundingProjection(input)).toThrow(
+        'Number of years must not exceed 100'
+      )
     })
 
     it('should handle negative zero in retirement calculations', () => {

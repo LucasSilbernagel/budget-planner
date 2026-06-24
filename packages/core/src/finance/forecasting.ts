@@ -1,20 +1,17 @@
 /**
  * Premium Forecasting Features
- * 
+ *
  * Advanced financial forecasting calculations for paid tier users.
  * Provides scenario modeling, goal tracking, and financial projections.
- * 
+ *
  * Architecture Requirement: FR5 - Core calculations (premium features)
  */
 
+import { type NormalizableFinancialItem, calculateNetPeriodIncome } from './netIncome'
 import {
-  calculateNetPeriodIncome,
-  type NormalizableFinancialItem,
-} from './netIncome'
-import {
+  type RetirementInput,
   calculateCompoundingProjection,
   calculateRetirementRequirement,
-  type RetirementInput,
 } from './retirement'
 
 /**
@@ -64,7 +61,7 @@ export interface ForecastingResult {
 
 /**
  * Calculates financial forecast based on current data and scenario
- * 
+ *
  * @param currentData - Current financial data (income, expenses, savings, investments)
  * @param scenario - Forecasting scenario with assumptions
  * @param years - Number of years to project
@@ -78,14 +75,14 @@ export function calculateFinancialForecast(
     investments: number // Current investments in cents
   },
   scenario: ForecastingScenario,
-  years: number = 10
+  years = 10
 ): ForecastingResult {
   const baseline: YearlyForecast[] = []
   const projection: YearlyForecast[] = []
 
   // Calculate baseline (current trends without scenario adjustments)
   let currentSavings = currentData.savings
-  let currentInvestments = currentData.investments
+  const currentInvestments = currentData.investments
   const baselineNetIncome = calculateNetPeriodIncome(currentData.income, currentData.expenses)
 
   for (let year = 1; year <= years; year++) {
@@ -114,19 +111,21 @@ export function calculateFinancialForecast(
     // Adjust income and expenses by growth rates
     const adjustedIncome = currentData.income.map((item) => ({
       ...item,
-      amount: Math.round(item.amount * Math.pow(1 + scenario.incomeGrowthRate, year)),
+      amount: Math.round(item.amount * (1 + scenario.incomeGrowthRate) ** year),
     }))
     const adjustedExpenses = currentData.expenses.map((item) => ({
       ...item,
-      amount: Math.round(item.amount * Math.pow(1 + scenario.expenseGrowthRate, year)),
+      amount: Math.round(item.amount * (1 + scenario.expenseGrowthRate) ** year),
     }))
 
     // Calculate net income with adjustments
     const netIncome = calculateNetPeriodIncome(adjustedIncome, adjustedExpenses)
 
     // Add one-time events for this year
-    const oneTimeForYear = scenario.oneTimeEvents?.filter((e) => e.year === year)
-      .reduce((sum, e) => sum + e.amount, 0) || 0
+    const oneTimeForYear =
+      scenario.oneTimeEvents
+        ?.filter((e) => e.year === year)
+        .reduce((sum, e) => sum + e.amount, 0) || 0
 
     const totalNetIncome = netIncome + oneTimeForYear
 
@@ -194,7 +193,7 @@ export interface GoalCalculation {
 
 /**
  * Calculates how long it will take to reach a financial goal
- * 
+ *
  * @param targetAmount - Target amount in cents
  * @param currentAmount - Current amount in cents
  * @param monthlyContribution - Monthly contribution in cents
@@ -230,7 +229,7 @@ export function calculateGoalTimeline(
 
   // Calculate monthly amount needed to reach goal in a specific timeframe
   // Using future value of annuity formula
-  const monthlyRate = annualReturnRate / 12
+  const _monthlyRate = annualReturnRate / 12
   const months = years * 12
   // FV = PMT * [((1 + r)^n - 1) / r] * (1 + r)
   // We need to solve for PMT, but for simplicity we'll use an approximation

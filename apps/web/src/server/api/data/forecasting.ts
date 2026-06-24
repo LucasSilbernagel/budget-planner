@@ -1,22 +1,22 @@
 /**
  * Premium Forecasting Server Functions
- * 
+ *
  * Server-side functions for premium forecasting features.
  * Only available for paid tier users.
- * 
+ *
  * Architecture: TanStack Start Server Functions with PostgreSQL
  */
 
-import type { UserSession } from '../auth/paddle'
-import type { ApiResult } from '../auth/paddle'
 import {
+  type ForecastingResult,
+  type ForecastingScenario,
+  type GoalCalculation,
   calculateFinancialForecast,
   calculateGoalTimeline,
-  type ForecastingScenario,
-  type ForecastingResult,
-  type GoalCalculation,
 } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/db'
+import type { UserSession } from '../auth/paddle'
+import type { ApiResult } from '../auth/paddle'
 
 /**
  * Financial item for forecasting
@@ -49,13 +49,13 @@ export async function calculateForecastServer(
 ): Promise<ApiResult<ForecastingResult>> {
   try {
     const userResult = await getUserContext(request)
-    
+
     if (!userResult.success) {
       return userResult as ApiResult<ForecastingResult>
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
@@ -85,11 +85,7 @@ export async function calculateForecastServer(
       investments: data.investments,
     }
 
-    const result = calculateFinancialForecast(
-      currentData,
-      data.scenario,
-      data.years
-    )
+    const result = calculateFinancialForecast(currentData, data.scenario, data.years)
 
     return {
       success: true,
@@ -118,13 +114,13 @@ export async function calculateGoalTimelineServer(
 ): Promise<ApiResult<GoalCalculation>> {
   try {
     const userResult = await getUserContext(request)
-    
+
     if (!userResult.success) {
       return userResult as ApiResult<GoalCalculation>
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
@@ -167,16 +163,16 @@ export async function checkPremiumAccessServer(
 ): Promise<ApiResult<{ hasAccess: boolean; subscriptionStatus: string }>> {
   try {
     const userResult = await getUserContext(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error,
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: true,

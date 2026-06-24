@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 /**
  * Verifies MSW intercepts all external service calls (AC-3, NFR8).
@@ -19,7 +19,7 @@ describe('MSW external-service interception', () => {
 
   it('mocks EthicalAds decision requests', async () => {
     const res = await fetch(
-      'https://server.ethicalads.io/api/v1/decision/?publisher=budget-planner',
+      'https://server.ethicalads.io/api/v1/decision/?publisher=budget-planner'
     )
     await expect(res.json()).resolves.toMatchObject({ id: 'msw-mock-ad' })
   })

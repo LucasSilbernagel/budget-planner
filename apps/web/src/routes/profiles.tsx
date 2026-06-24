@@ -1,20 +1,20 @@
 /**
  * Profiles Page
- * 
+ *
  * Page for managing user profiles in the Budget Planner application.
  * Allows users to create, view, switch, and manage multiple financial profiles.
- * 
+ *
  * Route: /profiles
- * 
+ *
  * Architecture: TanStack Start with React Router
  * Data Sovereignty: Client-side storage for free tier, server sync for paid tier
  */
 
+import { CreateProfileDialog } from '@/components/profiles/create-profile'
+import { ProfileList } from '@/components/profiles/profile-list'
+import { SwitchProfileDropdown } from '@/components/profiles/switch-profile'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ProfileList } from '@/components/profiles/profile-list'
-import { CreateProfileDialog } from '@/components/profiles/create-profile'
-import { SwitchProfileDropdown } from '@/components/profiles/switch-profile'
 
 // Define the route
 export const Route = createFileRoute('/profiles')({
@@ -31,11 +31,9 @@ function ProfilesPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Profiles</h1>
-            <p className="text-gray-600 mt-1">
-              Organize your finances with multiple profiles
-            </p>
+            <p className="text-gray-600 mt-1">Organize your finances with multiple profiles</p>
           </div>
-          
+
           {/* Active profile switcher */}
           <div className="flex items-center gap-4">
             <SwitchProfileDropdown />
@@ -54,23 +52,22 @@ function ProfilesPage() {
         </div>
 
         {/* Create profile dialog */}
-        {showCreateDialog && (
-          <CreateProfileDialog onClose={() => setShowCreateDialog(false)} />
-        )}
+        {showCreateDialog && <CreateProfileDialog onClose={() => setShowCreateDialog(false)} />}
 
         {/* Info section */}
         <div className="mt-8 bg-blue-50 rounded-xl p-6">
           <h2 className="text-lg font-semibold text-blue-800 mb-2">About Profiles</h2>
           <p className="text-blue-700">
-            Profiles help you organize your financial data for different purposes. 
-            Each profile has its own set of income, expenses, savings goals, and balance tracking. 
-            Switch between profiles to view different financial scenarios.
+            Profiles help you organize your financial data for different purposes. Each profile has
+            its own set of income, expenses, savings goals, and balance tracking. Switch between
+            profiles to view different financial scenarios.
           </p>
           <p className="text-blue-700 mt-2">
             <strong>Free Tier:</strong> Profile data is stored locally on this device only.
           </p>
           <p className="text-blue-700">
-            <strong>Paid Tier:</strong> Profile data is synchronized across all your devices via DanubeData (Germany - EU).
+            <strong>Paid Tier:</strong> Profile data is synchronized across all your devices via
+            DanubeData (Germany - EU).
           </p>
         </div>
       </div>

@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
-  users,
-  incomeSources,
-  expenses,
-  savingsGoals,
-  balanceTracking,
-  userProfiles,
-  subscriptionStatusEnum,
-  currencyEnum,
-  frequencyEnum,
-  financeTypeEnum,
-  allTables,
-  type User,
-  type NewUser,
   type Currency,
+  type NewUser,
   type SubscriptionStatus,
+  type User,
+  allTables,
+  balanceTracking,
+  currencyEnum,
+  expenses,
+  financeTypeEnum,
+  frequencyEnum,
+  incomeSources,
+  savingsGoals,
+  subscriptionStatusEnum,
+  userProfiles,
+  users,
 } from './schema'
 
 // Test 1: Schema compilation - Verify all tables are exported
@@ -60,7 +60,7 @@ describe('Type Generation', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }
-    
+
     expect(userExample.id).toBeDefined()
     expect(userExample.email).toBeDefined()
     expect(userExample.paddleId).toBeDefined()
@@ -81,7 +81,7 @@ describe('Type Generation', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as NewUser
-    
+
     expect(newUserExample.email).toBeDefined()
     expect(newUserExample.paddleId).toBeDefined()
     expect(newUserExample.updatedAt).toBeDefined()

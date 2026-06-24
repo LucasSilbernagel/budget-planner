@@ -1,23 +1,23 @@
 /**
  * Balance Tracking Calculations
- * 
+ *
  * Provides utilities for calculating timeline and progress for balance tracking entries.
  * Works with investment and debt types.
- * 
+ *
  * Architecture Requirement: All monetary values in cents (integers) to avoid floating-point precision issues.
  */
 
 /**
  * Calculate months to max contribution limit
- * 
+ *
  * @param currentBalance - Current balance in cents (can be negative for debts)
  * @param maxContributionLimit - Maximum contribution limit in cents (optional)
  * @param monthlyContribution - Monthly contribution in cents (optional)
  * @returns Number of months to reach limit, or null if calculation not possible
- * 
+ *
  * AC 6: Given a balance entry with maxContributionLimit = $5000 and monthlyContribution = $500,
  *      when viewed, shows it will reach the limit in 10 months at current rate
- * 
+ *
  * Calculation:
  * - If any parameter is null/undefined/NaN/Infinity: return null
  * - If no limit or no contribution: return null
@@ -31,9 +31,11 @@ export function calculateMonthsToLimit(
   monthlyContribution: number | undefined
 ): number | null {
   // Validate all parameters are finite numbers
-  if (!Number.isFinite(currentBalance) || 
-      maxContributionLimit !== undefined && !Number.isFinite(maxContributionLimit) ||
-      monthlyContribution !== undefined && !Number.isFinite(monthlyContribution)) {
+  if (
+    !Number.isFinite(currentBalance) ||
+    (maxContributionLimit !== undefined && !Number.isFinite(maxContributionLimit)) ||
+    (monthlyContribution !== undefined && !Number.isFinite(monthlyContribution))
+  ) {
     return null
   }
 
@@ -61,7 +63,7 @@ export function calculateMonthsToLimit(
 
 /**
  * Format timeline for display
- * 
+ *
  * @param months - Number of months (or null)
  * @returns Formatted string for display
  */
@@ -80,7 +82,7 @@ export function formatTimeline(months: number | null): string {
 
 /**
  * Calculate projected balance at a future date
- * 
+ *
  * @param currentBalance - Current balance in cents
  * @param monthlyContribution - Monthly contribution in cents
  * @param months - Number of months in the future
@@ -92,28 +94,34 @@ export function calculateProjectedBalance(
   months: number
 ): number {
   // Validate inputs are finite
-  if (!Number.isFinite(currentBalance) || !Number.isFinite(monthlyContribution) || !Number.isFinite(months)) {
+  if (
+    !Number.isFinite(currentBalance) ||
+    !Number.isFinite(monthlyContribution) ||
+    !Number.isFinite(months)
+  ) {
     return currentBalance
   }
-  
+
   if (months < 0) {
     return currentBalance
   }
-  
+
   // Check for potential arithmetic overflow
   const result = currentBalance + monthlyContribution * months
-  if (!Number.isFinite(result) ||
-      result > Number.MAX_SAFE_INTEGER ||
-      result < Number.MIN_SAFE_INTEGER) {
+  if (
+    !Number.isFinite(result) ||
+    result > Number.MAX_SAFE_INTEGER ||
+    result < Number.MIN_SAFE_INTEGER
+  ) {
     return currentBalance
   }
-  
+
   return result
 }
 
 /**
  * Calculate contribution progress percentage
- * 
+ *
  * @param currentBalance - Current balance in cents (positive for investments, negative for debts)
  * @param maxContributionLimit - Maximum contribution limit in cents (optional)
  * @param isDebt - Whether this is a debt entry (uses absolute value for calculation)
@@ -122,20 +130,24 @@ export function calculateProjectedBalance(
 export function calculateContributionProgress(
   currentBalance: number,
   maxContributionLimit: number | undefined,
-  isDebt: boolean = false
+  isDebt = false
 ): number | null {
   // Validate inputs
-  if (maxContributionLimit === undefined || !Number.isFinite(maxContributionLimit) || maxContributionLimit <= 0) {
+  if (
+    maxContributionLimit === undefined ||
+    !Number.isFinite(maxContributionLimit) ||
+    maxContributionLimit <= 0
+  ) {
     return null
   }
-  
+
   if (!Number.isFinite(currentBalance)) {
     return null
   }
 
   // For debts, use absolute value of currentBalance
   const balance = isDebt ? Math.abs(currentBalance) : currentBalance
-  
+
   // Cap at 100% if current exceeds limit, clamp negative values to 0
   const progress = (balance / maxContributionLimit) * 100
   return Math.min(100, Math.max(0, Math.round(progress)))
@@ -143,7 +155,7 @@ export function calculateContributionProgress(
 
 /**
  * Format progress percentage for display
- * 
+ *
  * @param progress - Progress percentage (0-100) or null
  * @returns Formatted string for display
  */
@@ -175,15 +187,15 @@ export interface DebtCalculationResult {
 
 /**
  * Calculate debt-specific metrics based on debt type
- * 
+ *
  * For credit cards (C1 strategy):
  * - Progress = utilization percentage (abs(current) / limit * 100)
  * - Timeline = months to pay off (abs(current) / monthlyContribution)
- * 
+ *
  * For mortgages/loans (C strategy):
  * - Progress = percentage paid off (requires originalBalance for full accuracy)
  * - Timeline = months to pay off (abs(current) / monthlyContribution)
- * 
+ *
  * @param currentBalance - Current balance in cents (negative for debts)
  * @param maxContributionLimit - Credit limit or original loan amount in cents
  * @param monthlyContribution - Monthly payment in cents
@@ -199,24 +211,26 @@ export function calculateDebtMetrics(
   originalBalance?: number
 ): DebtCalculationResult {
   // Validate inputs
-  if (!Number.isFinite(currentBalance) || 
-      maxContributionLimit !== undefined && !Number.isFinite(maxContributionLimit) ||
-      monthlyContribution !== undefined && !Number.isFinite(monthlyContribution)) {
+  if (
+    !Number.isFinite(currentBalance) ||
+    (maxContributionLimit !== undefined && !Number.isFinite(maxContributionLimit)) ||
+    (monthlyContribution !== undefined && !Number.isFinite(monthlyContribution))
+  ) {
     return {
       progress: null,
       progressLabel: 'Invalid data',
       timeline: null,
-      timelineLabel: 'Invalid data'
+      timelineLabel: 'Invalid data',
     }
   }
 
   const absCurrent = Math.abs(currentBalance)
   const monthly = monthlyContribution ?? 0
-  
+
   // Calculate timeline (months to pay off) - same for all debt types
   let timeline: number | null = null
   let timelineLabel = 'No payment set'
-  
+
   if (monthly > 0) {
     timeline = Math.ceil(absCurrent / monthly)
     timelineLabel = timeline === 1 ? '1 month to pay off' : `${timeline} months to pay off`
@@ -225,7 +239,7 @@ export function calculateDebtMetrics(
   // Calculate progress based on debt type
   let progress: number | null = null
   let progressLabel = 'No limit'
-  
+
   if (maxContributionLimit !== undefined && maxContributionLimit > 0) {
     switch (debtSubType) {
       case 'credit-card':
@@ -233,7 +247,7 @@ export function calculateDebtMetrics(
         progress = Math.min(100, Math.round((absCurrent / maxContributionLimit) * 100))
         progressLabel = `${progress}% utilized`
         break
-        
+
       case 'mortgage':
       case 'loan':
         // C Strategy: Percentage paid off
@@ -247,8 +261,6 @@ export function calculateDebtMetrics(
           progressLabel = timeline !== null ? timelineLabel : 'No limit'
         }
         break
-        
-      case 'other':
       default:
         // Default to utilization for other debt types
         progress = Math.min(100, Math.round((absCurrent / maxContributionLimit) * 100))
@@ -260,6 +272,6 @@ export function calculateDebtMetrics(
     progress,
     progressLabel,
     timeline,
-    timelineLabel
+    timelineLabel,
   }
 }

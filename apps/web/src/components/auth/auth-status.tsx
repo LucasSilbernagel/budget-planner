@@ -1,9 +1,9 @@
 /**
  * Authentication Status Component
- * 
+ *
  * Displays current user authentication status.
  * Shows user info when authenticated, login button when not.
- * 
+ *
  * Usage:
  * ```tsx
  * <AuthStatus />
@@ -11,8 +11,8 @@
  * ```
  */
 
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
-import { useQuery, useMutation } from '@tanstack/react-query'
 import { PaddleAuthButton } from './paddle-button'
 
 export interface AuthStatusProps {
@@ -27,11 +27,11 @@ export interface AuthStatusProps {
  */
 async function fetchCurrentUser(): Promise<any | null> {
   const response = await fetch('/api/auth/me')
-  
+
   if (!response.ok) {
     return null
   }
-  
+
   const data = await response.json()
   return data.user || null
 }
@@ -43,7 +43,7 @@ async function logoutUser(): Promise<void> {
   const response = await fetch('/api/auth/logout', {
     method: 'POST',
   })
-  
+
   if (!response.ok) {
     throw new Error('Failed to logout')
   }
@@ -52,17 +52,18 @@ async function logoutUser(): Promise<void> {
 /**
  * Authentication Status Component
  */
-export function AuthStatus({ 
-  showAvatar = false, 
-  className = '',
-}: AuthStatusProps) {
+export function AuthStatus({ showAvatar = false, className = '' }: AuthStatusProps) {
   const router = useRouter()
-  const { data: user, isLoading, refetch } = useQuery({
+  const {
+    data: user,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ['currentUser'],
     queryFn: fetchCurrentUser,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
-  
+
   const logoutMutation = useMutation({
     mutationFn: logoutUser,
     onSuccess: () => {
@@ -72,7 +73,7 @@ export function AuthStatus({
       refetch()
     },
   })
-  
+
   const handleLogout = async () => {
     try {
       await logoutMutation.mutateAsync()
@@ -80,7 +81,7 @@ export function AuthStatus({
       console.error('Logout failed:', error)
     }
   }
-  
+
   if (isLoading) {
     return (
       <div className={`flex items-center gap-2 ${className}`}>
@@ -89,7 +90,7 @@ export function AuthStatus({
       </div>
     )
   }
-  
+
   if (!user) {
     // Not authenticated - show login button
     return (
@@ -98,7 +99,7 @@ export function AuthStatus({
       </div>
     )
   }
-  
+
   // Authenticated - show user info
   return (
     <div className={`flex items-center gap-3 ${className}`}>
@@ -109,14 +110,12 @@ export function AuthStatus({
           </span>
         </div>
       )}
-      
+
       <div className="flex flex-col">
         <span className="text-sm font-medium text-gray-900">{user.email}</span>
-        <span className="text-xs text-gray-500 capitalize">
-          {user.subscriptionStatus}
-        </span>
+        <span className="text-xs text-gray-500 capitalize">{user.subscriptionStatus}</span>
       </div>
-      
+
       <button
         type="button"
         onClick={handleLogout}

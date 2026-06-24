@@ -1,12 +1,12 @@
 /**
  * Frequency Normalization Engine Tests
- * 
+ *
  * Mathematical validation tests for frequency normalization calculations.
  * Zero tolerance for errors - NFR3 requirement
- * 
+ *
  * Note: All amounts are in cents (e.g., $100 = 10000 cents) to avoid
  * floating-point precision issues
- * 
+ *
  * Multipliers:
  * - Weekly: 52/12 = 4.333333...
  * - Biweekly: 26/12 = 2.166666...
@@ -14,22 +14,22 @@
  * - Annually: 1/12 = 0.083333...
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  normalizeToMonthly,
-  getNormalizationMultiplier,
-  denormalizeFromMonthly,
-  calculateTotalMonthlyNormalized,
-  validateFrequency,
-  validateAmount,
   NormalizableFinancialItem,
+  calculateTotalMonthlyNormalized,
+  denormalizeFromMonthly,
+  getNormalizationMultiplier,
+  normalizeToMonthly,
+  validateAmount,
+  validateFrequency,
 } from '../normalization.js'
 
 // Test data: amounts in cents (e.g., $100 = 10000 cents)
 const TEST_AMOUNTS = {
-  WEEKLY: 10000,    // $100/week
-  BIWEEKLY: 20000,  // $200/biweekly
-  MONTHLY: 50000,   // $500/month
+  WEEKLY: 10000, // $100/week
+  BIWEEKLY: 20000, // $200/biweekly
+  MONTHLY: 50000, // $500/month
   ANNUALLY: 120000, // $1200/year
 }
 
@@ -39,10 +39,10 @@ const TEST_AMOUNTS = {
 // Monthly: $500 * 1 = $500 = 50000 cents
 // Annually: $1200 * (1/12) = $100 = 10000 cents
 const EXPECTED_MONTHLY = {
-  WEEKLY: 43333,    // $100 * 52/12 = $433.333... → 43333 cents
-  BIWEEKLY: 43333,  // $200 * 26/12 = $433.333... → 43333 cents
-  MONTHLY: 50000,   // $500 * 1 = $500
-  ANNUALLY: 10000,  // $1200 * 1/12 = $100
+  WEEKLY: 43333, // $100 * 52/12 = $433.333... → 43333 cents
+  BIWEEKLY: 43333, // $200 * 26/12 = $433.333... → 43333 cents
+  MONTHLY: 50000, // $500 * 1 = $500
+  ANNUALLY: 10000, // $1200 * 1/12 = $100
 }
 
 describe('Frequency Normalization Engine', () => {
@@ -122,7 +122,7 @@ describe('Frequency Normalization Engine', () => {
       // This is tricky to get exactly .5, but we can verify the rounding behavior
       const result1 = normalizeToMonthly(1, 'monthly')
       expect(result1).toBe(1)
-      
+
       const result2 = normalizeToMonthly(2, 'monthly')
       expect(result2).toBe(2)
     })
@@ -172,7 +172,7 @@ describe('Frequency Normalization Engine', () => {
         { amount: 50000, frequency: 'monthly' as const },
         { amount: 120000, frequency: 'annually' as const },
       ]
-      
+
       const result = calculateTotalMonthlyNormalized(items)
       expect(result).toBe(146666)
     })
@@ -187,7 +187,7 @@ describe('Frequency Normalization Engine', () => {
         { amount: 10000, frequency: 'monthly' as const },
         { amount: -5000, frequency: 'monthly' as const },
       ]
-      
+
       const result = calculateTotalMonthlyNormalized(items)
       expect(result).toBe(5000)
     })
@@ -197,7 +197,7 @@ describe('Frequency Normalization Engine', () => {
         { amount: -10000, frequency: 'weekly' as const },
         { amount: -20000, frequency: 'biweekly' as const },
       ]
-      
+
       const result = calculateTotalMonthlyNormalized(items)
       expect(result).toBe(-86666)
     })
@@ -207,7 +207,7 @@ describe('Frequency Normalization Engine', () => {
         { amount: 1000000, frequency: 'weekly' as const },
         { amount: 5000000, frequency: 'monthly' as const },
       ]
-      
+
       // 1000000 * (52/12) = 4333333.333... + 5000000 = 9333333.333...
       // Rounded to nearest integer = 9333333
       const result = calculateTotalMonthlyNormalized(items)
@@ -249,9 +249,9 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('should throw error for negative Infinity input', () => {
-      expect(() =>
-        normalizeToMonthly(-Infinity, 'weekly')
-      ).toThrow('Amount must be a finite number')
+      expect(() => normalizeToMonthly(-Infinity, 'weekly')).toThrow(
+        'Amount must be a finite number'
+      )
     })
 
     it('should handle very large numbers without overflow', () => {
@@ -269,15 +269,13 @@ describe('Frequency Normalization Engine', () => {
 
   describe('Edge Cases - Input Validation', () => {
     it('should throw error for null items array in calculateTotalMonthlyNormalized', () => {
-      expect(() =>
-        calculateTotalMonthlyNormalized(null as any)
-      ).toThrow('Items must be an array')
+      expect(() => calculateTotalMonthlyNormalized(null as any)).toThrow('Items must be an array')
     })
 
     it('should throw error for undefined items array in calculateTotalMonthlyNormalized', () => {
-      expect(() =>
-        calculateTotalMonthlyNormalized(undefined as any)
-      ).toThrow('Items must be an array')
+      expect(() => calculateTotalMonthlyNormalized(undefined as any)).toThrow(
+        'Items must be an array'
+      )
     })
 
     it('should handle empty array in calculateTotalMonthlyNormalized', () => {
@@ -312,9 +310,9 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('should throw error for null amount in normalizeToMonthly', () => {
-      expect(() =>
-        normalizeToMonthly(null as any, 'weekly')
-      ).toThrow('Amount must be a finite number')
+      expect(() => normalizeToMonthly(null as any, 'weekly')).toThrow(
+        'Amount must be a finite number'
+      )
     })
 
     it('should throw error for null frequency in normalizeToMonthly', () => {
@@ -340,9 +338,9 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('should throw error for null monthlyAmount in denormalizeFromMonthly', () => {
-      expect(() =>
-        denormalizeFromMonthly(null as any, 'weekly')
-      ).toThrow('Amount must be a finite number')
+      expect(() => denormalizeFromMonthly(null as any, 'weekly')).toThrow(
+        'Amount must be a finite number'
+      )
     })
 
     it('should handle negative zero correctly', () => {

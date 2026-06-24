@@ -1,6 +1,6 @@
+import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Frequency } from '@budget-planner/db'
 
 // Client-side type for income source (with string timestamps for localStorage)
 // For free tier without auth, userId defaults to 0
@@ -10,12 +10,12 @@ interface ClientIncomeSource {
   name: string
   amount: number
   frequency: Frequency
-  createdAt: string  // ISO string for localStorage serialization
-  updatedAt: string  // ISO string for localStorage serialization
+  createdAt: string // ISO string for localStorage serialization
+  updatedAt: string // ISO string for localStorage serialization
 }
 
 interface ClientNewIncomeSource {
-  userId?: number  // Optional for free tier (no auth yet)
+  userId?: number // Optional for free tier (no auth yet)
   name: string
   amount: number
   frequency: Frequency
@@ -46,7 +46,7 @@ const generateIncomeTempId = (): number => {
 // For free tier without auth, userId defaults to 0
 const toClientIncomeSource = (newSource: ClientNewIncomeSource): ClientIncomeSource => ({
   ...newSource,
-  userId: newSource.userId ?? 0,  // Default to 0 for free tier (no auth)
+  userId: newSource.userId ?? 0, // Default to 0 for free tier (no auth)
   id: generateIncomeTempId(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -80,9 +80,7 @@ export const useIncomeStore = create<IncomeState>()(
       // Delete an income source
       deleteIncomeSource: (id) => {
         set((state) => ({
-          incomeSources: state.incomeSources.filter(
-            (source) => source.id !== id
-          ),
+          incomeSources: state.incomeSources.filter((source) => source.id !== id),
         }))
       },
 
@@ -93,17 +91,12 @@ export const useIncomeStore = create<IncomeState>()(
 
       // Get income sources filtered by frequency
       getIncomeSourcesByFrequency: (frequency) => {
-        return get().incomeSources.filter(
-          (source) => source.frequency === frequency
-        )
+        return get().incomeSources.filter((source) => source.frequency === frequency)
       },
 
       // Calculate total income (sum of all amounts in cents)
       getTotalIncome: () => {
-        return get().incomeSources.reduce(
-          (sum, source) => sum + source.amount,
-          0
-        )
+        return get().incomeSources.reduce((sum, source) => sum + source.amount, 0)
       },
     }),
     {
@@ -116,11 +109,9 @@ export const useIncomeStore = create<IncomeState>()(
 )
 
 // Selector hooks for better performance
-export const useIncomeSources = () =>
-  useIncomeStore((state) => state.incomeSources)
+export const useIncomeSources = () => useIncomeStore((state) => state.incomeSources)
 
-export const useTotalIncome = () =>
-  useIncomeStore((state) => state.getTotalIncome())
+export const useTotalIncome = () => useIncomeStore((state) => state.getTotalIncome())
 
 export const useIncomeByFrequency = (frequency: Frequency) =>
   useIncomeStore((state) => state.getIncomeSourcesByFrequency(frequency))

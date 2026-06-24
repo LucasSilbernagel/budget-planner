@@ -1,9 +1,9 @@
 /**
  * Sync API Endpoints
- * 
+ *
  * Server API endpoints for handling synchronization operations.
  * Implements batch processing, conflict detection, and sync history tracking.
- * 
+ *
  * Features:
  * - Batch sync operations
  * - Conflict detection and resolution
@@ -11,24 +11,24 @@
  * - Authentication validation
  * - Rate limiting
  * - Audit logging to DanubeData PostgreSQL
- * 
+ *
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
-import { z } from 'zod'
 import type { SyncOperation, SyncResult, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import {
-  incomeSources,
-  expenses,
-  savingsGoals,
   balanceTracking,
-  userProfiles,
+  expenses,
+  incomeSources,
   rateLimits,
+  savingsGoals,
+  userProfiles,
 } from '@budget-planner/db'
-import { eq, and, gt, lte } from 'drizzle-orm'
+import { and, eq, gt, lte } from 'drizzle-orm'
+import { z } from 'zod'
 
 // ============================================================================
 // Types
@@ -192,51 +192,59 @@ const userProfileSchema = z.object({
  * Zod schema for sync operation validation
  * Uses discriminated union to validate data based on entityType
  */
-export const syncOperationSchema = z.object({
-  id: z.string(),
-  type: z.enum(['create', 'update', 'delete']),
-  entityType: z.enum(['incomeSource', 'expense', 'savingsGoal', 'balanceTracking', 'userProfile']),
-  entityId: z.string(),
-  data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
-  timestamp: z.number(),
-  deviceId: z.string(),
-  userId: z.string(),
-  version: z.number().optional(),
-}).superRefine((data, ctx) => {
-  // Validate data structure based on entityType
-  const { entityType, data: entityData, type } = data
-  
-  // For delete operations, data may be minimal
-  if (type === 'delete') {
-    // Delete operations only need userId in data
-    if (!entityData.userId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Delete operations require userId in data',
-      })
+export const syncOperationSchema = z
+  .object({
+    id: z.string(),
+    type: z.enum(['create', 'update', 'delete']),
+    entityType: z.enum([
+      'incomeSource',
+      'expense',
+      'savingsGoal',
+      'balanceTracking',
+      'userProfile',
+    ]),
+    entityId: z.string(),
+    data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
+    timestamp: z.number(),
+    deviceId: z.string(),
+    userId: z.string(),
+    version: z.number().optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Validate data structure based on entityType
+    const { entityType, data: entityData, type } = data
+
+    // For delete operations, data may be minimal
+    if (type === 'delete') {
+      // Delete operations only need userId in data
+      if (!entityData.userId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Delete operations require userId in data',
+        })
+      }
+      return
     }
-    return
-  }
-  
-  // For create/update, validate full structure based on entityType
-  switch (entityType) {
-    case 'incomeSource':
-      incomeSourceSchema.parse(entityData)
-      break
-    case 'expense':
-      expenseSchema.parse(entityData)
-      break
-    case 'savingsGoal':
-      savingsGoalSchema.parse(entityData)
-      break
-    case 'balanceTracking':
-      balanceTrackingSchema.parse(entityData)
-      break
-    case 'userProfile':
-      userProfileSchema.parse(entityData)
-      break
-  }
-})
+
+    // For create/update, validate full structure based on entityType
+    switch (entityType) {
+      case 'incomeSource':
+        incomeSourceSchema.parse(entityData)
+        break
+      case 'expense':
+        expenseSchema.parse(entityData)
+        break
+      case 'savingsGoal':
+        savingsGoalSchema.parse(entityData)
+        break
+      case 'balanceTracking':
+        balanceTrackingSchema.parse(entityData)
+        break
+      case 'userProfile':
+        userProfileSchema.parse(entityData)
+        break
+    }
+  })
 
 /**
  * Zod schema for batch sync request
@@ -300,12 +308,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
     const existing = await db
       .select()
       .from(rateLimits)
-      .where(
-        and(
-          eq(rateLimits.userId, userId),
-          gt(rateLimits.windowStart, windowStart)
-        )
-      )
+      .where(and(eq(rateLimits.userId, userId), gt(rateLimits.windowStart, windowStart)))
       .limit(1)
 
     let requestCount = 0
@@ -323,7 +326,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
 
     // Increment or create the rate limit entry
     const newCount = requestCount + 1
-    
+
     if (rateLimitId) {
       // Update existing entry
       await db
@@ -351,7 +354,7 @@ async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remai
     // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = error instanceof Error ? error.message : String(error)
     console.error('[RateLimit] Database error, falling back to in-memory:', sanitizedError)
-    
+
     // In-memory fallback
     const validEntries = rateLimitStore.filter((entry) => entry.resetTime > now)
     rateLimitStore.length = 0
@@ -404,20 +407,16 @@ async function getEntity(
       // @ts-expect-error - Dynamic column access
       eq(table.id, entityId)
     )
-    
+
     // Add profileId filter if provided and table has profileId column
     if (profileId && table.profileId) {
       // @ts-expect-error - Dynamic column access
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
-    
+
     // @ts-expect-error - Dynamic table access
-    const result = await db
-      .select()
-      .from(table)
-      .where(whereClause)
-      .limit(1)
-    
+    const result = await db.select().from(table).where(whereClause).limit(1)
+
     return result[0] || null
   } catch (error) {
     // Sanitize error to avoid exposing sensitive database information
@@ -459,9 +458,9 @@ async function createEntity(
     await db.insert(table).values(insertData)
     return { success: true }
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -484,13 +483,13 @@ async function updateEntity(
       // @ts-expect-error - Dynamic column access
       eq(table.id, entityId)
     )
-    
+
     // Add profileId filter if provided and table has profileId column
     if (profileId && table.profileId) {
       // @ts-expect-error - Dynamic column access
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
-    
+
     // @ts-expect-error - Dynamic table update
     await db
       .update(table)
@@ -499,9 +498,9 @@ async function updateEntity(
       .where(whereClause)
     return { success: true }
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -523,22 +522,20 @@ async function deleteEntity(
       // @ts-expect-error - Dynamic column access
       eq(table.id, entityId)
     )
-    
+
     // Add profileId filter if provided and table has profileId column
     if (profileId && table.profileId) {
       // @ts-expect-error - Dynamic column access
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
-    
+
     // @ts-expect-error - Dynamic table delete
-    await db
-      .delete(table)
-      .where(whereClause)
+    await db.delete(table).where(whereClause)
     return { success: true }
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -553,7 +550,7 @@ async function applyOperation(
   const entityId = operation.entityId
   const userId = operation.userId
   const profileId = operation.profileId
-  
+
   // Validate userId is not empty
   if (!userId) {
     return { success: false, error: 'User ID is required' }
@@ -561,7 +558,7 @@ async function applyOperation(
 
   try {
     switch (operation.type) {
-      case 'create':
+      case 'create': {
         // Check if entity already exists
         const exists = await entityExists(entityType, entityId, userId, profileId)
         if (exists) {
@@ -569,27 +566,30 @@ async function applyOperation(
         }
         // @ts-expect-error - Data may not have userId
         return createEntity(entityType, { ...operation.data, userId, profileId })
+      }
 
-      case 'update':
+      case 'update': {
         // Check if entity exists
         const entityExistsForUpdate = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForUpdate) {
           return { success: false, error: 'Entity not found' }
         }
         return updateEntity(entityType, entityId, operation.data, userId, profileId)
+      }
 
-      case 'delete':
+      case 'delete': {
         // Check if entity exists
         const entityExistsForDelete = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForDelete) {
           return { success: false, error: 'Entity not found' }
         }
         return deleteEntity(entityType, entityId, userId, profileId)
+      }
     }
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -604,7 +604,7 @@ async function checkConflict(
   const entityId = operation.entityId
   const userId = operation.userId
   const profileId = operation.profileId
-  
+
   // Validate userId is not empty
   if (!userId) {
     return { hasConflict: false }
@@ -612,30 +612,37 @@ async function checkConflict(
 
   try {
     switch (operation.type) {
-      case 'create':
+      case 'create': {
         // Conflict if entity already exists on server
         const exists = await entityExists(entityType, entityId, userId, profileId)
         if (exists) {
           const serverData = await getEntity(entityType, entityId, userId, profileId)
-          return { hasConflict: true, conflictType: 'create-create', serverData: serverData || undefined }
+          return {
+            hasConflict: true,
+            conflictType: 'create-create',
+            serverData: serverData || undefined,
+          }
         }
         break
+      }
 
-      case 'update':
+      case 'update': {
         // Conflict if entity doesn't exist on server
         const existsForUpdate = await entityExists(entityType, entityId, userId, profileId)
         if (!existsForUpdate) {
           return { hasConflict: true, conflictType: 'update-delete', serverData: undefined }
         }
         break
+      }
 
-      case 'delete':
+      case 'delete': {
         // Conflict if entity doesn't exist on server
         const existsForDelete = await entityExists(entityType, entityId, userId, profileId)
         if (!existsForDelete) {
           return { hasConflict: true, conflictType: 'delete-update', serverData: undefined }
         }
         break
+      }
     }
 
     return { hasConflict: false }
@@ -672,25 +679,28 @@ async function logAudit(
   userAgent?: string
 ): Promise<void> {
   try {
-    await db.execute(`
+    await db.execute(
+      `
       INSERT INTO ${SYNC_AUDIT_TABLE} (
         id, userId, operationId, entityType, entityId, operationType, timestamp, success, error, ipAddress, userAgent
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
       )
-    `, [
-      `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      operationId,
-      entityType,
-      entityId,
-      operationType,
-      Date.now(),
-      success,
-      error,
-      ipAddress,
-      userAgent
-    ])
+    `,
+      [
+        `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        userId,
+        operationId,
+        entityType,
+        entityId,
+        operationType,
+        Date.now(),
+        success,
+        error,
+        ipAddress,
+        userAgent,
+      ]
+    )
   } catch (dbError) {
     // Fallback to console log if database fails
     // Sanitize error to avoid exposing sensitive database information
@@ -743,24 +753,27 @@ async function recordSyncHistory(
       error,
     }
 
-    await db.execute(`
+    await db.execute(
+      `
       INSERT INTO ${SYNC_HISTORY_TABLE} (
         id, userId, deviceId, startTimestamp, endTimestamp, operationsCount, conflictCount, failureCount, status, error
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
       )
-    `, [
-      historyEntry.id,
-      historyEntry.userId,
-      historyEntry.deviceId,
-      historyEntry.startTimestamp,
-      historyEntry.endTimestamp,
-      historyEntry.operationsCount,
-      historyEntry.conflictCount,
-      historyEntry.failureCount,
-      historyEntry.status,
-      historyEntry.error
-    ])
+    `,
+      [
+        historyEntry.id,
+        historyEntry.userId,
+        historyEntry.deviceId,
+        historyEntry.startTimestamp,
+        historyEntry.endTimestamp,
+        historyEntry.operationsCount,
+        historyEntry.conflictCount,
+        historyEntry.failureCount,
+        historyEntry.status,
+        historyEntry.error,
+      ]
+    )
 
     return historyEntry
   } catch (dbError) {
@@ -790,10 +803,10 @@ async function recordSyncHistory(
 
 /**
  * Process a batch of sync operations
- * 
+ *
  * This is the main endpoint for handling client sync requests.
  * It processes operations in order, detects conflicts, and applies changes.
- * 
+ *
  * @param request - The batch sync request
  * @param user - The authenticated user
  * @param ipAddress - Client IP address
@@ -963,9 +976,13 @@ export async function processBatchSync(
   }
 
   // Record sync history to database
-  const errorMessage = failedCount > 0 ? 'Sync completed with errors' :
-    conflictCount > 0 ? 'Sync completed with conflicts' : undefined
-  
+  const errorMessage =
+    failedCount > 0
+      ? 'Sync completed with errors'
+      : conflictCount > 0
+        ? 'Sync completed with conflicts'
+        : undefined
+
   await recordSyncHistory(
     user.id,
     deviceId,
@@ -995,11 +1012,14 @@ export async function processBatchSync(
  */
 export async function getSyncHistory(userId: string): Promise<SyncHistoryEntry[]> {
   try {
-    const result = await db.execute(`
+    const result = await db.execute(
+      `
       SELECT * FROM ${SYNC_HISTORY_TABLE} 
       WHERE userId = $1 
       ORDER BY startTimestamp DESC
-    `, [userId])
+    `,
+      [userId]
+    )
     return result.rows as SyncHistoryEntry[]
   } catch {
     return []
@@ -1011,12 +1031,15 @@ export async function getSyncHistory(userId: string): Promise<SyncHistoryEntry[]
  */
 export async function getSyncAuditLogs(userId: string): Promise<SyncAuditLog[]> {
   try {
-    const result = await db.execute(`
+    const result = await db.execute(
+      `
       SELECT * FROM ${SYNC_AUDIT_TABLE} 
       WHERE userId = $1 
       ORDER BY timestamp DESC 
       LIMIT 1000
-    `, [userId])
+    `,
+      [userId]
+    )
     return result.rows as SyncAuditLog[]
   } catch {
     return []
@@ -1034,13 +1057,16 @@ export async function getSyncStatus(userId: string): Promise<{
 }> {
   try {
     // Get last sync from history
-    const result = await db.execute(`
+    const result = await db.execute(
+      `
       SELECT * FROM ${SYNC_HISTORY_TABLE} 
       WHERE userId = $1 
       ORDER BY startTimestamp DESC 
       LIMIT 1
-    `, [userId])
-    
+    `,
+      [userId]
+    )
+
     const lastSync = result.rows[0] as SyncHistoryEntry | undefined
 
     return {
@@ -1061,7 +1087,7 @@ export async function getSyncStatus(userId: string): Promise<{
 
 /**
  * Resolve a conflict manually
- * 
+ *
  * In a production implementation, this would allow the user to choose
  * which version of the data to keep when a conflict is detected.
  */
@@ -1089,9 +1115,9 @@ export async function resolveConflict(
     }
     return result
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -1100,14 +1126,6 @@ export async function resolveConflict(
 // Exports
 // ============================================================================
 
-export {
-  RATE_LIMIT_CONFIG,
-}
+export { RATE_LIMIT_CONFIG }
 
-export type {
-  BatchSyncRequest,
-  BatchSyncResponse,
-  SyncConflict,
-  SyncHistoryEntry,
-  SyncAuditLog,
-}
+export type { BatchSyncRequest, BatchSyncResponse, SyncConflict, SyncHistoryEntry, SyncAuditLog }

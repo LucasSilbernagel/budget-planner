@@ -22,7 +22,7 @@ export const handlers = [
       mocked: true,
       data: {},
       meta: { request_id: 'msw-mock-request' },
-    }),
+    })
   ),
 
   // --- EthicalAds: decision endpoint + widget script + view/click pixels ---
@@ -37,6 +37,6 @@ export const handlers = [
       link: 'https://example.test/mock-ad',
       view_url: 'https://example.test/mock-view',
       nonce: 'msw-mock-nonce',
-    }),
+    })
   ),
 ]

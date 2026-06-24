@@ -1,32 +1,32 @@
 /**
  * useFinancialCalculations Hook
- * 
+ *
  * React hook for accessing server-side financial calculation functions.
  * Provides type-safe access to TanStack Start Server Functions for paid tier users.
  * Falls back to client-side calculations for free tier users.
- * 
+ *
  * Architecture: React Hook with TanStack Start Server Functions
  */
 
-import { useState, useCallback } from 'react'
 import type {
+  CompoundingInput,
   RetirementInput,
   RetirementResult,
-  CompoundingInput,
   YearlyProjection,
 } from '@budget-planner/core'
+import {
+  calculateCompoundingProjection as calculateCompoundingProjectionClient,
+  calculateRequiredAssets,
+  calculateSafeMonthlyWithdrawal as calculateSafeMonthlyWithdrawalClient,
+} from '@budget-planner/core/finance'
+import { useCallback, useState } from 'react'
 import type {
+  AggregationInput,
+  AggregationResult,
   FinancialApiResult,
   NetWorthProjectionInput,
   NetWorthProjectionResult,
-  AggregationInput,
-  AggregationResult,
 } from '../server/functions/financial'
-import {
-  calculateRequiredAssets,
-  calculateSafeMonthlyWithdrawal as calculateSafeMonthlyWithdrawalClient,
-  calculateCompoundingProjection as calculateCompoundingProjectionClient,
-} from '@budget-planner/core/finance'
 
 // ============================================================================
 // Type Definitions
@@ -46,7 +46,7 @@ export interface CalculationState<T> {
 /**
  * Initial state for calculations
  */
-const initialState = <T,>(): CalculationState<T> => ({
+const initialState = <T>(): CalculationState<T> => ({
   data: null,
   error: null,
   isLoading: false,
@@ -69,18 +69,18 @@ export interface UseFinancialCalculationsResult {
   projection: CalculationState<YearlyProjection[]>
   netWorth: CalculationState<NetWorthProjectionResult>
   aggregation: CalculationState<AggregationResult>
-  
+
   // Tier information
   tier: UserTier
   isPaidTier: boolean
-  
+
   // Calculation functions
   calculateRetirement: (input: RetirementInput) => Promise<void>
   calculateWithdrawal: (assets: number, annualReturnRate: number) => Promise<void>
   calculateProjection: (input: CompoundingInput) => Promise<void>
   calculateNetWorth: (input: NetWorthProjectionInput) => Promise<void>
   calculateAggregation: (input: AggregationInput) => Promise<void>
-  
+
   // Reset functions
   resetRetirement: () => void
   resetWithdrawal: () => void
@@ -104,27 +104,27 @@ function detectUserTier(): UserTier {
   if (typeof window === 'undefined') {
     return 'unknown'
   }
-  
+
   // Check for user session in localStorage (for client-side detection)
   try {
     const userSession = localStorage.getItem('paddle_user_session')
-    
+
     // SSR guard: JSON.parse can throw if userSession is malformed
     const userData = userSession ? JSON.parse(userSession) : null
-    
+
     if (userData && userData.subscriptionStatus === 'active') {
       return 'paid'
     }
-    
+
     // If there's a user but no active subscription, it's free tier
     if (userData) {
       return 'free'
     }
-  } catch (error) {
+  } catch (_error) {
     // Ignore errors in localStorage access or JSON parsing
     // Note: In production, consider using a proper logger
   }
-  
+
   return 'unknown'
 }
 
@@ -159,23 +159,23 @@ function calculateProjectionClient(input: CompoundingInput): YearlyProjection[] 
 function calculateNetWorthClient(input: NetWorthProjectionInput): NetWorthProjectionResult {
   const yearlyProjections: NetWorthProjectionResult['yearlyProjections'] = []
   let assets = input.currentAssets / 100
-  let liabilities = input.currentLiabilities / 100
+  const liabilities = input.currentLiabilities / 100
   const monthlySavings = input.monthlySavings / 100
-  
+
   for (let year = 0; year <= input.timeHorizonYears; year++) {
     const netWorth = assets - liabilities
-    
+
     yearlyProjections.push({
       year,
       assets: Math.round(assets * 100),
       liabilities: Math.round(liabilities * 100),
       netWorth: Math.round(netWorth * 100),
     })
-    
-    assets *= (1 + input.expectedReturnRate)
+
+    assets *= 1 + input.expectedReturnRate
     assets += monthlySavings * 12
   }
-  
+
   return {
     yearlyProjections,
     finalNetWorth: yearlyProjections[yearlyProjections.length - 1]?.netWorth || 0,
@@ -188,7 +188,7 @@ function calculateNetWorthClient(input: NetWorthProjectionInput): NetWorthProjec
 function calculateAggregationClient(input: AggregationInput): AggregationResult {
   const sortedValues = [...input.values].sort((a, b) => a - b)
   let result: number
-  
+
   switch (input.operation) {
     case 'sum':
       result = input.values.reduce((acc, val) => acc + val, 0)
@@ -196,12 +196,14 @@ function calculateAggregationClient(input: AggregationInput): AggregationResult 
     case 'average':
       result = input.values.reduce((acc, val) => acc + val, 0) / input.values.length
       break
-    case 'median':
+    case 'median': {
       const mid = Math.floor(sortedValues.length / 2)
-      result = sortedValues.length % 2 !== 0
-        ? sortedValues[mid]
-        : (sortedValues[mid - 1] + sortedValues[mid]) / 2
+      result =
+        sortedValues.length % 2 !== 0
+          ? sortedValues[mid]
+          : (sortedValues[mid - 1] + sortedValues[mid]) / 2
       break
+    }
     case 'max':
       result = Math.max(...input.values)
       break
@@ -211,7 +213,7 @@ function calculateAggregationClient(input: AggregationInput): AggregationResult 
     default:
       result = 0
   }
-  
+
   return {
     result,
     operation: input.operation,
@@ -250,7 +252,9 @@ async function callProjectionServer(input: CompoundingInput): Promise<YearlyProj
 /**
  * Call net worth calculation server function
  */
-async function callNetWorthServer(input: NetWorthProjectionInput): Promise<NetWorthProjectionResult> {
+async function callNetWorthServer(
+  input: NetWorthProjectionInput
+): Promise<NetWorthProjectionResult> {
   const { calculateNetWorth } = await import('../../features/api/client')
   return calculateNetWorth(input)
 }
@@ -269,21 +273,21 @@ async function callAggregationServer(input: AggregationInput): Promise<Aggregati
 
 /**
  * useFinancialCalculations Hook
- * 
+ *
  * Provides access to financial calculation functions with automatic tier detection.
  * Paid tier users get server-side calculations with persistence.
  * Free tier users get client-side calculations.
- * 
+ *
  * @returns Object with calculation functions and state
- * 
+ *
  * @example
  * ```tsx
  * const { calculateRetirement, retirement } = useFinancialCalculations()
- * 
+ *
  * const handleCalculate = async () => {
  *   await calculateRetirement({ desiredMonthlyIncome: 5000, annualReturnRate: 0.07 })
  * }
- * 
+ *
  * if (retirement.isLoading) return <Spinner />
  * if (retirement.error) return <Error message={retirement.error} />
  * return <Result data={retirement.data} />
@@ -293,149 +297,172 @@ export function useFinancialCalculations(): UseFinancialCalculationsResult {
   // Tier detection
   const tier = detectUserTier()
   const isPaidTier = tier === 'paid'
-  
+
   // State for each calculation type
-  const [retirementState, setRetirementState] = useState<CalculationState<RetirementResult>>(initialState())
+  const [retirementState, setRetirementState] = useState<CalculationState<RetirementResult>>(
+    initialState()
+  )
   const [withdrawalState, setWithdrawalState] = useState<CalculationState<number>>(initialState())
-  const [projectionState, setProjectionState] = useState<CalculationState<YearlyProjection[]>>(initialState())
-  const [netWorthState, setNetWorthState] = useState<CalculationState<NetWorthProjectionResult>>(initialState())
-  const [aggregationState, setAggregationState] = useState<CalculationState<AggregationResult>>(initialState())
-  
+  const [projectionState, setProjectionState] = useState<CalculationState<YearlyProjection[]>>(
+    initialState()
+  )
+  const [netWorthState, setNetWorthState] = useState<CalculationState<NetWorthProjectionResult>>(
+    initialState()
+  )
+  const [aggregationState, setAggregationState] = useState<CalculationState<AggregationResult>>(
+    initialState()
+  )
+
   // Retirement calculation
-  const calculateRetirement = useCallback(async (input: RetirementInput) => {
-    setRetirementState({ ...initialState(), isLoading: true })
-    
-    try {
-      const result = isPaidTier
-        ? await callRetirementServer(input)
-        : calculateRetirementClient(input)
-      
-      setRetirementState({
-        data: result,
-        error: null,
-        isLoading: false,
-        isSuccess: true,
-        isError: false,
-      })
-    } catch (error) {
-      setRetirementState({
-        data: null,
-        error: error instanceof Error ? error.message : 'Failed to calculate retirement requirement',
-        isLoading: false,
-        isSuccess: false,
-        isError: true,
-      })
-    }
-  }, [isPaidTier])
-  
+  const calculateRetirement = useCallback(
+    async (input: RetirementInput) => {
+      setRetirementState({ ...initialState(), isLoading: true })
+
+      try {
+        const result = isPaidTier
+          ? await callRetirementServer(input)
+          : calculateRetirementClient(input)
+
+        setRetirementState({
+          data: result,
+          error: null,
+          isLoading: false,
+          isSuccess: true,
+          isError: false,
+        })
+      } catch (error) {
+        setRetirementState({
+          data: null,
+          error:
+            error instanceof Error ? error.message : 'Failed to calculate retirement requirement',
+          isLoading: false,
+          isSuccess: false,
+          isError: true,
+        })
+      }
+    },
+    [isPaidTier]
+  )
+
   // Withdrawal calculation
-  const calculateWithdrawal = useCallback(async (assets: number, annualReturnRate: number) => {
-    setWithdrawalState({ ...initialState(), isLoading: true })
-    
-    try {
-      const result = isPaidTier
-        ? await callWithdrawalServer(assets, annualReturnRate)
-        : calculateSafeMonthlyWithdrawalClient(assets, annualReturnRate)
-      
-      setWithdrawalState({
-        data: result,
-        error: null,
-        isLoading: false,
-        isSuccess: true,
-        isError: false,
-      })
-    } catch (error) {
-      setWithdrawalState({
-        data: null,
-        error: error instanceof Error ? error.message : 'Failed to calculate safe withdrawal',
-        isLoading: false,
-        isSuccess: false,
-        isError: true,
-      })
-    }
-  }, [isPaidTier])
-  
+  const calculateWithdrawal = useCallback(
+    async (assets: number, annualReturnRate: number) => {
+      setWithdrawalState({ ...initialState(), isLoading: true })
+
+      try {
+        const result = isPaidTier
+          ? await callWithdrawalServer(assets, annualReturnRate)
+          : calculateSafeMonthlyWithdrawalClient(assets, annualReturnRate)
+
+        setWithdrawalState({
+          data: result,
+          error: null,
+          isLoading: false,
+          isSuccess: true,
+          isError: false,
+        })
+      } catch (error) {
+        setWithdrawalState({
+          data: null,
+          error: error instanceof Error ? error.message : 'Failed to calculate safe withdrawal',
+          isLoading: false,
+          isSuccess: false,
+          isError: true,
+        })
+      }
+    },
+    [isPaidTier]
+  )
+
   // Projection calculation
-  const calculateProjection = useCallback(async (input: CompoundingInput) => {
-    setProjectionState({ ...initialState(), isLoading: true })
-    
-    try {
-      const result = isPaidTier
-        ? await callProjectionServer(input)
-        : calculateProjectionClient(input)
-      
-      setProjectionState({
-        data: result,
-        error: null,
-        isLoading: false,
-        isSuccess: true,
-        isError: false,
-      })
-    } catch (error) {
-      setProjectionState({
-        data: null,
-        error: error instanceof Error ? error.message : 'Failed to calculate projection',
-        isLoading: false,
-        isSuccess: false,
-        isError: true,
-      })
-    }
-  }, [isPaidTier])
-  
+  const calculateProjection = useCallback(
+    async (input: CompoundingInput) => {
+      setProjectionState({ ...initialState(), isLoading: true })
+
+      try {
+        const result = isPaidTier
+          ? await callProjectionServer(input)
+          : calculateProjectionClient(input)
+
+        setProjectionState({
+          data: result,
+          error: null,
+          isLoading: false,
+          isSuccess: true,
+          isError: false,
+        })
+      } catch (error) {
+        setProjectionState({
+          data: null,
+          error: error instanceof Error ? error.message : 'Failed to calculate projection',
+          isLoading: false,
+          isSuccess: false,
+          isError: true,
+        })
+      }
+    },
+    [isPaidTier]
+  )
+
   // Net worth calculation
-  const calculateNetWorth = useCallback(async (input: NetWorthProjectionInput) => {
-    setNetWorthState({ ...initialState(), isLoading: true })
-    
-    try {
-      const result = isPaidTier
-        ? await callNetWorthServer(input)
-        : calculateNetWorthClient(input)
-      
-      setNetWorthState({
-        data: result,
-        error: null,
-        isLoading: false,
-        isSuccess: true,
-        isError: false,
-      })
-    } catch (error) {
-      setNetWorthState({
-        data: null,
-        error: error instanceof Error ? error.message : 'Failed to calculate net worth projection',
-        isLoading: false,
-        isSuccess: false,
-        isError: true,
-      })
-    }
-  }, [isPaidTier])
-  
+  const calculateNetWorth = useCallback(
+    async (input: NetWorthProjectionInput) => {
+      setNetWorthState({ ...initialState(), isLoading: true })
+
+      try {
+        const result = isPaidTier ? await callNetWorthServer(input) : calculateNetWorthClient(input)
+
+        setNetWorthState({
+          data: result,
+          error: null,
+          isLoading: false,
+          isSuccess: true,
+          isError: false,
+        })
+      } catch (error) {
+        setNetWorthState({
+          data: null,
+          error:
+            error instanceof Error ? error.message : 'Failed to calculate net worth projection',
+          isLoading: false,
+          isSuccess: false,
+          isError: true,
+        })
+      }
+    },
+    [isPaidTier]
+  )
+
   // Aggregation calculation
-  const calculateAggregation = useCallback(async (input: AggregationInput) => {
-    setAggregationState({ ...initialState(), isLoading: true })
-    
-    try {
-      const result = isPaidTier
-        ? await callAggregationServer(input)
-        : calculateAggregationClient(input)
-      
-      setAggregationState({
-        data: result,
-        error: null,
-        isLoading: false,
-        isSuccess: true,
-        isError: false,
-      })
-    } catch (error) {
-      setAggregationState({
-        data: null,
-        error: error instanceof Error ? error.message : 'Failed to calculate aggregation',
-        isLoading: false,
-        isSuccess: false,
-        isError: true,
-      })
-    }
-  }, [isPaidTier])
-  
+  const calculateAggregation = useCallback(
+    async (input: AggregationInput) => {
+      setAggregationState({ ...initialState(), isLoading: true })
+
+      try {
+        const result = isPaidTier
+          ? await callAggregationServer(input)
+          : calculateAggregationClient(input)
+
+        setAggregationState({
+          data: result,
+          error: null,
+          isLoading: false,
+          isSuccess: true,
+          isError: false,
+        })
+      } catch (error) {
+        setAggregationState({
+          data: null,
+          error: error instanceof Error ? error.message : 'Failed to calculate aggregation',
+          isLoading: false,
+          isSuccess: false,
+          isError: true,
+        })
+      }
+    },
+    [isPaidTier]
+  )
+
   // Reset functions
   const resetRetirement = useCallback(() => setRetirementState(initialState()), [])
   const resetWithdrawal = useCallback(() => setWithdrawalState(initialState()), [])
@@ -449,7 +476,7 @@ export function useFinancialCalculations(): UseFinancialCalculationsResult {
     resetNetWorth()
     resetAggregation()
   }, [resetRetirement, resetWithdrawal, resetProjection, resetNetWorth, resetAggregation])
-  
+
   return {
     // State
     retirement: retirementState,
@@ -457,18 +484,18 @@ export function useFinancialCalculations(): UseFinancialCalculationsResult {
     projection: projectionState,
     netWorth: netWorthState,
     aggregation: aggregationState,
-    
+
     // Tier info
     tier,
     isPaidTier,
-    
+
     // Calculation functions
     calculateRetirement,
     calculateWithdrawal,
     calculateProjection,
     calculateNetWorth,
     calculateAggregation,
-    
+
     // Reset functions
     resetRetirement,
     resetWithdrawal,

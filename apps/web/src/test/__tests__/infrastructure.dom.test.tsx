@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { renderWithProviders, screen, makeIncomeSource } from '@/test/utils'
+import { makeIncomeSource, renderWithProviders, screen } from '@/test/utils'
+import { describe, expect, it } from 'vitest'
 
 /**
  * Verifies the component-testing pipeline (AC-1): jsdom environment +
@@ -18,9 +18,7 @@ describe('component test infrastructure', () => {
   it('renders a component in jsdom and applies jest-dom matchers', () => {
     const income = makeIncomeSource({ name: 'Salary', amount: 5000 })
 
-    renderWithProviders(
-      <IncomeBadge name={income.name} amount={income.amount} />,
-    )
+    renderWithProviders(<IncomeBadge name={income.name} amount={income.amount} />)
 
     const badge = screen.getByTestId('income-badge')
     expect(badge).toBeInTheDocument()

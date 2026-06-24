@@ -1,24 +1,24 @@
 /**
  * Forecasting Page Route
- * 
+ *
  * Premium feature route for advanced financial forecasting tools.
  * Provides scenario modeling, goal tracking, and financial projections.
- * 
+ *
  * Route: /forecasting
  * Access: Premium users only (paid tier)
- * 
+ *
  * Architecture: TanStack Start file-based routing with React
  * Data Sovereignty: Server-side calculations, data in DanubeData (Germany - EU)
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
+import type { ForecastingResult, ForecastingScenario } from '@budget-planner/core'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { usePremiumAccess } from '../hooks/usePremiumAccess'
+import React, { useState, useEffect, useCallback } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
-import { ScenarioBuilder } from '../components/forecasting/scenario-builder'
-import { ProjectionChart } from '../components/forecasting/projection-chart'
 import { ForecastList } from '../components/forecasting/forecast-list'
-import type { ForecastingScenario, ForecastingResult } from '@budget-planner/core'
+import { ProjectionChart } from '../components/forecasting/projection-chart'
+import { ScenarioBuilder } from '../components/forecasting/scenario-builder'
+import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import type { ForecastingProfileOutput } from '../server/functions/forecastingProfiles'
 
 // ============================================================================
@@ -31,9 +31,9 @@ export const Route = createFileRoute('/forecasting')({
     // Server-side authentication check for premium features
     // Import server function dynamically to avoid circular dependencies
     const { checkPremiumAccessServer } = await import('../server/api/data/forecasting')
-    
+
     const result = await checkPremiumAccessServer(request)
-    
+
     // If check failed or user doesn't have access, redirect to home
     // Note: We allow the route to load and show the upgrade prompt client-side
     // This is a security measure to prevent unauthorized access to the route itself
@@ -42,14 +42,14 @@ export const Route = createFileRoute('/forecasting')({
       // We still allow the route to load so the upgrade prompt can be shown
       return null
     }
-    
+
     if (!result.success) {
       // Authentication check failed - redirect to login
       // Note: In TanStack Start, we should use the router's redirect utility
       // For now, we'll just return null and let client-side handle it
       return null
     }
-    
+
     return null
   },
 })
@@ -83,9 +83,7 @@ export interface SavedForecast {
  * scenarioData is a JSON string of { scenario, result }; returns null if it
  * cannot be parsed into the expected shape so a corrupt row can't crash the UI.
  */
-function mapToSavedForecast(
-  profile: ForecastingProfileOutput
-): SavedForecast | null {
+function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | null {
   try {
     const parsed = JSON.parse(profile.scenarioData) as {
       scenario?: ForecastingScenario
@@ -119,16 +117,16 @@ function mapToSavedForecast(
 
 /**
  * Forecasting Page Component
- * 
+ *
  * Main page for premium forecasting features.
  * Handles access control and renders appropriate UI based on subscription status.
  */
 export function ForecastingPage(): React.ReactElement {
   const { status, checkAccess } = usePremiumAccess()
   const [activeTab, setActiveTab] = useState<ForecastingTab>('scenarios')
-  const [savedForecasts, setSavedForecasts] = useState<SavedForecast[]>([])
+  const [_savedForecasts, _setSavedForecasts] = useState<SavedForecast[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  
+
   // Check premium access on mount
   useEffect(() => {
     const check = async () => {
@@ -144,7 +142,7 @@ export function ForecastingPage(): React.ReactElement {
   }, [])
 
   // State for server-side forecasts
-  const [isLoadingForecasts, setIsLoadingForecasts] = useState(false)
+  const [_isLoadingForecasts, setIsLoadingForecasts] = useState(false)
   const [serverForecasts, setServerForecasts] = useState<ForecastingProfileOutput[]>([])
   // The user profile that newly-saved forecasts are attached to. Forecasting
   // profiles require a real userProfiles UUID, so resolve the user's default
@@ -192,85 +190,90 @@ export function ForecastingPage(): React.ReactElement {
   }, [status.hasAccess, status.isAuthenticated])
 
   // Handle saving a forecast - uses server function
-  const handleSaveForecast = useCallback(async (forecast: {
-    name: string
-    description?: string
-    scenario: ForecastingScenario
-    result: ForecastingResult
-  }): Promise<{ success: boolean; error?: string }> => {
-    if (!defaultProfileId) {
-      const error =
-        'No financial profile found. Create a profile before saving forecasts.'
-      console.error('Cannot save forecast:', error)
-      return { success: false, error }
-    }
-    try {
-      // Import server function dynamically
-      const { createForecastingProfile } = await import('../server/functions/forecastingProfiles')
-
-      // Create request
-      const request = new Request(window.location.href)
-
-      // Convert forecast to input format
-      const input = {
-        name: forecast.name,
-        description: forecast.description,
-        scenarioData: { scenario: forecast.scenario, result: forecast.result },
-        profileId: defaultProfileId,
+  const handleSaveForecast = useCallback(
+    async (forecast: {
+      name: string
+      description?: string
+      scenario: ForecastingScenario
+      result: ForecastingResult
+    }): Promise<{ success: boolean; error?: string }> => {
+      if (!defaultProfileId) {
+        const error = 'No financial profile found. Create a profile before saving forecasts.'
+        console.error('Cannot save forecast:', error)
+        return { success: false, error }
       }
+      try {
+        // Import server function dynamically
+        const { createForecastingProfile } = await import('../server/functions/forecastingProfiles')
 
-      const result = await createForecastingProfile(request, input)
+        // Create request
+        const request = new Request(window.location.href)
 
-      if (result.success && result.data) {
-        // Reload forecasts (scoped to the same profile) to get the updated list
-        const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-        const getResult = await getForecastingProfiles(request, defaultProfileId)
-
-        if (getResult.success && getResult.data) {
-          setServerForecasts(getResult.data)
+        // Convert forecast to input format
+        const input = {
+          name: forecast.name,
+          description: forecast.description,
+          scenarioData: { scenario: forecast.scenario, result: forecast.result },
+          profileId: defaultProfileId,
         }
-        setActiveTab('saved')
-        return { success: true }
-      }
 
-      // A failed save (e.g. duplicate name hitting the unique constraint) must
-      // be surfaced to the user, not silently swallowed.
-      const error = result.error || 'Failed to save forecast'
-      console.error('Failed to save forecast:', error)
-      return { success: false, error }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save forecast'
-      console.error('Failed to save forecast:', error)
-      return { success: false, error: message }
-    }
-  }, [defaultProfileId])
+        const result = await createForecastingProfile(request, input)
+
+        if (result.success && result.data) {
+          // Reload forecasts (scoped to the same profile) to get the updated list
+          const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
+          const getResult = await getForecastingProfiles(request, defaultProfileId)
+
+          if (getResult.success && getResult.data) {
+            setServerForecasts(getResult.data)
+          }
+          setActiveTab('saved')
+          return { success: true }
+        }
+
+        // A failed save (e.g. duplicate name hitting the unique constraint) must
+        // be surfaced to the user, not silently swallowed.
+        const error = result.error || 'Failed to save forecast'
+        console.error('Failed to save forecast:', error)
+        return { success: false, error }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to save forecast'
+        console.error('Failed to save forecast:', error)
+        return { success: false, error: message }
+      }
+    },
+    [defaultProfileId]
+  )
 
   // Handle deleting a forecast - uses server function
-  const handleDeleteForecast = useCallback(async (id: string) => {
-    try {
-      // Import server function dynamically
-      const { deleteForecastingProfile } = await import('../server/functions/forecastingProfiles')
-      
-      // Create request
-      const request = new Request(window.location.href)
-      
-      const result = await deleteForecastingProfile(request, parseInt(id))
+  const handleDeleteForecast = useCallback(
+    async (id: string) => {
+      try {
+        // Import server function dynamically
+        const { deleteForecastingProfile } = await import('../server/functions/forecastingProfiles')
 
-      if (result.success) {
-        // Reload forecasts (scoped to the same profile) to get the updated list
-        const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-        const getResult = await getForecastingProfiles(request, defaultProfileId ?? undefined)
+        // Create request
+        const request = new Request(window.location.href)
 
-        if (getResult.success && getResult.data) {
-          setServerForecasts(getResult.data)
+        const result = await deleteForecastingProfile(request, parseInt(id))
+
+        if (result.success) {
+          // Reload forecasts (scoped to the same profile) to get the updated list
+          const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
+          const getResult = await getForecastingProfiles(request, defaultProfileId ?? undefined)
+
+          if (getResult.success && getResult.data) {
+            setServerForecasts(getResult.data)
+          }
+        } else {
+          console.error('Failed to delete forecast:', result.error)
         }
-      } else {
-        console.error('Failed to delete forecast:', result.error)
+      } catch (error) {
+        console.error('Failed to delete forecast:', error)
       }
-    } catch (error) {
-      console.error('Failed to delete forecast:', error)
-    }
-  }, [defaultProfileId])
+    },
+    [defaultProfileId]
+  )
 
   // Show loading state
   if (isLoading) {
@@ -304,22 +307,15 @@ export function ForecastingPage(): React.ReactElement {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Tabs */}
         <div className="mb-8">
-          <TabNavigation
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-          />
+          <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} />
         </div>
 
         {/* Tab Content */}
         <div className="bg-white rounded-xl shadow-lg p-8">
-          {activeTab === 'scenarios' && (
-            <ScenarioBuilder onSave={handleSaveForecast} />
-          )}
-          
-          {activeTab === 'projections' && (
-            <ProjectionChart />
-          )}
-          
+          {activeTab === 'scenarios' && <ScenarioBuilder onSave={handleSaveForecast} />}
+
+          {activeTab === 'projections' && <ProjectionChart />}
+
           {activeTab === 'saved' && (
             <ForecastList
               forecasts={serverForecasts
@@ -436,7 +432,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps): React.Re
  */
 function getTabIcon(tabId: ForecastingTab, isActive: boolean): React.ReactElement {
   const className = `w-4 h-4 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
-  
+
   switch (tabId) {
     case 'scenarios':
       return <ScenarioIcon className={className} />
@@ -480,12 +476,7 @@ function LoadingSpinner(): React.ReactElement {
 
 function CrownIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -498,12 +489,7 @@ function CrownIcon({ className }: { className: string }): React.ReactElement {
 
 function ScenarioIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -516,12 +502,7 @@ function ScenarioIcon({ className }: { className: string }): React.ReactElement 
 
 function ChartIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -534,12 +515,7 @@ function ChartIcon({ className }: { className: string }): React.ReactElement {
 
 function SaveIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"

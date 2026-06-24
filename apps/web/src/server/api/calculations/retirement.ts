@@ -1,13 +1,21 @@
 /**
  * Retirement Modeler Server Functions
- * 
+ *
  * Server-side calculation functions for retirement planning.
  * Uses the Safe Withdrawal Model: FV = Ir × (12 / r)
- * 
+ *
  * Architecture: TanStack Start Server Functions for RPC-style backend communication
  */
 
-import { calculateRetirementRequirement, calculateSafeMonthlyWithdrawal, calculateCompoundingProjection, type RetirementInput, type RetirementResult, type CompoundingInput, type YearlyProjection } from '@budget-planner/core'
+import {
+  type CompoundingInput,
+  type RetirementInput,
+  type RetirementResult,
+  type YearlyProjection,
+  calculateCompoundingProjection,
+  calculateRetirementRequirement,
+  calculateSafeMonthlyWithdrawal,
+} from '@budget-planner/core'
 
 /**
  * Result type for API responses

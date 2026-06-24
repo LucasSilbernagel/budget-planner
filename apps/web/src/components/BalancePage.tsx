@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import type { FinanceType } from '../stores/balanceStore'
 import {
-  useBalanceStore,
   useBalanceEntries,
-  useTotalInvestmentBalance as useTotalInvestments,
-  useTotalDebtBalance as useTotalDebts,
+  useBalanceStore,
   useNetBalance as useNetWorth,
+  useTotalDebtBalance as useTotalDebts,
+  useTotalInvestmentBalance as useTotalInvestments,
 } from '../stores'
+import type { FinanceType } from '../stores/balanceStore'
 
 const FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -35,11 +35,7 @@ export function BalancePage() {
   const totalInvestments = useTotalInvestments()
   const totalDebts = useTotalDebts()
   const netWorth = useNetWorth()
-  const {
-    addBalanceEntry,
-    updateBalanceEntry,
-    deleteBalanceEntry,
-  } = useBalanceStore()
+  const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry } = useBalanceStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -66,7 +62,7 @@ export function BalancePage() {
   }, [isModalOpen, editingId])
 
   // Open modal for adding new balance entry
-  const openAddModal = () => {
+  const _openAddModal = () => {
     setEditingId(null)
     setIsModalOpen(true)
   }
@@ -85,9 +81,7 @@ export function BalancePage() {
     setName(entry.name)
     setCurrentBalance(formatAmountForInput(entry.currentBalance))
     setMaxContributionLimit(
-      entry.maxContributionLimit !== null
-        ? formatAmountForInput(entry.maxContributionLimit)
-        : ''
+      entry.maxContributionLimit !== null ? formatAmountForInput(entry.maxContributionLimit) : ''
     )
     setMonthlyContribution(formatAmountForInput(entry.monthlyContribution))
     setIsModalOpen(true)
@@ -122,7 +116,7 @@ export function BalancePage() {
 
       // Validate current balance
       const balanceInCents = Math.round(parseFloat(currentBalance || '0') * 100)
-      if (isNaN(balanceInCents) || balanceInCents < 0) {
+      if (Number.isNaN(balanceInCents) || balanceInCents < 0) {
         alert('Please enter a valid non-negative current balance')
         return
       }
@@ -131,7 +125,7 @@ export function BalancePage() {
       let maxLimitInCents: number | null = null
       if (maxContributionLimit && maxContributionLimit.trim() !== '') {
         const parsed = Math.round(parseFloat(maxContributionLimit) * 100)
-        if (isNaN(parsed) || parsed < 0) {
+        if (Number.isNaN(parsed) || parsed < 0) {
           alert('Please enter a valid non-negative max contribution limit')
           return
         }
@@ -139,10 +133,8 @@ export function BalancePage() {
       }
 
       // Validate monthly contribution
-      const monthlyInCents = Math.round(
-        parseFloat(monthlyContribution || '0') * 100
-      )
-      if (isNaN(monthlyInCents) || monthlyInCents < 0) {
+      const monthlyInCents = Math.round(parseFloat(monthlyContribution || '0') * 100)
+      if (Number.isNaN(monthlyInCents) || monthlyInCents < 0) {
         alert('Please enter a valid non-negative monthly contribution')
         return
       }
@@ -169,11 +161,7 @@ export function BalancePage() {
 
   // Handle delete
   const handleDelete = (id: number) => {
-    if (
-      confirm(
-        'Are you sure you want to delete this balance entry? This cannot be undone.'
-      )
-    ) {
+    if (confirm('Are you sure you want to delete this balance entry? This cannot be undone.')) {
       deleteBalanceEntry(id)
     }
   }
@@ -189,17 +177,13 @@ export function BalancePage() {
       <div className="mx-auto max-w-4xl">
         <header className="mb-8">
           <h1 className="font-bold text-gray-900 text-3xl">Balance Tracking</h1>
-          <p className="mt-2 text-gray-600">
-            Monitor your investments and debts
-          </p>
+          <p className="mt-2 text-gray-600">Monitor your investments and debts</p>
         </header>
 
         <main className="space-y-6">
           {/* Stats Cards */}
           <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-4 font-semibold text-gray-800 text-xl">
-              Financial Overview
-            </h2>
+            <h2 className="mb-4 font-semibold text-gray-800 text-xl">Financial Overview</h2>
             <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-gray-500 text-sm">Total Investments</p>
@@ -209,9 +193,7 @@ export function BalancePage() {
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-gray-500 text-sm">Total Debts</p>
-                <p className="mt-1 font-bold text-red-600 text-2xl">
-                  {formatAmount(totalDebts)}
-                </p>
+                <p className="mt-1 font-bold text-red-600 text-2xl">{formatAmount(totalDebts)}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-gray-500 text-sm">Net Worth</p>
@@ -228,18 +210,12 @@ export function BalancePage() {
 
           {/* Balance Entries List */}
           <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-6 font-semibold text-gray-800 text-xl">
-              Your Balance Entries
-            </h2>
+            <h2 className="mb-6 font-semibold text-gray-800 text-xl">Your Balance Entries</h2>
 
             {balanceEntries.length === 0 ? (
               <div className="bg-gray-50 p-8 rounded-lg text-center">
-                <p className="mb-4 text-gray-500">
-                  No balance entries recorded yet
-                </p>
-                <p className="text-gray-400 text-sm">
-                  Click "Add Balance Entry" to get started
-                </p>
+                <p className="mb-4 text-gray-500">No balance entries recorded yet</p>
+                <p className="text-gray-400 text-sm">Click "Add Balance Entry" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -279,9 +255,7 @@ export function BalancePage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-medium text-gray-900 text-sm">
-                              {entry.name}
-                            </div>
+                            <div className="font-medium text-gray-900 text-sm">{entry.name}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-gray-500 text-sm">
@@ -330,9 +304,7 @@ export function BalancePage() {
             <div className="bg-white shadow-xl p-6 rounded-lg w-full max-w-md">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-medium text-gray-900 text-lg">
-                  {editingId !== null
-                    ? 'Edit Balance Entry'
-                    : 'Add Balance Entry'}
+                  {editingId !== null ? 'Edit Balance Entry' : 'Add Balance Entry'}
                 </h3>
                 <button
                   onClick={closeModal}
@@ -352,10 +324,7 @@ export function BalancePage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label
-                    htmlFor="type"
-                    className="block mb-1 font-medium text-gray-700 text-sm"
-                  >
+                  <label htmlFor="type" className="block mb-1 font-medium text-gray-700 text-sm">
                     Type *
                   </label>
                   <select
@@ -374,10 +343,7 @@ export function BalancePage() {
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="name"
-                    className="block mb-1 font-medium text-gray-700 text-sm"
-                  >
+                  <label htmlFor="name" className="block mb-1 font-medium text-gray-700 text-sm">
                     Name *
                   </label>
                   <input
@@ -481,8 +447,8 @@ export function BalancePage() {
                     {isSubmitting
                       ? 'Saving...'
                       : editingId !== null
-                      ? 'Save Changes'
-                      : 'Add Balance Entry'}
+                        ? 'Save Changes'
+                        : 'Add Balance Entry'}
                   </button>
                 </div>
               </form>

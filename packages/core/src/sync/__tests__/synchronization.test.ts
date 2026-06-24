@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  SynchronizationService,
-  createSynchronizationService,
   SyncQueue,
-  createSyncQueue,
   SyncStatus,
+  SynchronizationService,
+  createSyncQueue,
+  createSynchronizationService,
 } from '../index'
 import type { SyncOperation } from '../types'
 
@@ -14,9 +14,7 @@ import type { SyncOperation } from '../types'
 let opCounter = 0
 
 // Helper to generate a local test operation (originates on this device)
-function createTestOperation(
-  overrides: Partial<SyncOperation> = {}
-): SyncOperation {
+function createTestOperation(overrides: Partial<SyncOperation> = {}): SyncOperation {
   return {
     id: `test-op-${Date.now()}-${++opCounter}`,
     type: 'create',
@@ -33,9 +31,7 @@ function createTestOperation(
 // Helper to generate a server-side operation (originates on a *different*
 // device). Conflicts only arise between operations from different devices, so
 // cross-device fixtures are required to exercise conflict detection/resolution.
-function createServerOperation(
-  overrides: Partial<SyncOperation> = {}
-): SyncOperation {
+function createServerOperation(overrides: Partial<SyncOperation> = {}): SyncOperation {
   return createTestOperation({ deviceId: 'server-device', ...overrides })
 }
 
@@ -115,11 +111,7 @@ describe('Synchronization Service', () => {
     })
 
     it('should queue delete operation', async () => {
-      const operation = await service.queueDelete(
-        'savingsGoal',
-        'goal-1',
-        testUserId
-      )
+      const operation = await service.queueDelete('savingsGoal', 'goal-1', testUserId)
 
       expect(operation.type).toBe('delete')
       expect(operation.data).toEqual({})

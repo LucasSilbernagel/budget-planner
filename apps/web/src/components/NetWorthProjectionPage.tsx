@@ -1,16 +1,16 @@
+import { calculateCompoundingProjection } from '@budget-planner/core'
 import React, { useState } from 'react'
 import {
-  LineChart,
+  CartesianGrid,
+  Legend,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
 } from 'recharts'
-import { calculateCompoundingProjection } from '@budget-planner/core'
-import { useIncomeSources, useExpenses, useBalanceEntries } from '../stores'
+import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
 
 const FORMATTER = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -24,8 +24,8 @@ function formatAmount(cents: number): string {
 
 // Calculate initial net worth from current data
 function calculateInitialNetWorth(
-  incomeSources: Array<{ amount: number; frequency: string }>,
-  expenses: Array<{ amount: number; frequency: string }>,
+  _incomeSources: Array<{ amount: number; frequency: string }>,
+  _expenses: Array<{ amount: number; frequency: string }>,
   balanceEntries: Array<{ type: string; currentBalance: number }>
 ): number {
   // For simplicity, we'll use the current balances from balance tracking
@@ -47,23 +47,13 @@ export function NetWorthProjectionPage() {
   const balanceEntries = useBalanceEntries()
 
   // Calculate initial net worth
-  const initialNetWorth = calculateInitialNetWorth(
-    incomeSources,
-    expenses,
-    balanceEntries
-  )
+  const initialNetWorth = calculateInitialNetWorth(incomeSources, expenses, balanceEntries)
 
   // Calculate monthly net income (gross income - expenses) for projection
   // For simplicity, we'll use the raw amounts without frequency normalization
   // In a full implementation, this would use the normalized values
-  const monthlyIncome = incomeSources.reduce(
-    (sum, source) => sum + source.amount,
-    0
-  )
-  const monthlyExpenses = expenses.reduce(
-    (sum, expense) => sum + expense.amount,
-    0
-  )
+  const monthlyIncome = incomeSources.reduce((sum, source) => sum + source.amount, 0)
+  const monthlyExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const monthlyNetIncome = monthlyIncome - monthlyExpenses
   const annualNetIncome = monthlyNetIncome * 12
 
@@ -90,7 +80,7 @@ export function NetWorthProjectionPage() {
   const hasData = balanceEntries.length > 0 || incomeSources.length > 0
 
   // Format tooltip
-  const formatTooltip = (value: number, name: string, item: any) => {
+  const _formatTooltip = (value: number, name: string, _item: any) => {
     if (name === 'netWorth') {
       return [formatAmount(value * 100), 'Net Worth']
     }
@@ -101,9 +91,7 @@ export function NetWorthProjectionPage() {
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Net Worth Projection
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">Net Worth Projection</h1>
           <p className="text-gray-600 mt-2">
             Visualize your financial future based on current data
           </p>
@@ -112,9 +100,7 @@ export function NetWorthProjectionPage() {
         <main className="space-y-6">
           {/* Current Net Worth */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Current Net Worth
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Current Net Worth</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-gray-50 rounded-lg p-4">
                 <p className="text-sm text-gray-500">Current Net Worth</p>
@@ -133,16 +119,11 @@ export function NetWorthProjectionPage() {
 
           {/* Projection Parameters */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Projection Parameters
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Projection Parameters</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label
-                  htmlFor="years"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
+                <label htmlFor="years" className="block text-sm font-medium text-gray-700 mb-1">
                   Projection Period (years)
                 </label>
                 <input
@@ -191,9 +172,7 @@ export function NetWorthProjectionPage() {
                   id="additionalContribution"
                   value={additionalContribution}
                   onChange={(e) =>
-                    setAdditionalContribution(
-                      Math.max(0, parseFloat(e.target.value) || 0)
-                    )
+                    setAdditionalContribution(Math.max(0, parseFloat(e.target.value) || 0))
                   }
                   min="0"
                   step="100"
@@ -205,9 +184,7 @@ export function NetWorthProjectionPage() {
 
           {/* Net Worth Projection Chart */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Net Worth Projection
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Net Worth Projection</h2>
 
             {hasData ? (
               <div className="h-[400px]">
@@ -224,7 +201,7 @@ export function NetWorthProjectionPage() {
                       tickFormatter={(value) => formatAmount(value * 100)}
                     />
                     <Tooltip
-                      formatter={(value: number, name: string, item: any) => {
+                      formatter={(value: number, name: string, _item: any) => {
                         if (name === 'netWorth') {
                           return [formatAmount(value * 100), 'Net Worth']
                         }
@@ -247,12 +224,9 @@ export function NetWorthProjectionPage() {
               </div>
             ) : (
               <div className="bg-gray-50 rounded-lg p-8 text-center">
-                <p className="text-gray-500 mb-4">
-                  Insufficient data for projection
-                </p>
+                <p className="text-gray-500 mb-4">Insufficient data for projection</p>
                 <p className="text-sm text-gray-400">
-                  Add income sources, expenses, or balance entries to see your
-                  financial projection
+                  Add income sources, expenses, or balance entries to see your financial projection
                 </p>
               </div>
             )}
@@ -261,17 +235,18 @@ export function NetWorthProjectionPage() {
           {/* Projection Summary */}
           {hasData && chartData.length > 0 && (
             <section className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                Projection Summary
-              </h2>
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">Projection Summary</h2>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {projection
-                  .filter((_, index) => index === 0 || index === Math.floor(projection.length / 2) || index === projection.length - 1)
-                  .map((item, index) => (
+                  .filter(
+                    (_, index) =>
+                      index === 0 ||
+                      index === Math.floor(projection.length / 2) ||
+                      index === projection.length - 1
+                  )
+                  .map((item, _index) => (
                     <div key={item.year} className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-500">
-                        Year {item.year}
-                      </p>
+                      <p className="text-sm text-gray-500">Year {item.year}</p>
                       <p className="text-lg font-bold text-purple-600">
                         {formatAmount(item.endingBalance)}
                       </p>
@@ -283,14 +258,12 @@ export function NetWorthProjectionPage() {
 
           {/* Information */}
           <section className="bg-blue-50 rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-medium text-blue-800 mb-2">
-              How It Works
-            </h3>
+            <h3 className="text-lg font-medium text-blue-800 mb-2">How It Works</h3>
             <p className="text-sm text-blue-700">
-              This projection uses compound interest calculations based on your
-              current net worth, annual net income, and the return rate you specify.
-              The formula accounts for both capital appreciation and regular
-              contributions to give you a realistic view of your financial future.
+              This projection uses compound interest calculations based on your current net worth,
+              annual net income, and the return rate you specify. The formula accounts for both
+              capital appreciation and regular contributions to give you a realistic view of your
+              financial future.
             </p>
           </section>
         </main>

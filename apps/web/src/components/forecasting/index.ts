@@ -1,6 +1,6 @@
 /**
  * Forecasting Components
- * 
+ *
  * Collection of components for premium forecasting features.
  */
 

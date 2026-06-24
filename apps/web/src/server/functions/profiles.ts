@@ -1,21 +1,21 @@
 /**
  * Profile Server Functions
- * 
+ *
  * Server functions for managing user profiles in the Budget Planner application.
  * Handles profile CRUD operations for paid tier users.
- * 
+ *
  * Architecture: TanStack Start Server Functions
  * Database: Drizzle ORM with DanubeData PostgreSQL (Germany - EU only)
  * Authentication: Requires valid user session via Paddle
  */
 
 import { db } from '@budget-planner/db'
+import type { NewUserProfile, UserProfile } from '@budget-planner/db'
 import { userProfiles, users } from '@budget-planner/db/src/schema'
-import { eq, and, neq } from 'drizzle-orm'
-import type { UserProfile, NewUserProfile } from '@budget-planner/db'
 import type { Request } from '@tanstack/start'
+import { and, eq, neq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
-import type { UserSession, ApiResult } from '../api/auth/paddle'
+import type { ApiResult, UserSession } from '../api/auth/paddle'
 
 // Type definitions for API requests
 // Note: These extend the base ApiResult from paddle auth for consistency
@@ -39,14 +39,14 @@ export async function createProfile(
   try {
     // Extract userId from authenticated session
     const sessionResult = await getCurrentUserSession(request)
-    
+
     if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
       }
     }
-    
+
     const userId = sessionResult.data.userId
 
     // Validate input
@@ -65,11 +65,7 @@ export async function createProfile(
     }
 
     // Check if user exists
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1)
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
 
     if (!user) {
       return {
@@ -117,14 +113,14 @@ export async function getProfiles(request: Request): Promise<ApiResult<UserProfi
   try {
     // Extract userId from authenticated session
     const sessionResult = await getCurrentUserSession(request)
-    
+
     if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
       }
     }
-    
+
     const userId = sessionResult.data.userId
 
     const profiles = await db
@@ -155,25 +151,20 @@ export async function getProfile(
   try {
     // Extract userId from authenticated session
     const sessionResult = await getCurrentUserSession(request)
-    
+
     if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
       }
     }
-    
+
     const userId = sessionResult.data.userId
 
     const [profile] = await db
       .select()
       .from(userProfiles)
-      .where(
-        and(
-          eq(userProfiles.id, profileId),
-          eq(userProfiles.userId, userId)
-        )
-      )
+      .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
       .limit(1)
 
     if (!profile) {
@@ -205,14 +196,14 @@ export async function updateProfile(
   try {
     // Extract userId from authenticated session
     const sessionResult = await getCurrentUserSession(request)
-    
+
     if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
       }
     }
-    
+
     const userId = sessionResult.data.userId
 
     // Validate input
@@ -227,12 +218,7 @@ export async function updateProfile(
     const [existingProfile] = await db
       .select()
       .from(userProfiles)
-      .where(
-        and(
-          eq(userProfiles.id, input.id),
-          eq(userProfiles.userId, userId)
-        )
-      )
+      .where(and(eq(userProfiles.id, input.id), eq(userProfiles.userId, userId)))
       .limit(1)
 
     if (!existingProfile) {
@@ -291,33 +277,25 @@ export async function updateProfile(
 /**
  * Delete a profile
  */
-export async function deleteProfile(
-  request: Request,
-  profileId: string
-): Promise<ApiResult<void>> {
+export async function deleteProfile(request: Request, profileId: string): Promise<ApiResult<void>> {
   try {
     // Extract userId from authenticated session
     const sessionResult = await getCurrentUserSession(request)
-    
+
     if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
       }
     }
-    
+
     const userId = sessionResult.data.userId
 
     // Check if profile exists and belongs to user
     const [existingProfile] = await db
       .select()
       .from(userProfiles)
-      .where(
-        and(
-          eq(userProfiles.id, profileId),
-          eq(userProfiles.userId, userId)
-        )
-      )
+      .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
       .limit(1)
 
     if (!existingProfile) {
@@ -336,10 +314,7 @@ export async function deleteProfile(
     }
 
     // Check if this is the user's last profile
-    const profileCount = await db
-      .select()
-      .from(userProfiles)
-      .where(eq(userProfiles.userId, userId))
+    const profileCount = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId))
 
     if (profileCount.length <= 1) {
       return {
@@ -351,9 +326,7 @@ export async function deleteProfile(
     // Delete the profile (cascade will delete related financial data)
     // Wrap in transaction to ensure atomicity
     await db.transaction(async (tx) => {
-      await tx
-        .delete(userProfiles)
-        .where(eq(userProfiles.id, profileId))
+      await tx.delete(userProfiles).where(eq(userProfiles.id, profileId))
     })
 
     return {
@@ -377,32 +350,24 @@ export async function setDefaultProfile(
   try {
     // Extract userId from authenticated session
     const sessionResult = await getCurrentUserSession(request)
-    
+
     if (!sessionResult.success || !sessionResult.data) {
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
       }
     }
-    
+
     const userId = sessionResult.data.userId
 
     // First, unset default flag from all profiles
-    await db
-      .update(userProfiles)
-      .set({ isDefault: false })
-      .where(eq(userProfiles.userId, userId))
+    await db.update(userProfiles).set({ isDefault: false }).where(eq(userProfiles.userId, userId))
 
     // Then set the specified profile as default
     await db
       .update(userProfiles)
       .set({ isDefault: true })
-      .where(
-        and(
-          eq(userProfiles.id, profileId),
-          eq(userProfiles.userId, userId)
-        )
-      )
+      .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
 
     return {
       success: true,

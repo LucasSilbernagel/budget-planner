@@ -1,12 +1,12 @@
 /**
  * Database Client
- * 
+ *
  * Drizzle ORM client for DanubeData PostgreSQL.
  * All database operations MUST use DanubeData (Germany - EU) for CLOUD Act immunity.
- * 
+ *
  * Architecture: Drizzle ORM with pg driver
  * Data Sovereignty: Zero US data residency (NFR1, NFR2)
- * 
+ *
  * NOTE: This package is SERVER-ONLY. Do not import in browser code.
  */
 
@@ -24,7 +24,7 @@ let pool: Pool | null = null
 if (typeof window !== 'undefined') {
   throw new Error(
     '@budget-planner/db is a SERVER-ONLY package. ' +
-    'Do not import in browser code. Use server functions/API endpoints instead.'
+      'Do not import in browser code. Use server functions/API endpoints instead.'
   )
 }
 
@@ -35,35 +35,35 @@ if (typeof window !== 'undefined') {
 function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env['DATABASE_URL']
-    
+
     if (!databaseUrl) {
       throw new Error(
         'DATABASE_URL is not configured. ' +
-        'All database operations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity (NFR1, NFR2).'
+          'All database operations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity (NFR1, NFR2).'
       )
     }
-    
+
     // Validate URL is DanubeData (Germany - EU region)
     const url = new URL(databaseUrl)
     const host = url.hostname.toLowerCase()
     const nodeEnv = process.env['NODE_ENV'] || 'development'
-    
+
     // Allow localhost for development
     // Production must use DanubeData (Germany) for EU data sovereignty
     if (nodeEnv === 'production') {
       // DanubeData uses various hostnames, check for known patterns
-      const isDanubeData = host.includes('.db.elephantsql.com') || 
-                          host.includes('.danubedata.com') ||
-                          host.includes('.supabase.co') // DanubeData also uses Supabase infra
-      
+      const isDanubeData =
+        host.includes('.db.elephantsql.com') ||
+        host.includes('.danubedata.com') ||
+        host.includes('.supabase.co') // DanubeData also uses Supabase infra
+
       if (!isDanubeData) {
         throw new Error(
-          'Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity. ' +
-          `Detected host: ${host}. Expected: *.db.elephantsql.com, *.danubedata.com, or *.supabase.co`
+          `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity. Detected host: ${host}. Expected: *.db.elephantsql.com, *.danubedata.com, or *.supabase.co`
         )
       }
     }
-    
+
     pool = new Pool({
       connectionString: databaseUrl,
       // SSL required for production
@@ -74,7 +74,7 @@ function getPool(): Pool {
       idleTimeoutMillis: 10000,
     })
   }
-  
+
   return pool
 }
 

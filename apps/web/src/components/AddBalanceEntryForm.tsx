@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react'
-import type { ClientNewBalanceTracking, ValidationError } from '@budget-planner/core/services/balanceTracking'
+import {
+  currencySymbol,
+  formatCurrency,
+  formatForInput,
+  parseCurrencyToCents,
+} from '@budget-planner/core/format/currency'
+import type {
+  ClientNewBalanceTracking,
+  ValidationError,
+} from '@budget-planner/core/services/balanceTracking'
 import { validateBalanceTracking } from '@budget-planner/core/services/balanceTracking'
-import { useCurrencyPreferences } from '../stores/currencyStore'
-import { formatCurrency, formatForInput, parseCurrencyToCents, currencySymbol } from '@budget-planner/core/format/currency'
 import type { FinanceType } from '@budget-planner/db'
+import React, { useState, useEffect } from 'react'
+import { useCurrencyPreferences } from '../stores/currencyStore'
 
 /**
  * Props for AddBalanceEntryForm component
@@ -17,17 +25,17 @@ export interface AddBalanceEntryFormProps {
 
 /**
  * AddBalanceEntryForm component
- * 
+ *
  * Form for adding a new balance tracking entry.
  * Includes validation and error display.
- * 
+ *
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
  * - type: Required, must be 'investment' or 'debt'
  * - currentBalance: Required, integer (in cents, can be negative)
  * - maxContributionLimit: Optional, non-negative integer (in cents)
  * - monthlyContribution: Optional, non-negative integer (in cents)
- * 
+ *
  * @param props - Component props
  * @param props.onSubmit - Callback when form is submitted with valid data
  * @param props.onCancel - Callback when form is cancelled
@@ -74,12 +82,23 @@ export function AddBalanceEntryForm({
         name,
         type,
         currentBalance: currentBalanceCents,
-        maxContributionLimit: maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
+        maxContributionLimit:
+          maxContributionLimitCents !== 0 ? maxContributionLimitCents : undefined,
         monthlyContribution: monthlyContributionCents,
       })
       setErrors(newErrors)
     }
-  }, [name, type, currentBalance, maxContributionLimit, monthlyContribution, currentBalanceCents, maxContributionLimitCents, monthlyContributionCents, submitAttempted])
+  }, [
+    name,
+    type,
+    currentBalance,
+    maxContributionLimit,
+    monthlyContribution,
+    currentBalanceCents,
+    maxContributionLimitCents,
+    monthlyContributionCents,
+    submitAttempted,
+  ])
 
   /**
    * Handle form submission
@@ -167,9 +186,7 @@ export function AddBalanceEntryForm({
             {getFieldError('name')}
           </p>
         )}
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Max 100 characters
-        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Max 100 characters</p>
       </div>
 
       {/* Type Field */}
@@ -237,7 +254,11 @@ export function AddBalanceEntryForm({
                 : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
             }`}
             aria-invalid={hasFieldError('currentBalance')}
-            aria-describedby={hasFieldError('currentBalance') ? 'balance-entry-current-balance-error' : 'balance-entry-current-balance-help'}
+            aria-describedby={
+              hasFieldError('currentBalance')
+                ? 'balance-entry-current-balance-error'
+                : 'balance-entry-current-balance-help'
+            }
             data-testid="balance-entry-current-balance-input"
           />
         </div>
@@ -282,7 +303,11 @@ export function AddBalanceEntryForm({
                 : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
             }`}
             aria-invalid={hasFieldError('maxContributionLimit')}
-            aria-describedby={hasFieldError('maxContributionLimit') ? 'balance-entry-max-limit-error' : 'balance-entry-max-limit-help'}
+            aria-describedby={
+              hasFieldError('maxContributionLimit')
+                ? 'balance-entry-max-limit-error'
+                : 'balance-entry-max-limit-help'
+            }
             data-testid="balance-entry-max-limit-input"
           />
         </div>
@@ -330,7 +355,11 @@ export function AddBalanceEntryForm({
                 : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
             }`}
             aria-invalid={hasFieldError('monthlyContribution')}
-            aria-describedby={hasFieldError('monthlyContribution') ? 'balance-entry-monthly-contribution-error' : 'balance-entry-monthly-contribution-help'}
+            aria-describedby={
+              hasFieldError('monthlyContribution')
+                ? 'balance-entry-monthly-contribution-error'
+                : 'balance-entry-monthly-contribution-help'
+            }
             data-testid="balance-entry-monthly-contribution-input"
           />
         </div>
@@ -360,7 +389,12 @@ export function AddBalanceEntryForm({
             Timeline Preview:
             <span className="font-medium ml-1">
               {monthlyContributionCents !== 0
-                ? Math.max(0, Math.ceil((maxContributionLimitCents - currentBalanceCents) / monthlyContributionCents))
+                ? Math.max(
+                    0,
+                    Math.ceil(
+                      (maxContributionLimitCents - currentBalanceCents) / monthlyContributionCents
+                    )
+                  )
                 : 0}
               months to limit
             </span>

@@ -1,9 +1,9 @@
 /**
  * Version Utilities
- * 
+ *
  * Provides access to application version from package.json.
  * Used for displaying version in UI footer.
- * 
+ *
  * Architecture Requirement: FR13 - Display application version
  */
 

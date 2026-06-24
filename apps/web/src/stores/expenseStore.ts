@@ -1,6 +1,6 @@
+import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Frequency } from '@budget-planner/db'
 
 // Client-side type for expense (with string timestamps for localStorage)
 // For free tier without auth, userId defaults to 0
@@ -10,12 +10,12 @@ interface ClientExpense {
   name: string
   amount: number
   frequency: Frequency
-  createdAt: string  // ISO string for localStorage serialization
-  updatedAt: string  // ISO string for localStorage serialization
+  createdAt: string // ISO string for localStorage serialization
+  updatedAt: string // ISO string for localStorage serialization
 }
 
 interface ClientNewExpense {
-  userId?: number  // Optional for free tier (no auth yet)
+  userId?: number // Optional for free tier (no auth yet)
   name: string
   amount: number
   frequency: Frequency
@@ -48,7 +48,7 @@ const generateExpenseTempId = (): number => {
 // For free tier without auth, userId defaults to 0
 const toClientExpense = (newExpense: ClientNewExpense): ClientExpense => ({
   ...newExpense,
-  userId: newExpense.userId ?? 0,  // Default to 0 for free tier (no auth)
+  userId: newExpense.userId ?? 0, // Default to 0 for free tier (no auth)
   id: generateExpenseTempId(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -82,9 +82,7 @@ export const useExpenseStore = create<ExpenseState>()(
       // Delete an expense
       deleteExpense: (id) => {
         set((state) => ({
-          expenses: state.expenses.filter(
-            (expense) => expense.id !== id
-          ),
+          expenses: state.expenses.filter((expense) => expense.id !== id),
         }))
       },
 
@@ -95,17 +93,12 @@ export const useExpenseStore = create<ExpenseState>()(
 
       // Get expenses filtered by frequency
       getExpensesByFrequency: (frequency) => {
-        return get().expenses.filter(
-          (expense) => expense.frequency === frequency
-        )
+        return get().expenses.filter((expense) => expense.frequency === frequency)
       },
 
       // Calculate total expenses (sum of all amounts in cents)
       getTotalExpenses: () => {
-        return get().expenses.reduce(
-          (sum, expense) => sum + expense.amount,
-          0
-        )
+        return get().expenses.reduce((sum, expense) => sum + expense.amount, 0)
       },
     }),
     {
@@ -118,11 +111,9 @@ export const useExpenseStore = create<ExpenseState>()(
 )
 
 // Selector hooks for better performance
-export const useExpenses = () =>
-  useExpenseStore((state) => state.expenses)
+export const useExpenses = () => useExpenseStore((state) => state.expenses)
 
-export const useTotalExpenses = () =>
-  useExpenseStore((state) => state.getTotalExpenses())
+export const useTotalExpenses = () => useExpenseStore((state) => state.getTotalExpenses())
 
 export const useExpenseByFrequency = (frequency: Frequency) =>
   useExpenseStore((state) => state.getExpensesByFrequency(frequency))

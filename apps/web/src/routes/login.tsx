@@ -1,16 +1,16 @@
 /**
  * Login Page
- * 
+ *
  * Page for user authentication via Paddle.
  * Provides entry point for new users to sign up and existing users to log in.
- * 
+ *
  * Route: /login
- * 
+ *
  * Data Sovereignty: Redirects to Paddle (UK-based) for authentication
  */
 
-import { createFileRoute, redirect } from '@tanstack/react-router'
 import { PaddleAuthButton } from '@/components/auth/paddle-button'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -23,17 +23,13 @@ function LoginPage() {
         {/* Logo / Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Budget Planner</h1>
-          <p className="text-gray-600 mt-2">
-            Track your finances with privacy and control
-          </p>
+          <p className="text-gray-600 mt-2">Track your finances with privacy and control</p>
         </div>
 
         {/* Auth Card */}
         <div className="bg-white shadow-md rounded-2xl p-8 border border-gray-200">
           <div className="text-center">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              Welcome
-            </h2>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">Welcome</h2>
             <p className="text-gray-600 mb-6">
               Sign in to access premium features and sync your data across devices
             </p>
@@ -45,11 +41,11 @@ function LoginPage() {
 
             <div className="text-center text-sm text-gray-500">
               <p>
-                By signing in, you agree to our {' '}
+                By signing in, you agree to our{' '}
                 <a href="#" className="text-blue-600 hover:underline">
                   Terms of Service
                 </a>{' '}
-                and {' '}
+                and{' '}
                 <a href="#" className="text-blue-600 hover:underline">
                   Privacy Policy
                 </a>
@@ -59,12 +55,10 @@ function LoginPage() {
 
           {/* Free Tier Notice */}
           <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h3 className="font-medium text-gray-900 mb-1">
-              Free Tier Available
-            </h3>
+            <h3 className="font-medium text-gray-900 mb-1">Free Tier Available</h3>
             <p className="text-sm text-gray-600">
-              You can also use Budget Planner without an account. 
-              Your data will be stored locally on this device only.
+              You can also use Budget Planner without an account. Your data will be stored locally
+              on this device only.
             </p>
             <a
               href="/"

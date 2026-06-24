@@ -1,9 +1,9 @@
 /**
  * Forecast List Component
- * 
+ *
  * Displays a list of saved forecasting scenarios with management capabilities.
  * Allows users to view, load, edit, and delete saved forecasts.
- * 
+ *
  * Architecture: React Component with Tailwind CSS
  * Data Sovereignty: Saved forecasts stored server-side for paid tier
  */
@@ -59,7 +59,7 @@ function formatDate(dateString: string): string {
  */
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
-  return text.slice(0, maxLength) + '...'
+  return `${text.slice(0, maxLength)}...`
 }
 
 // ============================================================================
@@ -68,7 +68,7 @@ function truncate(text: string, maxLength: number): string {
 
 /**
  * Forecast List Component
- * 
+ *
  * Displays and manages saved forecasting scenarios.
  * Provides search, filter, and bulk action capabilities.
  */
@@ -108,11 +108,12 @@ export function ForecastList({
         case 'date':
           comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           break
-        case 'netWorth':
+        case 'netWorth': {
           const aWorth = a.result.summary.endingNetWorth
           const bWorth = b.result.summary.endingNetWorth
           comparison = bWorth - aWorth
           break
+        }
       }
 
       return sortDirection === 'asc' ? comparison : -comparison
@@ -148,17 +149,20 @@ export function ForecastList({
   }, [selectedCount, totalCount, filteredForecasts])
 
   // Handle delete for a single forecast
-  const handleDelete = useCallback((id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (window.confirm('Are you sure you want to delete this forecast?')) {
-      onDelete(id)
-      setSelectedIds((prev) => {
-        const newSet = new Set(prev)
-        newSet.delete(id)
-        return newSet
-      })
-    }
-  }, [onDelete])
+  const handleDelete = useCallback(
+    (id: string, e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (window.confirm('Are you sure you want to delete this forecast?')) {
+        onDelete(id)
+        setSelectedIds((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(id)
+          return newSet
+        })
+      }
+    },
+    [onDelete]
+  )
 
   // Handle delete for selected forecasts
   const handleBulkDelete = useCallback(() => {
@@ -170,19 +174,25 @@ export function ForecastList({
   }, [selectedIds, selectedCount, onDelete])
 
   // Handle load forecast
-  const handleLoad = useCallback((forecast: SavedForecast) => {
-    onLoad?.(forecast)
-  }, [onLoad])
+  const handleLoad = useCallback(
+    (forecast: SavedForecast) => {
+      onLoad?.(forecast)
+    },
+    [onLoad]
+  )
 
   // Toggle sort direction
-  const toggleSortDirection = useCallback((field: 'name' | 'date' | 'netWorth') => {
-    if (sortBy === field) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortBy(field)
-      setSortDirection('desc')
-    }
-  }, [sortBy, sortDirection])
+  const toggleSortDirection = useCallback(
+    (field: 'name' | 'date' | 'netWorth') => {
+      if (sortBy === field) {
+        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setSortBy(field)
+        setSortDirection('desc')
+      }
+    },
+    [sortBy, sortDirection]
+  )
 
   // Get sort indicator
   const getSortIndicator = (field: 'name' | 'date' | 'netWorth'): React.ReactElement => {
@@ -201,15 +211,11 @@ export function ForecastList({
       {/* Header */}
       <div className="mb-4">
         <h2 className="text-2xl font-bold text-gray-800">My Saved Forecasts</h2>
-        <p className="text-gray-500 mt-1">
-          Manage your saved forecasting scenarios
-        </p>
+        <p className="text-gray-500 mt-1">Manage your saved forecasting scenarios</p>
       </div>
 
       {/* Empty State */}
-      {forecasts.length === 0 && (
-        <EmptyState />
-      )}
+      {forecasts.length === 0 && <EmptyState />}
 
       {/* Toolbar */}
       {forecasts.length > 0 && (
@@ -235,11 +241,9 @@ export function ForecastList({
           {/* Selection Info */}
           <div className="flex items-center gap-4">
             {selectedCount > 0 && (
-              <span className="text-sm text-gray-600">
-                {selectedCount} selected
-              </span>
+              <span className="text-sm text-gray-600">{selectedCount} selected</span>
             )}
-            
+
             {/* Bulk Actions */}
             <button
               type="button"
@@ -304,7 +308,7 @@ export function ForecastList({
                 </th>
               </tr>
             </thead>
-            
+
             {/* Table Body */}
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredForecasts.map((forecast) => (
@@ -332,9 +336,7 @@ export function ForecastList({
                     <div className="text-sm font-medium text-gray-800">
                       {truncate(forecast.name, 40)}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      v{forecast.version ?? 1}
-                    </div>
+                    <div className="text-xs text-gray-500 mt-1">v{forecast.version ?? 1}</div>
                   </td>
 
                   {/* Description */}
@@ -346,9 +348,7 @@ export function ForecastList({
 
                   {/* Created Date */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-600">
-                      {formatDate(forecast.createdAt)}
-                    </div>
+                    <div className="text-sm text-gray-600">{formatDate(forecast.createdAt)}</div>
                   </td>
 
                   {/* Ending Net Worth */}
@@ -435,12 +435,7 @@ function EmptyState(): React.ReactElement {
 
 function SearchIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -453,12 +448,7 @@ function SearchIcon({ className }: { className: string }): React.ReactElement {
 
 function FolderIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -471,12 +461,7 @@ function FolderIcon({ className }: { className: string }): React.ReactElement {
 
 function LoadIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -495,12 +480,7 @@ function LoadIcon({ className }: { className: string }): React.ReactElement {
 
 function DeleteIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"

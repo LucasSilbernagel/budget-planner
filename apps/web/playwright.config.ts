@@ -9,14 +9,14 @@ import { defineConfig, devices } from '@playwright/test'
  * By default Playwright boots the Vite dev server (port 5173). Point it at an
  * already-running instance with PLAYWRIGHT_BASE_URL to skip that.
  */
-const baseURL = process.env['PLAYWRIGHT_BASE_URL'] || 'http://localhost:5173'
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
-  forbidOnly: !!process.env['CI'],
-  retries: process.env['CI'] ? 2 : 0,
-  workers: process.env['CI'] ? 1 : undefined,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
     baseURL,
@@ -29,12 +29,12 @@ export default defineConfig({
     },
   ],
   // Auto-start the dev server unless an external base URL was provided.
-  webServer: process.env['PLAYWRIGHT_BASE_URL']
+  webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
         command: 'pnpm dev',
         url: baseURL,
-        reuseExistingServer: !process.env['CI'],
+        reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },
 })

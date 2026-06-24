@@ -1,13 +1,13 @@
 /**
  * Vitest Setup File
- * 
+ *
  * Global test setup for @budget-planner/core package
  * Mocks browser APIs for Node.js environment
- * 
+ *
  * Phase 1: Environment Fixes - Fix localStorage mocking
  */
 
-import { beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 
 // Mock localStorage for Node.js environment
 // This is needed because some modules (balanceTracking, synchronization) use localStorage

@@ -13,24 +13,24 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate:pg",
+    "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
-    "drizzle-orm": "^0.30.0",
+    "drizzle-orm": "^0.32.0",
     "pg": "^8.11.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/pg": "^8.10.9",
-    "drizzle-kit": "^0.20.17",
+    "drizzle-kit": "^0.23.0",
     "dotenv": "^16.3.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
-    "biome": "^0.3.3",
+    "@biomejs/biome": "1.5.3",
     "vitest": "^1.6.1"
   },
   "engines": {

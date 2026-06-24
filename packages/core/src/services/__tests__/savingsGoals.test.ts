@@ -1,20 +1,20 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  ClientSavingsGoal,
   ClientNewSavingsGoal,
+  ClientSavingsGoal,
   SavingsGoalStatus,
   SavingsGoalWithProgress,
   ValidationError,
   calculateProgress,
-  getStatusFromProgress,
-  withProgress,
-  validateSavingsGoal,
-  isValidSavingsGoal,
-  sortByCreationDate,
   filterSavingsGoals,
   generateSavingsGoalTempId,
+  getStatusFromProgress,
+  isValidSavingsGoal,
   resetSavingsGoalTempId,
+  sortByCreationDate,
   toClientSavingsGoal,
+  validateSavingsGoal,
+  withProgress,
 } from '../savingsGoals'
 
 describe('savingsGoals service', () => {
@@ -186,7 +186,11 @@ describe('savingsGoals service', () => {
         currentBalance: 50000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'name' && e.message === 'Name must be 100 characters or less')).toBe(true)
+      expect(
+        errors.some(
+          (e) => e.field === 'name' && e.message === 'Name must be 100 characters or less'
+        )
+      ).toBe(true)
     })
 
     it('should return error for missing targetAmount', () => {
@@ -195,7 +199,9 @@ describe('savingsGoals service', () => {
         currentBalance: 50000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'targetAmount' && e.message === 'Target amount is required')).toBe(true)
+      expect(
+        errors.some((e) => e.field === 'targetAmount' && e.message === 'Target amount is required')
+      ).toBe(true)
     })
 
     it('should return error for negative targetAmount', () => {
@@ -205,7 +211,11 @@ describe('savingsGoals service', () => {
         currentBalance: 50000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'targetAmount' && e.message === 'Target amount must be positive')).toBe(true)
+      expect(
+        errors.some(
+          (e) => e.field === 'targetAmount' && e.message === 'Target amount must be positive'
+        )
+      ).toBe(true)
     })
 
     it('should return error for zero targetAmount', () => {
@@ -215,7 +225,11 @@ describe('savingsGoals service', () => {
         currentBalance: 50000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'targetAmount' && e.message === 'Target amount must be positive')).toBe(true)
+      expect(
+        errors.some(
+          (e) => e.field === 'targetAmount' && e.message === 'Target amount must be positive'
+        )
+      ).toBe(true)
     })
 
     it('should return error for non-integer targetAmount', () => {
@@ -225,7 +239,13 @@ describe('savingsGoals service', () => {
         currentBalance: 50000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'targetAmount' && e.message === 'Target amount must be an integer (in cents)')).toBe(true)
+      expect(
+        errors.some(
+          (e) =>
+            e.field === 'targetAmount' &&
+            e.message === 'Target amount must be an integer (in cents)'
+        )
+      ).toBe(true)
     })
 
     it('should return error for missing currentBalance', () => {
@@ -234,7 +254,11 @@ describe('savingsGoals service', () => {
         targetAmount: 100000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'currentBalance' && e.message === 'Current balance is required')).toBe(true)
+      expect(
+        errors.some(
+          (e) => e.field === 'currentBalance' && e.message === 'Current balance is required'
+        )
+      ).toBe(true)
     })
 
     it('should return error for negative currentBalance', () => {
@@ -244,7 +268,11 @@ describe('savingsGoals service', () => {
         currentBalance: -100,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'currentBalance' && e.message === 'Current balance cannot be negative')).toBe(true)
+      expect(
+        errors.some(
+          (e) => e.field === 'currentBalance' && e.message === 'Current balance cannot be negative'
+        )
+      ).toBe(true)
     })
 
     it('should return error for currentBalance exceeding targetAmount', () => {
@@ -254,7 +282,13 @@ describe('savingsGoals service', () => {
         currentBalance: 150000,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'currentBalance' && e.message === 'Current balance cannot exceed target amount')).toBe(true)
+      expect(
+        errors.some(
+          (e) =>
+            e.field === 'currentBalance' &&
+            e.message === 'Current balance cannot exceed target amount'
+        )
+      ).toBe(true)
     })
 
     it('should return error for non-integer currentBalance', () => {
@@ -264,7 +298,13 @@ describe('savingsGoals service', () => {
         currentBalance: 50.5,
       }
       const errors = validateSavingsGoal(input)
-      expect(errors.some((e) => e.field === 'currentBalance' && e.message === 'Current balance must be an integer (in cents)')).toBe(true)
+      expect(
+        errors.some(
+          (e) =>
+            e.field === 'currentBalance' &&
+            e.message === 'Current balance must be an integer (in cents)'
+        )
+      ).toBe(true)
     })
   })
 
@@ -295,9 +335,30 @@ describe('savingsGoals service', () => {
       const oldest = new Date(now.getTime() - 172800000) // Two days ago
 
       const goals: ClientSavingsGoal[] = [
-        { id: 1, name: 'Oldest', targetAmount: 100, currentBalance: 0, createdAt: oldest.toISOString(), updatedAt: oldest.toISOString() },
-        { id: 2, name: 'Newest', targetAmount: 100, currentBalance: 0, createdAt: now.toISOString(), updatedAt: now.toISOString() },
-        { id: 3, name: 'Older', targetAmount: 100, currentBalance: 0, createdAt: older.toISOString(), updatedAt: older.toISOString() },
+        {
+          id: 1,
+          name: 'Oldest',
+          targetAmount: 100,
+          currentBalance: 0,
+          createdAt: oldest.toISOString(),
+          updatedAt: oldest.toISOString(),
+        },
+        {
+          id: 2,
+          name: 'Newest',
+          targetAmount: 100,
+          currentBalance: 0,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        },
+        {
+          id: 3,
+          name: 'Older',
+          targetAmount: 100,
+          currentBalance: 0,
+          createdAt: older.toISOString(),
+          updatedAt: older.toISOString(),
+        },
       ]
 
       const sorted = sortByCreationDate(goals)
@@ -311,8 +372,22 @@ describe('savingsGoals service', () => {
       const older = new Date(now.getTime() - 86400000)
 
       const goals: ClientSavingsGoal[] = [
-        { id: 1, name: 'Older', targetAmount: 100, currentBalance: 0, createdAt: older.toISOString(), updatedAt: older.toISOString() },
-        { id: 2, name: 'Newest', targetAmount: 100, currentBalance: 0, createdAt: now.toISOString(), updatedAt: now.toISOString() },
+        {
+          id: 1,
+          name: 'Older',
+          targetAmount: 100,
+          currentBalance: 0,
+          createdAt: older.toISOString(),
+          updatedAt: older.toISOString(),
+        },
+        {
+          id: 2,
+          name: 'Newest',
+          targetAmount: 100,
+          currentBalance: 0,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        },
       ]
 
       const originalOrder = [...goals]
@@ -323,9 +398,36 @@ describe('savingsGoals service', () => {
 
   describe('filterSavingsGoals', () => {
     const goals: SavingsGoalWithProgress[] = [
-      { id: 1, name: 'Goal A', targetAmount: 100, currentBalance: 50, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), progress: 50, status: 'on-track' },
-      { id: 2, name: 'Goal B', targetAmount: 100, currentBalance: 100, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), progress: 100, status: 'complete' },
-      { id: 3, name: 'Goal C', targetAmount: 100, currentBalance: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), progress: 0, status: 'not-started' },
+      {
+        id: 1,
+        name: 'Goal A',
+        targetAmount: 100,
+        currentBalance: 50,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        progress: 50,
+        status: 'on-track',
+      },
+      {
+        id: 2,
+        name: 'Goal B',
+        targetAmount: 100,
+        currentBalance: 100,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        progress: 100,
+        status: 'complete',
+      },
+      {
+        id: 3,
+        name: 'Goal C',
+        targetAmount: 100,
+        currentBalance: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        progress: 0,
+        status: 'not-started',
+      },
     ]
 
     it('should filter by status', () => {

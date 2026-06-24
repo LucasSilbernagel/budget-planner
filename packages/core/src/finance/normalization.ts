@@ -1,13 +1,13 @@
 /**
  * Frequency Normalization Engine
- * 
+ *
  * Normalizes financial values to a monthly base for consistent aggregation.
  * Multipliers are based on the average number of periods per month:
  * - Weekly: 4.333 (52 weeks / 12 months)
  * - Biweekly: 2.167 (26 biweekly periods / 12 months)
  * - Monthly: 1
  * - Annually: 0.0833 (1 / 12)
- * 
+ *
  * Architecture Requirement: FR5 - Core calculations
  */
 
@@ -16,7 +16,7 @@ export type Frequency = 'weekly' | 'biweekly' | 'monthly' | 'annually'
 
 // Interface for financial items that can be normalized
 export interface NormalizableFinancialItem {
-  amount: number      // In cents
+  amount: number // In cents
   frequency: Frequency
 }
 
@@ -24,10 +24,10 @@ export interface NormalizableFinancialItem {
 // These are the exact number of periods per month
 // Using precise fractions to avoid floating-point accumulation errors
 const FREQUENCY_MULTIPLIERS: Record<Frequency, number> = {
-  weekly: 52 / 12,       // 52 weeks / 12 months = 4.333333...
-  biweekly: 26 / 12,     // 26 biweekly periods / 12 months = 2.166666...
-  monthly: 1,            // 1 month / 12 months = 1/12, but we're normalizing TO monthly, so multiply by 1
-  annually: 1 / 12,     // 1 / 12 = 0.083333...
+  weekly: 52 / 12, // 52 weeks / 12 months = 4.333333...
+  biweekly: 26 / 12, // 26 biweekly periods / 12 months = 2.166666...
+  monthly: 1, // 1 month / 12 months = 1/12, but we're normalizing TO monthly, so multiply by 1
+  annually: 1 / 12, // 1 / 12 = 0.083333...
 }
 
 /**
@@ -47,7 +47,7 @@ export function validateFrequency(frequency: unknown): asserts frequency is Freq
  * @throws Error if amount is not a finite number
  */
 export function validateAmount(amount: unknown): asserts amount is number {
-  if (typeof amount !== 'number' || !isFinite(amount)) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
     throw new Error('Amount must be a finite number')
   }
 }
@@ -94,21 +94,16 @@ export function denormalizeFromMonthly(monthlyAmount: unknown, frequency: unknow
  * @param items - Array of NormalizableFinancialItem
  * @returns The total monthly normalized amount in cents
  */
-export function calculateTotalMonthlyNormalized(
-  items: unknown
-): number {
+export function calculateTotalMonthlyNormalized(items: unknown): number {
   if (!Array.isArray(items)) {
     throw new Error('Items must be an array')
   }
-  
-  return items.reduce(
-    (sum, item) => {
-      validateAmount(item?.amount)
-      validateFrequency(item?.frequency)
-      return sum + normalizeToMonthly(item.amount, item.frequency)
-    },
-    0
-  )
+
+  return items.reduce((sum, item) => {
+    validateAmount(item?.amount)
+    validateFrequency(item?.frequency)
+    return sum + normalizeToMonthly(item.amount, item.frequency)
+  }, 0)
 }
 
 // Note: Frequency and NormalizableFinancialItem are already exported directly above

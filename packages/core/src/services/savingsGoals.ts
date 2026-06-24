@@ -1,9 +1,9 @@
 /**
  * Savings Goals Service
- * 
+ *
  * Core service layer for savings goal operations.
  * Provides type definitions, validation, and business logic for savings goals.
- * 
+ *
  * Architecture:
  * - Pure TypeScript functions, no side effects
  * - Works with both client-side (free tier) and server-side (paid tier) data
@@ -113,7 +113,7 @@ export { calculateProgress } from '../utils/savingsGoalCalculations'
 
 /**
  * Determine status based on progress percentage
- * 
+ *
  * @param progress - Progress percentage (0-100)
  * @returns Status enum value
  */
@@ -125,12 +125,15 @@ export function getStatusFromProgress(progress: number): SavingsGoalStatus {
 
 /**
  * Calculate progress and status for a savings goal
- * 
+ *
  * @param savingsGoal - Savings goal with targetAmount and currentBalance
  * @returns SavingsGoalWithProgress with calculated fields
  */
 export function withProgress(savingsGoal: ClientSavingsGoal): SavingsGoalWithProgress {
-  const progress = calculateSavingsGoalProgress(savingsGoal.targetAmount, savingsGoal.currentBalance)
+  const progress = calculateSavingsGoalProgress(
+    savingsGoal.targetAmount,
+    savingsGoal.currentBalance
+  )
   return {
     ...savingsGoal,
     progress,
@@ -153,10 +156,10 @@ export interface ValidationError {
 
 /**
  * Validate savings goal input
- * 
+ *
  * @param input - Savings goal input to validate
  * @returns Array of validation errors (empty if valid)
- * 
+ *
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
  * - targetAmount: Required, positive integer (in cents)
@@ -233,7 +236,7 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
 
 /**
  * Check if savings goal input is valid
- * 
+ *
  * @param input - Savings goal input to validate
  * @returns true if valid, false otherwise
  */
@@ -247,9 +250,9 @@ export function isValidSavingsGoal(input: Partial<ClientNewSavingsGoal>): boolea
 
 /**
  * Sort savings goals by creation date (newest first)
- * 
+ *
  * AC 2: When viewing the savings goals list, all goals are displayed sorted by creation date (newest first)
- * 
+ *
  * @param goals - Array of savings goals to sort
  * @returns New array sorted by createdAt (descending)
  */
@@ -263,7 +266,7 @@ export function sortByCreationDate(goals: ClientSavingsGoal[]): ClientSavingsGoa
 
 /**
  * Filter savings goals by status
- * 
+ *
  * @param goals - Array of savings goals with progress
  * @param filter - Filter options
  * @returns Filtered array of savings goals
@@ -296,7 +299,7 @@ let savingsGoalTempIdCounter = -20000
 
 /**
  * Generate a temporary ID for client-side savings goal storage
- * 
+ *
  * @returns Negative number ID for client-side use
  */
 export function generateSavingsGoalTempId(): number {
@@ -313,14 +316,14 @@ export function resetSavingsGoalTempId(): void {
 
 /**
  * Convert new savings goal input to client savings goal (add ID and timestamps)
- * 
+ *
  * @param input - New savings goal input
  * @param userId - Optional user ID (0 for free tier)
  * @returns Client savings goal with ID and timestamps
  */
 export function toClientSavingsGoal(
   input: ClientNewSavingsGoal,
-  userId?: number
+  _userId?: number
 ): ClientSavingsGoal {
   const now = new Date().toISOString()
   return {

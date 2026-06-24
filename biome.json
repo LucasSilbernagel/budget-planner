@@ -9,62 +9,56 @@
     "indentStyle": "space",
     "indentWidth": 2,
     "lineEnding": "lf",
-    "lineWidth": 100,
-    "attributePosition": "auto"
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingComma": "es5"
+    }
   },
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": true,
+      "complexity": {
+        "noUselessFragments": "error",
+        "useLiteralKeys": "off"
+      },
       "correctness": {
         "noUnusedVariables": "error",
         "useExhaustiveDependencies": "error",
-        "noUselessFragments": "error",
-        "noEmptyBlockStatements": "error",
         "noEmptyPattern": "error"
       },
       "suspicious": {
         "noExplicitAny": "error",
-        "noSparseArrays": "error",
-        "noConfusingVoidExpression": "error",
-        "noMisleadingCharacterClass": "error",
-        "noUnreachableCode": "error",
+        "noArrayIndexKey": "error",
         "noUnsafeNegation": "error",
         "useNamespaceKeyword": "error"
       },
       "performance": {
-        "noAccumulatingSpread": "error",
-        "noBarrelFile": "off",
-        "noConstantCondition": "error"
+        "noAccumulatingSpread": "error"
       },
       "style": {
-        "use_const": "error",
-        "useNamingConvention": "error",
+        "useConst": "error",
         "useSelfClosingElements": "error",
-        "useShorthandArrayType": "error",
-        "useSimplifiedLogicExpression": "error"
+        "useShorthandArrayType": "error"
       },
       "security": {
-        "noArrayIndexKey": "error",
-        "noDangerouslySetInnerHtml": "error",
-        "noDocumentWrite": "error",
-        "noInnerHtml": "error"
+        "noDangerouslySetInnerHtml": "error"
       }
     }
   },
   "files": {
-    "include": [
-      "**/*.{ts,tsx,js,jsx,json}",
-      "!node_modules",
-      "!dist",
-      "!.pnpm-store"
-    ],
     "ignore": [
       "node_modules",
       "dist",
       ".pnpm-store",
       "pnpm-lock.yaml",
-      "**/*.d.ts"
+      "**/*.d.ts",
+      "_bmad-output",
+      "routeTree.gen.ts"
     ]
   }
 }

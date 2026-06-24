@@ -1,9 +1,9 @@
 /**
  * Balance Tracking Store
- * 
+ *
  * Zustand store for client-side balance tracking state management.
  * Provides state, selectors, and actions for balance tracking entries.
- * 
+ *
  * Architecture:
  * - Uses Zustand for state management
  * - Persists to localStorage via persist middleware
@@ -11,22 +11,22 @@
  * - Supports both free tier (client-side) and paid tier (server-side)
  */
 
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import type {
-  ClientBalanceTracking,
-  ClientNewBalanceTracking,
   BalanceTrackingFilter,
   BalanceTrackingWithTimeline,
+  ClientBalanceTracking,
+  ClientNewBalanceTracking,
 } from '@budget-planner/core/services/balanceTracking'
 import {
+  filterBalanceTracking,
+  sortByCreationDate,
   toClientBalanceTracking,
   validateBalanceTracking,
   withTimeline,
-  sortByCreationDate,
-  filterBalanceTracking,
 } from '@budget-planner/core/services/balanceTracking'
 import type { FinanceType } from '@budget-planner/db'
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 // ============================================================================
 // State Definition
@@ -44,7 +44,10 @@ interface BalanceState {
 
   // Actions
   addBalanceEntry: (data: ClientNewBalanceTracking) => ClientBalanceTracking | null
-  updateBalanceEntry: (id: number, data: Partial<ClientNewBalanceTracking>) => ClientBalanceTracking | null
+  updateBalanceEntry: (
+    id: number,
+    data: Partial<ClientNewBalanceTracking>
+  ) => ClientBalanceTracking | null
   deleteBalanceEntry: (id: number) => boolean
   setFilter: (filter: BalanceTrackingFilter) => void
   clearFilter: () => void
@@ -91,7 +94,10 @@ export const useBalanceStore = create<BalanceState>()(
       },
 
       // Update an existing balance entry
-      updateBalanceEntry: (id: number, data: Partial<ClientNewBalanceTracking>): ClientBalanceTracking | null => {
+      updateBalanceEntry: (
+        id: number,
+        data: Partial<ClientNewBalanceTracking>
+      ): ClientBalanceTracking | null => {
         // Validate input
         const errors = validateBalanceTracking(data)
         if (errors.length > 0) {
@@ -118,7 +124,7 @@ export const useBalanceStore = create<BalanceState>()(
         }
 
         // Update state
-        set((state) => ({
+        set((_state) => ({
           entries: sortByCreationDate(updatedEntries),
         }))
 
@@ -212,8 +218,7 @@ export const useInvestmentEntries = (): BalanceTrackingWithTimeline[] =>
 /**
  * Get debt entries
  */
-export const useDebtEntries = (): BalanceTrackingWithTimeline[] =>
-  useBalanceEntriesByType('debt')
+export const useDebtEntries = (): BalanceTrackingWithTimeline[] => useBalanceEntriesByType('debt')
 
 /**
  * Get total investment balance
@@ -255,8 +260,7 @@ export const useBalanceFilter = (): BalanceTrackingFilter =>
 /**
  * Get entry count
  */
-export const useBalanceEntryCount = (): number =>
-  useBalanceStore((state) => state.entries.length)
+export const useBalanceEntryCount = (): number => useBalanceStore((state) => state.entries.length)
 
 // ============================================================================
 // Action Hooks

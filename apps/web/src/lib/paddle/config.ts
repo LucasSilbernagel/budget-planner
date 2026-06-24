@@ -1,6 +1,6 @@
 /**
  * Paddle Configuration
- * 
+ *
  * Centralized configuration for Paddle integration.
  * Handles environment-specific settings and client initialization.
  */
@@ -24,7 +24,7 @@ export const PADDLE_OAUTH_BASE_URLS = {
  */
 export function getPaddleEnvironment() {
   const paddleConfig = getPaddleConfig()
-  
+
   return {
     environment: paddleConfig.environment,
     isSandbox: paddleConfig.environment === 'sandbox',
@@ -43,18 +43,19 @@ export function getPaddleEnvironment() {
  */
 export function getPaddleOAuthConfig() {
   const { environment, vendorId, publicKey, isConfigured } = getPaddleEnvironment()
-  
+
   if (!isConfigured) {
     console.warn('Paddle configuration is not complete. Some features may not work.')
   }
-  
+
   return {
     vendorId: vendorId || '',
     publicKey: publicKey || '',
     environment,
     // OAuth settings
     // Paddle redirects back to this URL after authentication
-    redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/api/auth/paddle/callback` : '',
+    redirectUri:
+      typeof window !== 'undefined' ? `${window.location.origin}/api/auth/paddle/callback` : '',
   }
 }
 

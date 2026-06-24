@@ -1,9 +1,9 @@
 /**
  * Offline Detection and Queueing Module
- * 
+ *
  * Handles offline/online detection, queue persistence, and automatic
  * queue processing when connectivity is restored.
- * 
+ *
  * Key Features:
  * - Browser online/offline event detection
  * - Queue persistence in localStorage/IndexedDB
@@ -11,8 +11,8 @@
  * - User notifications for sync status changes
  */
 
-import type { SyncOperation, SyncQueueStorage, ProcessOperationFn } from './types'
-import { SyncQueue, LocalStorageSyncQueueStorage } from './queue'
+import { LocalStorageSyncQueueStorage, SyncQueue } from './queue'
+import type { ProcessOperationFn, SyncOperation, SyncQueueStorage } from './types'
 
 // ============================================================================
 // Types
@@ -42,25 +42,25 @@ export type SyncNotificationCallback = (
 export interface OfflineQueueConfig {
   /** Storage implementation to use */
   storage?: SyncQueueStorage
-  
+
   /** Maximum retry attempts for failed syncs */
   maxRetries?: number
-  
+
   /** Base delay between retries in milliseconds */
   baseRetryDelay?: number
-  
+
   /** Maximum delay between retries in milliseconds */
   maxRetryDelay?: number
-  
+
   /** Whether to use exponential backoff */
   useExponentialBackoff?: boolean
-  
+
   /** Whether to show user notifications */
   showNotifications?: boolean
-  
+
   /** Whether to enable debug logging */
   debug?: boolean
-  
+
   /** Custom function to process sync operations (e.g., make API calls to server) */
   processOperation?: ProcessOperationFn
 }
@@ -144,16 +144,18 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
         }
       }
     })
-    
+
     // Await the promise to ensure it's initialized
-    await this.dbPromise?.catch(() => { /* Ignore errors, will be handled by methods */ })
+    await this.dbPromise?.catch(() => {
+      /* Ignore errors, will be handled by methods */
+    })
   }
 
   async loadQueue(userId: string): Promise<SyncOperation[]> {
     try {
       // Ensure initialization is complete
       await this.initPromise
-      
+
       if (!this.dbPromise) {
         // IndexedDB not available, try localStorage
         const storage = new LocalStorageSyncQueueStorage()
@@ -161,7 +163,7 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
       }
 
       const db = await this.dbPromise
-      
+
       return new Promise((resolve, reject) => {
         const transaction = db.transaction(this.storeName, 'readonly')
         const store = transaction.objectStore(this.storeName)
@@ -194,7 +196,7 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
     try {
       // Ensure initialization is complete
       await this.initPromise
-      
+
       if (!this.dbPromise) {
         // IndexedDB not available, try localStorage
         const storage = new LocalStorageSyncQueueStorage()
@@ -203,7 +205,7 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
       }
 
       const db = await this.dbPromise
-      
+
       await new Promise<void>((resolve, reject) => {
         const transaction = db.transaction(this.storeName, 'readwrite')
         const store = transaction.objectStore(this.storeName)
@@ -247,7 +249,7 @@ export class IndexedDBSyncQueueStorageImpl implements SyncQueueStorage {
       }
 
       const db = await this.dbPromise
-      
+
       await new Promise<void>((resolve, reject) => {
         const transaction = db.transaction(this.storeName, 'readwrite')
         const store = transaction.objectStore(this.storeName)
@@ -287,18 +289,18 @@ export class OfflineQueueManager {
   private queue: SyncQueue
   private config: RequiredOfflineQueueConfig & { processOperation?: ProcessOperationFn }
   private isOffline: boolean
-  private retryCount: number = 0
-  private processing: boolean = false
+  private retryCount = 0
+  private processing = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
-  
+
   private statusCallbacks: Set<OfflineStatusCallback> = new Set()
   private processingCallbacks: Set<QueueProcessingCallback> = new Set()
   private notificationCallbacks: Set<SyncNotificationCallback> = new Set()
-  
+
   // Store bound event handlers to enable proper cleanup
   private boundHandleOnline: (() => void) | null = null
   private boundHandleOffline: (() => void) | null = null
-  
+
   // Custom operation processor
   private processOperationFn: ProcessOperationFn | null = null
 
@@ -312,12 +314,12 @@ export class OfflineQueueManager {
     if (typeof navigator === 'undefined') {
       return false
     }
-    
+
     // First check navigator.onLine
     if (!navigator.onLine) {
       return false
     }
-    
+
     // For now, rely on navigator.onLine
     // This is consistent with SynchronizationService which removed the fetch-based check
     // for security reasons (prevents endpoint enumeration)
@@ -330,11 +332,7 @@ export class OfflineQueueManager {
    * @param config - Configuration options
    * @param externalQueue - Optional external SyncQueue instance to use (for coordination with SynchronizationService)
    */
-  constructor(
-    userId: string,
-    config: OfflineQueueConfig = {},
-    externalQueue?: SyncQueue
-  ) {
+  constructor(userId: string, config: OfflineQueueConfig = {}, externalQueue?: SyncQueue) {
     this.config = { ...DEFAULT_CONFIG, ...config }
     // FIX: Use checkRealConnectivity for consistency with SynchronizationService
     this.isOffline = !this.checkRealConnectivity()
@@ -357,10 +355,10 @@ export class OfflineQueueManager {
       // Bind handlers once and store for proper cleanup
       this.boundHandleOnline = this.handleOnline.bind(this)
       this.boundHandleOffline = this.handleOffline.bind(this)
-      
+
       window.addEventListener('online', this.boundHandleOnline)
       window.addEventListener('offline', this.boundHandleOffline)
-      
+
       // Check initial online status using real connectivity check
       this.isOffline = !this.checkRealConnectivity()
     }
@@ -402,17 +400,17 @@ export class OfflineQueueManager {
     // FIX: Use checkRealConnectivity to verify actual connectivity (consistent with SynchronizationService)
     // This prevents false positives from navigator.onLine (e.g., captive portals)
     const isReallyOnline = this.checkRealConnectivity()
-    
+
     if (!isReallyOnline) {
       this.log('Device reports online but connectivity check failed')
       return
     }
-    
+
     this.isOffline = false
     this.log('Device is now online')
     this.notifyStatusCallbacks()
     this.notify('Device is online. Processing queued changes...', 'success')
-    
+
     // Process queued operations
     this.processQueue().catch((error) => {
       this.log('Queue processing error:', error)
@@ -437,7 +435,7 @@ export class OfflineQueueManager {
     if (this.isOffline || this.processing) {
       return
     }
-    
+
     // Set processing flag BEFORE any async operations to prevent TOCTOU
     this.processing = true
     // Note: retryCount is NOT reset here - it's managed by scheduleRetry
@@ -453,7 +451,7 @@ export class OfflineQueueManager {
     try {
       // Get operations to process
       const operations = this.queue.getReadyOperations()
-      
+
       if (operations.length === 0) {
         this.log('No operations to process')
         return
@@ -471,7 +469,7 @@ export class OfflineQueueManager {
         try {
           // Process the operation
           await this.processSyncOperation(operation)
-          
+
           // Remove from queue on success
           await this.queue.remove(operation.id)
           successCount++
@@ -502,7 +500,7 @@ export class OfflineQueueManager {
   /**
    * Process a sync operation by calling the configured processOperation function
    * or falling back to a default implementation.
-   * 
+   *
    * @param operation - The sync operation to process
    * @returns Promise resolving when the operation is processed
    */
@@ -510,17 +508,17 @@ export class OfflineQueueManager {
     // Use custom processOperation function if provided
     if (this.processOperationFn) {
       const result = await this.processOperationFn(operation)
-      
+
       // If the operation failed and we should retry, throw an error
       // The queue manager will handle retries
       if (!result.success && !result.conflict) {
         throw new Error(result.error || 'Operation processing failed')
       }
-      
+
       // If there was a conflict, we still consider it processed (conflict will be handled separately)
       return
     }
-    
+
     // Default implementation: simulate network delay
     // This is useful for testing or when no real processing is configured
     // In production, a custom processOperation should be provided
@@ -533,7 +531,7 @@ export class OfflineQueueManager {
   private scheduleRetry(): void {
     // Increment retry count first, then check
     this.retryCount++
-    
+
     if (this.retryCount > this.config.maxRetries) {
       this.retryCount = this.config.maxRetries // Cap at max
       this.log('Max retries reached')
@@ -542,9 +540,9 @@ export class OfflineQueueManager {
     }
 
     const delay = this.calculateRetryDelay()
-    
+
     this.log(`Scheduling retry ${this.retryCount} in ${delay}ms`)
-    
+
     if (this.retryTimeout) {
       clearTimeout(this.retryTimeout)
     }
@@ -565,10 +563,10 @@ export class OfflineQueueManager {
     }
 
     // Exponential backoff with jitter
-    const exponentialDelay = this.config.baseRetryDelay * Math.pow(2, this.retryCount - 1)
+    const exponentialDelay = this.config.baseRetryDelay * 2 ** (this.retryCount - 1)
     const jitter = exponentialDelay * 0.2 * Math.random() // 20% jitter
     const delay = exponentialDelay + jitter
-    
+
     // Cap at maximum delay
     return Math.min(delay, this.config.maxRetryDelay)
   }
@@ -606,7 +604,7 @@ export class OfflineQueueManager {
    */
   async queueOperation(operation: SyncOperation): Promise<void> {
     await this.queue.add(operation)
-    
+
     // If online, process immediately
     if (!this.isOffline && !this.processing) {
       this.processQueue().catch((error) => {
@@ -620,13 +618,15 @@ export class OfflineQueueManager {
   /**
    * Add a callback for offline/online status changes
    * @returns Unsubscribe function to remove the callback
-   * 
+   *
    * FIX: Added memory leak protection - warns if too many callbacks accumulate
    * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onStatusChange(callback: OfflineStatusCallback): () => void {
     if (this.statusCallbacks.size >= MAX_CALLBACKS) {
-      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
     }
     this.statusCallbacks.add(callback)
     return () => this.statusCallbacks.delete(callback)
@@ -635,13 +635,15 @@ export class OfflineQueueManager {
   /**
    * Add a callback for queue processing status changes
    * @returns Unsubscribe function to remove the callback
-   * 
+   *
    * FIX: Added memory leak protection - warns if too many callbacks accumulate
    * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onProcessingChange(callback: QueueProcessingCallback): () => void {
     if (this.processingCallbacks.size >= MAX_CALLBACKS) {
-      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
     }
     this.processingCallbacks.add(callback)
     return () => this.processingCallbacks.delete(callback)
@@ -650,13 +652,15 @@ export class OfflineQueueManager {
   /**
    * Add a callback for sync notifications
    * @returns Unsubscribe function to remove the callback
-   * 
+   *
    * FIX: Added memory leak protection - warns if too many callbacks accumulate
    * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onNotification(callback: SyncNotificationCallback): () => void {
     if (this.notificationCallbacks.size >= MAX_CALLBACKS) {
-      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
     }
     this.notificationCallbacks.add(callback)
     return () => this.notificationCallbacks.delete(callback)

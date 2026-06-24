@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  calculateProgress,
-  formatPercentage,
-  calculateRemaining,
   calculateMonthlySavingsNeeded,
-  getProgressStatus,
+  calculateProgress,
+  calculateRemaining,
+  formatPercentage,
   getProgressInfo,
+  getProgressStatus,
 } from '../savingsGoalCalculations'
 
 describe('savingsGoalCalculations', () => {

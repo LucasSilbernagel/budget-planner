@@ -1,14 +1,14 @@
 /**
  * usePremiumAccess Hook
- * 
+ *
  * React hook for checking premium feature access.
  * Provides subscription status and access control for premium features.
- * 
+ *
  * Architecture: React Hook with TanStack Start Server Functions
  * Data Sovereignty: All checks performed server-side, data in DanubeData (Germany - EU)
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { UserSession } from '../server/api/auth/paddle'
 
 // ============================================================================
@@ -57,13 +57,13 @@ const defaultStatus: PremiumAccessStatus = {
 
 /**
  * Custom hook for checking premium feature access
- * 
+ *
  * @returns Premium access status and check function
- * 
+ *
  * @example
  * ```tsx
  * const { hasAccess, subscriptionStatus, isLoading, checkAccess } = usePremiumAccess()
- * 
+ *
  * if (isLoading) return <LoadingSpinner />
  * if (!hasAccess) return <UpgradePrompt />
  * return <PremiumFeature />
@@ -85,12 +85,12 @@ export function usePremiumAccess(): {
 
       // Import server function dynamically to avoid circular dependencies
       const { checkPremiumAccessServer } = await import('../server/api/data/forecasting')
-      
+
       // Create request object for server function
       // In browser environment, use document.cookie; in SSR, this will be undefined
       // and the server function will handle authentication from context
       const request = getRequestContext()
-      
+
       const result = await checkPremiumAccessServer(request)
 
       if (result.success && result.data) {
@@ -109,23 +109,22 @@ export function usePremiumAccess(): {
           subscriptionStatus: result.data.subscriptionStatus,
           isAuthenticated: true,
         }
-      } else {
-        // Fallback for when server check fails - assume no access
-        // Log the error for debugging
-        console.error('Premium access check failed:', result.error)
-        const fallbackStatus: PremiumAccessStatus = {
-          hasAccess: false,
-          subscriptionStatus: 'free',
-          isLoading: false,
-          error: result.error || 'Failed to check premium access',
-          isAuthenticated: false,
-        }
-        setStatus(fallbackStatus)
-        return {
-          hasAccess: false,
-          subscriptionStatus: 'free',
-          isAuthenticated: false,
-        }
+      }
+      // Fallback for when server check fails - assume no access
+      // Log the error for debugging
+      console.error('Premium access check failed:', result.error)
+      const fallbackStatus: PremiumAccessStatus = {
+        hasAccess: false,
+        subscriptionStatus: 'free',
+        isLoading: false,
+        error: result.error || 'Failed to check premium access',
+        isAuthenticated: false,
+      }
+      setStatus(fallbackStatus)
+      return {
+        hasAccess: false,
+        subscriptionStatus: 'free',
+        isAuthenticated: false,
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to check premium access'
@@ -174,11 +173,11 @@ function getRequestContext(): Request {
   // For client-side calls, we need to pass a Request with cookies
   // Check for document to avoid SSR errors
   const headers: Record<string, string> = {}
-  
+
   if (typeof document !== 'undefined') {
     headers.cookie = document.cookie
   }
-  
+
   // @ts-expect-error - Creating Request with headers
   return new Request('http://localhost:5173', {
     headers,
@@ -192,7 +191,7 @@ function getRequestContext(): Request {
 /**
  * Hook for protecting premium routes
  * Returns whether user can access the route and loading state
- * 
+ *
  * @returns Object with access status and loading state
  */
 export function usePremiumRouteAccess(): {
@@ -218,7 +217,7 @@ export function usePremiumRouteAccess(): {
 /**
  * Server-side function to check premium access from request
  * Used in loaders and server functions
- * 
+ *
  * @param request - Incoming request
  * @returns Promise resolving to access check result
  */

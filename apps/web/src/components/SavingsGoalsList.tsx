@@ -1,6 +1,9 @@
+import type {
+  ClientSavingsGoal,
+  SavingsGoalWithProgress,
+} from '@budget-planner/core/services/savingsGoals'
 import React from 'react'
 import SavingsGoalCard from './SavingsGoalCard'
-import type { ClientSavingsGoal, SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 
 /**
  * Props for SavingsGoalsList component
@@ -16,12 +19,12 @@ export interface SavingsGoalsListProps {
 
 /**
  * SavingsGoalsList component
- * 
+ *
  * Displays a list of savings goals using SavingsGoalCard components.
  * Supports empty state, loading state, and free/paid tier indicators.
- * 
+ *
  * AC 2: When viewing the savings goals list, all goals are displayed sorted by creation date (newest first)
- * 
+ *
  * @param props - Component props
  * @param props.goals - Array of savings goals to display
  * @param props.onEdit - Callback when edit button is clicked
@@ -79,9 +82,7 @@ export function SavingsGoalsList({
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           No Savings Goals
         </h3>
-        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-          {emptyMessage}
-        </p>
+        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">{emptyMessage}</p>
         {isFreeTier && (
           <p className="text-xs text-gray-500 dark:text-gray-500 mt-4">
             Savings goals will be stored in your browser's local storage.

@@ -1,9 +1,14 @@
+// `sql` is exported from the drizzle-orm package root (NOT pg-core) in
+// drizzle-orm 0.30.x; importing it from pg-core yields undefined and throws
+// "sql is not a function" when drizzle() walks the schema's CHECK constraints.
+import { sql } from 'drizzle-orm'
 import {
   boolean,
+  check,
+  index,
   integer,
   pgEnum,
   pgTable,
-  index,
   serial,
   text,
   timestamp,
@@ -11,14 +16,10 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
-// `sql` is exported from the drizzle-orm package root (NOT pg-core) in
-// drizzle-orm 0.30.x; importing it from pg-core yields undefined and throws
-// "sql is not a function" when drizzle() walks the schema's CHECK constraints.
-import { sql } from 'drizzle-orm'
 
 // Type imports for Drizzle
 // Note: Using InferSelectModel and InferInsertModel (InferModel is deprecated)
-import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
+import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
 // VALIDATION STRATEGY:
 // - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
@@ -31,19 +32,11 @@ import type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
 
 // Frequency enum for income and expense recurrence
 // Values use snake_case as per architecture: weekly, biweekly, monthly, annually
-export const frequencyEnum = pgEnum('frequency', [
-  'weekly',
-  'biweekly',
-  'monthly',
-  'annually',
-])
+export const frequencyEnum = pgEnum('frequency', ['weekly', 'biweekly', 'monthly', 'annually'])
 
 // Finance type enum for balance tracking
 // Values use snake_case as per architecture
-export const financeTypeEnum = pgEnum('financeType', [
-  'investment',
-  'debt',
-])
+export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt'])
 
 // Subscription status enum for user accounts
 // Values use snake_case as per architecture
@@ -80,169 +73,225 @@ export const currencyEnum = pgEnum('currency', [
 ])
 
 // Users table - referenced by incomeSources, expenses, savingsGoals, and balanceTracking
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
-  paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID
-  subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
-  currency: currencyEnum('currency').default('NONE'),
-  isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  // CHECK constraints: Prevent empty strings for required fields
-  sql`CHECK (${table.email} <> '')`,
-  sql`CHECK (${table.paddleId} <> '')`,
-])
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
+    paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID
+    subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
+    currency: currencyEnum('currency').default('NONE'),
+    isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    // CHECK constraints: Prevent empty strings for required fields
+    emailNotEmpty: check('users_email_not_empty', sql`${table.email} <> ''`),
+    paddleIdNotEmpty: check('users_paddleId_not_empty', sql`${table.paddleId} <> ''`),
+  })
+)
 
 // Income Sources table - camelCase name per architecture
-export const incomeSources = pgTable('incomeSources', {
-  id: serial('id').primaryKey(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  profileId: uuid('profileId')
-    .references(() => userProfiles.id)
-    .notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
-  frequency: frequencyEnum('frequency').notNull(),
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('incomeSources_userId_profileId_idx').on(table.userId, table.profileId),
-  // CHECK constraint: amount must be positive (> 0)
-  sql`CHECK (${table.amount} > 0)`,
-])
+export const incomeSources = pgTable(
+  'incomeSources',
+  {
+    id: serial('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    profileId: uuid('profileId')
+      .references(() => userProfiles.id)
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
+    frequency: frequencyEnum('frequency').notNull(),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdProfileIdIdx: index('incomeSources_userId_profileId_idx').on(
+      table.userId,
+      table.profileId
+    ),
+    // CHECK constraint: amount must be positive (> 0)
+    amountPositive: check('incomeSources_amount_positive', sql`${table.amount} > 0`),
+  })
+)
 
 // Expenses table - camelCase name per architecture
-export const expenses = pgTable('expenses', {
-  id: serial('id').primaryKey(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  profileId: uuid('profileId')
-    .references(() => userProfiles.id)
-    .notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
-  frequency: frequencyEnum('frequency').notNull(),
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('expenses_userId_profileId_idx').on(table.userId, table.profileId),
-  // CHECK constraint: amount must be positive (> 0)
-  sql`CHECK (${table.amount} > 0)`,
-])
+export const expenses = pgTable(
+  'expenses',
+  {
+    id: serial('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    profileId: uuid('profileId')
+      .references(() => userProfiles.id)
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
+    frequency: frequencyEnum('frequency').notNull(),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdProfileIdIdx: index('expenses_userId_profileId_idx').on(table.userId, table.profileId),
+    // CHECK constraint: amount must be positive (> 0)
+    amountPositive: check('expenses_amount_positive', sql`${table.amount} > 0`),
+  })
+)
 
 // Savings Goals table - camelCase name per architecture
-export const savingsGoals = pgTable('savingsGoals', {
-  id: serial('id').primaryKey(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  profileId: uuid('profileId')
-    .references(() => userProfiles.id)
-    .notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  targetAmount: integer('targetAmount').notNull(), // Target amount in cents (> 0 required)
-  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('savingsGoals_userId_profileId_idx').on(table.userId, table.profileId),
-  // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
-  sql`CHECK (${table.targetAmount} > 0)`,
-  sql`CHECK (${table.currentBalance} >= 0)`,
-])
+export const savingsGoals = pgTable(
+  'savingsGoals',
+  {
+    id: serial('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    profileId: uuid('profileId')
+      .references(() => userProfiles.id)
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    targetAmount: integer('targetAmount').notNull(), // Target amount in cents (> 0 required)
+    currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdProfileIdIdx: index('savingsGoals_userId_profileId_idx').on(
+      table.userId,
+      table.profileId
+    ),
+    // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
+    targetAmountPositive: check(
+      'savingsGoals_targetAmount_positive',
+      sql`${table.targetAmount} > 0`
+    ),
+    currentBalanceNonNegative: check(
+      'savingsGoals_currentBalance_non_negative',
+      sql`${table.currentBalance} >= 0`
+    ),
+  })
+)
 
 // Balance Tracking table - camelCase name per architecture
-export const balanceTracking = pgTable('balanceTracking', {
-  id: serial('id').primaryKey(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  profileId: uuid('profileId')
-    .references(() => userProfiles.id)
-    .notNull(),
-  type: financeTypeEnum('type').notNull(), // investment or debt
-  name: varchar('name', { length: 255 }).notNull(),
-  currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
-  maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)
-  monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents (>= 0 required)
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('balanceTracking_userId_profileId_idx').on(table.userId, table.profileId),
-  // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
-  sql`CHECK (${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0)`,
-  sql`CHECK (${table.monthlyContribution} >= 0)`,
-])
+export const balanceTracking = pgTable(
+  'balanceTracking',
+  {
+    id: serial('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    profileId: uuid('profileId')
+      .references(() => userProfiles.id)
+      .notNull(),
+    type: financeTypeEnum('type').notNull(), // investment or debt
+    name: varchar('name', { length: 255 }).notNull(),
+    currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
+    maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)
+    monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents (>= 0 required)
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdProfileIdIdx: index('balanceTracking_userId_profileId_idx').on(
+      table.userId,
+      table.profileId
+    ),
+    // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
+    maxContributionLimitValid: check(
+      'balanceTracking_maxContributionLimit_valid',
+      sql`${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0`
+    ),
+    monthlyContributionNonNegative: check(
+      'balanceTracking_monthlyContribution_non_negative',
+      sql`${table.monthlyContribution} >= 0`
+    ),
+  })
+)
 
 // User Profiles table - camelCase name per architecture
 // Profiles allow users to organize their financial data for different purposes
 // Only available for paid tier users
-export const userProfiles = pgTable('userProfiles', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  isDefault: boolean('isDefault').default(false).notNull(),
-  currency: currencyEnum('currency').default('NONE'),
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('userProfiles_userId_idx').on(table.userId),
-])
+export const userProfiles = pgTable(
+  'userProfiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    description: text('description'),
+    isDefault: boolean('isDefault').default(false).notNull(),
+    currency: currencyEnum('currency').default('NONE'),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('userProfiles_userId_idx').on(table.userId),
+  })
+)
 
 // Rate Limit table - for server-side rate limiting
 // Stores request counts per user for rate limiting purposes
-export const rateLimits = pgTable('rateLimits', {
-  id: serial('id').primaryKey(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  requestCount: integer('requestCount').default(0).notNull(),
-  windowStart: timestamp('windowStart').defaultNow().notNull(),
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('rateLimits_userId_idx').on(table.userId),
-])
+export const rateLimits = pgTable(
+  'rateLimits',
+  {
+    id: serial('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    requestCount: integer('requestCount').default(0).notNull(),
+    windowStart: timestamp('windowStart').defaultNow().notNull(),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('rateLimits_userId_idx').on(table.userId),
+  })
+)
 
 // Forecasting Profiles table - for saving premium forecasting scenarios
 // Only available for paid tier users
 // Allows users to save, load, and manage their forecasting scenarios
-export const forecastingProfiles = pgTable('forecastingProfiles', {
-  id: serial('id').primaryKey(),
-  userId: uuid('userId')
-    .references(() => users.id)
-    .notNull(),
-  profileId: uuid('profileId')
-    .references(() => userProfiles.id)
-    .notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  // Serialized forecasting scenario data
-  scenarioData: text('scenarioData').notNull(), // JSON string
-  // Version for schema evolution
-  version: integer('version').default(1).notNull(),
-  isDefault: boolean('isDefault').default(false).notNull(),
-  createdAt: timestamp('createdAt').defaultNow().notNull(),
-  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
-}, (table) => [
-  index('forecastingProfiles_userId_idx').on(table.userId),
-  index('forecastingProfiles_profileId_idx').on(table.profileId),
-  index('forecastingProfiles_userId_profileId_idx').on(table.userId, table.profileId),
-  // Prevent duplicate forecast names within the same user/profile (P6)
-  unique('forecastingProfiles_userId_profileId_name_unique').on(
-    table.userId,
-    table.profileId,
-    table.name,
-  ),
-])
+export const forecastingProfiles = pgTable(
+  'forecastingProfiles',
+  {
+    id: serial('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    profileId: uuid('profileId')
+      .references(() => userProfiles.id)
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    description: text('description'),
+    // Serialized forecasting scenario data
+    scenarioData: text('scenarioData').notNull(), // JSON string
+    // Version for schema evolution
+    version: integer('version').default(1).notNull(),
+    isDefault: boolean('isDefault').default(false).notNull(),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('forecastingProfiles_userId_idx').on(table.userId),
+    profileIdIdx: index('forecastingProfiles_profileId_idx').on(table.profileId),
+    userIdProfileIdIdx: index('forecastingProfiles_userId_profileId_idx').on(
+      table.userId,
+      table.profileId
+    ),
+    // Prevent duplicate forecast names within the same user/profile (P6)
+    userIdProfileIdNameUnique: unique('forecastingProfiles_userId_profileId_name_unique').on(
+      table.userId,
+      table.profileId,
+      table.name
+    ),
+  })
+)
 
 // Type exports for TypeScript type safety
 // Note: Using InferSelectModel instead of deprecated InferModel

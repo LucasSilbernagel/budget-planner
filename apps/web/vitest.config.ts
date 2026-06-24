@@ -1,7 +1,7 @@
-import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
-import { resolve, dirname } from 'path'
+import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vitest/config'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -61,6 +61,9 @@ export default defineConfig({
     env: {
       DATABASE_URL: 'postgres://test:test@localhost:5432/budget_planner_test',
       NODE_ENV: 'test',
+      // Deterministic 32+ char key so signed-session signing/verification works
+      // in unit tests (Story 5-7). Never used outside the test runner.
+      SESSION_SECRET: 'test-session-secret-0123456789abcdef-fixed',
     },
     coverage: {
       provider: 'v8',

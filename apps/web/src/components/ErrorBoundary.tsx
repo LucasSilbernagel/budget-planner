@@ -24,25 +24,25 @@ interface ErrorBoundaryState {
 function sanitizeErrorMessage(error: Error): string {
   // List of sensitive patterns to remove
   const sensitivePatterns = [
-    /at \w+ \(/g,  // "at functionName ("
-    /\.tsx:\d+:\d+/g,  // file locations
+    /at \w+ \(/g, // "at functionName ("
+    /\.tsx:\d+:\d+/g, // file locations
     /\.ts:\d+:\d+/g,
     /\.jsx:\d+:\d+/g,
     /\.js:\d+:\d+/g,
   ]
-  
+
   let message = error.message
-  
+
   // Remove sensitive information
-  sensitivePatterns.forEach(pattern => {
+  sensitivePatterns.forEach((pattern) => {
     message = message.replace(pattern, '')
   })
-  
+
   // If message is now empty or too generic, use a standard message
   if (!message || message.length < 10) {
     return 'An unexpected error occurred'
   }
-  
+
   return message
 }
 
@@ -65,14 +65,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     // Store sanitized message, not raw error
     return {
       hasError: true,
-      errorMessage: sanitizeErrorMessage(error)
+      errorMessage: sanitizeErrorMessage(error),
     }
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     // Log the full error to error reporting service (server-side)
     console.error('ErrorBoundary caught an error:', error, errorInfo)
-    
+
     // Call optional error handler with sanitized message
     this.props.onError?.(error, errorInfo)
   }
@@ -83,12 +83,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       if (this.props.fallback) {
         return this.props.fallback
       }
-      
+
       return (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700" role="alert">
           <h3 className="font-semibold mb-2">Something went wrong</h3>
           <p className="text-sm">
-            An error occurred while rendering this component. Please try again or contact support if the problem persists.
+            An error occurred while rendering this component. Please try again or contact support if
+            the problem persists.
           </p>
           {this.state.errorMessage && (
             <details className="mt-2 text-xs">

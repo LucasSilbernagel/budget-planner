@@ -1,14 +1,11 @@
 /**
  * Sync Queue Module
- * 
+ *
  * Manages the offline-first queue for synchronization operations.
  * Operations are queued when offline and processed when back online.
  */
 
-import type {
-  SyncOperation,
-  SyncQueueStorage,
-} from './types'
+import type { SyncOperation, SyncQueueStorage } from './types'
 
 /**
  * Maximum number of operations allowed in the queue
@@ -46,7 +43,9 @@ class LocalStorageSyncQueueStorage implements SyncQueueStorage {
       // DO NOT silently fail - this violates NFR: Zero tolerance for data loss
       // Throw the error so the caller can handle it appropriately
       throw new Error(
-        `Failed to save sync queue to localStorage for user ${userId}: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to save sync queue to localStorage for user ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       )
     }
   }
@@ -57,10 +56,7 @@ class LocalStorageSyncQueueStorage implements SyncQueueStorage {
       localStorage.removeItem(key)
     } catch (error) {
       // Log error but don't throw - clearing is less critical than saving
-      console.error(
-        `Failed to clear sync queue from localStorage for user ${userId}:`,
-        error
-      )
+      console.error(`Failed to clear sync queue from localStorage for user ${userId}:`, error)
     }
   }
 }
@@ -78,10 +74,7 @@ export class SyncQueue {
    * @param userId - The user ID for this queue
    * @param storage - Optional persistent storage for the queue
    */
-  constructor(
-    userId: string,
-    storage?: SyncQueueStorage
-  ) {
+  constructor(userId: string, storage?: SyncQueueStorage) {
     this.userId = userId
     this.storage = storage ?? new LocalStorageSyncQueueStorage()
   }
@@ -101,8 +94,7 @@ export class SyncQueue {
     // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
     if (this.queue.length >= MAX_QUEUE_SIZE) {
       throw new Error(
-        `Queue size limit (${MAX_QUEUE_SIZE}) exceeded. ` +
-        'Please sync existing operations before adding more.'
+        `Queue size limit (${MAX_QUEUE_SIZE}) exceeded. Please sync existing operations before adding more.`
       )
     }
 
@@ -122,9 +114,7 @@ export class SyncQueue {
     // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
     if (this.queue.length + operations.length > MAX_QUEUE_SIZE) {
       throw new Error(
-        `Queue size limit (${MAX_QUEUE_SIZE}) would be exceeded. ` +
-        `Current: ${this.queue.length}, Adding: ${operations.length}. ` +
-        'Please sync existing operations before adding more.'
+        `Queue size limit (${MAX_QUEUE_SIZE}) would be exceeded. Current: ${this.queue.length}, Adding: ${operations.length}. Please sync existing operations before adding more.`
       )
     }
 
@@ -200,10 +190,7 @@ export class SyncQueue {
    * @param entityType - The entity type
    * @param entityId - The entity ID
    */
-  async removeByEntity(
-    entityType: string,
-    entityId: string | number
-  ): Promise<number> {
+  async removeByEntity(entityType: string, entityId: string | number): Promise<number> {
     const normalizedEntityId = String(entityId)
     const filtered = this.queue.filter(
       (op) => !(op.entityType === entityType && op.entityId === normalizedEntityId)
@@ -298,10 +285,7 @@ export class SyncQueue {
    * @param entityType - The entity type
    * @param entityId - The entity ID
    */
-  hasPendingOperations(
-    entityType: string,
-    entityId: string | number
-  ): boolean {
+  hasPendingOperations(entityType: string, entityId: string | number): boolean {
     const normalizedEntityId = String(entityId)
     return this.queue.some(
       (op) => op.entityType === entityType && op.entityId === normalizedEntityId
@@ -313,9 +297,7 @@ export class SyncQueue {
  * Create a sync queue with localStorage persistence
  * @param userId - The user ID for this queue
  */
-export function createSyncQueue(
-  userId: string
-): SyncQueue {
+export function createSyncQueue(userId: string): SyncQueue {
   return new SyncQueue(userId, undefined)
 }
 

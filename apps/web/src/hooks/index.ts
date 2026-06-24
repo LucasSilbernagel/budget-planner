@@ -1,6 +1,6 @@
 /**
  * Custom React Hooks
- * 
+ *
  * Collection of custom hooks for the Budget Planner application.
  * Organized by feature domain.
  */

@@ -1,9 +1,9 @@
 /**
  * Synchronization Service
- * 
+ *
  * Core synchronization service for multi-device data synchronization in the paid tier.
  * Implements offline-first strategy with conflict resolution.
- * 
+ *
  * Key Features:
  * - Automatic sync when online
  * - Queue persistence for offline changes
@@ -12,20 +12,20 @@
  * - Retry logic for failed operations
  */
 
-import { SyncQueue, createSyncQueue, LocalStorageSyncQueueStorage } from './queue'
+import { LocalStorageSyncQueueStorage, SyncQueue, createSyncQueue } from './queue'
 import type {
-  SyncOperation,
-  SyncOperationType,
-  SyncEntityType,
-  SyncState,
-  SyncConfig,
-  SyncResult,
-  SyncStatusCallback,
   ConflictCallback,
+  ConflictResolutionStrategy,
   ConflictResult,
   ConflictType,
-  ConflictResolutionStrategy,
   ProcessOperationResult,
+  SyncConfig,
+  SyncEntityType,
+  SyncOperation,
+  SyncOperationType,
+  SyncResult,
+  SyncState,
+  SyncStatusCallback,
 } from './types'
 import { SyncStatus } from './types'
 import { syncOperationDataSchema } from './types'
@@ -124,17 +124,17 @@ const cachedDeviceIds: Map<string, string> = new Map()
  * Generates a unique device ID for the current device and user
  * Uses localStorage to maintain consistency across page refreshes
  * Falls back to sessionStorage or in-memory cache if localStorage fails
- * 
+ *
  * FIX: Device IDs are now user-scoped to prevent cross-user data leakage
  * FIX: Added race condition handling - reads back after write to get canonical value
  * Storage key: bp-device-id-{userId}
  */
 function generateDeviceId(userId: string): string {
   const storageKey = `bp-device-id-${userId}`
-  
+
   try {
     let deviceId = localStorage.getItem(storageKey)
-    
+
     if (!deviceId) {
       // Generate a new device ID
       deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
@@ -151,13 +151,13 @@ function generateDeviceId(userId: string): string {
         deviceId = actualDeviceId
       }
     }
-    
+
     return deviceId
   } catch {
     // If localStorage is not available, try sessionStorage as fallback
     try {
       let deviceId = sessionStorage.getItem(storageKey)
-      
+
       if (!deviceId) {
         deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
         try {
@@ -171,7 +171,7 @@ function generateDeviceId(userId: string): string {
           deviceId = actualDeviceId
         }
       }
-      
+
       return deviceId
     } catch {
       // If both localStorage and sessionStorage fail, use in-memory cache
@@ -188,7 +188,7 @@ function generateDeviceId(userId: string): string {
 
 /**
  * Synchronization Service
- * 
+ *
  * Main service class for managing data synchronization between devices.
  * Implements offline-first strategy with automatic retry and conflict resolution.
  */
@@ -201,18 +201,18 @@ export class SynchronizationService {
   private statusCallbacks: Set<SyncStatusCallback> = new Set()
   private conflictCallbacks: Set<ConflictCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
-  private isProcessing: boolean = false
+  private isProcessing = false
   // Set when a sync trigger (e.g. coming back online) arrives while a sync is
   // already in progress, so we run one more pass after the current one finishes
   // instead of dropping the trigger.
-  private pendingResync: boolean = false
+  private pendingResync = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
-  
+
   // Circuit breaker state for retry logic
-  private circuitBroken: boolean = false
-  private circuitBrokenUntil: number = 0
-  private consecutiveFailures: number = 0
-  
+  private circuitBroken = false
+  private circuitBrokenUntil = 0
+  private consecutiveFailures = 0
+
   // Store bound event handlers to enable proper cleanup
   private boundHandleOnline: (() => void) | null = null
   private boundHandleOffline: (() => void) | null = null
@@ -228,26 +228,26 @@ export class SynchronizationService {
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
       throw new Error('Invalid userId: must be a non-empty string')
     }
-    
+
     // Validate configuration
     const mergedConfig = { ...DEFAULT_CONFIG, ...config }
-    
+
     if (mergedConfig.maxRetries < 0) {
       throw new Error('Invalid maxRetries: must be non-negative')
     }
-    
+
     if (mergedConfig.retryDelay < 0) {
       throw new Error('Invalid retryDelay: must be non-negative')
     }
-    
+
     if (mergedConfig.batchSize <= 0) {
       throw new Error('Invalid batchSize: must be positive')
     }
-    
+
     if (mergedConfig.autoSyncInterval < 0) {
       throw new Error('Invalid autoSyncInterval: must be non-negative')
     }
-    
+
     this.userId = userId
     this.deviceId = generateDeviceId(userId)
     this.config = mergedConfig
@@ -279,18 +279,18 @@ export class SynchronizationService {
     if (typeof navigator === 'undefined') {
       return false
     }
-    
+
     // First check navigator.onLine
     if (!navigator.onLine) {
       return false
     }
-    
+
     // SECURITY FIX: Removed unauthenticated /api/health endpoint check
     // This prevents endpoint enumeration and network reconnaissance
     // Trade-off: Captive portals may cause false negatives
     // Alternative: Use authenticated sync endpoint for connectivity check
     // For now, rely on navigator.onLine and handle failures gracefully
-    
+
     return true
   }
 
@@ -301,10 +301,10 @@ export class SynchronizationService {
   async initialize(): Promise<void> {
     // Load the queue from storage
     await this.queue.initialize()
-    
+
     // Update state with pending operations
     this.state.pendingOperations = this.queue.getAll()
-    
+
     // Set up online/offline event listeners if in browser
     if (typeof window !== 'undefined') {
       // Bind handlers once and store for proper cleanup
@@ -319,7 +319,7 @@ export class SynchronizationService {
       this.boundHandleOffline = () => {
         this.handleOffline()
       }
-      
+
       // Set up visibility change handler to pause sync in background tabs
       this.boundHandleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
@@ -334,11 +334,11 @@ export class SynchronizationService {
         // When tab is hidden/backgrounded, don't do anything special
         // The auto-sync timer will continue but we won't process in background
       }
-      
+
       window.addEventListener('online', this.boundHandleOnline)
       window.addEventListener('offline', this.boundHandleOffline)
       window.addEventListener('visibilitychange', this.boundHandleVisibilityChange)
-      
+
       // Check initial online status with real connectivity check
       this.state.isOnline = await this.checkRealConnectivity()
     }
@@ -385,7 +385,7 @@ export class SynchronizationService {
    */
   destroy(): void {
     this.stopAutoSync()
-    
+
     if (this.retryTimeout) {
       clearTimeout(this.retryTimeout)
       this.retryTimeout = null
@@ -417,12 +417,12 @@ export class SynchronizationService {
   private async handleOnline(): Promise<void> {
     // Verify real connectivity before marking as online
     const isReallyOnline = await this.checkRealConnectivity()
-    
+
     if (!isReallyOnline) {
       this.log('Device reports online but connectivity check failed')
       return
     }
-    
+
     this.state.isOnline = true
     this.log('Device is now online')
 
@@ -456,13 +456,15 @@ export class SynchronizationService {
    * Add a callback for sync status changes
    * @param callback - The callback function
    * @returns Unsubscribe function to remove the callback
-   * 
+   *
    * FIX: Added memory leak protection - warns if too many callbacks accumulate
    * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onStatusChange(callback: SyncStatusCallback): () => void {
     if (this.statusCallbacks.size >= MAX_CALLBACKS) {
-      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
     }
     this.statusCallbacks.add(callback)
     return () => this.statusCallbacks.delete(callback)
@@ -472,13 +474,15 @@ export class SynchronizationService {
    * Add a callback for conflict detection
    * @param callback - The callback function
    * @returns Unsubscribe function to remove the callback
-   * 
+   *
    * FIX: Added memory leak protection - warns if too many callbacks accumulate
    * Remember to call the returned function to unsubscribe and prevent memory leaks
    */
   onConflict(callback: ConflictCallback): () => void {
     if (this.conflictCallbacks.size >= MAX_CALLBACKS) {
-      this.log(`WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`)
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
     }
     this.conflictCallbacks.add(callback)
     return () => this.conflictCallbacks.delete(callback)
@@ -526,7 +530,9 @@ export class SynchronizationService {
   ): Promise<SyncOperation> {
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
-      throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
+      throw new Error(
+        `Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`
+      )
     }
 
     // Validate operation data payload against the sync operation schema
@@ -579,7 +585,9 @@ export class SynchronizationService {
   ): Promise<SyncOperation> {
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
-      throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
+      throw new Error(
+        `Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`
+      )
     }
 
     // Validate operation data payload against the sync operation schema
@@ -629,7 +637,9 @@ export class SynchronizationService {
   ): Promise<SyncOperation> {
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
-      throw new Error(`Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`)
+      throw new Error(
+        `Unauthorized: Operation userId mismatch. Expected: ${this.userId}, Got: ${userId}`
+      )
     }
 
     // For delete operations, data is typically empty; the permissive schema
@@ -676,12 +686,12 @@ export class SynchronizationService {
     if (localOp.entityType !== serverOp.entityType || localOp.entityId !== serverOp.entityId) {
       return { hasConflict: false }
     }
-    
+
     // Check if operations are from the same device - not a conflict
     if (localOp.deviceId === serverOp.deviceId) {
       return { hasConflict: false }
     }
-    
+
     // Check if operations have the same ID - not a conflict
     if (localOp.id === serverOp.id) {
       return { hasConflict: false }
@@ -718,8 +728,7 @@ export class SynchronizationService {
       if (stableStringify(localOp.data) !== stableStringify(serverOp.data)) {
         return {
           hasConflict: true,
-          conflictType:
-            localOp.type === 'create' ? 'create-create' : 'version-mismatch',
+          conflictType: localOp.type === 'create' ? 'create-create' : 'version-mismatch',
           localOperation: localOp,
           serverOperation: serverOp,
         }
@@ -730,7 +739,7 @@ export class SynchronizationService {
 
     // Different operation types on same entity - this is a conflict
     let conflictType: ConflictType
-    
+
     if (localOp.type === 'create' && serverOp.type === 'create') {
       conflictType = 'create-create'
     } else if (localOp.type === 'create' && serverOp.type === 'update') {
@@ -768,7 +777,7 @@ export class SynchronizationService {
    */
   resolveConflict(localOp: SyncOperation, serverOp: SyncOperation): SyncOperation {
     const conflictResult = this.detectConflict(localOp, serverOp)
-    
+
     if (!conflictResult.hasConflict) {
       // No conflict, return the local operation
       return localOp
@@ -778,11 +787,9 @@ export class SynchronizationService {
     switch (this.config.conflictResolutionStrategy) {
       case 'server-wins':
         return serverOp
-      
+
       case 'client-wins':
         return localOp
-      
-      case 'last-write-wins':
       default: {
         // Last write wins based on timestamp.
         // If timestamps are equal, use deviceId as deterministic tiebreaker.
@@ -801,7 +808,7 @@ export class SynchronizationService {
         this.notifyConflictCallbacks({ ...conflictResult, resolution: winner })
         return winner
       }
-      
+
       case 'manual':
         // For manual resolution, we mark the conflict and let the user decide
         // In this case, we'll store the conflict and notify callbacks
@@ -810,7 +817,7 @@ export class SynchronizationService {
         this.notifyStatusCallbacks()
         this.notifyConflictCallbacks(conflictResult)
         return localOp
-      
+
       case 'merge':
         // Attempt to merge changes based on operation types
         if (localOp.type === 'update' && serverOp.type === 'update') {
@@ -820,7 +827,7 @@ export class SynchronizationService {
             data: { ...serverOp.data, ...localOp.data },
           }
         }
-        
+
         // For create+create: merge the data from both
         if (localOp.type === 'create' && serverOp.type === 'create') {
           return {
@@ -828,27 +835,27 @@ export class SynchronizationService {
             data: { ...serverOp.data, ...localOp.data },
           }
         }
-        
+
         // For create+delete: prefer create (the entity exists)
         if (localOp.type === 'create' && serverOp.type === 'delete') {
           return localOp
         }
-        
+
         // For delete+create: prefer create (the entity exists)
         if (localOp.type === 'delete' && serverOp.type === 'create') {
           return serverOp
         }
-        
+
         // For update+delete: prefer update (keep the data)
         if (localOp.type === 'update' && serverOp.type === 'delete') {
           return localOp
         }
-        
+
         // For delete+update: prefer update (keep the data)
         if (localOp.type === 'delete' && serverOp.type === 'update') {
           return serverOp
         }
-        
+
         // Fall back to last-write-wins for any other combinations
         // If timestamps are equal, use deviceId as deterministic tiebreaker
         if (localOp.timestamp > serverOp.timestamp) {
@@ -865,7 +872,7 @@ export class SynchronizationService {
   /**
    * Sync all pending operations to the server
    * This is the main synchronization method
-   * 
+   *
    * Uses atomic check-and-set for isProcessing to prevent TOCTOU race conditions
    */
   async sync(): Promise<SyncResult> {
@@ -884,9 +891,9 @@ export class SynchronizationService {
         duration: 0,
       }
     }
-    
+
     this.isProcessing = true
-    
+
     if (!this.state.isOnline) {
       this.isProcessing = false
       return {
@@ -909,12 +916,12 @@ export class SynchronizationService {
     try {
       // Get operations to process (sorted by timestamp)
       const operations = this.queue.getReadyOperations(this.config.batchSize)
-      
+
       if (operations.length === 0) {
         this.state.status = SyncStatus.COMPLETED
         this.state.lastSyncTimestamp = Date.now()
         this.notifyStatusCallbacks()
-        
+
         return {
           success: true,
           synchronizedCount: 0,
@@ -982,7 +989,7 @@ export class SynchronizationService {
       // Remove all successfully processed operations from queue at once
       // Only count as synchronized AFTER successful removal
       if (successfullyProcessed.length > 0) {
-        const operationsToRemove = successfullyProcessed.map(op => op.id)
+        const operationsToRemove = successfullyProcessed.map((op) => op.id)
         try {
           await this.queue.removeBatch(operationsToRemove)
           // Only count as synchronized AFTER successful removal from queue
@@ -1005,7 +1012,7 @@ export class SynchronizationService {
       // would duplicate them).
       let requeuableFailedOps = failedOperations
       if (failedOperations.length > 0) {
-        const failedOperationIds = failedOperations.map(op => op.id)
+        const failedOperationIds = failedOperations.map((op) => op.id)
         try {
           await this.queue.removeBatch(failedOperationIds)
         } catch (removeError) {
@@ -1080,7 +1087,7 @@ export class SynchronizationService {
       this.state.lastError = error instanceof Error ? error.message : String(error)
       this.state.lastSyncTimestamp = Date.now()
       this.notifyStatusCallbacks()
-      
+
       return {
         success: false,
         synchronizedCount: 0,
@@ -1112,9 +1119,7 @@ export class SynchronizationService {
    * Otherwise, this returns success without actually processing (for testing/mocking).
    * @param operation - The sync operation to process
    */
-  private async processOperation(
-    operation: SyncOperation
-  ): Promise<ProcessOperationResult> {
+  private async processOperation(operation: SyncOperation): Promise<ProcessOperationResult> {
     // If a custom processOperation function is provided, use it
     if (this.config.processOperation) {
       return this.config.processOperation(operation)
@@ -1127,13 +1132,13 @@ export class SynchronizationService {
     // processOperation (the client hook wires the server function).
     throw new Error(
       'No processOperation configured: refusing to mark operations as synced ' +
-      'to avoid silent data loss. Provide config.processOperation.'
+        'to avoid silent data loss. Provide config.processOperation.'
     )
   }
 
   /**
    * Schedule a retry for failed operations
-   * 
+   *
    * FIX: Added circuit breaker to prevent hammering failing server
    */
   private scheduleRetry(): void {
@@ -1146,14 +1151,17 @@ export class SynchronizationService {
     if (this.circuitBroken) {
       if (now < this.circuitBrokenUntil) {
         // Circuit is still open, don't retry yet
-        this.log(`Circuit breaker: Open until ${new Date(this.circuitBrokenUntil).toISOString()}. Retry skipped.`)
+        this.log(
+          `Circuit breaker: Open until ${new Date(
+            this.circuitBrokenUntil
+          ).toISOString()}. Retry skipped.`
+        )
         return
-      } else {
-        // Cooldown period has passed, try to close the circuit
-        this.circuitBroken = false
-        this.consecutiveFailures = 0
-        this.log('Circuit breaker: Cooldown complete. Resuming retries.')
       }
+      // Cooldown period has passed, try to close the circuit
+      this.circuitBroken = false
+      this.consecutiveFailures = 0
+      this.log('Circuit breaker: Cooldown complete. Resuming retries.')
     }
 
     this.retryTimeout = setTimeout(() => {
@@ -1221,7 +1229,9 @@ export class SynchronizationService {
   private openCircuit(): void {
     this.circuitBroken = true
     this.circuitBrokenUntil = Date.now() + CIRCUIT_BREAKER_CONFIG.cooldownPeriod
-    this.log(`Circuit breaker: OPENED. Too many consecutive failures (${this.consecutiveFailures}). Retries paused for ${CIRCUIT_BREAKER_CONFIG.cooldownPeriod}ms.`)
+    this.log(
+      `Circuit breaker: OPENED. Too many consecutive failures (${this.consecutiveFailures}). Retries paused for ${CIRCUIT_BREAKER_CONFIG.cooldownPeriod}ms.`
+    )
   }
 
   /**
