@@ -1,20 +1,34 @@
 /**
  * Financial Data Server Functions
- * 
+ *
  * Handles CRUD operations for financial data (income sources, expenses, savings, balance).
  * Provides synchronization between client and server for paid tier users.
- * 
+ *
  * Architecture: TanStack Start Server Functions with PostgreSQL (Drizzle ORM)
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
+import { db } from '@budget-planner/db'
+import type {
+  BalanceTracking,
+  Expense,
+  IncomeSource,
+  NewBalanceTracking,
+  NewExpense,
+  NewIncomeSource,
+  NewSavingsGoal,
+  SavingsGoal,
+} from '@budget-planner/db'
+import {
+  balanceTracking,
+  expenses,
+  incomeSources,
+  savingsGoals,
+} from '@budget-planner/db/src/schema'
 import type { Request } from '@tanstack/start'
+import { and, eq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../auth/paddle'
 import type { ApiResult } from '../auth/paddle'
-import { db } from '@budget-planner/db'
-import { incomeSources, expenses, savingsGoals, balanceTracking } from '@budget-planner/db/src/schema'
-import { eq, and } from 'drizzle-orm'
-import type { IncomeSource, NewIncomeSource, Expense, NewExpense, SavingsGoal, NewSavingsGoal, BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
 
 // ============================================================================
 // Type Definitions
@@ -164,10 +178,17 @@ export async function getIncomeSources(
       eq(incomeSources.userId, ctx.userId),
       eq(incomeSources.profileId, activeProfileId)
     )
-    const sources = await db.select().from(incomeSources).where(whereClause).orderBy(incomeSources.createdAt)
+    const sources = await db
+      .select()
+      .from(incomeSources)
+      .where(whereClause)
+      .orderBy(incomeSources.createdAt)
     return { success: true, data: sources }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to get income sources' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get income sources',
+    }
   }
 }
 
@@ -191,18 +212,24 @@ export async function createIncomeSource(
     if (data.amount < 0) {
       return { success: false, error: 'Amount cannot be negative' }
     }
-    const [newSource] = await db.insert(incomeSources).values({
-      userId: ctx.userId,
-      profileId: activeProfileId,
-      name: data.name,
-      amount: data.amount,
-      frequency: data.frequency,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).returning()
+    const [newSource] = await db
+      .insert(incomeSources)
+      .values({
+        userId: ctx.userId,
+        profileId: activeProfileId,
+        name: data.name,
+        amount: data.amount,
+        frequency: data.frequency,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning()
     return { success: true, data: newSource }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to create income source' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create income source',
+    }
   }
 }
 
@@ -221,37 +248,48 @@ export async function updateIncomeSource(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    
+
     // Validate numeric fields
     if (data.amount !== undefined && data.amount < 0) {
       return { success: false, error: 'Amount cannot be negative' }
     }
-    
-    const [existing] = await db.select().from(incomeSources).where(
-      and(
-        eq(incomeSources.id, id),
-        eq(incomeSources.userId, ctx.userId),
-        eq(incomeSources.profileId, activeProfileId)
+
+    const [existing] = await db
+      .select()
+      .from(incomeSources)
+      .where(
+        and(
+          eq(incomeSources.id, id),
+          eq(incomeSources.userId, ctx.userId),
+          eq(incomeSources.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Income source not found or not authorized' }
     }
-    const updateObj = { 
-      ...data, 
+    const updateObj = {
+      ...data,
       updatedAt: new Date(),
-      id: undefined // Don't update the ID
+      id: undefined, // Don't update the ID
     }
-    const [updated] = await db.update(incomeSources).set(updateObj).where(
-      and(
-        eq(incomeSources.id, id),
-        eq(incomeSources.userId, ctx.userId),
-        eq(incomeSources.profileId, activeProfileId)
+    const [updated] = await db
+      .update(incomeSources)
+      .set(updateObj)
+      .where(
+        and(
+          eq(incomeSources.id, id),
+          eq(incomeSources.userId, ctx.userId),
+          eq(incomeSources.profileId, activeProfileId)
+        )
       )
-    ).returning()
+      .returning()
     return { success: true, data: updated }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to update income source' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update income source',
+    }
   }
 }
 
@@ -269,26 +307,35 @@ export async function deleteIncomeSource(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    const [existing] = await db.select().from(incomeSources).where(
-      and(
-        eq(incomeSources.id, id),
-        eq(incomeSources.userId, ctx.userId),
-        eq(incomeSources.profileId, activeProfileId)
+    const [existing] = await db
+      .select()
+      .from(incomeSources)
+      .where(
+        and(
+          eq(incomeSources.id, id),
+          eq(incomeSources.userId, ctx.userId),
+          eq(incomeSources.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Income source not found or not authorized' }
     }
-    await db.delete(incomeSources).where(
-      and(
-        eq(incomeSources.id, id),
-        eq(incomeSources.userId, ctx.userId),
-        eq(incomeSources.profileId, activeProfileId)
+    await db
+      .delete(incomeSources)
+      .where(
+        and(
+          eq(incomeSources.id, id),
+          eq(incomeSources.userId, ctx.userId),
+          eq(incomeSources.profileId, activeProfileId)
+        )
       )
-    )
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to delete income source' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete income source',
+    }
   }
 }
 
@@ -316,7 +363,10 @@ export async function getExpenses(
     const list = await db.select().from(expenses).where(whereClause).orderBy(expenses.createdAt)
     return { success: true, data: list }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to get expenses' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get expenses',
+    }
   }
 }
 
@@ -339,18 +389,24 @@ export async function createExpense(
     if (data.amount < 0) {
       return { success: false, error: 'Amount cannot be negative' }
     }
-    const [newExpense] = await db.insert(expenses).values({
-      userId: ctx.userId,
-      profileId: activeProfileId,
-      name: data.name,
-      amount: data.amount,
-      frequency: data.frequency,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).returning()
+    const [newExpense] = await db
+      .insert(expenses)
+      .values({
+        userId: ctx.userId,
+        profileId: activeProfileId,
+        name: data.name,
+        amount: data.amount,
+        frequency: data.frequency,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning()
     return { success: true, data: newExpense }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to create expense' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create expense',
+    }
   }
 }
 
@@ -368,37 +424,48 @@ export async function updateExpense(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    
+
     // Validate numeric fields
     if (data.amount !== undefined && data.amount < 0) {
       return { success: false, error: 'Amount cannot be negative' }
     }
-    
-    const [existing] = await db.select().from(expenses).where(
-      and(
-        eq(expenses.id, id),
-        eq(expenses.userId, ctx.userId),
-        eq(expenses.profileId, activeProfileId)
+
+    const [existing] = await db
+      .select()
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.id, id),
+          eq(expenses.userId, ctx.userId),
+          eq(expenses.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Expense not found or not authorized' }
     }
-    const updateObj = { 
-      ...data, 
+    const updateObj = {
+      ...data,
       updatedAt: new Date(),
-      id: undefined
+      id: undefined,
     }
-    const [updated] = await db.update(expenses).set(updateObj).where(
-      and(
-        eq(expenses.id, id),
-        eq(expenses.userId, ctx.userId),
-        eq(expenses.profileId, activeProfileId)
+    const [updated] = await db
+      .update(expenses)
+      .set(updateObj)
+      .where(
+        and(
+          eq(expenses.id, id),
+          eq(expenses.userId, ctx.userId),
+          eq(expenses.profileId, activeProfileId)
+        )
       )
-    ).returning()
+      .returning()
     return { success: true, data: updated }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to update expense' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update expense',
+    }
   }
 }
 
@@ -416,26 +483,35 @@ export async function deleteExpense(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    const [existing] = await db.select().from(expenses).where(
-      and(
-        eq(expenses.id, id),
-        eq(expenses.userId, ctx.userId),
-        eq(expenses.profileId, activeProfileId)
+    const [existing] = await db
+      .select()
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.id, id),
+          eq(expenses.userId, ctx.userId),
+          eq(expenses.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Expense not found or not authorized' }
     }
-    await db.delete(expenses).where(
-      and(
-        eq(expenses.id, id),
-        eq(expenses.userId, ctx.userId),
-        eq(expenses.profileId, activeProfileId)
+    await db
+      .delete(expenses)
+      .where(
+        and(
+          eq(expenses.id, id),
+          eq(expenses.userId, ctx.userId),
+          eq(expenses.profileId, activeProfileId)
+        )
       )
-    )
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to delete expense' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete expense',
+    }
   }
 }
 
@@ -460,10 +536,17 @@ export async function getSavingsGoals(
       eq(savingsGoals.userId, ctx.userId),
       eq(savingsGoals.profileId, activeProfileId)
     )
-    const goals = await db.select().from(savingsGoals).where(whereClause).orderBy(savingsGoals.createdAt)
+    const goals = await db
+      .select()
+      .from(savingsGoals)
+      .where(whereClause)
+      .orderBy(savingsGoals.createdAt)
     return { success: true, data: goals }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to get savings goals' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get savings goals',
+    }
   }
 }
 
@@ -489,18 +572,24 @@ export async function createSavingsGoal(
     if (data.currentBalance !== undefined && data.currentBalance < 0) {
       return { success: false, error: 'Current balance cannot be negative' }
     }
-    const [newGoal] = await db.insert(savingsGoals).values({
-      userId: ctx.userId,
-      profileId: activeProfileId,
-      name: data.name,
-      targetAmount: data.targetAmount,
-      currentBalance: data.currentBalance || 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).returning()
+    const [newGoal] = await db
+      .insert(savingsGoals)
+      .values({
+        userId: ctx.userId,
+        profileId: activeProfileId,
+        name: data.name,
+        targetAmount: data.targetAmount,
+        currentBalance: data.currentBalance || 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning()
     return { success: true, data: newGoal }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to create savings goal' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create savings goal',
+    }
   }
 }
 
@@ -518,7 +607,7 @@ export async function updateSavingsGoal(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    
+
     // Validate numeric fields
     if (data.targetAmount !== undefined && data.targetAmount < 0) {
       return { success: false, error: 'Target amount cannot be negative' }
@@ -526,32 +615,43 @@ export async function updateSavingsGoal(
     if (data.currentBalance !== undefined && data.currentBalance < 0) {
       return { success: false, error: 'Current balance cannot be negative' }
     }
-    
-    const [existing] = await db.select().from(savingsGoals).where(
-      and(
-        eq(savingsGoals.id, id),
-        eq(savingsGoals.userId, ctx.userId),
-        eq(savingsGoals.profileId, activeProfileId)
+
+    const [existing] = await db
+      .select()
+      .from(savingsGoals)
+      .where(
+        and(
+          eq(savingsGoals.id, id),
+          eq(savingsGoals.userId, ctx.userId),
+          eq(savingsGoals.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Savings goal not found or not authorized' }
     }
-    const updateObj = { 
-      ...data, 
+    const updateObj = {
+      ...data,
       updatedAt: new Date(),
-      id: undefined
+      id: undefined,
     }
-    const [updated] = await db.update(savingsGoals).set(updateObj).where(
-      and(
-        eq(savingsGoals.id, id),
-        eq(savingsGoals.userId, ctx.userId),
-        eq(savingsGoals.profileId, activeProfileId)
+    const [updated] = await db
+      .update(savingsGoals)
+      .set(updateObj)
+      .where(
+        and(
+          eq(savingsGoals.id, id),
+          eq(savingsGoals.userId, ctx.userId),
+          eq(savingsGoals.profileId, activeProfileId)
+        )
       )
-    ).returning()
+      .returning()
     return { success: true, data: updated }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to update savings goal' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update savings goal',
+    }
   }
 }
 
@@ -569,26 +669,35 @@ export async function deleteSavingsGoal(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    const [existing] = await db.select().from(savingsGoals).where(
-      and(
-        eq(savingsGoals.id, id),
-        eq(savingsGoals.userId, ctx.userId),
-        eq(savingsGoals.profileId, activeProfileId)
+    const [existing] = await db
+      .select()
+      .from(savingsGoals)
+      .where(
+        and(
+          eq(savingsGoals.id, id),
+          eq(savingsGoals.userId, ctx.userId),
+          eq(savingsGoals.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Savings goal not found or not authorized' }
     }
-    await db.delete(savingsGoals).where(
-      and(
-        eq(savingsGoals.id, id),
-        eq(savingsGoals.userId, ctx.userId),
-        eq(savingsGoals.profileId, activeProfileId)
+    await db
+      .delete(savingsGoals)
+      .where(
+        and(
+          eq(savingsGoals.id, id),
+          eq(savingsGoals.userId, ctx.userId),
+          eq(savingsGoals.profileId, activeProfileId)
+        )
       )
-    )
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to delete savings goal' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete savings goal',
+    }
   }
 }
 
@@ -613,10 +722,17 @@ export async function getBalanceTracking(
       eq(balanceTracking.userId, ctx.userId),
       eq(balanceTracking.profileId, activeProfileId)
     )
-    const entries = await db.select().from(balanceTracking).where(whereClause).orderBy(balanceTracking.createdAt)
+    const entries = await db
+      .select()
+      .from(balanceTracking)
+      .where(whereClause)
+      .orderBy(balanceTracking.createdAt)
     return { success: true, data: entries }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to get balance tracking' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get balance tracking',
+    }
   }
 }
 
@@ -642,23 +758,33 @@ export async function createBalanceTracking(
     if (data.monthlyContribution !== undefined && data.monthlyContribution < 0) {
       return { success: false, error: 'Monthly contribution cannot be negative' }
     }
-    if (data.maxContributionLimit !== undefined && data.maxContributionLimit !== null && data.maxContributionLimit < 0) {
+    if (
+      data.maxContributionLimit !== undefined &&
+      data.maxContributionLimit !== null &&
+      data.maxContributionLimit < 0
+    ) {
       return { success: false, error: 'Max contribution limit cannot be negative' }
     }
-    const [newEntry] = await db.insert(balanceTracking).values({
-      userId: ctx.userId,
-      profileId: activeProfileId,
-      type: data.type,
-      name: data.name,
-      currentBalance: data.currentBalance,
-      maxContributionLimit: data.maxContributionLimit ?? null,
-      monthlyContribution: data.monthlyContribution ?? 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).returning()
+    const [newEntry] = await db
+      .insert(balanceTracking)
+      .values({
+        userId: ctx.userId,
+        profileId: activeProfileId,
+        type: data.type,
+        name: data.name,
+        currentBalance: data.currentBalance,
+        maxContributionLimit: data.maxContributionLimit ?? null,
+        monthlyContribution: data.monthlyContribution ?? 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning()
     return { success: true, data: newEntry }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to create balance tracking' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create balance tracking',
+    }
   }
 }
 
@@ -676,7 +802,7 @@ export async function updateBalanceTracking(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    
+
     // Validate numeric fields
     if (data.currentBalance !== undefined && data.currentBalance < 0) {
       return { success: false, error: 'Current balance cannot be negative' }
@@ -684,35 +810,50 @@ export async function updateBalanceTracking(
     if (data.monthlyContribution !== undefined && data.monthlyContribution < 0) {
       return { success: false, error: 'Monthly contribution cannot be negative' }
     }
-    if (data.maxContributionLimit !== undefined && data.maxContributionLimit !== null && data.maxContributionLimit < 0) {
+    if (
+      data.maxContributionLimit !== undefined &&
+      data.maxContributionLimit !== null &&
+      data.maxContributionLimit < 0
+    ) {
       return { success: false, error: 'Max contribution limit cannot be negative' }
     }
-    
-    const [existing] = await db.select().from(balanceTracking).where(
-      and(
-        eq(balanceTracking.id, id),
-        eq(balanceTracking.userId, ctx.userId),
-        eq(balanceTracking.profileId, activeProfileId)
+
+    const [existing] = await db
+      .select()
+      .from(balanceTracking)
+      .where(
+        and(
+          eq(balanceTracking.id, id),
+          eq(balanceTracking.userId, ctx.userId),
+          eq(balanceTracking.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Balance tracking entry not found or not authorized' }
     }
-    const updateObj = { 
-      ...data, 
+    const updateObj = {
+      ...data,
       updatedAt: new Date(),
-      id: undefined
+      id: undefined,
     }
-    const [updated] = await db.update(balanceTracking).set(updateObj).where(
-      and(
-        eq(balanceTracking.id, id),
-        eq(balanceTracking.userId, ctx.userId),
-        eq(balanceTracking.profileId, activeProfileId)
+    const [updated] = await db
+      .update(balanceTracking)
+      .set(updateObj)
+      .where(
+        and(
+          eq(balanceTracking.id, id),
+          eq(balanceTracking.userId, ctx.userId),
+          eq(balanceTracking.profileId, activeProfileId)
+        )
       )
-    ).returning()
+      .returning()
     return { success: true, data: updated }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to update balance tracking' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update balance tracking',
+    }
   }
 }
 
@@ -730,26 +871,35 @@ export async function deleteBalanceTracking(
     if (!activeProfileId) {
       return { success: false, error: 'Profile ID required for paid tier' }
     }
-    const [existing] = await db.select().from(balanceTracking).where(
-      and(
-        eq(balanceTracking.id, id),
-        eq(balanceTracking.userId, ctx.userId),
-        eq(balanceTracking.profileId, activeProfileId)
+    const [existing] = await db
+      .select()
+      .from(balanceTracking)
+      .where(
+        and(
+          eq(balanceTracking.id, id),
+          eq(balanceTracking.userId, ctx.userId),
+          eq(balanceTracking.profileId, activeProfileId)
+        )
       )
-    ).limit(1)
+      .limit(1)
     if (!existing) {
       return { success: false, error: 'Balance tracking entry not found or not authorized' }
     }
-    await db.delete(balanceTracking).where(
-      and(
-        eq(balanceTracking.id, id),
-        eq(balanceTracking.userId, ctx.userId),
-        eq(balanceTracking.profileId, activeProfileId)
+    await db
+      .delete(balanceTracking)
+      .where(
+        and(
+          eq(balanceTracking.id, id),
+          eq(balanceTracking.userId, ctx.userId),
+          eq(balanceTracking.profileId, activeProfileId)
+        )
       )
-    )
     return { success: true }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to delete balance tracking' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete balance tracking',
+    }
   }
 }
 
@@ -765,12 +915,14 @@ export async function syncFinancialData(
     savingsGoals?: CreateSavingsGoalInput[]
     balanceTracking?: CreateBalanceTrackingInput[]
   }
-): Promise<FinancialApiResult<{
-  incomeSources: IncomeSource[]
-  expenses: Expense[]
-  savingsGoals: SavingsGoal[]
-  balanceTracking: BalanceTracking[]
-}>> {
+): Promise<
+  FinancialApiResult<{
+    incomeSources: IncomeSource[]
+    expenses: Expense[]
+    savingsGoals: SavingsGoal[]
+    balanceTracking: BalanceTracking[]
+  }>
+> {
   try {
     const ctx = await getAuthenticatedUserContext(request)
     if (!ctx.success || !ctx.userId) {
@@ -787,23 +939,42 @@ export async function syncFinancialData(
       balanceTracking: [] as BalanceTracking[],
     }
     if (data.incomeSources?.length) {
-      const srcs = await Promise.all(data.incomeSources.map(s => createIncomeSource(request, { ...s, profileId: activeProfileId })))
-      results.incomeSources = srcs.filter(r => r.success).map(r => r.data!) as IncomeSource[]
+      const srcs = await Promise.all(
+        data.incomeSources.map((s) =>
+          createIncomeSource(request, { ...s, profileId: activeProfileId })
+        )
+      )
+      results.incomeSources = srcs.filter((r) => r.success).map((r) => r.data!) as IncomeSource[]
     }
     if (data.expenses?.length) {
-      const exps = await Promise.all(data.expenses.map(e => createExpense(request, { ...e, profileId: activeProfileId })))
-      results.expenses = exps.filter(r => r.success).map(r => r.data!) as Expense[]
+      const exps = await Promise.all(
+        data.expenses.map((e) => createExpense(request, { ...e, profileId: activeProfileId }))
+      )
+      results.expenses = exps.filter((r) => r.success).map((r) => r.data!) as Expense[]
     }
     if (data.savingsGoals?.length) {
-      const goals = await Promise.all(data.savingsGoals.map(g => createSavingsGoal(request, { ...g, profileId: activeProfileId })))
-      results.savingsGoals = goals.filter(r => r.success).map(r => r.data!) as SavingsGoal[]
+      const goals = await Promise.all(
+        data.savingsGoals.map((g) =>
+          createSavingsGoal(request, { ...g, profileId: activeProfileId })
+        )
+      )
+      results.savingsGoals = goals.filter((r) => r.success).map((r) => r.data!) as SavingsGoal[]
     }
     if (data.balanceTracking?.length) {
-      const tracking = await Promise.all(data.balanceTracking.map(t => createBalanceTracking(request, { ...t, profileId: activeProfileId })))
-      results.balanceTracking = tracking.filter(r => r.success).map(r => r.data!) as BalanceTracking[]
+      const tracking = await Promise.all(
+        data.balanceTracking.map((t) =>
+          createBalanceTracking(request, { ...t, profileId: activeProfileId })
+        )
+      )
+      results.balanceTracking = tracking
+        .filter((r) => r.success)
+        .map((r) => r.data!) as BalanceTracking[]
     }
     return { success: true, data: results }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to synchronize financial data' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to synchronize financial data',
+    }
   }
 }

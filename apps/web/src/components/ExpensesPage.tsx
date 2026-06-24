@@ -1,10 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import {
-  useExpenseStore,
-  useExpenses,
-  useTotalExpenses,
-} from '../stores'
 import type { Frequency } from '@budget-planner/db'
+import React, { useState, useEffect } from 'react'
+import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -28,11 +24,7 @@ function formatAmount(cents: number): string {
 export function ExpensesPage() {
   const expenses = useExpenses()
   const totalExpenses = useTotalExpenses()
-  const {
-    addExpense,
-    updateExpense,
-    deleteExpense,
-  } = useExpenseStore()
+  const { addExpense, updateExpense, deleteExpense } = useExpenseStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -61,7 +53,12 @@ export function ExpensesPage() {
   }
 
   // Open modal for editing existing expense
-  const openEditModal = (source: { id: number; name: string; amount: number; frequency: Frequency }) => {
+  const openEditModal = (source: {
+    id: number
+    name: string
+    amount: number
+    frequency: Frequency
+  }) => {
     setEditingId(source.id)
     setName(source.name)
     setAmount((source.amount / 100).toString())
@@ -85,7 +82,7 @@ export function ExpensesPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
-    
+
     try {
       // Validate name
       const trimmedName = name.trim()
@@ -96,7 +93,7 @@ export function ExpensesPage() {
 
       // Validate amount
       const amountInCents = Math.round(parseFloat(amount) * 100)
-      if (isNaN(amountInCents) || amountInCents <= 0) {
+      if (Number.isNaN(amountInCents) || amountInCents <= 0) {
         alert('Please enter a valid positive amount')
         return
       }
@@ -131,9 +128,7 @@ export function ExpensesPage() {
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
-          <p className="text-gray-600 mt-2">
-            Track and categorize your spending
-          </p>
+          <p className="text-gray-600 mt-2">Track and categorize your spending</p>
         </header>
 
         <main className="space-y-6">
@@ -141,9 +136,7 @@ export function ExpensesPage() {
           <section className="bg-white rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Total Expenses
-                </h2>
+                <h2 className="text-xl font-semibold text-gray-800">Total Expenses</h2>
                 <p className="text-3xl font-bold text-red-600 mt-2">
                   {formatAmount(totalExpenses)}
                 </p>
@@ -159,16 +152,12 @@ export function ExpensesPage() {
 
           {/* Expenses List */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6">
-              Your Expenses
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-6">Your Expenses</h2>
 
             {expenses.length === 0 ? (
               <div className="bg-gray-50 rounded-lg p-8 text-center">
                 <p className="text-gray-500 mb-4">No expenses recorded yet</p>
-                <p className="text-sm text-gray-400">
-                  Click "Add Expense" to get started
-                </p>
+                <p className="text-sm text-gray-400">Click "Add Expense" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -193,9 +182,7 @@ export function ExpensesPage() {
                     {expenses.map((expense) => (
                       <tr key={expense.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {expense.name}
-                          </div>
+                          <div className="text-sm font-medium text-gray-900">{expense.name}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-500">
@@ -244,7 +231,12 @@ export function ExpensesPage() {
                   aria-label="Close"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
@@ -288,7 +280,10 @@ export function ExpensesPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="frequency" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="frequency"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Frequency *
                   </label>
                   <select
@@ -319,7 +314,11 @@ export function ExpensesPage() {
                     disabled={isSubmitting}
                     className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSubmitting ? 'Saving...' : editingId !== null ? 'Save Changes' : 'Add Expense'}
+                    {isSubmitting
+                      ? 'Saving...'
+                      : editingId !== null
+                        ? 'Save Changes'
+                        : 'Add Expense'}
                   </button>
                 </div>
               </form>

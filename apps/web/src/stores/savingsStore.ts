@@ -1,14 +1,11 @@
+import type {
+  ClientNewSavingsGoal,
+  ClientSavingsGoal,
+} from '@budget-planner/core/services/savingsGoals'
+import { sortByCreationDate, withProgress } from '@budget-planner/core/services/savingsGoals'
+import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type {
-  ClientSavingsGoal,
-  ClientNewSavingsGoal,
-} from '@budget-planner/core/services/savingsGoals'
-import {
-  sortByCreationDate,
-  withProgress,
-} from '@budget-planner/core/services/savingsGoals'
-import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 
 // Define the type for our store state
 interface SavingsState {
@@ -16,7 +13,10 @@ interface SavingsState {
 
   // CRUD operations
   addSavingsGoal: (goal: ClientNewSavingsGoal) => ClientSavingsGoal
-  updateSavingsGoal: (id: number, updates: Partial<ClientNewSavingsGoal>) => ClientSavingsGoal | undefined
+  updateSavingsGoal: (
+    id: number,
+    updates: Partial<ClientNewSavingsGoal>
+  ) => ClientSavingsGoal | undefined
   deleteSavingsGoal: (id: number) => boolean
 
   // Query operations
@@ -32,7 +32,10 @@ interface SavingsState {
 // Note: In production with backend, IDs will come from the database
 // Using negative IDs for temporary client-side entries to avoid conflicts
 // Start at -20000 to match the core service constant
-import { generateSavingsGoalTempId, toClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
+import {
+  generateSavingsGoalTempId,
+  toClientSavingsGoal,
+} from '@budget-planner/core/services/savingsGoals'
 
 // Storage key for localStorage
 // Using the key specified in Dev Notes: localStorage: `budget-planner:savings-goals`
@@ -105,18 +108,12 @@ export const useSavingsStore = create<SavingsState>()(
 
       // Calculate total savings (sum of all current balances)
       getTotalSavings: () => {
-        return get().savingsGoals.reduce(
-          (sum, goal) => sum + goal.currentBalance,
-          0
-        )
+        return get().savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
       },
 
       // Calculate total target amount across all goals
       getTotalTargetAmount: () => {
-        return get().savingsGoals.reduce(
-          (sum, goal) => sum + goal.targetAmount,
-          0
-        )
+        return get().savingsGoals.reduce((sum, goal) => sum + goal.targetAmount, 0)
       },
 
       // Calculate progress percentage for a specific savings goal
@@ -129,14 +126,8 @@ export const useSavingsStore = create<SavingsState>()(
       // Calculate overall progress percentage across all savings goals
       getOverallProgress: () => {
         const state = get()
-        const totalBalance = state.savingsGoals.reduce(
-          (sum, goal) => sum + goal.currentBalance,
-          0
-        )
-        const totalTarget = state.savingsGoals.reduce(
-          (sum, goal) => sum + goal.targetAmount,
-          0
-        )
+        const totalBalance = state.savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
+        const totalTarget = state.savingsGoals.reduce((sum, goal) => sum + goal.targetAmount, 0)
         if (totalTarget <= 0) return 0
         return Math.min(100, Math.round((totalBalance / totalTarget) * 100))
       },
@@ -151,17 +142,14 @@ export const useSavingsStore = create<SavingsState>()(
 )
 
 // Selector hooks for better performance
-export const useSavingsGoals = () =>
-  useSavingsStore((state) => state.savingsGoals)
+export const useSavingsGoals = () => useSavingsStore((state) => state.savingsGoals)
 
 export const useSavingsGoalsWithProgress = () =>
   useSavingsStore((state) => state.getSavingsGoalsWithProgress())
 
-export const useTotalSavings = () =>
-  useSavingsStore((state) => state.getTotalSavings())
+export const useTotalSavings = () => useSavingsStore((state) => state.getTotalSavings())
 
-export const useTotalTargetAmount = () =>
-  useSavingsStore((state) => state.getTotalTargetAmount())
+export const useTotalTargetAmount = () => useSavingsStore((state) => state.getTotalTargetAmount())
 
 export const useOverallSavingsProgress = () =>
   useSavingsStore((state) => state.getOverallProgress())

@@ -1,13 +1,17 @@
 /**
  * Net Period Income Calculation
- * 
+ *
  * Calculates net period income by normalizing all income and expense values
  * to a monthly base and then computing: totalNormalizedIncome - totalNormalizedExpenses
- * 
+ *
  * Architecture Requirement: FR5 - Core calculations
  */
 
-import { normalizeToMonthly, calculateTotalMonthlyNormalized, type Frequency } from './normalization'
+import {
+  type Frequency,
+  calculateTotalMonthlyNormalized,
+  normalizeToMonthly,
+} from './normalization'
 
 /**
  * Interface for financial items that can be normalized
@@ -31,7 +35,7 @@ export function calculateNetPeriodIncome(
   const expensesArray = expenses || []
   const totalNormalizedIncome = calculateTotalMonthlyNormalized(sources)
   const totalNormalizedExpenses = calculateTotalMonthlyNormalized(expensesArray)
-  
+
   // Net period income = income - expenses
   return totalNormalizedIncome - totalNormalizedExpenses
 }
@@ -41,9 +45,7 @@ export function calculateNetPeriodIncome(
  * @param incomeSources - Array of income sources with amount and frequency
  * @returns Gross period income in cents (always positive or zero)
  */
-export function calculateGrossPeriodIncome(
-  incomeSources: NormalizableFinancialItem[]
-): number {
+export function calculateGrossPeriodIncome(incomeSources: NormalizableFinancialItem[]): number {
   return calculateTotalMonthlyNormalized(incomeSources || [])
 }
 
@@ -52,9 +54,7 @@ export function calculateGrossPeriodIncome(
  * @param expenses - Array of expenses with amount and frequency
  * @returns Total period expenses in cents (always positive or zero)
  */
-export function calculateTotalPeriodExpenses(
-  expenses: NormalizableFinancialItem[]
-): number {
+export function calculateTotalPeriodExpenses(expenses: NormalizableFinancialItem[]): number {
   return calculateTotalMonthlyNormalized(expenses || [])
 }
 
@@ -62,10 +62,10 @@ export function calculateTotalPeriodExpenses(
  * Result type for net income calculation
  */
 export interface NetIncomeResult {
-  grossIncome: number  // In cents, normalized to monthly
-  totalExpenses: number  // In cents, normalized to monthly
-  netIncome: number  // In cents, can be positive or negative
-  isSurplus: boolean  // True if netIncome >= 0
+  grossIncome: number // In cents, normalized to monthly
+  totalExpenses: number // In cents, normalized to monthly
+  netIncome: number // In cents, can be positive or negative
+  isSurplus: boolean // True if netIncome >= 0
 }
 
 /**
@@ -81,7 +81,7 @@ export function calculateNetIncomeResult(
   const grossIncome = calculateGrossPeriodIncome(incomeSources)
   const totalExpenses = calculateTotalPeriodExpenses(expenses)
   const netIncome = grossIncome - totalExpenses
-  
+
   return {
     grossIncome,
     totalExpenses,

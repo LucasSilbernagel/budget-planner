@@ -1,9 +1,9 @@
 /**
  * Paddle Authentication Button
- * 
+ *
  * Component for triggering Paddle OAuth authentication flow.
  * Renders a button that initiates the Paddle authentication popup.
- * 
+ *
  * Usage:
  * ```tsx
  * <PaddleAuthButton />
@@ -12,8 +12,8 @@
  * ```
  */
 
+import { loadPaddleScript, openPaddleAuth } from '@/lib/paddle/client'
 import { useEffect, useState } from 'react'
-import { openPaddleAuth, loadPaddleScript } from '@/lib/paddle/client'
 
 export interface PaddleAuthButtonProps {
   /** Button variant styling */
@@ -69,7 +69,7 @@ export function PaddleAuthButton({
   const [paddleReady, setPaddleReady] = useState(false)
   const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+
   // Load Paddle.js script on component mount
   useEffect(() => {
     loadPaddleScript()
@@ -88,13 +88,13 @@ export function PaddleAuthButton({
         setError('Failed to load authentication service')
       })
   }, [])
-  
+
   const handleClick = async () => {
     if (!paddleReady || isAuthenticating) return
-    
+
     setIsAuthenticating(true)
     setError(null)
-    
+
     try {
       openPaddleAuth()
     } catch (err) {
@@ -102,10 +102,10 @@ export function PaddleAuthButton({
       setIsAuthenticating(false)
     }
   }
-  
+
   const disabled = !paddleReady || isAuthenticating || !!error
   const loading = isAuthenticating || isLoading
-  
+
   return (
     <div className="flex flex-col gap-2">
       <button
@@ -113,7 +113,7 @@ export function PaddleAuthButton({
         onClick={handleClick}
         disabled={disabled}
         className={`${baseClasses} ${variantClasses[variant]} ${className}`}
-        aria-label={loading ? loadingText : (children as string || 'Sign up with Paddle')}
+        aria-label={loading ? loadingText : (children as string) || 'Sign up with Paddle'}
         aria-busy={loading}
       >
         {loading ? (
@@ -147,11 +147,9 @@ export function PaddleAuthButton({
           </>
         )}
       </button>
-      
-      {error && (
-        <p className="text-sm text-red-600 text-center">{error}</p>
-      )}
-      
+
+      {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+
       {!paddleReady && !error && (
         <p className="text-sm text-gray-500 text-center">Loading authentication...</p>
       )}
@@ -171,7 +169,13 @@ function PaddleIcon() {
       fill="currentColor"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }

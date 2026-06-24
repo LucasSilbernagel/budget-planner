@@ -1,23 +1,23 @@
 /**
  * useActiveProfile Hook
- * 
+ *
  * Custom hook for accessing and managing the active profile in the Budget Planner application.
  * Provides convenient access to profile data and operations.
- * 
+ *
  * Architecture: Built on top of useProfileStore (Zustand)
  * Data Sovereignty: Works with client-side storage for free tier, server sync for paid tier
  */
 
 import {
+  type ClientProfile,
+  useActiveProfile as useActiveProfileBase,
+  useActiveProfileId,
+  useHasMultipleProfiles,
+  useIsLoadingProfiles,
+  useProfileCount,
+  useProfileError,
   useProfileStore,
   useProfiles,
-  useActiveProfileId,
-  useActiveProfile as useActiveProfileBase,
-  useIsLoadingProfiles,
-  useProfileError,
-  useProfileCount,
-  useHasMultipleProfiles,
-  type ClientProfile,
 } from '../stores/profileStore'
 
 // Re-export all store hooks for convenience
@@ -54,7 +54,7 @@ export function useProfilesWithActive(): {
   const profiles = useProfiles()
   const activeProfileId = useActiveProfileId()
   const activeProfile = useActiveProfile()
-  
+
   return {
     profiles,
     activeProfile,
@@ -67,23 +67,23 @@ export function useProfilesWithActive(): {
  */
 export function useProfileSwitcher() {
   const { switchProfile, activeProfileId } = useProfileStore()
-  
+
   /**
    * Switch to a specific profile by ID
    */
   const switchToProfile = (profileId: string) => {
     // Get fresh state to check if profile exists
     const state = useProfileStore.getState()
-    const profileExists = state.profiles.some(p => p.id === profileId)
-    
+    const profileExists = state.profiles.some((p) => p.id === profileId)
+
     if (!profileExists) {
       console.error(`[useActiveProfile] Profile ${profileId} not found`)
       return
     }
-    
+
     switchProfile(profileId)
   }
-  
+
   /**
    * Switch to the next profile in the list
    */
@@ -91,12 +91,12 @@ export function useProfileSwitcher() {
     const state = useProfileStore.getState()
     const profiles = state.profiles
     if (profiles.length <= 1) return
-    
-    const currentIndex = profiles.findIndex(p => p.id === activeProfileId)
+
+    const currentIndex = profiles.findIndex((p) => p.id === activeProfileId)
     const nextIndex = (currentIndex + 1) % profiles.length
     switchProfile(profiles[nextIndex].id)
   }
-  
+
   /**
    * Switch to the previous profile in the list
    */
@@ -104,12 +104,12 @@ export function useProfileSwitcher() {
     const state = useProfileStore.getState()
     const profiles = state.profiles
     if (profiles.length <= 1) return
-    
-    const currentIndex = profiles.findIndex(p => p.id === activeProfileId)
+
+    const currentIndex = profiles.findIndex((p) => p.id === activeProfileId)
     const previousIndex = (currentIndex - 1 + profiles.length) % profiles.length
     switchProfile(profiles[previousIndex].id)
   }
-  
+
   return {
     switchToProfile,
     switchToNextProfile,
@@ -121,12 +121,15 @@ export function useProfileSwitcher() {
  * Hook for profile CRUD operations
  */
 export function useProfileManager() {
-  const { addProfile, updateProfile, removeProfile, setProfiles, setLoading, setError } = useProfileStore()
-  
+  const { addProfile, updateProfile, removeProfile, setProfiles, setLoading, setError } =
+    useProfileStore()
+
   /**
    * Create a new profile
    */
-  const createProfile = (profileData: Omit<ClientProfile, 'id' | 'userId'> & { userId: string }) => {
+  const createProfile = (
+    profileData: Omit<ClientProfile, 'id' | 'userId'> & { userId: string }
+  ) => {
     // Generate a temporary client-side UUID
     // Server will assign the real UUID when synced for paid tier
     // Use crypto.randomUUID with fallback for compatibility
@@ -142,36 +145,39 @@ export function useProfileManager() {
         return v.toString(16)
       })
     }
-    
+
     const newProfile: ClientProfile = {
       ...profileData,
       id: generateUUID(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
-    
+
     addProfile(newProfile)
     return newProfile
   }
-  
+
   /**
    * Update an existing profile
    */
-  const modifyProfile = (profileId: string, updates: Omit<Partial<ClientProfile>, 'createdAt' | 'updatedAt'>) => {
+  const modifyProfile = (
+    profileId: string,
+    updates: Omit<Partial<ClientProfile>, 'createdAt' | 'updatedAt'>
+  ) => {
     const timestamp = new Date().toISOString()
-    updateProfile(profileId, { 
-      ...updates, 
-      updatedAt: timestamp 
+    updateProfile(profileId, {
+      ...updates,
+      updatedAt: timestamp,
     } as Partial<ClientProfile>)
   }
-  
+
   /**
    * Delete a profile
    */
   const deleteProfile = (profileId: string) => {
     return removeProfile(profileId)
   }
-  
+
   /**
    * Set profiles from server (for paid tier sync)
    */
@@ -186,7 +192,7 @@ export function useProfileManager() {
       setLoading(false)
     }
   }
-  
+
   return {
     createProfile,
     modifyProfile,
@@ -200,10 +206,10 @@ export function useProfileManager() {
  */
 export function useProfileById(profileId: string | null): ClientProfile | null {
   const profiles = useProfiles()
-  
+
   if (profileId === null) return null
-  
-  return profiles.find(p => p.id === profileId) ?? null
+
+  return profiles.find((p) => p.id === profileId) ?? null
 }
 
 /**
@@ -219,5 +225,5 @@ export function useIsProfileActive(profileId: string): boolean {
  */
 export function useDefaultProfile(): ClientProfile | null {
   const profiles = useProfiles()
-  return profiles.find(p => p.isDefault) ?? null
+  return profiles.find((p) => p.isDefault) ?? null
 }

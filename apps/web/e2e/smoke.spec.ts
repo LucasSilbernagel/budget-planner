@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
 /**
  * Smoke E2E test — verifies the app boots and serves a document.

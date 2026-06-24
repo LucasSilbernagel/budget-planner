@@ -1,6 +1,6 @@
+import type { CurrencyCode, CurrencyMode } from '@budget-planner/core'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { CurrencyMode, CurrencyCode } from '@budget-planner/core'
 
 // Define the type for our store state
 interface CurrencyState {
@@ -50,28 +50,32 @@ export const useCurrencyStore = create<CurrencyState>()(
 )
 
 // Selector hooks for better performance
-export const useCurrencyMode = () =>
-  useCurrencyStore((state) => state.mode)
+export const useCurrencyMode = () => useCurrencyStore((state) => state.mode)
 
-export const useCurrencyCode = () =>
-  useCurrencyStore((state) => state.currency)
+export const useCurrencyCode = () => useCurrencyStore((state) => state.currency)
 
 export const useCurrencyPreferences = () =>
   useCurrencyStore((state) => ({ mode: state.mode, currency: state.currency }))
 
 // Helper to get formatted value based on current preferences
-import { formatCurrency as formatCurrencyCore, formatAmount, type CurrencyOptions } from '@budget-planner/core'
+import {
+  type CurrencyOptions,
+  formatAmount,
+  formatCurrency as formatCurrencyCore,
+} from '@budget-planner/core'
 
 export function useFormattedAmount(): (cents: number) => string {
   const { mode, currency } = useCurrencyPreferences()
-  
+
   // Return a function that can be used anywhere in the component
   return (cents: number) => formatCurrencyCore(cents, { mode, currency })
 }
 
-export function useFormattedAmountWithOptions(options: Partial<CurrencyOptions> = {}): (cents: number) => string {
+export function useFormattedAmountWithOptions(
+  options: Partial<CurrencyOptions> = {}
+): (cents: number) => string {
   const { mode, currency } = useCurrencyPreferences()
-  
+
   // Return a function that can be used anywhere in the component
   return (cents: number) => formatCurrencyCore(cents, { mode, currency, ...options })
 }

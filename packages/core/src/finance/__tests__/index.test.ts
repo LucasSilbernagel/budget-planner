@@ -1,13 +1,13 @@
 /**
  * Finance Module Index Tests
- * 
+ *
  * Tests that all exports from the finance module index are properly exported
  * and accessible. This ensures the module's public API is correctly exposed.
- * 
+ *
  * Zero tolerance for errors - NFR3 requirement
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import * as finance from '../index'
 
 describe('Finance Module Index', () => {
@@ -243,25 +243,17 @@ describe('Finance Module Index', () => {
     })
 
     it('should calculate net period income using exported functions', () => {
-      const incomeSources = [
-        { amount: 50000, frequency: 'monthly' as const },
-      ]
-      const expenses = [
-        { amount: 20000, frequency: 'monthly' as const },
-      ]
-      
+      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+
       const result = finance.calculateNetPeriodIncome(incomeSources, expenses)
       expect(result).toBe(30000)
     })
 
     it('should calculate savings capacity using exported function', () => {
-      const incomeSources = [
-        { amount: 50000, frequency: 'monthly' as const },
-      ]
-      const expenses = [
-        { amount: 20000, frequency: 'monthly' as const },
-      ]
-      
+      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+
       const result = finance.calculateSavingsCapacityPercentage(incomeSources, expenses)
       expect(result).toBe(40)
     })
@@ -271,7 +263,7 @@ describe('Finance Module Index', () => {
         monthlyIncome: 500000, // $5000/month
         annualReturnRate: 0.06, // 6%
       })
-      
+
       expect(result.requiredAssets).toBe(100000000) // $1,000,000
     })
 
@@ -282,14 +274,14 @@ describe('Finance Module Index', () => {
         [{ amount: 20000, frequency: 'monthly' as const }]
       )
       expect(netIncome).toBe(30000)
-      
+
       // Test savings capacity
       const savingsCapacity = finance.calculateSavingsCapacityPercentage(
         [{ amount: 50000, frequency: 'monthly' as const }],
         [{ amount: 20000, frequency: 'monthly' as const }]
       )
       expect(savingsCapacity).toBe(40)
-      
+
       // Test retirement
       const retirement = finance.calculateRequiredAssets(500000, 0.06)
       expect(retirement).toBe(100000000)
@@ -299,17 +291,21 @@ describe('Finance Module Index', () => {
   describe('Mathematical Validation - Zero Tolerance', () => {
     it('should pass exact validation across all modules', () => {
       // Net income: $500 - $200 = $300 (30000 cents)
-      expect(finance.calculateNetPeriodIncome(
-        [{ amount: 50000, frequency: 'monthly' as const }],
-        [{ amount: 20000, frequency: 'monthly' as const }]
-      )).toBe(30000)
-      
+      expect(
+        finance.calculateNetPeriodIncome(
+          [{ amount: 50000, frequency: 'monthly' as const }],
+          [{ amount: 20000, frequency: 'monthly' as const }]
+        )
+      ).toBe(30000)
+
       // Savings capacity: (expenses / grossIncome) * 100 = 40%
-      expect(finance.calculateSavingsCapacityPercentage(
-        [{ amount: 50000, frequency: 'monthly' as const }],
-        [{ amount: 20000, frequency: 'monthly' as const }]
-      )).toBe(40)
-      
+      expect(
+        finance.calculateSavingsCapacityPercentage(
+          [{ amount: 50000, frequency: 'monthly' as const }],
+          [{ amount: 20000, frequency: 'monthly' as const }]
+        )
+      ).toBe(40)
+
       // Retirement: $5000 * (12 / 0.06) = $1,000,000
       expect(finance.calculateRequiredAssets(500000, 0.06)).toBe(100000000)
     })
@@ -326,9 +322,9 @@ describe('Finance Module Index', () => {
         incomeGrowthRate: 0.05,
         expenseGrowthRate: 0.03,
       }
-      
+
       const result = finance.calculateFinancialForecast(currentData, scenario, 1)
-      
+
       // Verify structure
       expect(result.scenario).toBeDefined()
       expect(result.baseline).toBeDefined()

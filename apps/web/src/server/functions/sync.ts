@@ -1,32 +1,30 @@
 /**
  * Sync Server Functions
- * 
+ *
  * Server-side functions for multi-device synchronization.
  * These functions can be called from client code via TanStack Start's server function proxy.
- * 
+ *
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
-import type { SyncOperation, ProcessOperationResult } from '@budget-planner/core/sync'
+import type { ProcessOperationResult, SyncOperation } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
-import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
-import { processBatchSync, getSyncHistory, getSyncAuditLogs, getSyncStatus } from '../api/sync'
 import type { User } from '@budget-planner/db'
 import type { Request } from '@tanstack/start'
 import { getUserContext } from '../api/data/forecasting'
+import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
+import { getSyncAuditLogs, getSyncHistory, getSyncStatus, processBatchSync } from '../api/sync'
 
 /**
  * Server Function: Process a batch of sync operations
- * 
+ *
  * This is the main sync endpoint that handles client sync requests.
  * It validates the user, processes operations, and returns the sync result.
- * 
+ *
  * @param request - The batch sync request containing operations to process
  * @returns Promise resolving to the batch sync response
  */
-export async function syncBatch(
-  request: Request
-): Promise<BatchSyncResponse> {
+export async function syncBatch(request: Request): Promise<BatchSyncResponse> {
   // Get the current user from the request context using Paddle auth
   let userResult
   try {
@@ -45,7 +43,7 @@ export async function syncBatch(
       error: `Authentication error: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
-  
+
   if (!userResult.success || !userResult.data) {
     return {
       success: false,
@@ -62,7 +60,7 @@ export async function syncBatch(
 
   const user = userResult.data
   let data: BatchSyncRequest
-  
+
   // SECURITY: Limit request body size to prevent DoS
   const contentLength = request.headers.get('content-length')
   const MAX_REQUEST_SIZE = 1024 * 1024 // 1MB
@@ -79,7 +77,7 @@ export async function syncBatch(
       error: 'Request too large',
     }
   }
-  
+
   try {
     data = await request.json()
   } catch (error) {
@@ -109,7 +107,9 @@ export async function syncBatch(
 /**
  * Server Function: Get sync history for the current user
  */
-export async function syncGetHistory(request?: Request): Promise<ReturnType<typeof getSyncHistory>> {
+export async function syncGetHistory(
+  request?: Request
+): Promise<ReturnType<typeof getSyncHistory>> {
   let userResult = { success: false, data: null as User | null }
   if (request) {
     try {
@@ -119,18 +119,20 @@ export async function syncGetHistory(request?: Request): Promise<ReturnType<type
       return []
     }
   }
-  
+
   if (!userResult.success || !userResult.data) {
     return []
   }
-  
+
   return getSyncHistory(userResult.data.id)
 }
 
 /**
  * Server Function: Get sync audit logs for the current user
  */
-export async function syncGetAuditLogs(request?: Request): Promise<ReturnType<typeof getSyncAuditLogs>> {
+export async function syncGetAuditLogs(
+  request?: Request
+): Promise<ReturnType<typeof getSyncAuditLogs>> {
   let userResult = { success: false, data: null as User | null }
   if (request) {
     try {
@@ -140,11 +142,11 @@ export async function syncGetAuditLogs(request?: Request): Promise<ReturnType<ty
       return []
     }
   }
-  
+
   if (!userResult.success || !userResult.data) {
     return []
   }
-  
+
   return getSyncAuditLogs(userResult.data.id)
 }
 
@@ -166,7 +168,7 @@ export async function syncGetStatus(request?: Request): Promise<ReturnType<typeo
       }
     }
   }
-  
+
   if (!userResult.success || !userResult.data) {
     return {
       pendingCount: 0,
@@ -175,18 +177,18 @@ export async function syncGetStatus(request?: Request): Promise<ReturnType<typeo
       status: SyncStatusEnum.PENDING,
     }
   }
-  
+
   return getSyncStatus(userResult.data.id)
 }
 
 /**
  * Process a single sync operation
- * 
+ *
  * This is a helper function that can be used as a custom processOperation
  * implementation for the SynchronizationService on the client side.
- * 
+ *
  * It wraps a single operation in a batch request and sends it to the server.
- * 
+ *
  * @param operation - The sync operation to process
  * @returns Promise resolving to the operation result
  */
@@ -200,37 +202,37 @@ export async function processSyncOperation(
       clientTimestamp: Date.now(),
       deviceId: operation.deviceId,
     }
-    
+
     // Call the server batch sync function
     const response = await syncBatch(request)
-    
+
     // If the batch succeeded and processed one operation
     if (response.success && response.processedCount === 1) {
       return { success: true }
     }
-    
+
     // If there were conflicts
     if (response.conflictCount > 0) {
       return { success: false, conflict: true }
     }
-    
+
     // If there were failures
     if (response.failedCount > 0) {
-      return { 
-        success: false, 
-        error: response.error || 'Operation failed on server' 
+      return {
+        success: false,
+        error: response.error || 'Operation failed on server',
       }
     }
-    
+
     // Fallback
-    return { 
-      success: response.success, 
-      error: response.error 
+    return {
+      success: response.success,
+      error: response.error,
     }
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }

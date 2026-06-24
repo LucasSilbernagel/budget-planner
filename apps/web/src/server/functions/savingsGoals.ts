@@ -1,20 +1,20 @@
 /**
  * Savings Goals Server Functions
- * 
+ *
  * Server-side functions for savings goal CRUD operations.
  * Used for paid tier with server-side persistence to Scaleway PostgreSQL.
- * 
+ *
  * Architecture: TanStack Start Server Functions (RPC-style)
  * Database: Scaleway PostgreSQL via Drizzle ORM
- * 
+ *
  * NOTE: Free tier uses client-side only (localStorage/IndexedDB) and does NOT
  * use these server functions. Free tier is handled in the Zustand store.
  */
 
-import { and, eq, desc } from 'drizzle-orm'
 import { db } from '@budget-planner/db'
-import { savingsGoals } from '@budget-planner/db/src/schema'
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
+import { savingsGoals } from '@budget-planner/db/src/schema'
+import { and, desc, eq } from 'drizzle-orm'
 
 // ============================================================================
 // Type Definitions
@@ -101,20 +101,23 @@ function withProgress(goal: DbSavingsGoal): SavingsGoalOutput {
 /**
  * GET /savings-goals
  * Fetch all savings goals for a user and profile
- * 
+ *
  * @param userId - User ID to fetch savings goals for
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Array of savings goals with progress information
  */
-export async function getSavingsGoals(userId: string, profileId?: string): Promise<ApiResult<SavingsGoalOutput[]>> {
+export async function getSavingsGoals(
+  userId: string,
+  profileId?: string
+): Promise<ApiResult<SavingsGoalOutput[]>> {
   try {
     // Build where clause
     let whereClause = eq(savingsGoals.userId, userId)
-    
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
     }
-    
+
     // Fetch all savings goals for the user and profile, ordered by creation date (newest first)
     const goals = await db
       .select()
@@ -141,28 +144,25 @@ export async function getSavingsGoals(userId: string, profileId?: string): Promi
 /**
  * GET /savings-goals/:id
  * Fetch a single savings goal by ID
- * 
+ *
  * @param id - Savings goal ID
  * @param userId - User ID (for authorization)
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Single savings goal with progress information
  */
-export async function getSavingsGoal(id: number, userId: string, profileId?: string): Promise<ApiResult<SavingsGoalOutput>> {
+export async function getSavingsGoal(
+  id: number,
+  userId: string,
+  profileId?: string
+): Promise<ApiResult<SavingsGoalOutput>> {
   try {
-    let whereClause = and(
-      eq(savingsGoals.id, id),
-      eq(savingsGoals.userId, userId)
-    )
-    
+    let whereClause = and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId))
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
     }
-    
-    const goal = await db
-      .select()
-      .from(savingsGoals)
-      .where(whereClause)
-      .limit(1)
+
+    const goal = await db.select().from(savingsGoals).where(whereClause).limit(1)
 
     if (!goal.length) {
       return {
@@ -187,11 +187,13 @@ export async function getSavingsGoal(id: number, userId: string, profileId?: str
 /**
  * POST /savings-goals
  * Create a new savings goal
- * 
+ *
  * @param input - Savings goal data to create
  * @returns Created savings goal with progress information
  */
-export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<ApiResult<SavingsGoalOutput>> {
+export async function createSavingsGoal(
+  input: CreateSavingsGoalInput
+): Promise<ApiResult<SavingsGoalOutput>> {
   try {
     // Validate input
     if (!input.name || input.name.trim() === '') {
@@ -200,7 +202,7 @@ export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<
         error: 'Name is required',
       }
     }
-    
+
     // For paid tier, profileId is required
     if (!input.profileId) {
       return {
@@ -259,13 +261,17 @@ export async function createSavingsGoal(input: CreateSavingsGoalInput): Promise<
 /**
  * PUT /savings-goals/:id
  * Update an existing savings goal
- * 
+ *
  * @param input - Savings goal data to update
  * @param userId - User ID (for authorization)
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Updated savings goal with progress information
  */
-export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: string, profileId?: string): Promise<ApiResult<SavingsGoalOutput>> {
+export async function updateSavingsGoal(
+  input: UpdateSavingsGoalInput,
+  userId: string,
+  profileId?: string
+): Promise<ApiResult<SavingsGoalOutput>> {
   try {
     // Validate input
     if (!input.id) {
@@ -276,21 +282,14 @@ export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: s
     }
 
     // Build where clause
-    let whereClause = and(
-      eq(savingsGoals.id, input.id),
-      eq(savingsGoals.userId, userId)
-    )
-    
+    let whereClause = and(eq(savingsGoals.id, input.id), eq(savingsGoals.userId, userId))
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
     }
 
     // Check if goal exists and belongs to user
-    const existingGoal = await db
-      .select()
-      .from(savingsGoals)
-      .where(whereClause)
-      .limit(1)
+    const existingGoal = await db.select().from(savingsGoals).where(whereClause).limit(1)
 
     if (!existingGoal.length) {
       return {
@@ -300,7 +299,7 @@ export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: s
     }
 
     // Validate updates
-    if (input.name !== undefined && (input.name.trim() === '')) {
+    if (input.name !== undefined && input.name.trim() === '') {
       return {
         success: false,
         error: 'Name cannot be empty',
@@ -359,30 +358,27 @@ export async function updateSavingsGoal(input: UpdateSavingsGoalInput, userId: s
 /**
  * DELETE /savings-goals/:id
  * Delete a savings goal
- * 
+ *
  * @param id - Savings goal ID to delete
  * @param userId - User ID (for authorization)
  * @param profileId - Profile ID to filter by (optional for backward compatibility)
  * @returns Success/failure result
  */
-export async function deleteSavingsGoal(id: number, userId: string, profileId?: string): Promise<ApiResult<void>> {
+export async function deleteSavingsGoal(
+  id: number,
+  userId: string,
+  profileId?: string
+): Promise<ApiResult<void>> {
   try {
     // Build where clause
-    let whereClause = and(
-      eq(savingsGoals.id, id),
-      eq(savingsGoals.userId, userId)
-    )
-    
+    let whereClause = and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId))
+
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
     }
 
     // Check if goal exists and belongs to user
-    const existingGoal = await db
-      .select()
-      .from(savingsGoals)
-      .where(whereClause)
-      .limit(1)
+    const existingGoal = await db.select().from(savingsGoals).where(whereClause).limit(1)
 
     if (!existingGoal.length) {
       return {
@@ -392,9 +388,7 @@ export async function deleteSavingsGoal(id: number, userId: string, profileId?: 
     }
 
     // Delete from database
-    await db
-      .delete(savingsGoals)
-      .where(whereClause)
+    await db.delete(savingsGoals).where(whereClause)
 
     return {
       success: true,
@@ -412,7 +406,4 @@ export async function deleteSavingsGoal(id: number, userId: string, profileId?: 
 // Exports
 // ============================================================================
 
-export {
-  getSavingsGoals as getAllSavingsGoals,
-  getSavingsGoal as getSavingsGoalById,
-}
+export { getSavingsGoals as getAllSavingsGoals, getSavingsGoal as getSavingsGoalById }

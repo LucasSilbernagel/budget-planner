@@ -1,14 +1,14 @@
 /**
  * Financial Server Functions Tests
- * 
+ *
  * Unit tests for financial calculation server functions.
  * Tests validate calculation logic, parameter validation, and error handling.
- * 
+ *
  * Note: These tests use mock Request objects since server functions require authentication.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Request } from '@tanstack/start'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock the authentication function
 vi.mock('../api/auth/paddle', () => ({
@@ -22,21 +22,19 @@ vi.mock('@budget-planner/core', () => ({
   calculateCompoundingProjection: vi.fn(),
 }))
 
-// Import after mocking
 import {
-  getCurrentUserSession,
-} from '../api/auth/paddle'
-import {
+  calculateCompoundingProjection,
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
-  calculateCompoundingProjection,
 } from '@budget-planner/core'
+// Import after mocking
+import { getCurrentUserSession } from '../api/auth/paddle'
 import {
-  retirementCalculation,
-  safeWithdrawalCalculation,
+  complexAggregation,
   compoundingProjection,
   netWorthProjection,
-  complexAggregation,
+  retirementCalculation,
+  safeWithdrawalCalculation,
 } from '../financial'
 
 // ============================================================================
@@ -51,7 +49,7 @@ function createMockRequest(userData: any = null): Request {
     json: vi.fn().mockResolvedValue({}),
     headers: new Headers(),
   } as unknown as Request
-  
+
   // Mock getCurrentUserSession based on userData
   if (userData) {
     ;(getCurrentUserSession as vi.Mock).mockResolvedValue({
@@ -64,7 +62,7 @@ function createMockRequest(userData: any = null): Request {
       error: 'No user session',
     })
   }
-  
+
   return mockRequest
 }
 
@@ -102,9 +100,9 @@ describe('retirementCalculation', () => {
   it('should reject unauthenticated requests', async () => {
     const mockRequest = createMockRequest(null)
     const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0.07 }
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Authentication required')
   })
@@ -112,9 +110,9 @@ describe('retirementCalculation', () => {
   it('should reject free tier users', async () => {
     const mockRequest = createMockRequest(createMockFreeUser())
     const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0.07 }
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Premium feature')
   })
@@ -122,9 +120,9 @@ describe('retirementCalculation', () => {
   it('should reject missing required parameters', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { desiredMonthlyIncome: 0, annualReturnRate: 0 }
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Missing required parameters')
   })
@@ -132,9 +130,9 @@ describe('retirementCalculation', () => {
   it('should reject negative income', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { desiredMonthlyIncome: -1000, annualReturnRate: 0.07 }
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Desired monthly income must be positive')
   })
@@ -142,9 +140,9 @@ describe('retirementCalculation', () => {
   it('should reject invalid return rate (zero)', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0 }
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Annual return rate must be between 0 and 1')
   })
@@ -152,9 +150,9 @@ describe('retirementCalculation', () => {
   it('should reject invalid return rate (>= 1)', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { desiredMonthlyIncome: 5000, annualReturnRate: 1.5 }
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Annual return rate must be between 0 and 1')
   })
@@ -162,12 +160,12 @@ describe('retirementCalculation', () => {
   it('should call core function with valid input', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0.07 }
-    
+
     const mockResult = { requiredAssets: 857142.86 }
     ;(calculateRetirementRequirement as vi.Mock).mockReturnValue(mockResult)
-    
+
     const result = await retirementCalculation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data).toEqual(mockResult)
     expect(calculateRetirementRequirement).toHaveBeenCalledWith(input)
@@ -185,18 +183,18 @@ describe('safeWithdrawalCalculation', () => {
 
   it('should reject unauthenticated requests', async () => {
     const mockRequest = createMockRequest(null)
-    
+
     const result = await safeWithdrawalCalculation(mockRequest, 1000000, 0.07)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Authentication required')
   })
 
   it('should reject negative asset value', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    
+
     const result = await safeWithdrawalCalculation(mockRequest, -1000, 0.07)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Asset value must be positive')
   })
@@ -206,11 +204,10 @@ describe('safeWithdrawalCalculation', () => {
     const assets = 1000000
     const annualReturnRate = 0.07
     const expectedResult = 7000
-    
     ;(calculateSafeMonthlyWithdrawal as vi.Mock).mockReturnValue(expectedResult)
-    
+
     const result = await safeWithdrawalCalculation(mockRequest, assets, annualReturnRate)
-    
+
     expect(result.success).toBe(true)
     expect(result.data).toBe(expectedResult)
     expect(calculateSafeMonthlyWithdrawal).toHaveBeenCalledWith(assets, annualReturnRate)
@@ -229,9 +226,9 @@ describe('compoundingProjection', () => {
   it('should reject unauthenticated requests', async () => {
     const mockRequest = createMockRequest(null)
     const input = { principal: 10000, annualReturnRate: 0.07, years: 30 }
-    
+
     const result = await compoundingProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Authentication required')
   })
@@ -239,9 +236,9 @@ describe('compoundingProjection', () => {
   it('should reject missing required parameters', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { principal: 0, annualReturnRate: 0, years: 0 }
-    
+
     const result = await compoundingProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Missing required parameters')
   })
@@ -249,9 +246,9 @@ describe('compoundingProjection', () => {
   it('should reject negative principal', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { principal: -1000, annualReturnRate: 0.07, years: 30 }
-    
+
     const result = await compoundingProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Principal cannot be negative')
   })
@@ -259,9 +256,9 @@ describe('compoundingProjection', () => {
   it('should reject negative return rate', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { principal: 10000, annualReturnRate: -0.07, years: 30 }
-    
+
     const result = await compoundingProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Return rate cannot be negative')
   })
@@ -269,9 +266,9 @@ describe('compoundingProjection', () => {
   it('should reject non-positive time horizon', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { principal: 10000, annualReturnRate: 0.07, years: 0 }
-    
+
     const result = await compoundingProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Time horizon must be positive')
   })
@@ -280,11 +277,10 @@ describe('compoundingProjection', () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { principal: 10000, annualReturnRate: 0.07, years: 30 }
     const mockResult = [{ year: 0, value: 10000 }]
-    
     ;(calculateCompoundingProjection as vi.Mock).mockReturnValue(mockResult)
-    
+
     const result = await compoundingProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data).toEqual(mockResult)
     expect(calculateCompoundingProjection).toHaveBeenCalledWith(input)
@@ -309,9 +305,9 @@ describe('netWorthProjection', () => {
       expectedReturnRate: 0.07,
       timeHorizonYears: 30,
     }
-    
+
     const result = await netWorthProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Authentication required')
   })
@@ -325,9 +321,9 @@ describe('netWorthProjection', () => {
       expectedReturnRate: 0.07,
       timeHorizonYears: 0,
     }
-    
+
     const result = await netWorthProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Time horizon must be positive')
   })
@@ -341,9 +337,9 @@ describe('netWorthProjection', () => {
       expectedReturnRate: 1.5,
       timeHorizonYears: 30,
     }
-    
+
     const result = await netWorthProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Return rate must be between 0 and 1')
   })
@@ -357,9 +353,9 @@ describe('netWorthProjection', () => {
       expectedReturnRate: 0.07, // 7%
       timeHorizonYears: 1,
     }
-    
+
     const result = await netWorthProjection(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
     expect(result.data?.yearlyProjections).toHaveLength(2) // Year 0 and year 1
@@ -382,9 +378,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'sum',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Authentication required')
   })
@@ -395,9 +391,9 @@ describe('complexAggregation', () => {
       values: [],
       operation: 'sum',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Values array must not be empty')
   })
@@ -408,9 +404,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'invalid' as any,
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(false)
     expect(result.error).toContain('Invalid operation')
   })
@@ -421,9 +417,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'sum',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data?.result).toBe(600)
     expect(result.data?.operation).toBe('sum')
@@ -436,9 +432,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'average',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data?.result).toBe(200)
     expect(result.data?.operation).toBe('average')
@@ -450,9 +446,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'max',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data?.result).toBe(300)
   })
@@ -463,9 +459,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'min',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data?.result).toBe(100)
   })
@@ -476,9 +472,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300],
       operation: 'median',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data?.result).toBe(200)
   })
@@ -489,9 +485,9 @@ describe('complexAggregation', () => {
       values: [100, 200, 300, 400],
       operation: 'median',
     }
-    
+
     const result = await complexAggregation(mockRequest, input)
-    
+
     expect(result.success).toBe(true)
     expect(result.data?.result).toBe(250)
   })

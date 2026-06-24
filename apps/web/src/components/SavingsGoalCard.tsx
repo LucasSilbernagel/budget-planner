@@ -1,8 +1,11 @@
-import React from 'react'
-import * as RadixDialog from '@radix-ui/react-dialog'
-import type { ClientSavingsGoal, SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
-import { useCurrencyPreferences } from '../stores/currencyStore'
 import { formatCurrency } from '@budget-planner/core/format/currency'
+import type {
+  ClientSavingsGoal,
+  SavingsGoalWithProgress,
+} from '@budget-planner/core/services/savingsGoals'
+import * as RadixDialog from '@radix-ui/react-dialog'
+import React from 'react'
+import { useCurrencyPreferences } from '../stores/currencyStore'
 
 /**
  * SavingsGoalCard component props
@@ -34,17 +37,22 @@ function getProgressColor(progress: number): string {
 
 /**
  * SavingsGoalCard component
- * 
+ *
  * Displays a single savings goal with its progress and provides edit/delete actions.
  * Used in SavingsGoalsList.
- * 
+ *
  * @param props - Component props
  * @param props.goal - Savings goal data to display
  * @param props.onEdit - Callback when edit button is clicked
  * @param props.onDelete - Callback when delete button is clicked
  * @param props.isFreeTier - Whether this is free tier (affects UI text)
  */
-export function SavingsGoalCard({ goal, onEdit, onDelete, isFreeTier = true }: SavingsGoalCardProps) {
+export function SavingsGoalCard({
+  goal,
+  onEdit,
+  onDelete,
+  isFreeTier = true,
+}: SavingsGoalCardProps) {
   // Get currency preferences from store
   const { mode, currency } = useCurrencyPreferences()
 
@@ -53,18 +61,26 @@ export function SavingsGoalCard({ goal, onEdit, onDelete, isFreeTier = true }: S
 
   // Calculate progress if not already present
   // Guard against division by zero and cap at 100%
-  const progress = 'progress' in goal ? goal.progress : (
-    goal.targetAmount <= 0 ? 0 : Math.min(100, Math.round((goal.currentBalance / goal.targetAmount) * 100))
-  )
-  const status = 'status' in goal ? goal.status : (
-    progress >= 100 ? 'complete' : progress > 0 ? 'on-track' : 'not-started'
-  )
+  const progress =
+    'progress' in goal
+      ? goal.progress
+      : goal.targetAmount <= 0
+        ? 0
+        : Math.min(100, Math.round((goal.currentBalance / goal.targetAmount) * 100))
+  const status =
+    'status' in goal
+      ? goal.status
+      : progress >= 100
+        ? 'complete'
+        : progress > 0
+          ? 'on-track'
+          : 'not-started'
 
   // Format dates for display - guard against invalid dates
   let createdDate = 'Invalid Date'
   try {
     const date = new Date(goal.createdAt)
-    if (!isNaN(date.getTime())) {
+    if (!Number.isNaN(date.getTime())) {
       createdDate = date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -90,9 +106,7 @@ export function SavingsGoalCard({ goal, onEdit, onDelete, isFreeTier = true }: S
           >
             {goal.name}
           </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Created: {createdDate}
-          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Created: {createdDate}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -165,15 +179,15 @@ export function SavingsGoalCard({ goal, onEdit, onDelete, isFreeTier = true }: S
         <div className="flex justify-end">
           <span
             className={`px-2 py-1 text-xs font-medium rounded-full ${
-              status === 'complete' 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
-              status === 'on-track' 
-                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
-              status === 'not-started' 
-                ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' :
-              status === 'behind' 
-                ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' :
-                'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+              status === 'complete'
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                : status === 'on-track'
+                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                  : status === 'not-started'
+                    ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                    : status === 'behind'
+                      ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'
+                      : 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
             }`}
             role="status"
             aria-live="polite"

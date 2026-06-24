@@ -1,16 +1,19 @@
 /**
  * Time Period Filter Component
- * 
+ *
  * Provides time period filtering functionality for financial visualizations.
  * Supports presets (Last Month, Last 3 Months, etc.) and custom date ranges.
- * 
+ *
  * Story: 3-3-enhance-income-vs-expense-visualization
  * Task: 3 - Create time period filter component
  */
 
+import {
+  TIME_PERIOD_PRESETS,
+  getDateRangeForPreset,
+} from '@budget-planner/core/finance/visualization'
+import type { DateRange, TimePeriodPreset } from '@budget-planner/core/finance/visualization'
 import React, { useState, useCallback } from 'react'
-import { TIME_PERIOD_PRESETS, getDateRangeForPreset } from '@budget-planner/core/finance/visualization'
-import type { TimePeriodPreset, DateRange } from '@budget-planner/core/finance/visualization'
 
 // ============================================================================
 // Types
@@ -22,19 +25,19 @@ import type { TimePeriodPreset, DateRange } from '@budget-planner/core/finance/v
 export interface TimePeriodFilterProps {
   /** Currently selected preset */
   selectedPreset: TimePeriodPreset
-  
+
   /** Custom date range (used when preset is 'custom') */
   customRange?: DateRange
-  
+
   /** Callback when time period changes */
   onTimePeriodChange: (preset: TimePeriodPreset, customRange?: DateRange) => void
-  
+
   /** Available presets (defaults to all) */
   availablePresets?: TimePeriodPreset[]
-  
+
   /** Whether to show custom range option */
   showCustomRange?: boolean
-  
+
   /** Size variant */
   size?: 'sm' | 'md' | 'lg'
 }
@@ -72,7 +75,7 @@ function formatDate(date: Date): string {
  */
 function getAvailablePresets(available?: TimePeriodPreset[]): TimePeriodPreset[] {
   if (available) {
-    return PRESET_ORDER.filter(preset => available.includes(preset))
+    return PRESET_ORDER.filter((preset) => available.includes(preset))
   }
   return PRESET_ORDER
 }
@@ -83,7 +86,7 @@ function getAvailablePresets(available?: TimePeriodPreset[]): TimePeriodPreset[]
 
 /**
  * Time Period Filter Component
- * 
+ *
  * Allows users to select a time period for financial data visualization.
  * Supports preset periods and custom date ranges.
  */
@@ -97,18 +100,19 @@ export function TimePeriodFilter({
 }: TimePeriodFilterProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const available = getAvailablePresets(availablePresets)
-  
+
   // Handle preset selection
-  const handlePresetSelect = useCallback((preset: TimePeriodPreset) => {
-    onTimePeriodChange(preset)
-    setIsExpanded(false)
-  }, [onTimePeriodChange])
-  
+  const handlePresetSelect = useCallback(
+    (preset: TimePeriodPreset) => {
+      onTimePeriodChange(preset)
+      setIsExpanded(false)
+    },
+    [onTimePeriodChange]
+  )
+
   // Get current date range
-  const currentRange = customRange 
-    ? customRange 
-    : getDateRangeForPreset(selectedPreset)
-  
+  const currentRange = customRange ? customRange : getDateRangeForPreset(selectedPreset)
+
   // Determine button size classes
   const getSizeClasses = () => {
     switch (size) {
@@ -120,7 +124,7 @@ export function TimePeriodFilter({
         return 'px-4 py-2 text-sm'
     }
   }
-  
+
   return (
     <div className="relative inline-block text-left">
       {/* Main Button */}
@@ -144,21 +148,16 @@ export function TimePeriodFilter({
             viewBox="0 0 24 24"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
       </div>
-      
+
       {/* Date Range Display (below button) */}
       <div className="mt-1 text-xs text-gray-500 text-center">
         {formatDate(currentRange.startDate)} - {formatDate(currentRange.endDate)}
       </div>
-      
+
       {/* Dropdown Menu */}
       {isExpanded && (
         <div
@@ -167,14 +166,16 @@ export function TimePeriodFilter({
           aria-orientation="vertical"
           aria-labelledby="time-period-menu"
         >
-          <div className="py-1" role="none">
+          <div className="py-1">
             {available
-              .filter(preset => showCustomRange || preset !== 'custom')
+              .filter((preset) => showCustomRange || preset !== 'custom')
               .map((preset) => (
                 <button
                   key={preset}
                   type="button"
-                  className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 hover:text-gray-900 ${selectedPreset === preset ? 'bg-gray-100 text-gray-900' : 'text-gray-700'}`}
+                  className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 hover:text-gray-900 ${
+                    selectedPreset === preset ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                  }`}
                   role="menuitem"
                   onClick={() => handlePresetSelect(preset)}
                 >
@@ -187,7 +188,7 @@ export function TimePeriodFilter({
           </div>
         </div>
       )}
-      
+
       {/* Custom Range Inputs (shown when custom is selected) */}
       {selectedPreset === 'custom' && showCustomRange && (
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -198,10 +199,14 @@ export function TimePeriodFilter({
             <input
               type="date"
               id="start-date"
-              value={customRange?.startDate && !isNaN(customRange.startDate.getTime()) ? customRange.startDate.toISOString().split('T')[0] : ''}
+              value={
+                customRange?.startDate && !Number.isNaN(customRange.startDate.getTime())
+                  ? customRange.startDate.toISOString().split('T')[0]
+                  : ''
+              }
               onChange={(e) => {
                 const newStart = new Date(e.target.value)
-                if (!isNaN(newStart.getTime())) {
+                if (!Number.isNaN(newStart.getTime())) {
                   onTimePeriodChange('custom', {
                     ...(customRange || getDateRangeForPreset('last-month')),
                     startDate: newStart,
@@ -218,10 +223,14 @@ export function TimePeriodFilter({
             <input
               type="date"
               id="end-date"
-              value={customRange?.endDate && !isNaN(customRange.endDate.getTime()) ? customRange.endDate.toISOString().split('T')[0] : ''}
+              value={
+                customRange?.endDate && !Number.isNaN(customRange.endDate.getTime())
+                  ? customRange.endDate.toISOString().split('T')[0]
+                  : ''
+              }
               onChange={(e) => {
                 const newEnd = new Date(e.target.value)
-                if (!isNaN(newEnd.getTime())) {
+                if (!Number.isNaN(newEnd.getTime())) {
                   onTimePeriodChange('custom', {
                     ...(customRange || getDateRangeForPreset('last-month')),
                     endDate: newEnd,
@@ -250,11 +259,6 @@ TimePeriodFilter.defaultProps = {
 // Export
 // ============================================================================
 
-export {
-  PRESET_ORDER,
-  getAvailablePresets,
-}
+export { PRESET_ORDER, getAvailablePresets }
 
-export type {
-  TimePeriodFilterProps,
-}
+export type { TimePeriodFilterProps }

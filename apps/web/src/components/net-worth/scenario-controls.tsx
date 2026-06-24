@@ -1,13 +1,13 @@
 /**
  * Scenario Controls Component
- * 
+ *
  * Provides interactive controls for adjusting net worth projection parameters.
  * Supports multiple scenarios for comparison.
  * Used in the net worth projection page for scenario modeling.
  */
 
-import React from 'react';
-import type { TimeHorizon, NetWorthProjectionInput } from '@budget-planner/core';
+import type { NetWorthProjectionInput, TimeHorizon } from '@budget-planner/core'
+import React from 'react'
 
 // ============================================================================
 // Types
@@ -18,46 +18,46 @@ import type { TimeHorizon, NetWorthProjectionInput } from '@budget-planner/core'
  */
 export interface ScenarioControlsProps {
   /** Array of scenarios to manage */
-  scenarios: Scenario[];
-  
+  scenarios: Scenario[]
+
   /** Currently active scenario index */
-  activeScenarioIndex: number;
-  
+  activeScenarioIndex: number
+
   /** Called when scenarios change */
-  onScenariosChange: (scenarios: Scenario[]) => void;
-  
+  onScenariosChange: (scenarios: Scenario[]) => void
+
   /** Called when active scenario changes */
-  onActiveScenarioChange: (index: number) => void;
-  
+  onActiveScenarioChange: (index: number) => void
+
   /** Whether projection is currently in progress */
-  isCalculating?: boolean;
+  isCalculating?: boolean
 }
 
 /**
  * A single scenario with its input and display settings
  */
 export interface Scenario {
-  id: string;
-  name: string;
-  input: NetWorthProjectionInput;
-  color: string;
-  isVisible: boolean;
+  id: string
+  name: string
+  input: NetWorthProjectionInput
+  color: string
+  isVisible: boolean
 }
 
 /**
  * Individual control configuration
  */
 interface ControlConfig {
-  label: string;
-  key: keyof NetWorthProjectionInput;
-  type: 'number' | 'select';
-  min?: number;
-  max?: number;
-  step?: number;
-  options?: { value: string; label: string }[];
-  description: string;
-  formatValue?: (value: number | string | undefined) => string;
-  parseValue?: (value: string) => number | string;
+  label: string
+  key: keyof NetWorthProjectionInput
+  type: 'number' | 'select'
+  min?: number
+  max?: number
+  step?: number
+  options?: { value: string; label: string }[]
+  description: string
+  formatValue?: (value: number | string | undefined) => string
+  parseValue?: (value: string) => number | string
 }
 
 // ============================================================================
@@ -69,7 +69,7 @@ const TIME_HORIZONS: { value: TimeHorizon; label: string }[] = [
   { value: '5y', label: '5 Years' },
   { value: '10y', label: '10 Years' },
   { value: 'custom', label: 'Custom' },
-];
+]
 
 // Predefined scenario colors
 const SCENARIO_COLORS = [
@@ -80,7 +80,7 @@ const SCENARIO_COLORS = [
   '#ef4444', // Red
   '#06b6d4', // Cyan
   '#84cc16', // Lime
-];
+]
 
 const DEFAULT_SCENARIOS: Scenario[] = [
   {
@@ -120,7 +120,7 @@ const DEFAULT_SCENARIOS: Scenario[] = [
       currentAssetsCents: 10000000,
       currentLiabilitiesCents: 0,
       monthlyNetIncomeCents: 500000,
-      assetReturnRate: 0.10, // 10% - higher return
+      assetReturnRate: 0.1, // 10% - higher return
       incomeGrowthRate: 0.05, // 5% - higher growth
       timeHorizon: '10y',
       customYears: undefined,
@@ -128,7 +128,7 @@ const DEFAULT_SCENARIOS: Scenario[] = [
     color: SCENARIO_COLORS[1],
     isVisible: true,
   },
-];
+]
 
 const CONTROLS: ControlConfig[] = [
   {
@@ -143,9 +143,9 @@ const CONTROLS: ControlConfig[] = [
         return new Intl.NumberFormat('en-US', {
           style: 'currency',
           currency: 'USD',
-        }).format(value / 100);
+        }).format(value / 100)
       }
-      return typeof value === 'string' ? value : '';
+      return typeof value === 'string' ? value : ''
     },
     parseValue: (value: string) => Math.round(parseFloat(value) * 100),
   },
@@ -161,9 +161,9 @@ const CONTROLS: ControlConfig[] = [
         return new Intl.NumberFormat('en-US', {
           style: 'currency',
           currency: 'USD',
-        }).format(value / 100);
+        }).format(value / 100)
       }
-      return typeof value === 'string' ? value : '';
+      return typeof value === 'string' ? value : ''
     },
     parseValue: (value: string) => Math.round(parseFloat(value) * 100),
   },
@@ -177,13 +177,13 @@ const CONTROLS: ControlConfig[] = [
     description: 'Your monthly income minus expenses (can be negative)',
     formatValue: (value: number | string | undefined) => {
       if (typeof value === 'number') {
-        const sign = value < 0 ? '-' : '';
+        const sign = value < 0 ? '-' : ''
         return `${sign}${new Intl.NumberFormat('en-US', {
           style: 'currency',
           currency: 'USD',
-        }).format(Math.abs(value) / 100)}`;
+        }).format(Math.abs(value) / 100)}`
       }
-      return typeof value === 'string' ? value : '';
+      return typeof value === 'string' ? value : ''
     },
     parseValue: (value: string) => Math.round(parseFloat(value) * 100),
   },
@@ -197,9 +197,9 @@ const CONTROLS: ControlConfig[] = [
     description: 'Expected annual return on your assets',
     formatValue: (value: number | string | undefined) => {
       if (typeof value === 'number') {
-        return `${(value * 100).toFixed(1)}%`;
+        return `${(value * 100).toFixed(1)}%`
       }
-      return typeof value === 'string' ? value : '';
+      return typeof value === 'string' ? value : ''
     },
     parseValue: (value: string) => parseFloat(value) / 100,
   },
@@ -213,9 +213,9 @@ const CONTROLS: ControlConfig[] = [
     description: 'Expected annual growth rate for your net income',
     formatValue: (value: number | string | undefined) => {
       if (typeof value === 'number') {
-        return `${(value * 100).toFixed(1)}%`;
+        return `${(value * 100).toFixed(1)}%`
       }
-      return typeof value === 'string' ? value : '';
+      return typeof value === 'string' ? value : ''
     },
     parseValue: (value: string) => parseFloat(value) / 100,
   },
@@ -226,12 +226,12 @@ const CONTROLS: ControlConfig[] = [
     options: TIME_HORIZONS,
     description: 'How far into the future to project',
     formatValue: (value: string | undefined) => {
-      const option = TIME_HORIZONS.find(o => o.value === value);
-      return option?.label ?? value ?? '';
+      const option = TIME_HORIZONS.find((o) => o.value === value)
+      return option?.label ?? value ?? ''
     },
     parseValue: (value: string) => value as TimeHorizon,
   },
-];
+]
 
 // ============================================================================
 // Helper Functions
@@ -241,7 +241,7 @@ const CONTROLS: ControlConfig[] = [
  * Generate a unique ID for a new scenario
  */
 function generateScenarioId(): string {
-  return `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `scenario-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
 /**
@@ -250,10 +250,10 @@ function generateScenarioId(): string {
 function getNextColor(usedColors: string[]): string {
   for (const color of SCENARIO_COLORS) {
     if (!usedColors.includes(color)) {
-      return color;
+      return color
     }
   }
-  return SCENARIO_COLORS[0];
+  return SCENARIO_COLORS[0]
 }
 
 // ============================================================================
@@ -275,31 +275,27 @@ function NumberControl({
   parseValue,
   disabled,
 }: {
-  label: string;
-  value: unknown;
-  onChange: (newValue: unknown) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  description: string;
-  formatValue?: (value: number | string | undefined) => string;
-  parseValue?: (value: string) => number | string;
-  disabled?: boolean;
+  label: string
+  value: unknown
+  onChange: (newValue: unknown) => void
+  min?: number
+  max?: number
+  step?: number
+  description: string
+  formatValue?: (value: number | string | undefined) => string
+  parseValue?: (value: string) => number | string
+  disabled?: boolean
 }) {
-  const formattedValue = formatValue ? formatValue(value as number) : String(value);
-  
+  const formattedValue = formatValue ? formatValue(value as number) : String(value)
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = parseValue 
-      ? parseValue(e.target.value)
-      : parseFloat(e.target.value);
-    onChange(newValue);
-  };
+    const newValue = parseValue ? parseValue(e.target.value) : parseFloat(e.target.value)
+    onChange(newValue)
+  }
 
   return (
     <div className="mb-3">
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label}
-      </label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input
         type="number"
         value={formattedValue}
@@ -312,7 +308,7 @@ function NumberControl({
       />
       <p className="mt-1 text-xs text-gray-500">{description}</p>
     </div>
-  );
+  )
 }
 
 /**
@@ -328,29 +324,25 @@ function SelectControl({
   parseValue,
   disabled,
 }: {
-  label: string;
-  value: unknown;
-  onChange: (newValue: unknown) => void;
-  options?: { value: string; label: string }[];
-  description: string;
-  formatValue?: (value: number | string | undefined) => string;
-  parseValue?: (value: string) => number | string;
-  disabled?: boolean;
+  label: string
+  value: unknown
+  onChange: (newValue: unknown) => void
+  options?: { value: string; label: string }[]
+  description: string
+  formatValue?: (value: number | string | undefined) => string
+  parseValue?: (value: string) => number | string
+  disabled?: boolean
 }) {
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = parseValue 
-      ? parseValue(e.target.value)
-      : e.target.value;
-    onChange(newValue);
-  };
+    const newValue = parseValue ? parseValue(e.target.value) : e.target.value
+    onChange(newValue)
+  }
 
-  const formattedValue = formatValue ? formatValue(value as string) : String(value);
+  const formattedValue = formatValue ? formatValue(value as string) : String(value)
 
   return (
     <div className="mb-3">
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label}
-      </label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <select
         value={formattedValue}
         onChange={handleChange}
@@ -365,7 +357,7 @@ function SelectControl({
       </select>
       <p className="mt-1 text-xs text-gray-500">{description}</p>
     </div>
-  );
+  )
 }
 
 // Custom input for when time horizon is custom
@@ -374,24 +366,22 @@ function CustomYearsInput({
   onChange,
   disabled,
 }: {
-  customYears: number | undefined;
-  onChange: (years: number) => void;
-  disabled?: boolean;
+  customYears: number | undefined
+  onChange: (years: number) => void
+  disabled?: boolean
 }) {
-  if (!customYears && customYears !== 0) return null;
+  if (!customYears && customYears !== 0) return null
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const years = parseInt(e.target.value, 10);
-    if (!isNaN(years) && years > 0 && years <= 50) {
-      onChange(years);
+    const years = parseInt(e.target.value, 10)
+    if (!Number.isNaN(years) && years > 0 && years <= 50) {
+      onChange(years)
     }
-  };
+  }
 
   return (
     <div className="mb-3">
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        Custom Years
-      </label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Custom Years</label>
       <input
         type="number"
         value={customYears}
@@ -402,11 +392,9 @@ function CustomYearsInput({
         disabled={disabled}
         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed text-sm"
       />
-      <p className="mt-1 text-xs text-gray-500">
-        Number of years for custom projection (1-50)
-      </p>
+      <p className="mt-1 text-xs text-gray-500">Number of years for custom projection (1-50)</p>
     </div>
-  );
+  )
 }
 
 // Scenario tab for switching between scenarios
@@ -418,12 +406,12 @@ function ScenarioTab({
   onClose,
   disabled,
 }: {
-  scenario: Scenario;
-  index: number;
-  isActive: boolean;
-  onClick: () => void;
-  onClose: () => void;
-  disabled?: boolean;
+  scenario: Scenario
+  index: number
+  isActive: boolean
+  onClick: () => void
+  onClose: () => void
+  disabled?: boolean
 }) {
   return (
     <div
@@ -439,19 +427,15 @@ function ScenarioTab({
           className="inline-block w-3 h-3 rounded-full mr-2"
           style={{ backgroundColor: scenario.color }}
         />
-        <span
-          className={`text-sm font-medium ${
-            isActive ? 'text-gray-800' : 'text-gray-600'
-          }`}
-        >
+        <span className={`text-sm font-medium ${isActive ? 'text-gray-800' : 'text-gray-600'}`}>
           {scenario.name}
         </span>
       </div>
       <button
         type="button"
         onClick={(e) => {
-          e.stopPropagation();
-          onClose();
+          e.stopPropagation()
+          onClose()
         }}
         disabled={disabled || index === 0}
         className={`ml-2 text-xs p-1 rounded hover:bg-gray-200 ${
@@ -461,7 +445,7 @@ function ScenarioTab({
         ×
       </button>
     </div>
-  );
+  )
 }
 
 // ============================================================================
@@ -475,56 +459,56 @@ export function ScenarioControls({
   onActiveScenarioChange,
   isCalculating = false,
 }: ScenarioControlsProps) {
-  const activeScenario = scenarios[activeScenarioIndex];
-  
+  const activeScenario = scenarios[activeScenarioIndex]
+
   // Update a specific scenario
   const updateScenario = (index: number, updates: Partial<Scenario>) => {
-    const newScenarios = [...scenarios];
-    newScenarios[index] = { ...newScenarios[index], ...updates };
-    onScenariosChange(newScenarios);
-  };
+    const newScenarios = [...scenarios]
+    newScenarios[index] = { ...newScenarios[index], ...updates }
+    onScenariosChange(newScenarios)
+  }
 
   // Add a new scenario
   const addScenario = () => {
-    const usedColors = scenarios.map(s => s.color);
-    const newColor = getNextColor(usedColors);
+    const usedColors = scenarios.map((s) => s.color)
+    const newColor = getNextColor(usedColors)
     const newScenario: Scenario = {
       id: generateScenarioId(),
       name: `Scenario ${scenarios.length + 1}`,
       input: { ...activeScenario.input },
       color: newColor,
       isVisible: true,
-    };
-    onScenariosChange([...scenarios, newScenario]);
-    onActiveScenarioChange(scenarios.length);
-  };
+    }
+    onScenariosChange([...scenarios, newScenario])
+    onActiveScenarioChange(scenarios.length)
+  }
 
   // Remove a scenario
   const removeScenario = (index: number) => {
-    if (scenarios.length <= 1) return;
+    if (scenarios.length <= 1) return
     if (index === activeScenarioIndex) {
-      onActiveScenarioChange(Math.max(0, index - 1));
+      onActiveScenarioChange(Math.max(0, index - 1))
     }
-    const newScenarios = scenarios.filter((_, i) => i !== index);
-    onScenariosChange(newScenarios);
-  };
+    const newScenarios = scenarios.filter((_, i) => i !== index)
+    onScenariosChange(newScenarios)
+  }
 
   // Update scenario name
   const updateScenarioName = (index: number, name: string) => {
-    updateScenario(index, { name });
-  };
+    updateScenario(index, { name })
+  }
 
   // Update scenario visibility
   const toggleScenarioVisibility = (index: number) => {
-    updateScenario(index, { isVisible: !scenarios[index].isVisible });
-  };
+    updateScenario(index, { isVisible: !scenarios[index].isVisible })
+  }
 
   // Update input value for active scenario
   const handleInputChange = (key: keyof NetWorthProjectionInput, newValue: unknown) => {
     updateScenario(activeScenarioIndex, {
       input: { ...activeScenario.input, [key]: newValue },
-    });
-  };
+    })
+  }
 
   // Handle custom years change
   const handleCustomYearsChange = (years: number) => {
@@ -534,17 +518,17 @@ export function ScenarioControls({
         timeHorizon: 'custom',
         customYears: years,
       },
-    });
-  };
+    })
+  }
 
   // Sync time horizon across all scenarios
   const syncTimeHorizon = (horizon: TimeHorizon) => {
-    const newScenarios = scenarios.map(scenario => ({
+    const newScenarios = scenarios.map((scenario) => ({
       ...scenario,
       input: { ...scenario.input, timeHorizon: horizon },
-    }));
-    onScenariosChange(newScenarios);
-  };
+    }))
+    onScenariosChange(newScenarios)
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-lg">
@@ -561,7 +545,7 @@ export function ScenarioControls({
             disabled={isCalculating}
           />
         ))}
-        
+
         {/* Add Scenario Button */}
         <button
           type="button"
@@ -589,28 +573,45 @@ export function ScenarioControls({
               className="text-lg font-semibold text-gray-800 bg-transparent border-none focus:ring-0 focus:outline-none disabled:opacity-50"
             />
           </div>
-          
+
           <div className="flex items-center space-x-2">
             {/* Visibility Toggle */}
             <button
               type="button"
               onClick={() => toggleScenarioVisibility(activeScenarioIndex)}
               disabled={isCalculating}
-              className={`p-2 rounded-md ${activeScenario.isVisible ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'} disabled:opacity-50 disabled:cursor-not-allowed`}
+              className={`p-2 rounded-md ${
+                activeScenario.isVisible ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
               title={activeScenario.isVisible ? 'Hide scenario' : 'Show scenario'}
             >
               {activeScenario.isVisible ? (
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
                 </svg>
               ) : (
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                  />
                 </svg>
               )}
             </button>
-            
+
             {/* Sync Time Horizon */}
             <button
               type="button"
@@ -620,7 +621,12 @@ export function ScenarioControls({
               title="Sync time horizon across all scenarios"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
               </svg>
             </button>
           </div>
@@ -630,10 +636,10 @@ export function ScenarioControls({
       {/* Controls */}
       <div className="p-4">
         <h3 className="text-sm font-semibold text-gray-700 mb-4">Parameters</h3>
-        
+
         <div className="space-y-3">
           {CONTROLS.map((control) => {
-            const ControlComponent = control.type === 'select' ? SelectControl : NumberControl;
+            const ControlComponent = control.type === 'select' ? SelectControl : NumberControl
             return (
               <ControlComponent
                 key={control.key}
@@ -643,9 +649,9 @@ export function ScenarioControls({
                 disabled={isCalculating}
                 {...control}
               />
-            );
+            )
           })}
-          
+
           {/* Custom years input - only shown when time horizon is custom */}
           {activeScenario.input.timeHorizon === 'custom' && (
             <CustomYearsInput
@@ -660,9 +666,11 @@ export function ScenarioControls({
         <div className="mt-4 pt-3 border-t border-gray-200">
           <button
             type="button"
-            onClick={() => updateScenario(activeScenarioIndex, {
-              input: DEFAULT_SCENARIOS[0].input,
-            })}
+            onClick={() =>
+              updateScenario(activeScenarioIndex, {
+                input: DEFAULT_SCENARIOS[0].input,
+              })
+            }
             disabled={isCalculating}
             className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           >
@@ -678,7 +686,9 @@ export function ScenarioControls({
           {scenarios.map((scenario, index) => (
             <div
               key={scenario.id}
-              className={`flex items-center justify-between p-2 rounded-md ${index === activeScenarioIndex ? 'bg-blue-50' : ''}`}
+              className={`flex items-center justify-between p-2 rounded-md ${
+                index === activeScenarioIndex ? 'bg-blue-50' : ''
+              }`}
               onClick={() => onActiveScenarioChange(index)}
             >
               <div className="flex items-center">
@@ -691,8 +701,8 @@ export function ScenarioControls({
               <button
                 type="button"
                 onClick={(e) => {
-                  e.stopPropagation();
-                  removeScenario(index);
+                  e.stopPropagation()
+                  removeScenario(index)
                 }}
                 disabled={isCalculating || index === 0}
                 className="text-gray-400 hover:text-gray-600 disabled:opacity-0"
@@ -704,9 +714,9 @@ export function ScenarioControls({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 // Export default scenarios for initial state
-export { DEFAULT_SCENARIOS };
-export type { Scenario };
+export { DEFAULT_SCENARIOS }
+export type { Scenario }

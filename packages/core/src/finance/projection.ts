@@ -1,6 +1,6 @@
 /**
  * Net Worth Projection Utilities
- * 
+ *
  * Provides compound interest calculations for forward-looking net worth projections.
  * All calculations use monthly compounding periods as per project requirements.
  */
@@ -12,32 +12,32 @@
 /**
  * Time horizon options for projections
  */
-export type TimeHorizon = '1y' | '5y' | '10y' | 'custom';
+export type TimeHorizon = '1y' | '5y' | '10y' | 'custom'
 
 /**
  * Input parameters for net worth projection
  */
 export interface NetWorthProjectionInput {
   /** Current total assets in cents (to avoid floating point precision issues) */
-  currentAssetsCents: number;
-  
+  currentAssetsCents: number
+
   /** Current total liabilities in cents */
-  currentLiabilitiesCents: number;
-  
+  currentLiabilitiesCents: number
+
   /** Monthly net income (income - expenses) in cents */
-  monthlyNetIncomeCents: number;
-  
+  monthlyNetIncomeCents: number
+
   /** Expected annual return rate on assets (as decimal, e.g., 0.07 for 7%) */
-  assetReturnRate: number;
-  
+  assetReturnRate: number
+
   /** Expected annual growth rate for net income (as decimal) */
-  incomeGrowthRate: number;
-  
+  incomeGrowthRate: number
+
   /** Time horizon for projection */
-  timeHorizon: TimeHorizon;
-  
+  timeHorizon: TimeHorizon
+
   /** Custom number of years (only used if timeHorizon === 'custom') */
-  customYears?: number;
+  customYears?: number
 }
 
 /**
@@ -45,22 +45,22 @@ export interface NetWorthProjectionInput {
  */
 export interface ProjectionPoint {
   /** Month number (0 = current, 1 = 1 month from now, etc.) */
-  month: number;
-  
+  month: number
+
   /** Year number (0 = current, 1 = 1 year from now, etc.) */
-  year: number;
-  
+  year: number
+
   /** Projected assets at this point in cents */
-  assetsCents: number;
-  
+  assetsCents: number
+
   /** Projected liabilities at this point in cents */
-  liabilitiesCents: number;
-  
+  liabilitiesCents: number
+
   /** Projected net worth at this point in cents */
-  netWorthCents: number;
-  
+  netWorthCents: number
+
   /** Projected monthly net income at this point in cents */
-  monthlyNetIncomeCents: number;
+  monthlyNetIncomeCents: number
 }
 
 /**
@@ -68,31 +68,31 @@ export interface ProjectionPoint {
  */
 export interface NetWorthProjectionResult {
   /** Input parameters used for this projection */
-  input: NetWorthProjectionInput;
-  
+  input: NetWorthProjectionInput
+
   /** Array of projection points, one per month */
-  timeline: ProjectionPoint[];
-  
+  timeline: ProjectionPoint[]
+
   /** Summary statistics */
   summary: {
     /** Total number of months in projection */
-    totalMonths: number;
-    
+    totalMonths: number
+
     /** Starting net worth in cents */
-    startingNetWorthCents: number;
-    
+    startingNetWorthCents: number
+
     /** Ending net worth in cents */
-    endingNetWorthCents: number;
-    
+    endingNetWorthCents: number
+
     /** Total growth in net worth in cents */
-    totalGrowthCents: number;
-    
+    totalGrowthCents: number
+
     /** Growth percentage (ending / starting) */
-    growthPercentage: number;
-    
+    growthPercentage: number
+
     /** Average monthly growth in cents */
-    averageMonthlyGrowthCents: number;
-  };
+    averageMonthlyGrowthCents: number
+  }
 }
 
 // ============================================================================
@@ -106,30 +106,30 @@ export interface NetWorthProjectionResult {
 function validateProjectionInput(input: NetWorthProjectionInput): void {
   // Check for negative values that don't make sense
   if (input.currentAssetsCents < 0) {
-    throw new Error('Current assets cannot be negative');
+    throw new Error('Current assets cannot be negative')
   }
-  
+
   if (input.currentLiabilitiesCents < 0) {
-    throw new Error('Current liabilities cannot be negative');
+    throw new Error('Current liabilities cannot be negative')
   }
-  
+
   // Asset return rate should be between -1 and a reasonable upper bound
   if (input.assetReturnRate < -1 || input.assetReturnRate > 1) {
-    throw new Error('Asset return rate must be between -100% and +100%');
+    throw new Error('Asset return rate must be between -100% and +100%')
   }
-  
+
   // Income growth rate should be reasonable
   if (input.incomeGrowthRate < -1 || input.incomeGrowthRate > 1) {
-    throw new Error('Income growth rate must be between -100% and +100%');
+    throw new Error('Income growth rate must be between -100% and +100%')
   }
-  
+
   // Custom years must be positive if provided
   if (input.timeHorizon === 'custom' && input.customYears !== undefined) {
     if (input.customYears <= 0) {
-      throw new Error('Custom time horizon must be positive');
+      throw new Error('Custom time horizon must be positive')
     }
     if (input.customYears > 50) {
-      throw new Error('Custom time horizon cannot exceed 50 years');
+      throw new Error('Custom time horizon cannot exceed 50 years')
     }
   }
 }
@@ -139,15 +139,19 @@ function validateProjectionInput(input: NetWorthProjectionInput): void {
  */
 function getYearsFromHorizon(horizon: TimeHorizon, customYears?: number): number {
   switch (horizon) {
-    case '1y': return 1;
-    case '5y': return 5;
-    case '10y': return 10;
-    case 'custom': 
+    case '1y':
+      return 1
+    case '5y':
+      return 5
+    case '10y':
+      return 10
+    case 'custom':
       if (customYears === undefined || customYears <= 0) {
-        throw new Error('Custom years must be provided for custom time horizon');
+        throw new Error('Custom years must be provided for custom time horizon')
       }
-      return customYears;
-    default: return 10;
+      return customYears
+    default:
+      return 10
   }
 }
 
@@ -162,54 +166,46 @@ function getYearsFromHorizon(horizon: TimeHorizon, customYears?: number): number
 function calculateMonthlyRate(annualRate: number): number {
   if (annualRate === -1) {
     // Special case: -100% means everything goes to 0
-    return -1;
+    return -1
   }
-  return Math.pow(1 + annualRate, 1/12) - 1;
+  return (1 + annualRate) ** (1 / 12) - 1
 }
 
 /**
  * Calculates compound growth over a number of periods
  * Formula: futureValue = presentValue * (1 + rate)^periods
  */
-function calculateCompoundGrowth(
-  presentValue: number, 
-  rate: number, 
-  periods: number
-): number {
+function calculateCompoundGrowth(presentValue: number, rate: number, periods: number): number {
   if (periods === 0) {
-    return presentValue;
+    return presentValue
   }
   if (rate === -1) {
     // -100% rate means everything goes to 0
-    return 0;
+    return 0
   }
-  return presentValue * Math.pow(1 + rate, periods);
+  return presentValue * (1 + rate) ** periods
 }
 
 /**
  * Calculates the future value of a series of deposits (future value of an annuity)
  * Formula: FV = PMT * (((1 + r)^n - 1) / r)
  * where PMT = regular payment, r = periodic rate, n = number of periods
- * 
+ *
  * Note: Currently not used in main projection logic but kept for potential future use
  * or alternative calculation methods.
  */
-function calculateFutureValueOfAnnuity(
-  payment: number,
-  rate: number,
-  periods: number
-): number {
+function calculateFutureValueOfAnnuity(payment: number, rate: number, periods: number): number {
   if (periods === 0) {
-    return 0;
+    return 0
   }
   if (rate === 0) {
     // Simple interest: FV = PMT * n
-    return payment * periods;
+    return payment * periods
   }
   if (rate === -1) {
-    return 0;
+    return 0
   }
-  return payment * ((Math.pow(1 + rate, periods) - 1) / rate);
+  return payment * (((1 + rate) ** periods - 1) / rate)
 }
 
 // ============================================================================
@@ -218,66 +214,64 @@ function calculateFutureValueOfAnnuity(
 
 /**
  * Creates a net worth projection timeline
- * 
+ *
  * Calculates month-by-month projection of net worth based on:
  * - Current assets and liabilities
  * - Monthly net income (which can grow over time)
  * - Asset return rate (compounded monthly)
- * 
+ *
  * The calculation for each month:
  * - Assets grow by the monthly return rate
  * - New net income is added (growing at incomeGrowthRate)
  * - The new net income itself earns returns in subsequent months
- * 
+ *
  * @param input - Projection input parameters
  * @returns Complete projection result with timeline and summary
  */
-export function createNetWorthProjection(
-  input: NetWorthProjectionInput
-): NetWorthProjectionResult {
+export function createNetWorthProjection(input: NetWorthProjectionInput): NetWorthProjectionResult {
   // Validate input
-  validateProjectionInput(input);
-  
+  validateProjectionInput(input)
+
   // Get total years
-  const totalYears = getYearsFromHorizon(input.timeHorizon, input.customYears);
-  const totalMonths = Math.floor(totalYears * 12);
-  
+  const totalYears = getYearsFromHorizon(input.timeHorizon, input.customYears)
+  const totalMonths = Math.floor(totalYears * 12)
+
   // Calculate rates
-  const monthlyAssetRate = calculateMonthlyRate(input.assetReturnRate);
-  const monthlyIncomeGrowthRate = calculateMonthlyRate(input.incomeGrowthRate);
-  
+  const monthlyAssetRate = calculateMonthlyRate(input.assetReturnRate)
+  const monthlyIncomeGrowthRate = calculateMonthlyRate(input.incomeGrowthRate)
+
   // Initialize
-  const timeline: ProjectionPoint[] = [];
-  let currentAssetsCents = input.currentAssetsCents;
-  let currentLiabilitiesCents = input.currentLiabilitiesCents;
-  let currentMonthlyNetIncomeCents = input.monthlyNetIncomeCents;
-  
+  const timeline: ProjectionPoint[] = []
+  let currentAssetsCents = input.currentAssetsCents
+  const currentLiabilitiesCents = input.currentLiabilitiesCents
+  let currentMonthlyNetIncomeCents = input.monthlyNetIncomeCents
+
   // Calculate starting net worth
-  const startingNetWorthCents = currentAssetsCents - currentLiabilitiesCents;
-  
+  const startingNetWorthCents = currentAssetsCents - currentLiabilitiesCents
+
   // Build timeline month by month
   // We always have at least month 0, so timeline will never be empty
   for (let month = 0; month <= totalMonths; month++) {
-    const year = Math.floor(month / 12);
-    
+    const year = Math.floor(month / 12)
+
     // For months > 0, apply compounding to assets
     if (month > 0) {
       // Assets grow by the monthly rate
       currentAssetsCents = Math.round(
         calculateCompoundGrowth(currentAssetsCents, monthlyAssetRate, 1)
-      );
-      
+      )
+
       // Add new net income for this month
-      currentAssetsCents += currentMonthlyNetIncomeCents;
-      
+      currentAssetsCents += currentMonthlyNetIncomeCents
+
       // Income grows at its own rate
       currentMonthlyNetIncomeCents = Math.round(
         calculateCompoundGrowth(currentMonthlyNetIncomeCents, monthlyIncomeGrowthRate, 1)
-      );
+      )
     }
-    
-    const netWorthCents = currentAssetsCents - currentLiabilitiesCents;
-    
+
+    const netWorthCents = currentAssetsCents - currentLiabilitiesCents
+
     timeline.push({
       month,
       year,
@@ -285,23 +279,20 @@ export function createNetWorthProjection(
       liabilitiesCents: currentLiabilitiesCents,
       netWorthCents,
       monthlyNetIncomeCents: currentMonthlyNetIncomeCents,
-    });
+    })
   }
-  
+
   // Calculate summary
   // timeline always has at least one element (month 0 was pushed above)
-  const timelineLength = timeline.length;
+  const timelineLength = timeline.length
   // Safe to use non-null assertion - loop always runs at least once (month = 0)
-  const lastPoint = timeline[timelineLength - 1]!;
-  const endingNetWorthCents = lastPoint.netWorthCents;
-  const totalGrowthCents = endingNetWorthCents - startingNetWorthCents;
-  const growthPercentage = startingNetWorthCents !== 0 
-    ? (endingNetWorthCents / startingNetWorthCents) * 100 
-    : 0;
-  const averageMonthlyGrowthCents = totalMonths > 0 
-    ? Math.round(totalGrowthCents / totalMonths)
-    : 0;
-  
+  const lastPoint = timeline[timelineLength - 1]!
+  const endingNetWorthCents = lastPoint.netWorthCents
+  const totalGrowthCents = endingNetWorthCents - startingNetWorthCents
+  const growthPercentage =
+    startingNetWorthCents !== 0 ? (endingNetWorthCents / startingNetWorthCents) * 100 : 0
+  const averageMonthlyGrowthCents = totalMonths > 0 ? Math.round(totalGrowthCents / totalMonths) : 0
+
   return {
     input: {
       ...input,
@@ -317,7 +308,7 @@ export function createNetWorthProjection(
       growthPercentage,
       averageMonthlyGrowthCents,
     },
-  };
+  }
 }
 
 // ============================================================================
@@ -341,7 +332,7 @@ export function projectNetWorthSimple(
     incomeGrowthRate: 0,
     timeHorizon: 'custom',
     customYears: years,
-  });
+  })
 }
 
 /**
@@ -353,17 +344,17 @@ export function calculateYearsToNetWorthTarget(
   monthlySavingsCents: number,
   annualReturnRate: number,
   targetNetWorthCents: number,
-  maxYears: number = 50
+  maxYears = 50
 ): number | null {
   if (currentNetWorthCents >= targetNetWorthCents) {
-    return 0;
+    return 0
   }
-  
+
   if (monthlySavingsCents <= 0 && annualReturnRate <= 0) {
     // No growth possible
-    return null;
+    return null
   }
-  
+
   const result = createNetWorthProjection({
     currentAssetsCents: currentNetWorthCents,
     currentLiabilitiesCents: 0,
@@ -372,17 +363,17 @@ export function calculateYearsToNetWorthTarget(
     incomeGrowthRate: 0,
     timeHorizon: 'custom',
     customYears: maxYears,
-  });
-  
+  })
+
   // Find the first point where net worth reaches or exceeds target
   for (const point of result.timeline) {
     if (point.netWorthCents >= targetNetWorthCents) {
-      return point.year + (point.month / 12);
+      return point.year + point.month / 12
     }
   }
-  
+
   // Target not reached within maxYears
-  return null;
+  return null
 }
 
 // ============================================================================
@@ -402,12 +393,12 @@ export function isNetWorthProjectionInput(obj: unknown): obj is NetWorthProjecti
     'assetReturnRate' in obj &&
     'incomeGrowthRate' in obj &&
     'timeHorizon' in obj
-  );
+  )
 }
 
 /**
  * Type guard for TimeHorizon
  */
 export function isTimeHorizon(value: unknown): value is TimeHorizon {
-  return typeof value === 'string' && ['1y', '5y', '10y', 'custom'].includes(value);
+  return typeof value === 'string' && ['1y', '5y', '10y', 'custom'].includes(value)
 }

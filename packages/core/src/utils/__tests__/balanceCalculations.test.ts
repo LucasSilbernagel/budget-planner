@@ -1,19 +1,19 @@
 /**
  * Balance Calculations Tests
- * 
+ *
  * Unit tests for balance tracking calculation utilities.
  * Tests timeline calculation, progress calculation, and formatting functions.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  calculateMonthsToLimit,
-  formatTimeline,
-  calculateProjectedBalance,
-  calculateContributionProgress,
-  formatProgress,
-  calculateDebtMetrics,
   DebtSubType,
+  calculateContributionProgress,
+  calculateDebtMetrics,
+  calculateMonthsToLimit,
+  calculateProjectedBalance,
+  formatProgress,
+  formatTimeline,
 } from '../balanceCalculations'
 
 describe('calculateMonthsToLimit', () => {
@@ -269,11 +269,7 @@ describe('Edge Case Handling - calculateProjectedBalance', () => {
   })
 
   it('should handle arithmetic overflow gracefully', () => {
-    const result = calculateProjectedBalance(
-      Number.MAX_SAFE_INTEGER,
-      Number.MAX_SAFE_INTEGER,
-      100
-    )
+    const result = calculateProjectedBalance(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, 100)
     expect(result).toBe(Number.MAX_SAFE_INTEGER)
   })
 })
@@ -322,8 +318,8 @@ describe('Debt-Specific Calculations', () => {
     it('should calculate utilization percentage for credit card', () => {
       const result = calculateDebtMetrics(
         -100000, // -$1,000 owed
-        500000,  // $5,000 limit
-        50000,   // $500/month payment
+        500000, // $5,000 limit
+        50000, // $500/month payment
         'credit-card'
       )
       expect(result.progress).toBe(20) // 100000/500000 * 100
@@ -333,12 +329,7 @@ describe('Debt-Specific Calculations', () => {
     })
 
     it('should handle credit card with no payment', () => {
-      const result = calculateDebtMetrics(
-        -100000,
-        500000,
-        undefined,
-        'credit-card'
-      )
+      const result = calculateDebtMetrics(-100000, 500000, undefined, 'credit-card')
       expect(result.progress).toBe(20)
       expect(result.timeline).toBeNull()
       expect(result.timelineLabel).toBe('No payment set')
@@ -348,11 +339,11 @@ describe('Debt-Specific Calculations', () => {
   describe('calculateDebtMetrics for mortgage', () => {
     it('should calculate payoff percentage with originalBalance', () => {
       const result = calculateDebtMetrics(
-        -180000,  // -$18,000 owed
-        200000,   // Original $20,000 loan
-        50000,    // $500/month payment
+        -180000, // -$18,000 owed
+        200000, // Original $20,000 loan
+        50000, // $500/month payment
         'mortgage',
-        200000    // Original balance
+        200000 // Original balance
       )
       // Paid off: 200000 - 180000 = 20000
       // Progress: 20000/200000 * 100 = 10%
@@ -378,12 +369,7 @@ describe('Debt-Specific Calculations', () => {
 
   describe('calculateDebtMetrics with invalid inputs', () => {
     it('should handle NaN inputs gracefully', () => {
-      const result = calculateDebtMetrics(
-        NaN,
-        500000,
-        50000,
-        'credit-card'
-      )
+      const result = calculateDebtMetrics(NaN, 500000, 50000, 'credit-card')
       expect(result.progress).toBeNull()
       expect(result.progressLabel).toBe('Invalid data')
       expect(result.timeline).toBeNull()
@@ -391,12 +377,7 @@ describe('Debt-Specific Calculations', () => {
     })
 
     it('should handle Infinity inputs gracefully', () => {
-      const result = calculateDebtMetrics(
-        Infinity,
-        500000,
-        50000,
-        'credit-card'
-      )
+      const result = calculateDebtMetrics(Infinity, 500000, 50000, 'credit-card')
       expect(result.progress).toBeNull()
       expect(result.progressLabel).toBe('Invalid data')
       expect(result.timeline).toBeNull()

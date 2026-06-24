@@ -1,6 +1,6 @@
 /**
  * Paddle Client
- * 
+ *
  * Client-side Paddle.js integration for authentication.
  * Handles Paddle OAuth flow initialization.
  */
@@ -26,26 +26,26 @@ export async function loadPaddleScript(): Promise<void> {
   if (paddleLoaded || paddleLoading) {
     return
   }
-  
+
   paddleLoading = true
-  
+
   return new Promise((resolve, reject) => {
     const script = document.createElement('script')
     script.src = PADDLE_SCRIPT_URL
     script.async = true
     script.defer = true
-    
+
     script.onload = () => {
       paddleLoaded = true
       paddleLoading = false
       resolve()
     }
-    
+
     script.onerror = () => {
       paddleLoading = false
       reject(new Error('Failed to load Paddle.js'))
     }
-    
+
     document.head.appendChild(script)
   })
 }
@@ -56,15 +56,15 @@ export async function loadPaddleScript(): Promise<void> {
  */
 export function initializePaddleAuth(): void {
   const config = getPaddleOAuthConfig()
-  
+
   if (!config.vendorId || !config.publicKey) {
     console.error('Paddle vendor ID and public key are required')
     throw new Error('Paddle configuration is incomplete')
   }
-  
+
   // Initialize Paddle with vendor configuration
   if (typeof window !== 'undefined' && (window as any).Paddle) {
-    (window as any).Paddle.Initialize({
+    ;(window as any).Paddle.Initialize({
       vendor: parseInt(config.vendorId),
       environment: config.environment,
     })
@@ -77,14 +77,14 @@ export function initializePaddleAuth(): void {
  */
 export function openPaddleAuth(): void {
   const config = getPaddleOAuthConfig()
-  
+
   if (!config.vendorId || !config.publicKey) {
     throw new Error('Paddle configuration is incomplete. Cannot authenticate.')
   }
-  
+
   // Use Paddle's Checkout.open method for authentication
   if (typeof window !== 'undefined' && (window as any).Paddle) {
-    (window as any).Paddle.Checkout.open({
+    ;(window as any).Paddle.Checkout.open({
       vendor: parseInt(config.vendorId),
       environment: config.environment,
       // This will trigger Paddle's authentication flow
@@ -96,7 +96,7 @@ export function openPaddleAuth(): void {
     paddleAuthUrl.searchParams.set('vendor', config.vendorId)
     paddleAuthUrl.searchParams.set('environment', config.environment)
     paddleAuthUrl.searchParams.set('redirect_uri', config.redirectUri)
-    
+
     window.location.href = paddleAuthUrl.toString()
   }
 }

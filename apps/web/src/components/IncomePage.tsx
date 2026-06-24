@@ -1,10 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import {
-  useIncomeStore,
-  useIncomeSources,
-  useTotalIncome,
-} from '../stores'
 import type { Frequency } from '@budget-planner/db'
+import React, { useState, useEffect } from 'react'
+import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -28,11 +24,7 @@ function formatAmount(cents: number): string {
 export function IncomePage() {
   const incomeSources = useIncomeSources()
   const totalIncome = useTotalIncome()
-  const {
-    addIncomeSource,
-    updateIncomeSource,
-    deleteIncomeSource,
-  } = useIncomeStore()
+  const { addIncomeSource, updateIncomeSource, deleteIncomeSource } = useIncomeStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -61,7 +53,12 @@ export function IncomePage() {
   }
 
   // Open modal for editing existing income source
-  const openEditModal = (source: { id: number; name: string; amount: number; frequency: Frequency }) => {
+  const openEditModal = (source: {
+    id: number
+    name: string
+    amount: number
+    frequency: Frequency
+  }) => {
     setEditingId(source.id)
     setName(source.name)
     setAmount((source.amount / 100).toString())
@@ -85,7 +82,7 @@ export function IncomePage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
-    
+
     try {
       // Validate name
       const trimmedName = name.trim()
@@ -96,7 +93,7 @@ export function IncomePage() {
 
       // Validate amount
       const amountInCents = Math.round(parseFloat(amount) * 100)
-      if (isNaN(amountInCents) || amountInCents <= 0) {
+      if (Number.isNaN(amountInCents) || amountInCents <= 0) {
         alert('Please enter a valid positive amount')
         return
       }
@@ -131,9 +128,7 @@ export function IncomePage() {
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Income Sources</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your income streams and track your earnings
-          </p>
+          <p className="text-gray-600 mt-2">Manage your income streams and track your earnings</p>
         </header>
 
         <main className="space-y-6">
@@ -141,9 +136,7 @@ export function IncomePage() {
           <section className="bg-white rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Total Income
-                </h2>
+                <h2 className="text-xl font-semibold text-gray-800">Total Income</h2>
                 <p className="text-3xl font-bold text-green-600 mt-2">
                   {formatAmount(totalIncome)}
                 </p>
@@ -159,16 +152,12 @@ export function IncomePage() {
 
           {/* Income Sources List */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6">
-              Your Income Sources
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-6">Your Income Sources</h2>
 
             {incomeSources.length === 0 ? (
               <div className="bg-gray-50 rounded-lg p-8 text-center">
                 <p className="text-gray-500 mb-4">No income sources yet</p>
-                <p className="text-sm text-gray-400">
-                  Click "Add Income Source" to get started
-                </p>
+                <p className="text-sm text-gray-400">Click "Add Income Source" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -193,14 +182,10 @@ export function IncomePage() {
                     {incomeSources.map((source) => (
                       <tr key={source.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {source.name}
-                          </div>
+                          <div className="text-sm font-medium text-gray-900">{source.name}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">
-                            {formatAmount(source.amount)}
-                          </div>
+                          <div className="text-sm text-gray-500">{formatAmount(source.amount)}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
@@ -244,7 +229,12 @@ export function IncomePage() {
                   aria-label="Close"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
@@ -288,7 +278,10 @@ export function IncomePage() {
                 </div>
 
                 <div>
-                  <label htmlFor="frequency" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    htmlFor="frequency"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
                     Frequency *
                   </label>
                   <select
@@ -319,7 +312,11 @@ export function IncomePage() {
                     disabled={isSubmitting}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSubmitting ? 'Saving...' : editingId !== null ? 'Save Changes' : 'Add Income Source'}
+                    {isSubmitting
+                      ? 'Saving...'
+                      : editingId !== null
+                        ? 'Save Changes'
+                        : 'Add Income Source'}
                   </button>
                 </div>
               </form>

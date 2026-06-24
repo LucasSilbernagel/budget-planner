@@ -1,15 +1,15 @@
 /**
  * Premium Prompt Component
- * 
+ *
  * Displays an upgrade prompt for users attempting to access premium features.
  * Shows the value proposition and provides a call-to-action to upgrade.
- * 
+ *
  * Architecture: React Component with Tailwind CSS
  * Usage: Shown when non-premium users try to access premium features
  */
 
-import React from 'react'
 import { Link } from '@tanstack/react-router'
+import React from 'react'
 
 // ============================================================================
 // Type Definitions
@@ -44,7 +44,8 @@ const PREMIUM_FEATURES = [
   'Priority Support',
 ]
 
-const DEFAULT_MESSAGE = 'This is a premium feature. Please upgrade to access advanced financial tools and insights.'
+const DEFAULT_MESSAGE =
+  'This is a premium feature. Please upgrade to access advanced financial tools and insights.'
 
 // ============================================================================
 // Main Component
@@ -52,16 +53,16 @@ const DEFAULT_MESSAGE = 'This is a premium feature. Please upgrade to access adv
 
 /**
  * Premium Prompt Component
- * 
+ *
  * Displays information about premium features and prompts user to upgrade.
- * 
+ *
  * @param props - Component props
  * @returns JSX Element
- * 
+ *
  * @example
  * ```tsx
  * <PremiumPrompt featureName="Advanced Forecasting" />
- * 
+ *
  * // As a dialog
  * <PremiumPrompt asDialog onClose={() => setShowPrompt(false)} />
  * ```
@@ -162,15 +163,14 @@ function PremiumPromptContent({
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">What you get:</h3>
         <ul className="space-y-2">
-          {PREMIUM_FEATURES.slice(0, 4).map((feature, index) => (
+          {PREMIUM_FEATURES.slice(0, 4).map((feature, _index) => (
             <li key={feature} className="flex items-center text-sm text-gray-600">
               <CheckIcon className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
               {feature}
             </li>
           ))}
           <li className="flex items-center text-sm text-gray-500">
-            <span className="w-4 h-4 mr-2 flex-shrink-0" />
-            + more features coming soon
+            <span className="w-4 h-4 mr-2 flex-shrink-0" />+ more features coming soon
           </li>
         </ul>
       </div>
@@ -220,10 +220,7 @@ function DialogContainer({ children, onClose }: DialogContainerProps): React.Rea
       aria-modal="true"
       aria-labelledby="premium-prompt-title"
     >
-      <div
-        className="relative w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>
@@ -268,12 +265,7 @@ function CheckIcon({ className }: { className: string }): React.ReactElement {
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M5 13l4 4L19 7"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
     </svg>
   )
 }
@@ -290,12 +282,7 @@ function CloseIcon({ className }: { className: string }): React.ReactElement {
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M6 18L18 6M6 6l12 12"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
     </svg>
   )
 }

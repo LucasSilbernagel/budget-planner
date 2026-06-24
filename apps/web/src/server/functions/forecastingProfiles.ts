@@ -1,18 +1,18 @@
 /**
  * Forecasting Profiles Server Functions
- * 
+ *
  * Server-side CRUD operations for premium forecasting profiles.
  * Only available for paid tier users (subscriptionStatus === 'active').
- * 
+ *
  * Architecture: TanStack Start Server Functions
  * Database: Drizzle ORM with DanubeData PostgreSQL (Germany - EU)
  * Data Sovereignty: All paid tier data stored in DanubeData EU (NFR1, NFR2)
  */
 
 import { db } from '@budget-planner/db'
-import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
-import { eq, and, desc, neq, inArray } from 'drizzle-orm'
 import type { ForecastingProfile, NewForecastingProfile, UserProfile } from '@budget-planner/db'
+import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
+import { and, desc, eq, inArray, neq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
 
@@ -82,19 +82,13 @@ function validateScenarioData(data: unknown): string {
 /**
  * Validate that a profile belongs to the current user
  */
-async function validateProfileOwnership(
-  profileId: string,
-  userId: string
-): Promise<boolean> {
+async function validateProfileOwnership(profileId: string, userId: string): Promise<boolean> {
   const [profile] = await db
     .select()
     .from(userProfiles)
-    .where(and(
-      eq(userProfiles.id, profileId),
-      eq(userProfiles.userId, userId)
-    ))
+    .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
     .limit(1)
-  
+
   return profile !== undefined
 }
 
@@ -109,11 +103,13 @@ async function ensureSingleDefault(
   await db
     .update(forecastingProfiles)
     .set({ isDefault: false })
-    .where(and(
-      eq(forecastingProfiles.userId, userId),
-      eq(forecastingProfiles.profileId, profileId),
-      excludeId ? neq(forecastingProfiles.id, excludeId) : undefined
-    ))
+    .where(
+      and(
+        eq(forecastingProfiles.userId, userId),
+        eq(forecastingProfiles.profileId, profileId),
+        excludeId ? neq(forecastingProfiles.id, excludeId) : undefined
+      )
+    )
 }
 
 /**
@@ -144,23 +140,23 @@ export async function createForecastingProfile(
   try {
     // Check authentication and premium access
     const userResult = await getCurrentUserSession(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error || 'Authentication check failed',
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
         error: 'Authentication required for premium features',
       }
     }
-    
+
     // Check premium access
     if (user.subscriptionStatus !== 'active') {
       return {
@@ -168,7 +164,7 @@ export async function createForecastingProfile(
         error: 'Premium feature: Please upgrade to access forecasting profile management',
       }
     }
-    
+
     // Validate input
     if (!input.name || typeof input.name !== 'string' || input.name.trim() === '') {
       return {
@@ -176,14 +172,14 @@ export async function createForecastingProfile(
         error: 'Profile name is required',
       }
     }
-    
+
     if (input.name.length > 255) {
       return {
         success: false,
         error: 'Profile name must be 255 characters or less',
       }
     }
-    
+
     // Validate that the profile belongs to the current user
     const profileOwned = await validateProfileOwnership(input.profileId, user.userId)
     if (!profileOwned) {
@@ -192,16 +188,16 @@ export async function createForecastingProfile(
         error: 'Invalid profile ID or profile does not belong to current user',
       }
     }
-    
+
     // Handle isDefault flag
     if (input.isDefault) {
       // Ensure only one default per user/profile
       await ensureSingleDefault(user.userId, input.profileId)
     }
-    
+
     // Validate and stringify scenarioData
     const scenarioDataString = validateScenarioData(input.scenarioData)
-    
+
     // Create the forecasting profile
     const [newProfile] = await db
       .insert(forecastingProfiles)
@@ -215,14 +211,14 @@ export async function createForecastingProfile(
         isDefault: input.isDefault || false,
       } as NewForecastingProfile)
       .returning()
-    
+
     // Get the profile name for the output
     const [userProfile] = await db
       .select({ name: userProfiles.name })
       .from(userProfiles)
       .where(eq(userProfiles.id, input.profileId))
       .limit(1)
-    
+
     return {
       success: true,
       data: {
@@ -255,23 +251,23 @@ export async function getForecastingProfiles(
   try {
     // Check authentication
     const userResult = await getCurrentUserSession(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error || 'Authentication check failed',
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
         error: 'Authentication required',
       }
     }
-    
+
     // Build the where condition once. Filter by profileId if provided.
     let whereCondition = eq(forecastingProfiles.userId, user.userId)
     if (profileId) {
@@ -296,24 +292,22 @@ export async function getForecastingProfiles(
       .orderBy(desc(forecastingProfiles.createdAt))
 
     // Get profile names for each forecasting profile
-    const profileIds = [...new Set(profiles.map(p => p.profileId))]
-    const profileNames = profileIds.length > 0
-      ? await db
-          .select({ id: userProfiles.id, name: userProfiles.name })
-          .from(userProfiles)
-          .where(and(
-            eq(userProfiles.userId, user.userId),
-            inArray(userProfiles.id, profileIds)
-          ))
-      : []
+    const profileIds = [...new Set(profiles.map((p) => p.profileId))]
+    const profileNames =
+      profileIds.length > 0
+        ? await db
+            .select({ id: userProfiles.id, name: userProfiles.name })
+            .from(userProfiles)
+            .where(and(eq(userProfiles.userId, user.userId), inArray(userProfiles.id, profileIds)))
+        : []
 
-    const profileNameMap = new Map(profileNames.map(p => [p.id, p.name]))
-    
-    const output: ForecastingProfileOutput[] = profiles.map(profile => ({
+    const profileNameMap = new Map(profileNames.map((p) => [p.id, p.name]))
+
+    const output: ForecastingProfileOutput[] = profiles.map((profile) => ({
       ...profile,
       profileName: profileNameMap.get(profile.profileId),
     }))
-    
+
     return {
       success: true,
       data: output,
@@ -337,47 +331,44 @@ export async function getForecastingProfileById(
   try {
     // Check authentication
     const userResult = await getCurrentUserSession(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error || 'Authentication check failed',
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
         error: 'Authentication required',
       }
     }
-    
+
     // Get the profile
     const [profile] = await db
       .select()
       .from(forecastingProfiles)
-      .where(and(
-        eq(forecastingProfiles.id, id),
-        eq(forecastingProfiles.userId, user.userId)
-      ))
+      .where(and(eq(forecastingProfiles.id, id), eq(forecastingProfiles.userId, user.userId)))
       .limit(1)
-    
+
     if (!profile) {
       return {
         success: false,
         error: 'Forecasting profile not found or access denied',
       }
     }
-    
+
     // Get the profile name
     const [userProfile] = await db
       .select({ name: userProfiles.name })
       .from(userProfiles)
       .where(eq(userProfiles.id, profile.profileId))
       .limit(1)
-    
+
     return {
       success: true,
       data: {
@@ -404,52 +395,49 @@ export async function updateForecastingProfile(
   try {
     // Check authentication
     const userResult = await getCurrentUserSession(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error || 'Authentication check failed',
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
         error: 'Authentication required',
       }
     }
-    
+
     // Get the existing profile to validate ownership
     const [existingProfile] = await db
       .select()
       .from(forecastingProfiles)
-      .where(and(
-        eq(forecastingProfiles.id, input.id),
-        eq(forecastingProfiles.userId, user.userId)
-      ))
+      .where(and(eq(forecastingProfiles.id, input.id), eq(forecastingProfiles.userId, user.userId)))
       .limit(1)
-    
+
     if (!existingProfile) {
       return {
         success: false,
         error: 'Forecasting profile not found or access denied',
       }
     }
-    
+
     // Handle isDefault flag
     if (input.isDefault !== undefined && input.isDefault) {
       // Ensure only one default per user/profile
       await ensureSingleDefault(user.userId, existingProfile.profileId, input.id)
     }
-    
+
     // Validate and stringify scenarioData if provided
     let scenarioDataString = existingProfile.scenarioData
     if (input.scenarioData !== undefined) {
       scenarioDataString = validateScenarioData(input.scenarioData)
     }
-    
+
     // Update the profile
     const [updatedProfile] = await db
       .update(forecastingProfiles)
@@ -463,14 +451,14 @@ export async function updateForecastingProfile(
       })
       .where(eq(forecastingProfiles.id, input.id))
       .returning()
-    
+
     // Get the profile name
     const [userProfile] = await db
       .select({ name: userProfiles.name })
       .from(userProfiles)
       .where(eq(userProfiles.id, existingProfile.profileId))
       .limit(1)
-    
+
     return {
       success: true,
       data: {
@@ -497,38 +485,35 @@ export async function deleteForecastingProfile(
   try {
     // Check authentication
     const userResult = await getCurrentUserSession(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error || 'Authentication check failed',
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
         error: 'Authentication required',
       }
     }
-    
+
     // Delete the profile
     const result = await db
       .delete(forecastingProfiles)
-      .where(and(
-        eq(forecastingProfiles.id, id),
-        eq(forecastingProfiles.userId, user.userId)
-      ))
-    
+      .where(and(eq(forecastingProfiles.id, id), eq(forecastingProfiles.userId, user.userId)))
+
     if (result.rowCount === 0) {
       return {
         success: false,
         error: 'Forecasting profile not found or access denied',
       }
     }
-    
+
     return {
       success: true,
     }
@@ -551,57 +536,54 @@ export async function setDefaultForecastingProfile(
   try {
     // Check authentication
     const userResult = await getCurrentUserSession(request)
-    
+
     if (!userResult.success) {
       return {
         success: false,
         error: userResult.error || 'Authentication check failed',
       }
     }
-    
+
     const user = userResult.data
-    
+
     if (!user) {
       return {
         success: false,
         error: 'Authentication required',
       }
     }
-    
+
     // Get the profile to validate ownership and get profileId
     const [profile] = await db
       .select()
       .from(forecastingProfiles)
-      .where(and(
-        eq(forecastingProfiles.id, id),
-        eq(forecastingProfiles.userId, user.userId)
-      ))
+      .where(and(eq(forecastingProfiles.id, id), eq(forecastingProfiles.userId, user.userId)))
       .limit(1)
-    
+
     if (!profile) {
       return {
         success: false,
         error: 'Forecasting profile not found or access denied',
       }
     }
-    
+
     // Ensure only one default per user/profile
     await ensureSingleDefault(user.userId, profile.profileId, id)
-    
+
     // Set this profile as default
     const [updatedProfile] = await db
       .update(forecastingProfiles)
       .set({ isDefault: true, updatedAt: new Date().toISOString() })
       .where(eq(forecastingProfiles.id, id))
       .returning()
-    
+
     // Get the profile name
     const [userProfile] = await db
       .select({ name: userProfiles.name })
       .from(userProfiles)
       .where(eq(userProfiles.id, profile.profileId))
       .limit(1)
-    
+
     return {
       success: true,
       data: {

@@ -12,8 +12,8 @@
  * module: `import { renderWithProviders, screen, makeIncomeSource } from '@/test/utils'`.
  */
 
+import { type RenderOptions, render } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { render, type RenderOptions } from '@testing-library/react'
 
 export * from '@testing-library/react'
 export { default as userEvent } from '@testing-library/user-event'
@@ -22,10 +22,7 @@ export { default as userEvent } from '@testing-library/user-event'
  * Render a component with all app-wide providers applied.
  * Extend the wrapper as global providers are added to the app.
  */
-export function renderWithProviders(
-  ui: ReactElement,
-  options?: Omit<RenderOptions, 'wrapper'>,
-) {
+export function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
   return render(ui, { ...options })
 }
 
@@ -66,9 +63,7 @@ export function testId(prefix = 'test'): string {
   return `${prefix}-${idCounter}`
 }
 
-export function makeIncomeSource(
-  overrides: Partial<IncomeSourceLike> = {},
-): IncomeSourceLike {
+export function makeIncomeSource(overrides: Partial<IncomeSourceLike> = {}): IncomeSourceLike {
   return {
     id: testId('income'),
     userId: testId('user'),
@@ -90,9 +85,7 @@ export function makeExpense(overrides: Partial<ExpenseLike> = {}): ExpenseLike {
   }
 }
 
-export function makeSavingsGoal(
-  overrides: Partial<SavingsGoalLike> = {},
-): SavingsGoalLike {
+export function makeSavingsGoal(overrides: Partial<SavingsGoalLike> = {}): SavingsGoalLike {
   return {
     id: testId('goal'),
     userId: testId('user'),

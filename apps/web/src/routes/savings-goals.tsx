@@ -1,25 +1,28 @@
+import { formatCurrency } from '@budget-planner/core/format/currency'
+import type {
+  ClientNewSavingsGoal,
+  ClientSavingsGoal,
+} from '@budget-planner/core/services/savingsGoals'
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import SavingsGoalsList from '../components/SavingsGoalsList'
 import AddSavingsGoalForm from '../components/AddSavingsGoalForm'
 import EditSavingsGoalForm from '../components/EditSavingsGoalForm'
-import type { ClientSavingsGoal, ClientNewSavingsGoal } from '@budget-planner/core/services/savingsGoals'
+import SavingsGoalsList from '../components/SavingsGoalsList'
+import { useCurrencyPreferences } from '../stores/currencyStore'
 import {
+  useOverallSavingsProgress,
+  useSavingsActions,
   useSavingsGoals,
   useSavingsGoalsWithProgress,
   useTotalSavings,
   useTotalTargetAmount,
-  useOverallSavingsProgress,
-  useSavingsActions,
 } from '../stores/savingsStore'
-import { useCurrencyPreferences } from '../stores/currencyStore'
-import { formatCurrency } from '@budget-planner/core/format/currency'
 
 /**
  * Savings Goals Page
- * 
+ *
  * Main page for managing savings goals.
  * Uses TanStack Start file-based routing (route: /savings-goals)
- * 
+ *
  * Features:
  * - List of savings goals with progress display
  * - Add new savings goal form
@@ -27,7 +30,7 @@ import { formatCurrency } from '@budget-planner/core/format/currency'
  * - Success/error message display
  * - Loading states
  * - Full accessibility compliance
- * 
+ *
  * AC 2: When viewing the savings goals list, all goals are displayed sorted by creation date (newest first)
  */
 export function SavingsGoalsPage() {
@@ -38,7 +41,7 @@ export function SavingsGoalsPage() {
   const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
 
   // Store data
-  const savingsGoals = useSavingsGoals()
+  const _savingsGoals = useSavingsGoals()
   const savingsGoalsWithProgress = useSavingsGoalsWithProgress()
   const totalSavings = useTotalSavings()
   const totalTarget = useTotalTargetAmount()
@@ -65,7 +68,10 @@ export function SavingsGoalsPage() {
 
   // Loading/submitting states
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error'
+    message: string
+  } | null>(null)
 
   // Open add modal
   const openAddModal = useCallback(() => {
@@ -97,12 +103,12 @@ export function SavingsGoalsPage() {
     if (notificationTimerRef.current) {
       clearTimeout(notificationTimerRef.current)
     }
-    
+
     setNotification({ type, message })
     // Auto-hide after 5 seconds
     notificationTimerRef.current = setTimeout(() => setNotification(null), 5000)
   }, [])
-  
+
   // Clean up notification timer on unmount
   useEffect(() => {
     return () => {
@@ -119,7 +125,7 @@ export function SavingsGoalsPage() {
       addSavingsGoal(data)
       showNotification('success', 'Savings goal created successfully!')
       closeModals()
-    } catch (error) {
+    } catch (_error) {
       showNotification('error', 'Failed to create savings goal')
     } finally {
       setIsSubmitting(false)
@@ -142,7 +148,7 @@ export function SavingsGoalsPage() {
       } else {
         showNotification('error', 'Failed to update savings goal - not found')
       }
-    } catch (error) {
+    } catch (_error) {
       showNotification('error', 'Failed to update savings goal')
     } finally {
       setIsSubmitting(false)
@@ -151,7 +157,9 @@ export function SavingsGoalsPage() {
 
   // Handle delete savings goal
   const handleDeleteSavingsGoal = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this savings goal? This action cannot be undone.')) {
+    if (
+      !confirm('Are you sure you want to delete this savings goal? This action cannot be undone.')
+    ) {
       return
     }
 
@@ -162,28 +170,27 @@ export function SavingsGoalsPage() {
       } else {
         showNotification('error', 'Failed to delete savings goal - not found')
       }
-    } catch (error) {
+    } catch (_error) {
       showNotification('error', 'Failed to delete savings goal')
     }
   }
 
   return (
-    <div
-      className="min-h-screen bg-gray-50 dark:bg-gray-900"
-      data-testid="savings-goals-page"
-    >
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900" data-testid="savings-goals-page">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Notification */}
         {notification && (
           <div
-            className={`mb-6 p-4 rounded-md ${notification.type === 'success' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'}`}
+            className={`mb-6 p-4 rounded-md ${
+              notification.type === 'success'
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+            }`}
             role="alert"
             aria-live="polite"
             data-testid="savings-goals-notification"
           >
-            <span className="font-medium">
-              {notification.type === 'success' ? '✓ ' : '✗ '}
-            </span>
+            <span className="font-medium">{notification.type === 'success' ? '✓ ' : '✗ '}</span>
             {notification.message}
           </div>
         )}
@@ -232,9 +239,7 @@ export function SavingsGoalsPage() {
               <p className="text-sm text-green-600 dark:text-green-400 font-medium mb-1">
                 Overall Progress
               </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {overallProgress}%
-              </p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{overallProgress}%</p>
               <div className="w-full bg-gray-200 rounded-full h-2 mt-2 dark:bg-gray-700">
                 <div
                   className="bg-green-600 h-2 rounded-full"
@@ -283,7 +288,7 @@ export function SavingsGoalsPage() {
           <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
             Your Savings Goals
           </h2>
-          
+
           <SavingsGoalsList
             goals={savingsGoalsWithProgress}
             onEdit={openEditModal}
@@ -344,7 +349,12 @@ export function SavingsGoalsPage() {
                 data-testid="add-savings-goal-close"
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -387,7 +397,12 @@ export function SavingsGoalsPage() {
                 data-testid="edit-savings-goal-close"
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -402,8 +417,6 @@ export function SavingsGoalsPage() {
           </div>
         </div>
       )}
-
-
     </div>
   )
 }

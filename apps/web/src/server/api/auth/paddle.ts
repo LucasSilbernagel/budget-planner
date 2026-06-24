@@ -1,19 +1,20 @@
 /**
  * Paddle Authentication Server Functions
- * 
+ *
  * Handles Paddle OAuth authentication and user account management.
  * Implements the Paddle authentication flow for account creation and login.
- * 
+ *
  * Architecture: TanStack Start Server Functions with Paddle OAuth
  * Data Sovereignty: All data stored in DanubeData (Germany - EU) (NFR1, NFR2)
  * Security: No US data residency, Paddle is UK-based, DanubeData is Germany-based
  */
 
-import { getPaddleConfig, type PaddleConfig } from '@budget-planner/config'
+import { type PaddleConfig, getPaddleConfig } from '@budget-planner/config'
 import { db } from '@budget-planner/db'
 import { users } from '@budget-planner/db/src/schema'
 import { eq } from 'drizzle-orm'
 import { createDefaultProfileForUser } from '../../functions/profiles'
+import { verifySession } from './session'
 
 /**
  * Result type for API responses
@@ -52,13 +53,13 @@ export interface UserSession {
 
 /**
  * Generate Paddle OAuth URL for authentication
- * 
+ *
  * @returns Paddle OAuth URL or error
  */
 export async function generatePaddleAuthUrl(): Promise<ApiResult<{ url: string }>> {
   try {
     const paddleConfig = getPaddleConfig()
-    
+
     if (!paddleConfig.isConfigured) {
       return {
         success: false,
@@ -69,13 +70,11 @@ export async function generatePaddleAuthUrl(): Promise<ApiResult<{ url: string }
     // Construct Paddle OAuth URL
     // This is a placeholder - actual implementation requires Paddle SDK
     const state = generateStateToken()
-    const redirectUri = encodeURIComponent(`${process.env.SITE_URL || 'http://localhost:5173'}/auth/callback`)
-    
-    const url = `https://sandbox-paddle.com/oauth2/authorize?` +
-      `response_type=code&` +
-      `client_id=${paddleConfig.vendorId}&` +
-      `redirect_uri=${redirectUri}&` +
-      `state=${state}`
+    const redirectUri = encodeURIComponent(
+      `${process.env.SITE_URL || 'http://localhost:5173'}/auth/callback`
+    )
+
+    const url = `https://sandbox-paddle.com/oauth2/authorize?response_type=code&client_id=${paddleConfig.vendorId}&redirect_uri=${redirectUri}&state=${state}`
 
     return {
       success: true,
@@ -92,7 +91,7 @@ export async function generatePaddleAuthUrl(): Promise<ApiResult<{ url: string }
 /**
  * Handle Paddle OAuth callback
  * Exchanges authorization code for access token and user information
- * 
+ *
  * @param code - Authorization code from Paddle
  * @param state - State token for CSRF protection
  * @returns User session information
@@ -103,7 +102,7 @@ export async function handlePaddleCallback(
 ): Promise<ApiResult<UserSession>> {
   try {
     const paddleConfig = getPaddleConfig()
-    
+
     if (!paddleConfig.isConfigured) {
       return {
         success: false,
@@ -121,25 +120,25 @@ export async function handlePaddleCallback(
 
     // Exchange code for token (placeholder - use Paddle SDK)
     const tokenResponse = await exchangeCodeForToken(code, paddleConfig)
-    
+
     if (!tokenResponse.success) {
       return tokenResponse
     }
 
     // Get user information from Paddle
-    const userResponse = await getPaddleUser(tokenResponse.data!.accessToken, paddleConfig)
-    
+    const userResponse = await getPaddleUser(tokenResponse.data?.accessToken, paddleConfig)
+
     if (!userResponse.success) {
       return userResponse
     }
 
     // Create or update user in DanubeData PostgreSQL (Germany - EU)
     const userResult = await createOrUpdateUser(userResponse.data!)
-    
+
     if (!userResult.success) {
       return userResult
     }
-    
+
     return userResult
   } catch (error) {
     return {
@@ -152,7 +151,7 @@ export async function handlePaddleCallback(
 /**
  * Get current user session from request
  * Uses cookies or JWT tokens for session management
- * 
+ *
  * @param request - Incoming request object
  * @returns User session or null if not authenticated
  */
@@ -163,7 +162,7 @@ export async function getCurrentUserSession(
     // Check for session cookie
     // Session is stored in 'session' cookie as JSON string
     const cookieHeader = request.headers.get('cookie')
-    
+
     if (!cookieHeader) {
       return {
         success: true,
@@ -181,7 +180,7 @@ export async function getCurrentUserSession(
     })
 
     const sessionToken = cookies.session
-    
+
     if (!sessionToken) {
       return {
         success: true,
@@ -191,7 +190,7 @@ export async function getCurrentUserSession(
 
     // Validate token and get user session
     const session = await validateSessionToken(sessionToken)
-    
+
     if (!session) {
       return {
         success: true,
@@ -213,14 +212,14 @@ export async function getCurrentUserSession(
 
 /**
  * Logout user by invalidating session
- * 
+ *
  * @returns Success status
  */
 export async function logoutUser(): Promise<ApiResult<void>> {
   try {
     // Invalidate session cookie or JWT token
     // This is a placeholder - implement actual logout logic
-    
+
     return {
       success: true,
     }
@@ -241,8 +240,7 @@ export async function logoutUser(): Promise<ApiResult<void>> {
  */
 function generateStateToken(): string {
   // In production, use crypto.randomUUID() or similar
-  return Math.random().toString(36).substring(2, 15) + 
-         Math.random().toString(36).substring(2, 15)
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
 }
 
 /**
@@ -257,12 +255,12 @@ function validateStateToken(state: string): boolean {
  * Exchange authorization code for access token
  */
 async function exchangeCodeForToken(
-  code: string,
+  _code: string,
   paddleConfig: PaddleConfig
 ): Promise<ApiResult<{ accessToken: string; refreshToken: string }>> {
   // Placeholder - use Paddle SDK for actual implementation
   // This would call Paddle's OAuth token endpoint
-  
+
   if (!paddleConfig.apiKey || !paddleConfig.vendorId) {
     return {
       success: false,
@@ -294,12 +292,12 @@ const RETRY_DELAY_MS = 1000
  * Get user information from Paddle
  * Uses Paddle API to fetch user details including subscription status
  * Includes retry logic for transient failures
- * 
+ *
  * Paddle API Endpoint: GET /users/me
  * Returns: User details including subscription information
  */
 async function getPaddleUser(
-  accessToken: string,
+  _accessToken: string,
   paddleConfig: PaddleConfig
 ): Promise<ApiResult<PaddleUser>> {
   // Validate credentials first
@@ -311,12 +309,13 @@ async function getPaddleUser(
   }
 
   // Determine API base URL based on environment
-  const apiBaseUrl = paddleConfig.environment === 'sandbox'
-    ? 'https://sandbox-vendors.paddle.com'
-    : 'https://vendors.paddle.com'
+  const apiBaseUrl =
+    paddleConfig.environment === 'sandbox'
+      ? 'https://sandbox-vendors.paddle.com'
+      : 'https://vendors.paddle.com'
 
   let lastError: Error | undefined
-  
+
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
       // Get user information from Paddle API
@@ -324,26 +323,24 @@ async function getPaddleUser(
       const response = await fetch(`${apiBaseUrl}/api/2.0/users/me`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${paddleConfig.apiKey}`,
+          Authorization: `Bearer ${paddleConfig.apiKey}`,
           'Content-Type': 'application/json',
         },
       })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        lastError = new Error(
-          errorData.error?.message || `Paddle API error: ${response.status}`
-        )
-        
+        lastError = new Error(errorData.error?.message || `Paddle API error: ${response.status}`)
+
         // Retry on 429 (rate limit) and 5xx errors
         if (response.status === 429 || response.status >= 500) {
           console.error(`Paddle API attempt ${attempt} failed: ${lastError.message}. Retrying...`)
           if (attempt < MAX_RETRY_ATTEMPTS) {
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt))
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt))
             continue
           }
         }
-        
+
         return {
           success: false,
           error: lastError.message,
@@ -359,7 +356,7 @@ async function getPaddleUser(
           error: 'Paddle user ID is missing from API response',
         }
       }
-      
+
       if (!userData.email) {
         return {
           success: false,
@@ -387,13 +384,13 @@ async function getPaddleUser(
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
       console.error(`Paddle API attempt ${attempt} failed: ${lastError.message}`)
-      
+
       // Retry on network errors
       if (attempt < MAX_RETRY_ATTEMPTS) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt))
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt))
         continue
       }
-      
+
       // After all retries, fail - do NOT return placeholder user in production
       console.error('Paddle API: All retry attempts failed')
       return {
@@ -402,7 +399,7 @@ async function getPaddleUser(
       }
     }
   }
-  
+
   // This should never be reached, but just in case
   return {
     success: false,
@@ -412,7 +409,7 @@ async function getPaddleUser(
 
 /**
  * Map Paddle API subscription data to our subscription status
- * 
+ *
  * Paddle API returns user with subscriptions array
  * Each subscription has a status field
  * @param userData - Raw user data from Paddle API
@@ -421,7 +418,7 @@ async function getPaddleUser(
 function mapPaddleSubscriptionStatus(userData: any): 'free' | 'active' | 'past_due' | 'canceled' {
   // Check if user has any active subscriptions
   const subscriptions = userData.subscriptions || []
-  
+
   if (subscriptions.length === 0) {
     // No subscriptions - free tier or trial
     return 'free'
@@ -431,11 +428,11 @@ function mapPaddleSubscriptionStatus(userData: any): 'free' | 'active' | 'past_d
   for (const subscription of subscriptions) {
     if (subscription && typeof subscription === 'object') {
       const status = subscription.status?.toLowerCase()
-      
+
       if (!status) {
         continue // Skip subscriptions without status
       }
-      
+
       // Map Paddle status to our enum
       // Paddle uses: active, past_due, canceled, trialing
       switch (status) {
@@ -453,7 +450,7 @@ function mapPaddleSubscriptionStatus(userData: any): 'free' | 'active' | 'past_d
       }
     }
   }
-  
+
   // If no valid subscription found, default to free
   return 'free'
 }
@@ -462,9 +459,7 @@ function mapPaddleSubscriptionStatus(userData: any): 'free' | 'active' | 'past_d
  * Create or update user in database
  * Uses Drizzle ORM with DanubeData PostgreSQL (Germany - EU only)
  */
-async function createOrUpdateUser(
-  paddleUser: PaddleUser
-): Promise<ApiResult<UserSession>> {
+async function createOrUpdateUser(paddleUser: PaddleUser): Promise<ApiResult<UserSession>> {
   try {
     // Validate email format and length
     if (!paddleUser.email || typeof paddleUser.email !== 'string') {
@@ -473,7 +468,7 @@ async function createOrUpdateUser(
         error: 'Invalid email from Paddle authentication',
       }
     }
-    
+
     // RFC 5321: max 254 characters
     if (paddleUser.email.length > 254) {
       return {
@@ -481,16 +476,16 @@ async function createOrUpdateUser(
         error: 'Email address too long',
       }
     }
-    
+
     // Basic email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/ 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(paddleUser.email)) {
       return {
         success: false,
         error: 'Invalid email format',
       }
     }
-    
+
     // Validate paddleId
     if (!paddleUser.id || typeof paddleUser.id !== 'string') {
       return {
@@ -498,21 +493,23 @@ async function createOrUpdateUser(
         error: 'Invalid Paddle user ID',
       }
     }
-    
+
     // Check if user with this paddleId already exists
     const existingUsers = await db
       .select()
       .from(users)
       .where(eq(users.paddleId, paddleUser.id))
       .limit(1)
-    
+
     const existingUser = existingUsers[0]
-    
+
     if (existingUser) {
       // User already exists - update subscriptionStatus and currency from Paddle if they differ
       // This ensures we have the latest subscription data from Paddle
-      if (existingUser.subscriptionStatus !== paddleUser.subscriptionStatus ||
-          existingUser.currency !== paddleUser.currency) {
+      if (
+        existingUser.subscriptionStatus !== paddleUser.subscriptionStatus ||
+        existingUser.currency !== paddleUser.currency
+      ) {
         await db
           .update(users)
           .set({
@@ -521,21 +518,25 @@ async function createOrUpdateUser(
           })
           .where(eq(users.paddleId, paddleUser.id))
       }
-      
+
       return {
         success: true,
         data: {
           userId: existingUser.id,
           email: existingUser.email,
           paddleId: existingUser.paddleId,
-          subscriptionStatus: (paddleUser.subscriptionStatus || existingUser.subscriptionStatus) as 'free' | 'active' | 'past_due' | 'canceled',
+          subscriptionStatus: (paddleUser.subscriptionStatus || existingUser.subscriptionStatus) as
+            | 'free'
+            | 'active'
+            | 'past_due'
+            | 'canceled',
           currency: paddleUser.currency || existingUser.currency,
           isAuthenticated: true,
           name: paddleUser.name,
-        }
+        },
       }
     }
-    
+
     // Create new user with UUID and proper subscription status from Paddle
     // AC-2: subscriptionStatus must be set appropriately for Paddle-created users
     const [newUser] = await db
@@ -549,15 +550,15 @@ async function createOrUpdateUser(
         currency: paddleUser.currency || 'NONE',
       })
       .returning()
-    
+
     // Create default profile for the new user
     const defaultProfileResult = await createDefaultProfileForUser(newUser.id)
-    
+
     // Log any profile creation errors but don't fail user creation
     if (!defaultProfileResult.success) {
       console.error('Failed to create default profile:', defaultProfileResult.error)
     }
-    
+
     return {
       success: true,
       data: {
@@ -568,7 +569,7 @@ async function createOrUpdateUser(
         currency: newUser.currency,
         isAuthenticated: true,
         name: paddleUser.name,
-      }
+      },
     }
   } catch (error) {
     return {
@@ -579,44 +580,50 @@ async function createOrUpdateUser(
 }
 
 /**
- * Validate session token and return user session
- * Session token is a JSON string containing user information
+ * Validate session token and return user session.
+ *
+ * Security (Story 5-7): the token's HMAC signature is verified before any of
+ * its contents are trusted, so forged or tampered cookies are rejected. The
+ * subscription status and currency are then read authoritatively from the
+ * database by userId — never from the cookie — so a client cannot grant itself
+ * premium access, and a stale cookie cannot outlive a downgrade/cancellation.
  */
-async function validateSessionToken(
-  token: string
-): Promise<UserSession | null> {
+async function validateSessionToken(token: string): Promise<UserSession | null> {
   try {
-    // Session token is stored as URL-encoded JSON in the cookie
-    // Decode the URI component first, then parse the JSON
+    // The cookie value is URL-encoded; decode before signature verification.
     const decodedToken = decodeURIComponent(token)
-    const sessionData = JSON.parse(decodedToken) as {
-      userId?: string
-      paddleId?: string
-      email?: string
-      subscriptionStatus?: 'free' | 'active' | 'past_due' | 'canceled'
-      currency?: string
-    }
 
-    // Validate required fields
-    if (!sessionData.userId || !sessionData.paddleId || !sessionData.email) {
-      console.error('Invalid session token: missing required fields')
+    // Verify the HMAC signature first. Unsigned, tampered, or wrong-secret
+    // tokens return null and are treated as unauthenticated.
+    const payload = verifySession(decodedToken)
+    if (!payload) {
+      console.error('Invalid session token: signature verification failed')
       return null
     }
 
-    // Ensure userId is a valid UUID format
+    // Ensure userId is a valid UUID format before querying the database.
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    if (!uuidPattern.test(sessionData.userId)) {
+    if (!uuidPattern.test(payload.userId)) {
       console.error('Invalid session token: userId is not a valid UUID')
       return null
     }
 
-    // Return the user session
+    // Resolve the authoritative user record. Subscription status and currency
+    // come from the database, NOT the cookie (NFR: server-enforced premium).
+    const matchingUsers = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1)
+
+    const user = matchingUsers[0]
+    if (!user) {
+      console.error('Invalid session token: no matching user record')
+      return null
+    }
+
     return {
-      userId: sessionData.userId,
-      email: sessionData.email,
-      paddleId: sessionData.paddleId,
-      subscriptionStatus: sessionData.subscriptionStatus || 'free',
-      currency: sessionData.currency || 'NONE',
+      userId: user.id,
+      email: user.email,
+      paddleId: user.paddleId,
+      subscriptionStatus: user.subscriptionStatus,
+      currency: user.currency,
       isAuthenticated: true,
     }
   } catch (error) {

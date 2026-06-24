@@ -1,9 +1,9 @@
 /**
  * Profile Store
- * 
+ *
  * Zustand store for managing user profiles in the Budget Planner application.
  * Handles active profile state, profile switching, and profile data.
- * 
+ *
  * Architecture: Zustand with persistence middleware
  * Data Sovereignty: Profile data stored client-side for free tier, synced to DanubeData for paid tier
  */
@@ -38,16 +38,16 @@ export interface ClientProfile {
 export interface ProfileState {
   // Array of profiles for the current user
   profiles: ClientProfile[]
-  
+
   // Currently active profile ID
   activeProfileId: string | null
-  
+
   // Loading state
   isLoading: boolean
-  
+
   // Error state
   error: string | null
-  
+
   // Actions
   setProfiles: (profiles: ClientProfile[]) => void
   setActiveProfileId: (profileId: string | null) => void
@@ -115,15 +115,15 @@ export const useProfileStore = create<ProfileState>()(
       addProfile: (profile) => {
         set((state) => {
           // Check if profile already exists (by ID)
-          const existingIndex = state.profiles.findIndex(p => p.id === profile.id)
-          
+          const existingIndex = state.profiles.findIndex((p) => p.id === profile.id)
+
           if (existingIndex >= 0) {
             // Update existing profile
             const updatedProfiles = [...state.profiles]
             updatedProfiles[existingIndex] = { ...updatedProfiles[existingIndex], ...profile }
             return { profiles: updatedProfiles }
           }
-          
+
           // Add new profile
           return { profiles: [...state.profiles, profile] }
         })
@@ -147,24 +147,24 @@ export const useProfileStore = create<ProfileState>()(
               error: 'Cannot delete the last profile. Create a new profile first.',
             }
           }
-          
+
           // Prevent deletion of the default profile
-          const profileToDelete = state.profiles.find(p => p.id === profileId)
+          const profileToDelete = state.profiles.find((p) => p.id === profileId)
           if (profileToDelete?.isDefault) {
             return {
               error: 'Cannot delete the default profile.',
             }
           }
-          
+
           // Remove the profile
           const newProfiles = state.profiles.filter((profile) => profile.id !== profileId)
-          
+
           // If the deleted profile was active, switch to the first remaining profile
           let newActiveProfileId = state.activeProfileId
           if (state.activeProfileId === profileId && newProfiles.length > 0) {
             newActiveProfileId = newProfiles[0].id
           }
-          
+
           return {
             profiles: newProfiles,
             activeProfileId: newActiveProfileId,
@@ -177,13 +177,13 @@ export const useProfileStore = create<ProfileState>()(
       switchProfile: (profileId: string) => {
         set((state) => {
           // Check if profile exists
-          const profileExists = state.profiles.some(p => p.id === profileId)
-          
+          const profileExists = state.profiles.some((p) => p.id === profileId)
+
           if (!profileExists) {
             console.error(`[profileStore] Profile ${profileId} not found`)
             return { error: 'Profile not found.' }
           }
-          
+
           // Clear any previous error on successful switch
           return {
             activeProfileId: profileId,
@@ -223,30 +223,24 @@ export const useProfileStore = create<ProfileState>()(
 )
 
 // Selector hooks for better performance
-export const useProfiles = () =>
-  useProfileStore((state) => state.profiles)
+export const useProfiles = () => useProfileStore((state) => state.profiles)
 
-export const useActiveProfileId = () =>
-  useProfileStore((state) => state.activeProfileId)
+export const useActiveProfileId = () => useProfileStore((state) => state.activeProfileId)
 
 export const useActiveProfile = (): ClientProfile | null =>
   useProfileStore((state) => {
     if (state.activeProfileId === null) return null
-    return state.profiles.find(p => p.id === state.activeProfileId) ?? null
+    return state.profiles.find((p) => p.id === state.activeProfileId) ?? null
   })
 
-export const useIsLoadingProfiles = () =>
-  useProfileStore((state) => state.isLoading)
+export const useIsLoadingProfiles = () => useProfileStore((state) => state.isLoading)
 
-export const useProfileError = () =>
-  useProfileStore((state) => state.error)
+export const useProfileError = () => useProfileStore((state) => state.error)
 
 // Helper hooks
-export const useProfileCount = () =>
-  useProfileStore((state) => state.profiles.length)
+export const useProfileCount = () => useProfileStore((state) => state.profiles.length)
 
-export const useHasMultipleProfiles = () =>
-  useProfileStore((state) => state.profiles.length > 1)
+export const useHasMultipleProfiles = () => useProfileStore((state) => state.profiles.length > 1)
 
 // Export types for use in components
 export type { Profile as ProfileType, ClientProfile as ClientProfileType }

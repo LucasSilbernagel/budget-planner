@@ -1,20 +1,20 @@
 /**
  * Scenario Builder Component
- * 
+ *
  * Allows users to create and configure financial forecasting scenarios.
  * Includes income, expense, growth rate, and one-time event configuration.
- * 
+ *
  * Architecture: React Component with Recharts for visualization
  * Data Sovereignty: Client-side input, server-side calculations
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
-  calculateFinancialForecast,
-  type ForecastingScenario,
   type ForecastingResult,
+  type ForecastingScenario,
+  calculateFinancialForecast,
 } from '@budget-planner/core'
 import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 
 // ============================================================================
 // Constants
@@ -163,7 +163,7 @@ function formatPercentage(value: number): string {
 
 /**
  * Scenario Builder Component
- * 
+ *
  * Allows users to build and configure financial forecasting scenarios.
  * Calculates projections based on user input.
  */
@@ -171,13 +171,13 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
   // State for financial items
   const [incomeItems, setIncomeItems] = useState<LocalFinancialItem[]>(DEFAULT_INCOME)
   const [expenseItems, setExpenseItems] = useState<LocalFinancialItem[]>(DEFAULT_EXPENSES)
-  
+
   // State for scenario configuration
   const [formData, setFormData] = useState<ScenarioFormData>(DEFAULT_FORM)
   const [savings, setSavings] = useState<number>(DEFAULT_SAVINGS)
   const [investments, setInvestments] = useState<number>(DEFAULT_INVESTMENTS)
   const [oneTimeEvents, setOneTimeEvents] = useState<OneTimeEvent[]>([])
-  
+
   // State for results
   const [result, setResult] = useState<ForecastingResult | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
@@ -191,12 +191,12 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current)
     }
-    
+
     // Set new timer
     debounceTimer.current = setTimeout(() => {
       calculateForecast()
     }, DEBOUNCE_DELAY_MS)
-    
+
     // Cleanup on unmount
     return () => {
       if (debounceTimer.current) {
@@ -230,11 +230,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
         investments,
       }
 
-      const newResult = calculateFinancialForecast(
-        currentData,
-        scenario,
-        formData.years
-      )
+      const newResult = calculateFinancialForecast(currentData, scenario, formData.years)
       setResult(newResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate forecast')
@@ -304,7 +300,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
    */
   const updateFinancialItem = useCallback(
     (
-      items: LocalFinancialItem[],
+      _items: LocalFinancialItem[],
       setItems: React.Dispatch<React.SetStateAction<LocalFinancialItem[]>>,
       id: string,
       field: keyof LocalFinancialItem,
@@ -634,7 +630,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       {result && (
         <section className="bg-blue-50 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Forecast Summary</h3>
-          
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               label="Starting Net Worth"
@@ -720,12 +716,12 @@ function InputField({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value
     setInternalValue(rawValue)
-    
+
     if (parseValue) {
       onChange(parseValue(rawValue))
     } else if (type === 'number') {
       const numValue = parseFloat(rawValue)
-      onChange(isNaN(numValue) ? 0 : numValue)
+      onChange(Number.isNaN(numValue) ? 0 : numValue)
     } else {
       onChange(rawValue)
     }
@@ -768,7 +764,7 @@ function FinancialItemRow({
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value)
     // Validate: ensure value is a valid number and not negative
-    if (isNaN(value) || value < 0) {
+    if (Number.isNaN(value) || value < 0) {
       onUpdate('amount', 0)
     } else {
       const cents = Math.round(value * 100)
@@ -795,7 +791,9 @@ function FinancialItemRow({
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+              $
+            </span>
             <input
               type="number"
               value={item.amount / 100}
@@ -858,7 +856,7 @@ function OneTimeEventRow({
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value)
     // Validate: ensure value is a valid number and not negative
-    if (isNaN(value) || value < 0) {
+    if (Number.isNaN(value) || value < 0) {
       onUpdate(event.id, 'amount', 0)
     } else {
       const cents = Math.round(value * 100)
@@ -890,7 +888,9 @@ function OneTimeEventRow({
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+              $
+            </span>
             <input
               type="number"
               value={event.amount / 100}
@@ -943,11 +943,7 @@ interface StatCardProps {
 
 function StatCard({ label, value, highlight }: StatCardProps): React.ReactElement {
   return (
-    <div
-      className={`rounded-lg p-4 text-center ${
-        highlight ? 'bg-white shadow' : 'bg-blue-100'
-      }`}
-    >
+    <div className={`rounded-lg p-4 text-center ${highlight ? 'bg-white shadow' : 'bg-blue-100'}`}>
       <dt className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</dt>
       <dd className={`mt-1 text-lg font-semibold ${highlight ? 'text-blue-600' : 'text-gray-800'}`}>
         {value}

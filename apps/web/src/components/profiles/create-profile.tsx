@@ -1,16 +1,16 @@
 /**
  * Create Profile Dialog Component
- * 
+ *
  * Modal dialog for creating a new user profile.
  * Includes form validation and handles profile creation.
- * 
+ *
  * Architecture: React with Tailwind CSS
  * State Management: Zustand via useProfileManager hook
  */
 
-import { useState, useEffect } from 'react'
-import { useProfileManager, useProfiles, useActiveProfileId } from '@/hooks/useActiveProfile'
+import { useActiveProfileId, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
+import { useEffect, useState } from 'react'
 
 // Available currency options
 const CURRENCY_OPTIONS = [
@@ -48,7 +48,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
-  
+
   const { createProfile } = useProfileManager()
   const profiles = useProfiles()
   const activeProfileId = useActiveProfileId()
@@ -70,21 +70,21 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
   // Form validation
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
-    
+
     // Name validation
     if (!form.name.trim()) {
       newErrors.name = 'Profile name is required'
     } else if (form.name.length > 255) {
       newErrors.name = 'Profile name must be 255 characters or less'
-    } else if (profiles.some(p => p.name === form.name && p.id !== activeProfileId)) {
+    } else if (profiles.some((p) => p.name === form.name && p.id !== activeProfileId)) {
       newErrors.name = 'A profile with this name already exists'
     }
-    
+
     // Description validation
     if (form.description && form.description.length > 500) {
       newErrors.description = 'Description must be 500 characters or less'
     }
-    
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -92,32 +92,31 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!validate()) return
-    
+
     setIsSubmitting(true)
-    
+
     try {
       // Create the profile
       // For now, we use a temporary userId - in production this would come from auth
       const userId = localStorage.getItem('userId') || 'temp-user'
-      
-      const newProfile = createProfile({
+
+      const _newProfile = createProfile({
         ...form,
         userId,
       })
-      
+
       // Mark as default if it's the first profile
       // In production, this would be handled server-side for paid tier
-      
+
       setSuccess(true)
-      
+
       // Close after a brief delay to show success message
       setTimeout(() => {
         onClose()
       }, 1500)
-      
-    } catch (error) {
+    } catch (_error) {
       setErrors({ ...errors, form: 'Failed to create profile. Please try again.' })
     } finally {
       setIsSubmitting(false)
@@ -127,7 +126,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
   // Handle input change
   const handleChange = (field: keyof FormState, value: string) => {
     setForm({ ...form, [field]: value })
-    
+
     // Clear error for this field
     if (errors[field]) {
       setErrors({ ...errors, [field]: '' })
@@ -154,9 +153,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Create New Profile</h2>
-            <p className="text-gray-600 mt-1">
-              Organize your finances for different purposes
-            </p>
+            <p className="text-gray-600 mt-1">Organize your finances for different purposes</p>
           </div>
           <button
             onClick={onClose}
@@ -164,7 +161,12 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
             aria-label="Close"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -173,10 +175,14 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {success ? (
             <div className="text-center py-8">
-              <svg className="w-12 h-12 text-green-500 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
-                <path 
-                  fillRule="evenodd" 
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" 
+              <svg
+                className="w-12 h-12 text-green-500 mx-auto mb-4"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
                   clipRule="evenodd"
                 />
               </svg>
@@ -189,7 +195,10 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
             <>
               {/* Name field */}
               <div>
-                <label htmlFor="profile-name" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="profile-name"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Profile Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -203,14 +212,15 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                     errors.name ? 'border-red-500' : 'border-gray-300'
                   }`}
                 />
-                {errors.name && (
-                  <p className="text-sm text-red-600 mt-1">{errors.name}</p>
-                )}
+                {errors.name && <p className="text-sm text-red-600 mt-1">{errors.name}</p>}
               </div>
 
               {/* Description field */}
               <div>
-                <label htmlFor="profile-description" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="profile-description"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Description
                 </label>
                 <textarea
@@ -234,7 +244,10 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
               {/* Currency field */}
               <div>
-                <label htmlFor="profile-currency" className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="profile-currency"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Currency
                 </label>
                 <select
@@ -254,7 +267,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
               {/* Info message */}
               <div className="p-3 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-700">
-                  💡 <strong>Note:</strong> This profile will initially contain no financial data. 
+                  💡 <strong>Note:</strong> This profile will initially contain no financial data.
                   You can add income, expenses, and other data after creating it.
                 </p>
               </div>

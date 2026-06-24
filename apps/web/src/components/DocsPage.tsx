@@ -1,5 +1,5 @@
-import React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import React from 'react'
 
 // Documentation content (in a real app, this would be loaded from markdown files)
 const docsContent: Record<string, { title: string; content: JSX.Element }> = {

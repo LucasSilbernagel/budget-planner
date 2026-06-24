@@ -1,6 +1,6 @@
 /**
  * Finance Module Index
- * 
+ *
  * Exports all financial calculation functions and types
  */
 

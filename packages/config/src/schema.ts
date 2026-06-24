@@ -1,8 +1,8 @@
 /**
  * Configuration Schema
- * 
+ *
  * Centralized configuration with Zod validation for environment variables.
- * 
+ *
  * Architecture: Zod schema validation with runtime loading
  */
 
@@ -25,6 +25,13 @@ export const envSchema = z.object({
 
   // Database (Scaleway PostgreSQL)
   DATABASE_URL: z.string().optional(),
+
+  // Session signing secret (HMAC-SHA256 key for signed session cookies).
+  // Optional at the schema level so dev/test can run without it (a guarded,
+  // insecure fallback is used); production enforcement lives in
+  // getSessionSecret(), which fails closed. Length is validated there rather
+  // than here so a short value warns in dev instead of crashing config load.
+  SESSION_SECRET: z.string().optional(),
 
   // Deployment
   SITE_URL: z.string().default('http://localhost:5173'),
@@ -73,10 +80,7 @@ export interface PaddleConfig {
  */
 export function getPaddleConfig(): PaddleConfig {
   const env = getConfig()
-  const isConfigured = 
-    !!env.PADDLE_VENDOR_ID &&
-    !!env.PADDLE_API_KEY &&
-    !!env.PADDLE_PUBLIC_KEY
+  const isConfigured = !!env.PADDLE_VENDOR_ID && !!env.PADDLE_API_KEY && !!env.PADDLE_PUBLIC_KEY
 
   return {
     environment: env.PADDLE_ENVIRONMENT,
@@ -86,6 +90,61 @@ export function getPaddleConfig(): PaddleConfig {
     webhookSecret: env.PADDLE_WEBHOOK_SECRET,
     isConfigured,
   }
+}
+
+/**
+ * Minimum acceptable length (characters) for SESSION_SECRET.
+ * 32 chars ≈ the entropy of `openssl rand -hex 32` truncated; enforced in production.
+ */
+export const SESSION_SECRET_MIN_LENGTH = 32
+
+/**
+ * Insecure development-only fallback used when SESSION_SECRET is not configured.
+ * NEVER reached in production: getSessionSecret() throws there if the secret is
+ * missing or too short, so this value can only sign cookies locally.
+ */
+const DEV_FALLBACK_SESSION_SECRET = 'dev-only-insecure-session-secret-do-not-use-in-production'
+
+/**
+ * Resolve the HMAC key used to sign and verify session cookies.
+ *
+ * Production (NODE_ENV=production): fails closed — throws if SESSION_SECRET is
+ * missing or shorter than SESSION_SECRET_MIN_LENGTH, so the app never signs
+ * sessions with a default/empty key.
+ *
+ * Development/test: uses the configured secret when present (warning if short),
+ * otherwise falls back to a fixed insecure dev key so local auth works without
+ * extra setup. The secret is server-side only and must never be logged or sent
+ * to the client.
+ */
+export function getSessionSecret(): string {
+  const env = getConfig()
+  const secret = env.SESSION_SECRET
+
+  if (env.NODE_ENV === 'production') {
+    if (!secret || secret.length < SESSION_SECRET_MIN_LENGTH) {
+      throw new Error(
+        `SESSION_SECRET must be set to at least ${SESSION_SECRET_MIN_LENGTH} characters in production`
+      )
+    }
+    return secret
+  }
+
+  if (secret && secret.length >= SESSION_SECRET_MIN_LENGTH) {
+    return secret
+  }
+
+  if (secret) {
+    console.warn(
+      `SESSION_SECRET is shorter than ${SESSION_SECRET_MIN_LENGTH} characters; acceptable only in non-production.`
+    )
+    return secret
+  }
+
+  console.warn(
+    'SESSION_SECRET is not set; using an insecure development fallback. Set SESSION_SECRET before deploying.'
+  )
+  return DEV_FALLBACK_SESSION_SECRET
 }
 
 // Application constants

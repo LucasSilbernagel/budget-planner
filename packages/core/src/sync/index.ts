@@ -1,6 +1,6 @@
 /**
  * Sync Module Index
- * 
+ *
  * Exports all synchronization-related functionality for the budget planner.
  */
 

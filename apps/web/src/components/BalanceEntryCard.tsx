@@ -1,8 +1,16 @@
-import React from 'react'
-import type { ClientBalanceTracking, BalanceTrackingWithTimeline } from '@budget-planner/core/services/balanceTracking'
-import { getTypeDisplayProperties, formatTimeline, calculateContributionProgress, formatProgress } from '@budget-planner/core/services/balanceTracking'
-import { useCurrencyPreferences } from '../stores/currencyStore'
 import { formatCurrency } from '@budget-planner/core/format/currency'
+import type {
+  BalanceTrackingWithTimeline,
+  ClientBalanceTracking,
+} from '@budget-planner/core/services/balanceTracking'
+import {
+  calculateContributionProgress,
+  formatProgress,
+  formatTimeline,
+  getTypeDisplayProperties,
+} from '@budget-planner/core/services/balanceTracking'
+import React from 'react'
+import { useCurrencyPreferences } from '../stores/currencyStore'
 
 /**
  * BalanceEntryCard component props
@@ -16,19 +24,24 @@ export interface BalanceEntryCardProps {
 
 /**
  * BalanceEntryCard component
- * 
+ *
  * Displays a single balance tracking entry with its timeline and provides edit/delete actions.
  * Handles both investment and debt types with appropriate styling.
- * 
+ *
  * AC 5: Investment entries displayed with positive growth indicators, debt entries with negative balance indicators
- * 
+ *
  * @param props - Component props
  * @param props.entry - Balance tracking entry data to display
  * @param props.onEdit - Callback when edit button is clicked
  * @param props.onDelete - Callback when delete button is clicked
  * @param props.isFreeTier - Whether this is free tier (affects UI text)
  */
-export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = true }: BalanceEntryCardProps) {
+export function BalanceEntryCard({
+  entry,
+  onEdit,
+  onDeleteConfirm,
+  isFreeTier = true,
+}: BalanceEntryCardProps) {
   // Get currency preferences from store
   const { mode, currency } = useCurrencyPreferences()
 
@@ -40,15 +53,16 @@ export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = 
 
   // Calculate timeline and progress if not already present
   const monthsToLimit = 'monthsToLimit' in entry ? entry.monthsToLimit : null
-  const progress = entry.maxContributionLimit !== undefined && entry.maxContributionLimit > 0
-    ? calculateContributionProgress(entry.currentBalance, entry.maxContributionLimit)
-    : null
+  const progress =
+    entry.maxContributionLimit !== undefined && entry.maxContributionLimit > 0
+      ? calculateContributionProgress(entry.currentBalance, entry.maxContributionLimit)
+      : null
 
   // Format dates for display - guard against invalid dates
   let createdDate = 'Invalid Date'
   try {
     const date = new Date(entry.createdAt)
-    if (!isNaN(date.getTime())) {
+    if (!Number.isNaN(date.getTime())) {
       createdDate = date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -88,9 +102,7 @@ export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = 
               {typeProps.icon} {typeProps.label}
             </span>
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Created: {createdDate}
-          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Created: {createdDate}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -115,19 +127,20 @@ export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = 
       <div className="space-y-3">
         {/* Current Balance */}
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600 dark:text-gray-400">
-            Current Balance
-          </span>
-          <span className={`font-semibold ${isDebt ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-            {balanceSign}{formatAmount(displayBalance)}
+          <span className="text-gray-600 dark:text-gray-400">Current Balance</span>
+          <span
+            className={`font-semibold ${
+              isDebt ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+            }`}
+          >
+            {balanceSign}
+            {formatAmount(displayBalance)}
           </span>
         </div>
 
         {/* Monthly Contribution */}
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600 dark:text-gray-400">
-            Monthly Contribution
-          </span>
+          <span className="text-gray-600 dark:text-gray-400">Monthly Contribution</span>
           <span className="font-semibold text-gray-900 dark:text-white">
             {formatAmount(entry.monthlyContribution)}
           </span>
@@ -136,9 +149,7 @@ export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = 
         {/* Max Contribution Limit */}
         {entry.maxContributionLimit !== undefined && entry.maxContributionLimit > 0 && (
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600 dark:text-gray-400">
-              Max Limit
-            </span>
+            <span className="text-gray-600 dark:text-gray-400">Max Limit</span>
             <span className="font-semibold text-gray-900 dark:text-white">
               {formatAmount(entry.maxContributionLimit)}
             </span>
@@ -149,9 +160,7 @@ export function BalanceEntryCard({ entry, onEdit, onDeleteConfirm, isFreeTier = 
         {progress !== null && (
           <div className="space-y-1 pt-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600 dark:text-gray-400">
-                {formatProgress(progress)}
-              </span>
+              <span className="text-gray-600 dark:text-gray-400">{formatProgress(progress)}</span>
               <span className="text-gray-600 dark:text-gray-400">
                 {formatTimeline(monthsToLimit)}
               </span>

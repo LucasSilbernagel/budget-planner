@@ -1,9 +1,9 @@
 /**
  * Server Functions Index
- * 
+ *
  * Central entry point for all TanStack Start Server Functions.
  * Organized by domain for easy discovery and consumption.
- * 
+ *
  * Architecture: TanStack Start Server Functions
  */
 

@@ -1,16 +1,20 @@
 /**
  * Profile List Component
- * 
+ *
  * Displays a list of user profiles with options to manage them.
  * Shows active profile indicator and allows switching between profiles.
- * 
+ *
  * Architecture: React with Tailwind CSS
  * State Management: Zustand via useActiveProfile hook
  */
 
-import { useState } from 'react'
-import { useProfilesWithActive, useProfileManager, useHasMultipleProfiles } from '@/hooks/useActiveProfile'
+import {
+  useHasMultipleProfiles,
+  useProfileManager,
+  useProfilesWithActive,
+} from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
+import { useState } from 'react'
 
 // Profile color options for visual distinction
 const PROFILE_COLORS = [
@@ -25,9 +29,7 @@ const PROFILE_COLORS = [
 ]
 
 // Profile icon options (simple SVG icons)
-const PROFILE_ICONS = [
-  '🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️',
-]
+const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️']
 
 interface ProfileListProps {
   onCreateNewProfile?: () => void
@@ -42,9 +44,9 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   // Handle profile deletion
   const handleDelete = async (profileId: string) => {
     if (deletingId) return // Prevent multiple simultaneous deletions
-    
+
     setDeletingId(profileId)
-    
+
     try {
       await deleteProfile(profileId)
     } finally {
@@ -57,7 +59,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     // Use a simple hash of the UUID to get a consistent index
     // Handle empty profileId gracefully
     if (!profileId) return PROFILE_COLORS[0]
-    
+
     let hash = 0
     for (let i = 0; i < profileId.length; i++) {
       hash = (hash << 5) - hash + profileId.charCodeAt(i)
@@ -71,7 +73,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     // Use a simple hash of the UUID to get a consistent index
     // Handle empty profileId gracefully
     if (!profileId) return PROFILE_ICONS[0]
-    
+
     let hash = 0
     for (let i = 0; i < profileId.length; i++) {
       hash = (hash << 5) - hash + profileId.charCodeAt(i)
@@ -81,13 +83,13 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   }
 
   // Format date for display
-  const formatDate = (dateString: string) => {
+  const _formatDate = (dateString: string) => {
     // Validate date string before parsing
     if (!dateString) return 'Invalid date'
-    
+
     const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'Invalid date'
-    
+    if (Number.isNaN(date.getTime())) return 'Invalid date'
+
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -137,8 +139,8 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
       {!hasMultipleProfiles && (
         <div className="mt-6 p-4 bg-gray-100 rounded-lg">
           <p className="text-sm text-gray-600">
-            💡 <strong>Tip:</strong> Create additional profiles to organize your finances 
-            for different purposes (e.g., personal, business, investments).
+            💡 <strong>Tip:</strong> Create additional profiles to organize your finances for
+            different purposes (e.g., personal, business, investments).
           </p>
         </div>
       )}
@@ -156,32 +158,27 @@ interface ProfileCardProps {
   icon: string
 }
 
-function ProfileCard({ 
-  profile, 
-  isActive, 
-  isDeleting, 
-  onDelete,
-  color,
-  icon 
-}: ProfileCardProps) {
+function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: ProfileCardProps) {
   const { switchToProfile } = useProfileManager()
   const hasMultipleProfiles = useHasMultipleProfiles()
 
   return (
-    <div 
+    <div
       className={`bg-white border rounded-xl p-5 transition-all duration-200 ${
-        isActive 
-          ? 'border-blue-500 shadow-lg shadow-blue-500/10' 
+        isActive
+          ? 'border-blue-500 shadow-lg shadow-blue-500/10'
           : 'border-gray-200 hover:border-gray-300'
       }`}
     >
       {/* Profile header */}
       <div className="flex items-start gap-3 mb-3">
         {/* Profile icon */}
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xl ${color}`}>
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xl ${color}`}
+        >
           {icon}
         </div>
-        
+
         {/* Profile info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -192,7 +189,9 @@ function ProfileCard({
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 truncate">{profile.description || 'No description'}</p>
+          <p className="text-sm text-gray-500 truncate">
+            {profile.description || 'No description'}
+          </p>
         </div>
       </div>
 
@@ -212,9 +211,9 @@ function ProfileCard({
       {isActive && (
         <div className="mt-4 flex items-center gap-2 text-sm text-green-600">
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-            <path 
-              fillRule="evenodd" 
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" 
+            <path
+              fillRule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
               clipRule="evenodd"
             />
           </svg>
@@ -232,7 +231,7 @@ function ProfileCard({
             Switch to
           </button>
         )}
-        
+
         {/* Delete button - only for non-default, non-last profiles */}
         {!profile.isDefault && hasMultipleProfiles && (
           <button

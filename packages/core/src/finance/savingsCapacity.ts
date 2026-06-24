@@ -1,30 +1,30 @@
 /**
  * Savings Capacity Percentage Calculation
- * 
+ *
  * Calculates the percentage of income that represents savings capacity.
  * Formula: (sum of normalized income - net period income) × 100
- * 
+ *
  * Note: This formula is based on the specification in the user stories.
  * Where netPeriodIncome = normalizedIncome - normalizedExpenses,
  * savingsCapacity = normalizedIncome - netPeriodIncome = normalizedExpenses
  * So savingsCapacityPercentage = normalizedExpenses / normalizedIncome × 100
- * 
+ *
  * Architecture Requirement: FR6 - Core calculations
  */
 
 import {
-  calculateNetPeriodIncome,
-  calculateGrossPeriodIncome,
-  type NormalizableFinancialItem,
   type Frequency,
+  type NormalizableFinancialItem,
+  calculateGrossPeriodIncome,
+  calculateNetPeriodIncome,
 } from './netIncome'
-import { normalizeToMonthly, calculateTotalMonthlyNormalized } from './normalization'
+import { calculateTotalMonthlyNormalized, normalizeToMonthly } from './normalization'
 
 /**
  * Calculates savings capacity percentage
  * Formula: ((grossIncome - netPeriodIncome) / grossIncome) × 100
  * Which simplifies to: (normalizedExpenses / grossIncome) × 100
- * 
+ *
  * @param incomeSources - Array of income sources with amount and frequency
  * @param expenses - Array of expenses with amount and frequency
  * @returns Savings capacity as a percentage (0-100)
@@ -57,7 +57,7 @@ export function calculateSavingsCapacityPercentage(
 /**
  * Calculates the maximum amount that can be allocated to savings
  * This is the net period income (income - expenses) after normalization
- * 
+ *
  * @param incomeSources - Array of income sources with amount and frequency
  * @param expenses - Array of expenses with amount and frequency
  * @returns Maximum allocable savings in cents (can be negative if expenses exceed income)
@@ -72,7 +72,7 @@ export function calculateMaxAllocableSavings(
 /**
  * Calculates the maximum dynamically allocable savings
  * This ensures the value is never negative (returns 0 if expenses exceed income)
- * 
+ *
  * @param incomeSources - Array of income sources with amount and frequency
  * @param expenses - Array of expenses with amount and frequency
  * @returns Maximum dynamically allocable savings in cents (always >= 0)
@@ -89,10 +89,10 @@ export function calculateMaxDynamicallyAllocableSavings(
  * Result type for savings capacity calculation
  */
 export interface SavingsCapacityResult {
-  grossIncome: number  // In cents, normalized to monthly
-  netPeriodIncome: number  // In cents, normalized to monthly
-  savingsCapacityPercentage: number  // Percentage (0-100)
-  maxAllocableSavings: number  // In cents, can be negative
+  grossIncome: number // In cents, normalized to monthly
+  netPeriodIncome: number // In cents, normalized to monthly
+  savingsCapacityPercentage: number // Percentage (0-100)
+  maxAllocableSavings: number // In cents, can be negative
 }
 
 /**
@@ -109,10 +109,7 @@ export function calculateSavingsCapacityResult(
   const expensesArray = expenses || []
   const grossIncome = calculateGrossPeriodIncome(sources)
   const netPeriodIncome = calculateNetPeriodIncome(sources, expensesArray)
-  const savingsCapacityPercentage = calculateSavingsCapacityPercentage(
-    incomeSources,
-    expenses
-  )
+  const savingsCapacityPercentage = calculateSavingsCapacityPercentage(incomeSources, expenses)
   const maxAllocableSavings = netPeriodIncome
 
   return {

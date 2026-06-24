@@ -1,9 +1,9 @@
 /**
  * Balance Tracking Service
- * 
+ *
  * Core service layer for balance tracking operations.
  * Provides type definitions, validation, and business logic for investment and debt tracking.
- * 
+ *
  * Architecture:
  * - Pure TypeScript functions, no side effects
  * - Works with both client-side (free tier) and server-side (paid tier) data
@@ -11,11 +11,11 @@
  */
 
 import type { BalanceTracking as DbBalanceTracking, FinanceType } from '@budget-planner/db'
-import { 
-  calculateMonthsToLimit, 
+import {
+  DebtCalculationResult,
   DebtSubType,
   calculateDebtMetrics,
-  DebtCalculationResult
+  calculateMonthsToLimit,
 } from '../utils/balanceCalculations'
 
 // ============================================================================
@@ -131,29 +131,34 @@ export { calculateMonthsToLimit } from '../utils/balanceCalculations'
 
 /**
  * Determine display type properties based on FinanceType
- * 
+ *
  * @param type - Finance type ('investment' or 'debt')
  * @returns Display properties for theming, or undefined if type is invalid
  */
-export function getTypeDisplayProperties(type: FinanceType): {
-  theme: 'success' | 'danger'
-  icon: string
-  label: string
-  colorClass: string
-  bgColorClass: string
-} | undefined {
+export function getTypeDisplayProperties(type: FinanceType):
+  | {
+      theme: 'success' | 'danger'
+      icon: string
+      label: string
+      colorClass: string
+      bgColorClass: string
+    }
+  | undefined {
   // Validate type parameter
   if (type !== 'investment' && type !== 'debt') {
     return undefined
   }
-  
-  const properties: Record<FinanceType, {
-    theme: 'success' | 'danger'
-    icon: string
-    label: string
-    colorClass: string
-    bgColorClass: string
-  }> = {
+
+  const properties: Record<
+    FinanceType,
+    {
+      theme: 'success' | 'danger'
+      icon: string
+      label: string
+      colorClass: string
+      bgColorClass: string
+    }
+  > = {
     investment: {
       theme: 'success' as const,
       icon: '↗',
@@ -175,7 +180,7 @@ export function getTypeDisplayProperties(type: FinanceType): {
 /**
  * Calculate months to limit and create display object
  * For debts, also calculates debt-specific metrics based on debtSubType
- * 
+ *
  * @param entry - Balance tracking entry
  * @returns BalanceTrackingWithTimeline with calculated fields
  */
@@ -185,13 +190,13 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
     entry.maxContributionLimit,
     entry.monthlyContribution
   )
-  
+
   // Calculate debt-specific metrics if this is a debt
   let debtProgress: number | null = null
-  let debtProgressLabel: string = 'No limit'
+  let debtProgressLabel = 'No limit'
   let debtTimeline: number | null = null
-  let debtTimelineLabel: string = 'No payment set'
-  
+  let debtTimelineLabel = 'No payment set'
+
   if (entry.type === 'debt' && entry.debtSubType) {
     const result = calculateDebtMetrics(
       entry.currentBalance,
@@ -205,7 +210,7 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
     debtTimeline = result.timeline
     debtTimelineLabel = result.timelineLabel
   }
-  
+
   return {
     ...entry,
     monthsToLimit,
@@ -231,10 +236,10 @@ export interface ValidationError {
 
 /**
  * Validate balance tracking input
- * 
+ *
  * @param input - Balance tracking input to validate
  * @returns Array of validation errors (empty if valid)
- * 
+ *
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
  * - type: Required, must be 'investment' or 'debt'
@@ -242,7 +247,9 @@ export interface ValidationError {
  * - maxContributionLimit: Optional, non-negative integer (in cents)
  * - monthlyContribution: Optional, non-negative integer (in cents)
  */
-export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>): ValidationError[] {
+export function validateBalanceTracking(
+  input: Partial<ClientNewBalanceTracking>
+): ValidationError[] {
   const errors: ValidationError[] = []
 
   // Name validation
@@ -299,7 +306,10 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
 
   // Max contribution limit validation (optional)
   if (input.maxContributionLimit !== undefined && input.maxContributionLimit !== null) {
-    if (typeof input.maxContributionLimit !== 'number' || !Number.isFinite(input.maxContributionLimit)) {
+    if (
+      typeof input.maxContributionLimit !== 'number' ||
+      !Number.isFinite(input.maxContributionLimit)
+    ) {
       errors.push({
         field: 'maxContributionLimit',
         message: 'Max contribution limit must be a finite number (in cents)',
@@ -328,7 +338,10 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
 
   // Monthly contribution validation
   if (input.monthlyContribution !== undefined && input.monthlyContribution !== null) {
-    if (typeof input.monthlyContribution !== 'number' || !Number.isFinite(input.monthlyContribution)) {
+    if (
+      typeof input.monthlyContribution !== 'number' ||
+      !Number.isFinite(input.monthlyContribution)
+    ) {
       errors.push({
         field: 'monthlyContribution',
         message: 'Monthly contribution must be a finite number (in cents)',
@@ -354,9 +367,12 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
       })
     }
   }
-  
+
   // Bounds validation for currentBalance (already validated as integer above)
-  if (input.currentBalance !== undefined && Math.abs(input.currentBalance) > Number.MAX_SAFE_INTEGER / 100) {
+  if (
+    input.currentBalance !== undefined &&
+    Math.abs(input.currentBalance) > Number.MAX_SAFE_INTEGER / 100
+  ) {
     errors.push({
       field: 'currentBalance',
       message: 'Current balance exceeds safe integer bounds',
@@ -369,7 +385,7 @@ export function validateBalanceTracking(input: Partial<ClientNewBalanceTracking>
 
 /**
  * Check if balance tracking input is valid
- * 
+ *
  * @param input - Balance tracking input to validate
  * @returns true if valid, false otherwise
  */
@@ -383,9 +399,9 @@ export function isValidBalanceTracking(input: Partial<ClientNewBalanceTracking>)
 
 /**
  * Sort balance tracking entries by creation date (newest first)
- * 
+ *
  * AC 2: When viewing the balance tracking list, all entries are displayed sorted by creation date (newest first)
- * 
+ *
  * @param entries - Array of balance tracking entries to sort
  * @returns New array sorted by createdAt (descending), or empty array if entries is null/undefined
  */
@@ -394,23 +410,23 @@ export function sortByCreationDate(entries: ClientBalanceTracking[]): ClientBala
   if (!entries) {
     return []
   }
-  
+
   return [...entries].sort((a, b) => {
     // Validate dates
     const dateA = new Date(a.createdAt).getTime()
     const dateB = new Date(b.createdAt).getTime()
-    
+
     // Handle invalid dates - push to end
     if (!Number.isFinite(dateA)) return 1
     if (!Number.isFinite(dateB)) return -1
-    
+
     return dateB - dateA // Newest first
   })
 }
 
 /**
  * Filter balance tracking entries by type and/or search
- * 
+ *
  * @param entries - Array of balance tracking entries with timeline
  * @param filter - Filter options
  * @returns Filtered array of balance tracking entries, or empty array if entries is null/undefined
@@ -423,7 +439,7 @@ export function filterBalanceTracking(
   if (!entries || !filter) {
     return []
   }
-  
+
   return entries.filter((entry) => {
     if (filter.type && entry.type !== filter.type) return false
     if (filter.search) {
@@ -476,7 +492,7 @@ function setTempIdCounter(value: number): void {
 /**
  * Generate a temporary ID for client-side balance tracking storage
  * Persists counter in localStorage to prevent collisions across tabs/sessions
- * 
+ *
  * @returns Negative number ID for client-side use
  */
 export function generateBalanceTrackingTempId(): number {
@@ -495,13 +511,11 @@ export function resetBalanceTrackingTempId(): void {
 
 /**
  * Convert new balance tracking input to client balance tracking (add ID and timestamps)
- * 
+ *
  * @param input - New balance tracking input
  * @returns Client balance tracking with ID and timestamps
  */
-export function toClientBalanceTracking(
-  input: ClientNewBalanceTracking
-): ClientBalanceTracking {
+export function toClientBalanceTracking(input: ClientNewBalanceTracking): ClientBalanceTracking {
   const now = new Date().toISOString()
   return {
     ...input,

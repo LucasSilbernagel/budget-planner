@@ -1,6 +1,9 @@
+import type {
+  BalanceTrackingWithTimeline,
+  ClientBalanceTracking,
+} from '@budget-planner/core/services/balanceTracking'
 import React, { useState, useEffect, useCallback } from 'react'
 import BalanceEntryCard from './BalanceEntryCard'
-import type { ClientBalanceTracking, BalanceTrackingWithTimeline } from '@budget-planner/core/services/balanceTracking'
 
 /**
  * Props for BalanceTrackingList component
@@ -16,13 +19,13 @@ export interface BalanceTrackingListProps {
 
 /**
  * BalanceTrackingList component
- * 
+ *
  * Displays a list of balance tracking entries using BalanceEntryCard components.
  * Supports empty state, loading state, and free/paid tier indicators.
- * 
+ *
  * AC 2: When viewing the balance tracking list, all entries are displayed sorted by creation date (newest first)
  * AC 2: Entries are grouped by type (investments vs debts)
- * 
+ *
  * @param props - Component props
  * @param props.entries - Array of balance tracking entries to display
  * @param props.onEdit - Callback when edit button is clicked
@@ -50,10 +53,13 @@ export function BalanceTrackingList({
   }, [])
 
   // Open delete confirmation
-  const handleOpenDeleteConfirm = useCallback((entry: ClientBalanceTracking | BalanceTrackingWithTimeline) => {
-    setDeletingId(entry.id)
-    setDeleteConfirmName(entry.name)
-  }, [])
+  const handleOpenDeleteConfirm = useCallback(
+    (entry: ClientBalanceTracking | BalanceTrackingWithTimeline) => {
+      setDeletingId(entry.id)
+      setDeleteConfirmName(entry.name)
+    },
+    []
+  )
 
   // Confirm and execute delete
   const handleConfirmDelete = useCallback(() => {
@@ -115,9 +121,7 @@ export function BalanceTrackingList({
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           No Balance Entries
         </h3>
-        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-          {emptyMessage}
-        </p>
+        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">{emptyMessage}</p>
         {isFreeTier && (
           <p className="text-xs text-gray-500 dark:text-gray-500 mt-4">
             Balance entries are stored in your browser's local storage
@@ -132,12 +136,12 @@ export function BalanceTrackingList({
     // Handle null/undefined createdAt by placing them at the end
     if (a.createdAt == null) return 1
     if (b.createdAt == null) return -1
-    
+
     const dateA = new Date(a.createdAt).getTime()
     const dateB = new Date(b.createdAt).getTime()
     // Handle invalid dates by placing them at the end
-    if (isNaN(dateA)) return 1
-    if (isNaN(dateB)) return -1
+    if (Number.isNaN(dateA)) return 1
+    if (Number.isNaN(dateB)) return -1
     return dateB - dateA // Newest first
   })
 
@@ -202,18 +206,24 @@ export function BalanceTrackingList({
             className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full max-w-[90vw] dark:bg-gray-800 dark:border dark:border-gray-700"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="delete-confirm-title" className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <h3
+              id="delete-confirm-title"
+              className="text-lg font-semibold text-gray-900 dark:text-white mb-4"
+            >
               Confirm Delete
             </h3>
             <p id="delete-confirm-description" className="text-gray-600 dark:text-gray-400 mb-6">
-              Are you sure you want to delete "{deleteConfirmName.length > 50 ? `${deleteConfirmName.slice(0, 47)}...` : deleteConfirmName}"? This action cannot be undone.
+              Are you sure you want to delete "
+              {deleteConfirmName.length > 50
+                ? `${deleteConfirmName.slice(0, 47)}...`
+                : deleteConfirmName}
+              "? This action cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleCloseDeleteConfirm}
                 className="px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 data-testid="delete-confirm-cancel"
-                autoFocus
               >
                 Cancel
               </button>

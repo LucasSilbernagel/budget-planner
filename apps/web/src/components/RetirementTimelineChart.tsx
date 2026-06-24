@@ -1,16 +1,23 @@
+import {
+  type YearlyProjection,
+  calculateCompoundingProjection,
+} from '@budget-planner/core/finance/retirement'
+import {
+  type CurrencyCode,
+  type CurrencyMode,
+  formatCurrency,
+} from '@budget-planner/core/format/currency'
 import React, { useState, useMemo, useCallback } from 'react'
 import {
-  LineChart,
+  CartesianGrid,
   Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts'
-import { calculateCompoundingProjection, type YearlyProjection } from '@budget-planner/core/finance/retirement'
-import { formatCurrency, type CurrencyMode, type CurrencyCode } from '@budget-planner/core/format/currency'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
 
@@ -29,7 +36,7 @@ export interface RetirementTimelineChartProps {
 /**
  * Format currency for chart display with abbreviations
  * Uses core formatCurrency with abbreviate option for large values
- * 
+ *
  * @param value - Amount in cents
  * @param mode - Currency display mode
  * @param currency - Currency code (e.g., 'USD', 'EUR')
@@ -60,9 +67,13 @@ function CustomTooltip({
   }
 
   const data = payload[0].payload as YearlyProjection & { retirementYear?: boolean }
-  
+
   // Guard: check that required properties exist
-  if (!('startingBalance' in data) || !('annualContribution' in data) || !('endingBalance' in data)) {
+  if (
+    !('startingBalance' in data) ||
+    !('annualContribution' in data) ||
+    !('endingBalance' in data)
+  ) {
     return (
       <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
         <p className="font-semibold text-gray-800">Year {label}</p>
@@ -70,7 +81,7 @@ function CustomTooltip({
       </div>
     )
   }
-  
+
   return (
     <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
       <p className="font-semibold text-gray-800">Year {label}</p>
@@ -84,9 +95,7 @@ function CustomTooltip({
         Ending Balance: {formatChartCurrency(data.endingBalance, mode, currency)}
       </p>
       {data.retirementYear && (
-        <p className="text-sm text-green-600 mt-2 font-medium">
-          ✓ Retirement Year
-        </p>
+        <p className="text-sm text-green-600 mt-2 font-medium">✓ Retirement Year</p>
       )}
     </div>
   )
@@ -94,9 +103,9 @@ function CustomTooltip({
 
 /**
  * RetirementTimelineChart component
- * 
+ *
  * Visualizes compounding growth over time for retirement planning.
- * 
+ *
  * Features:
  * - Interactive line chart with Recharts
  * - Configurable parameters: principal, contribution, return rate, years
@@ -104,7 +113,7 @@ function CustomTooltip({
  * - Tooltips with detailed information
  * - Responsive design
  * - Accessible chart elements
- * 
+ *
  * AC Coverage: AC-3 (Age timeline mapping with compounding projections)
  */
 function RetirementTimelineChartInner({
@@ -116,7 +125,7 @@ function RetirementTimelineChartInner({
   currentAge = 35,
 }: RetirementTimelineChartProps) {
   const { mode, currency } = useCurrencyPreferences()
-  
+
   // Local state for user-configurable parameters
   // Note: returnRate is stored as percentage (0-100) for UI consistency
   // annualReturnRate prop is in decimal (0-1), so convert to percentage
@@ -126,38 +135,38 @@ function RetirementTimelineChartInner({
   const [years, setYears] = useState<number>(yearsToProject)
   const [currentAgeState, setCurrentAge] = useState<number>(currentAge)
   const [retirementAgeState, setRetirementAge] = useState<number>(retirementAge)
-  
+
   // Calculate projections
   const [projectionError, setProjectionError] = useState<string | null>(null)
-  
+
   const projections = useMemo(() => {
     try {
       // Validate inputs before calculation
       if (returnRate <= 0) {
         throw new Error('Return rate must be greater than 0')
       }
-      
+
       if (years < 0) {
         throw new Error('Number of years must be non-negative')
       }
-      
+
       // Handle edge case: if years is 0, return empty array (consistent with core)
       if (years === 0) {
         return []
       }
-      
+
       // Ensure non-negative values for financial calculations
       const safePrincipal = Math.max(principal, 0)
       const safeContribution = Math.max(contribution, 0)
       const safeReturnRate = returnRate
-      
+
       const result = calculateCompoundingProjection({
         principal: safePrincipal * 100, // Convert to cents
         annualContribution: safeContribution * 100,
         annualReturnRate: safeReturnRate / 100, // Convert percentage to decimal
         years,
       })
-      
+
       setProjectionError(null)
       return result
     } catch (e) {
@@ -167,11 +176,11 @@ function RetirementTimelineChartInner({
       return []
     }
   }, [principal, contribution, returnRate, years])
-  
+
   // Add age information to projections
   const chartData = useMemo(() => {
     const retirementYear = retirementAgeState
-    
+
     return projections.map((projection, index) => ({
       ...projection,
       year: projection.year,
@@ -183,119 +192,122 @@ function RetirementTimelineChartInner({
       retirementYear: currentAgeState + index === retirementYear,
     }))
   }, [projections, currentAgeState, retirementAgeState])
-  
+
   // Handle parameter changes
   const handlePrincipalChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value
-    
+
     // Reject scientific notation
     if (rawValue.includes('e') || rawValue.includes('E')) {
       return
     }
-    
+
     const value = parseFloat(rawValue)
-    
+
     // Validate finite number
     if (!Number.isFinite(value)) {
       return
     }
-    
+
     setPrincipal(value)
   }, [])
-  
+
   const handleContributionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value
-    
+
     // Reject scientific notation
     if (rawValue.includes('e') || rawValue.includes('E')) {
       return
     }
-    
+
     const value = parseFloat(rawValue)
-    
+
     // Validate finite number
     if (!Number.isFinite(value)) {
       return
     }
-    
+
     setContribution(value)
   }, [])
-  
+
   const handleReturnRateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value
-    
+
     // Reject scientific notation
     if (rawValue.includes('e') || rawValue.includes('E')) {
       return
     }
-    
+
     const value = parseFloat(rawValue)
-    
+
     // Validate finite number
     if (!Number.isFinite(value)) {
       return
     }
-    
+
     // Cap at 100% and ensure non-negative
     setReturnRate(Math.min(Math.max(value, 0), 100))
   }, [])
-  
+
   const handleYearsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value
-    
+
     // Reject scientific notation
     if (rawValue.includes('e') || rawValue.includes('E')) {
       return
     }
-    
+
     const value = parseInt(rawValue, 10)
-    
+
     // Validate finite number
     if (!Number.isFinite(value)) {
       return
     }
-    
+
     setYears(value)
   }, [])
-  
+
   const handleCurrentAgeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value
-    
+
     // Reject scientific notation
     if (rawValue.includes('e') || rawValue.includes('E')) {
       return
     }
-    
+
     const value = parseInt(rawValue, 10)
-    
+
     // Validate finite number
     if (!Number.isFinite(value)) {
       return
     }
-    
+
     // Enforce minimum age of 18 and maximum of 120
     setCurrentAge(Math.min(Math.max(value, 18), 120))
   }, [])
-  
-  const handleRetirementAgeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
-    
-    // Reject scientific notation
-    if (rawValue.includes('e') || rawValue.includes('E')) {
-      return
-    }
-    
-    const value = parseInt(rawValue, 10)
-    
-    // Validate finite number
-    if (!Number.isFinite(value)) {
-      return
-    }
-    
-    // Enforce minimum of currentAge + 1 and maximum of 120
-    setRetirementAge(Math.min(Math.max(value, currentAgeState + 1), 120))
-  }, [currentAgeState])
-  
+
+  const handleRetirementAgeChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const rawValue = e.target.value
+
+      // Reject scientific notation
+      if (rawValue.includes('e') || rawValue.includes('E')) {
+        return
+      }
+
+      const value = parseInt(rawValue, 10)
+
+      // Validate finite number
+      if (!Number.isFinite(value)) {
+        return
+      }
+
+      // Enforce minimum of currentAge + 1 and maximum of 120
+      setRetirementAge(Math.min(Math.max(value, currentAgeState + 1), 120))
+    },
+    [currentAgeState]
+  )
+
   // Reset to defaults
   const resetToDefaults = useCallback(() => {
     setPrincipal(initialPrincipal)
@@ -304,8 +316,15 @@ function RetirementTimelineChartInner({
     setYears(yearsToProject)
     setCurrentAge(currentAge)
     setRetirementAge(retirementAge)
-  }, [initialPrincipal, annualContribution, annualReturnRate, yearsToProject, currentAge, retirementAge])
-  
+  }, [
+    initialPrincipal,
+    annualContribution,
+    annualReturnRate,
+    yearsToProject,
+    currentAge,
+    retirementAge,
+  ])
+
   if (chartData.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500">
@@ -313,7 +332,7 @@ function RetirementTimelineChartInner({
       </div>
     )
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Controls */}
@@ -323,7 +342,9 @@ function RetirementTimelineChartInner({
             Current Savings
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              $
+            </span>
             <input
               type="number"
               id="principal"
@@ -335,13 +356,15 @@ function RetirementTimelineChartInner({
             />
           </div>
         </div>
-        
+
         <div>
           <label htmlFor="contribution" className="block text-xs font-medium text-gray-600 mb-1">
             Annual Contribution
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              $
+            </span>
             <input
               type="number"
               id="contribution"
@@ -353,7 +376,7 @@ function RetirementTimelineChartInner({
             />
           </div>
         </div>
-        
+
         <div>
           <label htmlFor="returnRate" className="block text-xs font-medium text-gray-600 mb-1">
             Return Rate
@@ -369,10 +392,12 @@ function RetirementTimelineChartInner({
               max="100"
               step="0.1"
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              %
+            </span>
           </div>
         </div>
-        
+
         <div>
           <label htmlFor="years" className="block text-xs font-medium text-gray-600 mb-1">
             Years
@@ -387,7 +412,7 @@ function RetirementTimelineChartInner({
             max="100"
           />
         </div>
-        
+
         <div>
           <label htmlFor="currentAge" className="block text-xs font-medium text-gray-600 mb-1">
             Current Age
@@ -402,7 +427,7 @@ function RetirementTimelineChartInner({
             max="120"
           />
         </div>
-        
+
         <div>
           <label htmlFor="retirementAge" className="block text-xs font-medium text-gray-600 mb-1">
             Retirement Age
@@ -417,7 +442,7 @@ function RetirementTimelineChartInner({
             max="120"
           />
         </div>
-        
+
         <div className="flex items-end">
           <button
             onClick={resetToDefaults}
@@ -427,7 +452,7 @@ function RetirementTimelineChartInner({
           </button>
         </div>
       </div>
-      
+
       {/* Chart */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <ResponsiveContainer width="100%" height={400}>
@@ -470,14 +495,22 @@ function RetirementTimelineChartInner({
           </LineChart>
         </ResponsiveContainer>
       </div>
-      
+
       {/* Summary */}
       <div className="p-4 bg-gray-50 rounded-lg">
         <p className="text-sm text-gray-600">
-          <strong>Projection Summary:</strong> Starting with {formatChartCurrency(principal * 100, mode, currency)} 
-          at age {currentAgeState}, with a {returnRate}% annual return and 
-          {formatChartCurrency(contribution * 100, mode, currency)} annual contributions, 
-          your assets could grow to <strong>{formatChartCurrency(chartData[chartData.length - 1]?.endingBalance * 100, mode, currency)}</strong> 
+          <strong>Projection Summary:</strong> Starting with{' '}
+          {formatChartCurrency(principal * 100, mode, currency)}
+          at age {currentAgeState}, with a {returnRate}% annual return and
+          {formatChartCurrency(contribution * 100, mode, currency)} annual contributions, your
+          assets could grow to{' '}
+          <strong>
+            {formatChartCurrency(
+              chartData[chartData.length - 1]?.endingBalance * 100,
+              mode,
+              currency
+            )}
+          </strong>
           in {years} years at age {currentAgeState + years}.
         </p>
       </div>

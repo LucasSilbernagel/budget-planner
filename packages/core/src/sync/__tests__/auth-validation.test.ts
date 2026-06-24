@@ -1,10 +1,10 @@
 /**
  * Authentication Validation Tests for SynchronizationService
- * 
+ *
  * Tests for the security fix that validates userId in queue operations
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { SynchronizationService } from '../synchronization'
 
 describe('SynchronizationService Authentication Validation', () => {
@@ -25,7 +25,7 @@ describe('SynchronizationService Authentication Validation', () => {
         { name: 'Salary', amount: 5000 },
         validUserId
       )
-      
+
       expect(operation.userId).toBe(validUserId)
       expect(operation.entityType).toBe('incomeSource')
     })
@@ -50,7 +50,7 @@ describe('SynchronizationService Authentication Validation', () => {
         { name: 'Updated Salary', amount: 6000 },
         validUserId
       )
-      
+
       expect(operation.userId).toBe(validUserId)
       expect(operation.type).toBe('update')
     })
@@ -69,24 +69,16 @@ describe('SynchronizationService Authentication Validation', () => {
 
   describe('queueDelete', () => {
     it('should accept operations with matching userId', async () => {
-      const operation = await service.queueDelete(
-        'incomeSource',
-        'inc-1',
-        validUserId
-      )
-      
+      const operation = await service.queueDelete('incomeSource', 'inc-1', validUserId)
+
       expect(operation.userId).toBe(validUserId)
       expect(operation.type).toBe('delete')
     })
 
     it('should reject operations with mismatched userId', async () => {
-      await expect(
-        service.queueDelete(
-          'incomeSource',
-          'inc-1',
-          invalidUserId
-        )
-      ).rejects.toThrow('Unauthorized: Operation userId mismatch')
+      await expect(service.queueDelete('incomeSource', 'inc-1', invalidUserId)).rejects.toThrow(
+        'Unauthorized: Operation userId mismatch'
+      )
     })
   })
 
@@ -95,13 +87,13 @@ describe('SynchronizationService Authentication Validation', () => {
       // This simulates a security attack where a malicious user
       // tries to queue operations for another user
       const maliciousService = new SynchronizationService(invalidUserId, { autoSync: false })
-      
+
       await expect(
         maliciousService.queueCreate(
           'incomeSource',
           'inc-1',
           { name: 'Fake Income', amount: 10000 },
-          validUserId  // Trying to create for user-123
+          validUserId // Trying to create for user-123
         )
       ).rejects.toThrow('Unauthorized: Operation userId mismatch')
     })

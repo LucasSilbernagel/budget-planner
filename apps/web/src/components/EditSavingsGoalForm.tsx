@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react'
-import type { ClientSavingsGoal, ClientNewSavingsGoal, ValidationError } from '@budget-planner/core/services/savingsGoals'
+import { currencySymbol, formatCurrency } from '@budget-planner/core/format/currency'
+import type {
+  ClientNewSavingsGoal,
+  ClientSavingsGoal,
+  ValidationError,
+} from '@budget-planner/core/services/savingsGoals'
 import { validateSavingsGoal } from '@budget-planner/core/services/savingsGoals'
+import React, { useState, useEffect } from 'react'
 import { useCurrencyPreferences } from '../stores/currencyStore'
-import { formatCurrency, currencySymbol } from '@budget-planner/core/format/currency'
 
 /**
  * Parse currency string to cents
@@ -11,24 +15,24 @@ import { formatCurrency, currencySymbol } from '@budget-planner/core/format/curr
  */
 function parseCurrencyToCents(value: string): number {
   if (!value || value.trim() === '') return 0
-  
+
   // Remove all non-numeric characters except decimal point and minus sign
   const cleaned = value.replace(/[^\d.-]/g, '')
-  
+
   // Reject if multiple decimal points
   if ((cleaned.match(/\./g) || []).length > 1) return 0
-  
+
   // Reject if starts with minus sign (negative values)
   if (cleaned.startsWith('-')) return 0
-  
+
   // Reject scientific notation
   if (cleaned.includes('e') || cleaned.includes('E')) return 0
-  
+
   const amount = parseFloat(cleaned)
-  
+
   // Reject NaN, Infinity, or negative values
-  if (isNaN(amount) || !isFinite(amount) || amount < 0) return 0
-  
+  if (Number.isNaN(amount) || !Number.isFinite(amount) || amount < 0) return 0
+
   // Handle floating point precision by working with the string
   // Convert to cents directly from string to avoid IEEE 754 issues
   if (cleaned.includes('.')) {
@@ -36,8 +40,8 @@ function parseCurrencyToCents(value: string): number {
     const paddedDecimal = decimal.padEnd(2, '0').slice(0, 2)
     return parseInt(whole + paddedDecimal, 10) || 0
   }
-  
-  return parseInt(cleaned + '00', 10) || 0
+
+  return parseInt(`${cleaned}00`, 10) || 0
 }
 
 /**
@@ -60,16 +64,16 @@ export interface EditSavingsGoalFormProps {
 
 /**
  * EditSavingsGoalForm component
- * 
+ *
  * Form for editing an existing savings goal.
  * Includes validation and error display.
  * Pre-fills with existing goal data.
- * 
+ *
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
  * - targetAmount: Required, positive integer (in cents)
  * - currentBalance: Required, non-negative integer (in cents), <= targetAmount
- * 
+ *
  * @param props - Component props
  * @param props.goal - Savings goal to edit
  * @param props.onSubmit - Callback when form is submitted with valid data
@@ -203,9 +207,7 @@ export function EditSavingsGoalForm({
             {getFieldError('name')}
           </p>
         )}
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Max 100 characters
-        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Max 100 characters</p>
       </div>
 
       {/* Target Amount Field */}
@@ -233,7 +235,9 @@ export function EditSavingsGoalForm({
                 : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
             }`}
             aria-invalid={hasFieldError('targetAmount')}
-            aria-describedby={hasFieldError('targetAmount') ? 'edit-savings-goal-target-amount-error' : undefined}
+            aria-describedby={
+              hasFieldError('targetAmount') ? 'edit-savings-goal-target-amount-error' : undefined
+            }
             data-testid="edit-savings-goal-target-amount-input"
           />
         </div>
@@ -278,7 +282,11 @@ export function EditSavingsGoalForm({
                 : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
             }`}
             aria-invalid={hasFieldError('currentBalance')}
-            aria-describedby={hasFieldError('currentBalance') ? 'edit-savings-goal-current-balance-error' : 'edit-savings-goal-current-balance-help'}
+            aria-describedby={
+              hasFieldError('currentBalance')
+                ? 'edit-savings-goal-current-balance-error'
+                : 'edit-savings-goal-current-balance-help'
+            }
             data-testid="edit-savings-goal-current-balance-input"
           />
         </div>
@@ -299,11 +307,13 @@ export function EditSavingsGoalForm({
             = {formatAmount(currentBalanceCents)}
           </p>
         )}
-        {targetAmountCents > 0 && currentBalanceCents > 0 && currentBalanceCents <= targetAmountCents && (
-          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-            {Math.round((currentBalanceCents / targetAmountCents) * 100)}% of target
-          </p>
-        )}
+        {targetAmountCents > 0 &&
+          currentBalanceCents > 0 &&
+          currentBalanceCents <= targetAmountCents && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+              {Math.round((currentBalanceCents / targetAmountCents) * 100)}% of target
+            </p>
+          )}
       </div>
 
       {/* Form Validation Summary */}

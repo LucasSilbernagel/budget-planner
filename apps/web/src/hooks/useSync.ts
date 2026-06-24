@@ -1,9 +1,9 @@
 /**
  * useSync Hook
- * 
+ *
  * Custom React hook for managing client-side synchronization state and operations.
  * Provides automatic sync, manual sync triggers, and sync status indicators.
- * 
+ *
  * Features:
  * - Automatic sync on data changes with debouncing
  * - Manual sync trigger
@@ -12,20 +12,20 @@
  * - Error handling and retry logic
  */
 
+import type {
+  ProcessOperationFn,
+  SyncResult,
+  SyncState,
+  SyncStatus,
+} from '@budget-planner/core/sync'
+import {
+  SyncStatus as SyncStatusEnum,
+  SynchronizationService,
+  createSynchronizationService,
+} from '@budget-planner/core/sync'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type {
-  SyncState,
-  SyncStatus,
-  SyncResult,
-  ProcessOperationFn,
-} from '@budget-planner/core/sync'
-import {
-  SynchronizationService,
-  createSynchronizationService,
-  SyncStatus as SyncStatusEnum,
-} from '@budget-planner/core/sync'
 import { processSyncOperation } from '../server/functions/sync'
 
 // ============================================================================
@@ -38,28 +38,28 @@ import { processSyncOperation } from '../server/functions/sync'
 interface SyncStoreState {
   /** Current sync status */
   status: SyncStatus
-  
+
   /** Whether the device is online */
   isOnline: boolean
-  
+
   /** Number of pending operations */
   pendingCount: number
-  
+
   /** Number of failed operations */
   failedCount: number
-  
+
   /** Number of conflict operations */
   conflictCount: number
-  
+
   /** Last sync timestamp (null if never synced) */
   lastSyncTimestamp: number | null
-  
+
   /** Last error message */
   lastError: string | undefined
-  
+
   /** Whether a sync is currently in progress */
   isSyncing: boolean
-  
+
   /** Retry count for failed operations */
   retryCount: number
 }
@@ -70,7 +70,7 @@ interface SyncStoreState {
 interface SyncStoreActions {
   /** Update the sync state */
   setState: (state: Partial<SyncStoreState>) => void
-  
+
   /** Reset the store to initial state */
   reset: () => void
 }
@@ -86,13 +86,13 @@ type SyncStore = SyncStoreState & SyncStoreActions
 export interface UseSyncOptions {
   /** User ID for synchronization */
   userId: string
-  
+
   /** Whether to enable automatic sync */
   autoSync?: boolean
-  
+
   /** Debounce delay for automatic sync in milliseconds */
   debounceDelay?: number
-  
+
   /** Sync configuration overrides */
   syncConfig?: Partial<Parameters<typeof createSynchronizationService>[1]>
 }
@@ -103,53 +103,53 @@ export interface UseSyncOptions {
 export interface UseSyncReturn {
   /** Current sync status */
   status: SyncStatus
-  
+
   /** Whether the device is online */
   isOnline: boolean
-  
+
   /** Number of pending operations */
   pendingCount: number
-  
+
   /** Number of failed operations */
   failedCount: number
-  
+
   /** Number of conflict operations */
   conflictCount: number
-  
+
   /** Last sync timestamp */
   lastSyncTimestamp: number | null
-  
+
   /** Last error message */
   lastError: string | undefined
-  
+
   /** Whether a sync is currently in progress */
   isSyncing: boolean
-  
+
   /** Retry count for failed operations */
   retryCount: number
-  
+
   /** Whether there are pending changes */
   hasPendingChanges: boolean
-  
+
   /** Whether there are conflicts to resolve */
   hasConflicts: boolean
-  
+
   /** Whether there are failed operations */
   hasFailures: boolean
-  
+
   /** Manual sync trigger */
   sync: () => Promise<SyncResult | undefined>
-  
+
   /** Force sync immediately (bypasses debounce) */
   forceSync: () => Promise<SyncResult | undefined>
-  
+
   /** Queue a create operation */
   queueCreate: (
     entityType: string,
     entityId: string | number,
     data: Record<string, unknown>
   ) => Promise<void>
-  
+
   /** Queue an update operation */
   queueUpdate: (
     entityType: string,
@@ -157,10 +157,10 @@ export interface UseSyncReturn {
     data: Record<string, unknown>,
     version?: number
   ) => Promise<void>
-  
+
   /** Queue a delete operation */
   queueDelete: (entityType: string, entityId: string | number) => Promise<void>
-  
+
   /** Reset the sync state */
   reset: () => void
 }
@@ -222,13 +222,13 @@ export function resetSyncStore(): void {
 
 /**
  * Custom hook for managing synchronization state
- * 
+ *
  * @param options - Configuration options for the sync hook
  * @returns Sync state and actions
  */
 export function useSync(options: UseSyncOptions): UseSyncReturn {
   const { userId, autoSync = true, debounceDelay = 2000, syncConfig = {} } = options
-  
+
   const store = getSyncStore()
   const syncServiceRef = useRef<SynchronizationService | null>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -285,19 +285,17 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     lastError,
     isSyncing,
     retryCount,
-  } = store(
-    (state) => ({
-      status: state.status,
-      isOnline: state.isOnline,
-      pendingCount: state.pendingCount,
-      failedCount: state.failedCount,
-      conflictCount: state.conflictCount,
-      lastSyncTimestamp: state.lastSyncTimestamp,
-      lastError: state.lastError,
-      isSyncing: state.isSyncing,
-      retryCount: state.retryCount,
-    })
-  )
+  } = store((state) => ({
+    status: state.status,
+    isOnline: state.isOnline,
+    pendingCount: state.pendingCount,
+    failedCount: state.failedCount,
+    conflictCount: state.conflictCount,
+    lastSyncTimestamp: state.lastSyncTimestamp,
+    lastError: state.lastError,
+    isSyncing: state.isSyncing,
+    retryCount: state.retryCount,
+  }))
 
   // Derived state
   const hasPendingChanges = pendingCount > 0
@@ -319,7 +317,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
 
     handleStatusChange(true)
-    
+
     try {
       const result = await syncServiceRef.current.forceSync()
       return result
@@ -338,7 +336,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
 
     handleStatusChange(true)
-    
+
     try {
       const result = await syncServiceRef.current.forceSync()
       return result
@@ -360,14 +358,14 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
       }
-      
+
       await syncServiceRef.current.queueCreate(entityType, entityId, data, userId)
-      
+
       // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
-      
+
       if (autoSync) {
         debounceTimerRef.current = setTimeout(() => {
           forceSync().catch((error) => {
@@ -389,14 +387,14 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
       }
-      
+
       await syncServiceRef.current.queueUpdate(entityType, entityId, data, userId, version)
-      
+
       // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
-      
+
       if (autoSync) {
         debounceTimerRef.current = setTimeout(() => {
           forceSync().catch((error) => {
@@ -413,14 +411,14 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
       }
-      
+
       await syncServiceRef.current.queueDelete(entityType, entityId, userId)
-      
+
       // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
-      
+
       if (autoSync) {
         debounceTimerRef.current = setTimeout(() => {
           forceSync().catch((error) => {
@@ -458,12 +456,12 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       lastError,
       isSyncing,
       retryCount,
-      
+
       // Derived state
       hasPendingChanges,
       hasConflicts,
       hasFailures,
-      
+
       // Actions
       sync,
       forceSync,
