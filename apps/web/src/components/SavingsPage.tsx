@@ -146,6 +146,7 @@ export function SavingsPage() {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={openAddModal}
                 className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors whitespace-nowrap"
               >
@@ -216,12 +217,14 @@ export function SavingsPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                             <button
+                              type="button"
                               onClick={() => openEditModal(goal)}
                               className="text-blue-600 hover:text-blue-900 mr-4"
                             >
                               Edit
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDelete(goal.id)}
                               className="text-red-600 hover:text-red-900"
                             >
@@ -247,11 +250,18 @@ export function SavingsPage() {
                   {editingId !== null ? 'Edit Savings Goal' : 'Add Savings Goal'}
                 </h3>
                 <button
+                  type="button"
                   onClick={closeModal}
                   className="text-gray-400 hover:text-gray-600"
                   aria-label="Close"
                 >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg
+                    aria-hidden="true"
+                    className="h-6 w-6"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"

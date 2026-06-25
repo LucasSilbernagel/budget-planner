@@ -12,8 +12,6 @@ import { describe, expect, it } from 'vitest'
 import {
   type CompoundingInput,
   type RetirementInput,
-  type RetirementResult,
-  type YearlyProjection,
   calculateCompoundingProjection,
   calculateRequiredAssets,
   calculateRetirementRequirement,

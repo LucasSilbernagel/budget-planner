@@ -7,11 +7,7 @@
  * Architecture Requirement: FR5 - Core calculations
  */
 
-import {
-  type Frequency,
-  calculateTotalMonthlyNormalized,
-  normalizeToMonthly,
-} from './normalization'
+import { type Frequency, calculateTotalMonthlyNormalized } from './normalization'
 
 /**
  * Interface for financial items that can be normalized

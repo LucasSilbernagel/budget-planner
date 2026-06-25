@@ -9,16 +9,7 @@
  */
 
 import { db } from '@budget-planner/db'
-import type {
-  BalanceTracking,
-  Expense,
-  IncomeSource,
-  NewBalanceTracking,
-  NewExpense,
-  NewIncomeSource,
-  NewSavingsGoal,
-  SavingsGoal,
-} from '@budget-planner/db'
+import type { BalanceTracking, Expense, IncomeSource, SavingsGoal } from '@budget-planner/db'
 import {
   balanceTracking,
   expenses,
@@ -28,7 +19,6 @@ import {
 import type { Request } from '@tanstack/start'
 import { and, eq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../auth/paddle'
-import type { ApiResult } from '../auth/paddle'
 
 // ============================================================================
 // Type Definitions
@@ -944,13 +934,15 @@ export async function syncFinancialData(
           createIncomeSource(request, { ...s, profileId: activeProfileId })
         )
       )
-      results.incomeSources = srcs.filter((r) => r.success).map((r) => r.data!) as IncomeSource[]
+      results.incomeSources = srcs
+        .filter((r) => r.success && r.data)
+        .map((r) => r.data) as IncomeSource[]
     }
     if (data.expenses?.length) {
       const exps = await Promise.all(
         data.expenses.map((e) => createExpense(request, { ...e, profileId: activeProfileId }))
       )
-      results.expenses = exps.filter((r) => r.success).map((r) => r.data!) as Expense[]
+      results.expenses = exps.filter((r) => r.success && r.data).map((r) => r.data) as Expense[]
     }
     if (data.savingsGoals?.length) {
       const goals = await Promise.all(
@@ -958,7 +950,9 @@ export async function syncFinancialData(
           createSavingsGoal(request, { ...g, profileId: activeProfileId })
         )
       )
-      results.savingsGoals = goals.filter((r) => r.success).map((r) => r.data!) as SavingsGoal[]
+      results.savingsGoals = goals
+        .filter((r) => r.success && r.data)
+        .map((r) => r.data) as SavingsGoal[]
     }
     if (data.balanceTracking?.length) {
       const tracking = await Promise.all(
@@ -967,8 +961,8 @@ export async function syncFinancialData(
         )
       )
       results.balanceTracking = tracking
-        .filter((r) => r.success)
-        .map((r) => r.data!) as BalanceTracking[]
+        .filter((r) => r.success && r.data)
+        .map((r) => r.data) as BalanceTracking[]
     }
     return { success: true, data: results }
   } catch (error) {

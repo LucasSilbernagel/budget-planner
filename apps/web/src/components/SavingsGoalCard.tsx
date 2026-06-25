@@ -3,7 +3,6 @@ import type {
   ClientSavingsGoal,
   SavingsGoalWithProgress,
 } from '@budget-planner/core/services/savingsGoals'
-import * as RadixDialog from '@radix-ui/react-dialog'
 import React from 'react'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 
@@ -110,6 +109,7 @@ export function SavingsGoalCard({
         </div>
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={() => onEdit(goal)}
             className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-blue-400 dark:bg-blue-900/30 dark:hover:bg-blue-900/50"
             aria-label={`Edit savings goal ${goal.name}`}
@@ -118,6 +118,7 @@ export function SavingsGoalCard({
             Edit
           </button>
           <button
+            type="button"
             onClick={() => onDelete(goal.id)}
             className="px-3 py-1.5 text-sm font-medium text-red-600 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-red-400 dark:bg-red-900/30 dark:hover:bg-red-900/50"
             aria-label={`Delete savings goal ${goal.name}`}

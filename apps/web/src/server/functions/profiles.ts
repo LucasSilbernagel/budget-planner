@@ -15,7 +15,7 @@ import { userProfiles, users } from '@budget-planner/db/src/schema'
 import type { Request } from '@tanstack/start'
 import { and, eq, neq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
-import type { ApiResult, UserSession } from '../api/auth/paddle'
+import type { ApiResult } from '../api/auth/paddle'
 
 // Type definitions for API requests
 // Note: These extend the base ApiResult from paddle auth for consistency

@@ -186,28 +186,6 @@ function calculateCompoundGrowth(presentValue: number, rate: number, periods: nu
   return presentValue * (1 + rate) ** periods
 }
 
-/**
- * Calculates the future value of a series of deposits (future value of an annuity)
- * Formula: FV = PMT * (((1 + r)^n - 1) / r)
- * where PMT = regular payment, r = periodic rate, n = number of periods
- *
- * Note: Currently not used in main projection logic but kept for potential future use
- * or alternative calculation methods.
- */
-function calculateFutureValueOfAnnuity(payment: number, rate: number, periods: number): number {
-  if (periods === 0) {
-    return 0
-  }
-  if (rate === 0) {
-    // Simple interest: FV = PMT * n
-    return payment * periods
-  }
-  if (rate === -1) {
-    return 0
-  }
-  return payment * (((1 + rate) ** periods - 1) / rate)
-}
-
 // ============================================================================
 // Main Projection Function
 // ============================================================================
@@ -286,6 +264,7 @@ export function createNetWorthProjection(input: NetWorthProjectionInput): NetWor
   // timeline always has at least one element (month 0 was pushed above)
   const timelineLength = timeline.length
   // Safe to use non-null assertion - loop always runs at least once (month = 0)
+  // biome-ignore lint/style/noNonNullAssertion: month 0 is always pushed, so timeline is non-empty; ?. would widen lastPoint to undefined and break the .netWorthCents access below.
   const lastPoint = timeline[timelineLength - 1]!
   const endingNetWorthCents = lastPoint.netWorthCents
   const totalGrowthCents = endingNetWorthCents - startingNetWorthCents

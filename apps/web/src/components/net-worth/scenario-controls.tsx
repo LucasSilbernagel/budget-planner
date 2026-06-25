@@ -421,6 +421,14 @@ function ScenarioTab({
           : 'bg-gray-50 hover:bg-gray-100 border border-transparent'
       }`}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      tabIndex={0}
+      role="button"
     >
       <div className="flex items-center">
         <span
@@ -586,7 +594,13 @@ export function ScenarioControls({
               title={activeScenario.isVisible ? 'Hide scenario' : 'Show scenario'}
             >
               {activeScenario.isVisible ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg
+                  aria-hidden="true"
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -601,7 +615,13 @@ export function ScenarioControls({
                   />
                 </svg>
               ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg
+                  aria-hidden="true"
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -620,7 +640,13 @@ export function ScenarioControls({
               className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
               title="Sync time horizon across all scenarios"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                aria-hidden="true"
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -690,6 +716,14 @@ export function ScenarioControls({
                 index === activeScenarioIndex ? 'bg-blue-50' : ''
               }`}
               onClick={() => onActiveScenarioChange(index)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onActiveScenarioChange(index)
+                }
+              }}
+              tabIndex={0}
+              role="button"
             >
               <div className="flex items-center">
                 <span

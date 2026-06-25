@@ -32,10 +32,7 @@ interface SavingsState {
 // Note: In production with backend, IDs will come from the database
 // Using negative IDs for temporary client-side entries to avoid conflicts
 // Start at -20000 to match the core service constant
-import {
-  generateSavingsGoalTempId,
-  toClientSavingsGoal,
-} from '@budget-planner/core/services/savingsGoals'
+import { toClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 
 // Storage key for localStorage
 // Using the key specified in Dev Notes: localStorage: `budget-planner:savings-goals`

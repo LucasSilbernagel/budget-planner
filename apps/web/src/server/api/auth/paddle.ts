@@ -132,8 +132,12 @@ export async function handlePaddleCallback(
       return userResponse
     }
 
+    if (!userResponse.data) {
+      return { success: false, error: 'Paddle user data missing from authentication response' }
+    }
+
     // Create or update user in DanubeData PostgreSQL (Germany - EU)
-    const userResult = await createOrUpdateUser(userResponse.data!)
+    const userResult = await createOrUpdateUser(userResponse.data)
 
     if (!userResult.success) {
       return userResult
@@ -172,12 +176,12 @@ export async function getCurrentUserSession(
 
     // Parse cookies from header
     const cookies: Record<string, string> = {}
-    cookieHeader.split(';').forEach((cookie) => {
+    for (const cookie of cookieHeader.split(';')) {
       const [name, ...rest] = cookie.trim().split('=')
       if (name && rest.length > 0) {
         cookies[name] = rest.join('=')
       }
-    })
+    }
 
     const sessionToken = cookies.session
 
@@ -415,7 +419,9 @@ async function getPaddleUser(
  * @param userData - Raw user data from Paddle API
  * @returns Mapped subscription status
  */
-function mapPaddleSubscriptionStatus(userData: any): 'free' | 'active' | 'past_due' | 'canceled' {
+function mapPaddleSubscriptionStatus(userData: {
+  subscriptions?: Array<{ status?: string }>
+}): 'free' | 'active' | 'past_due' | 'canceled' {
   // Check if user has any active subscriptions
   const subscriptions = userData.subscriptions || []
 

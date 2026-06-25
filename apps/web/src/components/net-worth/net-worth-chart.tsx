@@ -6,7 +6,7 @@
  * Displays projection timeline with assets, liabilities, and net worth.
  */
 
-import type { NetWorthProjectionResult, ProjectionPoint, TimeHorizon } from '@budget-planner/core'
+import type { NetWorthProjectionResult } from '@budget-planner/core'
 import React from 'react'
 import {
   Brush,
@@ -20,11 +20,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import {
-  useCurrencyPreferences,
-  useFormattedAmount,
-  useFormattedAmountWithOptions,
-} from '../../stores/currencyStore'
+import { useFormattedAmount, useFormattedAmountWithOptions } from '../../stores/currencyStore'
 import type { Scenario } from './scenario-controls'
 
 // ============================================================================
@@ -162,18 +158,26 @@ function getStartingNetWorth(
 }
 
 /**
- * Custom tooltip component for multiple scenarios
+ * Single entry in a Recharts tooltip payload (only the fields used here).
  */
-function CustomTooltip({
-  active,
-  payload,
-  label,
-  scenarios,
-  formatAmount,
-}: any & {
+interface TooltipPayloadItem {
+  dataKey?: string | number
+  value?: number
+  payload?: { year?: number }
+}
+
+interface CustomTooltipProps {
+  active?: boolean
+  payload?: TooltipPayloadItem[]
+  label?: string
   scenarios: { scenario: Scenario; projection: NetWorthProjectionResult }[]
   formatAmount: (cents: number) => string
-}) {
+}
+
+/**
+ * Custom tooltip component for multiple scenarios
+ */
+function CustomTooltip({ active, payload, label, scenarios, formatAmount }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) {
     return null
   }
@@ -188,7 +192,9 @@ function CustomTooltip({
 
   // Find the month index from the label
   const monthMatch = label?.match(/^(\d+)\.(\d+)$/)
-  const monthIndex = monthMatch ? parseInt(monthMatch[1], 10) * 12 + parseInt(monthMatch[2], 10) : 0
+  const monthIndex = monthMatch
+    ? parseInt(monthMatch[1] ?? '0', 10) * 12 + parseInt(monthMatch[2] ?? '0', 10)
+    : 0
 
   return (
     <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg min-w-[280px]">
@@ -200,16 +206,16 @@ function CustomTooltip({
           .filter((s) => s.scenario.isVisible)
           .map((s, _scenarioIndex) => {
             const scenarioDataKey = `scenario-${scenarios.indexOf(s)}-netWorth`
-            const dataPoint = payload.find((p: any) => p.dataKey === scenarioDataKey)
+            const dataPoint = payload.find((p) => p.dataKey === scenarioDataKey)
 
             if (!dataPoint) return null
 
             const netWorthCents = dataPoint.value as number
             const assetsCents = payload.find(
-              (p: any) => p.dataKey === `scenario-${scenarios.indexOf(s)}-assets`
+              (p) => p.dataKey === `scenario-${scenarios.indexOf(s)}-assets`
             )?.value as number
             const liabilitiesCents = payload.find(
-              (p: any) => p.dataKey === `scenario-${scenarios.indexOf(s)}-liabilities`
+              (p) => p.dataKey === `scenario-${scenarios.indexOf(s)}-liabilities`
             )?.value as number
 
             return (
@@ -244,23 +250,36 @@ function CustomTooltip({
 /**
  * Custom legend component for multiple scenarios
  */
-function CustomLegend({
-  payload,
-  onVisibilityToggle,
-}: any & { onVisibilityToggle?: (scenarioId: string) => void }) {
+interface LegendPayloadItem {
+  dataKey: string
+  color?: string
+  value?: string
+}
+
+interface CustomLegendProps {
+  payload?: LegendPayloadItem[]
+  onVisibilityToggle?: (scenarioId: string) => void
+}
+
+function CustomLegend({ payload, onVisibilityToggle }: CustomLegendProps) {
   return (
     <div className="flex flex-wrap justify-center gap-4 pb-4">
-      {payload.map((entry: any) => {
-        // Extract scenario index from dataKey
-        const match = entry.dataKey.match(/scenario-(\d+)-netWorth/)
-        const _scenarioIndex = match ? parseInt(match[1], 10) : 0
-
+      {payload?.map((entry) => {
         return (
           <div key={entry.dataKey} className="flex items-center">
             <span
               className="inline-block w-3 h-3 rounded-full mr-2 cursor-pointer"
               style={{ backgroundColor: entry.color }}
               onClick={() => onVisibilityToggle?.(entry.dataKey)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onVisibilityToggle?.(entry.dataKey)
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`Toggle ${entry.value} visibility`}
             />
             <span className="text-sm text-gray-700">{entry.value}</span>
           </div>

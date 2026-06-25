@@ -45,13 +45,6 @@ function parseCurrencyToCents(value: string): number {
 }
 
 /**
- * Format cents to currency string for input display
- */
-function formatCentsToCurrency(cents: number): string {
-  return (cents / 100).toFixed(2)
-}
-
-/**
  * Props for EditSavingsGoalForm component
  */
 export interface EditSavingsGoalFormProps {
@@ -122,7 +115,7 @@ export function EditSavingsGoalForm({
       })
       setErrors(newErrors)
     }
-  }, [name, targetAmount, currentBalance, submitAttempted])
+  }, [name, targetAmountCents, currentBalanceCents, submitAttempted])
 
   /**
    * Handle form submission

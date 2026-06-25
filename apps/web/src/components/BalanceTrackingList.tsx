@@ -201,7 +201,9 @@ export function BalanceTrackingList({
           aria-labelledby="delete-confirm-title"
           aria-describedby="delete-confirm-description"
           onClick={handleCloseDeleteConfirm}
+          onKeyDown={(e) => e.key === 'Escape' && handleCloseDeleteConfirm()}
         >
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
           <div
             className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full max-w-[90vw] dark:bg-gray-800 dark:border dark:border-gray-700"
             onClick={(e) => e.stopPropagation()}
@@ -221,6 +223,7 @@ export function BalanceTrackingList({
             </p>
             <div className="flex gap-3 justify-end">
               <button
+                type="button"
                 onClick={handleCloseDeleteConfirm}
                 className="px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 data-testid="delete-confirm-cancel"
@@ -228,6 +231,7 @@ export function BalanceTrackingList({
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleConfirmDelete}
                 className="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-red-500 dark:hover:bg-red-600"
                 data-testid="delete-confirm-confirm"

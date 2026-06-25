@@ -358,12 +358,7 @@ interface SummaryCardProps {
   positive?: boolean
 }
 
-function SummaryCard({
-  label,
-  value,
-  change,
-  positive = true,
-}: SummaryCardProps): React.ReactElement {
+function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactElement {
   const changeFormatted = formatCurrency(change)
   const isPositive = change >= 0
 

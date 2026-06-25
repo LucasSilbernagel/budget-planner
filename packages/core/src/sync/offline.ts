@@ -670,26 +670,26 @@ export class OfflineQueueManager {
    * Notify all status callbacks
    */
   private notifyStatusCallbacks(): void {
-    this.statusCallbacks.forEach((callback) => {
+    for (const callback of this.statusCallbacks) {
       try {
         callback(this.isOffline)
       } catch (error) {
         this.log('Status callback error:', error)
       }
-    })
+    }
   }
 
   /**
    * Notify all processing callbacks
    */
   private notifyProcessingCallbacks(): void {
-    this.processingCallbacks.forEach((callback) => {
+    for (const callback of this.processingCallbacks) {
       try {
         callback(this.processing)
       } catch (error) {
         this.log('Processing callback error:', error)
       }
-    })
+    }
   }
 
   /**
@@ -700,13 +700,13 @@ export class OfflineQueueManager {
       return
     }
 
-    this.notificationCallbacks.forEach((callback) => {
+    for (const callback of this.notificationCallbacks) {
       try {
         callback(message, type)
       } catch (error) {
         this.log('Notification callback error:', error)
       }
-    })
+    }
   }
 
   /**

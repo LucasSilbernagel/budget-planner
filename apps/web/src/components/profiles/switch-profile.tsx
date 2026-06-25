@@ -86,6 +86,7 @@ export function SwitchProfileDropdown() {
     <div className="relative" ref={dropdownRef}>
       {/* Dropdown button */}
       <button
+        type="button"
         onClick={toggleDropdown}
         className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
         aria-expanded={isOpen}
@@ -107,6 +108,7 @@ export function SwitchProfileDropdown() {
           )}
         </div>
         <svg
+          aria-hidden="true"
           className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
@@ -128,6 +130,7 @@ export function SwitchProfileDropdown() {
           <div className="max-h-80 overflow-y-auto">
             {profiles.map((profile) => (
               <button
+                type="button"
                 key={profile.id}
                 onClick={() => handleSwitch(profile.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
@@ -148,7 +151,12 @@ export function SwitchProfileDropdown() {
                   </p>
                 </div>
                 {profile.id === activeProfile.id && (
-                  <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                  <svg
+                    aria-hidden="true"
+                    className="w-4 h-4 text-blue-600"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
                     <path
                       fillRule="evenodd"
                       d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -164,7 +172,6 @@ export function SwitchProfileDropdown() {
           <div className="px-4 py-2 border-t border-gray-200">
             <a
               href="/profiles"
-              onClick={() => setIsOpen(false)}
               className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
             >
               Manage Profiles →
@@ -179,7 +186,6 @@ export function SwitchProfileDropdown() {
 // Export a simpler version for the navbar
 export function SwitchProfileSimple() {
   const { activeProfile } = useProfilesWithActive()
-  const { switchToProfile } = useProfileSwitcher()
   const hasMultipleProfiles = useHasMultipleProfiles()
 
   if (!activeProfile || !hasMultipleProfiles) {

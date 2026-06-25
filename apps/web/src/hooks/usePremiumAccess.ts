@@ -9,7 +9,6 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import type { UserSession } from '../server/api/auth/paddle'
 
 // ============================================================================
 // Type Definitions

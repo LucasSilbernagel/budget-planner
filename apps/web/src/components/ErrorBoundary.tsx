@@ -34,9 +34,9 @@ function sanitizeErrorMessage(error: Error): string {
   let message = error.message
 
   // Remove sensitive information
-  sensitivePatterns.forEach((pattern) => {
+  for (const pattern of sensitivePatterns) {
     message = message.replace(pattern, '')
-  })
+  }
 
   // If message is now empty or too generic, use a standard message
   if (!message || message.length < 10) {

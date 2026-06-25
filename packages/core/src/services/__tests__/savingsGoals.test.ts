@@ -2,9 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ClientNewSavingsGoal,
   ClientSavingsGoal,
-  SavingsGoalStatus,
   SavingsGoalWithProgress,
-  ValidationError,
   calculateProgress,
   filterSavingsGoals,
   generateSavingsGoalTempId,

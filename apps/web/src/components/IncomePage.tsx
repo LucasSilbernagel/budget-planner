@@ -142,6 +142,7 @@ export function IncomePage() {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={openAddModal}
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors whitespace-nowrap"
               >
@@ -194,12 +195,14 @@ export function IncomePage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                           <button
+                            type="button"
                             onClick={() => openEditModal(source)}
                             className="text-blue-600 hover:text-blue-900 mr-4"
                           >
                             Edit
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDelete(source.id)}
                             className="text-red-600 hover:text-red-900"
                           >
@@ -224,11 +227,18 @@ export function IncomePage() {
                   {editingId !== null ? 'Edit Income Source' : 'Add Income Source'}
                 </h3>
                 <button
+                  type="button"
                   onClick={closeModal}
                   className="text-gray-400 hover:text-gray-600"
                   aria-label="Close"
                 >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg
+                    aria-hidden="true"
+                    className="h-6 w-6"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"

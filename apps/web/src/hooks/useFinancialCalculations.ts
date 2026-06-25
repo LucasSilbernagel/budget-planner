@@ -23,7 +23,6 @@ import { useCallback, useState } from 'react'
 import type {
   AggregationInput,
   AggregationResult,
-  FinancialApiResult,
   NetWorthProjectionInput,
   NetWorthProjectionResult,
 } from '../server/functions/financial'

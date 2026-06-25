@@ -107,7 +107,7 @@ export function AddSavingsGoalForm({
       })
       setErrors(newErrors)
     }
-  }, [name, targetAmount, currentBalance, submitAttempted])
+  }, [name, targetAmountCents, currentBalanceCents, submitAttempted])
 
   /**
    * Handle form submission

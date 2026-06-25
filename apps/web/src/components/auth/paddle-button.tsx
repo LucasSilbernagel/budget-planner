@@ -76,12 +76,8 @@ export function PaddleAuthButton({
       .then(() => {
         setPaddleReady(true)
         // Initialize Paddle auth
-        try {
-          // Note: Paddle.Initialize is called in the client.ts file
-          // The script is loaded, Paddle object should be available
-        } catch (err) {
-          console.warn('Paddle initialization warning:', err)
-        }
+        // Note: Paddle.Initialize is called in the client.ts file
+        // The script is loaded, Paddle object should be available
       })
       .catch((err) => {
         console.error('Failed to load Paddle.js:', err)
@@ -119,6 +115,7 @@ export function PaddleAuthButton({
         {loading ? (
           <>
             <svg
+              aria-hidden="true"
               className="animate-spin h-5 w-5"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -164,6 +161,7 @@ export function PaddleAuthButton({
 function PaddleIcon() {
   return (
     <svg
+      aria-hidden="true"
       className="w-5 h-5"
       viewBox="0 0 24 24"
       fill="currentColor"

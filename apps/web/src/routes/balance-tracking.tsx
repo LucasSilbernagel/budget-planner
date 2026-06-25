@@ -259,12 +259,14 @@ export function BalanceTrackingPage() {
         {/* Add Button */}
         <div className="flex justify-end mb-6">
           <button
+            type="button"
             onClick={openAddModal}
             className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400"
             aria-label="Add new balance entry"
             data-testid="balance-tracking-add-button"
           >
             <svg
+              aria-hidden="true"
               className="w-5 h-5 inline-block mr-2"
               fill="none"
               stroke="currentColor"
@@ -337,11 +339,13 @@ export function BalanceTrackingPage() {
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
           onClick={(e) => e.target === e.currentTarget && closeModals()}
+          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-balance-entry-title"
           data-testid="add-balance-entry-modal"
         >
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
           <div
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
@@ -354,12 +358,19 @@ export function BalanceTrackingPage() {
                 Add Balance Entry
               </h3>
               <button
+                type="button"
                 onClick={closeModals}
                 className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                 aria-label="Close modal"
                 data-testid="add-balance-entry-close"
               >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  aria-hidden="true"
+                  className="w-6 h-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -385,11 +396,13 @@ export function BalanceTrackingPage() {
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
           onClick={(e) => e.target === e.currentTarget && closeModals()}
+          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
           role="dialog"
           aria-modal="true"
           aria-labelledby="edit-balance-entry-title"
           data-testid="edit-balance-entry-modal"
         >
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
           <div
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
@@ -402,12 +415,19 @@ export function BalanceTrackingPage() {
                 Edit Balance Entry
               </h3>
               <button
+                type="button"
                 onClick={closeModals}
                 className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                 aria-label="Close modal"
                 data-testid="edit-balance-entry-close"
               >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  aria-hidden="true"
+                  className="w-6 h-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"

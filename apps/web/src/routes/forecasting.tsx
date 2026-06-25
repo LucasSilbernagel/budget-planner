@@ -12,7 +12,7 @@
  */
 
 import type { ForecastingResult, ForecastingScenario } from '@budget-planner/core'
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import React, { useState, useEffect, useCallback } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
@@ -27,7 +27,7 @@ import type { ForecastingProfileOutput } from '../server/functions/forecastingPr
 
 export const Route = createFileRoute('/forecasting')({
   component: ForecastingPage,
-  loader: async ({ context, request }) => {
+  loader: async ({ request }) => {
     // Server-side authentication check for premium features
     // Import server function dynamically to avoid circular dependencies
     const { checkPremiumAccessServer } = await import('../server/api/data/forecasting')
@@ -476,7 +476,13 @@ function LoadingSpinner(): React.ReactElement {
 
 function CrownIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -489,7 +495,13 @@ function CrownIcon({ className }: { className: string }): React.ReactElement {
 
 function ScenarioIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -502,7 +514,13 @@ function ScenarioIcon({ className }: { className: string }): React.ReactElement 
 
 function ChartIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -515,7 +533,13 @@ function ChartIcon({ className }: { className: string }): React.ReactElement {
 
 function SaveIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"

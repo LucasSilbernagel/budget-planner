@@ -15,7 +15,7 @@
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
-import type { SyncOperation, SyncResult, SyncStatus } from '@budget-planner/core/sync'
+import type { SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
@@ -27,7 +27,7 @@ import {
   savingsGoals,
   userProfiles,
 } from '@budget-planner/db'
-import { and, eq, gt, lte } from 'drizzle-orm'
+import { and, eq, gt } from 'drizzle-orm'
 import { z } from 'zod'
 
 // ============================================================================
@@ -837,7 +837,7 @@ export async function processBatchSync(
     }
   }
 
-  const { operations, clientTimestamp, deviceId } = validationResult.data
+  const { operations, deviceId } = validationResult.data
 
   // Tier gating: server-side sync is a paid-tier feature. Free (and canceled)
   // users must not be able to persist data to the server even with a valid

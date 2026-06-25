@@ -492,13 +492,13 @@ export class SynchronizationService {
    * Notify all status callbacks
    */
   private notifyStatusCallbacks(): void {
-    this.statusCallbacks.forEach((callback) => {
+    for (const callback of this.statusCallbacks) {
       try {
         callback({ ...this.state })
       } catch (error) {
         this.log('Status callback error:', error)
       }
-    })
+    }
   }
 
   /**
@@ -506,13 +506,13 @@ export class SynchronizationService {
    * @param conflict - The conflict result
    */
   private notifyConflictCallbacks(conflict: ConflictResult): void {
-    this.conflictCallbacks.forEach((callback) => {
+    for (const callback of this.conflictCallbacks) {
       try {
         callback({ ...conflict })
       } catch (error) {
         this.log('Conflict callback error:', error)
       }
-    })
+    }
   }
 
   /**
@@ -790,24 +790,6 @@ export class SynchronizationService {
 
       case 'client-wins':
         return localOp
-      default: {
-        // Last write wins based on timestamp.
-        // If timestamps are equal, use deviceId as deterministic tiebreaker.
-        // Notify conflict callbacks so an auto-resolved conflict (which may
-        // discard one side's write — e.g. an equal-timestamp tie) is observable
-        // rather than silently losing data.
-        let winner: SyncOperation
-        if (localOp.timestamp > serverOp.timestamp) {
-          winner = localOp
-        } else if (localOp.timestamp < serverOp.timestamp) {
-          winner = serverOp
-        } else {
-          // Timestamps are equal, use deviceId as tiebreaker
-          winner = localOp.deviceId > serverOp.deviceId ? localOp : serverOp
-        }
-        this.notifyConflictCallbacks({ ...conflictResult, resolution: winner })
-        return winner
-      }
 
       case 'manual':
         // For manual resolution, we mark the conflict and let the user decide
@@ -866,6 +848,25 @@ export class SynchronizationService {
         }
         // Timestamps are equal, use deviceId as tiebreaker
         return localOp.deviceId > serverOp.deviceId ? localOp : serverOp
+
+      default: {
+        // Last write wins based on timestamp.
+        // If timestamps are equal, use deviceId as deterministic tiebreaker.
+        // Notify conflict callbacks so an auto-resolved conflict (which may
+        // discard one side's write — e.g. an equal-timestamp tie) is observable
+        // rather than silently losing data.
+        let winner: SyncOperation
+        if (localOp.timestamp > serverOp.timestamp) {
+          winner = localOp
+        } else if (localOp.timestamp < serverOp.timestamp) {
+          winner = serverOp
+        } else {
+          // Timestamps are equal, use deviceId as tiebreaker
+          winner = localOp.deviceId > serverOp.deviceId ? localOp : serverOp
+        }
+        this.notifyConflictCallbacks({ ...conflictResult, resolution: winner })
+        return winner
+      }
     }
   }
 

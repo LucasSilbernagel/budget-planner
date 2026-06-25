@@ -212,7 +212,14 @@ interface DialogContainerProps {
   onClose: (e: React.MouseEvent) => void
 }
 
-function DialogContainer({ children, onClose }: DialogContainerProps): React.ReactElement {
+function DialogContainer({
+  children,
+  // NOTE: onClose is passed by callers (handleClose) but never attached to the
+  // backdrop click handler below — clicking outside the dialog does not close it.
+  // Preserved (aliased) to keep the prop contract; wiring it is a behavior change
+  // tracked as a separate follow-up rather than fixed in this lint-only story.
+  onClose: _onClose,
+}: DialogContainerProps): React.ReactElement {
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
@@ -220,6 +227,7 @@ function DialogContainer({ children, onClose }: DialogContainerProps): React.Rea
       aria-modal="true"
       aria-labelledby="premium-prompt-title"
     >
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops click propagation, there is no keyboard-activatable behavior here. */}
       <div className="relative w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
@@ -237,6 +245,7 @@ function DialogContainer({ children, onClose }: DialogContainerProps): React.Rea
 function CrownIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       fill="none"
       stroke="currentColor"
@@ -259,6 +268,7 @@ function CrownIcon({ className }: { className: string }): React.ReactElement {
 function CheckIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       fill="none"
       stroke="currentColor"
@@ -276,6 +286,7 @@ function CheckIcon({ className }: { className: string }): React.ReactElement {
 function CloseIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       fill="none"
       stroke="currentColor"
@@ -293,6 +304,7 @@ function CloseIcon({ className }: { className: string }): React.ReactElement {
 function SparklesIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       fill="none"
       stroke="currentColor"

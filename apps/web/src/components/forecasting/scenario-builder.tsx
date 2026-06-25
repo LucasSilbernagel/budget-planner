@@ -56,7 +56,10 @@ export interface ScenarioBuilderProps {
     description?: string
     scenario: ForecastingScenario
     result: ForecastingResult
-  }) => void | Promise<{ success: boolean; error?: string } | void>
+  }) =>
+    | { success: boolean; error?: string }
+    | undefined
+    | Promise<{ success: boolean; error?: string } | undefined>
 }
 
 /**
@@ -137,7 +140,7 @@ function generateId(prefix: string): string {
  * Convert local financial items to normalizable items
  */
 function toNormalizableItems(items: LocalFinancialItem[]): NormalizableFinancialItem[] {
-  return items.map(({ id, ...rest }) => rest)
+  return items.map(({ id: _id, ...rest }) => rest)
 }
 
 /**
@@ -186,6 +189,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Calculate scenario whenever inputs change (with debounce)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these are exactly the inputs the debounced calculateForecast (declared below) depends on; depending on calculateForecast itself would reference it before initialization (TDZ).
   useEffect(() => {
     // Clear any existing timer
     if (debounceTimer.current) {
@@ -220,7 +224,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
         expenseGrowthRate: formData.expenseGrowthRate,
         newIncome: toNormalizableItems(incomeItems),
         newExpenses: toNormalizableItems(expenseItems),
-        oneTimeEvents: oneTimeEvents.map(({ id, ...rest }) => rest),
+        oneTimeEvents: oneTimeEvents.map(({ id: _id, ...rest }) => rest),
       }
 
       const currentData = {
@@ -407,7 +411,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       scenario.newExpenses = toNormalizableItems(expenseItems)
     }
     if (oneTimeEvents.length > 0) {
-      scenario.oneTimeEvents = oneTimeEvents.map(({ id, ...rest }) => rest)
+      scenario.oneTimeEvents = oneTimeEvents.map(({ id: _id, ...rest }) => rest)
     }
 
     setIsSaving(true)

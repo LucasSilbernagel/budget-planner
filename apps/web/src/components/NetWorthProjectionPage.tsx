@@ -80,7 +80,7 @@ export function NetWorthProjectionPage() {
   const hasData = balanceEntries.length > 0 || incomeSources.length > 0
 
   // Format tooltip
-  const _formatTooltip = (value: number, name: string, _item: any) => {
+  const _formatTooltip = (value: number, name: string, _item: unknown) => {
     if (name === 'netWorth') {
       return [formatAmount(value * 100), 'Net Worth']
     }
@@ -201,7 +201,7 @@ export function NetWorthProjectionPage() {
                       tickFormatter={(value) => formatAmount(value * 100)}
                     />
                     <Tooltip
-                      formatter={(value: number, name: string, _item: any) => {
+                      formatter={(value: number, name: string, _item: unknown) => {
                         if (name === 'netWorth') {
                           return [formatAmount(value * 100), 'Net Worth']
                         }

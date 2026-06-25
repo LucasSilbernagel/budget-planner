@@ -89,9 +89,6 @@ export function EditBalanceEntryForm({
   }, [
     name,
     type,
-    currentBalance,
-    maxContributionLimit,
-    monthlyContribution,
     currentBalanceCents,
     maxContributionLimitCents,
     monthlyContributionCents,

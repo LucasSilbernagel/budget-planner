@@ -10,19 +10,16 @@
 
 import {
   type CompoundingInput,
-  type ForecastingResult,
-  type ForecastingScenario,
   type RetirementInput,
   type RetirementResult,
   type YearlyProjection,
   calculateCompoundingProjection,
-  calculateFinancialForecast,
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
 } from '@budget-planner/core'
 import type { Request } from '@tanstack/start'
 import { getCurrentUserSession } from '../api/auth/paddle'
-import type { ApiResult } from '../api/auth/paddle'
+import type { ApiResult, UserSession } from '../api/auth/paddle'
 
 // ============================================================================
 // Type Definitions
@@ -91,11 +88,11 @@ export interface AggregationResult {
  * Get authenticated user context and verify premium subscription
  * Returns user if authenticated and has active subscription, otherwise returns error
  */
-async function getAuthenticatedUser(request: Request): Promise<ApiResult<any>> {
+async function getAuthenticatedUser(request: Request): Promise<ApiResult<UserSession>> {
   const userResult = await getCurrentUserSession(request)
 
   if (!userResult.success) {
-    return userResult
+    return { success: false, error: userResult.error }
   }
 
   const user = userResult.data

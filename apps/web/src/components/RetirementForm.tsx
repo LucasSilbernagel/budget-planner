@@ -1,4 +1,3 @@
-import { calculateRequiredAssets } from '@budget-planner/core/finance/retirement'
 import { formatCurrency } from '@budget-planner/core/format/currency'
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useFinancialCalculations } from '../hooks/useFinancialCalculations'
@@ -292,7 +291,7 @@ function RetirementFormInner({
       // If we exceeded max years
       return null
     },
-    []
+    [validatedSavingsRate]
   )
 
   // Retirement insights based on existing data
@@ -366,7 +365,7 @@ function RetirementFormInner({
   const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
 
   // Sanitize error messages for display to users
-  const sanitizeDisplayError = (error: unknown): string => {
+  const sanitizeDisplayError = useCallback((error: unknown): string => {
     if (!(error instanceof Error)) {
       return 'An error occurred during calculation'
     }
@@ -391,7 +390,7 @@ function RetirementFormInner({
       userFriendlyMessages[error.message] ||
       'An error occurred during calculation. Please check your inputs.'
     )
-  }
+  }, [])
 
   // Track the latest calculation inputs to prevent race conditions
   // Uses unique calculation ID to reliably match results with inputs
@@ -467,7 +466,14 @@ function RetirementFormInner({
       setError(errorMessage)
       setRequiredAssets(null)
     }
-  }, [monthlyIncomeInput, annualReturnRateInput, calculateRetirement, onCalculate, retirement.data])
+  }, [
+    monthlyIncomeInput,
+    annualReturnRateInput,
+    calculateRetirement,
+    onCalculate,
+    retirement.data,
+    sanitizeDisplayError,
+  ])
 
   // Trigger onCalculate when hook succeeds (fallback for cases where promise doesn't resolve)
   useEffect(() => {

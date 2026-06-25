@@ -17,11 +17,8 @@ import {
   type DateRange,
   type DrillDownState,
   type FinancialDataPoint,
-  type RechartsDataItem,
   // Constants
   TIME_PERIOD_PRESETS,
-  // Types
-  type TimePeriodPreset,
   // Category Aggregation
   aggregateByCategory,
   aggregateByCategoryAndType,
@@ -188,9 +185,9 @@ describe('CATEGORY_COLORS', () => {
   })
 
   it('should contain valid hex color codes', () => {
-    CATEGORY_COLORS.forEach((color) => {
+    for (const color of CATEGORY_COLORS) {
       expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/)
-    })
+    }
   })
 })
 
@@ -384,7 +381,9 @@ describe('aggregateByCategoryAndType', () => {
     expect(result.has('income')).toBe(true)
     expect(result.has('expense')).toBe(true)
 
+    // biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('income')) above.
     const incomeAggregates = result.get('income')!
+    // biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('expense')) above.
     const expenseAggregates = result.get('expense')!
 
     // Check income categories

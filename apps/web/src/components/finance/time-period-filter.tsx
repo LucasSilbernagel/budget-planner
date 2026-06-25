@@ -142,6 +142,7 @@ export function TimePeriodFilter({
             <span>{TIME_PERIOD_PRESETS[selectedPreset]?.label || selectedPreset}</span>
           </span>
           <svg
+            aria-hidden="true"
             className="ml-2 h-4 w-4"
             fill="none"
             stroke="currentColor"

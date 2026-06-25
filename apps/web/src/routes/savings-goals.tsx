@@ -64,7 +64,9 @@ export function SavingsGoalsPage() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAddModalOpen, isEditModalOpen, closeModals])
+    // closeModals is a stable useCallback; omitted to avoid referencing it before its
+    // declaration below (TDZ) in the dependency array.
+  }, [isAddModalOpen, isEditModalOpen])
 
   // Loading/submitting states
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -257,12 +259,14 @@ export function SavingsGoalsPage() {
         {/* Add Button */}
         <div className="flex justify-end mb-6">
           <button
+            type="button"
             onClick={openAddModal}
             className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400"
             aria-label="Add new savings goal"
             data-testid="savings-goals-add-button"
           >
             <svg
+              aria-hidden="true"
               className="w-5 h-5 inline-block mr-2"
               fill="none"
               stroke="currentColor"
@@ -326,11 +330,13 @@ export function SavingsGoalsPage() {
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
           onClick={(e) => e.target === e.currentTarget && closeModals()}
+          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-savings-goal-title"
           data-testid="add-savings-goal-modal"
         >
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
           <div
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
@@ -343,12 +349,19 @@ export function SavingsGoalsPage() {
                 Add Savings Goal
               </h3>
               <button
+                type="button"
                 onClick={closeModals}
                 className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                 aria-label="Close modal"
                 data-testid="add-savings-goal-close"
               >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  aria-hidden="true"
+                  className="w-6 h-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -374,11 +387,13 @@ export function SavingsGoalsPage() {
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
           onClick={(e) => e.target === e.currentTarget && closeModals()}
+          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
           role="dialog"
           aria-modal="true"
           aria-labelledby="edit-savings-goal-title"
           data-testid="edit-savings-goal-modal"
         >
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
           <div
             className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
@@ -391,12 +406,19 @@ export function SavingsGoalsPage() {
                 Edit Savings Goal
               </h3>
               <button
+                type="button"
                 onClick={closeModals}
                 className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                 aria-label="Close modal"
                 data-testid="edit-savings-goal-close"
               >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  aria-hidden="true"
+                  className="w-6 h-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"

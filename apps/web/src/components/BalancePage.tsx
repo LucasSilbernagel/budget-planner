@@ -276,12 +276,14 @@ export function BalancePage() {
                           </td>
                           <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
                             <button
+                              type="button"
                               onClick={() => openEditModal(entry)}
                               className="mr-4 text-blue-600 hover:text-blue-900"
                             >
                               Edit
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDelete(entry.id)}
                               className="text-red-600 hover:text-red-900"
                             >
@@ -307,11 +309,18 @@ export function BalancePage() {
                   {editingId !== null ? 'Edit Balance Entry' : 'Add Balance Entry'}
                 </h3>
                 <button
+                  type="button"
                   onClick={closeModal}
                   className="text-gray-400 hover:text-gray-600"
                   aria-label="Close"
                 >
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg
+                    aria-hidden="true"
+                    className="w-6 h-6"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"

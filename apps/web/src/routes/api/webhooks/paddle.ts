@@ -191,7 +191,16 @@ export async function POST(request: Request) {
     }
 
     // Parse webhook data
-    let data: any
+    let data: {
+      event_type?: string
+      data?: {
+        user_id?: string
+        status?: string
+        email?: string
+        currency_code?: string
+        currency?: string
+      }
+    }
     try {
       data = JSON.parse(payload)
     } catch {

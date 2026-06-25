@@ -106,6 +106,7 @@ export function BalanceEntryCard({
         </div>
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={() => onEdit(entry)}
             className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-blue-400 dark:bg-blue-900/30 dark:hover:bg-blue-900/50"
             aria-label={`Edit balance entry ${entry.name}`}
@@ -114,6 +115,7 @@ export function BalanceEntryCard({
             Edit
           </button>
           <button
+            type="button"
             onClick={() => onDeleteConfirm(entry)}
             className="px-3 py-1.5 text-sm font-medium text-red-600 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-red-400 dark:bg-red-900/30 dark:hover:bg-red-900/50"
             aria-label={`Delete balance entry ${entry.name}`}

@@ -1,7 +1,6 @@
 import {
   currencySymbol,
   formatCurrency,
-  formatForInput,
   parseCurrencyToCents,
 } from '@budget-planner/core/format/currency'
 import type {
@@ -91,9 +90,6 @@ export function AddBalanceEntryForm({
   }, [
     name,
     type,
-    currentBalance,
-    maxContributionLimit,
-    monthlyContribution,
     currentBalanceCents,
     maxContributionLimitCents,
     monthlyContributionCents,

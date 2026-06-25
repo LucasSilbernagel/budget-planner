@@ -10,9 +10,9 @@
  */
 
 import { db } from '@budget-planner/db'
-import type { ForecastingProfile, NewForecastingProfile, UserProfile } from '@budget-planner/db'
+import type { ForecastingProfile, NewForecastingProfile } from '@budget-planner/db'
 import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
-import { and, desc, eq, inArray, neq } from 'drizzle-orm'
+import { type SQL, and, desc, eq, inArray, neq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
 
@@ -269,7 +269,7 @@ export async function getForecastingProfiles(
     }
 
     // Build the where condition once. Filter by profileId if provided.
-    let whereCondition = eq(forecastingProfiles.userId, user.userId)
+    let whereCondition: SQL | undefined = eq(forecastingProfiles.userId, user.userId)
     if (profileId) {
       const profileOwned = await validateProfileOwnership(profileId, user.userId)
       if (!profileOwned) {
@@ -281,7 +281,7 @@ export async function getForecastingProfiles(
       whereCondition = and(
         eq(forecastingProfiles.userId, user.userId),
         eq(forecastingProfiles.profileId, profileId)
-      )!
+      )
     }
 
     // Order by createdAt descending

@@ -168,7 +168,9 @@ export function ForecastList({
   const handleBulkDelete = useCallback(() => {
     if (selectedCount === 0) return
     if (window.confirm(`Are you sure you want to delete ${selectedCount} selected forecast(s)?`)) {
-      selectedIds.forEach((id) => onDelete(id))
+      for (const id of selectedIds) {
+        onDelete(id)
+      }
       setSelectedIds(new Set())
     }
   }, [selectedIds, selectedCount, onDelete])
@@ -191,7 +193,7 @@ export function ForecastList({
         setSortDirection('desc')
       }
     },
-    [sortBy, sortDirection]
+    [sortBy]
   )
 
   // Get sort indicator
@@ -273,35 +275,38 @@ export function ForecastList({
                     aria-label="Select all"
                   />
                 </th>
-                <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => toggleSortDirection('name')}
-                >
-                  <div className="flex items-center">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <button
+                    type="button"
+                    className="flex items-center uppercase cursor-pointer hover:text-gray-700"
+                    onClick={() => toggleSortDirection('name')}
+                  >
                     Name
                     <span className="ml-1">{getSortIndicator('name')}</span>
-                  </div>
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Description
                 </th>
-                <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => toggleSortDirection('date')}
-                >
-                  <div className="flex items-center">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <button
+                    type="button"
+                    className="flex items-center uppercase cursor-pointer hover:text-gray-700"
+                    onClick={() => toggleSortDirection('date')}
+                  >
                     Created
                     <span className="ml-1">{getSortIndicator('date')}</span>
-                  </div>
+                  </button>
                 </th>
-                <th
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => toggleSortDirection('netWorth')}
-                >
-                  <div className="flex items-center">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <button
+                    type="button"
+                    className="flex items-center uppercase cursor-pointer hover:text-gray-700"
+                    onClick={() => toggleSortDirection('netWorth')}
+                  >
                     Ending Net Worth
                     <span className="ml-1">{getSortIndicator('netWorth')}</span>
-                  </div>
+                  </button>
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -312,6 +317,7 @@ export function ForecastList({
             {/* Table Body */}
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredForecasts.map((forecast) => (
+                // biome-ignore lint/a11y/useKeyWithClickEvents: row click is a pointer convenience; keyboard users select via the per-row aria-labeled checkbox in the first cell.
                 <tr
                   key={forecast.id}
                   onClick={() => toggleSelection(forecast.id)}
@@ -435,7 +441,13 @@ function EmptyState(): React.ReactElement {
 
 function SearchIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -448,7 +460,13 @@ function SearchIcon({ className }: { className: string }): React.ReactElement {
 
 function FolderIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -461,7 +479,13 @@ function FolderIcon({ className }: { className: string }): React.ReactElement {
 
 function LoadIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -480,7 +504,13 @@ function LoadIcon({ className }: { className: string }): React.ReactElement {
 
 function DeleteIcon({ className }: { className: string }): React.ReactElement {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       <path
         strokeLinecap="round"
         strokeLinejoin="round"

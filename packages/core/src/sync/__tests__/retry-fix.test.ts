@@ -26,7 +26,9 @@ describe('SynchronizationService Retry Logic Fix', () => {
         const indices = operations
           .map((op: any, i: number) => (ids.includes(op.id) ? i : -1))
           .filter((i) => i !== -1)
-        indices.reverse().forEach((i) => operations.splice(i, 1))
+        for (const i of indices.reverse()) {
+          operations.splice(i, 1)
+        }
       }),
     }
 

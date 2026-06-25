@@ -58,11 +58,7 @@ export const useCurrencyPreferences = () =>
   useCurrencyStore((state) => ({ mode: state.mode, currency: state.currency }))
 
 // Helper to get formatted value based on current preferences
-import {
-  type CurrencyOptions,
-  formatAmount,
-  formatCurrency as formatCurrencyCore,
-} from '@budget-planner/core'
+import { type CurrencyOptions, formatCurrency as formatCurrencyCore } from '@budget-planner/core'
 
 export function useFormattedAmount(): (cents: number) => string {
   const { mode, currency } = useCurrencyPreferences()

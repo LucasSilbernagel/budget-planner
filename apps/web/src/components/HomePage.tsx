@@ -1,8 +1,6 @@
 import { calculateNetIncomeResult } from '@budget-planner/core/finance'
 import {
   CATEGORY_COLORS,
-  DEFAULT_COLORS,
-  TIME_PERIOD_PRESETS,
   aggregateByCategoryAndType,
   filterByDateRange,
   generateColorMap,
@@ -33,7 +31,7 @@ import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } fro
 import { useFormattedAmount } from '../stores/currencyStore'
 import { APP_VERSION } from '../utils/version'
 import { ErrorBoundary } from './ErrorBoundary'
-import { CategoryDrillDown, useCategoryDrillDown } from './finance/category-drill-down'
+import { useCategoryDrillDown } from './finance/category-drill-down'
 import { TimePeriodFilter } from './finance/time-period-filter'
 
 // Colors for the charts
@@ -199,11 +197,7 @@ export function HomePage() {
 
   // Drill-down state for category navigation
   const {
-    state: drillDownState,
     currentData: drillDownCurrentData,
-    aggregatedData: drillDownAggregatedData,
-    chartData: drillDownChartData,
-    colors: drillDownColors,
     breadcrumb,
     drillDown,
     drillUp,
@@ -280,7 +274,7 @@ export function HomePage() {
   // Calculate total amount for pie chart (memoized to avoid O(n^2) recalculation)
   const totalChartAmount = useMemo(
     () => allCategoryData.reduce((sum, item) => sum.value + item.value, 0),
-    [incomeData, expenseData]
+    [allCategoryData]
   )
 
   // Prepare data for the asset breakdown pie chart
@@ -433,19 +427,21 @@ export function HomePage() {
                           aria-label="drill-down-breadcrumb"
                         >
                           <button
+                            type="button"
                             onClick={resetDrillDown}
                             className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                           >
                             🏠 All Categories
                           </button>
-                          {breadcrumb.map((item, index) => (
-                            <React.Fragment key={index}>
+                          {breadcrumb.map((item) => (
+                            <React.Fragment key={`${item.type}-${item.name}`}>
                               <span className="text-gray-400">→</span>
                               <span className="text-sm text-gray-600">{item.name}</span>
                             </React.Fragment>
                           ))}
                         </nav>
                         <button
+                          type="button"
                           onClick={drillUp}
                           className="text-blue-600 hover:text-blue-800 text-sm font-medium whitespace-nowrap"
                         >
@@ -470,7 +466,7 @@ export function HomePage() {
                             fill="#8884d8"
                             dataKey="value"
                             nameKey="name"
-                            label={({ name, percent, value }) => {
+                            label={({ name, percent }) => {
                               // Show name and percentage, handle long names
                               const displayName =
                                 name.length > 15 ? `${name.substring(0, 12)}...` : name
@@ -493,7 +489,7 @@ export function HomePage() {
                                   : '0'
                               return (
                                 <Cell
-                                  key={`cell-${index}`}
+                                  key={`${entry.type}-${entry.category}`}
                                   fill={
                                     entry.fill ||
                                     entry.color ||
@@ -555,8 +551,11 @@ export function HomePage() {
                         {allCategoryData
                           .sort((a, b) => b.value - a.value)
                           .slice(0, 5)
-                          .map((item, index) => (
-                            <div key={index} className="flex justify-between text-xs">
+                          .map((item) => (
+                            <div
+                              key={`${item.type}-${item.category}`}
+                              className="flex justify-between text-xs"
+                            >
                               <span className="flex items-center">
                                 <span
                                   className="w-2 h-2 rounded-full mr-2"
@@ -594,8 +593,8 @@ export function HomePage() {
                             nameKey="name"
                             label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
                           >
-                            {assetBreakdownData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            {assetBreakdownData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
                             ))}
                           </Pie>
                           <Tooltip
@@ -639,8 +638,8 @@ export function HomePage() {
                           />
                           <Legend />
                           <Bar dataKey="amount" name="Amount">
-                            {netWorthBarData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.fill} />
+                            {netWorthBarData.map((entry) => (
+                              <Cell key={entry.category} fill={entry.fill} />
                             ))}
                           </Bar>
                         </BarChart>

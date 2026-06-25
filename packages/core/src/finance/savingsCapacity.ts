@@ -13,12 +13,10 @@
  */
 
 import {
-  type Frequency,
   type NormalizableFinancialItem,
   calculateGrossPeriodIncome,
   calculateNetPeriodIncome,
 } from './netIncome'
-import { calculateTotalMonthlyNormalized, normalizeToMonthly } from './normalization'
 
 /**
  * Calculates savings capacity percentage

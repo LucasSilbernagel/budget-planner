@@ -8,6 +8,34 @@
 import { getPaddleOAuthConfig } from './config'
 
 /**
+ * Minimal typing for the Paddle.js global injected by the loaded script.
+ * Only the members this client uses are declared.
+ */
+interface PaddleGlobal {
+  Initialize: (options: { vendor: number; environment: string }) => void
+  Checkout: { open: (options: Record<string, unknown>) => void }
+}
+
+/**
+ * Cached Paddle user shape. Currently unused (server is the source of truth),
+ * declared so the accessor avoids `any`.
+ */
+interface PaddleUser {
+  id: string
+  email?: string
+}
+
+/**
+ * Safely read the Paddle global off `window` with a narrow type instead of `any`.
+ */
+function getPaddleGlobal(): PaddleGlobal | undefined {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+  return (window as unknown as { Paddle?: PaddleGlobal }).Paddle
+}
+
+/**
  * Paddle.js script URL
  * This loads the Paddle checkout script which provides the Paddle object
  */
@@ -63,8 +91,9 @@ export function initializePaddleAuth(): void {
   }
 
   // Initialize Paddle with vendor configuration
-  if (typeof window !== 'undefined' && (window as any).Paddle) {
-    ;(window as any).Paddle.Initialize({
+  const paddle = getPaddleGlobal()
+  if (paddle) {
+    paddle.Initialize({
       vendor: parseInt(config.vendorId),
       environment: config.environment,
     })
@@ -83,8 +112,9 @@ export function openPaddleAuth(): void {
   }
 
   // Use Paddle's Checkout.open method for authentication
-  if (typeof window !== 'undefined' && (window as any).Paddle) {
-    ;(window as any).Paddle.Checkout.open({
+  const paddle = getPaddleGlobal()
+  if (paddle) {
+    paddle.Checkout.open({
       vendor: parseInt(config.vendorId),
       environment: config.environment,
       // This will trigger Paddle's authentication flow
@@ -115,7 +145,7 @@ export function isPaddleAuthenticated(): boolean {
  * Get current Paddle user from local storage/session
  * Note: This is cached data - server should verify with database
  */
-export function getCurrentPaddleUser(): any | null {
+export function getCurrentPaddleUser(): PaddleUser | null {
   // In a real implementation, this would read from your session
   return null
 }

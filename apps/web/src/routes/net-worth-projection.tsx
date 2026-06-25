@@ -12,7 +12,6 @@
 import {
   type NetWorthProjectionInput,
   type NetWorthProjectionResult,
-  type TimeHorizon,
   createNetWorthProjection,
 } from '@budget-planner/core'
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
@@ -38,36 +37,6 @@ import { useFinancialCalculations } from '../hooks/useFinancialCalculations'
 interface ScenarioWithProjection {
   scenario: Scenario
   projection: NetWorthProjectionResult
-}
-
-/**
- * Save/load scenario presets
- */
-interface ScenarioPreset {
-  id: string
-  name: string
-  scenarios: Scenario[]
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Generate a unique ID for presets
- */
-function generatePresetId(): string {
-  return `preset-${Date.now()}`
-}
-
-/**
- * Create default scenarios with projections
- */
-function createDefaultScenariosWithProjection(): ScenarioWithProjection[] {
-  return DEFAULT_SCENARIOS.map((scenario) => ({
-    scenario,
-    projection: createNetWorthProjection(scenario.input),
-  }))
 }
 
 // ============================================================================
@@ -141,8 +110,9 @@ export function NetWorthProjectionPage() {
         if (!isMounted) return
         setError(err instanceof Error ? err.message : 'Unknown error occurred')
       } finally {
-        if (!isMounted) return
-        setIsCalculating(false)
+        if (isMounted) {
+          setIsCalculating(false)
+        }
       }
     }
 
@@ -221,6 +191,7 @@ export function NetWorthProjectionPage() {
             <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-700 flex items-center">
                 <svg
+                  aria-hidden="true"
                   className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-600"
                   fill="none"
                   viewBox="0 0 24 24"

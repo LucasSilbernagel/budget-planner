@@ -8,7 +8,7 @@ const docsContent: Record<string, { title: string; content: JSX.Element }> = {
     content: (
       <div className="space-y-4">
         <p>Welcome to Budget Planner! This guide will help you get started.</p>
-        
+
         <h3 className="text-lg font-semibold text-gray-800">Creating Your First Income Source</h3>
         <ol className="list-decimal list-inside space-y-2">
           <li>Navigate to the Income page</li>
@@ -18,7 +18,7 @@ const docsContent: Record<string, { title: string; content: JSX.Element }> = {
           <li>Select a frequency (weekly, biweekly, monthly, annually)</li>
           <li>Click "Add Income Source"</li>
         </ol>
-        
+
         <h3 className="text-lg font-semibold text-gray-800">Adding Expenses</h3>
         <p>Similar to income sources, you can add expenses on the Expenses page.</p>
       </div>
@@ -36,7 +36,7 @@ const docsContent: Record<string, { title: string; content: JSX.Element }> = {
           <li>Savings goal tracking</li>
           <li>Balance tracking for investments and debts</li>
         </ul>
-        
+
         <h3 className="text-lg font-semibold text-gray-800">Premium Features</h3>
         <ul className="list-disc list-inside space-y-2">
           <li>Multi-device synchronization</li>
@@ -55,24 +55,23 @@ const docsContent: Record<string, { title: string; content: JSX.Element }> = {
         <div>
           <h4 className="font-medium text-gray-800">How do I reset my data?</h4>
           <p className="text-gray-600">
-            For free tier users with client-side storage, you can clear your data
-            by clearing your browser's localStorage. In Chrome: Settings > Privacy > 
-            Clear browsing data > Local Storage.
+            For free tier users with client-side storage, you can clear your data by clearing your
+            browser's localStorage. In Chrome: Settings &gt; Privacy &gt; Clear browsing data &gt;
+            Local Storage.
           </p>
         </div>
         <div>
           <h4 className="font-medium text-gray-800">Can I import/export my data?</h4>
           <p className="text-gray-600">
-            Data import/export functionality is planned for a future release.
-            Currently, data is stored locally for free tier users.
+            Data import/export functionality is planned for a future release. Currently, data is
+            stored locally for free tier users.
           </p>
         </div>
         <div>
           <h4 className="font-medium text-gray-800">How are calculations performed?</h4>
           <p className="text-gray-600">
-            All financial calculations are performed using integer arithmetic with
-            values stored in cents for precision. Visualizations use normalized values
-            for consistent comparisons.
+            All financial calculations are performed using integer arithmetic with values stored in
+            cents for precision. Visualizations use normalized values for consistent comparisons.
           </p>
         </div>
       </div>
@@ -89,17 +88,13 @@ export const DocsPage = () => {
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Documentation</h1>
-          <p className="text-gray-600 mt-2">
-            Learn how to use Budget Planner effectively
-          </p>
+          <p className="text-gray-600 mt-2">Learn how to use Budget Planner effectively</p>
         </header>
 
         <main className="space-y-6">
           {/* Documentation Navigation */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Documentation Index
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Documentation Index</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {docIds.map((id) => (
                 <a
@@ -107,9 +102,7 @@ export const DocsPage = () => {
                   href={`/docs/${id}`}
                   className="block bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
                 >
-                  <h3 className="font-medium text-blue-600">
-                    {docsContent[id].title}
-                  </h3>
+                  <h3 className="font-medium text-blue-600">{docsContent[id].title}</h3>
                 </a>
               ))}
             </div>
@@ -121,17 +114,15 @@ export const DocsPage = () => {
               Welcome to Budget Planner Documentation
             </h2>
             <p className="text-gray-600">
-              Select a documentation page from the index above to get started.
-              This documentation system is built using TanStack Router for
-              seamless navigation between documentation pages.
+              Select a documentation page from the index above to get started. This documentation
+              system is built using TanStack Router for seamless navigation between documentation
+              pages.
             </p>
           </section>
 
           {/* Additional Resources */}
           <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Additional Resources
-            </h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Additional Resources</h2>
             <div className="flex gap-4">
               <a
                 href="https://github.com/lucassilbernagel/budget-planner"
@@ -180,18 +171,16 @@ export const docRoute = createFileRoute('/docs/$docId')({
 // Specific documentation page component
 function DocPage() {
   const { docId } = docsRoute.useParams()
-  
+
   // Get the documentation content
   const doc = docsContent[docId]
-  
+
   if (!doc) {
     return (
       <div className="min-h-screen bg-gray-50 p-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-bold text-gray-900">Documentation Not Found</h1>
-          <p className="text-gray-600 mt-2">
-            The requested documentation page does not exist.
-          </p>
+          <p className="text-gray-600 mt-2">The requested documentation page does not exist.</p>
           <a
             href="/docs"
             className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -202,21 +191,17 @@ function DocPage() {
       </div>
     )
   }
-  
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">{doc.title}</h1>
-          <p className="text-gray-600 mt-2">
-            Budget Planner Documentation
-          </p>
+          <p className="text-gray-600 mt-2">Budget Planner Documentation</p>
         </header>
 
         <main className="bg-white rounded-lg shadow-md p-6">
-          <div className="prose max-w-none">
-            {doc.content}
-          </div>
+          <div className="prose max-w-none">{doc.content}</div>
         </main>
 
         <div className="mt-6 flex gap-4">

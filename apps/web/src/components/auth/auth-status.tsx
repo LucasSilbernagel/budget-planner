@@ -23,17 +23,25 @@ export interface AuthStatusProps {
 }
 
 /**
+ * Authenticated user shape consumed by this component.
+ */
+interface AuthUser {
+  email: string
+  subscriptionStatus: string
+}
+
+/**
  * Fetch current user session
  */
-async function fetchCurrentUser(): Promise<any | null> {
+async function fetchCurrentUser(): Promise<AuthUser | null> {
   const response = await fetch('/api/auth/me')
 
   if (!response.ok) {
     return null
   }
 
-  const data = await response.json()
-  return data.user || null
+  const data = (await response.json()) as { user?: AuthUser }
+  return data.user ?? null
 }
 
 /**

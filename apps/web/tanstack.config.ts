@@ -1,4 +1,3 @@
-import type { ServerFunction } from '@tanstack/start'
 import { defineConfig } from '@tanstack/start/config'
 
 /**

@@ -36,7 +36,7 @@ interface ProfileListProps {
 }
 
 export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
-  const { profiles, activeProfile, activeProfileId } = useProfilesWithActive()
+  const { profiles, activeProfileId } = useProfilesWithActive()
   const { deleteProfile } = useProfileManager()
   const hasMultipleProfiles = useHasMultipleProfiles()
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -112,6 +112,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
         <div className="text-center py-12">
           <p className="text-gray-500 mb-4">No profiles yet</p>
           <button
+            type="button"
             onClick={onCreateNewProfile ? onCreateNewProfile : () => {}}
             disabled={!onCreateNewProfile}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -210,7 +211,7 @@ function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: P
       {/* Active indicator */}
       {isActive && (
         <div className="mt-4 flex items-center gap-2 text-sm text-green-600">
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+          <svg aria-hidden="true" className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
               d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -225,6 +226,7 @@ function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: P
       <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
         {!isActive && (
           <button
+            type="button"
             onClick={() => switchToProfile(profile.id)}
             className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
           >
@@ -235,6 +237,7 @@ function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: P
         {/* Delete button - only for non-default, non-last profiles */}
         {!profile.isDefault && hasMultipleProfiles && (
           <button
+            type="button"
             onClick={onDelete}
             disabled={isDeleting}
             className="text-sm text-red-600 hover:text-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"

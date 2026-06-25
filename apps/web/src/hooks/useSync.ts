@@ -12,18 +12,13 @@
  * - Error handling and retry logic
  */
 
-import type {
-  ProcessOperationFn,
-  SyncResult,
-  SyncState,
-  SyncStatus,
-} from '@budget-planner/core/sync'
+import type { ProcessOperationFn, SyncResult, SyncStatus } from '@budget-planner/core/sync'
 import {
   SyncStatus as SyncStatusEnum,
   SynchronizationService,
   createSynchronizationService,
 } from '@budget-planner/core/sync'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { processSyncOperation } from '../server/functions/sync'
@@ -272,7 +267,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       syncServiceRef.current?.destroy()
       syncServiceRef.current = null
     }
-  }, [userId, syncConfig])
+  }, [userId, syncConfig, store])
 
   // Sync state from store
   const {

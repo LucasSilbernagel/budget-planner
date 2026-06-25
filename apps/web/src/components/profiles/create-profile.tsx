@@ -9,7 +9,6 @@
  */
 
 import { useActiveProfileId, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
-import type { ClientProfile } from '@/hooks/useActiveProfile'
 import { useEffect, useState } from 'react'
 
 // Available currency options
@@ -59,13 +58,13 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
     // For now, we just ensure the dialog is visible
   }, [])
 
-  // Reset form when dialog opens
+  // Reset form when dialog opens (mount)
   useEffect(() => {
     setForm(INITIAL_FORM)
     setErrors({})
     setSuccess(false)
     setIsSubmitting(false)
-  }, [onClose])
+  }, [])
 
   // Form validation
   const validate = (): boolean => {
@@ -144,7 +143,9 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
       onClick={handleBackdropClick}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -156,11 +157,18 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
             <p className="text-gray-600 mt-1">Organize your finances for different purposes</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
             aria-label="Close"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              aria-hidden="true"
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -176,6 +184,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
           {success ? (
             <div className="text-center py-8">
               <svg
+                aria-hidden="true"
                 className="w-12 h-12 text-green-500 mx-auto mb-4"
                 fill="currentColor"
                 viewBox="0 0 20 20"

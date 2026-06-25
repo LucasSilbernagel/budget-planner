@@ -543,7 +543,9 @@ function toStackedBarChartData(data: FinancialDataPoint[]): {
   // `cat` is a key obtained from categoryMap.keys(), so get() is guaranteed to
   // return a value — the non-null assertion is safe and keeps the element type
   // `number` (an optional chain here would wrongly widen it to `undefined`).
+  // biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
   const incomeData = categories.map((cat) => categoryMap.get(cat)!.income)
+  // biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
   const expenseData = categories.map((cat) => categoryMap.get(cat)!.expense)
 
   return { categories, incomeData, expenseData }
@@ -688,6 +690,7 @@ function generateColorMap(categories: string[]): Record<string, string> {
     // Get color using modulo to cycle through the palette
     // CATEGORY_COLORS is a const array with 16 colors, modulo guarantees valid index
     const colorIndex = i % CATEGORY_COLORS.length
+    // biome-ignore lint/style/noNonNullAssertion: colorIndex = i % CATEGORY_COLORS.length is always a valid index; ?. would widen to string | undefined and break the Record<string, string> assignment.
     colorMap[category] = CATEGORY_COLORS[colorIndex]!
   }
 

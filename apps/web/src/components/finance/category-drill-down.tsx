@@ -12,13 +12,14 @@ import type {
   CategoryAggregate,
   DrillDownState,
   FinancialDataPoint,
+  RechartsDataItem,
 } from '@budget-planner/core/finance/visualization'
 import {
   aggregateByCategory,
   createDrillDownState,
   drillDownToCategory,
   drillToRoot,
-  drillUp,
+  drillUp as drillUpLevel,
   generateColorMap,
   getDataForDrillDownLevel,
   isDrillDownActive,
@@ -64,7 +65,7 @@ export interface DrillDownRenderProps {
   aggregatedData: CategoryAggregate[]
 
   /** Formatted chart data */
-  chartData: any[]
+  chartData: RechartsDataItem[]
 
   /** Color map for current level */
   colors: Record<string, string>
@@ -117,6 +118,7 @@ function Breadcrumb({
       <ol className="flex items-center space-x-2">
         <li>
           <button
+            type="button"
             onClick={() => onClick(-1)}
             className="text-blue-600 hover:text-blue-800 font-medium"
           >
@@ -124,10 +126,11 @@ function Breadcrumb({
           </button>
         </li>
         {items.map((item, index) => (
-          <React.Fragment key={index}>
+          <React.Fragment key={`${item.type}-${item.name}`}>
             <li className="text-gray-400">/</li>
             <li>
               <button
+                type="button"
                 onClick={() => onClick(index)}
                 className={`font-medium ${
                   index === items.length - 1 ? 'text-gray-800' : 'text-blue-600 hover:text-blue-800'
@@ -161,6 +164,7 @@ function DrillDownControls({
     <div className="flex space-x-2 mb-4">
       {canDrillUp && (
         <button
+          type="button"
           onClick={onDrillUp}
           className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition-colors"
           aria-label="Go back"
@@ -171,6 +175,7 @@ function DrillDownControls({
       )}
       {canReset && (
         <button
+          type="button"
           onClick={onReset}
           className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition-colors"
           aria-label="Reset view"
@@ -271,7 +276,7 @@ export function CategoryDrillDown({
 
   // Handle drill-up
   const handleDrillUp = useCallback(() => {
-    setState(drillUp(state))
+    setState(drillUpLevel(state))
   }, [state])
 
   // Handle reset
@@ -424,7 +429,7 @@ export function useCategoryDrillDown(
 
   // Handle drill-up
   const drillUp = useCallback(() => {
-    setState(drillUp(state))
+    setState(drillUpLevel(state))
   }, [state])
 
   // Handle reset

@@ -57,16 +57,17 @@ function CustomTooltip({
   currency,
 }: {
   active?: boolean
-  payload?: any[]
+  payload?: Array<{ payload: unknown }>
   label?: string
   mode: CurrencyMode
   currency: CurrencyCode
 }) {
-  if (!active || !payload || !payload.length) {
+  const firstEntry = payload?.[0]
+  if (!active || !firstEntry) {
     return null
   }
 
-  const data = payload[0].payload as YearlyProjection & { retirementYear?: boolean }
+  const data = firstEntry.payload as YearlyProjection & { retirementYear?: boolean }
 
   // Guard: check that required properties exist
   if (
@@ -445,6 +446,7 @@ function RetirementTimelineChartInner({
 
         <div className="flex items-end">
           <button
+            type="button"
             onClick={resetToDefaults}
             className="w-full text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 py-1.5 px-2 rounded transition-colors"
           >

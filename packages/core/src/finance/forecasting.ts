@@ -8,11 +8,6 @@
  */
 
 import { type NormalizableFinancialItem, calculateNetPeriodIncome } from './netIncome'
-import {
-  type RetirementInput,
-  calculateCompoundingProjection,
-  calculateRetirementRequirement,
-} from './retirement'
 
 /**
  * Forecasting scenario input

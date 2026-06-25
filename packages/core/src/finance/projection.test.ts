@@ -9,10 +9,9 @@
  * - Time horizon handling
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   NetWorthProjectionInput,
-  TimeHorizon,
   calculateYearsToNetWorthTarget,
   createNetWorthProjection,
   isNetWorthProjectionInput,
@@ -35,36 +34,6 @@ const BASE_INPUT: NetWorthProjectionInput = {
   assetReturnRate: 0.07, // 7% annual
   incomeGrowthRate: 0.03, // 3% annual income growth
   timeHorizon: '10y',
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Calculate expected future value with compound interest
- * FV = PV * (1 + r/n)^(nt)
- * For monthly compounding: FV = PV * (1 + annualRate/12)^(12*years)
- */
-function calculateExpectedFV(presentValue: number, annualRate: number, years: number): number {
-  const monthlyRate = (1 + annualRate) ** (1 / 12) - 1
-  const months = years * 12
-  return presentValue * (1 + monthlyRate) ** months
-}
-
-/**
- * Calculate future value of an annuity (series of payments)
- * FV = PMT * (((1 + r)^n - 1) / r)
- */
-function calculateExpectedFVAnnuity(payment: number, annualRate: number, years: number): number {
-  const monthlyRate = (1 + annualRate) ** (1 / 12) - 1
-  const months = years * 12
-
-  if (monthlyRate === 0) {
-    return payment * months
-  }
-
-  return payment * (((1 + monthlyRate) ** months - 1) / monthlyRate)
 }
 
 // ============================================================================

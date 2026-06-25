@@ -26,7 +26,7 @@ import { getSyncAuditLogs, getSyncHistory, getSyncStatus, processBatchSync } fro
  */
 export async function syncBatch(request: Request): Promise<BatchSyncResponse> {
   // Get the current user from the request context using Paddle auth
-  let userResult
+  let userResult: Awaited<ReturnType<typeof getUserContext>>
   try {
     userResult = await getUserContext(request)
   } catch (error) {
