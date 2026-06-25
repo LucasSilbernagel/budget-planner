@@ -12,7 +12,7 @@
 import { type PaddleConfig, getPaddleConfig } from '@budget-planner/config'
 import { db } from '@budget-planner/db'
 import { users } from '@budget-planner/db/src/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createDefaultProfileForUser } from '../../functions/profiles'
 import { verifySession } from './session'
 
@@ -616,7 +616,12 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
 
     // Resolve the authoritative user record. Subscription status and currency
     // come from the database, NOT the cookie (NFR: server-enforced premium).
-    const matchingUsers = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1)
+    // Soft-deleted users are excluded (fail-closed → treated as logged out).
+    const matchingUsers = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, payload.userId), eq(users.isDeleted, false)))
+      .limit(1)
 
     const user = matchingUsers[0]
     if (!user) {
@@ -629,7 +634,7 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
       email: user.email,
       paddleId: user.paddleId,
       subscriptionStatus: user.subscriptionStatus,
-      currency: user.currency,
+      currency: user.currency ?? 'NONE',
       isAuthenticated: true,
     }
   } catch (error) {

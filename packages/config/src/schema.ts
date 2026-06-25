@@ -108,23 +108,26 @@ const DEV_FALLBACK_SESSION_SECRET = 'dev-only-insecure-session-secret-do-not-use
 /**
  * Resolve the HMAC key used to sign and verify session cookies.
  *
- * Production (NODE_ENV=production): fails closed — throws if SESSION_SECRET is
- * missing or shorter than SESSION_SECRET_MIN_LENGTH, so the app never signs
- * sessions with a default/empty key.
+ * Any non-development environment (NODE_ENV !== 'development' — i.e. production,
+ * staging, preview, test, or an unset/unknown value): fails closed — throws if
+ * SESSION_SECRET is missing or shorter than SESSION_SECRET_MIN_LENGTH, so the
+ * app never signs sessions with a default/insecure key outside local dev. This
+ * prevents the committed dev fallback from ever signing forgeable cookies in a
+ * deployed environment where NODE_ENV is not explicitly 'production'.
  *
- * Development/test: uses the configured secret when present (warning if short),
- * otherwise falls back to a fixed insecure dev key so local auth works without
- * extra setup. The secret is server-side only and must never be logged or sent
- * to the client.
+ * Development (NODE_ENV=development) only: uses the configured secret when
+ * present (warning if short), otherwise falls back to a fixed insecure dev key
+ * so local auth works without extra setup. The secret is server-side only and
+ * must never be logged or sent to the client.
  */
 export function getSessionSecret(): string {
   const env = getConfig()
   const secret = env.SESSION_SECRET
 
-  if (env.NODE_ENV === 'production') {
+  if (env.NODE_ENV !== 'development') {
     if (!secret || secret.length < SESSION_SECRET_MIN_LENGTH) {
       throw new Error(
-        `SESSION_SECRET must be set to at least ${SESSION_SECRET_MIN_LENGTH} characters in production`
+        `SESSION_SECRET must be set to at least ${SESSION_SECRET_MIN_LENGTH} characters outside development`
       )
     }
     return secret
@@ -136,7 +139,7 @@ export function getSessionSecret(): string {
 
   if (secret) {
     console.warn(
-      `SESSION_SECRET is shorter than ${SESSION_SECRET_MIN_LENGTH} characters; acceptable only in non-production.`
+      `SESSION_SECRET is shorter than ${SESSION_SECRET_MIN_LENGTH} characters; acceptable only in development.`
     )
     return secret
   }
