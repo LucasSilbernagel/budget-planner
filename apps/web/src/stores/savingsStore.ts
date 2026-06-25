@@ -131,6 +131,8 @@ export const useSavingsStore = create<SavingsState>()(
     }),
     {
       name: SAVINGS_GOALS_STORAGE_KEY,
+      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
+      skipHydration: true,
       partialize: (state) => ({
         savingsGoals: state.savingsGoals,
       }),

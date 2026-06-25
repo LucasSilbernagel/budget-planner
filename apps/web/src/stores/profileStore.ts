@@ -214,6 +214,8 @@ export const useProfileStore = create<ProfileState>()(
     }),
     {
       name: 'budget-planner-profiles-v1',
+      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
+      skipHydration: true,
       partialize: (state) => ({
         profiles: state.profiles,
         activeProfileId: state.activeProfileId,

@@ -103,6 +103,8 @@ export const useExpenseStore = create<ExpenseState>()(
     }),
     {
       name: 'budget-planner-expenses-v1',
+      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
+      skipHydration: true,
       partialize: (state) => ({
         expenses: state.expenses,
       }),

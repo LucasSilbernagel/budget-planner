@@ -41,6 +41,8 @@ export const useCurrencyStore = create<CurrencyState>()(
     }),
     {
       name: 'budget-planner-currency-prefs-v1',
+      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
+      skipHydration: true,
       partialize: (state) => ({
         mode: state.mode,
         currency: state.currency,

@@ -1,0 +1,6 @@
+# TanStack Start / Router generated + build artifacts
+src/routeTree.gen.ts
+.tanstack/
+.nitro/
+.output/
+dist/

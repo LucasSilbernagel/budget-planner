@@ -101,6 +101,8 @@ export const useIncomeStore = create<IncomeState>()(
     }),
     {
       name: 'budget-planner-income-v1',
+      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
+      skipHydration: true,
       partialize: (state) => ({
         incomeSources: state.incomeSources,
       }),

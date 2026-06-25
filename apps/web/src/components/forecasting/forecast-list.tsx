@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react'
-import type { SavedForecast } from '../../routes/forecasting'
+import type { SavedForecast } from '../../_legacy_routes/forecasting'
 
 // ============================================================================
 // Type Definitions

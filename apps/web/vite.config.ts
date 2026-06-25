@@ -1,14 +1,15 @@
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import react from '@vitejs/plugin-react'
-// @ts-nocheck
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import viteReact from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// https://vitejs.dev/config/
+// https://tanstack.com/start — the Start plugin owns SSR, the server runtime,
+// and file-based route generation. It MUST be registered before the React plugin.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tanstackStart(), viteReact()],
   resolve: {
     alias: {
       // Path aliases for monorepo packages
@@ -21,14 +22,8 @@ export default defineConfig({
   },
   server: {
     fs: {
-      // Allow serving files from the project root
+      // Allow serving files from the monorepo root (workspace packages)
       allow: [resolve(__dirname, '../../')],
-    },
-  },
-  build: {
-    // Ensure workspace packages are not bundled
-    commonjsOptions: {
-      transformMixedEsModules: true,
     },
   },
 })

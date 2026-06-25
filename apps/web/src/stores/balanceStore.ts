@@ -168,6 +168,8 @@ export const useBalanceStore = create<BalanceState>()(
     }),
     {
       name: STORAGE_KEY,
+      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
+      skipHydration: true,
       partialize: (state) => ({
         entries: state.entries,
       }),
