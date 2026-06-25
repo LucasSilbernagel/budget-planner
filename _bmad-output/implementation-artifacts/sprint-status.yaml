@@ -40,7 +40,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-06-25  # 5-7 signed sessions closed via code review (launch blocker)
+last_updated: 2026-06-25  # 5-11 fidelity audit DONE (audit + independent code review); 5-12 spawned
 baseline_commit: 46396f0
 project: budget-planner
 project_key: NOKEY
@@ -75,12 +75,12 @@ development_status:
   3-1-implement-retirement-modeler-with-safe-withdrawal-model: done
   3-2-implement-forward-looking-net-worth-projection-visualization: done
   3-3-enhance-income-vs-expense-visualization: done
-  3-4-set-up-tanstack-start-server-functions-for-calculations: done
+  3-4-set-up-tanstack-start-server-functions-for-calculations: done  # ⚠️ AUDIT 5-11 (2026-06-25): CONFIRMED FAIL (kept 'done' per 1-2→5-10 precedent; remediation owns it). The "server functions" are plain async fns (NOT createServerFn, type-only @tanstack/start import), are never invoked (dead exports), have NO serving route (/api/calculations/* does not exist), and no Start runtime to host them (5-10). Paid-tier server calcs error at runtime; free-tier client fallback works. Math itself is correct (core 528 ✓). Remediation → 5-12 (blocked by 5-10). See audit-closed-stories-2026-06-24.md (Lead #1).
   epic-3-retrospective: optional
 
   # Epic 4: Premium Features & Display Customization
   epic-4: in-progress
-  4-1-implement-paddle-authentication-and-account-creation: done
+  4-1-implement-paddle-authentication-and-account-creation: done  # ⚠️ AUDIT 5-11 (2026-06-25): PARTIAL. Auth route handlers exist (routes/api/auth/paddle/*, webhooks/paddle.ts) but are NOT served without a Start runtime (shares the 5-10 blocker); rate-limiting/CSRF already deferred to 5-8. Functionally completed by 5-10 (+5-8). No new story. See audit-closed-stories-2026-06-24.md.
   4-2-create-database-schema-for-users-table: done
   4-3-implement-multi-device-data-synchronization-for-paid-tier: done  # Re-scoped 2026-06-23 (push/persist only); cross-device pull split to 4-18. Code review 2026-06-23: 21/24 patches applied (core sync module green, 528 tests pass), 3 held (DN1 uuid PK migration, P3 server-fn transport, P20 audit tables) — tracked in deferred-work.md. Closed 2026-06-24.
   # Infrastructure Note: Using DanubeData full stack (Static Sites + Rapids + PostgreSQL) - see ADR-001
@@ -94,7 +94,7 @@ development_status:
   4-11-implement-ethicalads-for-unauthenticated-users: ready-for-dev
   4-12-implement-clean-url-string-injection-for-client-metadata-tracking: ready-for-dev
   4-13-set-up-zustand-state-management: ready-for-dev
-  4-14-set-up-testing-infrastructure: done
+  4-14-set-up-testing-infrastructure: done  # ⚠️ AUDIT 5-11 (2026-06-25): PARTIAL. Vitest/MSW/Playwright infra works (core 528 ✓, db 16 ✓, 3/4 web suites ✓) BUT shipped with a broken financial.test.ts (mis-pathed mock → 24 false failures committed under 'done') and prior biome@0.3.3 mis-install meant lint never ran (→5-9). Test fix folded into 5-12; lint already in 5-9. See audit-closed-stories-2026-06-24.md (Lead #2).
   4-15-set-up-ci-cd-pipeline-with-github-actions: ready-for-dev
   4-16-deploy-to-danubedata-static-sites: ready-for-dev
   4-17-set-up-danubedata-managed-postgresql: ready-for-dev
@@ -113,5 +113,6 @@ development_status:
   5-8-production-security-and-data-sovereignty-hardening: backlog  # Added 2026-06-24 — consolidates Epic-5-bound security/sovereignty/sync-hardening items deferred from 5-1 (client.ts: anchored host allowlist vs substring match, remove Supabase-US/ElephantSQL from allowlist per NFR1/NFR2, NODE_ENV fail-closed, prod SSL CA, lazy db init), 4-4 (SQL injection refactor, rate limiting), and 4-5 sync endpoints (x-forwarded-for trust, auth on read endpoints, cryptographic device IDs). Source: deferred-work.md.
   5-9-resolve-biome-lint-backlog: done  # Closed 2026-06-25 via code review (3 layers; all 5 ACs verified PASS — lint exit 0/151 files, core 528 ✓, db 16 ✓, no new web fails). 0 patches (1 candidate reverted as lint-justified), 4 deferred (pre-existing/lint-justified, see deferred-work.md), 14 dismissed. Added 2026-06-24 — 179 Biome lint errors surfaced after Biome was repaired (prior biome@0.3.3 was the wrong package and never linted). Mechanical/auto-fixable already cleared (625→179); remainder need human judgment: 70 noUnusedVariables, 58 noExplicitAny, 18 useExhaustiveDependencies, 12 noNonNullAssertion, 10 noForEach, 6 noArrayIndexKey, 5 one-offs. Fix properly (no blanket ignores), no behavior change. Source: build-infra debt.
   5-10-convert-frontend-to-tanstack-start: ready-for-dev  # Added 2026-06-24 — URGENT. Framework audit: apps/web declares @tanstack/start but runs as a client-only TanStack Router SPA on plain Vite (vite.config has only react(); index.html+createRoot client mount; hand-written routeTree.gen.ts with orphaned src/routes/*.tsx; tanstack.config.ts is dead/fictional and never loads; api routes not served). Story 1-2 was marked done but never delivered Start. Server-side premium enforcement assumed by 5-7/5-8 only truly protects if a Start server actually runs these handlers. Converts to real Start (SSR entry, __root.tsx, generated route tree, createServerFileRoute, createServerFn). NOTE: a real Start app emits a server, not a pure static bundle — reconcile with 4-16 Static Sites deploy. Source: framework audit. [apps/web/vite.config.ts, src/index.tsx, src/routeTree.gen.ts, tanstack.config.ts]
-  5-11-audit-closed-stories-for-implementation-fidelity: ready-for-dev  # Added 2026-06-24 — URGENT launch gate. Story 1-2 was marked done but never delivered Start (→5-10): a story self-reported PASS against ACs it never met. Mistral Vibe implemented 1-1, 1-2, ALL of Epic 2 (2-1→2-7 financial calcs), and 5-1 with no independent code review; several done stories (1-3..1-7, 3-1..3-4, 4-1, 4-2, 4-14) have NO Dev Agent Record. This story audits every closed story against the real codebase/runtime (not its self-report), produces audit-closed-stories-2026-06-24.md with PASS/PARTIAL/FAIL verdicts, corrects falsely-done statuses, and spawns remediation stories. Strong leads: 3-4 (server functions likely non-functional under no-Start runtime) and 24 failing financial.test.ts tests. Does NOT fix inline. Source: framework audit.
+  5-11-audit-closed-stories-for-implementation-fidelity: done  # Audit COMPLETE + independently code-reviewed 2026-06-25 (claude-opus-4-8; 3-layer review confirmed all conclusions, applied 4 report-accuracy patches). Verdicts on 27 closed stories: 23 PASS, 2 PARTIAL (4-1 unserved-without-Start, 4-14 shipped broken test; 4-3/4-4/4-5 are PASS), 2 FAIL (1-2 already→5-10; 3-4 NEW). Lead #1 CONFIRMED: 3-4 server functions non-functional (dead code, no route, no Start runtime) → remediation 5-12. Lead #2 RESOLVED: 24 financial.test.ts failures = bad test (mis-pathed mock '../api/auth/paddle' should be '../../'; proven by temp-fix run 24→8), NOT a calc defect — core math correct (528 ✓, db 16 ✓). 10 closed stories flagged for missing Dev Agent Record/File List. Report: audit-closed-stories-2026-06-24.md. Tracking corrected: 3-4/4-1/4-14 annotated, 5-12 spawned. Does NOT fix inline (scope discipline).
+  5-12-fix-calculation-server-functions: backlog  # Added 2026-06-25 by audit 5-11 — remediation for confirmed FAIL of 3-4. Convert financial.ts to real createServerFn/served /api/calculations/* routes, wire client end-to-end, fix financial.test.ts (mock path + auth-error expectations). BLOCKED BY 5-10 (needs real Start server first). Math is already correct in packages/core — do not touch it. See audit-closed-stories-2026-06-24.md (Lead #1) + 5-12 story file.
   epic-5-retrospective: optional
