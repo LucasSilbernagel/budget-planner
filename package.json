@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
-    "lint": "biome check .",
+    "lint": "biome check . && pnpm validate:tsconfig",
     "lint:fix": "biome check --apply .",
     "format": "biome format --write .",
     "type-check": "pnpm --filter web type-check",

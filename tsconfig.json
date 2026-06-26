@@ -32,18 +32,7 @@
     "allowUnreachableCode": false,
     "skipLibCheck": true
   },
-  "include": [
-    "apps/**/*",
-    "packages/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/*.spec.ts",
-    "**/*.spec.tsx"
-  ],
+  "files": [],
   "references": [
     { "path": "./apps/web" },
     { "path": "./packages/db" },

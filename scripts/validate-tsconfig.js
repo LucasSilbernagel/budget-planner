@@ -101,6 +101,50 @@ function validateTsConfig(filePath) {
       warnings.push('No include pattern or files specified')
     }
 
+    // GUARDRAIL: a solution-style config (one with project `references`) must not
+    // directly `include` source files that live inside its referenced projects.
+    // Doing so makes this program "own" files that the composite referenced project
+    // also emits, producing TS6305 "Output file has not been built from source file"
+    // errors. A solution config should use `"files": []` and rely on `references`.
+    if (Array.isArray(config.references) && config.references.length > 0) {
+      const configDir = path.dirname(filePath)
+      const includePatterns = config.include || []
+
+      // The literal directory prefix of a glob, before the first wildcard segment.
+      const globBaseDir = (pattern) => {
+        const segments = pattern.split('/')
+        const literal = []
+        for (const seg of segments) {
+          if (seg.includes('*') || seg.includes('?')) break
+          literal.push(seg)
+        }
+        return path.resolve(configDir, literal.join('/'))
+      }
+
+      for (const ref of config.references) {
+        if (!ref || !ref.path) continue
+        let refDir = path.resolve(configDir, ref.path)
+        // `references` paths may point at a directory or directly at a tsconfig file.
+        if (refDir.endsWith('.json')) {
+          refDir = path.dirname(refDir)
+        } else if (fs.existsSync(refDir) && fs.statSync(refDir).isFile()) {
+          refDir = path.dirname(refDir)
+        }
+
+        for (const pattern of includePatterns) {
+          const baseDir = globBaseDir(pattern)
+          // Overlap if the include base contains (or equals) the referenced project dir.
+          if (refDir === baseDir || refDir.startsWith(`${baseDir}${path.sep}`)) {
+            errors.push(
+              `include pattern "${pattern}" overlaps referenced project "${ref.path}". ` +
+                'A config with `references` must not include its referenced projects’ ' +
+                'sources directly (causes TS6305). Use `"files": []` and rely on `references`.'
+            )
+          }
+        }
+      }
+    }
+
     // Check for rootDir in configs with include/files
     if (config.compilerOptions) {
       const opts = config.compilerOptions
