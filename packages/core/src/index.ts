@@ -37,3 +37,9 @@ export * from './format/locale'
 
 // Synchronization service
 export * from './sync/index'
+
+// Client metadata capture (clean URL-string injection, privacy-respecting)
+export * from './analytics/metadata'
+
+// In-memory analytics service
+export * from './analytics/service'

@@ -2,6 +2,7 @@ import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-r
 import type { ReactNode } from 'react'
 import { AdPlacement } from '../components/ads/AdPlacement'
 import { Footer } from '../components/layout/Footer'
+import { MetadataProvider } from '../context/metadata-context'
 import { StoreHydration } from '../lib/store-hydration'
 import appCss from '../styles/global.css?url'
 
@@ -36,15 +37,19 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body suppressHydrationWarning>
         <StoreHydration />
-        {/* Column layout so the global Footer is pushed to the bottom of the
-            viewport on short pages (mt-auto) yet flows after content on long ones. */}
-        <div className="flex min-h-screen flex-col">
-          {children}
-          {/* Global, unobtrusive ad slot. Renders only for non-premium users
-              (story 4-11): unauthenticated/free see ads; active-premium do not. */}
-          <AdPlacement />
-          <Footer />
-        </div>
+        {/* Captures privacy-respecting acquisition metadata from the landing
+            URL (story 4-12): URL-only, in-memory, no cookies/localStorage. */}
+        <MetadataProvider>
+          {/* Column layout so the global Footer is pushed to the bottom of the
+              viewport on short pages (mt-auto) yet flows after content on long ones. */}
+          <div className="flex min-h-screen flex-col">
+            {children}
+            {/* Global, unobtrusive ad slot. Renders only for non-premium users
+                (story 4-11): unauthenticated/free see ads; active-premium do not. */}
+            <AdPlacement />
+            <Footer />
+          </div>
+        </MetadataProvider>
         <Scripts />
       </body>
     </html>
