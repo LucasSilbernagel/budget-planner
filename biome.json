@@ -60,7 +60,9 @@
       "_bmad-output",
       "routeTree.gen.ts",
       "**/test-results",
-      "**/playwright-report"
+      "**/test-results/**",
+      "**/playwright-report",
+      "**/playwright-report/**"
     ]
   },
   "overrides": [

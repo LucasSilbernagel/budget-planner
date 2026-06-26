@@ -9,7 +9,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // https://tanstack.com/start — the Start plugin owns SSR, the server runtime,
 // and file-based route generation. It MUST be registered before the React plugin.
 export default defineConfig({
-  plugins: [tanstackStart(), viteReact()],
+  plugins: [
+    tanstackStart({
+      // Co-located test files (e.g. routes/api/.../__tests__/*.test.ts) are not
+      // routes; keep the generator from treating them as such and warning.
+      router: { routeFileIgnorePattern: '(__tests__|\\.(test|spec)\\.)' },
+    }),
+    viteReact(),
+  ],
   resolve: {
     // Array form so order is deterministic: more-specific `find`s must precede
     // less-specific ones (rollup/plugin-alias uses the first match).
