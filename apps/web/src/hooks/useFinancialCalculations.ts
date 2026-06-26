@@ -16,7 +16,7 @@ import type {
 } from '@budget-planner/core'
 import {
   calculateCompoundingProjection as calculateCompoundingProjectionClient,
-  calculateRequiredAssets,
+  calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal as calculateSafeMonthlyWithdrawalClient,
 } from '@budget-planner/core/finance'
 import { useCallback, useState } from 'react'
@@ -136,8 +136,11 @@ function detectUserTier(): UserTier {
  * Uses the Safe Withdrawal Model: FV = Ir × (12 / r)
  */
 function calculateRetirementClient(input: RetirementInput): RetirementResult {
-  // Use the existing core function which implements the Safe Withdrawal Model
-  return calculateRequiredAssets(input.desiredMonthlyIncome, input.annualReturnRate)
+  // Use the core function that returns a full RetirementResult (matching the
+  // paid-tier server shape the UI reads via retirement.data.requiredAssets).
+  // calculateRequiredAssets returns only a bare number, which would make
+  // retirement.data.requiredAssets undefined on the free tier.
+  return calculateRetirementRequirement(input)
 }
 
 /**
@@ -284,7 +287,7 @@ async function callAggregationServer(input: AggregationInput): Promise<Aggregati
  * const { calculateRetirement, retirement } = useFinancialCalculations()
  *
  * const handleCalculate = async () => {
- *   await calculateRetirement({ desiredMonthlyIncome: 5000, annualReturnRate: 0.07 })
+ *   await calculateRetirement({ monthlyIncome: 5000, annualReturnRate: 0.07 })
  * }
  *
  * if (retirement.isLoading) return <Spinner />

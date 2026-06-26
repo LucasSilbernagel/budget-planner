@@ -448,18 +448,16 @@ function RetirementFormInner({
       // Use hook for calculation (handles tier detection automatically)
       // For free tier: uses client-side calculateRequiredAssets
       // For paid tier: calls server function
-      void calculateRetirement({ desiredMonthlyIncome: monthlyIncomeCents, annualReturnRate }).then(
-        () => {
-          // When calculation completes, check if this is still the latest calculation
-          if (calculationInputsRef.current?.id === calculationId && onCalculate) {
-            onCalculate(
-              retirement.data?.requiredAssets ?? 0,
-              calculationInputsRef.current.monthlyIncome,
-              calculationInputsRef.current.returnRate
-            )
-          }
+      void calculateRetirement({ monthlyIncome: monthlyIncomeCents, annualReturnRate }).then(() => {
+        // When calculation completes, check if this is still the latest calculation
+        if (calculationInputsRef.current?.id === calculationId && onCalculate) {
+          onCalculate(
+            retirement.data?.requiredAssets ?? 0,
+            calculationInputsRef.current.monthlyIncome,
+            calculationInputsRef.current.returnRate
+          )
         }
-      )
+      })
     } catch (e) {
       // Sanitize error message for display (Decision A - strict validation, no silent defaults)
       const errorMessage = sanitizeDisplayError(e)

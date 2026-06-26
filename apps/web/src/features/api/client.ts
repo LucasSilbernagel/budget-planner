@@ -49,7 +49,7 @@ export async function calculateRetirement(input: RetirementInput): Promise<Retir
     throw new Error(result.error || 'Failed to calculate retirement requirement')
   }
 
-  if (!result.data) {
+  if (result.data === undefined) {
     throw new Error('Invalid response: retirement calculation data is undefined')
   }
 
@@ -83,7 +83,7 @@ export async function calculateSafeWithdrawal(
     throw new Error(result.error || 'Failed to calculate safe withdrawal')
   }
 
-  if (!result.data) {
+  if (result.data === undefined) {
     throw new Error('Invalid response: safe withdrawal data is undefined')
   }
 
@@ -114,7 +114,7 @@ export async function calculateProjection(input: CompoundingInput): Promise<Year
     throw new Error(result.error || 'Failed to calculate projection')
   }
 
-  if (!result.data) {
+  if (result.data === undefined) {
     throw new Error('Invalid response: projection data is undefined')
   }
 
@@ -127,10 +127,9 @@ export async function calculateProjection(input: CompoundingInput): Promise<Year
 export async function calculateNetWorth(
   input: NetWorthProjectionInput
 ): Promise<NetWorthProjectionResult> {
-  // Calls the calculation server route at /api/calculations/* (created by story 5-12;
-  // tanstack.config.ts was removed in 5-10). Until 5-12 lands these routes, the
-  // free-tier client-side fallback path is used.
-  // This will call netWorthProjection from ../../server/functions/financial
+  // Served by the POST /api/calculations/net-worth route (story 5-12), which
+  // invokes netWorthProjection from ../../server/functions/financial under the
+  // TanStack Start runtime with the auth/premium gate enforced server-side.
   const response = await fetch('/api/calculations/net-worth', {
     method: 'POST',
     headers: {
@@ -150,7 +149,7 @@ export async function calculateNetWorth(
     throw new Error(result.error || 'Failed to calculate net worth projection')
   }
 
-  if (!result.data) {
+  if (result.data === undefined) {
     throw new Error('Invalid response: net worth projection data is undefined')
   }
 
@@ -161,10 +160,9 @@ export async function calculateNetWorth(
  * Calls the complex aggregation Server Function
  */
 export async function calculateAggregation(input: AggregationInput): Promise<AggregationResult> {
-  // Calls the calculation server route at /api/calculations/* (created by story 5-12;
-  // tanstack.config.ts was removed in 5-10). Until 5-12 lands these routes, the
-  // free-tier client-side fallback path is used.
-  // This will call complexAggregation from ../../server/functions/financial
+  // Served by the POST /api/calculations/aggregation route (story 5-12), which
+  // invokes complexAggregation from ../../server/functions/financial under the
+  // TanStack Start runtime with the auth/premium gate enforced server-side.
   const response = await fetch('/api/calculations/aggregation', {
     method: 'POST',
     headers: {
@@ -184,7 +182,7 @@ export async function calculateAggregation(input: AggregationInput): Promise<Agg
     throw new Error(result.error || 'Failed to calculate aggregation')
   }
 
-  if (!result.data) {
+  if (result.data === undefined) {
     throw new Error('Invalid response: aggregation data is undefined')
   }
 

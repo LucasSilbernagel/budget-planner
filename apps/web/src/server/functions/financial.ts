@@ -80,6 +80,34 @@ export interface AggregationResult {
 }
 
 // ============================================================================
+// Helper: Map a calculation result to an HTTP status code
+// ============================================================================
+
+/**
+ * Translate a {@link FinancialApiResult} into the HTTP status the served
+ * `/api/calculations/*` route should return. Success is always 200; failures
+ * are classified from the error message so the served boundary preserves the
+ * auth/premium/validation distinction (401 / 403 / 400).
+ */
+export function httpStatusForResult(result: FinancialApiResult<unknown>): number {
+  if (result.success) {
+    return 200
+  }
+
+  const error = result.error ?? ''
+
+  if (error.includes('No user session') || error.includes('Authentication required')) {
+    return 401
+  }
+
+  if (error.includes('Premium')) {
+    return 403
+  }
+
+  return 400
+}
+
+// ============================================================================
 // Helper: Get authenticated user with subscription check
 // ============================================================================
 
@@ -139,22 +167,25 @@ export async function retirementCalculation(
   }
 
   try {
-    // Validate input - check for undefined/null first
-    if (input.desiredMonthlyIncome === undefined || input.annualReturnRate === undefined) {
+    // Validate input - check for undefined/null first.
+    // NOTE: the field is `monthlyIncome` to match @budget-planner/core's
+    // RetirementInput (the exact shape the client posts); calculateRetirementRequirement
+    // reads input.monthlyIncome, so any other field name silently computes NaN.
+    if (input.monthlyIncome === undefined || input.annualReturnRate === undefined) {
       return {
         success: false,
-        error: 'Missing required parameters: desiredMonthlyIncome and annualReturnRate',
+        error: 'Missing required parameters: monthlyIncome and annualReturnRate',
       }
     }
 
-    if (input.desiredMonthlyIncome === null || input.annualReturnRate === null) {
+    if (input.monthlyIncome === null || input.annualReturnRate === null) {
       return {
         success: false,
-        error: 'Parameters cannot be null: desiredMonthlyIncome and annualReturnRate',
+        error: 'Parameters cannot be null: monthlyIncome and annualReturnRate',
       }
     }
 
-    if (input.desiredMonthlyIncome <= 0) {
+    if (input.monthlyIncome <= 0) {
       return {
         success: false,
         error: 'Desired monthly income must be positive',

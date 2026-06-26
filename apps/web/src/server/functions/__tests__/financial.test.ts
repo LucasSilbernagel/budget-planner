@@ -7,11 +7,13 @@
  * Note: These tests use mock Request objects since server functions require authentication.
  */
 
-import type { Request } from '@tanstack/start'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock the authentication function
-vi.mock('../api/auth/paddle', () => ({
+// Mock the authentication function.
+// Path is relative to this test file (server/functions/__tests__/), so it must
+// resolve to server/api/auth/paddle — the exact module financial.ts imports —
+// otherwise the mock fails to intercept and the real session lookup runs.
+vi.mock('../../api/auth/paddle', () => ({
   getCurrentUserSession: vi.fn(),
 }))
 
@@ -28,7 +30,7 @@ import {
   calculateSafeMonthlyWithdrawal,
 } from '@budget-planner/core'
 // Import after mocking
-import { getCurrentUserSession } from '../api/auth/paddle'
+import { getCurrentUserSession } from '../../api/auth/paddle'
 import {
   complexAggregation,
   compoundingProjection,
@@ -99,17 +101,19 @@ describe('retirementCalculation', () => {
 
   it('should reject unauthenticated requests', async () => {
     const mockRequest = createMockRequest(null)
-    const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0.07 }
+    const input = { monthlyIncome: 5000, annualReturnRate: 0.07 }
 
     const result = await retirementCalculation(mockRequest, input)
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Authentication required')
+    // getAuthenticatedUser surfaces the underlying session error verbatim; the
+    // mocked unauthenticated session reports 'No user session'.
+    expect(result.error).toContain('No user session')
   })
 
   it('should reject free tier users', async () => {
     const mockRequest = createMockRequest(createMockFreeUser())
-    const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0.07 }
+    const input = { monthlyIncome: 5000, annualReturnRate: 0.07 }
 
     const result = await retirementCalculation(mockRequest, input)
 
@@ -119,7 +123,8 @@ describe('retirementCalculation', () => {
 
   it('should reject missing required parameters', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { desiredMonthlyIncome: 0, annualReturnRate: 0 }
+    // Omit monthlyIncome entirely to exercise the missing-params branch.
+    const input = { annualReturnRate: 0.07 } as any
 
     const result = await retirementCalculation(mockRequest, input)
 
@@ -129,7 +134,7 @@ describe('retirementCalculation', () => {
 
   it('should reject negative income', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { desiredMonthlyIncome: -1000, annualReturnRate: 0.07 }
+    const input = { monthlyIncome: -1000, annualReturnRate: 0.07 }
 
     const result = await retirementCalculation(mockRequest, input)
 
@@ -139,7 +144,7 @@ describe('retirementCalculation', () => {
 
   it('should reject invalid return rate (zero)', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0 }
+    const input = { monthlyIncome: 5000, annualReturnRate: 0 }
 
     const result = await retirementCalculation(mockRequest, input)
 
@@ -149,7 +154,7 @@ describe('retirementCalculation', () => {
 
   it('should reject invalid return rate (>= 1)', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { desiredMonthlyIncome: 5000, annualReturnRate: 1.5 }
+    const input = { monthlyIncome: 5000, annualReturnRate: 1.5 }
 
     const result = await retirementCalculation(mockRequest, input)
 
@@ -159,7 +164,7 @@ describe('retirementCalculation', () => {
 
   it('should call core function with valid input', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { desiredMonthlyIncome: 5000, annualReturnRate: 0.07 }
+    const input = { monthlyIncome: 5000, annualReturnRate: 0.07 }
 
     const mockResult = { requiredAssets: 857142.86 }
     ;(calculateRetirementRequirement as vi.Mock).mockReturnValue(mockResult)
@@ -187,7 +192,9 @@ describe('safeWithdrawalCalculation', () => {
     const result = await safeWithdrawalCalculation(mockRequest, 1000000, 0.07)
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Authentication required')
+    // getAuthenticatedUser surfaces the underlying session error verbatim; the
+    // mocked unauthenticated session reports 'No user session'.
+    expect(result.error).toContain('No user session')
   })
 
   it('should reject negative asset value', async () => {
@@ -196,7 +203,7 @@ describe('safeWithdrawalCalculation', () => {
     const result = await safeWithdrawalCalculation(mockRequest, -1000, 0.07)
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Asset value must be positive')
+    expect(result.error).toContain('Asset value cannot be negative')
   })
 
   it('should call core function with valid input', async () => {
@@ -230,12 +237,15 @@ describe('compoundingProjection', () => {
     const result = await compoundingProjection(mockRequest, input)
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Authentication required')
+    // getAuthenticatedUser surfaces the underlying session error verbatim; the
+    // mocked unauthenticated session reports 'No user session'.
+    expect(result.error).toContain('No user session')
   })
 
   it('should reject missing required parameters', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { principal: 0, annualReturnRate: 0, years: 0 }
+    // Omit principal entirely to exercise the missing-params branch.
+    const input = { annualReturnRate: 0.07, years: 30 } as any
 
     const result = await compoundingProjection(mockRequest, input)
 
@@ -309,7 +319,9 @@ describe('netWorthProjection', () => {
     const result = await netWorthProjection(mockRequest, input)
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Authentication required')
+    // getAuthenticatedUser surfaces the underlying session error verbatim; the
+    // mocked unauthenticated session reports 'No user session'.
+    expect(result.error).toContain('No user session')
   })
 
   it('should reject non-positive time horizon', async () => {
@@ -382,7 +394,9 @@ describe('complexAggregation', () => {
     const result = await complexAggregation(mockRequest, input)
 
     expect(result.success).toBe(false)
-    expect(result.error).toContain('Authentication required')
+    // getAuthenticatedUser surfaces the underlying session error verbatim; the
+    // mocked unauthenticated session reports 'No user session'.
+    expect(result.error).toContain('No user session')
   })
 
   it('should reject empty values array', async () => {
