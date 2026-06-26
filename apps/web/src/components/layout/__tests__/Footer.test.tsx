@@ -35,4 +35,10 @@ describe('Footer', () => {
       await screen.findByRole('link', { name: /report an issue or share feedback/i })
     ).toBeInTheDocument()
   })
+
+  it('renders the global documentation link (story 4-10)', async () => {
+    renderWithRouter(<Footer />)
+    const link = await screen.findByRole('link', { name: /documentation/i })
+    expect(link).toHaveAttribute('href', '/docs')
+  })
 })

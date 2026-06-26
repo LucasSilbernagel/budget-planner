@@ -4,10 +4,11 @@ import { FeedbackLink } from './FeedbackLink'
 /**
  * Global application footer (story 4-8, FR13 / UX-DR5; story 4-9, FR14 / UX-DR6).
  *
- * Renders once at the root layout so the application version AND the GitHub
- * "Report Issue / Feedback" link are available on every page. The version comes
- * from `APP_VERSION`, which is inlined at build time from package.json, so it
- * updates automatically on deploy (4-8 AC-1).
+ * Renders once at the root layout so the application version, the in-app
+ * "Documentation" link (story 4-10), AND the GitHub "Report Issue / Feedback"
+ * link are available on every page. The version comes from `APP_VERSION`, which
+ * is inlined at build time from package.json, so it updates automatically on
+ * deploy (4-8 AC-1).
  *
  * Kept deliberately minimal and unobtrusive: small, muted text in a semantic
  * `<footer>` (an implicit `contentinfo` landmark when it is a direct child of
@@ -23,6 +24,9 @@ export function Footer() {
         <span>
           Budget Planner <span aria-label={`version ${APP_VERSION}`}>v{APP_VERSION}</span>
         </span>
+        <a href="/docs" className="text-gray-500 underline hover:text-gray-700">
+          Documentation
+        </a>
         <FeedbackLink />
       </div>
     </footer>

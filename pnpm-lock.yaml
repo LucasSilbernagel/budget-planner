@@ -24,6 +24,7 @@ importers:
       '@paddle/paddle-js': ^1.6.4
       '@playwright/test': ^1.61.1
       '@radix-ui/react-slot': ^1.0.2
+      '@tailwindcss/typography': ^0.5.20
       '@tanstack/react-router': ^1.170.16
       '@tanstack/react-start': ^1.168.26
       '@testing-library/dom': ^10.4.1
@@ -37,6 +38,7 @@ importers:
       autoprefixer: ^10.4.17
       drizzle-orm: ^0.32.0
       jsdom: ^24.1.3
+      markdown-to-jsx: ^9.8.2
       msw: ^2.14.6
       postcss: ^8.4.35
       react: ^19.0.0
@@ -56,6 +58,7 @@ importers:
       '@tanstack/react-router': 1.170.16_tr5srszcxqwfln4zz73l4ytshu
       '@tanstack/react-start': 1.168.26_madfg3ga3xv7aa3b3qv2f22grq
       drizzle-orm: 0.32.2_kwf2tca3obanmilsxe2rj5654e
+      markdown-to-jsx: 9.8.2_react@19.2.7
       react: 19.2.7
       react-dom: 19.2.7_react@19.2.7
       recharts: 2.15.4_tr5srszcxqwfln4zz73l4ytshu
@@ -63,6 +66,7 @@ importers:
     devDependencies:
       '@biomejs/biome': 1.5.3
       '@playwright/test': 1.61.1
+      '@tailwindcss/typography': 0.5.20_tailwindcss@3.4.19
       '@testing-library/dom': 10.4.1
       '@testing-library/jest-dom': 6.9.1
       '@testing-library/react': 16.3.2_oonqsycbricutv5dm5fextbjwa
@@ -1595,6 +1599,15 @@ packages:
 
   /@sinclair/typebox/0.27.10:
     resolution: {integrity: sha512-MTBk/3jGLNB2tVxv6uLlFh1iu64iYOQ2PbdOSK3NW8JZsmlaOh2q6sdtKowBhfw8QFLmYNzTW4/oK4uATIi6ZA==}
+    dev: true
+
+  /@tailwindcss/typography/0.5.20_tailwindcss@3.4.19:
+    resolution: {integrity: sha512-hwbzQuNUfcPvbegQFatVPl/MY/tcM9KLl963hQ5laJKPh81TEZ1+dNG9PirGvcaDBkp+BCshExAyKVPW91dozw==}
+    peerDependencies:
+      tailwindcss: '>=3.0.0 || >=4.0.0 || insiders'
+    dependencies:
+      postcss-selector-parser: 6.0.10
+      tailwindcss: 3.4.19
     dev: true
 
   /@tanstack/history/1.162.0:
@@ -3890,6 +3903,27 @@ packages:
       semver: 7.8.5
     dev: true
 
+  /markdown-to-jsx/9.8.2_react@19.2.7:
+    resolution: {integrity: sha512-rWUuxKB5NsuJmSfUOuXkQ0O5qk0J/Lr3Lk6dzxKoKQI/jeHYlsVfz3zJdMLAhI46hHoXDYERWhtBOiqtWDZ4LA==}
+    engines: {node: '>= 18'}
+    peerDependencies:
+      react: '>= 16.0.0'
+      react-native: '*'
+      solid-js: '>=1.0.0'
+      vue: '>=3.0.0'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-native:
+        optional: true
+      solid-js:
+        optional: true
+      vue:
+        optional: true
+    dependencies:
+      react: 19.2.7
+    dev: false
+
   /math-intrinsics/1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
@@ -4289,6 +4323,14 @@ packages:
     dependencies:
       postcss: 8.5.15
       postcss-selector-parser: 6.1.4
+    dev: true
+
+  /postcss-selector-parser/6.0.10:
+    resolution: {integrity: sha512-IQ7TZdoaqbT+LCpShg46jnZVlhWD2w6iQYAcYXfHARZ7X1t/UGhhceQDs5X0cGqKvYlHNOuv7Oa1xmb0oQuA3w==}
+    engines: {node: '>=4'}
+    dependencies:
+      cssesc: 3.0.0
+      util-deprecate: 1.0.2
     dev: true
 
   /postcss-selector-parser/6.1.4:
