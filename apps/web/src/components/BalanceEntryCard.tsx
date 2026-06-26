@@ -3,12 +3,12 @@ import type {
   BalanceTrackingWithTimeline,
   ClientBalanceTracking,
 } from '@budget-planner/core/services/balanceTracking'
+import { getTypeDisplayProperties } from '@budget-planner/core/services/balanceTracking'
 import {
   calculateContributionProgress,
   formatProgress,
   formatTimeline,
 } from '@budget-planner/core/utils/balanceCalculations'
-import { getTypeDisplayProperties } from '@budget-planner/core/services/balanceTracking'
 import React from 'react'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 

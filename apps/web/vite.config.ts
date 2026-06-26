@@ -16,7 +16,10 @@ export default defineConfig({
     alias: [
       // Path aliases for monorepo packages
       { find: '@budget-planner/core', replacement: resolve(__dirname, '../../packages/core/src') },
-      { find: '@budget-planner/config', replacement: resolve(__dirname, '../../packages/config/src') },
+      {
+        find: '@budget-planner/config',
+        replacement: resolve(__dirname, '../../packages/config/src'),
+      },
       // Several server modules import the schema via the package subpath
       // `@budget-planner/db/src/schema` (valid under tsc/node resolution). This
       // more-specific rule must come BEFORE the bare `@budget-planner/db` rule,

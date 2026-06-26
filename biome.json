@@ -58,7 +58,9 @@
       "pnpm-lock.yaml",
       "**/*.d.ts",
       "_bmad-output",
-      "routeTree.gen.ts"
+      "routeTree.gen.ts",
+      "**/test-results",
+      "**/playwright-report"
     ]
   },
   "overrides": [

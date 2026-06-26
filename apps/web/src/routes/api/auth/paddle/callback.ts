@@ -37,9 +37,7 @@ export const Route = createFileRoute('/api/auth/paddle/callback')({
         const code = url.searchParams.get('code')
         const state = url.searchParams.get('state')
         const ip =
-          request.headers.get('x-forwarded-for') ||
-          request.headers.get('x-real-ip') ||
-          'unknown'
+          request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
 
         // Rate limiting
         const now = Date.now()
@@ -61,7 +59,10 @@ export const Route = createFileRoute('/api/auth/paddle/callback')({
 
         // Validate code format (should be a non-empty string, typically alphanumeric)
         if (typeof code !== 'string' || code.length < 10 || code.length > 200) {
-          return json({ success: false, error: 'Invalid authorization code format' }, { status: 400 })
+          return json(
+            { success: false, error: 'Invalid authorization code format' },
+            { status: 400 }
+          )
         }
 
         // Validate state parameter (required for CSRF protection)

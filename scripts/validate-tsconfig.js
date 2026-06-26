@@ -16,6 +16,30 @@ const validModuleResolutions = ['node', 'classic', 'node12', 'nodenext', 'node16
 // Minimum TypeScript version required
 const minTypeScriptVersion = '5.0.0'
 
+// Resolve the installed TypeScript version (best effort).
+function getInstalledTypeScriptVersion() {
+  try {
+    return require('typescript/package.json').version
+  } catch {
+    return null
+  }
+}
+
+// Compare two semver-ish strings ("5.9.3" vs "5.0.0"). Returns true if a >= b.
+function isVersionAtLeast(a, b) {
+  const pa = a.split('.').map((n) => Number.parseInt(n, 10) || 0)
+  const pb = b.split('.').map((n) => Number.parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] || 0
+    const db = pb[i] || 0
+    if (da > db) return true
+    if (da < db) return false
+  }
+  return true
+}
+
+const installedTypeScriptVersion = getInstalledTypeScriptVersion()
+
 function findTsConfigFiles(dir) {
   const results = []
   const files = fs.readdirSync(dir)
@@ -78,9 +102,18 @@ function validateTsConfig(filePath) {
       )
     }
 
-    // Check for bundler without TypeScript 5.0+
+    // Check for bundler without TypeScript 5.0+. Only warn if the installed
+    // version is actually too old (or can't be resolved).
     if (moduleResolution === 'bundler') {
-      warnings.push(`moduleResolution: "bundler" requires TypeScript ${minTypeScriptVersion}+`)
+      if (!installedTypeScriptVersion) {
+        warnings.push(
+          `moduleResolution: "bundler" requires TypeScript ${minTypeScriptVersion}+ (installed version could not be determined)`
+        )
+      } else if (!isVersionAtLeast(installedTypeScriptVersion, minTypeScriptVersion)) {
+        warnings.push(
+          `moduleResolution: "bundler" requires TypeScript ${minTypeScriptVersion}+ (installed: ${installedTypeScriptVersion})`
+        )
+      }
     }
 
     // Check for required fields (skip for base configs that only extend)
@@ -136,9 +169,7 @@ function validateTsConfig(filePath) {
           // Overlap if the include base contains (or equals) the referenced project dir.
           if (refDir === baseDir || refDir.startsWith(`${baseDir}${path.sep}`)) {
             errors.push(
-              `include pattern "${pattern}" overlaps referenced project "${ref.path}". ` +
-                'A config with `references` must not include its referenced projects’ ' +
-                'sources directly (causes TS6305). Use `"files": []` and rely on `references`.'
+              `include pattern "${pattern}" overlaps referenced project "${ref.path}". A config with \`references\` must not include its referenced projects’ sources directly (causes TS6305). Use \`"files": []\` and rely on \`references\`.`
             )
           }
         }
