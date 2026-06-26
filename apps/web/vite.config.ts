@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
@@ -6,9 +7,20 @@ import { defineConfig } from 'vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// Read the app version from package.json at config-evaluation time and inline it
+// into the bundle as `__APP_VERSION__` (story 4-8, AC-1). Reading from disk (vs.
+// a static import) keeps package.json the single source of truth: bumping the
+// version there is all that's needed for the footer to update on deploy.
+const { version: appVersion } = JSON.parse(
+  readFileSync(resolve(__dirname, './package.json'), 'utf-8')
+) as { version: string }
+
 // https://tanstack.com/start — the Start plugin owns SSR, the server runtime,
 // and file-based route generation. It MUST be registered before the React plugin.
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     tanstackStart({
       // Co-located test files (e.g. routes/api/.../__tests__/*.test.ts) are not

@@ -1,5 +1,6 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { Footer } from '../components/layout/Footer'
 import { StoreHydration } from '../lib/store-hydration'
 import appCss from '../styles/global.css?url'
 
@@ -34,7 +35,12 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body suppressHydrationWarning>
         <StoreHydration />
-        {children}
+        {/* Column layout so the global Footer is pushed to the bottom of the
+            viewport on short pages (mt-auto) yet flows after content on long ones. */}
+        <div className="flex min-h-screen flex-col">
+          {children}
+          <Footer />
+        </div>
         <Scripts />
       </body>
     </html>

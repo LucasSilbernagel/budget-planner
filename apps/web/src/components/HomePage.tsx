@@ -29,7 +29,6 @@ import {
 } from 'recharts'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
-import { APP_VERSION } from '../utils/version'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useCategoryDrillDown } from './finance/category-drill-down'
 import { TimePeriodFilter } from './finance/time-period-filter'
@@ -707,9 +706,12 @@ export function HomePage() {
           </section>
         </main>
 
-        <footer className="mt-8 pt-4 border-t border-gray-200 text-center text-sm text-gray-500">
+        {/* Version moved to the global <Footer> in __root.tsx (story 4-8); the
+            issue link stays here until it is consolidated by story 4-9. Rendered
+            as a <div>, not <footer>, to avoid a second contentinfo landmark. */}
+        <div className="mt-8 pt-4 border-t border-gray-200 text-center text-sm text-gray-500">
           <div className="flex flex-col md:flex-row justify-between items-center gap-2">
-            <p>Budget Planner v{APP_VERSION} - Built with TanStack Start & React 19</p>
+            <p>Built with TanStack Start &amp; React 19</p>
             <a
               href="https://github.com/lucassilbernagel/budget-planner/issues"
               target="_blank"
@@ -719,7 +721,7 @@ export function HomePage() {
               Report Issue / Feedback
             </a>
           </div>
-        </footer>
+        </div>
       </div>
     </div>
   )

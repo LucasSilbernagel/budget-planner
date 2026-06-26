@@ -1,9 +1,18 @@
+import { readFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Mirror vite.config.ts: inline the package.json version as `__APP_VERSION__`
+// so the version utility resolves to the real value under the test runner too
+// (story 4-8). version.ts also guards `typeof __APP_VERSION__` for any runner
+// that does not define it.
+const { version: appVersion } = JSON.parse(
+  readFileSync(resolve(__dirname, './package.json'), 'utf-8')
+) as { version: string }
 
 // Vitest config for @budget-planner/web.
 //
@@ -14,6 +23,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // folder, or a *.dom.test.ts file).
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   resolve: {
     // Resolve workspace packages to their TypeScript source (never the compiled
     // output) so tests run against the latest code. Array form + regex is used
