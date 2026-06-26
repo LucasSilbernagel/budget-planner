@@ -12,8 +12,14 @@
  * module: `import { renderWithProviders, screen, makeIncomeSource } from '@/test/utils'`.
  */
 
+import {
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+} from '@tanstack/react-router'
 import { type RenderOptions, render } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { type ReactElement, createElement } from 'react'
 
 export * from '@testing-library/react'
 export { default as userEvent } from '@testing-library/user-event'
@@ -24,6 +30,23 @@ export { default as userEvent } from '@testing-library/user-event'
  */
 export function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
   return render(ui, { ...options })
+}
+
+/**
+ * Render a component inside a minimal TanStack Router context.
+ *
+ * Components that read the current location (e.g. via `useLocation`) need a
+ * router in scope. This builds a throwaway in-memory router whose root route
+ * renders `ui`, with `path` seeding the initial location so tests can assert
+ * location-derived output (story 4-9 FeedbackLink, etc.).
+ */
+export function renderWithRouter(ui: ReactElement, { path = '/' }: { path?: string } = {}) {
+  const rootRoute = createRootRoute({ component: () => ui })
+  const router = createRouter({
+    routeTree: rootRoute,
+    history: createMemoryHistory({ initialEntries: [path] }),
+  })
+  return render(createElement(RouterProvider, { router }))
 }
 
 // ---------------------------------------------------------------------------

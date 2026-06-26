@@ -706,22 +706,9 @@ export function HomePage() {
           </section>
         </main>
 
-        {/* Version moved to the global <Footer> in __root.tsx (story 4-8); the
-            issue link stays here until it is consolidated by story 4-9. Rendered
-            as a <div>, not <footer>, to avoid a second contentinfo landmark. */}
-        <div className="mt-8 pt-4 border-t border-gray-200 text-center text-sm text-gray-500">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-2">
-            <p>Built with TanStack Start &amp; React 19</p>
-            <a
-              href="https://github.com/lucassilbernagel/budget-planner/issues"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800"
-            >
-              Report Issue / Feedback
-            </a>
-          </div>
-        </div>
+        {/* The version and the "Report Issue / Feedback" link now live in the
+            global <Footer> (story 4-8 + 4-9), so the page no longer renders its
+            own stopgap footer block. */}
       </div>
     </div>
   )
