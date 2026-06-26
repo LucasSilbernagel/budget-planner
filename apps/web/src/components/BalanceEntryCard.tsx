@@ -7,8 +7,8 @@ import {
   calculateContributionProgress,
   formatProgress,
   formatTimeline,
-  getTypeDisplayProperties,
-} from '@budget-planner/core/services/balanceTracking'
+} from '@budget-planner/core/utils/balanceCalculations'
+import { getTypeDisplayProperties } from '@budget-planner/core/services/balanceTracking'
 import React from 'react'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 

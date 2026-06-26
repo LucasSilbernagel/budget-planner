@@ -12,7 +12,7 @@
 import { db } from '@budget-planner/db'
 import type { ForecastingProfile, NewForecastingProfile } from '@budget-planner/db'
 import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
-import { type SQL, and, desc, eq, inArray, neq } from 'drizzle-orm'
+import { type SQL, and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
 
@@ -107,7 +107,7 @@ async function ensureSingleDefault(
       and(
         eq(forecastingProfiles.userId, userId),
         eq(forecastingProfiles.profileId, profileId),
-        excludeId ? neq(forecastingProfiles.id, excludeId) : undefined
+        excludeId ? ne(forecastingProfiles.id, excludeId) : undefined
       )
     )
 }

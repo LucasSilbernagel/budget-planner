@@ -4,3 +4,7 @@ src/routeTree.gen.ts
 .nitro/
 .output/
 dist/
+
+# Playwright e2e artifacts
+playwright-report/
+test-results/

@@ -16,7 +16,6 @@ import {
   incomeSources,
   savingsGoals,
 } from '@budget-planner/db/src/schema'
-import type { Request } from '@tanstack/start'
 import { and, eq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../auth/paddle'
 

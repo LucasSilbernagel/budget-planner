@@ -1,7 +1,12 @@
+import { createFileRoute } from '@tanstack/react-router'
 import React from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import RetirementForm from '../components/RetirementForm'
 import RetirementTimelineChart from '../components/RetirementTimelineChart'
+
+export const Route = createFileRoute('/retirement')({
+  component: RetirementPage,
+})
 
 /**
  * Retirement Calculator Page

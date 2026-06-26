@@ -228,7 +228,7 @@ function calculateAggregationClient(input: AggregationInput): AggregationResult 
  * Call retirement calculation server function
  */
 async function callRetirementServer(input: RetirementInput): Promise<RetirementResult> {
-  const { calculateRetirement } = await import('../../features/api/client')
+  const { calculateRetirement } = await import('../features/api/client')
   return calculateRetirement(input)
 }
 
@@ -236,7 +236,7 @@ async function callRetirementServer(input: RetirementInput): Promise<RetirementR
  * Call withdrawal calculation server function
  */
 async function callWithdrawalServer(assets: number, annualReturnRate: number): Promise<number> {
-  const { calculateSafeWithdrawal } = await import('../../features/api/client')
+  const { calculateSafeWithdrawal } = await import('../features/api/client')
   return calculateSafeWithdrawal(assets, annualReturnRate)
 }
 
@@ -244,7 +244,7 @@ async function callWithdrawalServer(assets: number, annualReturnRate: number): P
  * Call projection calculation server function
  */
 async function callProjectionServer(input: CompoundingInput): Promise<YearlyProjection[]> {
-  const { calculateProjection } = await import('../../features/api/client')
+  const { calculateProjection } = await import('../features/api/client')
   return calculateProjection(input)
 }
 
@@ -254,7 +254,7 @@ async function callProjectionServer(input: CompoundingInput): Promise<YearlyProj
 async function callNetWorthServer(
   input: NetWorthProjectionInput
 ): Promise<NetWorthProjectionResult> {
-  const { calculateNetWorth } = await import('../../features/api/client')
+  const { calculateNetWorth } = await import('../features/api/client')
   return calculateNetWorth(input)
 }
 
@@ -262,7 +262,7 @@ async function callNetWorthServer(
  * Call aggregation calculation server function
  */
 async function callAggregationServer(input: AggregationInput): Promise<AggregationResult> {
-  const { calculateAggregation } = await import('../../features/api/client')
+  const { calculateAggregation } = await import('../features/api/client')
   return calculateAggregation(input)
 }
 

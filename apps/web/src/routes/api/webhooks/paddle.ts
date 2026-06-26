@@ -1,7 +1,7 @@
 /**
  * Paddle Webhooks
  *
- * TanStack Start Server Function
+ * TanStack Start server route (file-route `server.handlers`)
  * Handles Paddle webhook events for subscription updates
  *
  * Endpoint: POST /api/webhooks/paddle
@@ -14,16 +14,10 @@ import crypto from 'crypto'
 import { getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import { type Currency, type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
-import { json } from '@tanstack/start'
+import { createFileRoute } from '@tanstack/react-router'
+import { json } from '@tanstack/react-start'
 import { eq } from 'drizzle-orm'
 
-/**
- * Verify Paddle webhook signature
- * Prevents unauthorized webhook requests
- *
- * Paddle webhook signature format: v1,{timestamp},{hmac}
- * The HMAC is computed as: hmac_sha256(timestamp + '.' + payload)
- */
 /**
  * Map Paddle webhook subscription status to our enum
  *
@@ -65,6 +59,13 @@ function isValidEmail(email?: string): boolean {
   return emailRegex.test(email)
 }
 
+/**
+ * Verify Paddle webhook signature
+ * Prevents unauthorized webhook requests
+ *
+ * Paddle webhook signature format: v1,{timestamp},{hmac}
+ * The HMAC is computed as: hmac_sha256(timestamp + '.' + payload)
+ */
 function verifyWebhookSignature(
   payload: string,
   signature: string | null,
@@ -168,95 +169,98 @@ async function handleSubscriptionStatusUpdate(
   }
 }
 
-/**
- * Main webhook handler
- */
-export async function POST(request: Request) {
-  try {
-    const paddleConfig = getPaddleConfig()
+export const Route = createFileRoute('/api/webhooks/paddle')({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        try {
+          const paddleConfig = getPaddleConfig()
 
-    if (!paddleConfig.webhookSecret) {
-      return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
-    }
-
-    // Get signature from header
-    const signature = request.headers.get('paddle-signature')
-
-    // Read raw body
-    const payload = await request.text()
-
-    // Verify signature
-    if (!verifyWebhookSignature(payload, signature, paddleConfig.webhookSecret)) {
-      return json({ success: false, error: 'Invalid webhook signature' }, { status: 401 })
-    }
-
-    // Parse webhook data
-    let data: {
-      event_type?: string
-      data?: {
-        user_id?: string
-        status?: string
-        email?: string
-        currency_code?: string
-        currency?: string
-      }
-    }
-    try {
-      data = JSON.parse(payload)
-    } catch {
-      return json({ success: false, error: 'Invalid JSON payload' }, { status: 400 })
-    }
-
-    // Handle different webhook event types
-    const eventType = data?.event_type
-
-    if (!eventType) {
-      console.error('Paddle webhook: missing event_type')
-      return json(
-        { success: false, error: 'Missing event_type in webhook payload' },
-        { status: 400 }
-      )
-    }
-
-    switch (eventType) {
-      case 'subscription_created':
-      case 'subscription_updated':
-      case 'subscription_cancelled':
-        {
-          const userId = data?.data?.user_id
-          const subscriptionStatus = data?.data?.status
-          const email = data?.data?.email
-          const currency = data?.data?.currency_code || data?.data?.currency
-
-          if (!userId) {
-            console.error(`Paddle webhook ${eventType}: missing user_id`)
-            break
+          if (!paddleConfig.webhookSecret) {
+            return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
           }
 
-          if (!subscriptionStatus) {
-            console.error(`Paddle webhook ${eventType}: missing status for user ${userId}`)
-            break
+          // Get signature from header
+          const signature = request.headers.get('paddle-signature')
+
+          // Read raw body
+          const payload = await request.text()
+
+          // Verify signature
+          if (!verifyWebhookSignature(payload, signature, paddleConfig.webhookSecret)) {
+            return json({ success: false, error: 'Invalid webhook signature' }, { status: 401 })
           }
 
-          await handleSubscriptionStatusUpdate(userId, subscriptionStatus, email, currency)
+          // Parse webhook data
+          let data: {
+            event_type?: string
+            data?: {
+              user_id?: string
+              status?: string
+              email?: string
+              currency_code?: string
+              currency?: string
+            }
+          }
+          try {
+            data = JSON.parse(payload)
+          } catch {
+            return json({ success: false, error: 'Invalid JSON payload' }, { status: 400 })
+          }
+
+          // Handle different webhook event types
+          const eventType = data?.event_type
+
+          if (!eventType) {
+            console.error('Paddle webhook: missing event_type')
+            return json(
+              { success: false, error: 'Missing event_type in webhook payload' },
+              { status: 400 }
+            )
+          }
+
+          switch (eventType) {
+            case 'subscription_created':
+            case 'subscription_updated':
+            case 'subscription_cancelled':
+              {
+                const userId = data?.data?.user_id
+                const subscriptionStatus = data?.data?.status
+                const email = data?.data?.email
+                const currency = data?.data?.currency_code || data?.data?.currency
+
+                if (!userId) {
+                  console.error(`Paddle webhook ${eventType}: missing user_id`)
+                  break
+                }
+
+                if (!subscriptionStatus) {
+                  console.error(`Paddle webhook ${eventType}: missing status for user ${userId}`)
+                  break
+                }
+
+                await handleSubscriptionStatusUpdate(userId, subscriptionStatus, email, currency)
+              }
+              break
+
+            case 'subscription_payment_succeeded':
+              // Handle successful payment
+              break
+
+            case 'subscription_payment_failed':
+              // Handle failed payment
+              break
+
+            default:
+              console.log(`Unhandled Paddle webhook event: ${eventType}`)
+          }
+
+          return json({ success: true })
+        } catch (error) {
+          console.error('Paddle webhook error:', error)
+          return json({ success: false, error: 'Internal server error' }, { status: 500 })
         }
-        break
-
-      case 'subscription_payment_succeeded':
-        // Handle successful payment
-        break
-
-      case 'subscription_payment_failed':
-        // Handle failed payment
-        break
-
-      default:
-        console.log(`Unhandled Paddle webhook event: ${eventType}`)
-    }
-
-    return json({ success: true })
-  } catch (error) {
-    console.error('Paddle webhook error:', error)
-    return json({ success: false, error: 'Internal server error' }, { status: 500 })
-  }
-}
+      },
+    },
+  },
+})

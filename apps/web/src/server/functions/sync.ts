@@ -10,7 +10,6 @@
 import type { ProcessOperationResult, SyncOperation } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
-import type { Request } from '@tanstack/start'
 import { getUserContext } from '../api/data/forecasting'
 import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
 import { getSyncAuditLogs, getSyncHistory, getSyncStatus, processBatchSync } from '../api/sync'

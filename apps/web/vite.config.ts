@@ -11,14 +11,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [tanstackStart(), viteReact()],
   resolve: {
-    alias: {
+    // Array form so order is deterministic: more-specific `find`s must precede
+    // less-specific ones (rollup/plugin-alias uses the first match).
+    alias: [
       // Path aliases for monorepo packages
-      '@budget-planner/core': resolve(__dirname, '../../packages/core/src'),
-      '@budget-planner/config': resolve(__dirname, '../../packages/config/src'),
-      '@budget-planner/db': resolve(__dirname, '../../packages/db/src'),
+      { find: '@budget-planner/core', replacement: resolve(__dirname, '../../packages/core/src') },
+      { find: '@budget-planner/config', replacement: resolve(__dirname, '../../packages/config/src') },
+      // Several server modules import the schema via the package subpath
+      // `@budget-planner/db/src/schema` (valid under tsc/node resolution). This
+      // more-specific rule must come BEFORE the bare `@budget-planner/db` rule,
+      // otherwise the bare alias rewrites it to `packages/db/src/src/schema`.
+      { find: '@budget-planner/db/src', replacement: resolve(__dirname, '../../packages/db/src') },
+      { find: '@budget-planner/db', replacement: resolve(__dirname, '../../packages/db/src') },
       // Path alias for project-relative imports
-      '@': resolve(__dirname, './src'),
-    },
+      { find: '@', replacement: resolve(__dirname, './src') },
+    ],
   },
   server: {
     fs: {

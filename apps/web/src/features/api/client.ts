@@ -127,7 +127,9 @@ export async function calculateProjection(input: CompoundingInput): Promise<Year
 export async function calculateNetWorth(
   input: NetWorthProjectionInput
 ): Promise<NetWorthProjectionResult> {
-  // Use the new TanStack Start Server Functions via the route defined in tanstack.config.ts
+  // Calls the calculation server route at /api/calculations/* (created by story 5-12;
+  // tanstack.config.ts was removed in 5-10). Until 5-12 lands these routes, the
+  // free-tier client-side fallback path is used.
   // This will call netWorthProjection from ../../server/functions/financial
   const response = await fetch('/api/calculations/net-worth', {
     method: 'POST',
@@ -159,7 +161,9 @@ export async function calculateNetWorth(
  * Calls the complex aggregation Server Function
  */
 export async function calculateAggregation(input: AggregationInput): Promise<AggregationResult> {
-  // Use the new TanStack Start Server Functions via the route defined in tanstack.config.ts
+  // Calls the calculation server route at /api/calculations/* (created by story 5-12;
+  // tanstack.config.ts was removed in 5-10). Until 5-12 lands these routes, the
+  // free-tier client-side fallback path is used.
   // This will call complexAggregation from ../../server/functions/financial
   const response = await fetch('/api/calculations/aggregation', {
     method: 'POST',

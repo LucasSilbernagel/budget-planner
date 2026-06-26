@@ -15,15 +15,27 @@ import { useSavingsStore } from '../stores/savingsStore'
  * server-rendered HTML to avoid hydration mismatches). Once the app has
  * mounted on the client, we trigger `rehydrate()` to load the user's
  * free-tier data from localStorage (story 1-6).
+ *
+ * Rejections are swallowed per-store: if localStorage is blocked (Safari
+ * private mode, `SecurityError`) or holds corrupt JSON, that store simply stays
+ * at its default rather than surfacing an unhandled promise rejection.
  */
 export function StoreHydration() {
   useEffect(() => {
-    void useIncomeStore.persist.rehydrate()
-    void useExpenseStore.persist.rehydrate()
-    void useSavingsStore.persist.rehydrate()
-    void useBalanceStore.persist.rehydrate()
-    void useCurrencyStore.persist.rehydrate()
-    void useProfileStore.persist.rehydrate()
+    const stores = [
+      useIncomeStore,
+      useExpenseStore,
+      useSavingsStore,
+      useBalanceStore,
+      useCurrencyStore,
+      useProfileStore,
+    ]
+
+    for (const store of stores) {
+      Promise.resolve(store.persist.rehydrate()).catch((error) => {
+        console.error('Store rehydration failed:', error)
+      })
+    }
   }, [])
 
   return null

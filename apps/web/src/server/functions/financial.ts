@@ -17,7 +17,6 @@ import {
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
 } from '@budget-planner/core'
-import type { Request } from '@tanstack/start'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult, UserSession } from '../api/auth/paddle'
 

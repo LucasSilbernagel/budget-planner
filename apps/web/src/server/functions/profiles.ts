@@ -12,8 +12,7 @@
 import { db } from '@budget-planner/db'
 import type { NewUserProfile, UserProfile } from '@budget-planner/db'
 import { userProfiles, users } from '@budget-planner/db/src/schema'
-import type { Request } from '@tanstack/start'
-import { and, eq, neq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
 
@@ -237,7 +236,7 @@ export async function updateProfile(
           and(
             eq(userProfiles.name, input.name),
             eq(userProfiles.userId, userId),
-            neq(userProfiles.id, input.id) // Exclude current profile
+            ne(userProfiles.id, input.id) // Exclude current profile
           )
         )
         .limit(1)

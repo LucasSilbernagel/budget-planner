@@ -31,6 +31,21 @@ const PROFILE_COLORS = [
 // Profile icon options (simple SVG icons)
 const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️']
 
+// Format date for display (module-scoped so both ProfileList and ProfileCard can use it)
+const formatDate = (dateString: string) => {
+  // Validate date string before parsing
+  if (!dateString) return 'Invalid date'
+
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return 'Invalid date'
+
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 interface ProfileListProps {
   onCreateNewProfile?: () => void
 }
@@ -80,21 +95,6 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
       hash |= 0 // Convert to 32-bit integer
     }
     return PROFILE_ICONS[Math.abs(hash) % PROFILE_ICONS.length]
-  }
-
-  // Format date for display
-  const _formatDate = (dateString: string) => {
-    // Validate date string before parsing
-    if (!dateString) return 'Invalid date'
-
-    const date = new Date(dateString)
-    if (Number.isNaN(date.getTime())) return 'Invalid date'
-
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
   }
 
   return (
