@@ -53,10 +53,10 @@ export function SavingsGoalCard({
   isFreeTier = true,
 }: SavingsGoalCardProps) {
   // Get currency preferences from store
-  const { mode, currency } = useCurrencyPreferences()
+  const { mode, currency, locale } = useCurrencyPreferences()
 
   // Format amount using current currency preferences
-  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
+  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
 
   // Calculate progress if not already present
   // Guard against division by zero and cap at 100%

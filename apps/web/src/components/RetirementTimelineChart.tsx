@@ -40,10 +40,16 @@ export interface RetirementTimelineChartProps {
  * @param value - Amount in cents
  * @param mode - Currency display mode
  * @param currency - Currency code (e.g., 'USD', 'EUR')
+ * @param locale - BCP-47 locale for Intl.NumberFormat grouping/decimals
  * @returns Formatted currency string with abbreviations for large values
  */
-function formatChartCurrency(value: number, mode: CurrencyMode, currency: CurrencyCode): string {
-  return formatCurrency(value, { mode, currency, abbreviate: true })
+function formatChartCurrency(
+  value: number,
+  mode: CurrencyMode,
+  currency: CurrencyCode,
+  locale: string
+): string {
+  return formatCurrency(value, { mode, currency, locale, abbreviate: true })
 }
 
 /**
@@ -55,12 +61,14 @@ function CustomTooltip({
   label,
   mode,
   currency,
+  locale,
 }: {
   active?: boolean
   payload?: Array<{ payload: unknown }>
   label?: string
   mode: CurrencyMode
   currency: CurrencyCode
+  locale: string
 }) {
   const firstEntry = payload?.[0]
   if (!active || !firstEntry) {
@@ -87,13 +95,13 @@ function CustomTooltip({
     <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
       <p className="font-semibold text-gray-800">Year {label}</p>
       <p className="text-sm text-gray-600">
-        Starting Balance: {formatChartCurrency(data.startingBalance, mode, currency)}
+        Starting Balance: {formatChartCurrency(data.startingBalance, mode, currency, locale)}
       </p>
       <p className="text-sm text-gray-600">
-        Annual Contribution: {formatChartCurrency(data.annualContribution, mode, currency)}
+        Annual Contribution: {formatChartCurrency(data.annualContribution, mode, currency, locale)}
       </p>
       <p className="text-sm text-gray-600">
-        Ending Balance: {formatChartCurrency(data.endingBalance, mode, currency)}
+        Ending Balance: {formatChartCurrency(data.endingBalance, mode, currency, locale)}
       </p>
       {data.retirementYear && (
         <p className="text-sm text-green-600 mt-2 font-medium">✓ Retirement Year</p>
@@ -125,7 +133,7 @@ function RetirementTimelineChartInner({
   retirementAge = 65,
   currentAge = 35,
 }: RetirementTimelineChartProps) {
-  const { mode, currency } = useCurrencyPreferences()
+  const { mode, currency, locale } = useCurrencyPreferences()
 
   // Local state for user-configurable parameters
   // Note: returnRate is stored as percentage (0-100) for UI consistency
@@ -468,13 +476,16 @@ function RetirementTimelineChartInner({
             <YAxis
               dataKey="endingBalance"
               label={{ value: 'Assets (USD)', angle: -90, position: 'insideLeft', offset: 10 }}
-              tickFormatter={(value) => formatChartCurrency(value, mode, currency)}
+              tickFormatter={(value) => formatChartCurrency(value, mode, currency, locale)}
               tick={{ fontSize: 12 }}
               domain={[0, 'auto']}
             />
             <Tooltip
-              content={<CustomTooltip mode={mode} currency={currency} />}
-              formatter={(value: number) => [formatChartCurrency(value, mode, currency), 'Assets']}
+              content={<CustomTooltip mode={mode} currency={currency} locale={locale} />}
+              formatter={(value: number) => [
+                formatChartCurrency(value, mode, currency, locale),
+                'Assets',
+              ]}
             />
             <Line
               type="monotone"
@@ -502,15 +513,16 @@ function RetirementTimelineChartInner({
       <div className="p-4 bg-gray-50 rounded-lg">
         <p className="text-sm text-gray-600">
           <strong>Projection Summary:</strong> Starting with{' '}
-          {formatChartCurrency(principal * 100, mode, currency)}
+          {formatChartCurrency(principal * 100, mode, currency, locale)}
           at age {currentAgeState}, with a {returnRate}% annual return and
-          {formatChartCurrency(contribution * 100, mode, currency)} annual contributions, your
-          assets could grow to{' '}
+          {formatChartCurrency(contribution * 100, mode, currency, locale)} annual contributions,
+          your assets could grow to{' '}
           <strong>
             {formatChartCurrency(
               chartData[chartData.length - 1]?.endingBalance * 100,
               mode,
-              currency
+              currency,
+              locale
             )}
           </strong>
           in {years} years at age {currentAgeState + years}.

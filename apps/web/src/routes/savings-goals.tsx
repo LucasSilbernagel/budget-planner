@@ -40,10 +40,10 @@ export const Route = createFileRoute('/savings-goals')({
  */
 function SavingsGoalsPage() {
   // Get currency preferences from store
-  const { mode, currency } = useCurrencyPreferences()
+  const { mode, currency, locale } = useCurrencyPreferences()
 
   // Format amount using current currency preferences
-  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
+  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
 
   // Store data
   const _savingsGoals = useSavingsGoals()

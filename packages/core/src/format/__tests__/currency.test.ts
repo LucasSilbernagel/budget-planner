@@ -107,6 +107,35 @@ describe('Currency Formatting', () => {
     })
   })
 
+  describe('locale-aware formatting (story 4-7: AC-1, AC-2, AC-3)', () => {
+    // de-DE uses U+00A0 (NBSP) before the symbol; fr-FR uses U+202F
+    // (narrow NBSP) as the grouping separator. Normalize both to a regular
+    // space so the assertions express the human-visible result.
+    const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
+
+    it('AC-1: en-US formats 1000 USD as $1,000.00', () => {
+      expect(formatCurrency(100000, { mode: 'symbol', currency: 'USD', locale: 'en-US' })).toBe(
+        '$1,000.00'
+      )
+    })
+
+    it('AC-2: de-DE formats 1000 EUR as 1.000,00 €', () => {
+      const result = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
+      expect(normalizeSpaces(result)).toBe('1.000,00 €')
+    })
+
+    it('AC-3: fr-FR formats 1000 EUR as 1 000,00 €', () => {
+      const result = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'fr-FR' })
+      expect(normalizeSpaces(result)).toBe('1 000,00 €')
+    })
+
+    it('the same value renders differently per locale (locale actually drives output)', () => {
+      const us = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'en-US' })
+      const de = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
+      expect(us).not.toBe(de)
+    })
+  })
+
   describe('formatAmount', () => {
     it('renders cents as a raw decimal string', () => {
       expect(formatAmount(123456)).toBe('1234.56')

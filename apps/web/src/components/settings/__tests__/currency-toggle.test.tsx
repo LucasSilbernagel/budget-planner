@@ -13,7 +13,12 @@ import { CurrencyToggle } from '../currency-toggle'
 describe('CurrencyToggle', () => {
   beforeEach(() => {
     // Reset the shared (singleton) store to its currency-less defaults.
-    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useCurrencyStore.setState({
+      mode: 'none',
+      currency: 'NONE',
+      locale: 'en-US',
+      localeUserSet: false,
+    })
   })
 
   it('defaults to symbols off (currency-less) with no currency picker', () => {
@@ -72,5 +77,32 @@ describe('CurrencyToggle', () => {
 
     expect(useCurrencyStore.getState().mode).toBe('none')
     expect(screen.queryByRole('combobox', { name: /currency/i })).not.toBeInTheDocument()
+  })
+
+  // --- Locale selector (story 4-7) ---
+
+  it('shows a locale picker only in symbol mode', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CurrencyToggle />)
+
+    // currency-less default: no locale picker
+    expect(screen.queryByRole('combobox', { name: /locale/i })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
+    expect(screen.getByRole('combobox', { name: /locale/i })).toBeInTheDocument()
+  })
+
+  it('reflects the current locale and updates the store on change', async () => {
+    const user = userEvent.setup()
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR', locale: 'en-US' })
+    renderWithProviders(<CurrencyToggle />)
+
+    const localePicker = screen.getByRole('combobox', { name: /locale/i })
+    expect(localePicker).toHaveValue('en-US')
+
+    await user.selectOptions(localePicker, 'de-DE')
+
+    expect(useCurrencyStore.getState().locale).toBe('de-DE')
+    expect(useCurrencyStore.getState().localeUserSet).toBe(true)
   })
 })

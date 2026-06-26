@@ -82,11 +82,11 @@ export function EditSavingsGoalForm({
   isFreeTier = true,
 }: EditSavingsGoalFormProps) {
   // Get currency preferences from store
-  const { mode, currency } = useCurrencyPreferences()
+  const { mode, currency, locale } = useCurrencyPreferences()
   const currencySymbolValue = currencySymbol(currency)
 
   // Format amount using current currency preferences
-  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
+  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
 
   // Format cents to currency string for input display
   const formatCentsToCurrency = (cents: number): string => (cents / 100).toFixed(2)

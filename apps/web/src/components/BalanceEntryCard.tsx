@@ -43,10 +43,10 @@ export function BalanceEntryCard({
   isFreeTier = true,
 }: BalanceEntryCardProps) {
   // Get currency preferences from store
-  const { mode, currency } = useCurrencyPreferences()
+  const { mode, currency, locale } = useCurrencyPreferences()
 
   // Format amount using current currency preferences
-  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
+  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
 
   // Get display properties based on type
   const typeProps = getTypeDisplayProperties(entry.type)

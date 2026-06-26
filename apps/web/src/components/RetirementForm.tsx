@@ -160,7 +160,7 @@ function RetirementFormInner({
   preFillFromExistingData = true,
   savingsRate = 0.5,
 }: RetirementFormProps) {
-  const { mode, currency } = useCurrencyPreferences()
+  const { mode, currency, locale } = useCurrencyPreferences()
   const { calculateRetirement, retirement } = useFinancialCalculations()
 
   // Access existing financial data from stores
@@ -362,7 +362,7 @@ function RetirementFormInner({
   ])
 
   // Format amount using current currency preferences
-  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency })
+  const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
 
   // Sanitize error messages for display to users
   const sanitizeDisplayError = useCallback((error: unknown): string => {

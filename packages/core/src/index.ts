@@ -32,5 +32,8 @@ export * from './finance/forecasting'
 // Currency formatting
 export * from './format/currency'
 
+// Locale resolution (currency display locale dimension)
+export * from './format/locale'
+
 // Synchronization service
 export * from './sync/index'
