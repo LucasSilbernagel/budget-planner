@@ -1,5 +1,6 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { AdPlacement } from '../components/ads/AdPlacement'
 import { Footer } from '../components/layout/Footer'
 import { StoreHydration } from '../lib/store-hydration'
 import appCss from '../styles/global.css?url'
@@ -39,6 +40,9 @@ function RootDocument({ children }: { children: ReactNode }) {
             viewport on short pages (mt-auto) yet flows after content on long ones. */}
         <div className="flex min-h-screen flex-col">
           {children}
+          {/* Global, unobtrusive ad slot. Renders only for non-premium users
+              (story 4-11): unauthenticated/free see ads; active-premium do not. */}
+          <AdPlacement />
           <Footer />
         </div>
         <Scripts />
