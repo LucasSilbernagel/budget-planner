@@ -11,16 +11,8 @@ import {
   YAxis,
 } from 'recharts'
 import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
-
-const FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-})
-
-// Format amount in cents to dollars
-function formatAmount(cents: number): string {
-  return FORMATTER.format(cents / 100)
-}
+import { useFormattedAmount } from '../stores/currencyStore'
+import { CurrencyToggle } from './settings/currency-toggle'
 
 // Calculate initial net worth from current data
 function calculateInitialNetWorth(
@@ -45,6 +37,9 @@ export function NetWorthProjectionPage() {
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
   const balanceEntries = useBalanceEntries()
+  // Amounts are stored in cents; the formatter respects the user's currency
+  // display preference (currency-less vs explicit symbols) from the store.
+  const formatAmount = useFormattedAmount()
 
   // Calculate initial net worth
   const initialNetWorth = calculateInitialNetWorth(incomeSources, expenses, balanceEntries)
@@ -90,11 +85,14 @@ export function NetWorthProjectionPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Net Worth Projection</h1>
-          <p className="text-gray-600 mt-2">
-            Visualize your financial future based on current data
-          </p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Net Worth Projection</h1>
+            <p className="text-gray-600 mt-2">
+              Visualize your financial future based on current data
+            </p>
+          </div>
+          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

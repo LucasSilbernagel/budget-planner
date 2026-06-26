@@ -22,6 +22,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useFormattedAmount } from '../../stores/currencyStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 
 // ============================================================================
@@ -72,17 +73,6 @@ const CHART_COLORS = {
 // ============================================================================
 
 /**
- * Format currency for display
- */
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(cents / 100)
-}
-
-/**
  * Format year for X-axis
  */
 function formatYear(year: number): string {
@@ -131,6 +121,7 @@ interface CustomTooltipProps {
 }
 
 function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.ReactElement | null {
+  const formatCurrency = useFormattedAmount()
   if (!active || !payload || !payload.length) return null
 
   return (
@@ -162,6 +153,8 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.Re
  * Supports interactive exploration of projection data.
  */
 export function ProjectionChart(): React.ReactElement {
+  // Display amounts respect the user's currency mode (currency-less vs symbols).
+  const formatCurrency = useFormattedAmount()
   const [config, setConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
   const [sampleResult, setSampleResult] = useState<ForecastingResult | null>(null)
 
@@ -359,6 +352,7 @@ interface SummaryCardProps {
 }
 
 function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactElement {
+  const formatCurrency = useFormattedAmount()
   const changeFormatted = formatCurrency(change)
   const isPositive = change >= 0
 

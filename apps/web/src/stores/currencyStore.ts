@@ -12,8 +12,10 @@ interface CurrencyState {
 }
 
 // Default values
-const DEFAULT_MODE: CurrencyMode = 'symbol'
-const DEFAULT_CURRENCY: CurrencyCode = 'USD'
+// Currency-less is the product default (FR9 / story 4-6 AC-1, project-context.md):
+// new users see raw numbers until they opt into explicit symbols via the toggle.
+const DEFAULT_MODE: CurrencyMode = 'none'
+const DEFAULT_CURRENCY: CurrencyCode = 'NONE'
 
 export const useCurrencyStore = create<CurrencyState>()(
   persist(

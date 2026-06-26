@@ -15,6 +15,7 @@ import {
 } from '@budget-planner/core'
 import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { useFormattedAmount } from '../../stores/currencyStore'
 
 // ============================================================================
 // Constants
@@ -144,16 +145,6 @@ function toNormalizableItems(items: LocalFinancialItem[]): NormalizableFinancial
 }
 
 /**
- * Format currency for display
- */
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(cents / 100)
-}
-
-/**
  * Format percentage for display
  */
 function formatPercentage(value: number): string {
@@ -171,6 +162,8 @@ function formatPercentage(value: number): string {
  * Calculates projections based on user input.
  */
 export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactElement {
+  // Display amounts respect the user's currency mode (currency-less vs symbols).
+  const formatCurrency = useFormattedAmount()
   // State for financial items
   const [incomeItems, setIncomeItems] = useState<LocalFinancialItem[]>(DEFAULT_INCOME)
   const [expenseItems, setExpenseItems] = useState<LocalFinancialItem[]>(DEFAULT_EXPENSES)

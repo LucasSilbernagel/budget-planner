@@ -10,6 +10,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react'
 import type { SavedForecast } from '../../routes/forecasting'
+import { useFormattedAmount } from '../../stores/currencyStore'
 
 // ============================================================================
 // Type Definitions
@@ -30,17 +31,6 @@ export interface ForecastListProps {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Format currency for display
- */
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(cents / 100)
-}
 
 /**
  * Format date for display
@@ -77,6 +67,8 @@ export function ForecastList({
   onDelete,
   onLoad,
 }: ForecastListProps): React.ReactElement {
+  // Display amounts respect the user's currency mode (currency-less vs symbols).
+  const formatCurrency = useFormattedAmount()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'netWorth'>('date')

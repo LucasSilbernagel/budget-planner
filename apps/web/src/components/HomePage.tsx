@@ -33,6 +33,7 @@ import { APP_VERSION } from '../utils/version'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useCategoryDrillDown } from './finance/category-drill-down'
 import { TimePeriodFilter } from './finance/time-period-filter'
+import { CurrencyToggle } from './settings/currency-toggle'
 
 // Colors for the charts
 const INCOME_COLOR = '#10B981'
@@ -340,9 +341,12 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Budget Planner</h1>
-          <p className="text-gray-600 mt-2">Track your income and expenses with ease</p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Budget Planner</h1>
+            <p className="text-gray-600 mt-2">Track your income and expenses with ease</p>
+          </div>
+          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

@@ -1,6 +1,8 @@
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect } from 'react'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
+import { useFormattedAmount } from '../stores/currencyStore'
+import { CurrencyToggle } from './settings/currency-toggle'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -10,19 +12,11 @@ const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'annually', label: 'Annually' },
 ]
 
-const FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-})
-
-// Amounts are stored in cents (integer) for precision
-// but displayed to users in dollars with decimal formatting
-function formatAmount(cents: number): string {
-  return FORMATTER.format(cents / 100)
-}
-
 export function IncomePage() {
   const incomeSources = useIncomeSources()
+  // Amounts are stored in cents; the formatter respects the user's currency
+  // display preference (currency-less vs explicit symbols) from the store.
+  const formatAmount = useFormattedAmount()
   const totalIncome = useTotalIncome()
   const { addIncomeSource, updateIncomeSource, deleteIncomeSource } = useIncomeStore()
 
@@ -126,9 +120,12 @@ export function IncomePage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Income Sources</h1>
-          <p className="text-gray-600 mt-2">Manage your income streams and track your earnings</p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Income Sources</h1>
+            <p className="text-gray-600 mt-2">Manage your income streams and track your earnings</p>
+          </div>
+          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

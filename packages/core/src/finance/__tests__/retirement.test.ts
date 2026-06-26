@@ -28,7 +28,9 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.06, // 6%
       }
 
-      const result = calculateRetirementRequirement(input)
+      // Currency-less is the default (story 4-6 AC-1); request symbol mode
+      // explicitly to assert the human-readable formatted output.
+      const result = calculateRetirementRequirement(input, { mode: 'symbol', currency: 'USD' })
 
       expect(result.requiredAssets).toBe(100000000) // $1,000,000
       expect(result.monthlyIncome).toBe(500000)
@@ -46,7 +48,7 @@ describe('Retirement Modeler', () => {
         annualReturnRate: 0.04, // 4%
       }
 
-      const result = calculateRetirementRequirement(input)
+      const result = calculateRetirementRequirement(input, { mode: 'symbol', currency: 'USD' })
 
       expect(result.requiredAssets).toBe(30000000) // $300,000
       expect(result.requiredAssetsFormatted).toContain('$300,000')

@@ -34,10 +34,14 @@ export interface CurrencyOptions {
 
 /**
  * Default currency options
+ *
+ * Per FR9 / AC-1 (story 4-6) and project-context.md, currency-less mode is the
+ * product default: new users see raw numeric entries with no currency symbol
+ * until they opt into explicit symbols.
  */
 export const DEFAULT_CURRENCY_OPTIONS: CurrencyOptions = {
-  mode: 'symbol',
-  currency: 'USD',
+  mode: 'none',
+  currency: 'NONE',
   locale: 'en-US',
 }
 
@@ -58,10 +62,17 @@ export const CURRENCY_ABBREVIATION_THRESHOLDS = {
  * @returns Formatted string
  */
 export function formatCurrency(cents: number, options: Partial<CurrencyOptions> = {}): string {
-  const { mode = 'symbol', currency = 'USD', locale = 'en-US', abbreviate = false } = options
+  const {
+    mode = DEFAULT_CURRENCY_OPTIONS.mode,
+    currency = DEFAULT_CURRENCY_OPTIONS.currency,
+    locale = DEFAULT_CURRENCY_OPTIONS.locale,
+    abbreviate = false,
+  } = options
 
-  // Convert cents to dollars
-  const dollars = cents / 100
+  // Guard non-finite input (NaN/Infinity) so no display path ever renders
+  // "NaN"/"$NaN". Mirrors formatForInput/parseFromInput, which already coerce
+  // non-finite values — formatCurrency is the universal display formatter.
+  const dollars = Number.isFinite(cents) ? cents / 100 : 0
 
   if (mode === 'none' || currency === 'NONE') {
     // Currency-less mode: return raw number
@@ -90,12 +101,12 @@ export function formatCurrency(cents: number, options: Partial<CurrencyOptions> 
   }
 
   try {
-    // Explicit symbols mode: use Intl.NumberFormat
+    // Explicit symbols mode: use Intl.NumberFormat.
+    // Let Intl apply each currency's native fraction digits (USD/EUR → 2,
+    // JPY → 0, BHD → 3) rather than forcing 2, per the native-localization rule.
     const formatter = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
     })
     return formatter.format(dollars)
   } catch {
@@ -183,14 +194,17 @@ export function formatForInput(cents: number): string {
 export function parseFromInput(value: string): number {
   if (!value || value.trim() === '') return 0
 
+  // Reject scientific notation BEFORE stripping — the regex below would remove
+  // the 'e'/'E', leaving a misleading numeric remainder (e.g. "1e10" -> "110").
+  // Match only a real exponent (digit, e/E, optional sign, digit) so incidental
+  // letters in garbage input (e.g. "100 each") don't reject otherwise-parseable digits.
+  if (/\d[eE][+-]?\d/.test(value)) return 0
+
   // Remove all non-numeric characters except decimal point and minus sign
   const cleaned = value.replace(/[^\d.-]/g, '')
 
   // Reject if multiple decimal points
   if ((cleaned.match(/\./g) || []).length > 1) return 0
-
-  // Reject scientific notation
-  if (cleaned.includes('e') || cleaned.includes('E')) return 0
 
   const amount = parseFloat(cleaned)
 

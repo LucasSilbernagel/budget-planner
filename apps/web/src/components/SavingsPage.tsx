@@ -1,16 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores'
-
-const FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-})
-
-// Amounts are stored in cents (integer) for precision
-// but displayed to users in dollars with decimal formatting
-function formatAmount(cents: number): string {
-  return FORMATTER.format(cents / 100)
-}
+import { useFormattedAmount } from '../stores/currencyStore'
+import { CurrencyToggle } from './settings/currency-toggle'
 
 // Format amount for input display (without currency symbol)
 function formatAmountForInput(cents: number): string {
@@ -22,6 +13,9 @@ export function SavingsPage() {
   const totalSavings = useTotalSavings()
   const { addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsProgress } =
     useSavingsStore()
+  // Amounts are stored in cents; the formatter respects the user's currency
+  // display preference (currency-less vs explicit symbols) from the store.
+  const formatAmount = useFormattedAmount()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -130,9 +124,12 @@ export function SavingsPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Savings Goals</h1>
-          <p className="text-gray-600 mt-2">Track and manage your savings targets</p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Savings Goals</h1>
+            <p className="text-gray-600 mt-2">Track and manage your savings targets</p>
+          </div>
+          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

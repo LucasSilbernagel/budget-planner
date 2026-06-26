@@ -7,17 +7,8 @@ import {
   useTotalInvestmentBalance as useTotalInvestments,
 } from '../stores'
 import type { FinanceType } from '../stores/balanceStore'
-
-const FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-})
-
-// Amounts are stored in cents (integer) for precision
-// but displayed to users in dollars with decimal formatting
-function formatAmount(cents: number): string {
-  return FORMATTER.format(cents / 100)
-}
+import { useFormattedAmount } from '../stores/currencyStore'
+import { CurrencyToggle } from './settings/currency-toggle'
 
 // Format amount for input display (without currency symbol)
 function formatAmountForInput(cents: number): string {
@@ -36,6 +27,9 @@ export function BalancePage() {
   const totalDebts = useTotalDebts()
   const netWorth = useNetWorth()
   const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry } = useBalanceStore()
+  // Amounts are stored in cents; the formatter respects the user's currency
+  // display preference (currency-less vs explicit symbols) from the store.
+  const formatAmount = useFormattedAmount()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -175,9 +169,12 @@ export function BalancePage() {
   return (
     <div className="bg-gray-50 p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-8">
-          <h1 className="font-bold text-gray-900 text-3xl">Balance Tracking</h1>
-          <p className="mt-2 text-gray-600">Monitor your investments and debts</p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-bold text-gray-900 text-3xl">Balance Tracking</h1>
+            <p className="mt-2 text-gray-600">Monitor your investments and debts</p>
+          </div>
+          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

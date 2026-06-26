@@ -18,6 +18,7 @@ import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
 import { ScenarioBuilder } from '../components/forecasting/scenario-builder'
+import { CurrencyToggle } from '../components/settings/currency-toggle'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import type { ForecastingProfileOutput } from '../server/functions/forecastingProfiles'
 
@@ -352,6 +353,7 @@ function PageHeader(): React.ReactElement {
             </p>
           </div>
           <div className="flex items-center space-x-4">
+            <CurrencyToggle />
             <PremiumBadge />
           </div>
         </div>
