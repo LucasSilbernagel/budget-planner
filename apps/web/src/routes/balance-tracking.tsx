@@ -42,7 +42,7 @@ export const Route = createFileRoute('/balance-tracking')({
  * AC 2: Entries are grouped by type (investments vs debts)
  * AC 5: Investment entries displayed with positive growth indicators, debt entries with negative balance indicators
  */
-export function BalanceTrackingPage() {
+function BalanceTrackingPage() {
   // Get currency preferences from store
   const { mode, currency } = useCurrencyPreferences()
   const currencySymbolValue = currencySymbol(currency)
@@ -456,5 +456,3 @@ export function BalanceTrackingPage() {
     </div>
   )
 }
-
-export default BalanceTrackingPage

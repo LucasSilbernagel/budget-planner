@@ -38,7 +38,7 @@ export const Route = createFileRoute('/savings-goals')({
  *
  * AC 2: When viewing the savings goals list, all goals are displayed sorted by creation date (newest first)
  */
-export function SavingsGoalsPage() {
+function SavingsGoalsPage() {
   // Get currency preferences from store
   const { mode, currency } = useCurrencyPreferences()
 
@@ -447,5 +447,3 @@ export function SavingsGoalsPage() {
     </div>
   )
 }
-
-export default SavingsGoalsPage

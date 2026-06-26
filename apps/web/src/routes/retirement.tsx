@@ -23,7 +23,7 @@ export const Route = createFileRoute('/retirement')({
  * AC Coverage: AC-1, AC-2 (via RetirementForm)
  * AC Coverage: AC-3 (via RetirementTimelineChart)
  */
-export function RetirementPage() {
+function RetirementPage() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -142,5 +142,3 @@ export function RetirementPage() {
     </ErrorBoundary>
   )
 }
-
-export default RetirementPage

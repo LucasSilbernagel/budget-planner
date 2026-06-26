@@ -122,7 +122,7 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
  * Main page for premium forecasting features.
  * Handles access control and renders appropriate UI based on subscription status.
  */
-export function ForecastingPage(): React.ReactElement {
+function ForecastingPage(): React.ReactElement {
   const { status, checkAccess } = usePremiumAccess()
   const [activeTab, setActiveTab] = useState<ForecastingTab>('scenarios')
   const [_savedForecasts, _setSavedForecasts] = useState<SavedForecast[]>([])

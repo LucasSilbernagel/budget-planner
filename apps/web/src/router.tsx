@@ -1,5 +1,30 @@
-import { createRouter as createTanStackRouter } from '@tanstack/react-router'
+import { Link, createRouter as createTanStackRouter } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
+
+/**
+ * Fallback shown for any unmatched route. Configured at the router level so
+ * every route inherits it (otherwise TanStack Router falls back to its generic
+ * `<p>Not Found</p>`).
+ */
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4">
+      <div className="text-center">
+        <p className="text-base font-semibold text-blue-600 dark:text-blue-400">404</p>
+        <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">Page not found</h1>
+        <p className="mt-4 text-gray-600 dark:text-gray-400">
+          Sorry, we couldn’t find the page you’re looking for.
+        </p>
+        <Link
+          to="/"
+          className="mt-8 inline-block px-6 py-3 bg-blue-600 text-white font-medium rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400"
+        >
+          Go home
+        </Link>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Router factory consumed by TanStack Start's generated SSR + client entries.
@@ -12,6 +37,7 @@ export function getRouter() {
     routeTree,
     defaultPreload: 'intent',
     scrollRestoration: true,
+    defaultNotFoundComponent: NotFound,
   })
 
   return router
