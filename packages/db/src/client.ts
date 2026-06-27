@@ -17,6 +17,10 @@ import * as schema from './schema'
 // Database connection pool singleton
 let pool: Pool | null = null
 
+// Drizzle instance singleton — memoized over the pool so we don't rebuild it
+// (and re-wrap the pool) on every property access through the lazy `db` Proxy.
+let dbInstance: ReturnType<typeof createDb> | null = null
+
 /**
  * Browser guard - this package is server-only
  * Prevents accidental browser imports which would cause errors
@@ -79,12 +83,22 @@ function getPool(): Pool {
 }
 
 /**
- * Get Drizzle database instance
+ * Build a fresh Drizzle instance over the pool.
+ * Internal — callers should use the memoized `getDb()` / `db`.
+ */
+function createDb() {
+  return drizzle(getPool(), { schema })
+}
+
+/**
+ * Get Drizzle database instance (memoized)
  * All database operations should use this instance
  */
 export function getDb() {
-  const pool = getPool()
-  return drizzle(pool, { schema })
+  if (!dbInstance) {
+    dbInstance = createDb()
+  }
+  return dbInstance
 }
 
 /**
@@ -100,13 +114,14 @@ export function getDb() {
 type Db = ReturnType<typeof getDb>
 
 export const db: Db = new Proxy({} as Db, {
-  get(_target, prop, receiver) {
+  get(_target, prop) {
     const instance = getDb()
-    return Reflect.get(instance as object, prop, receiver)
-  },
-  apply(_target, thisArg, args) {
-    const instance = getDb()
-    return Reflect.apply(instance as unknown as (...a: unknown[]) => unknown, thisArg, args)
+    const value = Reflect.get(instance as object, prop)
+    // Bind methods to the real instance so `this` is never the Proxy (which
+    // would otherwise re-enter this trap and break getter / private-field access).
+    return typeof value === 'function'
+      ? (value as (...a: unknown[]) => unknown).bind(instance)
+      : value
   },
 })
 
@@ -119,6 +134,7 @@ export async function closeDb() {
     await pool.end()
     pool = null
   }
+  dbInstance = null
 }
 
 /**

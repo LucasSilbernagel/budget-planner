@@ -29,14 +29,17 @@ Settings → Branches → Add branch ruleset (or "Add rule") for `main`:
 ## Apply via `gh` CLI
 
 ```sh
+# Note: -F sends typed JSON (booleans/integers/null); -f sends raw strings.
+# `strict` (boolean) and `required_approving_review_count` (integer) MUST use -F,
+# or the API rejects the string values with a 422.
 gh api -X PUT repos/LucasSilbernagel/budget-planner/branches/main/protection \
   -H "Accept: application/vnd.github+json" \
-  -f 'required_status_checks[strict]=true' \
+  -F 'required_status_checks[strict]=true' \
   -f 'required_status_checks[checks][][context]=Lint (Biome + tsconfig)' \
   -f 'required_status_checks[checks][][context]=Unit tests (Vitest)' \
   -f 'required_status_checks[checks][][context]=E2E tests (Playwright)' \
   -F 'enforce_admins=true' \
-  -f 'required_pull_request_reviews[required_approving_review_count]=1' \
+  -F 'required_pull_request_reviews[required_approving_review_count]=1' \
   -F 'restrictions=null'
 ```
 
