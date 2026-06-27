@@ -89,9 +89,26 @@ export function getDb() {
 
 /**
  * Database instance (pre-configured)
- * Import this directly for most use cases
+ * Import this directly for most use cases.
+ *
+ * Lazily initialized: the underlying pool/Drizzle instance is created on first
+ * property access, not at module load. This keeps `import '@budget-planner/db'`
+ * side-effect free so environments without DATABASE_URL (CI unit/e2e, SSR boot
+ * of pages that never query) don't crash on import. Connecting is deferred to
+ * the first real database operation (NFR8).
  */
-export const db = getDb()
+type Db = ReturnType<typeof getDb>
+
+export const db: Db = new Proxy({} as Db, {
+  get(_target, prop, receiver) {
+    const instance = getDb()
+    return Reflect.get(instance as object, prop, receiver)
+  },
+  apply(_target, thisArg, args) {
+    const instance = getDb()
+    return Reflect.apply(instance as unknown as (...a: unknown[]) => unknown, thisArg, args)
+  },
+})
 
 /**
  * Close database connection pool
