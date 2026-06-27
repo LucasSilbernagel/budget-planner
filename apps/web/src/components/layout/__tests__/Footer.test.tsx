@@ -41,4 +41,15 @@ describe('Footer', () => {
     const link = await screen.findByRole('link', { name: /documentation/i })
     expect(link).toHaveAttribute('href', '/docs')
   })
+
+  it.each([
+    [/^pricing$/i, '/pricing'],
+    [/terms of service/i, '/terms'],
+    [/privacy policy/i, '/privacy'],
+    [/refund policy/i, '/refund'],
+  ])('links to the %s compliance page (story 5-13)', async (name, href) => {
+    renderWithRouter(<Footer />)
+    const link = await screen.findByRole('link', { name })
+    expect(link).toHaveAttribute('href', href)
+  })
 })
