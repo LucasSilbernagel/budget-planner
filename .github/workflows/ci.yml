@@ -1,0 +1,132 @@
+name: CI
+
+# Quality-gate pipeline (Story 4-15).
+#
+# Runs the three required checks on every PR into `main` and on pushes to
+# `main`. Each gate is an independent job so it surfaces as its own required
+# status check in GitHub branch protection (see .github/BRANCH_PROTECTION.md):
+#   - lint        → pnpm biome check . (+ tsconfig validation)
+#   - unit-tests  → pnpm test:unit (Vitest, all workspaces)
+#   - e2e-tests   → pnpm test:e2e  (headless Playwright / Chromium)
+#
+# Deliberately NOT a gate: full `tsc` type-check — the repo carries a large,
+# tracked backlog of pre-existing type errors (build-infra debt) that would red
+# the pipeline. `validate:tsconfig` (config-file sanity only) is safe and runs.
+# Deployment is intentionally out of scope here; it is owned by the Epic 5
+# production stories (5-4 configure CI/CD for production, 4-16/4-17 deploy).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Supersede in-flight runs for the same ref so pushes don't pile up CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: these jobs only read the checked-out code.
+permissions:
+  contents: read
+
+env:
+  # Pin toolchain to match local dev: .nvmrc (Node 20, engines >=20.12.0) and
+  # pnpm 7 (pnpm-lock.yaml is lockfileVersion 5.4).
+  NODE_VERSION: '20'
+  PNPM_VERSION: '7.33.7'
+
+jobs:
+  lint:
+    name: Lint (Biome + tsconfig)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Biome check
+        run: pnpm biome check .
+
+      - name: Validate tsconfig files
+        run: pnpm validate:tsconfig
+
+  unit-tests:
+    name: Unit tests (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No package pre-build needed: vitest aliases @budget-planner/* to their
+      # TypeScript source (apps/web/vitest.config.ts), so tests run against src.
+      # External services (Paddle, EthicalAds) are mocked via MSW; the db client
+      # connects lazily, so no real database is required (NFR8).
+      - name: Run unit tests
+        run: pnpm test:unit
+
+  e2e-tests:
+    name: E2E tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Chromium binary + its OS deps are not part of `pnpm install`.
+      - name: Install Playwright browser
+        run: pnpm --filter @budget-planner/web exec playwright install --with-deps chromium
+
+      # Playwright boots the app itself (webServer: `pnpm dev`). GitHub Actions
+      # sets CI=true automatically, which enables retries + single worker and
+      # disables dev-server reuse (see apps/web/playwright.config.ts).
+      - name: Run Playwright tests
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
