@@ -10,6 +10,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 
 // Profile type definition
 // Matches the userProfiles table structure from packages/db/src/schema.ts
@@ -88,7 +89,7 @@ const DEFAULT_PROFILE: ClientProfile = {
 // Create the profile store
 export const useProfileStore = create<ProfileState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Initial state
       profiles: [DEFAULT_PROFILE],
       activeProfileId: DEFAULT_PROFILE.id,
@@ -113,6 +114,7 @@ export const useProfileStore = create<ProfileState>()(
 
       // Add a new profile
       addProfile: (profile) => {
+        const alreadyExists = get().profiles.some((p) => p.id === profile.id)
         set((state) => {
           // Check if profile already exists (by ID)
           const existingIndex = state.profiles.findIndex((p) => p.id === profile.id)
@@ -127,19 +129,36 @@ export const useProfileStore = create<ProfileState>()(
           // Add new profile
           return { profiles: [...state.profiles, profile] }
         })
+        // Paid tier: push to the server (no-op for the free tier).
+        if (alreadyExists) {
+          syncEntityUpdate('userProfile', profile)
+        } else {
+          syncEntityCreate('userProfile', profile)
+        }
       },
 
       // Update an existing profile
       updateProfile: (profileId, updates) => {
+        const previous = get().profiles.find((profile) => profile.id === profileId)
         set((state) => ({
           profiles: state.profiles.map((profile) =>
             profile.id === profileId ? { ...profile, ...updates } : profile
           ),
         }))
+        // Paid tier: queue the update.
+        if (previous) {
+          syncEntityUpdate('userProfile', { ...previous, ...updates }, previous)
+        }
       },
 
       // Remove a profile
       removeProfile: (profileId: string) => {
+        // Decide up front whether this removal will actually happen, so we only
+        // queue a server tombstone for a real delete (the guards below reject
+        // removing the last or the default profile).
+        const before = get()
+        const target = before.profiles.find((p) => p.id === profileId)
+        const willRemove = before.profiles.length > 1 && target !== undefined && !target.isDefault
         set((state) => {
           // Prevent deletion of the last profile
           if (state.profiles.length <= 1) {
@@ -171,6 +190,10 @@ export const useProfileStore = create<ProfileState>()(
             error: null,
           }
         })
+        // Paid tier: queue a tombstone only if a real removal occurred.
+        if (willRemove && target) {
+          syncEntityDelete('userProfile', target)
+        }
       },
 
       // Switch to a different profile

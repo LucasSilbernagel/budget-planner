@@ -11,6 +11,7 @@
 import type { ServerChange } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useIncomeStore } from '../../../stores/incomeStore'
+import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { applyServerChangesToStores } from '../applyServerChanges'
 
@@ -130,5 +131,86 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
     const goals = useSavingsStore.getState().savingsGoals
     expect(goals).toHaveLength(1)
     expect(goals[0].id).toBe(UUID_B)
+  })
+})
+
+const SERVER_PROFILE_DEFAULT = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+const SERVER_PROFILE_OTHER = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+
+function profileChange(id: string, isDefault: boolean, name: string): ServerChange {
+  return {
+    entityType: 'userProfile',
+    entityId: id,
+    data: {
+      id,
+      userId: 'u-1',
+      name,
+      isDefault,
+      currency: 'NONE',
+    },
+    updatedAt: 2000,
+    isDeleted: false,
+  }
+}
+
+describe('applyServerChangesToStores — active-profile reconciliation (Story 5-15)', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    // Start from the client default: a locally-generated profile id that does NOT
+    // exist server-side (the bootstrap gap 5-15 closes).
+    useProfileStore.setState({
+      profiles: [
+        {
+          id: 'local-default',
+          userId: '',
+          name: 'Main Profile',
+          isDefault: true,
+          currency: 'NONE',
+        },
+      ],
+      activeProfileId: 'local-default',
+    })
+  })
+
+  it('repoints a stale active profile to the pulled DEFAULT server profile', () => {
+    applyServerChangesToStores([
+      profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
+      profileChange(SERVER_PROFILE_DEFAULT, true, 'Main'),
+    ])
+
+    // The locally-generated active id was not among the pulled profiles, so it is
+    // repointed to the server's default profile — not just the first one.
+    expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
+  })
+
+  it('falls back to the first profile when none is marked default', () => {
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')])
+    expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_OTHER)
+  })
+
+  it('leaves an already-valid active profile untouched', () => {
+    useProfileStore.setState({
+      profiles: [
+        {
+          id: SERVER_PROFILE_DEFAULT,
+          userId: 'u-1',
+          name: 'Main',
+          isDefault: true,
+          currency: 'NONE',
+        },
+      ],
+      activeProfileId: SERVER_PROFILE_DEFAULT,
+    })
+
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')])
+
+    // The user's selection is still valid (it is in the set), so it is preserved
+    // even though another profile arrived.
+    expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
+  })
+
+  it('does NOT touch the active profile on a non-profile (income) pull', () => {
+    applyServerChangesToStores([incomeChange()])
+    expect(useProfileStore.getState().activeProfileId).toBe('local-default')
   })
 })

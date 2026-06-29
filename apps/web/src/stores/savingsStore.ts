@@ -6,6 +6,7 @@ import { sortByCreationDate, withProgress } from '@budget-planner/core/services/
 import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
 
 // Define the type for our store state
@@ -51,6 +52,8 @@ export const useSavingsStore = create<SavingsState>()(
         set((state) => ({
           savingsGoals: sortByCreationDate([...state.savingsGoals, goal]),
         }))
+        // Paid tier: also push to the server (no-op for the free tier).
+        syncEntityCreate('savingsGoal', goal)
         return goal
       },
 
@@ -63,8 +66,9 @@ export const useSavingsStore = create<SavingsState>()(
           return undefined
         }
 
+        const previousGoal = state.savingsGoals[index]
         const updatedGoal: ClientSavingsGoal = {
-          ...state.savingsGoals[index],
+          ...previousGoal,
           ...updates,
           updatedAt: new Date().toISOString(),
         }
@@ -77,21 +81,25 @@ export const useSavingsStore = create<SavingsState>()(
           ]),
         }))
 
+        // Paid tier: queue the update with the pre-edit row as the baseVersion.
+        syncEntityUpdate('savingsGoal', updatedGoal, previousGoal)
         return updatedGoal
       },
 
       // Delete a savings goal
       deleteSavingsGoal: (id: string) => {
         const state = get()
-        const exists = state.savingsGoals.some((g) => g.id === id)
+        const existing = state.savingsGoals.find((g) => g.id === id)
 
-        if (exists) {
+        if (existing) {
           set((state) => ({
             savingsGoals: state.savingsGoals.filter((g) => g.id !== id),
           }))
+          // Paid tier: queue a tombstone so the delete propagates to other devices.
+          syncEntityDelete('savingsGoal', existing)
         }
 
-        return exists
+        return existing !== undefined
       },
 
       // Get savings goal by ID

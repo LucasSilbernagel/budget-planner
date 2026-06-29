@@ -16,14 +16,12 @@ import type { ServerChange } from '@budget-planner/core/sync'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock the HTTP transport the hook wires into the core service.
+// Mock the HTTP transport the hook wires into the core service. Both the pull
+// (fetchServerChanges) and push (sendSyncOperation, Story 5-15) transports live
+// here now; mock both so no real network is touched (NFR8).
 vi.mock('../../features/api/client', () => ({
   fetchServerChanges: vi.fn(),
-}))
-
-// Avoid loading the real server push fn (it transitively imports db/zod).
-vi.mock('../../server/functions/sync', () => ({
-  processSyncOperation: vi.fn(),
+  sendSyncOperation: vi.fn(async () => ({ success: true })),
 }))
 
 import { fetchServerChanges } from '../../features/api/client'

@@ -846,14 +846,18 @@ async function recordSyncHistory(
  * It processes operations in order, detects conflicts, and applies changes.
  *
  * @param request - The batch sync request
- * @param user - The authenticated user
+ * @param user - The authenticated user. Only `id` (the uuid the operations must
+ *   belong to) and `subscriptionStatus` (the paid-tier gate) are read, so callers
+ *   may pass a session projection rather than a full DB row. NOTE: the session
+ *   object exposes the user id as `userId`; callers MUST map it to `id` here or
+ *   the per-operation ownership check silently compares against `undefined`.
  * @param ipAddress - Client IP address
  * @param userAgent - Client user agent
  * @returns Batch sync response
  */
 export async function processBatchSync(
   request: BatchSyncRequest,
-  user: User,
+  user: Pick<User, 'id' | 'subscriptionStatus'>,
   ipAddress?: string,
   userAgent?: string
 ): Promise<BatchSyncResponse> {

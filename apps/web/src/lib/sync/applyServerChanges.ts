@@ -95,16 +95,76 @@ function applyOne(change: ServerChange): void {
 }
 
 /**
+ * After a pull that delivered profiles, make sure the active profile points at a
+ * REAL (server-backed) profile (Story 5-15). A paid client starts with a
+ * locally-generated default-profile placeholder (`userId === ''`, never synced);
+ * once the server's profiles arrive, profile-scoped push/pull must be stamped with
+ * a profile id that actually exists server-side, not that placeholder.
+ *
+ * Server-backed profiles are identified by a non-empty `userId`. When real
+ * profiles exist we (1) drop the un-synced bootstrap placeholder(s) so the
+ * switcher doesn't show a phantom "Main Profile", and (2) repoint `activeProfileId`
+ * to the server's default (or first) profile UNLESS the user is already on a real
+ * profile (a deliberate switch is preserved).
+ */
+function reconcileActiveProfile(): void {
+  const state = useProfileStore.getState() as unknown as {
+    profiles: { id: string; userId?: string; isDefault?: boolean }[]
+    activeProfileId: string | null
+    setProfiles: (profiles: { id: string; userId?: string; isDefault?: boolean }[]) => void
+    setActiveProfileId: (id: string | null) => void
+  }
+  const { profiles, activeProfileId } = state
+  const realProfiles = profiles.filter((p) => p.userId !== undefined && p.userId !== '')
+  if (realProfiles.length === 0) {
+    // No server-backed profile pulled yet — leave the free-tier bootstrap alone.
+    return
+  }
+
+  // Drop un-synced bootstrap placeholders now that real profiles exist (keeps the
+  // profile list authoritative). setProfiles repoints active to the first entry,
+  // so we re-assert the intended active id immediately after.
+  if (realProfiles.length !== profiles.length) {
+    state.setProfiles(realProfiles)
+  }
+
+  const active = realProfiles.find((p) => p.id === activeProfileId)
+  if (active) {
+    // User is already on a real profile — preserve their selection.
+    state.setActiveProfileId(active.id)
+    return
+  }
+  // realProfiles is non-empty here (guarded above), so the fallback is defined.
+  const target = realProfiles.find((p) => p.isDefault) ?? realProfiles[0]
+  if (target) {
+    state.setActiveProfileId(target.id)
+  }
+}
+
+/**
  * Apply a batch of pulled server changes to the domain stores. Safe to call with
  * an empty array (no-op). Each change is applied independently so one malformed
  * change cannot block the rest.
  */
 export function applyServerChangesToStores(changes: ServerChange[]): void {
+  let appliedProfile = false
   for (const change of changes) {
     try {
       applyOne(change)
+      if (change.entityType === 'userProfile') {
+        appliedProfile = true
+      }
     } catch {
       // Never let one bad change abort the batch; the next pull will retry.
+    }
+  }
+  // Only touch the active-profile pointer when profiles actually changed, so an
+  // ordinary income/expense pull never perturbs the user's selected profile.
+  if (appliedProfile) {
+    try {
+      reconcileActiveProfile()
+    } catch {
+      // Reconciliation is best-effort; a failure here must not drop the changes.
     }
   }
 }

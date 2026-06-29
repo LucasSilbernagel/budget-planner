@@ -29,9 +29,11 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
-import { fetchServerChanges as fetchServerChangesHttp } from '../features/api/client'
+import {
+  fetchServerChanges as fetchServerChangesHttp,
+  sendSyncOperation,
+} from '../features/api/client'
 import { applyServerChangesToStores } from '../lib/sync/applyServerChanges'
-import { processSyncOperation } from '../server/functions/sync'
 import { useProfileStore } from '../stores/profileStore'
 
 // ============================================================================
@@ -188,11 +190,18 @@ export interface UseSyncReturn {
     entityType: string,
     entityId: string | number,
     data: Record<string, unknown>,
-    version?: number
+    version?: number,
+    /** Server `updatedAt` (ms) this edit was based on, for causal pull LWW (4-18 D1). */
+    baseVersion?: number
   ) => Promise<void>
 
   /** Queue a delete operation */
-  queueDelete: (entityType: string, entityId: string | number) => Promise<void>
+  queueDelete: (
+    entityType: string,
+    entityId: string | number,
+    /** Server `updatedAt` (ms) this delete was based on, for causal pull LWW (4-18 D1). */
+    baseVersion?: number
+  ) => Promise<void>
 
   /** Reset the sync state */
   reset: () => void
@@ -298,7 +307,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     // that calls the server sync function
     syncServiceRef.current = createSynchronizationService(userId, {
       autoSync: false, // We'll handle auto-sync ourselves
-      processOperation: processSyncOperation as ProcessOperationFn,
+      // Push transport (Story 5-15): goes over HTTP to POST /api/sync/batch via
+      // sendSyncOperation. Replaces the old direct import of the server function,
+      // which dragged `@budget-planner/db` into the client graph (5-12 hazard).
+      processOperation: sendSyncOperation as ProcessOperationFn,
+      // Stamp the active profile onto every queued op so profile-scoped entities
+      // satisfy the server's `profileId NOT NULL`. Read lazily at creation; a
+      // later profile switch updates it via updateConfig (see effect below) rather
+      // than recreating the service.
+      profileId: useProfileStore.getState().activeProfileId ?? undefined,
       // Pull transport (Story 4-18): goes over HTTP to /api/sync/changes. The
       // active profile is read lazily at call time so a profile switch is
       // reflected without re-creating the service. Never imports the server fn.
@@ -487,14 +504,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
   }, [autoPull, pullInterval, pull])
 
-  // Reset the pull cursor when the active profile changes (review P7). The cursor
-  // is global but the delta is profile-scoped, so a switch must force a full
-  // snapshot or the newly-active profile would miss every row older than the
-  // previous profile's cursor. No-op on first mount (cursor already null).
-  // activeProfileId is intentionally the trigger: the effect runs ON its change,
-  // it does not read it in the body.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional change-trigger dependency
+  // React to an active-profile switch (review P7 + Story 5-15):
+  //  1. Re-stamp the PUSH config so subsequently-queued ops carry the new
+  //     profileId (profile-scoped entities require `profileId NOT NULL` server-side).
+  //  2. Reset the PULL cursor: the cursor is global but the delta is profile-scoped,
+  //     so a switch must force a full snapshot or the newly-active profile would
+  //     miss every row older than the previous profile's cursor.
+  // No-op on first mount (cursor already null).
   useEffect(() => {
+    syncServiceRef.current?.updateConfig({ profileId: activeProfileId ?? undefined })
     syncServiceRef.current?.resetPullCursor()
   }, [activeProfileId])
 
@@ -532,13 +550,21 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       entityType: string,
       entityId: string | number,
       data: Record<string, unknown>,
-      version?: number
+      version?: number,
+      baseVersion?: number
     ): Promise<void> => {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
       }
 
-      await syncServiceRef.current.queueUpdate(entityType, entityId, data, userId, version)
+      await syncServiceRef.current.queueUpdate(
+        entityType,
+        entityId,
+        data,
+        userId,
+        version,
+        baseVersion
+      )
 
       // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
@@ -557,12 +583,21 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   )
 
   const queueDelete = useCallback(
-    async (entityType: string, entityId: string | number): Promise<void> => {
+    async (entityType: string, entityId: string | number, baseVersion?: number): Promise<void> => {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
       }
 
-      await syncServiceRef.current.queueDelete(entityType, entityId, userId)
+      // The server's delete validation requires `userId` inside the operation
+      // data payload, so pass it explicitly rather than relying on the default
+      // empty object (which would be rejected as "Delete operations require userId").
+      await syncServiceRef.current.queueDelete(
+        entityType,
+        entityId,
+        userId,
+        { userId },
+        baseVersion
+      )
 
       // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {

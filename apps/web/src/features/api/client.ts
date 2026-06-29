@@ -17,7 +17,7 @@ import type {
   RetirementResult,
   YearlyProjection,
 } from '@budget-planner/core'
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ProcessOperationResult, ServerChange, SyncOperation } from '@budget-planner/core/sync'
 import type {
   AggregationInput,
   AggregationResult,
@@ -240,6 +240,101 @@ export async function fetchServerChanges(
   }
 
   return result.changes ?? []
+}
+
+/**
+ * The subset of BatchSyncResponse the client transport needs. Declared locally so
+ * this client module never imports the server sync module (which transitively
+ * imports `@budget-planner/db`) — the same isolation `fetchServerChanges` keeps.
+ */
+interface BatchSyncResponseLite {
+  success: boolean
+  processedCount: number
+  failedCount: number
+  conflictCount: number
+  error?: string
+}
+
+/**
+ * Pushes a single sync operation to the server via HTTP (Story 5-15).
+ *
+ * This is the PUSH counterpart to {@link fetchServerChanges}. It is wired into the
+ * core SynchronizationService as `config.processOperation`, replacing the old
+ * direct import of the `processSyncOperation` server function (which dragged
+ * server/DB code into the client graph — the 5-12 hazard). It MUST NOT import the
+ * server sync module directly.
+ *
+ * Maps the served {@link BatchSyncResponseLite} envelope to the core's
+ * {@link ProcessOperationResult}, and classifies transport failures so the queue
+ * retries only transient ones:
+ * - network error / 5xx / 429 → `retryable: true` (back off and try again)
+ * - 4xx (auth/validation) → `retryable: false` (do not hammer a permanent reject)
+ *
+ * The service sends operations one at a time, so the batch always wraps exactly
+ * one operation (preserving the previous per-operation transport contract).
+ */
+export async function sendSyncOperation(operation: SyncOperation): Promise<ProcessOperationResult> {
+  let response: Response
+  try {
+    response = await fetch('/api/sync/batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        operations: [operation],
+        clientTimestamp: Date.now(),
+        deviceId: operation.deviceId,
+      }),
+    })
+  } catch (error) {
+    // Network/connectivity failure — always retryable.
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Network error',
+      retryable: true,
+    }
+  }
+
+  if (!response.ok) {
+    const errorData = (await response.json().catch(() => ({}))) as { error?: string }
+    return {
+      success: false,
+      error: errorData.error || `Sync request failed (${response.status})`,
+      // 429 (rate limit) and 5xx are transient; other 4xx are permanent.
+      retryable: response.status === 429 || response.status >= 500,
+      statusCode: response.status,
+    }
+  }
+
+  const result = (await response.json().catch(() => null)) as BatchSyncResponseLite | null
+  if (!result) {
+    return { success: false, error: 'Malformed sync response', retryable: true }
+  }
+
+  // Success: at least one operation was processed.
+  if (result.success && result.processedCount >= 1) {
+    return { success: true }
+  }
+  // Conflict: the server rejected the op because of a competing state (the queue
+  // routes these into the conflict bucket, not the failed bucket).
+  if (result.conflictCount > 0) {
+    return { success: false, conflict: true }
+  }
+  // Server-side failure (validation/apply): a permanent reject — not retryable,
+  // or the queue would replay the same rejected op forever.
+  if (result.failedCount > 0) {
+    return { success: false, error: result.error || 'Operation failed on server', retryable: false }
+  }
+  // Fallback: a 200 envelope that matched none of the above (e.g. success:true but
+  // processedCount:0) must NOT be treated as applied — doing so would drop the op
+  // from the queue as "synced" with nothing persisted server-side (silent loss).
+  // Treat it as a transient failure so the queue retries instead.
+  return {
+    success: false,
+    error: result.error || 'Unexpected sync response (nothing processed)',
+    retryable: true,
+  }
 }
 
 /**

@@ -27,6 +27,7 @@ import {
 import type { FinanceType } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
 
 // ============================================================================
@@ -91,6 +92,8 @@ export const useBalanceStore = create<BalanceState>()(
           entries: sortByCreationDate([...state.entries, newEntry]),
         }))
 
+        // Paid tier: also push to the server (no-op for the free tier).
+        syncEntityCreate('balanceTracking', newEntry)
         return newEntry
       },
 
@@ -106,6 +109,12 @@ export const useBalanceStore = create<BalanceState>()(
           return null
         }
 
+        // Find the pre-edit entry (also the baseVersion source for sync).
+        const previous = get().entries.find((e) => e.id === id)
+        if (!previous) {
+          return null
+        }
+
         // Find and update entry
         const updatedEntries = get().entries.map((entry) => {
           if (entry.id === id) {
@@ -118,12 +127,6 @@ export const useBalanceStore = create<BalanceState>()(
           return entry
         })
 
-        // Check if entry was found
-        const entryExists = get().entries.some((e) => e.id === id)
-        if (!entryExists) {
-          return null
-        }
-
         // Update state
         set((_state) => ({
           entries: sortByCreationDate(updatedEntries),
@@ -131,13 +134,17 @@ export const useBalanceStore = create<BalanceState>()(
 
         // Return updated entry
         const updatedEntry = updatedEntries.find((e) => e.id === id)
+        // Paid tier: queue the update with the pre-edit row as the baseVersion.
+        if (updatedEntry) {
+          syncEntityUpdate('balanceTracking', updatedEntry, previous)
+        }
         return updatedEntry || null
       },
 
       // Delete a balance entry
       deleteBalanceEntry: (id: string): boolean => {
-        const entryExists = get().entries.some((e) => e.id === id)
-        if (!entryExists) {
+        const existing = get().entries.find((e) => e.id === id)
+        if (!existing) {
           return false
         }
 
@@ -146,6 +153,8 @@ export const useBalanceStore = create<BalanceState>()(
           entries: state.entries.filter((e) => e.id !== id),
         }))
 
+        // Paid tier: queue a tombstone so the delete propagates to other devices.
+        syncEntityDelete('balanceTracking', existing)
         return true
       },
 

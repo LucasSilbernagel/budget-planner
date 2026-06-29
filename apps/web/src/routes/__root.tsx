@@ -2,6 +2,7 @@ import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-r
 import type { ReactNode } from 'react'
 import { AdPlacement } from '../components/ads/AdPlacement'
 import { Footer } from '../components/layout/Footer'
+import { SyncProvider } from '../components/sync/SyncProvider'
 import { MetadataProvider } from '../context/metadata-context'
 import { StoreHydration } from '../lib/store-hydration'
 import appCss from '../styles/global.css?url'
@@ -37,6 +38,10 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body suppressHydrationWarning>
         <StoreHydration />
+        {/* Mounts multi-device sync for authenticated paid sessions only
+            (story 5-15): free/unauthenticated users get no service and no
+            network. Renders nothing — pure wiring. */}
+        <SyncProvider />
         {/* Captures privacy-respecting acquisition metadata from the landing
             URL (story 4-12): URL-only, in-memory, no cookies/localStorage. */}
         <MetadataProvider>

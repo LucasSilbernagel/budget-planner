@@ -1,6 +1,7 @@
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
 
 // Client-side type for expense (with string timestamps for localStorage)
@@ -59,24 +60,34 @@ export const useExpenseStore = create<ExpenseState>()(
         set((state) => ({
           expenses: [...state.expenses, expense],
         }))
+        // Paid tier: also push to the server (no-op for the free tier).
+        syncEntityCreate('expense', expense)
       },
 
       // Update an existing expense
       updateExpense: (id, updates) => {
+        const previous = get().expenses.find((expense) => expense.id === id)
+        if (!previous) {
+          return
+        }
+        const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() }
         set((state) => ({
-          expenses: state.expenses.map((expense) =>
-            expense.id === id
-              ? { ...expense, ...updates, updatedAt: new Date().toISOString() }
-              : expense
-          ),
+          expenses: state.expenses.map((expense) => (expense.id === id ? updated : expense)),
         }))
+        // Paid tier: queue the update with the pre-edit row as the baseVersion.
+        syncEntityUpdate('expense', updated, previous)
       },
 
       // Delete an expense
       deleteExpense: (id) => {
+        const existing = get().expenses.find((expense) => expense.id === id)
         set((state) => ({
           expenses: state.expenses.filter((expense) => expense.id !== id),
         }))
+        // Paid tier: queue a tombstone so the delete propagates to other devices.
+        if (existing) {
+          syncEntityDelete('expense', existing)
+        }
       },
 
       // Get expense by ID

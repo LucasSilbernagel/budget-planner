@@ -57,7 +57,13 @@ export async function syncBatch(request: Request): Promise<BatchSyncResponse> {
     }
   }
 
-  const user = userResult.data
+  // The session exposes the user id as `userId`; processBatchSync reads `user.id`
+  // (and compares it to every operation's userId). Map it explicitly — passing the
+  // raw session here made the ownership check compare against `undefined`.
+  const user = {
+    id: userResult.data.userId,
+    subscriptionStatus: userResult.data.subscriptionStatus,
+  }
   let data: BatchSyncRequest
 
   // SECURITY: Limit request body size to prevent DoS
