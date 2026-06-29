@@ -17,6 +17,7 @@ import {
   calculateDebtMetrics,
   calculateMonthsToLimit,
 } from '../utils/balanceCalculations'
+import { generateUuid } from '../utils/uuid'
 
 // ============================================================================
 // Type Definitions
@@ -28,7 +29,10 @@ import {
  * Omits userId for free tier (no authentication)
  */
 export interface ClientBalanceTracking {
-  id: number
+  // Client-generatable uuid PK (Story 5-14): the row carries the SAME id on every
+  // device, so a server pull reconciles by this id with no duplicates. Replaces
+  // the old negative-integer temp id.
+  id: string
   type: FinanceType
   name: string
   currentBalance: number // In cents (can be negative for debts)
@@ -94,7 +98,7 @@ export interface CreateBalanceTrackingInput {
  * Uses number IDs to align with database serial and client-side negative IDs
  */
 export interface UpdateBalanceTrackingInput {
-  id: number // Number ID: positive for DB (serial), negative for client-side
+  id: string // uuid PK (Story 5-14) — shared client/server identity
   type?: FinanceType
   name?: string
   currentBalance?: number // In cents
@@ -458,55 +462,28 @@ export function filterBalanceTracking(
 // ============================================================================
 
 /**
- * Storage key for persisting the temporary ID counter
- * Using negative IDs to avoid conflicts with other entity types
- * Start at -30000 to avoid conflicts with income (-10000), expense, and savings goal IDs
- */
-const BALANCE_TRACKING_ID_COUNTER_KEY = 'budget-planner:balance-tracking-id-counter'
-
-/**
- * Get the current temporary ID counter value from localStorage
- * Initializes to -30000 if not present
- */
-function getTempIdCounter(): number {
-  const stored = localStorage.getItem(BALANCE_TRACKING_ID_COUNTER_KEY)
-  if (stored !== null) {
-    try {
-      return parseInt(stored, 10)
-    } catch {
-      // If parsing fails, reset to default
-      localStorage.setItem(BALANCE_TRACKING_ID_COUNTER_KEY, '-30000')
-      return -30000
-    }
-  }
-  return -30000
-}
-
-/**
- * Set the temporary ID counter value in localStorage
- */
-function setTempIdCounter(value: number): void {
-  localStorage.setItem(BALANCE_TRACKING_ID_COUNTER_KEY, value.toString())
-}
-
-/**
- * Generate a temporary ID for client-side balance tracking storage
- * Persists counter in localStorage to prevent collisions across tabs/sessions
+ * Generate a client-generatable uuid for a balance tracking entry (Story 5-14).
  *
- * @returns Negative number ID for client-side use
+ * Replaces the old localStorage-backed negative-integer counter: the id is now a
+ * uuid the client mints up front so a row created offline has the SAME id on every
+ * device and a server pull reconciles by id (no duplicates). Being stateless, it
+ * also drops the cross-tab counter coordination the old scheme needed. Name kept
+ * for call-site stability.
+ *
+ * @returns A uuid string
  */
-export function generateBalanceTrackingTempId(): number {
-  const counter = getTempIdCounter()
-  const newCounter = counter - 1
-  setTempIdCounter(newCounter)
-  return counter
+export function generateBalanceTrackingTempId(): string {
+  return generateUuid()
 }
 
 /**
- * Reset temporary ID counter (useful for testing)
+ * No-op retained for backward compatibility (Story 5-14).
+ *
+ * uuid generation is stateless, so there is no counter to reset. Kept so existing
+ * test/setup call sites compile unchanged.
  */
 export function resetBalanceTrackingTempId(): void {
-  setTempIdCounter(-30000)
+  // Intentionally empty — uuid ids are stateless (no counter to reset).
 }
 
 /**

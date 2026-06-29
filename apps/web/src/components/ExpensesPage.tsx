@@ -111,7 +111,7 @@ export function ExpensesPage() {
   }
 
   // Handle delete
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     if (confirm('Are you sure you want to delete this expense? This cannot be undone.')) {
       deleteExpense(id)
     }

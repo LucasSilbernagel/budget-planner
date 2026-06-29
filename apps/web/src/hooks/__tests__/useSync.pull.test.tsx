@@ -32,12 +32,17 @@ import { resetSyncStore, useSync } from '../useSync'
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 
+// Story 5-14: entity ids are client-generatable uuids shared across devices, so a
+// pulled change reconciles by the uuid string directly (no numeric coercion).
+const INCOME_ID = '11111111-1111-4111-8111-111111111111'
+const INCOME_ID_2 = '22222222-2222-4222-8222-222222222222'
+
 function incomeChange(overrides: Partial<ServerChange> = {}): ServerChange {
   return {
     entityType: 'incomeSource',
-    entityId: '77',
+    entityId: INCOME_ID,
     data: {
-      id: 77,
+      id: INCOME_ID,
       name: 'Pulled Salary',
       amount: 123400,
       frequency: 'monthly',
@@ -71,7 +76,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
     expect(fetchServerChanges).toHaveBeenCalled()
     expect(pullResult?.changesPulledCount).toBe(1)
     const sources = useIncomeStore.getState().incomeSources
-    expect(sources.some((s) => s.id === 77 && s.name === 'Pulled Salary')).toBe(true)
+    expect(sources.some((s) => s.id === INCOME_ID && s.name === 'Pulled Salary')).toBe(true)
     unmount()
   })
 
@@ -79,7 +84,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
     useIncomeStore.setState({
       incomeSources: [
         {
-          id: 77,
+          id: INCOME_ID,
           userId: 0,
           name: 'Existing',
           amount: 500,
@@ -99,7 +104,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
 
     await result.current.pull()
 
-    expect(useIncomeStore.getState().incomeSources.some((s) => s.id === 77)).toBe(false)
+    expect(useIncomeStore.getState().incomeSources.some((s) => s.id === INCOME_ID)).toBe(false)
     unmount()
   })
 
@@ -135,7 +140,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
 
   it('exposes forcePull as a callable manual trigger (AC-5)', async () => {
     asMock(fetchServerChanges).mockResolvedValue([
-      incomeChange({ entityId: '88', updatedAt: 1500 }),
+      incomeChange({ entityId: INCOME_ID_2, updatedAt: 1500 }),
     ])
 
     const { result, unmount } = renderHook(() =>
@@ -144,7 +149,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
 
     await result.current.forcePull()
 
-    expect(useIncomeStore.getState().incomeSources.some((s) => s.id === 88)).toBe(true)
+    expect(useIncomeStore.getState().incomeSources.some((s) => s.id === INCOME_ID_2)).toBe(true)
     unmount()
   })
 })

@@ -96,7 +96,10 @@ export const users = pgTable(
 export const incomeSources = pgTable(
   'incomeSources',
   {
-    id: serial('id').primaryKey(),
+    // Client-generatable uuid PK (Story 5-14): a row created offline holds the
+    // SAME id everywhere, so a pull can reconcile by id with no duplicates. The
+    // DB default covers server-originated rows; the client MAY supply the id.
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
       .notNull(),
@@ -127,7 +130,8 @@ export const incomeSources = pgTable(
 export const expenses = pgTable(
   'expenses',
   {
-    id: serial('id').primaryKey(),
+    // Client-generatable uuid PK (Story 5-14); see incomeSources note above.
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
       .notNull(),
@@ -153,7 +157,8 @@ export const expenses = pgTable(
 export const savingsGoals = pgTable(
   'savingsGoals',
   {
-    id: serial('id').primaryKey(),
+    // Client-generatable uuid PK (Story 5-14); see incomeSources note above.
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
       .notNull(),
@@ -189,7 +194,8 @@ export const savingsGoals = pgTable(
 export const balanceTracking = pgTable(
   'balanceTracking',
   {
-    id: serial('id').primaryKey(),
+    // Client-generatable uuid PK (Story 5-14); see incomeSources note above.
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
       .notNull(),

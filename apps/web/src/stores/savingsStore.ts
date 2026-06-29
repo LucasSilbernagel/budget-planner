@@ -6,6 +6,7 @@ import { sortByCreationDate, withProgress } from '@budget-planner/core/services/
 import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { withUuidIds } from '../lib/uuid'
 
 // Define the type for our store state
 interface SavingsState {
@@ -14,17 +15,17 @@ interface SavingsState {
   // CRUD operations
   addSavingsGoal: (goal: ClientNewSavingsGoal) => ClientSavingsGoal
   updateSavingsGoal: (
-    id: number,
+    id: string,
     updates: Partial<ClientNewSavingsGoal>
   ) => ClientSavingsGoal | undefined
-  deleteSavingsGoal: (id: number) => boolean
+  deleteSavingsGoal: (id: string) => boolean
 
   // Query operations
-  getSavingsGoalById: (id: number) => ClientSavingsGoal | undefined
+  getSavingsGoalById: (id: string) => ClientSavingsGoal | undefined
   getSavingsGoalsWithProgress: () => SavingsGoalWithProgress[]
   getTotalSavings: () => number
   getTotalTargetAmount: () => number
-  getSavingsProgress: (id: number) => number // Returns percentage (0-100)
+  getSavingsProgress: (id: string) => number // Returns percentage (0-100)
   getOverallProgress: () => number // Returns percentage across all goals
 }
 
@@ -54,7 +55,7 @@ export const useSavingsStore = create<SavingsState>()(
       },
 
       // Update an existing savings goal
-      updateSavingsGoal: (id: number, updates: Partial<ClientNewSavingsGoal>) => {
+      updateSavingsGoal: (id: string, updates: Partial<ClientNewSavingsGoal>) => {
         const state = get()
         const index = state.savingsGoals.findIndex((g) => g.id === id)
 
@@ -80,7 +81,7 @@ export const useSavingsStore = create<SavingsState>()(
       },
 
       // Delete a savings goal
-      deleteSavingsGoal: (id: number) => {
+      deleteSavingsGoal: (id: string) => {
         const state = get()
         const exists = state.savingsGoals.some((g) => g.id === id)
 
@@ -94,7 +95,7 @@ export const useSavingsStore = create<SavingsState>()(
       },
 
       // Get savings goal by ID
-      getSavingsGoalById: (id: number) => {
+      getSavingsGoalById: (id: string) => {
         return get().savingsGoals.find((goal) => goal.id === id)
       },
 
@@ -114,7 +115,7 @@ export const useSavingsStore = create<SavingsState>()(
       },
 
       // Calculate progress percentage for a specific savings goal
-      getSavingsProgress: (id: number) => {
+      getSavingsProgress: (id: string) => {
         const goal = get().savingsGoals.find((g) => g.id === id)
         if (!goal || goal.targetAmount === 0) return 0
         return Math.min(100, Math.round((goal.currentBalance / goal.targetAmount) * 100))
@@ -133,6 +134,12 @@ export const useSavingsStore = create<SavingsState>()(
       name: SAVINGS_GOALS_STORAGE_KEY,
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
+      // v1 (Story 5-14): convert any legacy negative-integer ids to fresh uuids.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as { savingsGoals?: ClientSavingsGoal[] }
+        return { savingsGoals: withUuidIds(state?.savingsGoals) }
+      },
       partialize: (state) => ({
         savingsGoals: state.savingsGoals,
       }),

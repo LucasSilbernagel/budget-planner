@@ -43,8 +43,10 @@ packages/*/src/**/*.d.ts.map
 *.tsbuildinfo
 tsconfig.tsbuildinfo
 
-# Database migrations
-migrations/
+# Database migrations are tracked in git (Story 5-14) so the schema history is
+# reproducible in CI/prod. The drizzle output dir (packages/db/migrations) is now
+# versioned; only the empty runtime scratch dir under src/ stays ignored.
+packages/db/src/migrations/
 
 # OS generated files
 *.pid

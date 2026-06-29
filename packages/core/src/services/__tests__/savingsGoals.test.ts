@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   ClientNewSavingsGoal,
   ClientSavingsGoal,
@@ -452,48 +452,35 @@ describe('savingsGoals service', () => {
     })
   })
 
+  // Story 5-14: ids are now client-generated uuids (replacing negative-integer
+  // temp ids) so an offline-created row keeps the SAME id once synced.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
   describe('generateSavingsGoalTempId', () => {
-    beforeEach(() => {
-      resetSavingsGoalTempId()
+    it('should generate a uuid string', () => {
+      const id1 = generateSavingsGoalTempId()
+      expect(typeof id1).toBe('string')
+      expect(id1).toMatch(UUID_RE)
     })
 
-    it('should generate negative IDs starting from -20000', () => {
-      resetSavingsGoalTempId()
-      const id1 = generateSavingsGoalTempId()
-      expect(id1).toBe(-20001)
-    })
-
-    it('should decrement counter for each call', () => {
-      resetSavingsGoalTempId()
-      const id1 = generateSavingsGoalTempId()
-      const id2 = generateSavingsGoalTempId()
-      const id3 = generateSavingsGoalTempId()
-
-      expect(id1).toBe(-20001)
-      expect(id2).toBe(-20002)
-      expect(id3).toBe(-20003)
-    })
-
-    it('should generate unique IDs', () => {
-      resetSavingsGoalTempId()
-      const id1 = generateSavingsGoalTempId()
-      const id2 = generateSavingsGoalTempId()
-      expect(id1).not.toBe(id2)
+    it('should generate unique IDs across calls', () => {
+      const ids = new Set([
+        generateSavingsGoalTempId(),
+        generateSavingsGoalTempId(),
+        generateSavingsGoalTempId(),
+      ])
+      expect(ids.size).toBe(3)
     })
   })
 
   describe('resetSavingsGoalTempId', () => {
-    it('should reset counter to -20000', () => {
-      // Generate some IDs first
-      generateSavingsGoalTempId()
-      generateSavingsGoalTempId()
-
-      // Reset
+    it('is a stateless no-op and still yields fresh unique uuids', () => {
+      const before = generateSavingsGoalTempId()
+      // No counter to reset; the call must not throw and must not collide ids.
       resetSavingsGoalTempId()
-
-      // Next ID should be -20001
-      const nextId = generateSavingsGoalTempId()
-      expect(nextId).toBe(-20001)
+      const after = generateSavingsGoalTempId()
+      expect(after).toMatch(UUID_RE)
+      expect(after).not.toBe(before)
     })
   })
 
@@ -506,7 +493,7 @@ describe('savingsGoals service', () => {
       }
 
       const result = toClientSavingsGoal(input)
-      expect(result.id).toBeLessThan(0) // Negative ID
+      expect(result.id).toMatch(UUID_RE) // client-generated uuid (Story 5-14)
       expect(result.name).toBe('Test Goal')
       expect(result.targetAmount).toBe(100000)
       expect(result.currentBalance).toBe(50000)

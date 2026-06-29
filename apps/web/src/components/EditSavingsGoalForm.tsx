@@ -49,7 +49,7 @@ function parseCurrencyToCents(value: string): number {
  */
 export interface EditSavingsGoalFormProps {
   goal: ClientSavingsGoal
-  onSubmit: (data: ClientNewSavingsGoal & { id: number }) => void | Promise<void>
+  onSubmit: (data: ClientNewSavingsGoal & { id: string }) => void | Promise<void>
   onCancel: () => void
   isSubmitting?: boolean
   isFreeTier?: boolean

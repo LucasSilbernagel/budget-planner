@@ -12,7 +12,7 @@ import { useCurrencyPreferences } from '../stores/currencyStore'
 export interface SavingsGoalCardProps {
   goal: ClientSavingsGoal | SavingsGoalWithProgress
   onEdit: (goal: ClientSavingsGoal) => void
-  onDelete: (id: number) => void
+  onDelete: (id: string) => void
   isFreeTier?: boolean
 }
 

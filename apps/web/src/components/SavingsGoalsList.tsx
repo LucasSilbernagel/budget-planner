@@ -11,7 +11,7 @@ import SavingsGoalCard from './SavingsGoalCard'
 export interface SavingsGoalsListProps {
   goals: (ClientSavingsGoal | SavingsGoalWithProgress)[]
   onEdit: (goal: ClientSavingsGoal) => void
-  onDelete: (id: number) => void
+  onDelete: (id: string) => void
   isLoading?: boolean
   isFreeTier?: boolean
   emptyMessage?: string

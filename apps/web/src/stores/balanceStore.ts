@@ -27,6 +27,7 @@ import {
 import type { FinanceType } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { withUuidIds } from '../lib/uuid'
 
 // ============================================================================
 // State Definition
@@ -45,10 +46,10 @@ interface BalanceState {
   // Actions
   addBalanceEntry: (data: ClientNewBalanceTracking) => ClientBalanceTracking | null
   updateBalanceEntry: (
-    id: number,
+    id: string,
     data: Partial<ClientNewBalanceTracking>
   ) => ClientBalanceTracking | null
-  deleteBalanceEntry: (id: number) => boolean
+  deleteBalanceEntry: (id: string) => boolean
   setFilter: (filter: BalanceTrackingFilter) => void
   clearFilter: () => void
   reset: () => void
@@ -95,7 +96,7 @@ export const useBalanceStore = create<BalanceState>()(
 
       // Update an existing balance entry
       updateBalanceEntry: (
-        id: number,
+        id: string,
         data: Partial<ClientNewBalanceTracking>
       ): ClientBalanceTracking | null => {
         // Validate input
@@ -134,7 +135,7 @@ export const useBalanceStore = create<BalanceState>()(
       },
 
       // Delete a balance entry
-      deleteBalanceEntry: (id: number): boolean => {
+      deleteBalanceEntry: (id: string): boolean => {
         const entryExists = get().entries.some((e) => e.id === id)
         if (!entryExists) {
           return false
@@ -170,6 +171,12 @@ export const useBalanceStore = create<BalanceState>()(
       name: STORAGE_KEY,
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
+      // v1 (Story 5-14): convert any legacy negative-integer ids to fresh uuids.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as { entries?: ClientBalanceTracking[] }
+        return { entries: withUuidIds(state?.entries) }
+      },
       partialize: (state) => ({
         entries: state.entries,
       }),

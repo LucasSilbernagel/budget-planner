@@ -145,7 +145,7 @@ function BalanceTrackingPage() {
   }
 
   // Handle update balance entry
-  const handleUpdateBalanceEntry = async (data: ClientNewBalanceTracking & { id: number }) => {
+  const handleUpdateBalanceEntry = async (data: ClientNewBalanceTracking & { id: string }) => {
     setIsSubmitting(true)
     try {
       const result = updateBalanceEntry(data.id, {
@@ -170,7 +170,7 @@ function BalanceTrackingPage() {
   }
 
   // Handle delete balance entry
-  const handleDeleteBalanceEntry = async (id: number) => {
+  const handleDeleteBalanceEntry = async (id: string) => {
     if (
       !confirm('Are you sure you want to delete this balance entry? This action cannot be undone.')
     ) {

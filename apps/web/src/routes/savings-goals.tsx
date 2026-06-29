@@ -140,7 +140,7 @@ function SavingsGoalsPage() {
   }
 
   // Handle update savings goal
-  const handleUpdateSavingsGoal = async (data: ClientNewSavingsGoal & { id: number }) => {
+  const handleUpdateSavingsGoal = async (data: ClientNewSavingsGoal & { id: string }) => {
     setIsSubmitting(true)
     try {
       const result = updateSavingsGoal(data.id, {
@@ -163,7 +163,7 @@ function SavingsGoalsPage() {
   }
 
   // Handle delete savings goal
-  const handleDeleteSavingsGoal = async (id: number) => {
+  const handleDeleteSavingsGoal = async (id: string) => {
     if (
       !confirm('Are you sure you want to delete this savings goal? This action cannot be undone.')
     ) {

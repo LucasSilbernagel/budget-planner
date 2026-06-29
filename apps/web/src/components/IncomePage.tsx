@@ -22,7 +22,7 @@ export function IncomePage() {
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
@@ -48,7 +48,7 @@ export function IncomePage() {
 
   // Open modal for editing existing income source
   const openEditModal = (source: {
-    id: number
+    id: string
     name: string
     amount: number
     frequency: Frequency
@@ -111,7 +111,7 @@ export function IncomePage() {
   }
 
   // Handle delete
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     if (confirm('Are you sure you want to delete this income source? This cannot be undone.')) {
       deleteIncomeSource(id)
     }

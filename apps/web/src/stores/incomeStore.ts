@@ -1,11 +1,15 @@
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { generateUUID, withUuidIds } from '../lib/uuid'
 
 // Client-side type for income source (with string timestamps for localStorage)
 // For free tier without auth, userId defaults to 0
 interface ClientIncomeSource {
-  id: number
+  // Client-generatable uuid PK (Story 5-14): the row carries the SAME id on every
+  // device, so a server pull reconciles by this id with no duplicates. Replaces
+  // the old negative-integer temp id.
+  id: string
   userId: number
   name: string
   amount: number
@@ -25,29 +29,20 @@ interface ClientNewIncomeSource {
 interface IncomeState {
   incomeSources: ClientIncomeSource[]
   addIncomeSource: (incomeSource: ClientNewIncomeSource) => void
-  updateIncomeSource: (id: number, updates: Partial<ClientNewIncomeSource>) => void
-  deleteIncomeSource: (id: number) => void
-  getIncomeSourceById: (id: number) => ClientIncomeSource | undefined
+  updateIncomeSource: (id: string, updates: Partial<ClientNewIncomeSource>) => void
+  deleteIncomeSource: (id: string) => void
+  getIncomeSourceById: (id: string) => ClientIncomeSource | undefined
   getIncomeSourcesByFrequency: (frequency: Frequency) => ClientIncomeSource[]
   getTotalIncome: () => number
 }
 
-// Helper to generate a temporary ID for client-side storage
-// Note: In production with backend, IDs will come from the database
-// Using negative IDs for temporary client-side entries to avoid conflicts
-// Start at -10000 to avoid conflicts with expense IDs
-let incomeTempIdCounter = -10000
-const generateIncomeTempId = (): number => {
-  incomeTempIdCounter -= 1
-  return incomeTempIdCounter
-}
-
 // Convert ClientNewIncomeSource to ClientIncomeSource (add id, userId, and timestamps as ISO strings)
-// For free tier without auth, userId defaults to 0
+// For free tier without auth, userId defaults to 0. The id is a client-generated
+// uuid (Story 5-14) so an offline-created row keeps the SAME id once synced.
 const toClientIncomeSource = (newSource: ClientNewIncomeSource): ClientIncomeSource => ({
   ...newSource,
   userId: newSource.userId ?? 0, // Default to 0 for free tier (no auth)
-  id: generateIncomeTempId(),
+  id: generateUUID(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 })
@@ -103,6 +98,14 @@ export const useIncomeStore = create<IncomeState>()(
       name: 'budget-planner-income-v1',
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
+      // v1 (Story 5-14): entity ids became uuid strings. Convert any legacy
+      // negative-integer ids persisted under v0 to fresh uuids on first load so
+      // they don't break sync push (uuid column) / pull reconciliation.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as { incomeSources?: ClientIncomeSource[] }
+        return { incomeSources: withUuidIds(state?.incomeSources) }
+      },
       partialize: (state) => ({
         incomeSources: state.incomeSources,
       }),

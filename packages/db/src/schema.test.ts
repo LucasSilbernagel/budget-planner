@@ -237,3 +237,34 @@ describe('Soft-delete (isDeleted) columns', () => {
     expect(userProfiles.isDeleted.default).toBe(false)
   })
 })
+
+// Test 7: Client-generatable uuid primary keys (Story 5-14, AC-1)
+// Every syncable entity must use a uuid PK with a DB default so a record created
+// on one device carries the SAME id everywhere (eliminating pull-side duplicate
+// rows) and the client MAY supply the id on insert.
+describe('Entity primary keys are client-generatable uuids', () => {
+  it('all four syncable entity tables expose a uuid id column', () => {
+    expect(incomeSources.id.getSQLType()).toBe('uuid')
+    expect(expenses.id.getSQLType()).toBe('uuid')
+    expect(savingsGoals.id.getSQLType()).toBe('uuid')
+    expect(balanceTracking.id.getSQLType()).toBe('uuid')
+  })
+
+  it('userProfiles (already uuid) and these entity ids are the same kind', () => {
+    expect(userProfiles.id.getSQLType()).toBe('uuid')
+    // A uuid PK surfaces as a string in TypeScript, not a number — this is what
+    // lets the client supply crypto.randomUUID() and the sync layer reconcile by
+    // a shared string id (AC-4).
+    expect(incomeSources.id.dataType).toBe('string')
+  })
+
+  it('entity ids carry a DB default so server-originated inserts need no client id', () => {
+    // defaultRandom() => the column is marked hasDefault; gen_random_uuid() fills
+    // any insert that omits the id (server-side rows), while the client may still
+    // supply its own uuid for offline-created rows.
+    expect(incomeSources.id.hasDefault).toBe(true)
+    expect(expenses.id.hasDefault).toBe(true)
+    expect(savingsGoals.id.hasDefault).toBe(true)
+    expect(balanceTracking.id.hasDefault).toBe(true)
+  })
+})

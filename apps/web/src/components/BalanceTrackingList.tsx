@@ -11,7 +11,7 @@ import BalanceEntryCard from './BalanceEntryCard'
 export interface BalanceTrackingListProps {
   entries: (ClientBalanceTracking | BalanceTrackingWithTimeline)[]
   onEdit: (entry: ClientBalanceTracking) => void
-  onDelete: (id: number) => void
+  onDelete: (id: string) => void
   isLoading?: boolean
   isFreeTier?: boolean
   emptyMessage?: string
@@ -43,7 +43,7 @@ export function BalanceTrackingList({
   emptyMessage = 'No balance entries yet. Add your first entry to get started!',
 }: BalanceTrackingListProps) {
   // Delete confirmation state
-  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteConfirmName, setDeleteConfirmName] = useState<string>('')
 
   // Close delete confirmation

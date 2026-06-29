@@ -12,6 +12,7 @@
 
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
 import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
+import { generateUuid } from '../utils/uuid'
 
 // ============================================================================
 // Type Definitions
@@ -23,7 +24,10 @@ import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savi
  * Omits userId for free tier (no authentication)
  */
 export interface ClientSavingsGoal {
-  id: number
+  // Client-generatable uuid PK (Story 5-14): the row carries the SAME id on every
+  // device, so a server pull reconciles by this id with no duplicates. Replaces
+  // the old negative-integer temp id.
+  id: string
   name: string
   targetAmount: number // In cents
   currentBalance: number // In cents
@@ -78,7 +82,7 @@ export interface CreateSavingsGoalInput {
  * Uses number IDs to align with database serial and client-side negative IDs
  */
 export interface UpdateSavingsGoalInput {
-  id: number // Number ID: positive for DB (serial), negative for client-side
+  id: string // uuid PK (Story 5-14) — shared client/server identity
   name?: string
   targetAmount?: number // In cents
   currentBalance?: number // In cents
@@ -290,28 +294,26 @@ export function filterSavingsGoals(
 // ============================================================================
 
 /**
- * Temporary ID counter for client-side savings goals
- * Note: In production with backend, IDs will come from the database
- * Using negative IDs to avoid conflicts with other entity types
- * Start at -20000 to avoid conflicts with income (-10000) and expense IDs
- */
-let savingsGoalTempIdCounter = -20000
-
-/**
- * Generate a temporary ID for client-side savings goal storage
+ * Generate a client-generatable uuid for a savings goal (Story 5-14).
  *
- * @returns Negative number ID for client-side use
+ * Replaces the old negative-integer temp-id counter: the id is now a uuid the
+ * client mints up front so a row created offline has the SAME id everywhere and a
+ * server pull reconciles by id (no duplicates). Name kept for call-site stability.
+ *
+ * @returns A uuid string
  */
-export function generateSavingsGoalTempId(): number {
-  savingsGoalTempIdCounter -= 1
-  return savingsGoalTempIdCounter
+export function generateSavingsGoalTempId(): string {
+  return generateUuid()
 }
 
 /**
- * Reset temporary ID counter (useful for testing)
+ * No-op retained for backward compatibility (Story 5-14).
+ *
+ * uuid generation is stateless, so there is no counter to reset. Kept so existing
+ * test/setup call sites compile unchanged.
  */
 export function resetSavingsGoalTempId(): void {
-  savingsGoalTempIdCounter = -20000
+  // Intentionally empty — uuid ids are stateless (no counter to reset).
 }
 
 /**

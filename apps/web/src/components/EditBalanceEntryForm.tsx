@@ -19,7 +19,7 @@ import { useCurrencyPreferences } from '../stores/currencyStore'
  */
 export interface EditBalanceEntryFormProps {
   entry: ClientBalanceTracking
-  onSubmit: (data: ClientNewBalanceTracking & { id: number }) => void | Promise<void>
+  onSubmit: (data: ClientNewBalanceTracking & { id: string }) => void | Promise<void>
   onCancel: () => void
   isSubmitting?: boolean
   isFreeTier?: boolean

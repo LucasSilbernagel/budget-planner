@@ -1,11 +1,15 @@
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { generateUUID, withUuidIds } from '../lib/uuid'
 
 // Client-side type for expense (with string timestamps for localStorage)
 // For free tier without auth, userId defaults to 0
 interface ClientExpense {
-  id: number
+  // Client-generatable uuid PK (Story 5-14): the row carries the SAME id on every
+  // device, so a server pull reconciles by this id with no duplicates. Replaces
+  // the old negative-integer temp id.
+  id: string
   userId: number
   name: string
   amount: number
@@ -25,31 +29,20 @@ interface ClientNewExpense {
 interface ExpenseState {
   expenses: ClientExpense[]
   addExpense: (expense: ClientNewExpense) => void
-  updateExpense: (id: number, updates: Partial<ClientNewExpense>) => void
-  deleteExpense: (id: number) => void
-  getExpenseById: (id: number) => ClientExpense | undefined
+  updateExpense: (id: string, updates: Partial<ClientNewExpense>) => void
+  deleteExpense: (id: string) => void
+  getExpenseById: (id: string) => ClientExpense | undefined
   getExpensesByFrequency: (frequency: Frequency) => ClientExpense[]
   getTotalExpenses: () => number
 }
 
-// Helper to generate a temporary ID for client-side storage
-// Note: In production with backend, IDs will come from the database
-// Using negative IDs for temporary client-side entries to avoid conflicts
-// Start at -20000 to avoid conflicts with income IDs
-let expenseTempIdCounter = -20000
-const generateExpenseTempId = (): number => {
-  // Check existing IDs and find the minimum to avoid conflicts
-  // This is a simple approach; for production, use a more robust ID system
-  expenseTempIdCounter -= 1
-  return expenseTempIdCounter
-}
-
 // Convert ClientNewExpense to ClientExpense (add id, userId, and timestamps as ISO strings)
-// For free tier without auth, userId defaults to 0
+// For free tier without auth, userId defaults to 0. The id is a client-generated
+// uuid (Story 5-14) so an offline-created row keeps the SAME id once synced.
 const toClientExpense = (newExpense: ClientNewExpense): ClientExpense => ({
   ...newExpense,
   userId: newExpense.userId ?? 0, // Default to 0 for free tier (no auth)
-  id: generateExpenseTempId(),
+  id: generateUUID(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 })
@@ -105,6 +98,12 @@ export const useExpenseStore = create<ExpenseState>()(
       name: 'budget-planner-expenses-v1',
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
+      // v1 (Story 5-14): convert any legacy negative-integer ids to fresh uuids.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as { expenses?: ClientExpense[] }
+        return { expenses: withUuidIds(state?.expenses) }
+      },
       partialize: (state) => ({
         expenses: state.expenses,
       }),

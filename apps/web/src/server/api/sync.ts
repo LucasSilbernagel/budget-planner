@@ -80,8 +80,8 @@ export interface SyncConflict {
   serverOperationId: string
   /** Entity type */
   entityType: string
-  /** Entity ID */
-  entityId: string | number
+  /** Entity ID (uuid string since Story 5-14 — no serial-int ids remain) */
+  entityId: string
   /** Type of conflict */
   conflictType: string
   /** Suggested resolution */
@@ -126,8 +126,8 @@ export interface SyncAuditLog {
   operationId: string
   /** Entity type */
   entityType: string
-  /** Entity ID */
-  entityId: string | number
+  /** Entity ID (uuid string since Story 5-14 — no serial-int ids remain) */
+  entityId: string
   /** Operation type */
   operationType: 'create' | 'update' | 'delete'
   /** Timestamp */
@@ -1227,7 +1227,7 @@ export async function getSyncChanges(
     for (const row of incomeRows) {
       changes.push({
         entityType: 'incomeSource',
-        entityId: String(row.id),
+        entityId: row.id,
         data: row,
         updatedAt: toEpochMs(row.updatedAt),
         isDeleted: row.isDeleted,
@@ -1250,7 +1250,7 @@ export async function getSyncChanges(
     for (const row of expenseRows) {
       changes.push({
         entityType: 'expense',
-        entityId: String(row.id),
+        entityId: row.id,
         data: row,
         updatedAt: toEpochMs(row.updatedAt),
         isDeleted: row.isDeleted,
@@ -1273,7 +1273,7 @@ export async function getSyncChanges(
     for (const row of savingsRows) {
       changes.push({
         entityType: 'savingsGoal',
-        entityId: String(row.id),
+        entityId: row.id,
         data: row,
         updatedAt: toEpochMs(row.updatedAt),
         isDeleted: row.isDeleted,
@@ -1296,7 +1296,7 @@ export async function getSyncChanges(
     for (const row of balanceRows) {
       changes.push({
         entityType: 'balanceTracking',
-        entityId: String(row.id),
+        entityId: row.id,
         data: row,
         updatedAt: toEpochMs(row.updatedAt),
         isDeleted: row.isDeleted,
@@ -1319,7 +1319,7 @@ export async function getSyncChanges(
   for (const row of profileRows) {
     changes.push({
       entityType: 'userProfile',
-      entityId: String(row.id),
+      entityId: row.id,
       data: row,
       updatedAt: toEpochMs(row.updatedAt),
       isDeleted: row.isDeleted,

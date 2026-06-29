@@ -341,14 +341,16 @@ describe('filterBalanceTracking', () => {
   })
 })
 
-describe('generateBalanceTrackingTempId', () => {
-  beforeEach(() => {
-    resetBalanceTrackingTempId()
-  })
+// Story 5-14: ids are now client-generated uuids (replacing the old
+// localStorage-backed negative-integer counter) so an offline-created row keeps
+// the SAME id once synced.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-  it('should generate negative IDs', () => {
+describe('generateBalanceTrackingTempId', () => {
+  it('should generate a uuid string', () => {
     const id = generateBalanceTrackingTempId()
-    expect(id).toBeLessThan(0)
+    expect(typeof id).toBe('string')
+    expect(id).toMatch(UUID_RE)
   })
 
   it('should generate unique IDs for each call', () => {
@@ -356,25 +358,16 @@ describe('generateBalanceTrackingTempId', () => {
     const id2 = generateBalanceTrackingTempId()
     expect(id1).not.toBe(id2)
   })
-
-  it('should start at -30000 and decrement', () => {
-    resetBalanceTrackingTempId()
-    const id1 = generateBalanceTrackingTempId()
-    const id2 = generateBalanceTrackingTempId()
-    expect(id1).toBe(-30000)
-    expect(id2).toBe(-30001)
-  })
 })
 
 describe('resetBalanceTrackingTempId', () => {
-  it('should reset counter to -30000', () => {
-    // Generate some IDs to move counter
-    generateBalanceTrackingTempId()
-    generateBalanceTrackingTempId()
-
+  it('is a stateless no-op and still yields fresh unique uuids', () => {
+    const before = generateBalanceTrackingTempId()
+    // No counter to reset; the call must not throw and must not collide ids.
     resetBalanceTrackingTempId()
-    const id = generateBalanceTrackingTempId()
-    expect(id).toBe(-30000)
+    const after = generateBalanceTrackingTempId()
+    expect(after).toMatch(UUID_RE)
+    expect(after).not.toBe(before)
   })
 })
 
@@ -388,7 +381,7 @@ describe('toClientBalanceTracking', () => {
     }
     const result = toClientBalanceTracking(input)
 
-    expect(result.id).toBeLessThan(0)
+    expect(result.id).toMatch(UUID_RE) // client-generated uuid (Story 5-14)
     expect(result.name).toBe('Test')
     expect(result.type).toBe('investment')
     expect(result.currentBalance).toBe(100000)

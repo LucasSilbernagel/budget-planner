@@ -6,18 +6,17 @@
  * writes them into the UI stores so pulled data is reflected. Core never imports
  * the stores; the dependency only ever points web → core.
  *
- * Reconciliation is state-snapshot based (the story's recommended v1): each
- * change is a replace-or-insert keyed by the SERVER id; a tombstone
- * (`isDeleted: true`) removes the entity locally. This sidesteps the
- * client-temp-id ↔ server-serial-id gap (DN1 debt, deferred) by treating the
- * server row as authoritative for cross-device convergence.
+ * Reconciliation is keyed by the entity's uuid id (Story 5-14): every syncable
+ * entity now has a client-generatable uuid PK, so a row created on one device
+ * carries the SAME id everywhere. Each change is a replace-or-insert by that
+ * shared id; a tombstone (`isDeleted: true`) removes the entity locally. This is
+ * what eliminates the old client-temp-id ↔ server-serial-id duplicate-on-create
+ * gap (DN1): there is no longer a numeric/string id split to bridge.
  *
- * KNOWN DN1 type debt: the client store item types model the free tier
- * (`userId: number`, negative temp `id`), while pulled rows carry a uuid
- * `userId` and a positive server `id`. At runtime this is harmless (the stored
- * value is only read back for display/aggregation), so the pulled row is written
- * through with its server fields. Unifying the client/server identity types is
- * the deferred DN1 uuid-PK migration — out of scope here.
+ * NOTE: the client store item types still model the free-tier `userId` as a
+ * number while a pulled row carries a uuid `userId`. That is harmless at runtime
+ * (the value is only read back for display/aggregation) and is a separate concern
+ * from the id unification this story delivers — out of scope here.
  */
 
 import type { ServerChange, SyncEntityType } from '@budget-planner/core/sync'
@@ -38,45 +37,23 @@ interface EntityBinding {
   store: StoreApi
   /** The state field that holds the entity array. */
   collection: string
-  /** Whether the entity id is a number (serial PK) vs a string (uuid). */
-  idIsNumeric: boolean
 }
 
 /**
- * Map each syncable entity type to its store + collection + id kind.
- * Kept as a single table so the apply logic below stays generic.
+ * Map each syncable entity type to its store + collection. Every entity id is a
+ * uuid string now (Story 5-14), so no per-entity id-kind flag is needed.
  */
 const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
-  incomeSource: {
-    store: useIncomeStore as unknown as StoreApi,
-    collection: 'incomeSources',
-    idIsNumeric: true,
-  },
-  expense: {
-    store: useExpenseStore as unknown as StoreApi,
-    collection: 'expenses',
-    idIsNumeric: true,
-  },
-  savingsGoal: {
-    store: useSavingsStore as unknown as StoreApi,
-    collection: 'savingsGoals',
-    idIsNumeric: true,
-  },
-  balanceTracking: {
-    store: useBalanceStore as unknown as StoreApi,
-    collection: 'entries',
-    idIsNumeric: true,
-  },
-  userProfile: {
-    store: useProfileStore as unknown as StoreApi,
-    collection: 'profiles',
-    idIsNumeric: false,
-  },
+  incomeSource: { store: useIncomeStore as unknown as StoreApi, collection: 'incomeSources' },
+  expense: { store: useExpenseStore as unknown as StoreApi, collection: 'expenses' },
+  savingsGoal: { store: useSavingsStore as unknown as StoreApi, collection: 'savingsGoals' },
+  balanceTracking: { store: useBalanceStore as unknown as StoreApi, collection: 'entries' },
+  userProfile: { store: useProfileStore as unknown as StoreApi, collection: 'profiles' },
 }
 
 /**
  * Apply a single pulled change to its store: remove on tombstone, otherwise
- * replace-or-insert by server id.
+ * replace-or-insert by the shared uuid id.
  */
 function applyOne(change: ServerChange): void {
   const binding = ENTITY_BINDINGS[change.entityType]
@@ -86,14 +63,14 @@ function applyOne(change: ServerChange): void {
     return
   }
 
-  const { store, collection, idIsNumeric } = binding
-  const id: number | string = idIsNumeric ? Number(change.entityId) : change.entityId
+  const { store, collection } = binding
+  const id = change.entityId
 
-  // Guard a non-numeric id for a numeric-id store (review P6): `Number(...)`
-  // would yield NaN, `item.id !== NaN` is always true (so a tombstone removes
-  // nothing) and an insert would store a `{ id: NaN }` orphan that can never be
-  // replaced or removed. Skip the change rather than corrupt the store.
-  if (typeof id === 'number' && Number.isNaN(id)) {
+  // Defensive guard (Story 5-14 review P3): a change with a missing/empty id can
+  // neither be matched (to replace/tombstone) nor safely inserted — `{ id: '' }`
+  // would be an orphan that no later change can ever target. Skip it rather than
+  // corrupt the store. (Replaces the old numeric NaN guard, which is now moot.)
+  if (!id) {
     return
   }
 
@@ -101,7 +78,7 @@ function applyOne(change: ServerChange): void {
   // Element type carries an explicit `id` (alongside the open record) so the
   // filter below uses real property access — not an index-signature lookup,
   // which would trip both TS4111 and Biome's literal-keys rule.
-  const current = (state[collection] as (Record<string, unknown> & { id: number | string })[]) ?? []
+  const current = (state[collection] as (Record<string, unknown> & { id: string })[]) ?? []
 
   // Remove any existing row with this id (the "replace" half of upsert, and the
   // whole job for a tombstone).
@@ -112,7 +89,7 @@ function applyOne(change: ServerChange): void {
     return
   }
 
-  // Insert the authoritative server row, normalizing the id to the store's kind.
+  // Insert the authoritative server row keyed by its shared uuid id.
   const entity = { ...change.data, id }
   store.setState({ [collection]: [...without, entity] })
 }
