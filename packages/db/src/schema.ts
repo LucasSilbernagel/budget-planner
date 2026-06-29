@@ -106,6 +106,10 @@ export const incomeSources = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
     frequency: frequencyEnum('frequency').notNull(),
+    // Soft-delete tombstone (Story 4-18): cross-device delete propagation. A hard
+    // DELETE can never be surfaced by a delta-by-updatedAt pull, so deletes are
+    // soft (isDeleted=true + updatedAt bump) and filtered from normal reads.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
@@ -133,6 +137,8 @@ export const expenses = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
     frequency: frequencyEnum('frequency').notNull(),
+    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
@@ -157,6 +163,8 @@ export const savingsGoals = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     targetAmount: integer('targetAmount').notNull(), // Target amount in cents (> 0 required)
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
+    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
@@ -193,6 +201,8 @@ export const balanceTracking = pgTable(
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
     maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)
     monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents (>= 0 required)
+    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
@@ -227,6 +237,8 @@ export const userProfiles = pgTable(
     description: text('description'),
     isDefault: boolean('isDefault').default(false).notNull(),
     currency: currencyEnum('currency').default('NONE'),
+    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },

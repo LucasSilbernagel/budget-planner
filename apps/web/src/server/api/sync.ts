@@ -15,7 +15,7 @@
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
-import type { SyncOperation, SyncStatus } from '@budget-planner/core/sync'
+import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
@@ -27,7 +27,7 @@ import {
   savingsGoals,
   userProfiles,
 } from '@budget-planner/db'
-import { and, eq, gt } from 'drizzle-orm'
+import { and, asc, eq, gt } from 'drizzle-orm'
 import { z } from 'zod'
 
 // ============================================================================
@@ -296,10 +296,26 @@ const RATE_LIMIT_CONFIG = {
 }
 
 /**
- * Check rate limit for a user using DanubeData PostgreSQL
- * This ensures rate limiting persists across server restarts (NFR1, NFR2)
+ * Subscription statuses permitted to use server-side sync (push AND pull).
+ *
+ * NOTE: this deliberately includes `past_due` (a paying customer with a failed
+ * latest charge keeps access during the dunning window) and therefore differs
+ * from the calculations gate, which is `active`-only. The pull route must match
+ * the push gate, not the calculations gate (Story 4-18).
  */
-async function checkRateLimit(userId: string): Promise<{ allowed: boolean; remaining: number }> {
+export const PAID_SYNC_STATUSES = ['active', 'past_due']
+
+/**
+ * Check rate limit for a user using DanubeData PostgreSQL
+ * This ensures rate limiting persists across server restarts (NFR1, NFR2).
+ *
+ * Exported so the pull route shares the same per-user budget as push (review D3);
+ * the window is generous (100/min) and a 30s poll is ~2/min, so push and pull
+ * coexist comfortably in one bucket.
+ */
+export async function checkRateLimit(
+  userId: string
+): Promise<{ allowed: boolean; remaining: number }> {
   const now = Date.now()
   const windowStart = new Date(now - RATE_LIMIT_CONFIG.windowMs)
 
@@ -405,7 +421,12 @@ async function getEntity(
       // @ts-expect-error - Dynamic column access
       eq(table.userId, userId),
       // @ts-expect-error - Dynamic column access
-      eq(table.id, entityId)
+      eq(table.id, entityId),
+      // Soft-deleted rows are treated as absent (Story 4-18): excluded from
+      // conflict checks AND from the app's normal reads so tombstones never
+      // resurface as live entities.
+      // @ts-expect-error - Dynamic column access
+      eq(table.isDeleted, false)
     )
 
     // Add profileId filter if provided and table has profileId column
@@ -452,8 +473,11 @@ async function createEntity(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const table = getTable(entityType)
-    // Ensure profileId is included in data if available
-    const insertData = data
+    // Explicitly stamp updatedAt (Story 4-18). Although the column defaults to
+    // now() on INSERT, a delta-by-updatedAt pull relies on updatedAt being a
+    // real, monotonic value for every mutation; set it here so create/update/
+    // soft-delete are uniform and a freshly created row is always pull-visible.
+    const insertData = { ...data, updatedAt: new Date() }
     // @ts-expect-error - Dynamic table insert
     await db.insert(table).values(insertData)
     return { success: true }
@@ -490,11 +514,15 @@ async function updateEntity(
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
+    // Drizzle's defaultNow() only fires on INSERT, so an UPDATE that does not
+    // set updatedAt would leave the cursor stale and a delta-by-updatedAt pull
+    // would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
+    const updateData = { ...data, updatedAt: new Date() }
     // @ts-expect-error - Dynamic table update
     await db
       .update(table)
       // @ts-expect-error - Dynamic column access
-      .set(data)
+      .set(updateData)
       .where(whereClause)
     return { success: true }
   } catch (error) {
@@ -506,7 +534,13 @@ async function updateEntity(
 }
 
 /**
- * Delete entity from database
+ * Soft-delete an entity (Story 4-18).
+ *
+ * A hard `DELETE` removes the row entirely, so a later delta-by-updatedAt pull
+ * can never surface it and the deletion is invisible to other devices (AC-3).
+ * Instead we set the tombstone flag and bump updatedAt; `getEntity`/`entityExists`
+ * and the app's normal reads filter `isDeleted = false`, so the row is absent for
+ * all live purposes while remaining discoverable by the pull cursor.
  */
 async function deleteEntity(
   entityType: keyof EntityTableMap,
@@ -529,8 +563,12 @@ async function deleteEntity(
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
-    // @ts-expect-error - Dynamic table delete
-    await db.delete(table).where(whereClause)
+    // @ts-expect-error - Dynamic table update (soft delete, not hard delete)
+    await db
+      .update(table)
+      // @ts-expect-error - Dynamic column access
+      .set({ isDeleted: true, updatedAt: new Date() })
+      .where(whereClause)
     return { success: true }
   } catch (error) {
     return {
@@ -842,7 +880,6 @@ export async function processBatchSync(
   // Tier gating: server-side sync is a paid-tier feature. Free (and canceled)
   // users must not be able to persist data to the server even with a valid
   // session. Only subscriptions with active access may sync.
-  const PAID_SYNC_STATUSES = ['active', 'past_due']
   if (!PAID_SYNC_STATUSES.includes(user.subscriptionStatus)) {
     return {
       success: false,
@@ -1083,6 +1120,216 @@ export async function getSyncStatus(userId: string): Promise<{
       status: SyncStatusEnum.PENDING,
     }
   }
+}
+
+// ============================================================================
+// Server → Client Pull (Story 4-18)
+// ============================================================================
+
+/**
+ * Normalize a Drizzle timestamp value to a Unix epoch in milliseconds.
+ * Drizzle may hand back a `Date` (default mode) or an ISO string; both are
+ * handled so the pull cursor is always a comparable number.
+ */
+function toEpochMs(value: unknown): number {
+  if (value instanceof Date) {
+    return value.getTime()
+  }
+  if (typeof value === 'number') {
+    return value
+  }
+  const parsed = new Date(value as string).getTime()
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+/**
+ * Maximum number of changes returned by a single pull, regardless of the
+ * client-requested limit. Bounds the response size (DoS guard).
+ */
+const MAX_PULL_LIMIT = 500
+
+/**
+ * Get server-side changes for a user since a cursor (Story 4-18, AC-1/AC-3).
+ *
+ * Selects rows from every syncable entity table where `updatedAt > since`
+ * (full snapshot when `since` is null), INCLUDING soft-deleted tombstones so
+ * deletions propagate to other devices (AC-3). Profile-scoped entities are
+ * additionally filtered by the active `profileId` to prevent cross-profile
+ * leakage; `userProfiles` are scoped by user only.
+ *
+ * SECURITY: the caller MUST pass the SESSION user id (never a client-supplied
+ * userId) — this function trusts `userId` as already-authorized. The result is
+ * ordered by `updatedAt` ascending and capped at `limit`, so a client that is
+ * behind paginates forward deterministically via its advancing cursor.
+ */
+/**
+ * Cap a timestamp-sorted change list WITHOUT splitting a run of rows that share
+ * the same `updatedAt` across the page boundary (Story 4-18 review P1).
+ *
+ * The pull cursor is the last returned row's `updatedAt`, and the next pull
+ * filters `updatedAt > cursor`. A blind `slice(0, cap)` through a run of rows
+ * sharing one `updatedAt` would leave the overflow rows at that timestamp `==
+ * cursor` next time, so the strict `>` would skip them FOREVER (silent data
+ * loss). So trim back to the last fully-included timestamp. Degenerate case: if
+ * the entire first `cap` rows share one timestamp, include that whole timestamp
+ * group (may exceed `cap`) so the cursor can still advance instead of stalling.
+ */
+export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: number): ServerChange[] {
+  if (sorted.length <= cap) {
+    return sorted
+  }
+  const boundaryTs = sorted[cap].updatedAt // first EXCLUDED row's timestamp
+  let end = cap
+  while (end > 0 && sorted[end - 1].updatedAt === boundaryTs) {
+    end--
+  }
+  if (end === 0) {
+    // The whole page is a single timestamp larger than the cap: include the full
+    // group for that timestamp to guarantee forward progress.
+    let i = cap
+    while (i < sorted.length && sorted[i].updatedAt === boundaryTs) {
+      i++
+    }
+    return sorted.slice(0, i)
+  }
+  return sorted.slice(0, end)
+}
+
+export async function getSyncChanges(
+  userId: string,
+  since: number | null,
+  limit = 100,
+  profileId?: string
+): Promise<ServerChange[]> {
+  const cappedLimit = Math.min(Math.max(1, Math.floor(limit)), MAX_PULL_LIMIT)
+  const sinceDate = since !== null ? new Date(since) : null
+  const changes: ServerChange[] = []
+
+  // Profile-scoped entity tables are pulled ONLY when an active profile is known
+  // (Story 4-18 review P3). Without a profileId we must NOT fall back to "all
+  // profiles", or a null / mid-switch active profile would mix other profiles'
+  // rows into the active stores. `userProfiles` is user-scoped and always pulled
+  // (the client needs the profile list before it can choose an active profile).
+  if (profileId !== undefined) {
+    // Income sources (profile-scoped)
+    const incomeRows = await db
+      .select()
+      .from(incomeSources)
+      .where(
+        and(
+          eq(incomeSources.userId, userId),
+          eq(incomeSources.profileId, profileId),
+          sinceDate ? gt(incomeSources.updatedAt, sinceDate) : undefined
+        )
+      )
+      .orderBy(asc(incomeSources.updatedAt))
+      .limit(cappedLimit)
+    for (const row of incomeRows) {
+      changes.push({
+        entityType: 'incomeSource',
+        entityId: String(row.id),
+        data: row,
+        updatedAt: toEpochMs(row.updatedAt),
+        isDeleted: row.isDeleted,
+      })
+    }
+
+    // Expenses (profile-scoped)
+    const expenseRows = await db
+      .select()
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.userId, userId),
+          eq(expenses.profileId, profileId),
+          sinceDate ? gt(expenses.updatedAt, sinceDate) : undefined
+        )
+      )
+      .orderBy(asc(expenses.updatedAt))
+      .limit(cappedLimit)
+    for (const row of expenseRows) {
+      changes.push({
+        entityType: 'expense',
+        entityId: String(row.id),
+        data: row,
+        updatedAt: toEpochMs(row.updatedAt),
+        isDeleted: row.isDeleted,
+      })
+    }
+
+    // Savings goals (profile-scoped)
+    const savingsRows = await db
+      .select()
+      .from(savingsGoals)
+      .where(
+        and(
+          eq(savingsGoals.userId, userId),
+          eq(savingsGoals.profileId, profileId),
+          sinceDate ? gt(savingsGoals.updatedAt, sinceDate) : undefined
+        )
+      )
+      .orderBy(asc(savingsGoals.updatedAt))
+      .limit(cappedLimit)
+    for (const row of savingsRows) {
+      changes.push({
+        entityType: 'savingsGoal',
+        entityId: String(row.id),
+        data: row,
+        updatedAt: toEpochMs(row.updatedAt),
+        isDeleted: row.isDeleted,
+      })
+    }
+
+    // Balance tracking (profile-scoped)
+    const balanceRows = await db
+      .select()
+      .from(balanceTracking)
+      .where(
+        and(
+          eq(balanceTracking.userId, userId),
+          eq(balanceTracking.profileId, profileId),
+          sinceDate ? gt(balanceTracking.updatedAt, sinceDate) : undefined
+        )
+      )
+      .orderBy(asc(balanceTracking.updatedAt))
+      .limit(cappedLimit)
+    for (const row of balanceRows) {
+      changes.push({
+        entityType: 'balanceTracking',
+        entityId: String(row.id),
+        data: row,
+        updatedAt: toEpochMs(row.updatedAt),
+        isDeleted: row.isDeleted,
+      })
+    }
+  }
+
+  // User profiles (scoped by user only — profiles are not themselves profile-scoped)
+  const profileRows = await db
+    .select()
+    .from(userProfiles)
+    .where(
+      and(
+        eq(userProfiles.userId, userId),
+        sinceDate ? gt(userProfiles.updatedAt, sinceDate) : undefined
+      )
+    )
+    .orderBy(asc(userProfiles.updatedAt))
+    .limit(cappedLimit)
+  for (const row of profileRows) {
+    changes.push({
+      entityType: 'userProfile',
+      entityId: String(row.id),
+      data: row,
+      updatedAt: toEpochMs(row.updatedAt),
+      isDeleted: row.isDeleted,
+    })
+  }
+
+  // Merge across tables, order by the global cursor with a stable id tiebreaker,
+  // then cap WITHOUT splitting a same-timestamp group across the boundary (P1).
+  changes.sort((a, b) => a.updatedAt - b.updatedAt || a.entityId.localeCompare(b.entityId))
+  return capChangesAtTimestampBoundary(changes, cappedLimit)
 }
 
 /**

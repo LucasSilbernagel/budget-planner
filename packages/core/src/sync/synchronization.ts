@@ -14,11 +14,14 @@
 
 import { LocalStorageSyncQueueStorage, SyncQueue, createSyncQueue } from './queue'
 import type {
+  ChangesPulledCallback,
   ConflictCallback,
   ConflictResolutionStrategy,
   ConflictResult,
   ConflictType,
   ProcessOperationResult,
+  PullResult,
+  ServerChange,
   SyncConfig,
   SyncEntityType,
   SyncOperation,
@@ -200,6 +203,7 @@ export class SynchronizationService {
   private deviceId: string
   private statusCallbacks: Set<SyncStatusCallback> = new Set()
   private conflictCallbacks: Set<ConflictCallback> = new Set()
+  private changesPulledCallbacks: Set<ChangesPulledCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing = false
   // Set when a sync trigger (e.g. coming back online) arrives while a sync is
@@ -262,6 +266,7 @@ export class SynchronizationService {
     return {
       status: SyncStatus.PENDING,
       lastSyncTimestamp: null,
+      lastPullTimestamp: null,
       pendingOperations: [],
       failedOperations: [],
       conflictOperations: [],
@@ -409,6 +414,7 @@ export class SynchronizationService {
 
     this.statusCallbacks.clear()
     this.conflictCallbacks.clear()
+    this.changesPulledCallbacks.clear()
   }
 
   /**
@@ -486,6 +492,36 @@ export class SynchronizationService {
     }
     this.conflictCallbacks.add(callback)
     return () => this.conflictCallbacks.delete(callback)
+  }
+
+  /**
+   * Add a callback for server changes applied during a pull (Story 4-18).
+   * The host app (web layer) subscribes to write applied changes into its UI
+   * stores; the core never imports the stores.
+   * @param callback - The callback function
+   * @returns Unsubscribe function to remove the callback
+   */
+  onChangesPulled(callback: ChangesPulledCallback): () => void {
+    if (this.changesPulledCallbacks.size >= MAX_CALLBACKS) {
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
+    }
+    this.changesPulledCallbacks.add(callback)
+    return () => this.changesPulledCallbacks.delete(callback)
+  }
+
+  /**
+   * Notify all changes-pulled callbacks with the applied server changes.
+   */
+  private notifyChangesPulledCallbacks(changes: ServerChange[]): void {
+    for (const callback of this.changesPulledCallbacks) {
+      try {
+        callback([...changes])
+      } catch (error) {
+        this.log('Changes-pulled callback error:', error)
+      }
+    }
   }
 
   /**
@@ -581,7 +617,8 @@ export class SynchronizationService {
     entityId: string | number,
     data: Record<string, unknown>,
     userId: string,
-    version?: number
+    version?: number,
+    baseVersion?: number
   ): Promise<SyncOperation> {
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
@@ -604,6 +641,8 @@ export class SynchronizationService {
       deviceId: this.deviceId,
       userId,
       version,
+      // Server `updatedAt` this edit was based on, for causal pull LWW (D1).
+      baseVersion,
       // Stamp the active profile (DN2: service-level config).
       profileId: this.config.profileId,
     }
@@ -633,7 +672,8 @@ export class SynchronizationService {
     entityType: SyncEntityType,
     entityId: string | number,
     userId: string,
-    data: Record<string, unknown> = {}
+    data: Record<string, unknown> = {},
+    baseVersion?: number
   ): Promise<SyncOperation> {
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
@@ -656,6 +696,8 @@ export class SynchronizationService {
       timestamp: Date.now(),
       deviceId: this.deviceId,
       userId,
+      // Server `updatedAt` this delete was based on, for causal pull LWW (D1).
+      baseVersion,
       // Stamp the active profile so profile-scoped entities satisfy the
       // server's `profileId NOT NULL` requirement (DN2: service-level config).
       profileId: this.config.profileId,
@@ -1244,6 +1286,207 @@ export class SynchronizationService {
   }
 
   /**
+   * Pull server-side changes since the last pull cursor and reconcile them
+   * against local state and the unsynced queue (Story 4-18, AC-1/AC-2/AC-3).
+   *
+   * Reconciliation model — STATE-BASED last-write-wins (intentionally distinct
+   * from the op-based `detectConflict` push path; see the Dev Note in the story):
+   * pulled changes are reconstructed from entity ROWS and carry no originating
+   * deviceId/operation id, so op-based conflict detection cannot run faithfully.
+   * Instead, for each server change we compare its `updatedAt` against any queued
+   * local op targeting the same `(entityType, entityId)`:
+   *   - local op newer OR equal (tie) → the local edit WINS; the server change is
+   *     suppressed (reported as a conflict) and the queued op is LEFT IN PLACE so
+   *     unsynced work is never silently lost (AC-2). Server loses ties to a
+   *     still-queued local edit, by deliberate rule.
+   *   - server strictly newer → the server change WINS; it is applied locally and
+   *     the now-stale queued op is removed from the queue (it lost LWW and must
+   *     not later re-push older data over the newer server value). A conflict
+   *     callback is emitted so this is observable, not silent.
+   * Server changes with no queued local op apply directly.
+   *
+   * The transport (`config.fetchServerChanges`) is REQUIRED — like
+   * `processOperation`, a missing transport throws rather than no-oping, so a
+   * misconfiguration can't masquerade as "no remote changes".
+   */
+  async pull(): Promise<PullResult> {
+    if (!this.config.fetchServerChanges) {
+      // Fail loud (mirrors processOperation): never present "no transport" as
+      // "no changes", which would hide a real wiring bug.
+      throw new Error(
+        'No fetchServerChanges configured: refusing to pull. Provide config.fetchServerChanges.'
+      )
+    }
+
+    const since = this.state.lastPullTimestamp
+
+    let changes: ServerChange[]
+    try {
+      changes = await this.config.fetchServerChanges(since)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.state.lastError = message
+      this.log('Pull transport error:', error)
+      this.notifyStatusCallbacks()
+      return {
+        success: false,
+        changesPulledCount: 0,
+        applied: [],
+        conflicts: [],
+        error: message,
+        lastPullTimestamp: since,
+      }
+    }
+
+    const applied: ServerChange[] = []
+    const conflicts: ServerChange[] = []
+    const droppedLocalOps: SyncOperation[] = []
+
+    // Index the current queue by entity key. The NEWEST op per entity is what
+    // would win a push, so the LWW decision compares against it — but when the
+    // server wins we must drop EVERY queued op for that entity (review P4), or an
+    // older create/update left behind would re-push stale data over the value the
+    // pull just applied. So track both the newest op and the full list per key.
+    const queuedByEntity = new Map<string, SyncOperation>()
+    const allOpsByEntity = new Map<string, SyncOperation[]>()
+    for (const op of this.queue.getAll()) {
+      const key = `${op.entityType}:${op.entityId}`
+      const existing = queuedByEntity.get(key)
+      if (!existing || op.timestamp > existing.timestamp) {
+        queuedByEntity.set(key, op)
+      }
+      const list = allOpsByEntity.get(key)
+      if (list) {
+        list.push(op)
+      } else {
+        allOpsByEntity.set(key, [op])
+      }
+    }
+
+    for (const change of changes) {
+      const key = `${change.entityType}:${change.entityId}`
+      const localOp = queuedByEntity.get(key)
+
+      // Decide the winner by CAUSAL version when the local op carries a
+      // baseVersion (review D1): the local edit has "already incorporated" the
+      // server change iff that change is no newer than the server version the op
+      // was based on (`change.updatedAt <= baseVersion`). A change newer than the
+      // base is a genuine concurrent server edit → server wins. When baseVersion
+      // is absent, fall back to the wall-clock `timestamp` comparison (unchanged
+      // behavior), so this is a strict, regression-free refinement.
+      const localWins =
+        localOp !== undefined &&
+        (localOp.baseVersion !== undefined
+          ? change.updatedAt <= localOp.baseVersion
+          : localOp.timestamp >= change.updatedAt)
+
+      if (localOp && localWins) {
+        // Local edit wins → suppress the server change and keep the queued op so
+        // the unsynced edit still pushes (AC-2).
+        conflicts.push(change)
+        this.notifyConflictCallbacks({
+          hasConflict: true,
+          conflictType: 'update-update',
+          localOperation: localOp,
+          // resolution = the local op: the still-queued local edit is the winner.
+          resolution: localOp,
+        })
+        continue
+      }
+
+      if (localOp) {
+        // Server change is strictly newer than the newest queued local op →
+        // server wins LWW. Drop ALL queued ops for this entity (review P4) so
+        // neither the newest nor any older op can later resurrect stale data, and
+        // record them so the UI conflict count reflects the discarded local
+        // writes (review D4). No `resolution` is set here: the winner is the
+        // server change, which is not a SyncOperation.
+        for (const op of allOpsByEntity.get(key) ?? [localOp]) {
+          droppedLocalOps.push(op)
+        }
+        this.notifyConflictCallbacks({
+          hasConflict: true,
+          conflictType: 'update-update',
+          localOperation: localOp,
+        })
+      }
+
+      applied.push(change)
+    }
+
+    // Advance the pull cursor — but NOT past a change suppressed by a still-queued
+    // local op (review D2). The cursor sits just below the earliest unresolved
+    // (suppressed) change, so the next pull re-fetches it (and idempotently
+    // re-applies anything after it) until the conflicting local op finally pushes.
+    // Without this, a suppressed server change whose local op never lands would be
+    // skipped forever by the server's `updatedAt > cursor` filter.
+    const earliestSuppressed = conflicts.length
+      ? Math.min(...conflicts.map((c) => c.updatedAt))
+      : null
+    let newCursor = since
+    for (const change of changes) {
+      if (earliestSuppressed !== null && change.updatedAt >= earliestSuppressed) {
+        continue
+      }
+      if (newCursor === null || change.updatedAt > newCursor) {
+        newCursor = change.updatedAt
+      }
+    }
+
+    // Remove queued ops that definitively lost LWW, and surface them as conflicts
+    // (mirrors the push path's conflictOperations) so the UI count reflects the
+    // local writes the server overwrote (review D4).
+    if (droppedLocalOps.length > 0) {
+      try {
+        await this.queue.removeBatch(droppedLocalOps.map((op) => op.id))
+        this.state.pendingOperations = this.queue.getAll()
+      } catch (error) {
+        // If removal fails the ops stay queued and will be re-evaluated on the
+        // next pull/push — no data is lost, the worst case is a redundant retry.
+        this.log('Failed to remove stale local ops after pull:', error)
+      }
+      this.state.conflictOperations = [...this.state.conflictOperations, ...droppedLocalOps]
+    }
+
+    // Persist the advanced pull cursor (separate from the push cursor) and surface
+    // the applied changes to the host app for store writes.
+    this.state.lastPullTimestamp = newCursor
+    this.state.lastError = undefined
+
+    if (applied.length > 0) {
+      this.notifyChangesPulledCallbacks(applied)
+    }
+    this.notifyStatusCallbacks()
+
+    return {
+      success: true,
+      changesPulledCount: applied.length,
+      applied,
+      conflicts,
+      lastPullTimestamp: newCursor,
+    }
+  }
+
+  /**
+   * Manual pull trigger (Story 4-18, AC-5). Identical to {@link pull}; named for
+   * symmetry with `forceSync` so the host hook can expose an explicit user action.
+   */
+  async forcePull(): Promise<PullResult> {
+    return this.pull()
+  }
+
+  /**
+   * Reset the server→client pull cursor (Story 4-18 review P7). Forces the next
+   * pull to request a full snapshot. The web layer calls this on profile switch:
+   * the pull cursor is global but the delta is profile-scoped, so without a reset
+   * the newly-active profile's rows older than the cursor would never be pulled.
+   */
+  resetPullCursor(): void {
+    this.state.lastPullTimestamp = null
+    this.notifyStatusCallbacks()
+  }
+
+  /**
    * Get the current sync state
    */
   getState(): SyncState {
@@ -1319,6 +1562,9 @@ export type {
   ConflictResult,
   ConflictType,
   ConflictResolutionStrategy,
+  ServerChange,
+  PullResult,
+  ChangesPulledCallback,
 }
 
 export { SyncQueue, createSyncQueue, LocalStorageSyncQueueStorage, DEFAULT_CONFIG }

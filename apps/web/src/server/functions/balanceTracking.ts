@@ -82,7 +82,9 @@ export async function getBalanceTrackingEntries(
     // Build where clause based on provided parameters
     // For paid tier, both userId and profileId should be provided
     // For free tier (legacy), only userId is used
-    let whereClause = eq(balanceTracking.userId, userId)
+    // Exclude soft-deleted tombstones (Story 4-18) so a row deleted on another
+    // device via sync does not resurrect in this list.
+    let whereClause = and(eq(balanceTracking.userId, userId), eq(balanceTracking.isDeleted, false))
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
@@ -121,7 +123,11 @@ export async function getBalanceTrackingEntry(
   profileId?: string
 ): Promise<BalanceTrackingServerResult> {
   try {
-    let whereClause = and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId))
+    let whereClause = and(
+      eq(balanceTracking.id, id),
+      eq(balanceTracking.userId, userId),
+      eq(balanceTracking.isDeleted, false)
+    )
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
@@ -220,7 +226,11 @@ export async function updateBalanceTrackingEntry(
 ): Promise<BalanceTrackingServerResult> {
   try {
     // Build where clause
-    let whereClause = and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId))
+    let whereClause = and(
+      eq(balanceTracking.id, id),
+      eq(balanceTracking.userId, userId),
+      eq(balanceTracking.isDeleted, false)
+    )
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))
@@ -283,7 +293,11 @@ export async function deleteBalanceTrackingEntry(
 ): Promise<BalanceTrackingServerResult> {
   try {
     // Build where clause
-    let whereClause = and(eq(balanceTracking.id, id), eq(balanceTracking.userId, userId))
+    let whereClause = and(
+      eq(balanceTracking.id, id),
+      eq(balanceTracking.userId, userId),
+      eq(balanceTracking.isDeleted, false)
+    )
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(balanceTracking.profileId, profileId))

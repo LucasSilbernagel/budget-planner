@@ -165,7 +165,9 @@ export async function getIncomeSources(
     }
     const whereClause = and(
       eq(incomeSources.userId, ctx.userId),
-      eq(incomeSources.profileId, activeProfileId)
+      eq(incomeSources.profileId, activeProfileId),
+      // Exclude soft-deleted tombstones from UI reads (Story 4-18).
+      eq(incomeSources.isDeleted, false)
     )
     const sources = await db
       .select()
@@ -347,7 +349,9 @@ export async function getExpenses(
     }
     const whereClause = and(
       eq(expenses.userId, ctx.userId),
-      eq(expenses.profileId, activeProfileId)
+      eq(expenses.profileId, activeProfileId),
+      // Exclude soft-deleted tombstones from UI reads (Story 4-18).
+      eq(expenses.isDeleted, false)
     )
     const list = await db.select().from(expenses).where(whereClause).orderBy(expenses.createdAt)
     return { success: true, data: list }
@@ -523,7 +527,9 @@ export async function getSavingsGoals(
     }
     const whereClause = and(
       eq(savingsGoals.userId, ctx.userId),
-      eq(savingsGoals.profileId, activeProfileId)
+      eq(savingsGoals.profileId, activeProfileId),
+      // Exclude soft-deleted tombstones from UI reads (Story 4-18).
+      eq(savingsGoals.isDeleted, false)
     )
     const goals = await db
       .select()
@@ -709,7 +715,9 @@ export async function getBalanceTracking(
     }
     const whereClause = and(
       eq(balanceTracking.userId, ctx.userId),
-      eq(balanceTracking.profileId, activeProfileId)
+      eq(balanceTracking.profileId, activeProfileId),
+      // Exclude soft-deleted tombstones from UI reads (Story 4-18).
+      eq(balanceTracking.isDeleted, false)
     )
     const entries = await db
       .select()

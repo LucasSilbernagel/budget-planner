@@ -125,7 +125,9 @@ export async function getProfiles(request: Request): Promise<ApiResult<UserProfi
     const profiles = await db
       .select()
       .from(userProfiles)
-      .where(eq(userProfiles.userId, userId))
+      // Exclude soft-deleted tombstones (Story 4-18): a profile deleted on
+      // another device via sync must not resurface here.
+      .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
       .orderBy(userProfiles.createdAt)
 
     return {
@@ -163,7 +165,13 @@ export async function getProfile(
     const [profile] = await db
       .select()
       .from(userProfiles)
-      .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
+      .where(
+        and(
+          eq(userProfiles.id, profileId),
+          eq(userProfiles.userId, userId),
+          eq(userProfiles.isDeleted, false)
+        )
+      )
       .limit(1)
 
     if (!profile) {
@@ -213,11 +221,17 @@ export async function updateProfile(
       }
     }
 
-    // Check if profile exists and belongs to user
+    // Check if profile exists and belongs to user (and is not a tombstone — 4-18)
     const [existingProfile] = await db
       .select()
       .from(userProfiles)
-      .where(and(eq(userProfiles.id, input.id), eq(userProfiles.userId, userId)))
+      .where(
+        and(
+          eq(userProfiles.id, input.id),
+          eq(userProfiles.userId, userId),
+          eq(userProfiles.isDeleted, false)
+        )
+      )
       .limit(1)
 
     if (!existingProfile) {
@@ -290,11 +304,17 @@ export async function deleteProfile(request: Request, profileId: string): Promis
 
     const userId = sessionResult.data.userId
 
-    // Check if profile exists and belongs to user
+    // Check if profile exists and belongs to user (and is not a tombstone — 4-18)
     const [existingProfile] = await db
       .select()
       .from(userProfiles)
-      .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
+      .where(
+        and(
+          eq(userProfiles.id, profileId),
+          eq(userProfiles.userId, userId),
+          eq(userProfiles.isDeleted, false)
+        )
+      )
       .limit(1)
 
     if (!existingProfile) {
@@ -312,8 +332,12 @@ export async function deleteProfile(request: Request, profileId: string): Promis
       }
     }
 
-    // Check if this is the user's last profile
-    const profileCount = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId))
+    // Check if this is the user's last profile. Exclude soft-deleted tombstones
+    // (Story 4-18) so the limit/last-profile check counts only live profiles.
+    const profileCount = await db
+      .select()
+      .from(userProfiles)
+      .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
 
     if (profileCount.length <= 1) {
       return {

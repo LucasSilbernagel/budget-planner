@@ -12,7 +12,14 @@
  * - Error handling and retry logic
  */
 
-import type { ProcessOperationFn, SyncResult, SyncStatus } from '@budget-planner/core/sync'
+import type {
+  FetchServerChangesFn,
+  ProcessOperationFn,
+  PullResult,
+  ServerChange,
+  SyncResult,
+  SyncStatus,
+} from '@budget-planner/core/sync'
 import {
   SyncStatus as SyncStatusEnum,
   SynchronizationService,
@@ -21,7 +28,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
+import { useShallow } from 'zustand/react/shallow'
+import { fetchServerChanges as fetchServerChangesHttp } from '../features/api/client'
+import { applyServerChangesToStores } from '../lib/sync/applyServerChanges'
 import { processSyncOperation } from '../server/functions/sync'
+import { useProfileStore } from '../stores/profileStore'
 
 // ============================================================================
 // Types
@@ -48,6 +59,12 @@ interface SyncStoreState {
 
   /** Last sync timestamp (null if never synced) */
   lastSyncTimestamp: number | null
+
+  /** Last pull timestamp (null if never pulled) — server → client cursor */
+  lastPullTimestamp: number | null
+
+  /** Number of changes applied by the most recent pull */
+  changesPulledCount: number
 
   /** Last error message */
   lastError: string | undefined
@@ -88,6 +105,15 @@ export interface UseSyncOptions {
   /** Debounce delay for automatic sync in milliseconds */
   debounceDelay?: number
 
+  /** Whether to enable automatic server → client pulls (default: true) */
+  autoPull?: boolean
+
+  /** Interval between automatic pulls in milliseconds (default: 30000) */
+  pullInterval?: number
+
+  /** Max changes requested per pull (server caps this; default: 100) */
+  pullLimit?: number
+
   /** Sync configuration overrides */
   syncConfig?: Partial<Parameters<typeof createSynchronizationService>[1]>
 }
@@ -114,6 +140,12 @@ export interface UseSyncReturn {
   /** Last sync timestamp */
   lastSyncTimestamp: number | null
 
+  /** Last pull timestamp (server → client cursor) */
+  lastPullTimestamp: number | null
+
+  /** Number of changes applied by the most recent pull */
+  changesPulledCount: number
+
   /** Last error message */
   lastError: string | undefined
 
@@ -137,6 +169,12 @@ export interface UseSyncReturn {
 
   /** Force sync immediately (bypasses debounce) */
   forceSync: () => Promise<SyncResult | undefined>
+
+  /** Manually pull server → client changes and apply them (AC-5) */
+  pull: () => Promise<PullResult | undefined>
+
+  /** Force an immediate pull (alias of pull, for symmetry with forceSync) */
+  forcePull: () => Promise<PullResult | undefined>
 
   /** Queue a create operation */
   queueCreate: (
@@ -174,6 +212,8 @@ const initialState: SyncStoreState = {
   failedCount: 0,
   conflictCount: 0,
   lastSyncTimestamp: null,
+  lastPullTimestamp: null,
+  changesPulledCount: 0,
   lastError: undefined,
   isSyncing: false,
   retryCount: 0,
@@ -211,6 +251,15 @@ export function resetSyncStore(): void {
   syncStore = null
 }
 
+/**
+ * Stable empty sync-config default (review P5). Using a module-level constant
+ * (not an inline `= {}`) keeps the identity stable across renders so the init
+ * effect — which lists `syncConfig` in its dependencies — does not tear down and
+ * recreate the service on every render (which would reset the in-memory pull
+ * cursor and force repeated full-snapshot pulls).
+ */
+const EMPTY_SYNC_CONFIG: Partial<Parameters<typeof createSynchronizationService>[1]> = {}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -222,11 +271,26 @@ export function resetSyncStore(): void {
  * @returns Sync state and actions
  */
 export function useSync(options: UseSyncOptions): UseSyncReturn {
-  const { userId, autoSync = true, debounceDelay = 2000, syncConfig = {} } = options
+  const {
+    userId,
+    autoSync = true,
+    debounceDelay = 2000,
+    autoPull = true,
+    pullInterval = 30000,
+    pullLimit = 100,
+    syncConfig = EMPTY_SYNC_CONFIG,
+  } = options
 
   const store = getSyncStore()
+  // Active profile drives profile-scoped pulls; a switch must reset the pull
+  // cursor (review P7) so the newly-active profile gets a full snapshot rather
+  // than a delta from the previous profile's (higher) cursor.
+  const activeProfileId = useProfileStore((s) => s.activeProfileId)
   const syncServiceRef = useRef<SynchronizationService | null>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Guards against overlapping pulls (auto-poll vs manual) — debounce/skip when
+  // a pull is already in flight.
+  const pullInFlightRef = useRef(false)
 
   // Initialize sync service on first render
   useEffect(() => {
@@ -235,6 +299,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     syncServiceRef.current = createSynchronizationService(userId, {
       autoSync: false, // We'll handle auto-sync ourselves
       processOperation: processSyncOperation as ProcessOperationFn,
+      // Pull transport (Story 4-18): goes over HTTP to /api/sync/changes. The
+      // active profile is read lazily at call time so a profile switch is
+      // reflected without re-creating the service. Never imports the server fn.
+      fetchServerChanges: ((since: number | null) =>
+        fetchServerChangesHttp(
+          since,
+          pullLimit,
+          useProfileStore.getState().activeProfileId ?? undefined
+        )) as FetchServerChangesFn,
       ...syncConfig,
     })
 
@@ -252,22 +325,35 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         failedCount: state.failedOperations.length,
         conflictCount: state.conflictOperations.length,
         lastSyncTimestamp: state.lastSyncTimestamp,
+        lastPullTimestamp: state.lastPullTimestamp,
         lastError: state.lastError,
         isSyncing: false, // Will be set to true during sync
         retryCount: state.retryCount,
       })
     })
 
+    // Subscribe to pulled changes: write them into the UI stores (Story 4-18).
+    // The core emits applied changes; the web layer owns the store writes.
+    const unsubscribeChanges = syncServiceRef.current.onChangesPulled((changes: ServerChange[]) => {
+      applyServerChangesToStores(changes)
+      const svc = syncServiceRef.current
+      store.getState().setState({
+        lastPullTimestamp: svc ? svc.getState().lastPullTimestamp : null,
+        changesPulledCount: changes.length,
+      })
+    })
+
     // Cleanup on unmount
     return () => {
       unsubscribe()
+      unsubscribeChanges()
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
       syncServiceRef.current?.destroy()
       syncServiceRef.current = null
     }
-  }, [userId, syncConfig, store])
+  }, [userId, syncConfig, store, pullLimit])
 
   // Sync state from store
   const {
@@ -277,20 +363,30 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     failedCount,
     conflictCount,
     lastSyncTimestamp,
+    lastPullTimestamp,
+    changesPulledCount,
     lastError,
     isSyncing,
     retryCount,
-  } = store((state) => ({
-    status: state.status,
-    isOnline: state.isOnline,
-    pendingCount: state.pendingCount,
-    failedCount: state.failedCount,
-    conflictCount: state.conflictCount,
-    lastSyncTimestamp: state.lastSyncTimestamp,
-    lastError: state.lastError,
-    isSyncing: state.isSyncing,
-    retryCount: state.retryCount,
-  }))
+  } = store(
+    // useShallow: the selector returns a fresh object each call; without a
+    // shallow comparator any repeated store write (Story 4-18 auto-poll fires
+    // setState on an interval) would drive an infinite re-render loop, since
+    // useSyncExternalStore sees a new snapshot reference on every notify.
+    useShallow((state) => ({
+      status: state.status,
+      isOnline: state.isOnline,
+      pendingCount: state.pendingCount,
+      failedCount: state.failedCount,
+      conflictCount: state.conflictCount,
+      lastSyncTimestamp: state.lastSyncTimestamp,
+      lastPullTimestamp: state.lastPullTimestamp,
+      changesPulledCount: state.changesPulledCount,
+      lastError: state.lastError,
+      isSyncing: state.isSyncing,
+      retryCount: state.retryCount,
+    }))
+  )
 
   // Derived state
   const hasPendingChanges = pendingCount > 0
@@ -342,6 +438,65 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       handleStatusChange(false)
     }
   }, [handleStatusChange])
+
+  // Pull server → client changes (AC-5 manual trigger; AC-4 auto-poll reuses it).
+  // Skips if a pull is already in flight so overlapping triggers debounce.
+  const pull = useCallback(async (): Promise<PullResult | undefined> => {
+    if (!syncServiceRef.current || pullInFlightRef.current) {
+      return undefined
+    }
+    pullInFlightRef.current = true
+    try {
+      const result = await syncServiceRef.current.pull()
+      // Store writes happen via the onChangesPulled subscription; here we only
+      // surface pull status/counters for UI (success/failure indication).
+      store.getState().setState({
+        lastPullTimestamp: result.lastPullTimestamp,
+        changesPulledCount: result.changesPulledCount,
+        lastError: result.success ? undefined : result.error,
+      })
+      return result
+    } catch (error) {
+      console.error('Pull failed:', error)
+      return undefined
+    } finally {
+      pullInFlightRef.current = false
+    }
+  }, [store])
+
+  // Force pull is an alias for pull (symmetry with forceSync).
+  const forcePull = pull
+
+  // Automatic polling (AC-4): pull on an interval while online. SSR-safe — the
+  // effect (and timer) only run client-side after mount. The server enforces the
+  // paid-tier gate, so a non-paid poll simply errors and is ignored.
+  useEffect(() => {
+    if (!autoPull || pullInterval <= 0) {
+      return
+    }
+    const timer = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return
+      }
+      pull().catch((error) => {
+        console.error('Auto-pull failed:', error)
+      })
+    }, pullInterval)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [autoPull, pullInterval, pull])
+
+  // Reset the pull cursor when the active profile changes (review P7). The cursor
+  // is global but the delta is profile-scoped, so a switch must force a full
+  // snapshot or the newly-active profile would miss every row older than the
+  // previous profile's cursor. No-op on first mount (cursor already null).
+  // activeProfileId is intentionally the trigger: the effect runs ON its change,
+  // it does not read it in the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional change-trigger dependency
+  useEffect(() => {
+    syncServiceRef.current?.resetPullCursor()
+  }, [activeProfileId])
 
   // Queue operations
   const queueCreate = useCallback(
@@ -448,6 +603,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       failedCount,
       conflictCount,
       lastSyncTimestamp,
+      lastPullTimestamp,
+      changesPulledCount,
       lastError,
       isSyncing,
       retryCount,
@@ -460,6 +617,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       // Actions
       sync,
       forceSync,
+      pull,
+      forcePull,
       queueCreate,
       queueUpdate,
       queueDelete,
@@ -472,6 +631,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       failedCount,
       conflictCount,
       lastSyncTimestamp,
+      lastPullTimestamp,
+      changesPulledCount,
       lastError,
       isSyncing,
       retryCount,
@@ -480,6 +641,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       hasFailures,
       sync,
       forceSync,
+      pull,
+      forcePull,
       queueCreate,
       queueUpdate,
       queueDelete,

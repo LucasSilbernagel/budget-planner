@@ -48,6 +48,7 @@ importers:
       typescript: ^5.3.3
       vite: ^7.3.6
       vitest: ^3.2.6
+      zod: ^3.22.4
       zustand: ^4.4.7
     dependencies:
       '@budget-planner/config': link:../../packages/config
@@ -62,6 +63,7 @@ importers:
       react: 19.2.7
       react-dom: 19.2.7_react@19.2.7
       recharts: 2.15.4_tr5srszcxqwfln4zz73l4ytshu
+      zod: 3.25.76
       zustand: 4.5.7_kwf2tca3obanmilsxe2rj5654e
     devDependencies:
       '@biomejs/biome': 1.5.3

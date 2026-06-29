@@ -111,8 +111,9 @@ export async function getSavingsGoals(
   profileId?: string
 ): Promise<ApiResult<SavingsGoalOutput[]>> {
   try {
-    // Build where clause
-    let whereClause = eq(savingsGoals.userId, userId)
+    // Build where clause. Exclude soft-deleted tombstones (Story 4-18) so a row
+    // deleted on another device via sync does not resurrect in this list.
+    let whereClause = and(eq(savingsGoals.userId, userId), eq(savingsGoals.isDeleted, false))
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
@@ -156,7 +157,11 @@ export async function getSavingsGoal(
   profileId?: string
 ): Promise<ApiResult<SavingsGoalOutput>> {
   try {
-    let whereClause = and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId))
+    let whereClause = and(
+      eq(savingsGoals.id, id),
+      eq(savingsGoals.userId, userId),
+      eq(savingsGoals.isDeleted, false)
+    )
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
@@ -282,7 +287,11 @@ export async function updateSavingsGoal(
     }
 
     // Build where clause
-    let whereClause = and(eq(savingsGoals.id, input.id), eq(savingsGoals.userId, userId))
+    let whereClause = and(
+      eq(savingsGoals.id, input.id),
+      eq(savingsGoals.userId, userId),
+      eq(savingsGoals.isDeleted, false)
+    )
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))
@@ -371,7 +380,11 @@ export async function deleteSavingsGoal(
 ): Promise<ApiResult<void>> {
   try {
     // Build where clause
-    let whereClause = and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId))
+    let whereClause = and(
+      eq(savingsGoals.id, id),
+      eq(savingsGoals.userId, userId),
+      eq(savingsGoals.isDeleted, false)
+    )
 
     if (profileId !== undefined) {
       whereClause = and(whereClause, eq(savingsGoals.profileId, profileId))

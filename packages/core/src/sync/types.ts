@@ -138,6 +138,88 @@ export interface SyncOperation {
 
   /** Optional version number for optimistic concurrency control */
   version?: number
+
+  /**
+   * The server-authoritative `updatedAt` (Unix ms epoch) of the entity row this
+   * operation was derived from, if known (Story 4-18 review D1). Lets pull
+   * reconciliation decide the winner by CAUSAL version instead of wall-clock
+   * `timestamp`, which is unreliable across devices with skewed clocks: a pulled
+   * server change is "already incorporated" by this op iff `change.updatedAt <=
+   * baseVersion`. When absent (e.g. a brand-new create, or an edit on an entity
+   * never pulled), reconciliation falls back to the `timestamp` comparison, so
+   * this is a strict, regression-free improvement. Populated by the host layer
+   * when it queues an edit against a known server row.
+   */
+  baseVersion?: number
+}
+
+/**
+ * A single server-side change surfaced by the pull endpoint (Story 4-18).
+ *
+ * Reconstructed from an entity ROW (not an operation), so it deliberately carries
+ * no originating deviceId or operation id — the server stores entities, not the
+ * op log. Pull reconciliation therefore uses state-based last-write-wins keyed on
+ * `updatedAt` rather than the op-based `detectConflict` path. A tombstone
+ * (`isDeleted: true`) represents a delete the client must apply by removing the
+ * entity locally.
+ */
+export interface ServerChange {
+  /** Type of entity that changed */
+  entityType: SyncEntityType
+
+  /** Server-authoritative id of the entity (serial int as string, or uuid) */
+  entityId: string
+
+  /** The entity's current column values (cents for monetary fields) */
+  data: Record<string, unknown>
+
+  /** When the row was last mutated on the server (Unix ms epoch) */
+  updatedAt: number
+
+  /** Whether this change is a soft-delete tombstone */
+  isDeleted: boolean
+}
+
+/**
+ * Transport hook for fetching server-side changes since a cursor (Story 4-18).
+ * Injected via {@link SyncConfig} to keep the core transport-agnostic — the web
+ * layer supplies an HTTP implementation; the core never imports `fetch`/`db`.
+ *
+ * @param since - Pull cursor (Unix ms epoch); `null` requests a full snapshot.
+ */
+export type FetchServerChangesFn = (since: number | null) => Promise<ServerChange[]>
+
+/**
+ * Callback invoked with the server changes that were applied during a pull, so
+ * the host app (web layer) can write them into its UI stores. The core never
+ * imports the stores; it only emits the applied changes.
+ */
+export type ChangesPulledCallback = (changes: ServerChange[]) => void
+
+/**
+ * Result of a pull (server → client) operation (Story 4-18).
+ */
+export interface PullResult {
+  /** Whether the pull completed without a transport/processing error */
+  success: boolean
+
+  /** Number of server changes applied to local state */
+  changesPulledCount: number
+
+  /** The server changes that were applied locally */
+  applied: ServerChange[]
+
+  /**
+   * Server changes that were NOT applied because a newer queued local edit won
+   * the last-write-wins comparison (unsynced local work is never discarded).
+   */
+  conflicts: ServerChange[]
+
+  /** Error message if the pull failed */
+  error?: string
+
+  /** The advanced pull cursor after this pull (Unix ms epoch, or null) */
+  lastPullTimestamp: number | null
 }
 
 /**
@@ -162,6 +244,14 @@ export interface SyncState {
 
   /** Timestamp of the last successful sync (null if never synced) */
   lastSyncTimestamp: number | null
+
+  /**
+   * Cursor for server → client pulls (Unix ms epoch; null if never pulled).
+   * Tracked SEPARATELY from `lastSyncTimestamp` (the push cursor): a push must
+   * not advance the pull cursor, or remote changes between the last pull and the
+   * push would be skipped forever (Story 4-18).
+   */
+  lastPullTimestamp: number | null
 
   /** Operations that are pending synchronization */
   pendingOperations: SyncOperation[]
@@ -284,6 +374,17 @@ export interface SyncConfig {
    * If not provided, operations will be queued but not processed
    */
   processOperation?: ProcessOperationFn
+
+  /**
+   * Transport hook for pulling server-side changes (Story 4-18). Injected the
+   * same way as {@link processOperation} to keep the core transport-agnostic.
+   * If not provided, `pull()` fails loud (it does not silently no-op) so a
+   * misconfiguration can't masquerade as "no remote changes".
+   */
+  fetchServerChanges?: FetchServerChangesFn
+
+  /** Interval for automatic server pulls in milliseconds (0/undefined = disabled) */
+  pullInterval?: number
 
   /**
    * Active profile ID (UUID) for the session. Profile-scoped entities

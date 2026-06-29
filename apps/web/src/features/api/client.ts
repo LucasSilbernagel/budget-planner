@@ -17,6 +17,7 @@ import type {
   RetirementResult,
   YearlyProjection,
 } from '@budget-planner/core'
+import type { ServerChange } from '@budget-planner/core/sync'
 import type {
   AggregationInput,
   AggregationResult,
@@ -187,6 +188,58 @@ export async function calculateAggregation(input: AggregationInput): Promise<Agg
   }
 
   return result.data
+}
+
+/**
+ * Pulls server-side entity changes since a cursor via HTTP (Story 4-18).
+ *
+ * Mirrors the calculations fetch+error-handling pattern and goes over HTTP to
+ * the served GET /api/sync/changes route. It MUST NOT import the server function
+ * directly — that transitively imports `@budget-planner/db` (server-only) and
+ * would pull DB code into the client bundle (the exact 3-4 defect 5-12 fixed).
+ *
+ * Wired into the core SynchronizationService as `config.fetchServerChanges`. It
+ * fails loud on a non-OK / unsuccessful response so a 401/403/500 surfaces as a
+ * pull error rather than masquerading as "no remote changes".
+ *
+ * @param since - Pull cursor (Unix ms epoch); `null` requests a full snapshot.
+ * @param limit - Max changes to request (server caps this).
+ * @param profileId - Active profile id, scoping profile-scoped entity reads.
+ */
+export async function fetchServerChanges(
+  since: number | null,
+  limit = 100,
+  profileId?: string
+): Promise<ServerChange[]> {
+  const params = new URLSearchParams()
+  if (since !== null) {
+    params.set('since', String(since))
+  }
+  params.set('limit', String(limit))
+
+  const headers: Record<string, string> = {}
+  if (profileId) {
+    headers['x-profile-id'] = profileId
+  }
+
+  const response = await fetch(`/api/sync/changes?${params.toString()}`, {
+    method: 'GET',
+    headers,
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error || 'Failed to fetch server changes')
+  }
+
+  const result: { success: boolean; changes?: ServerChange[]; error?: string } =
+    await response.json()
+
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to fetch server changes')
+  }
+
+  return result.changes ?? []
 }
 
 /**

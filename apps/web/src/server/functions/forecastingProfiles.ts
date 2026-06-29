@@ -86,7 +86,14 @@ async function validateProfileOwnership(profileId: string, userId: string): Prom
   const [profile] = await db
     .select()
     .from(userProfiles)
-    .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
+    // A soft-deleted profile (Story 4-18) is not a valid ownership target.
+    .where(
+      and(
+        eq(userProfiles.id, profileId),
+        eq(userProfiles.userId, userId),
+        eq(userProfiles.isDeleted, false)
+      )
+    )
     .limit(1)
 
   return profile !== undefined

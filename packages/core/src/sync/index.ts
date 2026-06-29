@@ -35,6 +35,10 @@ export type {
   ConflictResult,
   ConflictType,
   ConflictResolutionStrategy,
+  ServerChange,
+  PullResult,
+  FetchServerChangesFn,
+  ChangesPulledCallback,
 } from './types'
 
 export type {

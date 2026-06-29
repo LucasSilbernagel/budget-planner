@@ -209,3 +209,31 @@ describe('Enum Values', () => {
     expect(enumValues).toContain('TRY')
   })
 })
+
+// Test 6: Soft-delete tombstone columns (Story 4-18)
+// Cross-device delete propagation requires a tombstone flag on every syncable
+// entity table (mirroring the users precedent) so a delta-by-updatedAt pull can
+// surface deletions instead of losing them to a hard DELETE.
+describe('Soft-delete (isDeleted) columns', () => {
+  it('users already has an isDeleted column', () => {
+    expect(users.isDeleted).toBeDefined()
+  })
+
+  it('all syncable entity tables expose an isDeleted column', () => {
+    expect(incomeSources.isDeleted).toBeDefined()
+    expect(expenses.isDeleted).toBeDefined()
+    expect(savingsGoals.isDeleted).toBeDefined()
+    expect(balanceTracking.isDeleted).toBeDefined()
+    expect(userProfiles.isDeleted).toBeDefined()
+  })
+
+  it('isDeleted defaults to false and is not null', () => {
+    // Drizzle exposes column metadata on the column object. The migration
+    // (0002_*) emits `DEFAULT false NOT NULL`; verify the schema agrees so the
+    // tombstone can never be null and reads can filter on `isDeleted = false`.
+    expect(incomeSources.isDeleted.notNull).toBe(true)
+    expect(incomeSources.isDeleted.default).toBe(false)
+    expect(userProfiles.isDeleted.notNull).toBe(true)
+    expect(userProfiles.isDeleted.default).toBe(false)
+  })
+})
