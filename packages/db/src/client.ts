@@ -33,6 +33,56 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * EU/DanubeData host suffixes permitted for the production database.
+ *
+ * EU-only data sovereignty (NFR1, NFR2): the production database MUST be
+ * DanubeData (Germany, EU) for full CLOUD Act immunity. US-reachable infra
+ * (ElephantSQL, Supabase) is intentionally NOT permitted.
+ */
+const EU_DB_HOST_SUFFIXES = ['.danubedata.com'] as const
+
+/**
+ * True only for the explicit local environments that may relax SSL + host
+ * validation. Everything else — production, staging, preview, an unset or
+ * unknown NODE_ENV — is treated as production-grade and fails closed.
+ */
+export function isRelaxedDbEnv(nodeEnv: string | undefined): boolean {
+  return nodeEnv === 'development' || nodeEnv === 'test'
+}
+
+/**
+ * Anchored EU-sovereignty host check.
+ *
+ * Substring matching is unsafe — `host.includes('.danubedata.com')` would let
+ * `evil.danubedata.com.attacker.com` through — so we require an exact host or a
+ * dot-anchored suffix.
+ */
+export function isEuSovereignDbHost(host: string): boolean {
+  // Strip a single trailing dot: `pg-01.fra.danubedata.com.` is a valid
+  // absolute-FQDN form and must match the same as the dotless host.
+  const h = host.toLowerCase().replace(/\.$/, '')
+  return EU_DB_HOST_SUFFIXES.some((suffix) => h === suffix.slice(1) || h.endsWith(suffix))
+}
+
+/**
+ * Resolve the pg SSL option for a given environment.
+ *
+ * - Relaxed (development/test): SSL disabled for local Postgres.
+ * - Otherwise: TLS verification is enforced (`rejectUnauthorized: true`). When a
+ *   managed-provider CA is configured (`DATABASE_CA_CERT`) it is supplied so
+ *   verification succeeds against providers not in the system trust store.
+ */
+export function buildDbSsl(
+  nodeEnv: string | undefined,
+  caCert: string | undefined
+): false | { rejectUnauthorized: true; ca?: string } {
+  if (isRelaxedDbEnv(nodeEnv)) {
+    return false
+  }
+  return caCert ? { rejectUnauthorized: true, ca: caCert } : { rejectUnauthorized: true }
+}
+
+/**
  * Get database connection pool
  * Creates pool on first call, reuses thereafter
  */
@@ -47,31 +97,23 @@ function getPool(): Pool {
       )
     }
 
-    // Validate URL is DanubeData (Germany - EU region)
     const url = new URL(databaseUrl)
     const host = url.hostname.toLowerCase()
-    const nodeEnv = process.env['NODE_ENV'] || 'development'
+    const nodeEnv = process.env['NODE_ENV']
 
-    // Allow localhost for development
-    // Production must use DanubeData (Germany) for EU data sovereignty
-    if (nodeEnv === 'production') {
-      // DanubeData uses various hostnames, check for known patterns
-      const isDanubeData =
-        host.includes('.db.elephantsql.com') ||
-        host.includes('.danubedata.com') ||
-        host.includes('.supabase.co') // DanubeData also uses Supabase infra
-
-      if (!isDanubeData) {
-        throw new Error(
-          `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity. Detected host: ${host}. Expected: *.db.elephantsql.com, *.danubedata.com, or *.supabase.co`
-        )
-      }
+    // Fail closed: only an explicit development/test NODE_ENV relaxes SSL + host
+    // validation. Any other value (production, staging, preview, unset/unknown)
+    // must use a DanubeData EU host for data sovereignty (NFR1, NFR2).
+    if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
+      throw new Error(
+        `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity (NFR1, NFR2). Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.com).`
+      )
     }
 
     pool = new Pool({
       connectionString: databaseUrl,
-      // SSL required for production
-      ssl: nodeEnv === 'production' ? { rejectUnauthorized: true } : false,
+      // SSL enforced (with optional managed-provider CA) outside local dev/test
+      ssl: buildDbSsl(nodeEnv, process.env['DATABASE_CA_CERT']),
       // Connection pooling tuned for development (AC-4); pg defaults to max 10
       max: 10,
       connectionTimeoutMillis: 5000,

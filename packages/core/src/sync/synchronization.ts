@@ -124,6 +124,23 @@ function validateOperationData(data: Record<string, unknown>): Record<string, un
 const cachedDeviceIds: Map<string, string> = new Map()
 
 /**
+ * Generate a fresh, collision-resistant device identifier.
+ *
+ * Uses `crypto.randomUUID()` when available (122 bits of CSPRNG entropy) rather
+ * than `Math.random()`, which is non-cryptographic and can collide. A device ID
+ * keys per-user device tracking, so a predictable/colliding value is a security
+ * concern, not just a correctness one. The non-crypto fallback only runs in
+ * environments without Web Crypto.
+ */
+function newDeviceId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `device-${crypto.randomUUID()}`
+  }
+  // Fallback for environments without crypto.randomUUID
+  return `device-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+/**
  * Generates a unique device ID for the current device and user
  * Uses localStorage to maintain consistency across page refreshes
  * Falls back to sessionStorage or in-memory cache if localStorage fails
@@ -140,7 +157,7 @@ function generateDeviceId(userId: string): string {
 
     if (!deviceId) {
       // Generate a new device ID
-      deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
+      deviceId = newDeviceId()
       try {
         localStorage.setItem(storageKey, deviceId)
       } catch {
@@ -162,7 +179,7 @@ function generateDeviceId(userId: string): string {
       let deviceId = sessionStorage.getItem(storageKey)
 
       if (!deviceId) {
-        deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
+        deviceId = newDeviceId()
         try {
           sessionStorage.setItem(storageKey, deviceId)
         } catch {
@@ -181,7 +198,7 @@ function generateDeviceId(userId: string): string {
       // This ensures the same device ID is returned within the same session
       let deviceId = cachedDeviceIds.get(userId)
       if (!deviceId) {
-        deviceId = `device-${Math.random().toString(36).slice(2, 18)}`
+        deviceId = newDeviceId()
         cachedDeviceIds.set(userId, deviceId)
       }
       return deviceId

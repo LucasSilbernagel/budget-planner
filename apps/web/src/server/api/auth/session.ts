@@ -24,11 +24,16 @@ import { getSessionSecret } from '@budget-planner/config'
  *
  * Deliberately minimal: identity only. Subscription status and currency are
  * resolved from the database, not trusted from the cookie.
+ *
+ * `iat` (issued-at, epoch ms) is added by signSession so the server can revoke
+ * tokens issued before a logout watermark (Story 5-8). It is integrity-protected
+ * by the HMAC like every other claim, so a client cannot back-date it.
  */
 export interface SessionPayload {
   userId: string
   paddleId: string
   email: string
+  iat: number
 }
 
 /**
@@ -41,12 +46,16 @@ function computeSignature(encodedPayload: string, secret: string): string {
 /**
  * Sign a session payload into a tamper-evident token suitable for a cookie.
  *
- * @param payload - Identity claims to embed
+ * The issued-at (`iat`) stamp is set here, not by callers, so every token is
+ * comparable against the per-user revocation watermark.
+ *
+ * @param payload - Identity claims to embed (iat is added automatically)
  * @returns `<base64url(payload)>.<hex hmac>`
  */
-export function signSession(payload: SessionPayload): string {
+export function signSession(payload: Omit<SessionPayload, 'iat'>): string {
   const secret = getSessionSecret()
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const fullPayload: SessionPayload = { ...payload, iat: Date.now() }
+  const encodedPayload = Buffer.from(JSON.stringify(fullPayload)).toString('base64url')
   const signature = computeSignature(encodedPayload, secret)
   return `${encodedPayload}.${signature}`
 }
@@ -101,6 +110,9 @@ export function verifySession(token: string | null | undefined): SessionPayload 
       userId: payload.userId,
       paddleId: payload.paddleId,
       email: payload.email,
+      // Pre-5-8 tokens have no `iat`; treat as issued at epoch 0 so they are
+      // revoked by any logout watermark (and accepted only while none is set).
+      iat: typeof payload.iat === 'number' ? payload.iat : 0,
     }
   } catch {
     return null

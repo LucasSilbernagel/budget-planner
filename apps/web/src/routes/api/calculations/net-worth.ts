@@ -11,22 +11,28 @@
  */
 
 import {
-  type NetWorthProjectionInput,
   httpStatusForResult,
   netWorthProjection,
+  netWorthProjectionInputSchema,
+  parseCalcInput,
 } from '@/server/functions/financial'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
-  let input: NetWorthProjectionInput
+  let raw: unknown
   try {
-    input = (await request.json()) as NetWorthProjectionInput
+    raw = await request.json()
   } catch {
     return json({ success: false, error: 'Invalid JSON request body' }, { status: 400 })
   }
 
-  const result = await netWorthProjection(request, input)
+  const parsed = parseCalcInput(netWorthProjectionInputSchema, raw)
+  if (!parsed.success) {
+    return json(parsed, { status: httpStatusForResult(parsed) })
+  }
+
+  const result = await netWorthProjection(request, parsed.data)
   return json(result, { status: httpStatusForResult(result) })
 }
 

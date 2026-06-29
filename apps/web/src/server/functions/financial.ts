@@ -17,12 +17,21 @@ import {
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
 } from '@budget-planner/core'
+import { z } from 'zod'
 import { getCurrentUserSession } from '../api/auth/paddle'
-import type { ApiResult, UserSession } from '../api/auth/paddle'
+import type { UserSession } from '../api/auth/paddle'
 
 // ============================================================================
 // Type Definitions
 // ============================================================================
+
+/**
+ * Discriminated failure classification driving the HTTP status of a served
+ * `/api/calculations/*` route. Preferred over substring-matching the free-text
+ * `error` message, which misclassifies any future message that happens to
+ * contain a token like "Premium".
+ */
+export type FinancialErrorCode = 'AUTH' | 'PREMIUM' | 'VALIDATION'
 
 /**
  * Generic API result type for consistent response format
@@ -31,6 +40,8 @@ export interface FinancialApiResult<T> {
   success: boolean
   data?: T
   error?: string
+  /** Set on failures so the route maps status from a code, not the message. */
+  code?: FinancialErrorCode
 }
 
 /**
@@ -80,6 +91,84 @@ export interface AggregationResult {
 }
 
 // ============================================================================
+// Boundary input schemas (Story 5.8 — AC-15)
+// ============================================================================
+
+/**
+ * Runtime validation for the parsed JSON body at each `/api/calculations/*`
+ * boundary. The functions below additionally enforce business rules (positivity,
+ * ranges); these schemas only guarantee the *shape and types* so a string-typed
+ * number (`"5000"`) or a wrong-shape body is rejected with 400 before it flows
+ * into arithmetic. Unknown keys are stripped by zod's default object behavior.
+ */
+const finiteNumber = z.number().finite()
+
+export const retirementInputSchema = z.object({
+  monthlyIncome: finiteNumber,
+  annualReturnRate: finiteNumber,
+})
+
+export const netWorthProjectionInputSchema = z.object({
+  currentAssets: finiteNumber,
+  currentLiabilities: finiteNumber,
+  monthlySavings: finiteNumber,
+  expectedReturnRate: finiteNumber,
+  timeHorizonYears: finiteNumber,
+})
+
+export const withdrawalBodySchema = z.object({
+  assets: finiteNumber,
+  annualReturnRate: finiteNumber,
+})
+
+/**
+ * Cap the aggregation array length. Without it a huge `values` array does an
+ * O(n log n) sort and spreads into `Math.max(...)` (which throws RangeError at
+ * ~100k args) before any guard runs — the same DoS class the netWorthProjection
+ * `MAX_TIME_HORIZON_YEARS` cap defends against.
+ */
+const MAX_AGGREGATION_VALUES = 10_000
+
+export const aggregationInputSchema = z.object({
+  values: z.array(finiteNumber).max(MAX_AGGREGATION_VALUES),
+  operation: z.enum(['sum', 'average', 'median', 'max', 'min']),
+})
+
+export const compoundingInputSchema = z.object({
+  principal: finiteNumber,
+  annualContribution: finiteNumber,
+  annualReturnRate: finiteNumber,
+  years: finiteNumber,
+})
+
+/**
+ * Discriminated result of a boundary parse. The success arm guarantees `data`,
+ * so callers narrow with `if (!parsed.success)` and then use `parsed.data`
+ * directly — no `!parsed.data` guard that would misroute a legitimately-falsy
+ * parsed value (e.g. `0`) into the error branch.
+ */
+export type CalcParseResult<T> =
+  | { success: true; data: T }
+  | { success: false; code: FinancialErrorCode; error: string }
+
+/**
+ * Validate a raw (parsed-JSON) body against a boundary schema, returning a
+ * VALIDATION-coded failure on mismatch so the route maps it to 400 via
+ * {@link httpStatusForResult}.
+ */
+export function parseCalcInput<T>(schema: z.ZodType<T>, raw: unknown): CalcParseResult<T> {
+  const parsed = schema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      success: false,
+      code: 'VALIDATION',
+      error: parsed.error.issues[0]?.message ?? 'Invalid request body',
+    }
+  }
+  return { success: true, data: parsed.data }
+}
+
+// ============================================================================
 // Helper: Map a calculation result to an HTTP status code
 // ============================================================================
 
@@ -94,6 +183,17 @@ export function httpStatusForResult(result: FinancialApiResult<unknown>): number
     return 200
   }
 
+  // Prefer the discriminated code when present.
+  switch (result.code) {
+    case 'AUTH':
+      return 401
+    case 'PREMIUM':
+      return 403
+    case 'VALIDATION':
+      return 400
+  }
+
+  // Back-compat fallback for results predating the `code` field.
   const error = result.error ?? ''
 
   if (error.includes('No user session') || error.includes('Authentication required')) {
@@ -115,11 +215,11 @@ export function httpStatusForResult(result: FinancialApiResult<unknown>): number
  * Get authenticated user context and verify premium subscription
  * Returns user if authenticated and has active subscription, otherwise returns error
  */
-async function getAuthenticatedUser(request: Request): Promise<ApiResult<UserSession>> {
+async function getAuthenticatedUser(request: Request): Promise<FinancialApiResult<UserSession>> {
   const userResult = await getCurrentUserSession(request)
 
   if (!userResult.success) {
-    return { success: false, error: userResult.error }
+    return { success: false, code: 'AUTH', error: userResult.error }
   }
 
   const user = userResult.data
@@ -127,6 +227,7 @@ async function getAuthenticatedUser(request: Request): Promise<ApiResult<UserSes
   if (!user) {
     return {
       success: false,
+      code: 'AUTH',
       error: 'Authentication required for financial calculations',
     }
   }
@@ -135,6 +236,7 @@ async function getAuthenticatedUser(request: Request): Promise<ApiResult<UserSes
   if (user.subscriptionStatus !== 'active') {
     return {
       success: false,
+      code: 'PREMIUM',
       error: 'Premium feature: Please upgrade to access server-side calculations',
     }
   }
@@ -163,7 +265,7 @@ export async function retirementCalculation(
   const userResult = await getAuthenticatedUser(request)
 
   if (!userResult.success) {
-    return userResult as FinancialApiResult<RetirementResult>
+    return { success: false, error: userResult.error, code: userResult.code }
   }
 
   try {
@@ -236,7 +338,7 @@ export async function safeWithdrawalCalculation(
   const userResult = await getAuthenticatedUser(request)
 
   if (!userResult.success) {
-    return userResult as FinancialApiResult<number>
+    return { success: false, error: userResult.error, code: userResult.code }
   }
 
   try {
@@ -304,7 +406,7 @@ export async function compoundingProjection(
   const userResult = await getAuthenticatedUser(request)
 
   if (!userResult.success) {
-    return userResult as FinancialApiResult<YearlyProjection[]>
+    return { success: false, error: userResult.error, code: userResult.code }
   }
 
   try {
@@ -383,7 +485,7 @@ export async function netWorthProjection(
   const userResult = await getAuthenticatedUser(request)
 
   if (!userResult.success) {
-    return userResult as FinancialApiResult<NetWorthProjectionResult>
+    return { success: false, error: userResult.error, code: userResult.code }
   }
 
   try {
@@ -397,6 +499,7 @@ export async function netWorthProjection(
     ) {
       return {
         success: false,
+        code: 'VALIDATION',
         error:
           'Missing required parameters: currentAssets, currentLiabilities, monthlySavings, expectedReturnRate, timeHorizonYears',
       }
@@ -411,20 +514,66 @@ export async function netWorthProjection(
     ) {
       return {
         success: false,
+        code: 'VALIDATION',
         error: 'Parameters cannot be null',
+      }
+    }
+
+    // Reject non-finite inputs (NaN / Infinity). Unlike the other calculators
+    // (which delegate to core fns that throw on non-finite/overflow), this one
+    // computes the projection inline, so without these guards NaN/Infinity flow
+    // through and return success:true with garbage.
+    if (
+      !Number.isFinite(input.currentAssets) ||
+      !Number.isFinite(input.currentLiabilities) ||
+      !Number.isFinite(input.monthlySavings) ||
+      !Number.isFinite(input.expectedReturnRate) ||
+      !Number.isFinite(input.timeHorizonYears)
+    ) {
+      return {
+        success: false,
+        code: 'VALIDATION',
+        error: 'All parameters must be finite numbers',
+      }
+    }
+
+    // Monetary inputs are cents and must stay within safe-integer precision so
+    // the compounding arithmetic below stays exact.
+    if (
+      !Number.isSafeInteger(input.currentAssets) ||
+      !Number.isSafeInteger(input.currentLiabilities) ||
+      !Number.isSafeInteger(input.monthlySavings)
+    ) {
+      return {
+        success: false,
+        code: 'VALIDATION',
+        error: 'Monetary parameters must be safe integers (in cents)',
       }
     }
 
     if (input.timeHorizonYears <= 0) {
       return {
         success: false,
+        code: 'VALIDATION',
         error: 'Time horizon must be positive',
+      }
+    }
+
+    // Bound the loop: an astronomically large horizon is both a DoS vector and
+    // pushes the compounded total past the safe-integer range.
+    const MAX_TIME_HORIZON_YEARS = 200
+    if (input.timeHorizonYears > MAX_TIME_HORIZON_YEARS) {
+      return {
+        success: false,
+        code: 'VALIDATION',
+        error: `Time horizon must not exceed ${MAX_TIME_HORIZON_YEARS} years`,
       }
     }
 
     if (input.expectedReturnRate < 0 || input.expectedReturnRate >= 1) {
       return {
         success: false,
+        code: 'VALIDATION',
         error: 'Return rate must be between 0 and 1 (exclusive)',
       }
     }
@@ -454,6 +603,16 @@ export async function netWorthProjection(
 
       // Add monthly savings (converted to yearly)
       assetsCents += Math.round(monthlySavingsCents * 12)
+
+      // Guard against silent precision loss once the compounded total exceeds
+      // the safe-integer range (returning garbage past Number.MAX_SAFE_INTEGER).
+      if (!Number.isSafeInteger(assetsCents)) {
+        return {
+          success: false,
+          code: 'VALIDATION',
+          error: 'Projection exceeds the supported numeric range',
+        }
+      }
 
       // Calculate net worth at the beginning of the year
       const netWorthCents = assetsCents - liabilitiesCents
@@ -506,7 +665,7 @@ export async function complexAggregation(
   const userResult = await getAuthenticatedUser(request)
 
   if (!userResult.success) {
-    return userResult as FinancialApiResult<AggregationResult>
+    return { success: false, error: userResult.error, code: userResult.code }
   }
 
   try {

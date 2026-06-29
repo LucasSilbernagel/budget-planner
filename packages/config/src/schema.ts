@@ -106,40 +106,76 @@ export const SESSION_SECRET_MIN_LENGTH = 32
 const DEV_FALLBACK_SESSION_SECRET = 'dev-only-insecure-session-secret-do-not-use-in-production'
 
 /**
+ * Minimum number of distinct characters a session secret must contain.
+ *
+ * A length check alone accepts degenerate keys like 32 identical characters or
+ * whitespace padding. Requiring a spread of distinct characters rejects the
+ * obvious low-entropy values while staying comfortably below the variety of any
+ * real `openssl rand -hex 32` output (which has ~16 distinct hex chars).
+ */
+export const SESSION_SECRET_MIN_DISTINCT_CHARS = 8
+
+/**
+ * Trim a secret and collapse blank values to undefined. A secret made only of
+ * whitespace (e.g. a 32-space string) trims to empty and is therefore treated
+ * as "not set", which fails the production check below.
+ */
+function normalizeSecret(secret: string | undefined): string | undefined {
+  const trimmed = secret?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+/**
+ * A secret is acceptable when, after trimming, it is long enough AND has enough
+ * distinct characters. This rejects whitespace-only and trivially-padded /
+ * low-entropy secrets that would otherwise pass a bare length check.
+ */
+function isAcceptableSecret(secret: string): boolean {
+  return (
+    secret.length >= SESSION_SECRET_MIN_LENGTH &&
+    new Set(secret).size >= SESSION_SECRET_MIN_DISTINCT_CHARS
+  )
+}
+
+/**
  * Resolve the HMAC key used to sign and verify session cookies.
  *
- * Any non-development environment (NODE_ENV !== 'development' — i.e. production,
- * staging, preview, test, or an unset/unknown value): fails closed — throws if
- * SESSION_SECRET is missing or shorter than SESSION_SECRET_MIN_LENGTH, so the
- * app never signs sessions with a default/insecure key outside local dev. This
- * prevents the committed dev fallback from ever signing forgeable cookies in a
- * deployed environment where NODE_ENV is not explicitly 'production'.
+ * NODE_ENV is a `z.enum(['development','production','test']).default('development')`,
+ * so the branches resolve as follows:
+ * - **production / test** (the only non-development enum members): fails closed —
+ *   throws unless SESSION_SECRET, after trimming, is long enough and has enough
+ *   distinct characters. The committed dev fallback can never sign cookies here.
+ * - **unset NODE_ENV**: resolves to `development` via the schema default, so it
+ *   takes the development branch and may use the insecure fallback. (It does NOT
+ *   fail closed — deployments must set NODE_ENV explicitly.)
+ * - **a non-enum value** (e.g. `staging`, `preview`): rejected at `envSchema.parse()`
+ *   before this function ever runs, which also fails closed.
  *
- * Development (NODE_ENV=development) only: uses the configured secret when
- * present (warning if short), otherwise falls back to a fixed insecure dev key
- * so local auth works without extra setup. The secret is server-side only and
- * must never be logged or sent to the client.
+ * Development only: uses the configured secret when strong enough (warning if
+ * weak), otherwise falls back to a fixed insecure dev key so local auth works
+ * without extra setup. The secret is server-side only and must never be logged
+ * or sent to the client.
  */
 export function getSessionSecret(): string {
   const env = getConfig()
-  const secret = env.SESSION_SECRET
+  const secret = normalizeSecret(env.SESSION_SECRET)
 
   if (env.NODE_ENV !== 'development') {
-    if (!secret || secret.length < SESSION_SECRET_MIN_LENGTH) {
+    if (!secret || !isAcceptableSecret(secret)) {
       throw new Error(
-        `SESSION_SECRET must be set to at least ${SESSION_SECRET_MIN_LENGTH} characters outside development`
+        `SESSION_SECRET must be a strong value outside development: at least ${SESSION_SECRET_MIN_LENGTH} characters (after trimming) with at least ${SESSION_SECRET_MIN_DISTINCT_CHARS} distinct characters.`
       )
     }
     return secret
   }
 
-  if (secret && secret.length >= SESSION_SECRET_MIN_LENGTH) {
+  if (secret && isAcceptableSecret(secret)) {
     return secret
   }
 
   if (secret) {
     console.warn(
-      `SESSION_SECRET is shorter than ${SESSION_SECRET_MIN_LENGTH} characters; acceptable only in development.`
+      `SESSION_SECRET is weak (under ${SESSION_SECRET_MIN_LENGTH} chars or low entropy); acceptable only in development.`
     )
     return secret
   }

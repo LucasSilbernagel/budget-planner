@@ -11,22 +11,28 @@
  */
 
 import {
-  type AggregationInput,
+  aggregationInputSchema,
   complexAggregation,
   httpStatusForResult,
+  parseCalcInput,
 } from '@/server/functions/financial'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
-  let input: AggregationInput
+  let raw: unknown
   try {
-    input = (await request.json()) as AggregationInput
+    raw = await request.json()
   } catch {
     return json({ success: false, error: 'Invalid JSON request body' }, { status: 400 })
   }
 
-  const result = await complexAggregation(request, input)
+  const parsed = parseCalcInput(aggregationInputSchema, raw)
+  if (!parsed.success) {
+    return json(parsed, { status: httpStatusForResult(parsed) })
+  }
+
+  const result = await complexAggregation(request, parsed.data)
   return json(result, { status: httpStatusForResult(result) })
 }
 

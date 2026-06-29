@@ -9,6 +9,7 @@
  * Security: No US data residency, Paddle is UK-based, DanubeData is Germany-based
  */
 
+import crypto from 'crypto'
 import { type PaddleConfig, getPaddleConfig } from '@budget-planner/config'
 import { db } from '@budget-planner/db'
 import { users } from '@budget-planner/db/src/schema'
@@ -215,14 +216,29 @@ export async function getCurrentUserSession(
 }
 
 /**
- * Logout user by invalidating session
+ * Logout user by revoking their server-side sessions.
  *
+ * Stamps the user's `sessionsRevokedAt` watermark to now, which invalidates
+ * every session token issued at or before this moment (see validateSessionToken).
+ * Clearing the client cookie alone (done by the logout route) is insufficient —
+ * a token that was exfiltrated would otherwise stay valid for its full 7-day
+ * TTL. Resolving the user from the current session means logout works even
+ * though the stateless token carries no server-side session record.
+ *
+ * No valid session → no-op success (the caller is already effectively logged
+ * out). Failures are reported so the route can surface a 500.
+ *
+ * @param request - Incoming request carrying the session cookie to revoke
  * @returns Success status
  */
-export async function logoutUser(): Promise<ApiResult<void>> {
+export async function logoutUser(request: Request): Promise<ApiResult<void>> {
   try {
-    // Invalidate session cookie or JWT token
-    // This is a placeholder - implement actual logout logic
+    const sessionResult = await getCurrentUserSession(request)
+    const userId = sessionResult.success ? sessionResult.data?.userId : undefined
+
+    if (userId) {
+      await db.update(users).set({ sessionsRevokedAt: Date.now() }).where(eq(users.id, userId))
+    }
 
     return {
       success: true,
@@ -239,20 +255,37 @@ export async function logoutUser(): Promise<ApiResult<void>> {
 // Helper functions (placeholder implementations)
 // ============================================================================
 
+/** A CSRF state token is 32 random bytes rendered as 64 lowercase hex chars. */
+const STATE_TOKEN_PATTERN = /^[0-9a-f]{64}$/
+
 /**
- * Generate a state token for CSRF protection
+ * Generate a CSRF state token.
+ *
+ * Uses `crypto.randomBytes` (CSPRNG), not `Math.random()`, so the value is
+ * unpredictable and cannot be guessed by an attacker constructing a forged
+ * callback.
  */
-function generateStateToken(): string {
-  // In production, use crypto.randomUUID() or similar
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+export function generateStateToken(): string {
+  return crypto.randomBytes(32).toString('hex')
 }
 
 /**
- * Validate a state token
+ * Validate a CSRF state token's shape.
+ *
+ * Enforces the exact CSPRNG format (64 hex chars), which rejects empty,
+ * malformed, or low-entropy values — a strict improvement over the previous
+ * `state.length > 0`.
+ *
+ * NOTE (Story 5.8): full CSRF protection also requires binding the issued state
+ * to the user agent (e.g. a short-lived `HttpOnly` state cookie set when the
+ * auth URL is generated and compared here). That round-trip is intentionally
+ * deferred until the real Paddle SDK login flow replaces the current placeholder
+ * (`generatePaddleAuthUrl` builds a fake `sandbox-paddle.com` URL and the
+ * auth-url route has no client caller), at which point the stored-state compare
+ * lands in the live callback. Tracked in deferred-work.md.
  */
-function validateStateToken(state: string): boolean {
-  // In production, validate against stored state
-  return state.length > 0
+export function validateStateToken(state: string): boolean {
+  return STATE_TOKEN_PATTERN.test(state)
 }
 
 /**
@@ -626,6 +659,14 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
     const user = matchingUsers[0]
     if (!user) {
       console.error('Invalid session token: no matching user record')
+      return null
+    }
+
+    // Server-side revocation (Story 5-8): a token issued at or before the user's
+    // revocation watermark is rejected, so logout (and "sign out everywhere")
+    // invalidates exfiltrated tokens ahead of their 7-day TTL.
+    if (user.sessionsRevokedAt != null && payload.iat <= user.sessionsRevokedAt) {
+      console.error('Invalid session token: issued before session revocation')
       return null
     }
 

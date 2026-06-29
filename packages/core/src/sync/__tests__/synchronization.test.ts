@@ -69,6 +69,14 @@ describe('Synchronization Service', () => {
       expect(deviceId.startsWith('device-')).toBe(true)
     })
 
+    it('should generate a cryptographic (crypto.randomUUID) device ID, not Math.random (Story 5.8)', () => {
+      const deviceId = service.getDeviceId()
+      // device-<uuid>: the suffix must be a crypto.randomUUID() v4 value, not the
+      // old non-cryptographic `Math.random().toString(36)` slug.
+      const uuidV4 = /^device-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      expect(deviceId).toMatch(uuidV4)
+    })
+
     it('should initialize with PENDING status', () => {
       const state = service.getState()
       expect(state.status).toBe(SyncStatus.PENDING)

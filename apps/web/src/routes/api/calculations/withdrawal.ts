@@ -11,24 +11,33 @@
  * `@/server/functions/financial` (safeWithdrawalCalculation).
  */
 
-import { httpStatusForResult, safeWithdrawalCalculation } from '@/server/functions/financial'
+import {
+  httpStatusForResult,
+  parseCalcInput,
+  safeWithdrawalCalculation,
+  withdrawalBodySchema,
+} from '@/server/functions/financial'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
-interface WithdrawalBody {
-  assets: number
-  annualReturnRate: number
-}
-
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
-  let body: WithdrawalBody
+  let raw: unknown
   try {
-    body = (await request.json()) as WithdrawalBody
+    raw = await request.json()
   } catch {
     return json({ success: false, error: 'Invalid JSON request body' }, { status: 400 })
   }
 
-  const result = await safeWithdrawalCalculation(request, body.assets, body.annualReturnRate)
+  const parsed = parseCalcInput(withdrawalBodySchema, raw)
+  if (!parsed.success) {
+    return json(parsed, { status: httpStatusForResult(parsed) })
+  }
+
+  const result = await safeWithdrawalCalculation(
+    request,
+    parsed.data.assets,
+    parsed.data.annualReturnRate
+  )
   return json(result, { status: httpStatusForResult(result) })
 }
 

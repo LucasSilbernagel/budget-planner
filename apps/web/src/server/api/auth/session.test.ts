@@ -81,11 +81,15 @@ describe('signSession / verifySession', () => {
       email: 'user@example.com',
     }
 
+    const before = Date.now()
     const token = signSession(payload)
     expect(token).toContain('.')
 
     const verified = verifySession(token)
-    expect(verified).toEqual(payload)
+    // Identity claims round-trip; signSession also stamps an issued-at (iat).
+    expect(verified).toMatchObject(payload)
+    expect(verified?.iat).toBeGreaterThanOrEqual(before)
+    expect(verified?.iat).toBeLessThanOrEqual(Date.now())
   })
 
   it('returns null for an empty or missing token', () => {
@@ -145,6 +149,7 @@ describe('validateSessionToken via getCurrentUserSession', () => {
     subscriptionStatus: 'active' as const,
     currency: 'EUR' as const,
     isDeleted: false,
+    sessionsRevokedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   }
@@ -198,6 +203,36 @@ describe('validateSessionToken via getCurrentUserSession', () => {
 
     expect(result.success).toBe(true)
     expect(result.data).toBeNull()
+  })
+
+  it('rejects a token issued at or before the revocation watermark (Story 5.8 logout)', async () => {
+    const token = signSession({
+      userId: VALID_UUID,
+      paddleId: 'paddle-cookie',
+      email: 'cookie@example.com',
+    })
+    // User logged out "in the future" relative to this token's iat → revoked.
+    mockUserLookup([{ ...dbUserRow, sessionsRevokedAt: Date.now() + 60_000 }])
+
+    const result = await getCurrentUserSession(requestWithSessionCookie(token))
+
+    expect(result.success).toBe(true)
+    expect(result.data).toBeNull()
+  })
+
+  it('accepts a token issued after the revocation watermark (post-logout re-login)', async () => {
+    const token = signSession({
+      userId: VALID_UUID,
+      paddleId: 'paddle-cookie',
+      email: 'cookie@example.com',
+    })
+    // The watermark is in the past → this freshly-issued token is still valid.
+    mockUserLookup([{ ...dbUserRow, sessionsRevokedAt: Date.now() - 60_000 }])
+
+    const result = await getCurrentUserSession(requestWithSessionCookie(token))
+
+    expect(result.success).toBe(true)
+    expect(result.data?.isAuthenticated).toBe(true)
   })
 
   it('returns null data when no session cookie is present', async () => {

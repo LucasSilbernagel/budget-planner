@@ -3,6 +3,7 @@
 // "sql is not a function" when drizzle() walks the schema's CHECK constraints.
 import { sql } from 'drizzle-orm'
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -82,6 +83,11 @@ export const users = pgTable(
     subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
     currency: currencyEnum('currency').default('NONE'),
     isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
+    // Session revocation watermark (Story 5-8): epoch-ms timestamp of the user's
+    // last logout/"sign out everywhere". A signed session token is rejected when
+    // its issued-at (`iat`) is at or before this value, so an exfiltrated token
+    // can be invalidated server-side before its 7-day TTL. NULL = never revoked.
+    sessionsRevokedAt: bigint('sessionsRevokedAt', { mode: 'number' }),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },

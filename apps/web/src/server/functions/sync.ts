@@ -9,7 +9,6 @@
 
 import type { ProcessOperationResult, SyncOperation } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
-import type { User } from '@budget-planner/db'
 import { getUserContext } from '../api/data/forecasting'
 import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
 import { getSyncAuditLogs, getSyncHistory, getSyncStatus, processBatchSync } from '../api/sync'
@@ -99,82 +98,72 @@ export async function syncBatch(request: Request): Promise<BatchSyncResponse> {
     }
   }
 
-  // Get client IP and user agent from request
-  // SECURITY: x-forwarded-for can be spoofed; use with caution
-  // In production, consider using connection.socket.remoteAddress for more reliable IP
+  // Advisory-only request metadata for the audit log.
+  // SECURITY: `x-forwarded-for` is client-supplied and trivially spoofable, so it
+  // is NEVER used for a security decision — rate limiting keys on the
+  // authenticated `user.id` inside processBatchSync, not on this value. It is
+  // recorded as untrusted audit context only.
   const forwardedFor = request.headers.get('x-forwarded-for') || ''
-  const ipAddress = forwardedFor.split(',').pop()?.trim() || ''
+  const advisoryIpAddress = forwardedFor.split(',').pop()?.trim() || ''
   const userAgent = request.headers.get('user-agent')?.slice(0, 500) || '' // Limit length
 
-  return processBatchSync(data, user, ipAddress, userAgent)
+  return processBatchSync(data, user, advisoryIpAddress, userAgent)
+}
+
+/**
+ * Resolve the authenticated user id from the request, or null when the request
+ * carries no valid session.
+ *
+ * `request` is required: read endpoints must not be callable without a request
+ * to authenticate against. An absent/invalid session resolves to null (the
+ * caller returns a safe empty/pending result) rather than silently treating an
+ * unauthenticated call as a successful empty read.
+ */
+async function resolveAuthenticatedUserId(request: Request): Promise<string | null> {
+  try {
+    const userResult = await getUserContext(request)
+    if (!userResult.success || !userResult.data) {
+      return null
+    }
+    // UserSession exposes the id as `userId` (not `id`); the downstream read
+    // helpers key on it.
+    return userResult.data.userId
+  } catch {
+    // Authentication error (malformed request, bad token, etc.)
+    return null
+  }
 }
 
 /**
  * Server Function: Get sync history for the current user
  */
-export async function syncGetHistory(
-  request?: Request
-): Promise<ReturnType<typeof getSyncHistory>> {
-  let userResult = { success: false, data: null as User | null }
-  if (request) {
-    try {
-      userResult = await getUserContext(request)
-    } catch {
-      // Authentication error - return empty array (no history for unauthenticated)
-      return []
-    }
-  }
-
-  if (!userResult.success || !userResult.data) {
+export async function syncGetHistory(request: Request): Promise<ReturnType<typeof getSyncHistory>> {
+  const userId = await resolveAuthenticatedUserId(request)
+  if (!userId) {
     return []
   }
-
-  return getSyncHistory(userResult.data.id)
+  return getSyncHistory(userId)
 }
 
 /**
  * Server Function: Get sync audit logs for the current user
  */
 export async function syncGetAuditLogs(
-  request?: Request
+  request: Request
 ): Promise<ReturnType<typeof getSyncAuditLogs>> {
-  let userResult = { success: false, data: null as User | null }
-  if (request) {
-    try {
-      userResult = await getUserContext(request)
-    } catch {
-      // Authentication error - return empty array (no audit logs for unauthenticated)
-      return []
-    }
-  }
-
-  if (!userResult.success || !userResult.data) {
+  const userId = await resolveAuthenticatedUserId(request)
+  if (!userId) {
     return []
   }
-
-  return getSyncAuditLogs(userResult.data.id)
+  return getSyncAuditLogs(userId)
 }
 
 /**
  * Server Function: Get current sync status for the current user
  */
-export async function syncGetStatus(request?: Request): Promise<ReturnType<typeof getSyncStatus>> {
-  let userResult = { success: false, data: null as User | null }
-  if (request) {
-    try {
-      userResult = await getUserContext(request)
-    } catch {
-      // Authentication error - return pending status for unauthenticated
-      return {
-        pendingCount: 0,
-        conflictCount: 0,
-        lastSyncTimestamp: null,
-        status: SyncStatusEnum.PENDING,
-      }
-    }
-  }
-
-  if (!userResult.success || !userResult.data) {
+export async function syncGetStatus(request: Request): Promise<ReturnType<typeof getSyncStatus>> {
+  const userId = await resolveAuthenticatedUserId(request)
+  if (!userId) {
     return {
       pendingCount: 0,
       conflictCount: 0,
@@ -182,8 +171,7 @@ export async function syncGetStatus(request?: Request): Promise<ReturnType<typeo
       status: SyncStatusEnum.PENDING,
     }
   }
-
-  return getSyncStatus(userResult.data.id)
+  return getSyncStatus(userId)
 }
 
 /**

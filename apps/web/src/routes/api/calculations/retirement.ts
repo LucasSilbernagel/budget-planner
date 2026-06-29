@@ -11,20 +11,29 @@
  * thin HTTP boundary that parses the JSON body and maps the result to a status.
  */
 
-import { httpStatusForResult, retirementCalculation } from '@/server/functions/financial'
-import type { RetirementInput } from '@budget-planner/core'
+import {
+  httpStatusForResult,
+  parseCalcInput,
+  retirementCalculation,
+  retirementInputSchema,
+} from '@/server/functions/financial'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
-  let input: RetirementInput
+  let raw: unknown
   try {
-    input = (await request.json()) as RetirementInput
+    raw = await request.json()
   } catch {
     return json({ success: false, error: 'Invalid JSON request body' }, { status: 400 })
   }
 
-  const result = await retirementCalculation(request, input)
+  const parsed = parseCalcInput(retirementInputSchema, raw)
+  if (!parsed.success) {
+    return json(parsed, { status: httpStatusForResult(parsed) })
+  }
+
+  const result = await retirementCalculation(request, parsed.data)
   return json(result, { status: httpStatusForResult(result) })
 }
 

@@ -59,6 +59,7 @@
       "**/*.d.ts",
       "_bmad-output",
       "routeTree.gen.ts",
+      "**/migrations/meta/**",
       "**/test-results",
       "**/test-results/**",
       "**/playwright-report",
