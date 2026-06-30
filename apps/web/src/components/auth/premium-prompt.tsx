@@ -10,6 +10,7 @@
 
 import { Link } from '@tanstack/react-router'
 import React from 'react'
+import { Modal } from '../ui/Modal'
 
 // ============================================================================
 // Type Definitions
@@ -88,14 +89,19 @@ export function PremiumPrompt({
 
   if (asDialog) {
     return (
-      <DialogContainer onClose={handleClose}>
+      <Modal
+        isOpen
+        onClose={() => onClose?.()}
+        ariaLabel="Go Premium"
+        className="relative w-full max-w-md"
+      >
         <PremiumPromptContent
           featureName={featureName}
           message={message}
           onUpgradeClick={handleUpgradeClick}
           onClose={handleClose}
         />
-      </DialogContainer>
+      </Modal>
     )
   }
 
@@ -199,38 +205,6 @@ function PremiumPromptContent({
       <p className="mt-4 text-xs text-center text-gray-400">
         All data stored in Germany (EU) • CLOUD Act compliant
       </p>
-    </div>
-  )
-}
-
-// ============================================================================
-// Dialog Container
-// ============================================================================
-
-interface DialogContainerProps {
-  children: React.ReactNode
-  onClose: (e: React.MouseEvent) => void
-}
-
-function DialogContainer({
-  children,
-  // NOTE: onClose is passed by callers (handleClose) but never attached to the
-  // backdrop click handler below — clicking outside the dialog does not close it.
-  // Preserved (aliased) to keep the prop contract; wiring it is a behavior change
-  // tracked as a separate follow-up rather than fixed in this lint-only story.
-  onClose: _onClose,
-}: DialogContainerProps): React.ReactElement {
-  return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="premium-prompt-title"
-    >
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops click propagation, there is no keyboard-activatable behavior here. */}
-      <div className="relative w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
     </div>
   )
 }

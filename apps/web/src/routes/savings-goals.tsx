@@ -8,6 +8,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import AddSavingsGoalForm from '../components/AddSavingsGoalForm'
 import EditSavingsGoalForm from '../components/EditSavingsGoalForm'
 import SavingsGoalsList from '../components/SavingsGoalsList'
+import { Modal } from '../components/ui/Modal'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import {
   useOverallSavingsProgress,
@@ -59,19 +60,6 @@ function SavingsGoalsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<ClientSavingsGoal | null>(null)
-
-  // Handle Escape key for modals
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && (isAddModalOpen || isEditModalOpen)) {
-        closeModals()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-    // closeModals is a stable useCallback; omitted to avoid referencing it before its
-    // declaration below (TDZ) in the dependency array.
-  }, [isAddModalOpen, isEditModalOpen])
 
   // Loading/submitting states
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -331,119 +319,101 @@ function SavingsGoalsPage() {
       </div>
 
       {/* Add Modal */}
-      {isAddModalOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          onClick={(e) => e.target === e.currentTarget && closeModals()}
-          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="add-savings-goal-title"
-          data-testid="add-savings-goal-modal"
-        >
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={closeModals}
+        labelledBy="add-savings-goal-title"
+        testId="add-savings-goal-modal"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h3
+            id="add-savings-goal-title"
+            className="text-lg font-medium text-gray-900 dark:text-white"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3
-                id="add-savings-goal-title"
-                className="text-lg font-medium text-gray-900 dark:text-white"
-              >
-                Add Savings Goal
-              </h3>
-              <button
-                type="button"
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                aria-label="Close modal"
-                data-testid="add-savings-goal-close"
-              >
-                <svg
-                  aria-hidden="true"
-                  className="w-6 h-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <AddSavingsGoalForm
-              onSubmit={handleAddSavingsGoal}
-              onCancel={closeModals}
-              isSubmitting={isSubmitting}
-              isFreeTier={true}
-            />
-          </div>
+            Add Savings Goal
+          </h3>
+          <button
+            type="button"
+            onClick={closeModals}
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            aria-label="Close modal"
+            data-testid="add-savings-goal-close"
+          >
+            <svg
+              aria-hidden="true"
+              className="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
-      )}
+
+        <AddSavingsGoalForm
+          onSubmit={handleAddSavingsGoal}
+          onCancel={closeModals}
+          isSubmitting={isSubmitting}
+          isFreeTier={true}
+        />
+      </Modal>
 
       {/* Edit Modal */}
-      {isEditModalOpen && editingGoal && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          onClick={(e) => e.target === e.currentTarget && closeModals()}
-          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-savings-goal-title"
-          data-testid="edit-savings-goal-modal"
-        >
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
+      <Modal
+        isOpen={isEditModalOpen && editingGoal !== null}
+        onClose={closeModals}
+        labelledBy="edit-savings-goal-title"
+        testId="edit-savings-goal-modal"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h3
+            id="edit-savings-goal-title"
+            className="text-lg font-medium text-gray-900 dark:text-white"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3
-                id="edit-savings-goal-title"
-                className="text-lg font-medium text-gray-900 dark:text-white"
-              >
-                Edit Savings Goal
-              </h3>
-              <button
-                type="button"
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                aria-label="Close modal"
-                data-testid="edit-savings-goal-close"
-              >
-                <svg
-                  aria-hidden="true"
-                  className="w-6 h-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <EditSavingsGoalForm
-              goal={editingGoal}
-              onSubmit={handleUpdateSavingsGoal}
-              onCancel={closeModals}
-              isSubmitting={isSubmitting}
-              isFreeTier={true}
-            />
-          </div>
+            Edit Savings Goal
+          </h3>
+          <button
+            type="button"
+            onClick={closeModals}
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            aria-label="Close modal"
+            data-testid="edit-savings-goal-close"
+          >
+            <svg
+              aria-hidden="true"
+              className="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
-      )}
+
+        {editingGoal && (
+          <EditSavingsGoalForm
+            goal={editingGoal}
+            onSubmit={handleUpdateSavingsGoal}
+            onCancel={closeModals}
+            isSubmitting={isSubmitting}
+            isFreeTier={true}
+          />
+        )}
+      </Modal>
     </div>
   )
 }

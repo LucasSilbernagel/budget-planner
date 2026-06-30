@@ -8,6 +8,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import AddBalanceEntryForm from '../components/AddBalanceEntryForm'
 import BalanceTrackingList from '../components/BalanceTrackingList'
 import EditBalanceEntryForm from '../components/EditBalanceEntryForm'
+import { Modal } from '../components/ui/Modal'
 import {
   useBalanceActions,
   useBalanceEntriesWithTimeline,
@@ -72,16 +73,6 @@ function BalanceTrackingPage() {
     setIsEditModalOpen(false)
     setEditingEntry(null)
   }, [])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && (isAddModalOpen || isEditModalOpen)) {
-        closeModals()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAddModalOpen, isEditModalOpen, closeModals])
 
   // Loading/submitting states
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -340,119 +331,101 @@ function BalanceTrackingPage() {
       </div>
 
       {/* Add Modal */}
-      {isAddModalOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          onClick={(e) => e.target === e.currentTarget && closeModals()}
-          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="add-balance-entry-title"
-          data-testid="add-balance-entry-modal"
-        >
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={closeModals}
+        labelledBy="add-balance-entry-title"
+        testId="add-balance-entry-modal"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h3
+            id="add-balance-entry-title"
+            className="text-lg font-medium text-gray-900 dark:text-white"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3
-                id="add-balance-entry-title"
-                className="text-lg font-medium text-gray-900 dark:text-white"
-              >
-                Add Balance Entry
-              </h3>
-              <button
-                type="button"
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                aria-label="Close modal"
-                data-testid="add-balance-entry-close"
-              >
-                <svg
-                  aria-hidden="true"
-                  className="w-6 h-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <AddBalanceEntryForm
-              onSubmit={handleAddBalanceEntry}
-              onCancel={closeModals}
-              isSubmitting={isSubmitting}
-              isFreeTier={true}
-            />
-          </div>
+            Add Balance Entry
+          </h3>
+          <button
+            type="button"
+            onClick={closeModals}
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            aria-label="Close modal"
+            data-testid="add-balance-entry-close"
+          >
+            <svg
+              aria-hidden="true"
+              className="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
-      )}
+
+        <AddBalanceEntryForm
+          onSubmit={handleAddBalanceEntry}
+          onCancel={closeModals}
+          isSubmitting={isSubmitting}
+          isFreeTier={true}
+        />
+      </Modal>
 
       {/* Edit Modal */}
-      {isEditModalOpen && editingEntry && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          onClick={(e) => e.target === e.currentTarget && closeModals()}
-          onKeyDown={(e) => e.key === 'Escape' && closeModals()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-balance-entry-title"
-          data-testid="edit-balance-entry-modal"
-        >
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
-          <div
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
+      <Modal
+        isOpen={isEditModalOpen && editingEntry !== null}
+        onClose={closeModals}
+        labelledBy="edit-balance-entry-title"
+        testId="edit-balance-entry-modal"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+      >
+        <div className="flex justify-between items-center mb-6">
+          <h3
+            id="edit-balance-entry-title"
+            className="text-lg font-medium text-gray-900 dark:text-white"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3
-                id="edit-balance-entry-title"
-                className="text-lg font-medium text-gray-900 dark:text-white"
-              >
-                Edit Balance Entry
-              </h3>
-              <button
-                type="button"
-                onClick={closeModals}
-                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                aria-label="Close modal"
-                data-testid="edit-balance-entry-close"
-              >
-                <svg
-                  aria-hidden="true"
-                  className="w-6 h-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <EditBalanceEntryForm
-              entry={editingEntry}
-              onSubmit={handleUpdateBalanceEntry}
-              onCancel={closeModals}
-              isSubmitting={isSubmitting}
-              isFreeTier={true}
-            />
-          </div>
+            Edit Balance Entry
+          </h3>
+          <button
+            type="button"
+            onClick={closeModals}
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+            aria-label="Close modal"
+            data-testid="edit-balance-entry-close"
+          >
+            <svg
+              aria-hidden="true"
+              className="w-6 h-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
-      )}
+
+        {editingEntry && (
+          <EditBalanceEntryForm
+            entry={editingEntry}
+            onSubmit={handleUpdateBalanceEntry}
+            onCancel={closeModals}
+            isSubmitting={isSubmitting}
+            isFreeTier={true}
+          />
+        )}
+      </Modal>
     </div>
   )
 }

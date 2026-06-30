@@ -9,6 +9,7 @@ import {
 import type { FinanceType } from '../stores/balanceStore'
 import { useFormattedAmount } from '../stores/currencyStore'
 import { CurrencyToggle } from './settings/currency-toggle'
+import { Modal } from './ui/Modal'
 
 // Format amount for input display (without currency symbol)
 function formatAmountForInput(cents: number): string {
@@ -298,180 +299,170 @@ export function BalancePage() {
         </main>
 
         {/* Add/Edit Modal */}
-        {isModalOpen && (
-          <div className="z-50 fixed inset-0 flex justify-center items-center bg-black bg-opacity-50 p-4">
-            <div className="bg-white shadow-xl p-6 rounded-lg w-full max-w-md">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-medium text-gray-900 text-lg">
-                  {editingId !== null ? 'Edit Balance Entry' : 'Add Balance Entry'}
-                </h3>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="text-gray-400 hover:text-gray-600"
-                  aria-label="Close"
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="w-6 h-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="type" className="block mb-1 font-medium text-gray-700 text-sm">
-                    Type *
-                  </label>
-                  <select
-                    id="type"
-                    value={type}
-                    onChange={(e) => setType(e.target.value as FinanceType)}
-                    className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                    required
-                  >
-                    {TYPE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="name" className="block mb-1 font-medium text-gray-700 text-sm">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g., 401k, Student Loan, Credit Card"
-                    className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="currentBalance"
-                    className="block mb-1 font-medium text-gray-700 text-sm"
-                  >
-                    Current Balance *
-                  </label>
-                  <div className="relative shadow-sm rounded-md">
-                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                      <span className="text-gray-500 text-sm">$</span>
-                    </div>
-                    <input
-                      type="number"
-                      id="currentBalance"
-                      value={currentBalance}
-                      onChange={(e) => setCurrentBalance(e.target.value)}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="maxContributionLimit"
-                    className="block mb-1 font-medium text-gray-700 text-sm"
-                  >
-                    Max Contribution Limit (Optional)
-                  </label>
-                  <div className="relative shadow-sm rounded-md">
-                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                      <span className="text-gray-500 text-sm">$</span>
-                    </div>
-                    <input
-                      type="number"
-                      id="maxContributionLimit"
-                      value={maxContributionLimit}
-                      onChange={(e) => setMaxContributionLimit(e.target.value)}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="monthlyContribution"
-                    className="block mb-1 font-medium text-gray-700 text-sm"
-                  >
-                    Monthly Contribution *
-                  </label>
-                  <div className="relative shadow-sm rounded-md">
-                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                      <span className="text-gray-500 text-sm">$</span>
-                    </div>
-                    <input
-                      type="number"
-                      id="monthlyContribution"
-                      value={monthlyContribution}
-                      onChange={(e) => setMonthlyContribution(e.target.value)}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="hover:bg-gray-50 px-4 py-2 border border-gray-300 rounded-md text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4 py-2 rounded-md text-white disabled:cursor-not-allowed"
-                  >
-                    {isSubmitting
-                      ? 'Saving...'
-                      : editingId !== null
-                        ? 'Save Changes'
-                        : 'Add Balance Entry'}
-                  </button>
-                </div>
-              </form>
-            </div>
+        <Modal
+          isOpen={isModalOpen}
+          onClose={closeModal}
+          labelledBy="balance-modal-title"
+          className="bg-white shadow-xl p-6 rounded-lg w-full max-w-md"
+        >
+          <div className="flex justify-between items-center mb-6">
+            <h3 id="balance-modal-title" className="font-medium text-gray-900 text-lg">
+              {editingId !== null ? 'Edit Balance Entry' : 'Add Balance Entry'}
+            </h3>
+            <button
+              type="button"
+              onClick={closeModal}
+              className="text-gray-400 hover:text-gray-600"
+              aria-label="Close"
+            >
+              <svg
+                aria-hidden="true"
+                className="w-6 h-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
           </div>
-        )}
 
-        {/* Keyboard shortcut: Escape to close modal */}
-        {isModalOpen && (
-          <div
-            className="fixed inset-0 pointer-events-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') closeModal()
-            }}
-            tabIndex={-1}
-          />
-        )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="type" className="block mb-1 font-medium text-gray-700 text-sm">
+                Type *
+              </label>
+              <select
+                id="type"
+                value={type}
+                onChange={(e) => setType(e.target.value as FinanceType)}
+                className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                required
+              >
+                {TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="name" className="block mb-1 font-medium text-gray-700 text-sm">
+                Name *
+              </label>
+              <input
+                type="text"
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., 401k, Student Loan, Credit Card"
+                className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                required
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="currentBalance"
+                className="block mb-1 font-medium text-gray-700 text-sm"
+              >
+                Current Balance *
+              </label>
+              <div className="relative shadow-sm rounded-md">
+                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                  <span className="text-gray-500 text-sm">$</span>
+                </div>
+                <input
+                  type="number"
+                  id="currentBalance"
+                  value={currentBalance}
+                  onChange={(e) => setCurrentBalance(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="maxContributionLimit"
+                className="block mb-1 font-medium text-gray-700 text-sm"
+              >
+                Max Contribution Limit (Optional)
+              </label>
+              <div className="relative shadow-sm rounded-md">
+                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                  <span className="text-gray-500 text-sm">$</span>
+                </div>
+                <input
+                  type="number"
+                  id="maxContributionLimit"
+                  value={maxContributionLimit}
+                  onChange={(e) => setMaxContributionLimit(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="monthlyContribution"
+                className="block mb-1 font-medium text-gray-700 text-sm"
+              >
+                Monthly Contribution *
+              </label>
+              <div className="relative shadow-sm rounded-md">
+                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                  <span className="text-gray-500 text-sm">$</span>
+                </div>
+                <input
+                  type="number"
+                  id="monthlyContribution"
+                  value={monthlyContribution}
+                  onChange={(e) => setMonthlyContribution(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="hover:bg-gray-50 px-4 py-2 border border-gray-300 rounded-md text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4 py-2 rounded-md text-white disabled:cursor-not-allowed"
+              >
+                {isSubmitting
+                  ? 'Saving...'
+                  : editingId !== null
+                    ? 'Save Changes'
+                    : 'Add Balance Entry'}
+              </button>
+            </div>
+          </form>
+        </Modal>
 
         {/* Navigation */}
         <div className="flex flex-wrap gap-4 mt-8">

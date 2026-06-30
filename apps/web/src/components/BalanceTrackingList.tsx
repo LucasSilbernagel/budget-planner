@@ -2,8 +2,9 @@ import type {
   BalanceTrackingWithTimeline,
   ClientBalanceTracking,
 } from '@budget-planner/core/services/balanceTracking'
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import BalanceEntryCard from './BalanceEntryCard'
+import { Modal } from './ui/Modal'
 
 /**
  * Props for BalanceTrackingList component
@@ -68,17 +69,6 @@ export function BalanceTrackingList({
       handleCloseDeleteConfirm()
     }
   }, [deletingId, onDelete, handleCloseDeleteConfirm])
-
-  // Handle Escape key to close dialog
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && deletingId !== null) {
-        handleCloseDeleteConfirm()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [deletingId, handleCloseDeleteConfirm])
 
   if (isLoading) {
     return (
@@ -193,55 +183,46 @@ export function BalanceTrackingList({
       )}
 
       {/* Delete Confirmation Dialog (shared across all cards) */}
-      {deletingId !== null && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="delete-confirm-title"
-          aria-describedby="delete-confirm-description"
-          onClick={handleCloseDeleteConfirm}
-          onKeyDown={(e) => e.key === 'Escape' && handleCloseDeleteConfirm()}
+      <Modal
+        isOpen={deletingId !== null}
+        onClose={handleCloseDeleteConfirm}
+        role="alertdialog"
+        labelledBy="delete-confirm-title"
+        describedBy="delete-confirm-description"
+        className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full max-w-[90vw] dark:bg-gray-800 dark:border dark:border-gray-700"
+      >
+        <h3
+          id="delete-confirm-title"
+          className="text-lg font-semibold text-gray-900 dark:text-white mb-4"
         >
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: non-interactive container; onClick only stops propagation to the overlay so an inside click doesn't close the dialog — no keyboard equivalent applies (Escape is handled on the overlay). */}
-          <div
-            className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full max-w-[90vw] dark:bg-gray-800 dark:border dark:border-gray-700"
-            onClick={(e) => e.stopPropagation()}
+          Confirm Delete
+        </h3>
+        <p id="delete-confirm-description" className="text-gray-600 dark:text-gray-400 mb-6">
+          Are you sure you want to delete "
+          {deleteConfirmName.length > 50
+            ? `${deleteConfirmName.slice(0, 47)}...`
+            : deleteConfirmName}
+          "? This action cannot be undone.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={handleCloseDeleteConfirm}
+            className="px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+            data-testid="delete-confirm-cancel"
           >
-            <h3
-              id="delete-confirm-title"
-              className="text-lg font-semibold text-gray-900 dark:text-white mb-4"
-            >
-              Confirm Delete
-            </h3>
-            <p id="delete-confirm-description" className="text-gray-600 dark:text-gray-400 mb-6">
-              Are you sure you want to delete "
-              {deleteConfirmName.length > 50
-                ? `${deleteConfirmName.slice(0, 47)}...`
-                : deleteConfirmName}
-              "? This action cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={handleCloseDeleteConfirm}
-                className="px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                data-testid="delete-confirm-cancel"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-red-500 dark:hover:bg-red-600"
-                data-testid="delete-confirm-confirm"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmDelete}
+            className="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-red-500 dark:hover:bg-red-600"
+            data-testid="delete-confirm-confirm"
+          >
+            Delete
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }
