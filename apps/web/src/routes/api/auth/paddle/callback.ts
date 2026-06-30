@@ -21,17 +21,17 @@
 
 import { handlePaddleCallback } from '@/server/api/auth/paddle'
 import { signSession } from '@/server/api/auth/session'
+import { createSlidingWindowLimiter } from '@/server/rate-limit/sliding-window'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 /**
  * Per-IP sliding-window rate limiter for the OAuth callback.
  *
- * The previous implementation kept a single global "last attempt" slot, which
- * (a) limited every caller to one attempt per window regardless of the intended
- * max, and (b) was trivially defeated by alternating two IPs — each request
- * overwrote the other's slot. This keeps an independent attempt log per IP and
- * actually enforces RATE_LIMIT_MAX_ATTEMPTS within the window.
+ * Uses the shared sliding-window limiter (extracted in Story 5-16). It keeps an
+ * independent attempt log per IP and enforces RATE_LIMIT_MAX_ATTEMPTS within the
+ * window — replacing an earlier single-global-slot limiter that was defeated by
+ * alternating two IPs.
  *
  * Pre-auth there is no authenticated principal, so the client IP (from the
  * platform's forwarded header) is the only available key. In-memory is adequate
@@ -41,11 +41,15 @@ import { json } from '@tanstack/react-start'
 const RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
 const RATE_LIMIT_MAX_ATTEMPTS = 5
 const MAX_TRACKED_IPS = 10_000
-const callbackAttempts = new Map<string, number[]>()
+const callbackLimiter = createSlidingWindowLimiter({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  maxAttempts: RATE_LIMIT_MAX_ATTEMPTS,
+  maxKeys: MAX_TRACKED_IPS,
+})
 
 /** Test-only: clear the in-memory attempt log between cases. */
 export function _resetCallbackRateLimiter(): void {
-  callbackAttempts.clear()
+  callbackLimiter.reset()
 }
 
 /**
@@ -75,45 +79,16 @@ export function clientIpForRateLimit(request: Request): string | null {
   return request.headers.get('x-real-ip')?.trim() || null
 }
 
-/** Drop every IP bucket whose attempts have all aged out of the window. */
-function sweepExpired(windowStart: number): void {
-  for (const [key, timestamps] of callbackAttempts) {
-    if (timestamps.every((ts) => ts <= windowStart)) {
-      callbackAttempts.delete(key)
-    }
-  }
-}
-
 /**
  * Record an attempt for `ip` and report whether it exceeds the window limit.
  * Returns true when the request should be rejected (limit already reached).
  *
- * Exported for unit testing; the route handler is the only production caller.
+ * Thin wrapper over the shared sliding-window limiter; exported for unit testing
+ * (the route handler is the only production caller). The memory-bound /
+ * degrade-open behaviour now lives in the shared limiter.
  */
 export function isRateLimited(ip: string, now: number): boolean {
-  const windowStart = now - RATE_LIMIT_WINDOW_MS
-  const recent = (callbackAttempts.get(ip) ?? []).filter((ts) => ts > windowStart)
-
-  if (recent.length >= RATE_LIMIT_MAX_ATTEMPTS) {
-    // Persist the pruned list so the window keeps sliding without unbounded growth.
-    callbackAttempts.set(ip, recent)
-    return true
-  }
-
-  // Hard memory bound: a spoofed-IP flood can mint unlimited distinct keys, so
-  // before allocating a bucket for a NEW ip at capacity, sweep expired entries;
-  // if still full, refuse to track it (degrade open for this request) rather
-  // than let the map grow without limit. Already-tracked IPs stay limited.
-  if (!callbackAttempts.has(ip) && callbackAttempts.size >= MAX_TRACKED_IPS) {
-    sweepExpired(windowStart)
-    if (callbackAttempts.size >= MAX_TRACKED_IPS) {
-      return false
-    }
-  }
-
-  recent.push(now)
-  callbackAttempts.set(ip, recent)
-  return false
+  return callbackLimiter.check(ip, now)
 }
 
 export const Route = createFileRoute('/api/auth/paddle/callback')({

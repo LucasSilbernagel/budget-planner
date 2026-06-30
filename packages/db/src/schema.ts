@@ -317,6 +317,42 @@ export const forecastingProfiles = pgTable(
   })
 )
 
+// Login Tokens table - single-use magic-link tokens for passwordless re-auth (Story 5-16)
+//
+// Authentication is APP-OWNED email magic-link (ADR-003): a returning paid user
+// requests a link, we email a one-time token, and consuming it mints the existing
+// HMAC-signed session. We store ONLY the SHA-256 hash of the token (never the raw
+// value), so a leaked database row cannot be replayed as a login link. Single-use
+// is enforced by the `consumedAt` watermark inside one atomic UPDATE, which is
+// naturally correct under Rapids horizontal scaling (unlike an in-memory cache).
+//
+// This table authenticates EXISTING users only — account creation happens at
+// Paddle Billing checkout (Story 5-3). A request for an unknown email creates no
+// row and no token.
+export const loginTokens = pgTable(
+  'loginTokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    // SHA-256 of the raw token, lowercase hex (64 chars). The raw token lives
+    // only in the emailed link; we look up by re-hashing the presented value.
+    tokenHash: varchar('tokenHash', { length: 64 }).unique().notNull(),
+    // Short TTL (≤15 min, set in the token service). timestamptz so TTL math is
+    // timezone-safe across the app server and DB.
+    expiresAt: timestamp('expiresAt', { mode: 'date', withTimezone: true }).notNull(),
+    // NULL until the link is opened; set atomically on consume to enforce single-use.
+    consumedAt: timestamp('consumedAt', { mode: 'date', withTimezone: true }),
+    // timestamptz to match expiresAt/consumedAt — one consistent tz convention
+    // within the table (the column is currently audit-only, not used for TTL).
+    createdAt: timestamp('createdAt', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('loginTokens_userId_idx').on(table.userId),
+  })
+)
+
 // Type exports for TypeScript type safety
 // Note: Using InferSelectModel instead of deprecated InferModel
 export type User = InferSelectModel<typeof users>
@@ -343,6 +379,9 @@ export type NewRateLimit = InferInsertModel<typeof rateLimits>
 export type ForecastingProfile = InferSelectModel<typeof forecastingProfiles>
 export type NewForecastingProfile = InferInsertModel<typeof forecastingProfiles>
 
+export type LoginToken = InferSelectModel<typeof loginTokens>
+export type NewLoginToken = InferInsertModel<typeof loginTokens>
+
 // Frequency enum type
 export type Frequency = (typeof frequencyEnum.enumValues)[number]
 
@@ -365,6 +404,7 @@ export const allTables = {
   userProfiles,
   rateLimits,
   forecastingProfiles,
+  loginTokens,
 }
 
 // NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)

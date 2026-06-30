@@ -14,6 +14,13 @@
 import { http, HttpResponse } from 'msw'
 
 export const handlers = [
+  // --- Brevo (Sendinblue, EU/France): transactional email send (Story 5-16) ---
+  // Magic-link emails go through Brevo's EU endpoint. Intercepted here so no
+  // real send happens in CI (NFR8); per-test handlers override to assert payloads.
+  http.post('https://api.brevo.com/v3/smtp/email', () =>
+    HttpResponse.json({ messageId: 'msw-mock-message-id' }, { status: 201 })
+  ),
+
   // --- Paddle: api.paddle.com, sandbox-api.paddle.com, cdn.paddle.com ---
   // Anchored to the host so only paddle.com (and its subdomains) match — a bare
   // /paddle\.com/ would also intercept unrelated hosts like notpaddle.com.evil.test.

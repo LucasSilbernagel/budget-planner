@@ -12,8 +12,7 @@
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useRouter } from '@tanstack/react-router'
-import { PaddleAuthButton } from './paddle-button'
+import { Link, useRouter } from '@tanstack/react-router'
 
 export interface AuthStatusProps {
   /** Whether to show user avatar/initial */
@@ -100,10 +99,15 @@ export function AuthStatus({ showAvatar = false, className = '' }: AuthStatusPro
   }
 
   if (!user) {
-    // Not authenticated - show login button
+    // Not authenticated - link to the magic-link sign-in page (Story 5-16).
     return (
       <div className={`flex items-center gap-3 ${className}`}>
-        <PaddleAuthButton variant="primary" />
+        <Link
+          to="/login"
+          className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        >
+          Sign in
+        </Link>
       </div>
     )
   }

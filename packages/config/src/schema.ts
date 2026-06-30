@@ -26,6 +26,16 @@ export const envSchema = z.object({
   // Database (Scaleway PostgreSQL)
   DATABASE_URL: z.string().optional(),
 
+  // Transactional email (Story 5-16, magic-link login).
+  // Provider: Brevo (Sendinblue) — Paris, France; EU-hosted data centers, so a
+  // recipient email address (personal data) never leaves the EU (NFR1, NFR2).
+  // EMAIL_API_KEY is a RUNTIME SECRET injected via Rapids — never committed.
+  // Optional at the schema level so dev/test load without it; getEmailConfig()
+  // reports `isConfigured`, and the mailer fails closed outside development.
+  EMAIL_API_KEY: z.string().optional(),
+  // Verified sender address for the EU provider (the "from" on the magic link).
+  EMAIL_FROM: z.string().default('no-reply@budgetplanner.eu'),
+
   // Session signing secret (HMAC-SHA256 key for signed session cookies).
   // Optional at the schema level so dev/test can run without it (a guarded,
   // insecure fallback is used); production enforcement lives in
@@ -89,6 +99,61 @@ export function getPaddleConfig(): PaddleConfig {
     publicKey: env.PADDLE_PUBLIC_KEY,
     webhookSecret: env.PADDLE_WEBHOOK_SECRET,
     isConfigured,
+  }
+}
+
+// Email (transactional) configuration — Story 5-16
+export interface EmailConfig {
+  /** Brevo (EU) API key; undefined when unset. Runtime secret, never logged. */
+  apiKey: string | undefined
+  /** Verified sender address. */
+  from: string
+  /** Display name shown alongside the sender address. */
+  fromName: string
+  /** True only when an API key is present (so the mailer can actually send). */
+  isConfigured: boolean
+}
+
+/** Display name attached to outbound magic-link emails. */
+export const EMAIL_FROM_NAME = 'Budget Planner'
+
+/**
+ * Resolve the public site origin used to build absolute links in emails
+ * (magic-link, Story 5-16).
+ *
+ * Fails closed in production (mirrors getSessionSecret): a missing, localhost, or
+ * non-HTTPS `SITE_URL` outside development would otherwise silently email users a
+ * `http://localhost:5173/...` link. NODE_ENV is the enum-defaulted
+ * `development`, so production/test take the strict branch; an unset NODE_ENV
+ * resolves to `development` and returns the (localhost) default for local use.
+ */
+export function getSiteUrl(): string {
+  const env = getConfig()
+  const url = env.SITE_URL?.trim()
+
+  if (env.NODE_ENV === 'production') {
+    if (!url || url.includes('localhost') || !url.startsWith('https://')) {
+      throw new Error(
+        'SITE_URL must be set to the public https origin (not localhost) in production — magic-link emails build absolute links from it.'
+      )
+    }
+  }
+
+  return url || 'http://localhost:5173'
+}
+
+/**
+ * Get transactional-email configuration (EU provider — Brevo/Sendinblue, France).
+ * The recipient address is personal data, so the provider must be EU-resident
+ * (NFR1, NFR2). The API key is a runtime secret resolved here from the environment.
+ */
+export function getEmailConfig(): EmailConfig {
+  const env = getConfig()
+  return {
+    apiKey: env.EMAIL_API_KEY,
+    from: env.EMAIL_FROM,
+    fromName: EMAIL_FROM_NAME,
+    isConfigured: !!env.EMAIL_API_KEY,
   }
 }
 

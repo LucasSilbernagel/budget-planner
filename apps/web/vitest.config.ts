@@ -76,6 +76,12 @@ export default defineConfig({
       // Deterministic 32+ char key so signed-session signing/verification works
       // in unit tests (Story 5-7). Never used outside the test runner.
       SESSION_SECRET: 'test-session-secret-0123456789abcdef-fixed',
+      // Magic-link email (Story 5-16): a dummy key so the mailer takes its real
+      // send path; MSW intercepts the Brevo (EU) endpoint so nothing is sent.
+      EMAIL_API_KEY: 'test-email-api-key',
+      EMAIL_FROM: 'no-reply@budgetplanner.test',
+      // Stable origin for building absolute magic-link URLs in tests.
+      SITE_URL: 'https://app.test',
     },
     coverage: {
       provider: 'v8',
