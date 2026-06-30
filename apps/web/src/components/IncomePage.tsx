@@ -1,8 +1,9 @@
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
 import { CurrencyToggle } from './settings/currency-toggle'
+import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
 // Frequency options for the select dropdown
@@ -73,6 +74,13 @@ export function IncomePage() {
   // Loading state to prevent duplicate submissions
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Delete confirmation state. Holds the id pending deletion (themed dialog
+  // replaces the old browser confirm()). The "Add" button is a stable focus
+  // target after a confirmed delete removes the triggering row (AC-5).
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+  const pendingDeleteName = incomeSources.find((s) => s.id === pendingDeleteId)?.name ?? ''
+
   // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -111,10 +119,16 @@ export function IncomePage() {
     }
   }
 
-  // Handle delete
+  // Open the themed delete confirmation for an income source
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this income source? This cannot be undone.')) {
-      deleteIncomeSource(id)
+    setPendingDeleteId(id)
+  }
+
+  // Confirm and execute the pending delete
+  const confirmDelete = () => {
+    if (pendingDeleteId !== null) {
+      deleteIncomeSource(pendingDeleteId)
+      setPendingDeleteId(null)
     }
   }
 
@@ -140,6 +154,7 @@ export function IncomePage() {
                 </p>
               </div>
               <button
+                ref={addButtonRef}
                 type="button"
                 onClick={openAddModal}
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors whitespace-nowrap"
@@ -324,6 +339,21 @@ export function IncomePage() {
             </div>
           </form>
         </Modal>
+
+        {/* Delete confirmation */}
+        <ConfirmDialog
+          isOpen={pendingDeleteId !== null}
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDeleteId(null)}
+          finalFocusRef={addButtonRef}
+          message={
+            <>
+              Are you sure you want to delete
+              {pendingDeleteName ? ` "${pendingDeleteName}"` : ' this income source'}? This cannot
+              be undone.
+            </>
+          }
+        />
 
         {/* Navigation */}
         <div className="mt-8 flex flex-wrap gap-4">

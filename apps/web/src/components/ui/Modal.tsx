@@ -51,6 +51,16 @@ export interface ModalProps {
   closeOnOverlayClick?: boolean
   /** Element to receive focus when the modal opens. Defaults to the first focusable element. */
   initialFocusRef?: React.RefObject<HTMLElement | null>
+  /**
+   * Element to receive focus when the modal closes, overriding the default
+   * restore-to-trigger. Use when the triggering control is removed as a result
+   * of the modal's action (e.g. a confirmed delete) so focus lands on a stable
+   * element instead of falling to `<body>`. Applied on close regardless of
+   * whether the trigger detached synchronously, so it is robust to async
+   * actions. Falls back to the previously focused element when its `.current`
+   * is null.
+   */
+  finalFocusRef?: React.RefObject<HTMLElement | null>
   /** Optional `data-testid` applied to the dialog content element. */
   testId?: string
 }
@@ -81,6 +91,7 @@ export function Modal({
   className = 'bg-white rounded-lg shadow-xl max-w-md w-full p-6',
   closeOnOverlayClick = true,
   initialFocusRef,
+  finalFocusRef,
   testId,
 }: ModalProps) {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -115,9 +126,13 @@ export function Modal({
     }
 
     return () => {
-      previouslyFocused?.focus?.()
+      // Prefer an explicit return-focus target (e.g. a stable element when the
+      // trigger was removed by the modal's action); otherwise restore to the
+      // element that was focused when the modal opened.
+      const restoreTarget = finalFocusRef?.current ?? previouslyFocused
+      restoreTarget?.focus?.()
     }
-  }, [isOpen, initialFocusRef])
+  }, [isOpen, initialFocusRef, finalFocusRef])
 
   // Lock body scroll while open.
   useEffect(() => {

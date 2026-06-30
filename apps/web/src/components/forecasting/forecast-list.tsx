@@ -8,9 +8,10 @@
  * Data Sovereignty: Saved forecasts stored server-side for paid tier
  */
 
-import React, { useState, useCallback, useMemo } from 'react'
+import React, { useState, useCallback, useMemo, useRef } from 'react'
 import type { SavedForecast } from '../../routes/forecasting'
 import { useFormattedAmount } from '../../stores/currencyStore'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 
 // ============================================================================
 // Type Definitions
@@ -73,6 +74,13 @@ export function ForecastList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'netWorth'>('date')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  // Pending destructive delete, surfaced via a themed dialog (replaces
+  // window.confirm). `single` carries the row id; `bulk` deletes the current
+  // selection. The list heading is a stable focus target after confirm (AC-5).
+  const [pendingDelete, setPendingDelete] = useState<
+    { type: 'single'; id: string } | { type: 'bulk' } | null
+  >(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   // Filter and sort forecasts
   const filteredForecasts = useMemo(() => {
@@ -140,32 +148,37 @@ export function ForecastList({
     }
   }, [selectedCount, totalCount, filteredForecasts])
 
-  // Handle delete for a single forecast
-  const handleDelete = useCallback(
-    (id: string, e: React.MouseEvent) => {
-      e.stopPropagation()
-      if (window.confirm('Are you sure you want to delete this forecast?')) {
-        onDelete(id)
-        setSelectedIds((prev) => {
-          const newSet = new Set(prev)
-          newSet.delete(id)
-          return newSet
-        })
-      }
-    },
-    [onDelete]
-  )
+  // Open the themed confirmation for a single forecast
+  const handleDelete = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPendingDelete({ type: 'single', id })
+  }, [])
 
-  // Handle delete for selected forecasts
+  // Open the themed confirmation for the current selection
   const handleBulkDelete = useCallback(() => {
     if (selectedCount === 0) return
-    if (window.confirm(`Are you sure you want to delete ${selectedCount} selected forecast(s)?`)) {
+    setPendingDelete({ type: 'bulk' })
+  }, [selectedCount])
+
+  // Execute the pending delete (single row or whole selection)
+  const handleConfirmDelete = useCallback(() => {
+    if (pendingDelete === null) return
+    if (pendingDelete.type === 'single') {
+      const { id } = pendingDelete
+      onDelete(id)
+      setSelectedIds((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
+    } else {
       for (const id of selectedIds) {
         onDelete(id)
       }
       setSelectedIds(new Set())
     }
-  }, [selectedIds, selectedCount, onDelete])
+    setPendingDelete(null)
+  }, [pendingDelete, selectedIds, onDelete])
 
   // Handle load forecast
   const handleLoad = useCallback(
@@ -204,7 +217,13 @@ export function ForecastList({
     <div className="space-y-6">
       {/* Header */}
       <div className="mb-4">
-        <h2 className="text-2xl font-bold text-gray-800">My Saved Forecasts</h2>
+        <h2
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-2xl font-bold text-gray-800 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          My Saved Forecasts
+        </h2>
         <p className="text-gray-500 mt-1">Manage your saved forecasting scenarios</p>
       </div>
 
@@ -399,6 +418,19 @@ export function ForecastList({
           {searchQuery && ` (filtered by "${searchQuery}")`}
         </p>
       )}
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={pendingDelete !== null}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+        finalFocusRef={headingRef}
+        message={
+          pendingDelete?.type === 'bulk'
+            ? `Are you sure you want to delete ${selectedCount} selected forecast(s)? This cannot be undone.`
+            : 'Are you sure you want to delete this forecast? This cannot be undone.'
+        }
+      />
     </div>
   )
 }

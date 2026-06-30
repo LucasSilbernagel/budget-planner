@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   useBalanceEntries,
   useBalanceStore,
@@ -9,6 +9,7 @@ import {
 import type { FinanceType } from '../stores/balanceStore'
 import { useFormattedAmount } from '../stores/currencyStore'
 import { CurrencyToggle } from './settings/currency-toggle'
+import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
 // Format amount for input display (without currency symbol)
@@ -96,6 +97,13 @@ export function BalancePage() {
   // Loading state to prevent duplicate submissions
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Delete confirmation state (themed dialog replaces browser confirm()). This
+  // page has no "Add" button yet (tracked separately), so focus returns to the
+  // list heading after a confirmed delete removes the triggering row (AC-5).
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+  const listHeadingRef = useRef<HTMLHeadingElement>(null)
+  const pendingDeleteName = balanceEntries.find((e) => e.id === pendingDeleteId)?.name ?? ''
+
   // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -154,10 +162,16 @@ export function BalancePage() {
     }
   }
 
-  // Handle delete
+  // Open the themed delete confirmation for a balance entry
   const handleDelete = (id: number) => {
-    if (confirm('Are you sure you want to delete this balance entry? This cannot be undone.')) {
-      deleteBalanceEntry(id)
+    setPendingDeleteId(id)
+  }
+
+  // Confirm and execute the pending delete
+  const confirmDelete = () => {
+    if (pendingDeleteId !== null) {
+      deleteBalanceEntry(pendingDeleteId)
+      setPendingDeleteId(null)
     }
   }
 
@@ -208,7 +222,13 @@ export function BalancePage() {
 
           {/* Balance Entries List */}
           <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-6 font-semibold text-gray-800 text-xl">Your Balance Entries</h2>
+            <h2
+              ref={listHeadingRef}
+              tabIndex={-1}
+              className="mb-6 font-semibold text-gray-800 text-xl rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Your Balance Entries
+            </h2>
 
             {balanceEntries.length === 0 ? (
               <div className="bg-gray-50 p-8 rounded-lg text-center">
@@ -463,6 +483,21 @@ export function BalancePage() {
             </div>
           </form>
         </Modal>
+
+        {/* Delete confirmation */}
+        <ConfirmDialog
+          isOpen={pendingDeleteId !== null}
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDeleteId(null)}
+          finalFocusRef={listHeadingRef}
+          message={
+            <>
+              Are you sure you want to delete
+              {pendingDeleteName ? ` "${pendingDeleteName}"` : ' this balance entry'}? This cannot
+              be undone.
+            </>
+          }
+        />
 
         {/* Navigation */}
         <div className="flex flex-wrap gap-4 mt-8">

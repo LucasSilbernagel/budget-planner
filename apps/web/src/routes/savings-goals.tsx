@@ -8,6 +8,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import AddSavingsGoalForm from '../components/AddSavingsGoalForm'
 import EditSavingsGoalForm from '../components/EditSavingsGoalForm'
 import SavingsGoalsList from '../components/SavingsGoalsList'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { Modal } from '../components/ui/Modal'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import {
@@ -60,6 +61,13 @@ function SavingsGoalsPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<ClientSavingsGoal | null>(null)
+
+  // Delete confirmation state (themed dialog replaces browser confirm()). The
+  // "Add" button is a stable focus target after a confirmed delete (AC-5).
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+  const pendingDeleteName =
+    savingsGoalsWithProgress.find((g) => g.id === pendingDeleteId)?.name ?? ''
 
   // Loading/submitting states
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -150,16 +158,16 @@ function SavingsGoalsPage() {
     }
   }
 
-  // Handle delete savings goal
-  const handleDeleteSavingsGoal = async (id: string) => {
-    if (
-      !confirm('Are you sure you want to delete this savings goal? This action cannot be undone.')
-    ) {
-      return
-    }
+  // Open the themed delete confirmation for a savings goal
+  const handleDeleteSavingsGoal = (id: string) => {
+    setPendingDeleteId(id)
+  }
 
+  // Confirm and execute the pending delete
+  const confirmDeleteSavingsGoal = () => {
+    if (pendingDeleteId === null) return
     try {
-      const result = deleteSavingsGoal(id)
+      const result = deleteSavingsGoal(pendingDeleteId)
       if (result) {
         showNotification('success', 'Savings goal deleted successfully!')
       } else {
@@ -167,6 +175,8 @@ function SavingsGoalsPage() {
       }
     } catch (_error) {
       showNotification('error', 'Failed to delete savings goal')
+    } finally {
+      setPendingDeleteId(null)
     }
   }
 
@@ -252,6 +262,7 @@ function SavingsGoalsPage() {
         {/* Add Button */}
         <div className="flex justify-end mb-6">
           <button
+            ref={addButtonRef}
             type="button"
             onClick={openAddModal}
             className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-400"
@@ -414,6 +425,21 @@ function SavingsGoalsPage() {
           />
         )}
       </Modal>
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        isOpen={pendingDeleteId !== null}
+        onConfirm={confirmDeleteSavingsGoal}
+        onCancel={() => setPendingDeleteId(null)}
+        finalFocusRef={addButtonRef}
+        message={
+          <>
+            Are you sure you want to delete
+            {pendingDeleteName ? ` "${pendingDeleteName}"` : ' this savings goal'}? This action
+            cannot be undone.
+          </>
+        }
+      />
     </div>
   )
 }

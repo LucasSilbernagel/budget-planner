@@ -160,14 +160,10 @@ function BalanceTrackingPage() {
     }
   }
 
-  // Handle delete balance entry
+  // Handle delete balance entry. Confirmation is owned by the themed
+  // alertdialog inside <BalanceTrackingList>, so this only runs once the user
+  // has already confirmed (no browser confirm() — would double-prompt).
   const handleDeleteBalanceEntry = async (id: string) => {
-    if (
-      !confirm('Are you sure you want to delete this balance entry? This action cannot be undone.')
-    ) {
-      return
-    }
-
     try {
       const result = deleteBalanceEntry(id)
       if (result) {
