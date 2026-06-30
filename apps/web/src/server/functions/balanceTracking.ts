@@ -11,6 +11,7 @@
  * - Free tier uses client-side storage via Zustand
  */
 
+import { logger } from '@/lib/logger'
 import { db } from '@budget-planner/db'
 import type { BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
 import { balanceTracking } from '@budget-planner/db/src/schema'
@@ -101,7 +102,7 @@ export async function getBalanceTrackingEntries(
       data: entries,
     }
   } catch (error) {
-    console.error('Failed to fetch balance tracking entries:', error)
+    logger.error('Failed to fetch balance tracking entries', { error })
     return {
       success: false,
       error: 'Failed to fetch balance tracking entries',
@@ -147,7 +148,7 @@ export async function getBalanceTrackingEntry(
       data: entry[0],
     }
   } catch (error) {
-    console.error('Failed to fetch balance tracking entry:', error)
+    logger.error('Failed to fetch balance tracking entry', { error })
     return {
       success: false,
       error: 'Failed to fetch balance tracking entry',
@@ -201,7 +202,7 @@ export async function createBalanceTrackingEntry(
       data: result[0],
     }
   } catch (error) {
-    console.error('Failed to create balance tracking entry:', error)
+    logger.error('Failed to create balance tracking entry', { error })
     return {
       success: false,
       error: 'Failed to create balance tracking entry',
@@ -270,7 +271,7 @@ export async function updateBalanceTrackingEntry(
       data: result[0],
     }
   } catch (error) {
-    console.error('Failed to update balance tracking entry:', error)
+    logger.error('Failed to update balance tracking entry', { error })
     return {
       success: false,
       error: 'Failed to update balance tracking entry',
@@ -319,7 +320,7 @@ export async function deleteBalanceTrackingEntry(
       success: true,
     }
   } catch (error) {
-    console.error('Failed to delete balance tracking entry:', error)
+    logger.error('Failed to delete balance tracking entry', { error })
     return {
       success: false,
       error: 'Failed to delete balance tracking entry',

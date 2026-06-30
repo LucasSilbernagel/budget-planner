@@ -13,6 +13,7 @@
  * `api-key` header.
  */
 
+import { logger } from '@/lib/logger'
 import { getEmailConfig } from '@budget-planner/config'
 
 /** Brevo transactional-email endpoint (EU). */
@@ -60,9 +61,12 @@ export async function sendMagicLinkEmail(to: string, link: string): Promise<void
 
   if (!config.isConfigured || !config.apiKey) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn(
-        `[mailer] EMAIL_API_KEY not set — magic link for ${to} (dev only, not sent):\n${link}`
-      )
+      // Dev-only affordance so local sign-in works without an email account.
+      // `to` is redacted by the logger; the link survives so it can be copied.
+      logger.warn('[mailer] EMAIL_API_KEY not set — magic link generated (dev only, not sent)', {
+        to,
+        magicLink: link,
+      })
       return
     }
     throw new Error(

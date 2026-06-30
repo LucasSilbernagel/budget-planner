@@ -15,6 +15,7 @@
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
+import { logger } from '@/lib/logger'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
@@ -369,7 +370,7 @@ export async function checkRateLimit(
     // This ensures the feature still works even if rateLimits table is not available
     // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = error instanceof Error ? error.message : String(error)
-    console.error('[RateLimit] Database error, falling back to in-memory:', sanitizedError)
+    logger.error('[RateLimit] Database error, falling back to in-memory', { error: sanitizedError })
 
     // In-memory fallback
     const validEntries = rateLimitStore.filter((entry) => entry.resetTime > now)
@@ -442,7 +443,7 @@ async function getEntity(
   } catch (error) {
     // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = error instanceof Error ? error.message : String(error)
-    console.error(`[DB Error] Failed to get entity ${entityType}:${entityId}:`, sanitizedError)
+    logger.error('[DB Error] Failed to get entity', { entityType, entityId, error: sanitizedError })
     throw new Error(`Failed to get entity: ${sanitizedError}`)
   }
 }
@@ -689,7 +690,7 @@ async function checkConflict(
     // This prevents data resurrection from stale updates
     // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = error instanceof Error ? error.message : String(error)
-    console.error('[Conflict Check Error]:', sanitizedError)
+    logger.error('[Conflict Check Error]', { error: sanitizedError })
     return { hasConflict: true, conflictType: 'server-check-failed' }
   }
 }
@@ -743,7 +744,7 @@ async function logAudit(
     // Fallback to console log if database fails
     // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = dbError instanceof Error ? dbError.message : String(dbError)
-    console.error('[Audit DB Error]', {
+    logger.error('[Audit DB Error]', {
       id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       userId,
       operationId,
@@ -830,7 +831,7 @@ async function recordSyncHistory(
       status,
       error: `DB Error: ${sanitizedError}`,
     }
-    console.error('[SyncHistory DB Error]', historyEntry)
+    logger.error('[SyncHistory DB Error]', { entry: historyEntry })
     return historyEntry
   }
 }

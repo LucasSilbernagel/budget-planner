@@ -25,6 +25,8 @@
  */
 
 import crypto from 'crypto'
+import { captureError } from '@/lib/error-tracking'
+import { logger } from '@/lib/logger'
 import { clientIpForRateLimit } from '@/routes/api/auth/paddle/callback'
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
 import { signSession } from '@/server/api/auth/session'
@@ -136,7 +138,8 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
   try {
     peeked = await peekMagicLink(token)
   } catch (error) {
-    console.error('Magic-link peek failed:', error instanceof Error ? error.message : error)
+    logger.error('Magic-link peek failed', { error })
+    captureError(error, { scope: 'magic-link-peek' })
     return htmlResponse(invalidPage())
   }
 
@@ -183,7 +186,8 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   try {
     verified = await verifyMagicLink(token)
   } catch (error) {
-    console.error('Magic-link verify failed:', error instanceof Error ? error.message : error)
+    logger.error('Magic-link verify failed', { error })
+    captureError(error, { scope: 'magic-link-verify' })
     return invalidRedirect()
   }
 

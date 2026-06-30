@@ -11,6 +11,8 @@
  */
 
 import crypto from 'crypto'
+import { captureError } from '@/lib/error-tracking'
+import { logger } from '@/lib/logger'
 import { getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import { type Currency, type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
@@ -115,7 +117,7 @@ async function handleSubscriptionStatusUpdate(
 ): Promise<boolean> {
   // Validate inputs
   if (!paddleUserId || typeof paddleUserId !== 'string') {
-    console.error(`Invalid paddleUserId in webhook: ${paddleUserId}`)
+    logger.error('Webhook: invalid paddleUserId', { paddleUserId })
     return false
   }
 
@@ -124,7 +126,7 @@ async function handleSubscriptionStatusUpdate(
 
   // Validate email if provided
   if (email && !isValidEmail(email)) {
-    console.error(`Invalid email in webhook for user ${paddleUserId}: ${email}`)
+    logger.warn('Webhook: invalid email for user', { paddleUserId, email })
     return false
   }
 
@@ -158,13 +160,13 @@ async function handleSubscriptionStatusUpdate(
           subscriptionStatus: mappedStatus,
           currency: mappedCurrency,
         })
-        console.log(`Created new user ${paddleUserId} from subscription webhook`)
+        logger.info('Webhook: created new user from subscription', { paddleUserId })
       }
 
       return true
     })
   } catch (error) {
-    console.error(`Failed to update subscription status for user ${paddleUserId}:`, error)
+    logger.error('Webhook: failed to update subscription status', { paddleUserId, error })
     return false
   }
 }
@@ -212,7 +214,7 @@ export const Route = createFileRoute('/api/webhooks/paddle')({
           const eventType = data?.event_type
 
           if (!eventType) {
-            console.error('Paddle webhook: missing event_type')
+            logger.error('Webhook: missing event_type')
             return json(
               { success: false, error: 'Missing event_type in webhook payload' },
               { status: 400 }
@@ -230,12 +232,12 @@ export const Route = createFileRoute('/api/webhooks/paddle')({
                 const currency = data?.data?.currency_code || data?.data?.currency
 
                 if (!userId) {
-                  console.error(`Paddle webhook ${eventType}: missing user_id`)
+                  logger.error('Webhook: missing user_id', { eventType })
                   break
                 }
 
                 if (!subscriptionStatus) {
-                  console.error(`Paddle webhook ${eventType}: missing status for user ${userId}`)
+                  logger.error('Webhook: missing status', { eventType, userId })
                   break
                 }
 
@@ -252,12 +254,13 @@ export const Route = createFileRoute('/api/webhooks/paddle')({
               break
 
             default:
-              console.log(`Unhandled Paddle webhook event: ${eventType}`)
+              logger.info('Webhook: unhandled event', { eventType })
           }
 
           return json({ success: true })
         } catch (error) {
-          console.error('Paddle webhook error:', error)
+          logger.error('Webhook: unhandled error', { error })
+          captureError(error, { scope: 'paddle-webhook' })
           return json({ success: false, error: 'Internal server error' }, { status: 500 })
         }
       },

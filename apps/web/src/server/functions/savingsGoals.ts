@@ -11,6 +11,7 @@
  * use these server functions. Free tier is handled in the Zustand store.
  */
 
+import { logger } from '@/lib/logger'
 import { db } from '@budget-planner/db'
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
 import { savingsGoals } from '@budget-planner/db/src/schema'
@@ -134,7 +135,7 @@ export async function getSavingsGoals(
       data: goalsWithProgress,
     }
   } catch (error) {
-    console.error('Error fetching savings goals:', error)
+    logger.error('Error fetching savings goals', { error })
     return {
       success: false,
       error: 'Failed to fetch savings goals',
@@ -181,7 +182,7 @@ export async function getSavingsGoal(
       data: withProgress(goal[0]),
     }
   } catch (error) {
-    console.error('Error fetching savings goal:', error)
+    logger.error('Error fetching savings goal', { error })
     return {
       success: false,
       error: 'Failed to fetch savings goal',
@@ -255,7 +256,7 @@ export async function createSavingsGoal(
       data: withProgress(newGoal),
     }
   } catch (error) {
-    console.error('Error creating savings goal:', error)
+    logger.error('Error creating savings goal', { error })
     return {
       success: false,
       error: 'Failed to create savings goal',
@@ -356,7 +357,7 @@ export async function updateSavingsGoal(
       data: withProgress(updatedGoal),
     }
   } catch (error) {
-    console.error('Error updating savings goal:', error)
+    logger.error('Error updating savings goal', { error })
     return {
       success: false,
       error: 'Failed to update savings goal',
@@ -407,7 +408,7 @@ export async function deleteSavingsGoal(
       success: true,
     }
   } catch (error) {
-    console.error('Error deleting savings goal:', error)
+    logger.error('Error deleting savings goal', { error })
     return {
       success: false,
       error: 'Failed to delete savings goal',

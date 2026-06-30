@@ -14,6 +14,8 @@
  * limiter module + deferred-work.md for the Rapids multi-instance caveat.
  */
 
+import { captureError } from '@/lib/error-tracking'
+import { logger } from '@/lib/logger'
 import { clientIpForRateLimit } from '@/routes/api/auth/paddle/callback'
 import { requestMagicLink } from '@/server/api/auth/magic-link'
 import { createSlidingWindowLimiter } from '@/server/rate-limit/sliding-window'
@@ -97,7 +99,8 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   // which is a deploy-wide signal, not a per-email enumeration channel.
   const siteUrl = getSiteUrl()
   void requestMagicLink(email, siteUrl).catch((error) => {
-    console.error('Magic-link request failed:', error instanceof Error ? error.message : error)
+    logger.error('Magic-link request failed', { error })
+    captureError(error, { scope: 'magic-link-request' })
   })
 
   return json(GENERIC_OK)

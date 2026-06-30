@@ -10,6 +10,7 @@
  */
 
 import crypto from 'crypto'
+import { logger } from '@/lib/logger'
 import { type PaddleConfig, getPaddleConfig } from '@budget-planner/config'
 import { db } from '@budget-planner/db'
 import { users } from '@budget-planner/db/src/schema'
@@ -371,7 +372,7 @@ async function getPaddleUser(
 
         // Retry on 429 (rate limit) and 5xx errors
         if (response.status === 429 || response.status >= 500) {
-          console.error(`Paddle API attempt ${attempt} failed: ${lastError.message}. Retrying...`)
+          logger.error('Paddle API attempt failed, retrying', { attempt, error: lastError.message })
           if (attempt < MAX_RETRY_ATTEMPTS) {
             await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt))
             continue
@@ -420,7 +421,7 @@ async function getPaddleUser(
       }
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
-      console.error(`Paddle API attempt ${attempt} failed: ${lastError.message}`)
+      logger.error('Paddle API attempt failed', { attempt, error: lastError.message })
 
       // Retry on network errors
       if (attempt < MAX_RETRY_ATTEMPTS) {
@@ -429,7 +430,7 @@ async function getPaddleUser(
       }
 
       // After all retries, fail - do NOT return placeholder user in production
-      console.error('Paddle API: All retry attempts failed')
+      logger.error('Paddle API: All retry attempts failed')
       return {
         success: false,
         error: `Paddle API unavailable after ${MAX_RETRY_ATTEMPTS} attempts: ${lastError.message}`,
@@ -595,7 +596,7 @@ async function createOrUpdateUser(paddleUser: PaddleUser): Promise<ApiResult<Use
 
     // Log any profile creation errors but don't fail user creation
     if (!defaultProfileResult.success) {
-      console.error('Failed to create default profile:', defaultProfileResult.error)
+      logger.error('Failed to create default profile', { error: defaultProfileResult.error })
     }
 
     return {
@@ -636,14 +637,16 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
     // tokens return null and are treated as unauthenticated.
     const payload = verifySession(decodedToken)
     if (!payload) {
-      console.error('Invalid session token: signature verification failed')
+      // Security signal (possible tampering/forgery) — emitted in prod (warn),
+      // but not error, to avoid false error-rate spikes from routine bad cookies.
+      logger.warn('Invalid session token: signature verification failed')
       return null
     }
 
     // Ensure userId is a valid UUID format before querying the database.
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidPattern.test(payload.userId)) {
-      console.error('Invalid session token: userId is not a valid UUID')
+      logger.debug('Invalid session token: userId is not a valid UUID')
       return null
     }
 
@@ -658,7 +661,7 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
 
     const user = matchingUsers[0]
     if (!user) {
-      console.error('Invalid session token: no matching user record')
+      logger.debug('Invalid session token: no matching user record')
       return null
     }
 
@@ -666,7 +669,9 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
     // revocation watermark is rejected, so logout (and "sign out everywhere")
     // invalidates exfiltrated tokens ahead of their 7-day TTL.
     if (user.sessionsRevokedAt != null && payload.iat <= user.sessionsRevokedAt) {
-      console.error('Invalid session token: issued before session revocation')
+      // Security signal (token used after logout / "sign out everywhere") —
+      // emitted in prod (warn), not error, to avoid false error-rate spikes.
+      logger.warn('Invalid session token: issued before session revocation')
       return null
     }
 
@@ -679,7 +684,7 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
       isAuthenticated: true,
     }
   } catch (error) {
-    console.error('Failed to validate session token:', error)
+    logger.error('Failed to validate session token', { error })
     return null
   }
 }
