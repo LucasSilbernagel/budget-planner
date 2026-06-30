@@ -33,6 +33,10 @@ export interface ClientProfile {
   description?: string
   isDefault: boolean
   currency: string
+  // Set by useProfileManager.createProfile / server sync. Optional because the
+  // seeded DEFAULT_PROFILE and older persisted records may predate these fields.
+  createdAt?: string
+  updatedAt?: string
 }
 
 // Profile state interface
@@ -101,7 +105,7 @@ export const useProfileStore = create<ProfileState>()(
         set({
           profiles,
           // If active profile is not in the new list, set to first profile or null
-          activeProfileId: profiles.length > 0 ? profiles[0].id : null,
+          activeProfileId: profiles[0]?.id ?? null,
           isLoading: false,
           error: null,
         })
@@ -181,7 +185,7 @@ export const useProfileStore = create<ProfileState>()(
           // If the deleted profile was active, switch to the first remaining profile
           let newActiveProfileId = state.activeProfileId
           if (state.activeProfileId === profileId && newProfiles.length > 0) {
-            newActiveProfileId = newProfiles[0].id
+            newActiveProfileId = newProfiles[0]?.id ?? newActiveProfileId
           }
 
           return {

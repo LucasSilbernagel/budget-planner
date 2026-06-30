@@ -11,6 +11,7 @@
 import {
   useHasMultipleProfiles,
   useProfileManager,
+  useProfileSwitcher,
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
@@ -32,7 +33,7 @@ const PROFILE_COLORS = [
 const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️']
 
 // Format date for display (module-scoped so both ProfileList and ProfileCard can use it)
-const formatDate = (dateString: string) => {
+const formatDate = (dateString: string | undefined) => {
   // Validate date string before parsing
   if (!dateString) return 'Invalid date'
 
@@ -70,31 +71,31 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   }
 
   // Get color for a profile (consistent based on ID hash)
-  const getProfileColor = (profileId: string) => {
+  const getProfileColor = (profileId: string): string => {
     // Use a simple hash of the UUID to get a consistent index
     // Handle empty profileId gracefully
-    if (!profileId) return PROFILE_COLORS[0]
+    if (!profileId) return PROFILE_COLORS[0] ?? 'bg-blue-500'
 
     let hash = 0
     for (let i = 0; i < profileId.length; i++) {
       hash = (hash << 5) - hash + profileId.charCodeAt(i)
       hash |= 0 // Convert to 32-bit integer
     }
-    return PROFILE_COLORS[Math.abs(hash) % PROFILE_COLORS.length]
+    return PROFILE_COLORS[Math.abs(hash) % PROFILE_COLORS.length] ?? 'bg-blue-500'
   }
 
   // Get icon for a profile (consistent based on ID hash)
-  const getProfileIcon = (profileId: string) => {
+  const getProfileIcon = (profileId: string): string => {
     // Use a simple hash of the UUID to get a consistent index
     // Handle empty profileId gracefully
-    if (!profileId) return PROFILE_ICONS[0]
+    if (!profileId) return PROFILE_ICONS[0] ?? '🏠'
 
     let hash = 0
     for (let i = 0; i < profileId.length; i++) {
       hash = (hash << 5) - hash + profileId.charCodeAt(i)
       hash |= 0 // Convert to 32-bit integer
     }
-    return PROFILE_ICONS[Math.abs(hash) % PROFILE_ICONS.length]
+    return PROFILE_ICONS[Math.abs(hash) % PROFILE_ICONS.length] ?? '🏠'
   }
 
   return (
@@ -121,7 +122,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
           </button>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {profiles.map((profile) => (
             <ProfileCard
               key={profile.id}
@@ -160,7 +161,7 @@ interface ProfileCardProps {
 }
 
 function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: ProfileCardProps) {
-  const { switchToProfile } = useProfileManager()
+  const { switchToProfile } = useProfileSwitcher()
   const hasMultipleProfiles = useHasMultipleProfiles()
 
   return (
