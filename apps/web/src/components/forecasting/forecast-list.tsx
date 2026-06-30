@@ -253,7 +253,7 @@ export function ForecastList({
 
       {/* Table */}
       {filteredForecasts.length > 0 && (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-x-auto">
           {/* Table Header */}
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

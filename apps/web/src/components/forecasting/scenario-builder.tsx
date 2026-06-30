@@ -628,7 +628,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
         <section className="bg-blue-50 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Forecast Summary</h3>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
               label="Starting Net Worth"
               value={formatCurrency(summary?.startingNetWorth || 0)}

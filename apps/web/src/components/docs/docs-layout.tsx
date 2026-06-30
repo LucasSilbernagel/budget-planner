@@ -23,7 +23,7 @@ export interface DocsLayoutProps {
 
 export function DocsLayout({ title, description, activeSlug, children }: DocsLayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="mx-auto max-w-6xl">
         <header className="mb-8">
           <a href="/" className="text-sm text-blue-600 hover:underline">

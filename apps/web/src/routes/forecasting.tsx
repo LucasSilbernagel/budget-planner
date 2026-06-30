@@ -312,7 +312,7 @@ function ForecastingPage(): React.ReactElement {
         </div>
 
         {/* Tab Content */}
-        <div className="bg-white rounded-xl shadow-lg p-8">
+        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-8">
           {activeTab === 'scenarios' && <ScenarioBuilder onSave={handleSaveForecast} />}
 
           {activeTab === 'projections' && <ProjectionChart />}

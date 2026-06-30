@@ -192,7 +192,7 @@ export function TimePeriodFilter({
 
       {/* Custom Range Inputs (shown when custom is selected) */}
       {selectedPreset === 'custom' && showCustomRange && (
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label htmlFor="start-date" className="block text-xs text-gray-600 mb-1">
               Start Date

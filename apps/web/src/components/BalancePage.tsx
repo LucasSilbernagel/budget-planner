@@ -167,9 +167,9 @@ export function BalancePage() {
   }
 
   return (
-    <div className="bg-gray-50 p-8 min-h-screen">
+    <div className="bg-gray-50 p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-8 flex items-start justify-between gap-4">
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="font-bold text-gray-900 text-3xl">Balance Tracking</h1>
             <p className="mt-2 text-gray-600">Monitor your investments and debts</p>
@@ -474,7 +474,7 @@ export function BalancePage() {
         )}
 
         {/* Navigation */}
-        <div className="flex gap-4 mt-8">
+        <div className="flex flex-wrap gap-4 mt-8">
           <a
             href="/"
             className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"

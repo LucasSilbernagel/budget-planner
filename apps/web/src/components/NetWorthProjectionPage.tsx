@@ -83,9 +83,9 @@ export function NetWorthProjectionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8 flex items-start justify-between gap-4">
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Net Worth Projection</h1>
             <p className="text-gray-600 mt-2">
@@ -234,7 +234,7 @@ export function NetWorthProjectionPage() {
           {hasData && chartData.length > 0 && (
             <section className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold text-gray-800 mb-4">Projection Summary</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                 {projection
                   .filter(
                     (_, index) =>

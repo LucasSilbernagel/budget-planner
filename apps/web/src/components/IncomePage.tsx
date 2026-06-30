@@ -118,9 +118,9 @@ export function IncomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8 flex items-start justify-between gap-4">
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Income Sources</h1>
             <p className="text-gray-600 mt-2">Manage your income streams and track your earnings</p>
@@ -343,7 +343,7 @@ export function IncomePage() {
         )}
 
         {/* Navigation */}
-        <div className="mt-8 flex gap-4">
+        <div className="mt-8 flex flex-wrap gap-4">
           <a
             href="/"
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"

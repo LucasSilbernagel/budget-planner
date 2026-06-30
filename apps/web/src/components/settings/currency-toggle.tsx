@@ -68,7 +68,10 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
     <div
       role="group"
       aria-label="Currency display"
-      className={`flex items-center gap-3 ${className ?? ''}`.trim()}
+      // `max-w-full` caps the group at its container width so `flex-wrap` can
+      // actually break the label/switch/selects onto multiple lines at narrow
+      // (≤320px) widths instead of growing to its single-line max-content width.
+      className={`flex max-w-full flex-wrap items-center gap-3 ${className ?? ''}`.trim()}
     >
       <span id={labelId} className="text-sm font-medium text-gray-700">
         Currency symbols

@@ -27,6 +27,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -99,6 +100,10 @@ export function HomePage() {
 
   // Use currency formatting from store (respects user preferences)
   const formatAmount = useFormattedAmount()
+
+  // Below Tailwind `sm` (≤639px) charts must drop their desktop-width chrome
+  // (vertical right legend, wide Y-axis) so the plot area stays usable at 320px.
+  const isNarrowViewport = useIsNarrowViewport()
 
   // Calculate normalized totals for consistent monthly comparison
   // This ensures income and expenses with different frequencies are comparable
@@ -338,9 +343,9 @@ export function HomePage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-8 flex items-start justify-between gap-4">
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Budget Planner</h1>
             <p className="text-gray-600 mt-2">Track your income and expenses with ease</p>
@@ -352,7 +357,7 @@ export function HomePage() {
           {/* Quick Stats */}
           <section className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">Financial Overview</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
               <div className="bg-gray-50 rounded-lg p-4">
                 <p className="text-sm text-gray-500">Total Income (Monthly Normalized)</p>
                 <p className="text-2xl font-bold text-green-600">
@@ -465,16 +470,24 @@ export function HomePage() {
                             cx="50%"
                             cy="50%"
                             labelLine={false}
-                            outerRadius={80}
+                            outerRadius={isNarrowViewport ? 70 : 80}
                             fill="#8884d8"
                             dataKey="value"
                             nameKey="name"
-                            label={({ name, percent }) => {
-                              // Show name and percentage, handle long names
-                              const displayName =
-                                name.length > 15 ? `${name.substring(0, 12)}...` : name
-                              return `${displayName}: ${(percent * 100).toFixed(1)}%`
-                            }}
+                            // At ≤320px the outer slice labels extend past the
+                            // chart container and force horizontal page overflow;
+                            // the legend (moved to the bottom on narrow) and the
+                            // tooltip carry the same information instead.
+                            label={
+                              isNarrowViewport
+                                ? false
+                                : ({ name, percent }) => {
+                                    // Show name and percentage, handle long names
+                                    const displayName =
+                                      name.length > 15 ? `${name.substring(0, 12)}...` : name
+                                    return `${displayName}: ${(percent * 100).toFixed(1)}%`
+                                  }
+                            }
                             onClick={(_data, index, _event) => {
                               // Handle chart segment click for drill-down
                               const clickedItem = allCategoryData[index]
@@ -536,10 +549,10 @@ export function HomePage() {
                             }}
                           />
                           <Legend
-                            layout="vertical"
-                            align="right"
-                            verticalAlign="middle"
-                            wrapperStyle={{ paddingLeft: '20px' }}
+                            layout={isNarrowViewport ? 'horizontal' : 'vertical'}
+                            align={isNarrowViewport ? 'center' : 'right'}
+                            verticalAlign={isNarrowViewport ? 'bottom' : 'middle'}
+                            wrapperStyle={isNarrowViewport ? undefined : { paddingLeft: '20px' }}
                           />
                         </PieChart>
                       </ResponsiveContainer>
@@ -590,11 +603,17 @@ export function HomePage() {
                             cx="50%"
                             cy="50%"
                             labelLine={false}
-                            outerRadius={80}
+                            outerRadius={isNarrowViewport ? 70 : 80}
                             fill="#8884d8"
                             dataKey="value"
                             nameKey="name"
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
+                            // Suppress outer labels at ≤320px (they overflow the
+                            // container); legend + tooltip convey the breakdown.
+                            label={
+                              isNarrowViewport
+                                ? false
+                                : ({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`
+                            }
                           >
                             {assetBreakdownData.map((entry) => (
                               <Cell key={entry.name} fill={entry.color} />
@@ -635,7 +654,12 @@ export function HomePage() {
                             ]}
                             tickFormatter={(value) => formatAmount(value)}
                           />
-                          <YAxis dataKey="category" type="category" width={120} />
+                          <YAxis
+                            dataKey="category"
+                            type="category"
+                            width={isNarrowViewport ? 72 : 120}
+                            tick={{ fontSize: isNarrowViewport ? 11 : 12 }}
+                          />
                           <Tooltip
                             formatter={(value: number, name: string) => [formatAmount(value), name]}
                           />

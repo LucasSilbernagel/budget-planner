@@ -8,3 +8,4 @@
 export * from './useFinancialCalculations'
 export * from './useSync'
 export * from './usePremiumAccess'
+export * from './useIsNarrowViewport'
