@@ -1,0 +1,17 @@
+# Keep the Docker build context lean and force a clean in-image install/build
+# (Story 5-2). Host node_modules (pnpm symlinks) and prior build output must NOT
+# leak into the image.
+**/node_modules
+**/dist
+.git
+.github
+_bmad-output
+.claude
+**/coverage
+**/test-results
+**/playwright-report
+**/*.log
+**/.DS_Store
+**/.env
+**/.env.*
+!**/.env.example

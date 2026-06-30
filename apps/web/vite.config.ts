@@ -33,6 +33,14 @@ export default defineConfig({
     // Array form so order is deterministic: more-specific `find`s must precede
     // less-specific ones (rollup/plugin-alias uses the first match).
     alias: [
+      // `pg` (via @budget-planner/db → drizzle node-postgres) declares `pg-native`
+      // as an OPTIONAL peer dep. We never use the native driver and it is not
+      // installed; left alone, Vite resolves it to a module whose body throws at
+      // evaluation time, which crashes the eagerly-loaded server graph on EVERY
+      // request — SSR, /api/*, health (Story 5-2, AC-1). Alias it to a benign
+      // empty module so the never-taken native path no longer throws. Exact-match
+      // regex so it cannot catch unrelated specifiers.
+      { find: /^pg-native$/, replacement: resolve(__dirname, './pg-native-stub.mjs') },
       // Path aliases for monorepo packages
       { find: '@budget-planner/core', replacement: resolve(__dirname, '../../packages/core/src') },
       {

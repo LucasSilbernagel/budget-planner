@@ -1,0 +1,72 @@
+# DanubeData Rapids (Knative Serving) service definition — budget-planner web.
+# Story 5-2, AC-2. Region: Falkenstein, Germany (EU only) — NFR1/NFR2,
+# full CLOUD Act immunity. Serves SSR + /api/* + dist/client/ from one
+# self-listening container (apps/web/server-entry.mjs, AC-1).
+#
+# ⚠️ Rapids is Knative-based but newer, with limited public docs (ADR-001).
+# This standard Knative Service is the reproducible source of truth; the exact
+# DanubeData-specific bits — image registry path, the region-pin annotation key,
+# and the auto-TLS domain mapping (TLS is enabled at the cluster/domain level,
+# not a per-service field here) — MUST be reconciled during provisioning
+# (blocked-on-account). Region is ultimately enforced by creating the
+# account/project in Falkenstein, not by a free-text value below.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: budget-planner-web
+  labels:
+    app: budget-planner
+  annotations:
+    # EU-only region intent. Confirm the exact DanubeData annotation key at
+    # provisioning; the project itself must live in Falkenstein, DE.
+    danubedata.com/region: falkenstein-de
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0" # scale-to-zero → ~€0 idle cost
+        autoscaling.knative.dev/max-scale: "5" # cap fan-out (cold-start + cost aware)
+        autoscaling.knative.dev/target: "80" # soft target: concurrent reqs/instance
+    spec:
+      containerConcurrency: 100 # hard per-instance ceiling
+      timeoutSeconds: 60 # max request duration
+      containers:
+        - image: REPLACE_WITH_DANUBEDATA_REGISTRY/budget-planner-web:latest
+          ports:
+            - name: http1
+              containerPort: 8080 # must equal $PORT (server-entry.mjs default)
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          # Liveness/readiness use /api/health (Story 5-5): a process-up check
+          # with NO database dependency, so scale-from-zero is not gated on the
+          # DB. /api/ready performs the deeper dependency check (for monitoring,
+          # Story 5-5) and is intentionally NOT the scale-up gate.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          env:
+            - name: NODE_ENV
+              value: production # explicit — unset defaults to development (fail-OPEN session secret)
+            - name: PORT
+              value: "8080"
+            # --- Runtime secrets: injected as Rapids platform secrets, NEVER ---
+            # --- committed here. See apps/web/DEPLOY-RAPIDS.md for the full   ---
+            # --- inventory + generation commands (AC-3). Coordinate injection ---
+            # --- once across 5-2 / 4-16 / 4-17 / 5-3.                          ---
+            # DATABASE_URL, DATABASE_CA_CERT (optional), SESSION_SECRET,
+            # SITE_URL, PADDLE_ENVIRONMENT, PADDLE_VENDOR_ID, PADDLE_API_KEY,
+            # PADDLE_PUBLIC_KEY, PADDLE_WEBHOOK_SECRET, EMAIL_API_KEY, EMAIL_FROM.
