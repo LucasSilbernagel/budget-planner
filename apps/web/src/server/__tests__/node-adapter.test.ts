@@ -28,6 +28,10 @@ beforeAll(async () => {
   await mkdir(join(clientDir, 'assets'), { recursive: true })
   await writeFile(join(clientDir, 'assets', 'app-abc123.js'), 'console.log(1)')
   await writeFile(join(clientDir, 'favicon.svg'), '<svg></svg>')
+  // Binary favicon fallbacks added in story 6-5 — assert the adapter serves
+  // them with the correct image MIME type (contents are irrelevant here).
+  await writeFile(join(clientDir, 'favicon-32.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  await writeFile(join(clientDir, 'favicon.ico'), Buffer.from([0x00, 0x00, 0x01, 0x00]))
 })
 
 afterAll(async () => {
@@ -54,6 +58,20 @@ describe('resolveStaticAsset', () => {
     const asset = await resolveStaticAsset('/favicon.svg', clientDir)
     expect(asset).not.toBeNull()
     expect(asset.contentType).toBe('image/svg+xml')
+    expect(asset.cacheControl).toBe('public, max-age=3600')
+  })
+
+  it('serves the PNG favicon fallback with the image/png MIME type', async () => {
+    const asset = await resolveStaticAsset('/favicon-32.png', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.contentType).toBe('image/png')
+    expect(asset.cacheControl).toBe('public, max-age=3600')
+  })
+
+  it('serves the legacy .ico favicon with the image/x-icon MIME type', async () => {
+    const asset = await resolveStaticAsset('/favicon.ico', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.contentType).toBe('image/x-icon')
     expect(asset.cacheControl).toBe('public, max-age=3600')
   })
 

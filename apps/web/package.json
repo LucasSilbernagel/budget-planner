@@ -17,7 +17,8 @@
     "test:watch": "vitest --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "icons:generate": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@budget-planner/config": "workspace:*",
@@ -51,6 +52,7 @@
     "jsdom": "^24.1.3",
     "msw": "^2.14.6",
     "postcss": "^8.4.35",
+    "sharp": "^0.35.2",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^7.3.6",

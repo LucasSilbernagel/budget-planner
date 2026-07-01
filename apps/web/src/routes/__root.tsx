@@ -16,7 +16,15 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
+      // Favicon set (story 6-5). Modern browsers pick the SVG; the .ico is the
+      // legacy fallback and the sized PNGs cover browsers that ignore SVG icons.
+      // The 512 maskable PNG is intentionally NOT linked here — it is consumed by
+      // the PWA manifest that story 7-1 will add.
+      { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
       { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16.png' },
+      { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
+      { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
     ],
   }),
   component: RootComponent,
