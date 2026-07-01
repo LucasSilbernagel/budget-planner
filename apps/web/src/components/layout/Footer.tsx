@@ -42,6 +42,28 @@ export function Footer() {
           Refund Policy
         </a>
         <FeedbackLink />
+        {/* Copyright notice (story 6-9). The year is computed at render time so
+            it stays correct year over year (AC-1) rather than being hardcoded.
+            "Copyright <year>" and the author link are grouped in one <span>; it
+            wraps as a unit against the other footer items, though the internal
+            space may itself break at very narrow widths (still graceful, AC-5).
+            The external author link follows the established FeedbackLink
+            convention (target/rel + an aria-label ending in "(opens in a new
+            tab)"). suppressHydrationWarning covers the negligible case where an
+            SSR render and client hydration straddle New Year midnight and the
+            year differs — the value still updates, this just silences the warning. */}
+        <span suppressHydrationWarning>
+          Copyright {new Date().getFullYear()}{' '}
+          <a
+            href="https://lucassilbernagel.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Lucas Silbernagel's website (opens in a new tab)"
+            className="text-gray-500 underline hover:text-gray-700"
+          >
+            Lucas Silbernagel
+          </a>
+        </span>
       </div>
     </footer>
   )

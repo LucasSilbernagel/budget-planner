@@ -52,4 +52,24 @@ describe('Footer', () => {
     const link = await screen.findByRole('link', { name })
     expect(link).toHaveAttribute('href', href)
   })
+
+  it('displays a copyright notice for the current year (story 6-9)', async () => {
+    renderWithRouter(<Footer />)
+    // Compute the year the same way the component does so this never goes stale.
+    const year = new Date().getFullYear()
+    expect(await screen.findByText(new RegExp(`Copyright ${year}`))).toBeInTheDocument()
+  })
+
+  it('links the author name to their website in a new tab (story 6-9)', async () => {
+    renderWithRouter(<Footer />)
+    const link = await screen.findByRole('link', {
+      name: /lucas silbernagel.*opens in a new tab/i,
+    })
+    expect(link).toHaveAttribute('href', 'https://lucassilbernagel.com/')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    // Assert the visible attribution text too — the accessible name above is
+    // driven by aria-label, so this guards against the link text being emptied.
+    expect(link).toHaveTextContent('Lucas Silbernagel')
+  })
 })

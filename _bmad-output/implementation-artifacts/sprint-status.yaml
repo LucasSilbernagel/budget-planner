@@ -1,5 +1,6 @@
 # generated: 2026-06-18
-# last_updated: 2026-06-29 (5-15 multi-device sync wiring → DONE; queue-through-sync, all 7 tasks + code review (1 decision + 5 patches resolved, 5 deferred); 236/236 web tests, Biome clean, build green; only AC-4 live cross-device verification remains, blocked on deploy env — see deferred-work.md)
+# last_updated: 2026-06-30 (6-9 copyright footer notice → DONE; code review 3-layer: 6/6 ACs PASS, 3 Low patches applied, 6 dismissed; Footer 11/11, 405/405 web tests, Biome clean, build green)
+# prev_updated: 2026-06-29 (5-15 multi-device sync wiring → DONE; queue-through-sync, all 7 tasks + code review (1 decision + 5 patches resolved, 5 deferred); 236/236 web tests, Biome clean, build green; only AC-4 live cross-device verification remains, blocked on deploy env — see deferred-work.md)
 # project: budget-planner
 # project_key: NOKEY
 # tracking_system: file-system
@@ -131,7 +132,7 @@ development_status:
   6-6-add-the-missing-add-balance-entry-button-to-balance-tracking: backlog  # BUG-A (defect vs FR4 / Story 2.3) — add button referenced by existing copy
   6-7-constrain-decimal-precision-on-the-net-worth-annual-return-rate-input: backlog  # BUG-B (defect vs FR8 / Story 3.1) — limit decimals, preserve calc correctness (NFR3)
   6-8-replace-form-validation-alert-popups-with-inline-field-level-errors: backlog  # UX-DR14 (added 2026-06-30) — split out of UX-DR11/Story 6.3. Replace the ~11 browser alert() form-validation popups (IncomePage/ExpensesPage/SavingsPage/BalancePage "Please enter a…" messages) with themed inline field-level errors (aria-invalid + aria-describedby, NFR6). Pure client-side, free-tier-safe, no new deps/schema. Reuse 6.3 ConfirmDialog styling precedent; extend the 6.3 no-browser-confirm guard to also forbid validation alert(). Use create-story to draft.
-  6-9-add-copyright-notice-to-footer: ready-for-dev  # Story created 2026-06-30 via create-story (claude-opus-4-8). Added at user request (not in original epics). Add "Copyright {currentYear} Lucas Silbernagel" to the global Footer, with "Lucas Silbernagel" linking to https://lucassilbernagel.com/ in a new tab. Single-file presentational change to Footer.tsx + Footer.test.tsx. Reuse the FeedbackLink external-link convention (target=_blank + rel=noopener noreferrer + "(opens in a new tab)" aria-label) and existing muted footer link styling; year via new Date().getFullYear() (SSR-safe, do NOT hardcode). Preserve all 7 existing footer items + 320px flex-wrap. No new deps/schema/routes, client-side/free-tier-safe.
+  6-9-add-copyright-notice-to-footer: done  # Story created 2026-06-30 via create-story (claude-opus-4-8). Added at user request (not in original epics). Add "Copyright {currentYear} Lucas Silbernagel" to the global Footer, with "Lucas Silbernagel" linking to https://lucassilbernagel.com/ in a new tab. Single-file presentational change to Footer.tsx + Footer.test.tsx. Reuse the FeedbackLink external-link convention (target=_blank + rel=noopener noreferrer + "(opens in a new tab)" aria-label) and existing muted footer link styling; year via new Date().getFullYear() (SSR-safe, do NOT hardcode). Preserve all 7 existing footer items + 320px flex-wrap. No new deps/schema/routes, client-side/free-tier-safe.
   epic-6-retrospective: optional
 
   # Epic 7: Progressive Web App & Premium Display Customization (added 2026-06-30)
