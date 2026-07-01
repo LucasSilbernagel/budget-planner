@@ -1,3 +1,5 @@
+/// <reference path="./jest-dom.d.ts" />
+
 /**
  * Shared test utilities.
  *
@@ -18,7 +20,7 @@ import {
   createRootRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { type RenderOptions, render } from '@testing-library/react'
+import { type RenderOptions, type RenderResult, render } from '@testing-library/react'
 import { type ReactElement, createElement } from 'react'
 
 export * from '@testing-library/react'
@@ -28,7 +30,10 @@ export { default as userEvent } from '@testing-library/user-event'
  * Render a component with all app-wide providers applied.
  * Extend the wrapper as global providers are added to the app.
  */
-export function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
+export function renderWithProviders(
+  ui: ReactElement,
+  options?: Omit<RenderOptions, 'wrapper'>
+): RenderResult {
   return render(ui, { ...options })
 }
 
@@ -40,7 +45,10 @@ export function renderWithProviders(ui: ReactElement, options?: Omit<RenderOptio
  * renders `ui`, with `path` seeding the initial location so tests can assert
  * location-derived output (story 4-9 FeedbackLink, etc.).
  */
-export function renderWithRouter(ui: ReactElement, { path = '/' }: { path?: string } = {}) {
+export function renderWithRouter(
+  ui: ReactElement,
+  { path = '/' }: { path?: string } = {}
+): RenderResult {
   const rootRoute = createRootRoute({ component: () => ui })
   const router = createRouter({
     routeTree: rootRoute,

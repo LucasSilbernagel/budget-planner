@@ -24,6 +24,18 @@ import { server } from './src/mocks/server'
 // `expect` binding wires them to the correct instance.
 expect.extend(jestDomMatchers)
 
+// jsdom does not implement ResizeObserver, which Recharts' <ResponsiveContainer>
+// instantiates on mount. Provide a no-op stub so component tests that render charts
+// (e.g. NetWorthProjectionPage) don't throw. Only defined when missing, so a real
+// implementation (if ever present) is never clobbered.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+}
+
 // Fail loudly if a test triggers a request we have not mocked.
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 
