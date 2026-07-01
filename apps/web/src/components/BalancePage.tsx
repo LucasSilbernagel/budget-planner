@@ -57,8 +57,12 @@ export function BalancePage() {
     }
   }, [isModalOpen, editingId])
 
+  // Ref for the "Add Balance Entry" trigger so the modal can restore focus to
+  // it on close (accessibility), matching the sibling money pages.
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+
   // Open modal for adding new balance entry
-  const _openAddModal = () => {
+  const openAddModal = () => {
     setEditingId(null)
     setIsModalOpen(true)
   }
@@ -97,9 +101,9 @@ export function BalancePage() {
   // Loading state to prevent duplicate submissions
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Delete confirmation state (themed dialog replaces browser confirm()). This
-  // page has no "Add" button yet (tracked separately), so focus returns to the
-  // list heading after a confirmed delete removes the triggering row (AC-5).
+  // Delete confirmation state (themed dialog replaces browser confirm()). Focus
+  // returns to the list heading after a confirmed delete removes the triggering
+  // row (the Add button is a separate focus target used on modal close).
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
   const listHeadingRef = useRef<HTMLHeadingElement>(null)
   const pendingDeleteName = balanceEntries.find((e) => e.id === pendingDeleteId)?.name ?? ''
@@ -195,7 +199,18 @@ export function BalancePage() {
         <main className="space-y-6">
           {/* Stats Cards */}
           <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-4 font-semibold text-gray-800 text-xl">Financial Overview</h2>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+              <h2 className="font-semibold text-gray-800 text-xl">Financial Overview</h2>
+              <button
+                ref={addButtonRef}
+                type="button"
+                onClick={openAddModal}
+                data-testid="balance-add-button"
+                className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-md text-white transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+              >
+                + Add Balance Entry
+              </button>
+            </div>
             <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-gray-500 text-sm">Total Investments</p>
@@ -323,6 +338,7 @@ export function BalancePage() {
           isOpen={isModalOpen}
           onClose={closeModal}
           labelledBy="balance-modal-title"
+          finalFocusRef={addButtonRef}
           className="bg-white shadow-xl p-6 rounded-lg w-full max-w-md"
         >
           <div className="flex justify-between items-center mb-6">
