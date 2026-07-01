@@ -19,7 +19,9 @@ import { expect, test } from '@playwright/test'
 const NARROW_WIDTH = 320
 
 // Primary routes from AC-1. A doc page (`/docs/getting-started`) exercises the
-// docs detail layout in addition to the docs index.
+// docs detail layout in addition to the docs index. (The global 404 route is
+// checked separately in `not-found.spec.ts` — this sweep's `response.ok()` guard
+// assumes a 2xx route, which an unmatched URL is not.)
 const ROUTES = [
   '/',
   '/income',
