@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   useBalanceEntries,
   useBalanceStore,
@@ -42,6 +42,49 @@ export function BalancePage() {
   const [maxContributionLimit, setMaxContributionLimit] = useState('')
   const [monthlyContribution, setMonthlyContribution] = useState('')
 
+  // Inline field-validation error state (replaces browser alert() popups).
+  // Mirrors the canonical pattern in AddSavingsGoalForm: an errors map plus
+  // hasFieldError/getFieldError helpers and re-validate-on-change after the
+  // first submit attempt.
+  type FieldName = 'name' | 'currentBalance' | 'maxContributionLimit' | 'monthlyContribution'
+  const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
+  const [submitAttempted, setSubmitAttempted] = useState(false)
+
+  const hasFieldError = (field: FieldName): boolean => Boolean(errors[field])
+  const getFieldError = (field: FieldName): string | undefined => errors[field]
+
+  // Compute inline validation errors from the current field values, preserving
+  // the exact conditions, optional-field semantics and messages that previously
+  // drove the alert() popups.
+  const computeErrors = useCallback((): Partial<Record<FieldName, string>> => {
+    const next: Partial<Record<FieldName, string>> = {}
+    if (!name.trim()) {
+      next.name = 'Please enter a name for the balance entry'
+    }
+    const balanceInCents = Math.round(parseFloat(currentBalance || '0') * 100)
+    if (Number.isNaN(balanceInCents) || balanceInCents < 0) {
+      next.currentBalance = 'Please enter a valid non-negative current balance'
+    }
+    // Max contribution limit is optional: empty is valid, only validate a
+    // provided value.
+    if (maxContributionLimit && maxContributionLimit.trim() !== '') {
+      const parsed = Math.round(parseFloat(maxContributionLimit) * 100)
+      if (Number.isNaN(parsed) || parsed < 0) {
+        next.maxContributionLimit = 'Please enter a valid non-negative max contribution limit'
+      }
+    }
+    const monthlyInCents = Math.round(parseFloat(monthlyContribution || '0') * 100)
+    if (Number.isNaN(monthlyInCents) || monthlyInCents < 0) {
+      next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
+    }
+    return next
+  }, [name, currentBalance, maxContributionLimit, monthlyContribution])
+
+  const clearErrors = () => {
+    setErrors({})
+    setSubmitAttempted(false)
+  }
+
   // Reset form state when modal opens or editingId changes
   useEffect(() => {
     if (isModalOpen) {
@@ -57,6 +100,14 @@ export function BalancePage() {
     }
   }, [isModalOpen, editingId])
 
+  // After the first submit attempt, re-validate as the user edits so errors
+  // clear on correction (AC-3).
+  useEffect(() => {
+    if (submitAttempted) {
+      setErrors(computeErrors())
+    }
+  }, [submitAttempted, computeErrors])
+
   // Ref for the "Add Balance Entry" trigger so the modal can restore focus to
   // it on close (accessibility), matching the sibling money pages.
   const addButtonRef = useRef<HTMLButtonElement>(null)
@@ -64,6 +115,7 @@ export function BalancePage() {
   // Open modal for adding new balance entry
   const openAddModal = () => {
     setEditingId(null)
+    clearErrors()
     setIsModalOpen(true)
   }
 
@@ -84,6 +136,7 @@ export function BalancePage() {
       entry.maxContributionLimit !== null ? formatAmountForInput(entry.maxContributionLimit) : ''
     )
     setMonthlyContribution(formatAmountForInput(entry.monthlyContribution))
+    clearErrors()
     setIsModalOpen(true)
   }
 
@@ -96,6 +149,7 @@ export function BalancePage() {
     setCurrentBalance('')
     setMaxContributionLimit('')
     setMonthlyContribution('')
+    clearErrors()
   }
 
   // Loading state to prevent duplicate submissions
@@ -111,47 +165,28 @@ export function BalancePage() {
   // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitAttempted(true)
     setIsSubmitting(true)
 
     try {
-      // Validate name
-      const trimmedName = name.trim()
-      if (!trimmedName) {
-        alert('Please enter a name for the balance entry')
+      // Validate all fields inline; block submission if any errors exist.
+      const validationErrors = computeErrors()
+      setErrors(validationErrors)
+      if (Object.keys(validationErrors).length > 0) {
         return
       }
 
-      // Validate current balance
-      const balanceInCents = Math.round(parseFloat(currentBalance || '0') * 100)
-      if (Number.isNaN(balanceInCents) || balanceInCents < 0) {
-        alert('Please enter a valid non-negative current balance')
-        return
-      }
-
-      // Validate and parse max contribution limit (optional)
-      let maxLimitInCents: number | null = null
-      if (maxContributionLimit && maxContributionLimit.trim() !== '') {
-        const parsed = Math.round(parseFloat(maxContributionLimit) * 100)
-        if (Number.isNaN(parsed) || parsed < 0) {
-          alert('Please enter a valid non-negative max contribution limit')
-          return
-        }
-        maxLimitInCents = parsed
-      }
-
-      // Validate monthly contribution
-      const monthlyInCents = Math.round(parseFloat(monthlyContribution || '0') * 100)
-      if (Number.isNaN(monthlyInCents) || monthlyInCents < 0) {
-        alert('Please enter a valid non-negative monthly contribution')
-        return
-      }
+      const maxLimitInCents =
+        maxContributionLimit && maxContributionLimit.trim() !== ''
+          ? Math.round(parseFloat(maxContributionLimit) * 100)
+          : null
 
       const newEntry = {
         type,
-        name: trimmedName,
-        currentBalance: balanceInCents,
+        name: name.trim(),
+        currentBalance: Math.round(parseFloat(currentBalance || '0') * 100),
         maxContributionLimit: maxLimitInCents,
-        monthlyContribution: monthlyInCents,
+        monthlyContribution: Math.round(parseFloat(monthlyContribution || '0') * 100),
       }
 
       if (editingId !== null) {
@@ -368,7 +403,7 @@ export function BalancePage() {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
               <label htmlFor="type" className="block mb-1 font-medium text-gray-700 text-sm">
                 Type *
@@ -398,9 +433,26 @@ export function BalancePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., 401k, Student Loan, Credit Card"
-                className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                required
+                className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none w-full ${
+                  hasFieldError('name')
+                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                    : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                }`}
+                aria-invalid={hasFieldError('name')}
+                aria-required
+                aria-describedby={hasFieldError('name') ? 'balance-name-error' : undefined}
+                data-testid="balance-name-input"
               />
+              {hasFieldError('name') && (
+                <p
+                  id="balance-name-error"
+                  className="mt-1 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="balance-name-error"
+                >
+                  {getFieldError('name')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -421,11 +473,29 @@ export function BalancePage() {
                   onChange={(e) => setCurrentBalance(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  min="0"
-                  className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                  required
+                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full ${
+                    hasFieldError('currentBalance')
+                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                  }`}
+                  aria-invalid={hasFieldError('currentBalance')}
+                  aria-required
+                  aria-describedby={
+                    hasFieldError('currentBalance') ? 'balance-current-balance-error' : undefined
+                  }
+                  data-testid="balance-current-balance-input"
                 />
               </div>
+              {hasFieldError('currentBalance') && (
+                <p
+                  id="balance-current-balance-error"
+                  className="mt-1 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="balance-current-balance-error"
+                >
+                  {getFieldError('currentBalance')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -446,10 +516,30 @@ export function BalancePage() {
                   onChange={(e) => setMaxContributionLimit(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  min="0"
-                  className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full ${
+                    hasFieldError('maxContributionLimit')
+                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                  }`}
+                  aria-invalid={hasFieldError('maxContributionLimit')}
+                  aria-describedby={
+                    hasFieldError('maxContributionLimit')
+                      ? 'balance-max-contribution-error'
+                      : undefined
+                  }
+                  data-testid="balance-max-contribution-input"
                 />
               </div>
+              {hasFieldError('maxContributionLimit') && (
+                <p
+                  id="balance-max-contribution-error"
+                  className="mt-1 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="balance-max-contribution-error"
+                >
+                  {getFieldError('maxContributionLimit')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -470,11 +560,31 @@ export function BalancePage() {
                   onChange={(e) => setMonthlyContribution(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  min="0"
-                  className="shadow-sm px-3 py-2 pl-7 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
-                  required
+                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full ${
+                    hasFieldError('monthlyContribution')
+                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                  }`}
+                  aria-invalid={hasFieldError('monthlyContribution')}
+                  aria-required
+                  aria-describedby={
+                    hasFieldError('monthlyContribution')
+                      ? 'balance-monthly-contribution-error'
+                      : undefined
+                  }
+                  data-testid="balance-monthly-contribution-input"
                 />
               </div>
+              {hasFieldError('monthlyContribution') && (
+                <p
+                  id="balance-monthly-contribution-error"
+                  className="mt-1 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="balance-monthly-contribution-error"
+                >
+                  {getFieldError('monthlyContribution')}
+                </p>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 pt-4">

@@ -101,3 +101,88 @@ describe('BalancePage add balance entry button', () => {
     await waitFor(() => expect(addButton).toHaveFocus())
   })
 })
+
+/**
+ * BalancePage inline field-validation tests (story 6-8).
+ *
+ * Proves invalid add submissions surface themed, accessible inline field errors
+ * (no browser alert()), block the store mutation and keep the modal open,
+ * preserve the optional max-contribution-limit semantics, and that correcting
+ * the fields clears the errors and lets a valid submit proceed.
+ */
+describe('BalancePage inline validation', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('shows an inline name error on empty submit and does not mutate the store', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    expect(screen.getByTestId('balance-name-error')).toHaveTextContent(
+      'Please enter a name for the balance entry'
+    )
+    const nameInput = screen.getByTestId('balance-name-input')
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveAttribute('aria-describedby', 'balance-name-error')
+
+    // Empty current balance / monthly contribution default to 0 → valid, and the
+    // optional max-contribution limit is valid when blank.
+    expect(screen.queryByTestId('balance-current-balance-error')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('balance-monthly-contribution-error')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('balance-max-contribution-error')).not.toBeInTheDocument()
+
+    expect(useBalanceStore.getState().entries).toHaveLength(0)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('shows an inline error for a negative current balance', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog')
+    await user.type(screen.getByTestId('balance-name-input'), 'Credit Card')
+    await user.type(screen.getByTestId('balance-current-balance-input'), '-5')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    expect(screen.getByTestId('balance-current-balance-error')).toHaveTextContent(
+      'Please enter a valid non-negative current balance'
+    )
+    expect(useBalanceStore.getState().entries).toHaveLength(0)
+  })
+
+  it('clears the error after correction and a valid submit succeeds (AC-3)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+    expect(screen.getByTestId('balance-name-error')).toBeInTheDocument()
+
+    await user.type(screen.getByTestId('balance-name-input'), 'My 401k')
+    await waitFor(() => expect(screen.queryByTestId('balance-name-error')).not.toBeInTheDocument())
+
+    await user.type(screen.getByTestId('balance-current-balance-input'), '1500')
+    await user.type(screen.getByTestId('balance-monthly-contribution-input'), '250')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const entries = useBalanceStore.getState().entries
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      name: 'My 401k',
+      currentBalance: 150000,
+      monthlyContribution: 25000,
+    })
+  })
+})

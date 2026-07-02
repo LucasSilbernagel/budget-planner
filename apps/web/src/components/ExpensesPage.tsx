@@ -1,5 +1,5 @@
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
 import { CurrencyToggle } from './settings/currency-toggle'
@@ -29,6 +29,36 @@ export function ExpensesPage() {
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
 
+  // Inline field-validation error state (replaces browser alert() popups).
+  // Mirrors the canonical pattern in AddSavingsGoalForm: an errors map plus
+  // hasFieldError/getFieldError helpers and re-validate-on-change after the
+  // first submit attempt.
+  type FieldName = 'name' | 'amount'
+  const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
+  const [submitAttempted, setSubmitAttempted] = useState(false)
+
+  const hasFieldError = (field: FieldName): boolean => Boolean(errors[field])
+  const getFieldError = (field: FieldName): string | undefined => errors[field]
+
+  // Compute inline validation errors from the current field values, preserving
+  // the exact conditions and messages that previously drove the alert() popups.
+  const computeErrors = useCallback((): Partial<Record<FieldName, string>> => {
+    const next: Partial<Record<FieldName, string>> = {}
+    if (!name.trim()) {
+      next.name = 'Please enter a name for the expense'
+    }
+    const amountInCents = Math.round(parseFloat(amount) * 100)
+    if (Number.isNaN(amountInCents) || amountInCents <= 0) {
+      next.amount = 'Please enter a valid positive amount'
+    }
+    return next
+  }, [name, amount])
+
+  const clearErrors = () => {
+    setErrors({})
+    setSubmitAttempted(false)
+  }
+
   // Reset form state when modal opens or editingId changes
   useEffect(() => {
     if (isModalOpen) {
@@ -42,9 +72,18 @@ export function ExpensesPage() {
     }
   }, [isModalOpen, editingId])
 
+  // After the first submit attempt, re-validate as the user edits so errors
+  // clear on correction (AC-3).
+  useEffect(() => {
+    if (submitAttempted) {
+      setErrors(computeErrors())
+    }
+  }, [submitAttempted, computeErrors])
+
   // Open modal for adding new expense
   const openAddModal = () => {
     setEditingId(null)
+    clearErrors()
     setIsModalOpen(true)
   }
 
@@ -59,6 +98,7 @@ export function ExpensesPage() {
     setName(source.name)
     setAmount((source.amount / 100).toString())
     setFrequency(source.frequency)
+    clearErrors()
     setIsModalOpen(true)
   }
 
@@ -69,6 +109,7 @@ export function ExpensesPage() {
     setName('')
     setAmount('')
     setFrequency('monthly')
+    clearErrors()
   }
 
   // Loading state to prevent duplicate submissions
@@ -83,26 +124,20 @@ export function ExpensesPage() {
   // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitAttempted(true)
     setIsSubmitting(true)
 
     try {
-      // Validate name
-      const trimmedName = name.trim()
-      if (!trimmedName) {
-        alert('Please enter a name for the expense')
-        return
-      }
-
-      // Validate amount
-      const amountInCents = Math.round(parseFloat(amount) * 100)
-      if (Number.isNaN(amountInCents) || amountInCents <= 0) {
-        alert('Please enter a valid positive amount')
+      // Validate all fields inline; block submission if any errors exist.
+      const validationErrors = computeErrors()
+      setErrors(validationErrors)
+      if (Object.keys(validationErrors).length > 0) {
         return
       }
 
       const newExpense = {
-        name: trimmedName,
-        amount: amountInCents,
+        name: name.trim(),
+        amount: Math.round(parseFloat(amount) * 100),
         frequency,
       }
 
@@ -261,7 +296,7 @@ export function ExpensesPage() {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
                 Name *
@@ -272,9 +307,26 @@ export function ExpensesPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Rent, Groceries, Utilities"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500"
-                required
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none ${
+                  hasFieldError('name')
+                    ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                    : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
+                }`}
+                aria-invalid={hasFieldError('name')}
+                aria-required
+                aria-describedby={hasFieldError('name') ? 'expense-name-error' : undefined}
+                data-testid="expense-name-input"
               />
+              {hasFieldError('name') && (
+                <p
+                  id="expense-name-error"
+                  className="mt-1 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="expense-name-error"
+                >
+                  {getFieldError('name')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -292,11 +344,27 @@ export function ExpensesPage() {
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  min="0"
-                  className="w-full px-3 py-2 pl-7 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500"
-                  required
+                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none ${
+                    hasFieldError('amount')
+                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                      : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
+                  }`}
+                  aria-invalid={hasFieldError('amount')}
+                  aria-required
+                  aria-describedby={hasFieldError('amount') ? 'expense-amount-error' : undefined}
+                  data-testid="expense-amount-input"
                 />
               </div>
+              {hasFieldError('amount') && (
+                <p
+                  id="expense-amount-error"
+                  className="mt-1 text-sm text-red-600 dark:text-red-400"
+                  role="alert"
+                  data-testid="expense-amount-error"
+                >
+                  {getFieldError('amount')}
+                </p>
+              )}
             </div>
 
             <div>

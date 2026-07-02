@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, userEvent } from '@/test/utils'
+import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { IncomePage } from '../IncomePage'
@@ -58,5 +58,68 @@ describe('IncomePage delete confirmation', () => {
     expect(screen.queryByText('Salary')).not.toBeInTheDocument()
     expect(screen.getByText('No income sources yet')).toBeInTheDocument()
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
+  })
+})
+
+/**
+ * IncomePage inline field-validation tests (story 6-8).
+ *
+ * Proves invalid add submissions surface themed, accessible inline field errors
+ * (no browser alert()), block the store mutation and keep the modal open, and
+ * that correcting the fields clears the errors and lets a valid submit proceed.
+ */
+describe('IncomePage inline validation', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  it('shows inline field errors on invalid submit and does not mutate the store', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
+
+    // Both field errors render with the exact preserved messages.
+    expect(screen.getByTestId('income-name-error')).toHaveTextContent(
+      'Please enter a name for the income source'
+    )
+    expect(screen.getByTestId('income-amount-error')).toHaveTextContent(
+      'Please enter a valid positive amount'
+    )
+    // Errors are programmatically associated (AC-2).
+    const nameInput = screen.getByTestId('income-name-input')
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true')
+    expect(nameInput).toHaveAttribute('aria-describedby', 'income-name-error')
+    // No store mutation and the modal stays open (AC-1).
+    expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('clears the error after correction and a valid submit succeeds (AC-3)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
+    expect(screen.getByTestId('income-name-error')).toBeInTheDocument()
+
+    // Correct the name — its error clears as the user types (re-validate on change).
+    await user.type(screen.getByTestId('income-name-input'), 'Freelance')
+    await waitFor(() => expect(screen.queryByTestId('income-name-error')).not.toBeInTheDocument())
+
+    await user.type(screen.getByTestId('income-amount-input'), '100')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const sources = useIncomeStore.getState().incomeSources
+    expect(sources).toHaveLength(1)
+    expect(sources[0]).toMatchObject({ name: 'Freelance', amount: 10000 })
   })
 })
