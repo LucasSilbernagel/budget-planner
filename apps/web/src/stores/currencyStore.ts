@@ -2,6 +2,7 @@ import {
   type CurrencyCode,
   type CurrencyMode,
   type CurrencyOptions,
+  canonicalizeCurrency,
   formatCurrency as formatCurrencyCore,
   localeForCurrency,
 } from '@budget-planner/core'
@@ -37,9 +38,10 @@ export const useCurrencyStore = create<CurrencyState>()(
         set({ mode })
       },
 
-      // Set currency code
+      // Set currency code. Canonicalize defensively so a consolidated code
+      // (e.g. CAD/AUD/MXN) can never re-enter state at runtime (story 8-2).
       setCurrency: (currency) => {
-        set({ currency })
+        set({ currency: canonicalizeCurrency(currency) })
       },
 
       // Toggle between currency modes
@@ -56,7 +58,10 @@ export const useCurrencyStore = create<CurrencyState>()(
       // v1 (Story 8-1): the locale dimension is gone — formatting is now derived
       // from `currency`. Strip the obsolete locale/localeUserSet keys from any
       // legacy persisted blob so it migrates cleanly to currency-driven formatting.
-      version: 1,
+      // v2 (Story 8-2): canonicalize the persisted currency so a now-consolidated
+      // code (CAD/AUD/MXN) maps to its representative (USD) — no data loss, the
+      // money already rendered `$…`; everything else is preserved.
+      version: 2,
       migrate: (persisted) => {
         const state = persisted as { mode?: CurrencyMode; currency?: CurrencyCode }
         // Coalesce per field: a corrupt/partial blob missing mode/currency must
@@ -64,7 +69,7 @@ export const useCurrencyStore = create<CurrencyState>()(
         // over them (zustand's default merge spreads undefined keys).
         return {
           mode: state?.mode ?? DEFAULT_MODE,
-          currency: state?.currency ?? DEFAULT_CURRENCY,
+          currency: canonicalizeCurrency(state?.currency ?? DEFAULT_CURRENCY),
         }
       },
       partialize: (state) => ({

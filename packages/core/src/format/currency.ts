@@ -253,22 +253,46 @@ export function isCurrencySupported(currencyCode: string): boolean {
 }
 
 /**
- * Gets the list of supported currencies
+ * Currencies that render byte-for-byte identically to a canonical representative
+ * through the app's real formatting path (`formatCurrency` + `localeForCurrency`),
+ * mapped to that representative (story 8-2, FR26).
+ *
+ * The dollar family USD/CAD/AUD/MXN all render `$1,000.00` under their regional
+ * locales (en-US / en-CA / en-AU / es-MX), so CAD/AUD/MXN collapse to USD.
+ * Currencies that merely share a glyph but format differently (JPY `￥1,000`
+ * vs CNY `¥1,000.00`) are deliberately NOT consolidated. This is the single
+ * source of truth for consolidation, shared by callers and tests.
+ */
+export const CONSOLIDATED_CURRENCIES: Readonly<Record<string, string>> = {
+  CAD: 'USD',
+  AUD: 'USD',
+  MXN: 'USD',
+}
+
+/**
+ * Maps a consolidated currency code to its canonical representative, passing
+ * every other code (including `NONE` and unknown/server-only codes such as
+ * `SEK`/`NZD`) through unchanged.
+ *
+ * Pure and isomorphic (no DOM/navigator/env), so it is SSR-safe by construction
+ * and belongs in core. Consolidation is a selection/persistence concern, not a
+ * formatting one — `formatCurrency` still formats any code correctly.
+ *
+ * @param code - A currency code.
+ * @returns The canonical representative for consolidated codes, else `code`.
+ */
+export function canonicalizeCurrency(code: CurrencyCode): CurrencyCode {
+  return CONSOLIDATED_CURRENCIES[code] ?? code
+}
+
+/**
+ * Gets the list of selectable currencies.
+ *
+ * Consolidated (identical-render) codes are omitted so the selector shows one
+ * entry per distinct rendered output (story 8-2): the dollar family collapses to
+ * `USD`, dropping `CAD`/`AUD`/`MXN`. Those codes remain formattable via
+ * `CURRENCY_LOCALE`/`currencySymbol` for any legacy/synced value.
  */
 export function getSupportedCurrencies(): CurrencyCode[] {
-  return [
-    'NONE',
-    'USD',
-    'EUR',
-    'GBP',
-    'JPY',
-    'CAD',
-    'AUD',
-    'CHF',
-    'CNY',
-    'INR',
-    'BRL',
-    'ZAR',
-    'MXN',
-  ]
+  return ['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CHF', 'INR', 'BRL', 'ZAR']
 }

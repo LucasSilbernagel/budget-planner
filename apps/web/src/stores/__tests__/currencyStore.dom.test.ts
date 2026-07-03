@@ -96,5 +96,42 @@ describe('currencyStore (story 8-1)', () => {
       expect(useCurrencyStore.getState().mode).toBe('none')
       expect(useCurrencyStore.getState().currency).toBe('NONE')
     })
+
+    it('canonicalizes a persisted consolidated currency (v1 CAD → USD) (story 8-2 AC-3)', async () => {
+      // A user who picked CAD before consolidation: their money already rendered
+      // `$…`, so mapping to USD is lossless and must not throw or blank the state.
+      seed({ mode: 'symbol', currency: 'CAD' }, 1)
+
+      await expect(useCurrencyStore.persist.rehydrate()).resolves.not.toThrow()
+
+      expect(useCurrencyStore.getState().currency).toBe('USD')
+      expect(useCurrencyStore.getState().mode).toBe('symbol')
+
+      // The displayed money is unchanged — still `$1,000.00`.
+      const { result } = renderHook(() => useFormattedAmount())
+      expect(result.current(100000)).toBe('$1,000.00')
+    })
+
+    it('leaves a non-consolidated persisted currency untouched (EUR stays EUR)', async () => {
+      seed({ mode: 'symbol', currency: 'EUR' }, 1)
+
+      await useCurrencyStore.persist.rehydrate()
+
+      expect(useCurrencyStore.getState().currency).toBe('EUR')
+      expect(useCurrencyStore.getState().mode).toBe('symbol')
+    })
+
+    it('canonicalizes alongside the v0 locale-strip path (v0 AUD → USD)', async () => {
+      // Confirms the v0→(strip locale) migration still runs and the v2
+      // canonicalize step also applies to a legacy pre-8-1 blob.
+      seed({ mode: 'symbol', currency: 'AUD', locale: 'en-AU', localeUserSet: true }, 0)
+
+      await expect(useCurrencyStore.persist.rehydrate()).resolves.not.toThrow()
+
+      const state = useCurrencyStore.getState()
+      expect(state.currency).toBe('USD')
+      expect(state.mode).toBe('symbol')
+      expect('locale' in state).toBe(false)
+    })
   })
 })

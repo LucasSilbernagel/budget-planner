@@ -10,8 +10,11 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { localeForCurrency } from '../currency-locale.js'
 import {
+  CONSOLIDATED_CURRENCIES,
   DEFAULT_CURRENCY_OPTIONS,
+  canonicalizeCurrency,
   currencySymbol,
   formatAmount,
   formatCurrency,
@@ -223,6 +226,84 @@ describe('Currency Formatting', () => {
       expect(currencies).toContain('USD')
       expect(currencies).toContain('EUR')
       expect(currencies).toContain('GBP')
+    })
+
+    it('drops the consolidated dollar variants CAD/AUD/MXN (story 8-2)', () => {
+      const currencies = getSupportedCurrencies()
+      expect(currencies).not.toContain('CAD')
+      expect(currencies).not.toContain('AUD')
+      expect(currencies).not.toContain('MXN')
+    })
+
+    it('keeps exactly the 10 canonical selectable codes', () => {
+      expect(getSupportedCurrencies()).toEqual([
+        'NONE',
+        'USD',
+        'EUR',
+        'GBP',
+        'JPY',
+        'CNY',
+        'CHF',
+        'INR',
+        'BRL',
+        'ZAR',
+      ])
+    })
+  })
+
+  describe('canonicalizeCurrency (story 8-2: consolidation)', () => {
+    it('maps the consolidated dollar family to USD', () => {
+      expect(canonicalizeCurrency('CAD')).toBe('USD')
+      expect(canonicalizeCurrency('AUD')).toBe('USD')
+      expect(canonicalizeCurrency('MXN')).toBe('USD')
+    })
+
+    it('passes every kept selectable code through unchanged', () => {
+      for (const code of ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CHF', 'INR', 'BRL', 'ZAR', 'NONE']) {
+        expect(canonicalizeCurrency(code)).toBe(code)
+      }
+    })
+
+    it('passes non-consolidated / unknown codes through unchanged', () => {
+      // Distinct-render codes that are not part of the dollar cluster, plus garbage.
+      expect(canonicalizeCurrency('SEK')).toBe('SEK')
+      expect(canonicalizeCurrency('NZD')).toBe('NZD')
+      expect(canonicalizeCurrency('XYZ')).toBe('XYZ')
+    })
+
+    it('is idempotent (canonicalizing a representative is a no-op)', () => {
+      expect(canonicalizeCurrency(canonicalizeCurrency('CAD'))).toBe('USD')
+    })
+
+    it('CONSOLIDATED_CURRENCIES is the single source of truth for canonicalize', () => {
+      for (const [from, to] of Object.entries(CONSOLIDATED_CURRENCIES)) {
+        expect(canonicalizeCurrency(from)).toBe(to)
+      }
+    })
+
+    it('no consolidated code remains selectable (map ∩ list = ∅)', () => {
+      const selectable = getSupportedCurrencies()
+      for (const code of Object.keys(CONSOLIDATED_CURRENCIES)) {
+        expect(selectable).not.toContain(code)
+      }
+    })
+
+    it('equivalence-drift guard: no two selectable codes render identically', () => {
+      // The whole point of consolidation — after it, every remaining selectable
+      // currency must produce a distinct rendered string via the app's real
+      // formatting path. Adding a future currency that duplicates an existing
+      // render fails loudly here.
+      const seen = new Map<string, string>()
+      for (const code of getSupportedCurrencies()) {
+        const output = formatCurrency(100000, {
+          mode: 'symbol',
+          currency: code,
+          locale: localeForCurrency(code),
+        })
+        const collided = seen.get(output)
+        expect(collided, `${code} renders "${output}" identically to ${collided}`).toBeUndefined()
+        seen.set(output, code)
+      }
     })
   })
 })

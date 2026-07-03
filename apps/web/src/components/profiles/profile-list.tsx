@@ -15,6 +15,7 @@ import {
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
+import { canonicalizeCurrency } from '@budget-planner/core'
 import { useState } from 'react'
 
 // Profile color options for visual distinction
@@ -201,7 +202,9 @@ function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: P
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-500">Currency:</span>
-          <span className="font-medium text-gray-900">{profile.currency || 'NONE'}</span>
+          <span className="font-medium text-gray-900">
+            {canonicalizeCurrency(profile.currency || 'NONE')}
+          </span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-500">Created:</span>

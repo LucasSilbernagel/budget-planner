@@ -54,6 +54,19 @@ describe('CurrencyToggle', () => {
     expect(options).not.toContain('NONE')
   })
 
+  it('does not offer the consolidated dollar variants CAD/AUD/MXN (story 8-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CurrencyToggle />)
+    await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
+
+    const options = screen.getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
+    expect(options).not.toContain('CAD')
+    expect(options).not.toContain('AUD')
+    expect(options).not.toContain('MXN')
+    // The canonical dollar representative remains selectable.
+    expect(options).toContain('USD')
+  })
+
   it('updates the store currency when a different currency is picked', async () => {
     const user = userEvent.setup()
     useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })

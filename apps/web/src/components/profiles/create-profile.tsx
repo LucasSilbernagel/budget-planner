@@ -9,18 +9,21 @@
  */
 
 import { useActiveProfileId, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
+import { canonicalizeCurrency } from '@budget-planner/core'
 import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 
-// Available currency options
+// Available currency options.
+// The dollar family CAD/AUD render identically to USD via the app's formatting
+// path (story 8-2), so they are dropped as redundant — a single USD entry stands
+// in for the whole cluster. SEK/NZD are kept: they format distinctly (kr / NZ$)
+// and are not part of the consolidated dollar cluster.
 const CURRENCY_OPTIONS = [
   { value: 'NONE', label: 'No Currency' },
   { value: 'USD', label: 'US Dollar ($)' },
   { value: 'EUR', label: 'Euro (€)' },
   { value: 'GBP', label: 'British Pound (£)' },
   { value: 'JPY', label: 'Japanese Yen (¥)' },
-  { value: 'CAD', label: 'Canadian Dollar (C$)' },
-  { value: 'AUD', label: 'Australian Dollar (A$)' },
   { value: 'CHF', label: 'Swiss Franc (CHF)' },
   { value: 'CNY', label: 'Chinese Yuan (¥)' },
   { value: 'SEK', label: 'Swedish Krona (kr)' },
@@ -104,6 +107,9 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
       const _newProfile = createProfile({
         ...form,
+        // Never persist a consolidated code (story 8-2) — store the canonical
+        // representative so profiles stay consistent with the shrunk selector.
+        currency: canonicalizeCurrency(form.currency),
         userId,
       })
 

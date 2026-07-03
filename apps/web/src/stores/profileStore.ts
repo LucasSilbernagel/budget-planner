@@ -8,6 +8,7 @@
  * Data Sovereignty: Profile data stored client-side for free tier, synced to DanubeData for paid tier
  */
 
+import { canonicalizeCurrency } from '@budget-planner/core'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
@@ -117,7 +118,15 @@ export const useProfileStore = create<ProfileState>()(
       },
 
       // Add a new profile
-      addProfile: (profile) => {
+      addProfile: (rawProfile) => {
+        // Canonicalize on write so the stored + synced record carries the
+        // representative code (story 8-2). The app never converts currency —
+        // it is a display-format preference — so this is a lossless relabel that
+        // keeps state in step with the shrunk selector and the sync enum.
+        const profile = {
+          ...rawProfile,
+          currency: canonicalizeCurrency(rawProfile.currency || 'NONE'),
+        }
         const alreadyExists = get().profiles.some((p) => p.id === profile.id)
         set((state) => {
           // Check if profile already exists (by ID)
@@ -142,7 +151,13 @@ export const useProfileStore = create<ProfileState>()(
       },
 
       // Update an existing profile
-      updateProfile: (profileId, updates) => {
+      updateProfile: (profileId, rawUpdates) => {
+        // Canonicalize an incoming currency change at the store boundary so no
+        // consolidated code is ever persisted or synced (story 8-2).
+        const updates =
+          rawUpdates.currency === undefined
+            ? rawUpdates
+            : { ...rawUpdates, currency: canonicalizeCurrency(rawUpdates.currency || 'NONE') }
         const previous = get().profiles.find((profile) => profile.id === profileId)
         set((state) => ({
           profiles: state.profiles.map((profile) =>
@@ -243,6 +258,23 @@ export const useProfileStore = create<ProfileState>()(
       name: 'budget-planner-profiles-v1',
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
+      // v1 (Story 8-2): canonicalize any persisted profile currency so a
+      // now-consolidated code (CAD/AUD/MXN) converges to its representative (USD).
+      // Legacy blobs have no version (treated as 0), so this runs once on their
+      // next load and rewrites storage. `-v1` in the store *name* is unrelated to
+      // this numeric `version` (see currencyStore for the same distinction).
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as Partial<Pick<ProfileState, 'profiles' | 'activeProfileId'>>
+        if (!Array.isArray(state?.profiles)) return state
+        return {
+          ...state,
+          profiles: state.profiles.map((profile) => ({
+            ...profile,
+            currency: canonicalizeCurrency(profile.currency || 'NONE'),
+          })),
+        }
+      },
       partialize: (state) => ({
         profiles: state.profiles,
         activeProfileId: state.activeProfileId,
