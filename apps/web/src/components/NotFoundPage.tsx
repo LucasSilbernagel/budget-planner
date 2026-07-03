@@ -15,15 +15,15 @@ import { Link } from '@tanstack/react-router'
  * (e.g. `HomePage`). There is no shared layout component to import, so the
  * idiom is reproduced here rather than abstracted.
  *
- * Theme: the app has no cohesive dark theme yet and no in-app light/dark toggle
- * (that is story 7.3). Most user-facing surfaces — `HomePage`, the `Footer`, the
- * CRUD pages — are hardcoded light, but a few already carry `dark:` variants
- * (e.g. the balance-tracking and savings-goals routes), so under Tailwind's
- * default `media` (`prefers-color-scheme`) strategy the app is inconsistently
- * themed today. This page is deliberately light-only to match `HomePage` and the
- * `/` recovery target rather than add to that patchwork; the light-only 404 is a
- * known, intentional inconsistency to be reconciled when story 7.3 lands a real
- * theme across the whole app.
+ * Theme: this page is part of story 7.3's guaranteed dark-mode surface set (AC-2)
+ * and carries `dark:` variants keyed off Tailwind's class strategy (the `.dark`
+ * class the premium theme toggle sets on `<html>`). The variants are `dark:`
+ * (class-driven) rather than `prefers-color-scheme`-driven, so the page follows
+ * the in-app theme, not the OS. On the very first paint the no-flash `<head>`
+ * script applies whatever theme is persisted (including a stale `dark` from a
+ * since-lapsed user) before the client-only tier check resolves; `ThemeProvider`
+ * then corrects non-premium users back to light (AC-3). Steady state: dark shows
+ * only while a paid user has dark mode enabled.
  *
  * Scope note: the docs section keeps its own contextual not-found (`DocNotFound`
  * in `routes/docs/$docId.tsx`, rendered inside `DocsLayout`) by design. This
@@ -35,24 +35,26 @@ import { Link } from '@tanstack/react-router'
  */
 export function NotFoundPage() {
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
       <div className="mx-auto max-w-6xl">
         <header className="mb-8">
           {/* Brand wordmark — mirrors every page header's <h1>Budget Planner</h1>
               styling, but stays a non-heading node so the page keeps a single
               <h1> ("Page not found"). */}
-          <p className="text-3xl font-bold text-gray-900">Budget Planner</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">Budget Planner</p>
         </header>
 
         <main className="flex flex-col items-center py-16 text-center sm:py-24">
-          <p className="text-base font-semibold text-blue-600">404</p>
-          <h1 className="mt-4 text-3xl font-bold text-gray-900 sm:text-4xl">Page not found</h1>
-          <p className="mt-4 max-w-md text-gray-600">
+          <p className="text-base font-semibold text-blue-600 dark:text-blue-400">404</p>
+          <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-gray-100 sm:text-4xl">
+            Page not found
+          </h1>
+          <p className="mt-4 max-w-md text-gray-600 dark:text-gray-400">
             Sorry, we couldn’t find the page you’re looking for.
           </p>
           <Link
             to="/"
-            className="mt-8 inline-block rounded-lg bg-blue-600 px-6 py-3 font-medium text-white shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="mt-8 inline-block rounded-lg bg-blue-600 px-6 py-3 font-medium text-white shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
           >
             Go home
           </Link>

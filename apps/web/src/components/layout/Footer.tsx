@@ -1,4 +1,5 @@
 import { APP_VERSION } from '../../utils/version'
+import { ThemeToggle } from '../settings/theme-toggle'
 import { FeedbackLink } from './FeedbackLink'
 
 /**
@@ -18,7 +19,12 @@ import { FeedbackLink } from './FeedbackLink'
  */
 export function Footer() {
   return (
-    <footer className="mt-auto border-t border-gray-200 py-3 text-center text-xs text-gray-500">
+    <footer className="mt-auto border-t border-gray-200 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+      {/* Premium-gated dark mode toggle (story 7-3). One global instance so the
+          gate mounts a single Modal (avoids 7-2's single-open deferral). */}
+      <div className="mb-2 flex justify-center">
+        <ThemeToggle />
+      </div>
       <div className="flex flex-col items-center justify-center gap-1 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
         {/* Brand stays a plain text node so it's announced; the label is scoped
             to the version span so screen readers say "version 0.0.1" rather than
@@ -26,19 +32,34 @@ export function Footer() {
         <span>
           Budget Planner <span aria-label={`version ${APP_VERSION}`}>v{APP_VERSION}</span>
         </span>
-        <a href="/pricing" className="text-gray-500 underline hover:text-gray-700">
+        <a
+          href="/pricing"
+          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
           Pricing
         </a>
-        <a href="/docs" className="text-gray-500 underline hover:text-gray-700">
+        <a
+          href="/docs"
+          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
           Documentation
         </a>
-        <a href="/terms" className="text-gray-500 underline hover:text-gray-700">
+        <a
+          href="/terms"
+          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
           Terms of Service
         </a>
-        <a href="/privacy" className="text-gray-500 underline hover:text-gray-700">
+        <a
+          href="/privacy"
+          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
           Privacy Policy
         </a>
-        <a href="/refund" className="text-gray-500 underline hover:text-gray-700">
+        <a
+          href="/refund"
+          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
           Refund Policy
         </a>
         <FeedbackLink />
@@ -59,7 +80,7 @@ export function Footer() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Lucas Silbernagel's website (opens in a new tab)"
-            className="text-gray-500 underline hover:text-gray-700"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             Lucas Silbernagel
           </a>

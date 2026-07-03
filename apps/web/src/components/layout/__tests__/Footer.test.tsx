@@ -1,10 +1,27 @@
 import { renderWithRouter, screen } from '@/test/utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { APP_VERSION } from '../../../utils/version'
+
+// The footer now mounts the premium-gated dark-mode toggle (story 7-3), which
+// calls usePremiumAccess on mount. Mock it to a resolved free tier so these
+// footer tests stay hermetic (no server-function import / network) and the
+// toggle deterministically renders its locked state.
+vi.mock('../../../hooks/usePremiumAccess', () => ({
+  usePremiumAccess: () => ({
+    status: {
+      hasAccess: false,
+      subscriptionStatus: 'free',
+      isLoading: false,
+      error: null,
+      isAuthenticated: false,
+    },
+  }),
+}))
+
 import { Footer } from '../Footer'
 
 /**
- * Footer component tests (story 4-8, AC-1; story 4-9, AC-1).
+ * Footer component tests (story 4-8, AC-1; story 4-9, AC-1; story 7-3 toggle).
  *
  * Covers: the footer renders as an accessible landmark, displays the
  * application version sourced from package.json, and exposes the global

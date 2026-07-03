@@ -344,23 +344,29 @@ export function HomePage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
         <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Budget Planner</h1>
-            <p className="text-gray-600 mt-2">Track your income and expenses with ease</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Budget Planner</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              Track your income and expenses with ease
+            </p>
           </div>
           <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">
           {/* Quick Stats */}
-          <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Financial Overview</h2>
+          <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
+              Financial Overview
+            </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Total Income (Monthly Normalized)</p>
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Total Income (Monthly Normalized)
+                </p>
                 <p className="text-2xl font-bold text-green-600">
                   {formatAmount(totalNormalizedIncome)}
                 </p>
@@ -368,8 +374,10 @@ export function HomePage() {
                   <p className="text-xs text-gray-400 mt-1">Raw: {formatAmount(totalIncomeRaw)}</p>
                 )}
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Total Expenses (Monthly Normalized)</p>
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Total Expenses (Monthly Normalized)
+                </p>
                 <p className="text-2xl font-bold text-red-600">
                   {formatAmount(totalNormalizedExpenses)}
                 </p>
@@ -379,8 +387,8 @@ export function HomePage() {
                   </p>
                 )}
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Net Period Income</p>
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Net Period Income</p>
                 <p
                   className={`text-2xl font-bold ${
                     netPeriodIncome >= 0 ? 'text-green-600' : 'text-red-600'
@@ -389,8 +397,8 @@ export function HomePage() {
                   {formatAmount(netPeriodIncome)}
                 </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Net Worth</p>
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Net Worth</p>
                 <p
                   className={`text-2xl font-bold ${
                     netWorth >= 0 ? 'text-purple-600' : 'text-red-600'
@@ -399,8 +407,8 @@ export function HomePage() {
                   {formatAmount(netWorth)}
                 </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-500">Financial Health</p>
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Financial Health</p>
                 <p className="text-2xl font-bold text-blue-600">{financialHealthScore}%</p>
               </div>
             </div>
@@ -412,9 +420,9 @@ export function HomePage() {
               {/* Row 1: Two pie charts side by side */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Enhanced Income vs Expense Breakdown (Story 3-3) */}
-                <section className="bg-white rounded-lg shadow-md p-6">
+                <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-gray-800">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
                       Income vs Expense Breakdown
                     </h2>
                     <div className="flex items-center space-x-2">
@@ -429,7 +437,7 @@ export function HomePage() {
 
                   {/* Drill-down breadcrumb navigation */}
                   {isDrillDownActive && breadcrumb.length > 0 && (
-                    <div className="mb-4 p-2 bg-gray-50 rounded-lg">
+                    <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
                       <div className="flex items-center justify-between">
                         <nav
                           className="flex items-center space-x-2"
@@ -562,8 +570,10 @@ export function HomePage() {
 
                   {/* Category breakdown summary */}
                   {allCategoryData.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <h3 className="text-sm font-medium text-gray-600 mb-2">Top Categories</h3>
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                      <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                        Top Categories
+                      </h3>
                       <div className="space-y-1">
                         {allCategoryData
                           .sort((a, b) => b.value - a.value)
@@ -589,8 +599,8 @@ export function HomePage() {
                 </section>
 
                 {/* Asset Breakdown */}
-                <section className="bg-white rounded-lg shadow-md p-6">
-                  <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                  <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
                     Asset & Liability Breakdown
                   </h2>
                   <div className="h-[350px]">
@@ -635,8 +645,8 @@ export function HomePage() {
               </div>
 
               {/* Row 2: Full width bar chart */}
-              <section className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
                   Financial Category Summary
                 </h2>
                 {netWorthBarData.length > 0 ? (
@@ -675,17 +685,19 @@ export function HomePage() {
                     </ErrorBoundary>
                   </div>
                 ) : (
-                  <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <p className="text-gray-500">No financial data to display</p>
+                  <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-8 text-center">
+                    <p className="text-gray-500 dark:text-gray-400">No financial data to display</p>
                   </div>
                 )}
               </section>
             </>
           ) : (
-            <section className="bg-white rounded-lg shadow-md p-6">
-              <div className="bg-gray-50 rounded-lg p-8 text-center">
-                <p className="text-gray-500 mb-4">No data available for visualization</p>
-                <p className="text-sm text-gray-400">
+            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-8 text-center">
+                <p className="text-gray-500 dark:text-gray-400 mb-4">
+                  No data available for visualization
+                </p>
+                <p className="text-sm text-gray-400 dark:text-gray-500">
                   Add income sources, expenses, savings goals, or balance entries to see your
                   financial overview
                 </p>
@@ -694,8 +706,10 @@ export function HomePage() {
           )}
 
           {/* Navigation to CRUD pages */}
-          <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Manage Your Finances</h2>
+          <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
+              Manage Your Finances
+            </h2>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <a
                 href="/income"
@@ -734,19 +748,23 @@ export function HomePage() {
               7-2, FR24). Paid users get the working link; everyone else sees the
               feature with a lock badge and an upgrade prompt. Enforcement stays
               server-side (the /forecasting loader + session gate). */}
-          <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Premium Features</h2>
+          <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
+              Premium Features
+            </h2>
             <PremiumFeatureGate
               featureName="Advanced Forecasting"
-              className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100"
+              className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
               locked={<PremiumFeatureLabel />}
             >
               <a
                 href="/forecasting"
-                className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100"
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
               >
                 <PremiumFeatureLabel />
-                <span className="text-sm font-medium text-blue-700 whitespace-nowrap">Open →</span>
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                  Open →
+                </span>
               </a>
             </PremiumFeatureGate>
           </section>
@@ -768,8 +786,8 @@ export function HomePage() {
 function PremiumFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
-      <span className="font-medium text-gray-800">Advanced Forecasting</span>
-      <span className="text-sm text-gray-500">
+      <span className="font-medium text-gray-800 dark:text-gray-100">Advanced Forecasting</span>
+      <span className="text-sm text-gray-500 dark:text-gray-400">
         Scenario modeling, projections, and saved forecasts
       </span>
     </span>

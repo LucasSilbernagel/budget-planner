@@ -11,6 +11,13 @@
   body {
     @apply text-gray-900 bg-gray-50;
   }
+
+  /* Dark theme canvas (story 7-3). Keyed off the `.dark` class the theme toggle
+     sets on <html> (Tailwind class strategy), so the root background/text darken
+     even on surfaces that have not yet been given their own `dark:` variants. */
+  .dark body {
+    @apply text-gray-100 bg-gray-900;
+  }
 }
 
 /* Custom component styles */

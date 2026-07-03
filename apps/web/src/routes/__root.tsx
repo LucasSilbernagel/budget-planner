@@ -4,9 +4,26 @@ import { AdPlacement } from '../components/ads/AdPlacement'
 import { Footer } from '../components/layout/Footer'
 import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
+import { ThemeProvider } from '../components/theme/ThemeProvider'
 import { MetadataProvider } from '../context/metadata-context'
 import { StoreHydration } from '../lib/store-hydration'
+import { THEME_STORAGE_KEY } from '../stores/themeStore'
 import appCss from '../styles/global.css?url'
+
+/**
+ * No-flash theme bootstrap (story 7-3, AC-4). Runs synchronously in <head>
+ * before first paint: reads the persisted theme from localStorage and adds the
+ * `.dark` class to <html> so a paid user's dark preference paints correctly on
+ * the very first frame — no flash of light before React hydrates. Wrapped in
+ * try/catch so blocked or corrupt storage never throws (mirrors StoreHydration's
+ * swallow-errors discipline). ThemeProvider reconciles + enforces the
+ * premium-gate correction after mount.
+ *
+ * The storage key comes from `THEME_STORAGE_KEY` (single source of truth in
+ * themeStore); the persisted `{ state: { theme } }` shape is still hard-parsed
+ * here because this runs before any module can load. See that constant's JSDoc.
+ */
+const NO_FLASH_THEME_SCRIPT = `(function(){try{var raw=localStorage.getItem('${THEME_STORAGE_KEY}');if(!raw)return;var parsed=JSON.parse(raw);var theme=parsed&&parsed.state&&parsed.state.theme;if(theme==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`
 
 export const Route = createRootRoute({
   head: () => ({
@@ -47,12 +64,22 @@ function RootComponent() {
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: the no-flash script mutates <html>'s className
+    // before hydration (adds `.dark`), which the server HTML does not carry.
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Blocking, self-authored bootstrap — must run before the stylesheet
+            paints to prevent a theme flash (story 7-3, AC-4). */}
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
         <StoreHydration />
+        {/* Syncs the persisted theme onto <html class="dark"> and enforces the
+            premium fail-safe-to-light for non-paying users (story 7-3). Renders
+            nothing. */}
+        <ThemeProvider />
         {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
             (dynamic import in an effect), renders nothing. */}
         <RegisterSW />

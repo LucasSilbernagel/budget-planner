@@ -88,7 +88,7 @@ export function Modal({
   ariaLabel,
   describedBy,
   role = 'dialog',
-  className = 'bg-white rounded-lg shadow-xl max-w-md w-full p-6',
+  className = 'bg-white dark:bg-gray-800 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6',
   closeOnOverlayClick = true,
   initialFocusRef,
   finalFocusRef,

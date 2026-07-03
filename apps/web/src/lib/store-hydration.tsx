@@ -5,6 +5,7 @@ import { useExpenseStore } from '../stores/expenseStore'
 import { useIncomeStore } from '../stores/incomeStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useSavingsStore } from '../stores/savingsStore'
+import { useThemeStore } from '../stores/themeStore'
 
 /**
  * Client-side rehydration for all persisted Zustand stores.
@@ -29,6 +30,7 @@ export function StoreHydration() {
       useBalanceStore,
       useCurrencyStore,
       useProfileStore,
+      useThemeStore,
     ]
 
     for (const store of stores) {

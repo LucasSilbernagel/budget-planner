@@ -144,20 +144,20 @@ function PremiumPromptContent({
   onClose,
 }: PremiumPromptContentProps): React.ReactElement {
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-lg border border-blue-200 p-6 max-w-md mx-auto w-full">
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl shadow-lg border border-blue-200 dark:border-gray-700 p-6 max-w-md mx-auto w-full">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center">
           <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
             <CrownIcon className="w-6 h-6 text-white" />
           </div>
-          <h2 className="text-xl font-bold text-gray-800">Go Premium</h2>
+          <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Go Premium</h2>
         </div>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition-colors"
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700 transition-colors"
             aria-label="Close"
           >
             <CloseIcon className="w-5 h-5" />
@@ -168,25 +168,33 @@ function PremiumPromptContent({
       {/* Message */}
       <div className="mb-4">
         {featureName && (
-          <p className="text-gray-700 mb-2">
+          <p className="text-gray-700 dark:text-gray-300 mb-2">
             You need a premium subscription to access
-            <span className="font-semibold text-blue-600 ml-1">"{featureName}"</span>.
+            <span className="font-semibold text-blue-600 dark:text-blue-400 ml-1">
+              "{featureName}"
+            </span>
+            .
           </p>
         )}
-        <p className="text-gray-600 text-sm">{message}</p>
+        <p className="text-gray-600 dark:text-gray-400 text-sm">{message}</p>
       </div>
 
       {/* Features List */}
       <div className="mb-6">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">What you get:</h3>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+          What you get:
+        </h3>
         <ul className="space-y-2">
           {PREMIUM_FEATURES.slice(0, 4).map((feature, _index) => (
-            <li key={feature} className="flex items-center text-sm text-gray-600">
+            <li
+              key={feature}
+              className="flex items-center text-sm text-gray-600 dark:text-gray-400"
+            >
               <CheckIcon className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
               {feature}
             </li>
           ))}
-          <li className="flex items-center text-sm text-gray-500">
+          <li className="flex items-center text-sm text-gray-500 dark:text-gray-400">
             <span className="w-4 h-4 mr-2 flex-shrink-0" />+ more features coming soon
           </li>
         </ul>
@@ -205,7 +213,7 @@ function PremiumPromptContent({
         <button
           type="button"
           onClick={onClose || (() => {})}
-          className="inline-flex items-center justify-center px-4 py-2 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors text-center"
+          className="inline-flex items-center justify-center px-4 py-2 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors text-center"
           disabled={!onClose}
         >
           Maybe Later

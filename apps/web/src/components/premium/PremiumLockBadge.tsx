@@ -24,7 +24,7 @@ export interface PremiumLockBadgeProps {
 export function PremiumLockBadge({ className }: PremiumLockBadgeProps): React.ReactElement {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 ${
+      className={`inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 ${
         className ?? ''
       }`}
     >

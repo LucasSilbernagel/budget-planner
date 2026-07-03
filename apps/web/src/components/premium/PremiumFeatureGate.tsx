@@ -74,7 +74,7 @@ export function PremiumFeatureGate({
     return (
       <div
         aria-hidden="true"
-        className="animate-pulse rounded-md bg-gray-200"
+        className="animate-pulse rounded-md bg-gray-200 dark:bg-gray-700"
         data-testid="premium-gate-skeleton"
       >
         {/* Reserve the resolved control's exact footprint (padding/layout from
