@@ -1,230 +1,164 @@
-# Budget Planner - BMAD Project
+# Budget Planner
 
-A personal budget planning software project built using the BMAD Method.
+Budget Planner is a privacy-first personal budgeting and financial-planning web app.
+It helps you track income and expenses, set savings goals, monitor account balances, and model long-term outcomes like retirement and net worth.
+The free tier runs entirely in your browser with no account and no server calls, so your financial data never leaves your device.
+The paid tier adds authenticated, EU-hosted multi-device sync.
 
-## Project Status
+> **Note:** This project is not yet deployed to production, so there is no live demo link yet.
 
-- **BMAD Installation**: Pending (requires Node.js 20.12+)
-- **Current Phase**: Pre-Analysis
-- **Track**: BMAD Method (recommended for products with 10-50+ stories)
+## Features
 
-## Quick Start
+- **Income and expense tracking** with frequency-normalized budgeting (weekly, monthly, annual, and more collapsed to a common basis).
+- **Net period income and savings capacity** calculations, including maximum dynamically allocable savings.
+- **Retirement modeler** using a safe-withdrawal model, plus a forward-looking **net-worth projection** with compounding.
+- **Savings goals and balance tracking** with clear progress visualizations.
+- **Currency control** that formats amounts using the selected currency's regional default.
+- **Premium-gated dark mode** and **advanced forecasting**, surfaced in a discoverable locked state for free users.
+- **Progressive Web App (PWA)** support with offline shell caching and installability.
+- **Multi-device sync** for paid users, backed by EU-hosted PostgreSQL.
+- **In-app documentation** and an **in-app contact form**.
 
-### 1. Install Node.js 20.12+
-BMAD requires Node.js 20.12 or higher. You currently have v16.16.0.
+## Tech Stack
 
-**Options:**
-- Download from [Node.js official website](https://nodejs.org/)
-- Use a version manager like `nvm`:
-  ```bash
-  nvm install 20
-  nvm use 20
-  ```
+- **Framework:** TanStack Start (SSR with file-based routing).
+- **UI:** React 19, Tailwind CSS.
+- **State:** Zustand.
+- **Charts:** Recharts.
+- **Language:** TypeScript.
+- **Database:** Drizzle ORM with PostgreSQL.
+- **Tooling:** Biome (lint/format), Vitest (unit), Playwright (end-to-end), MSW (network mocking).
+- **Monorepo:** pnpm workspaces.
 
-### 2. Install BMAD Method
-Once Node.js 20.12+ is installed, run:
+## Getting Started
+
+### Prerequisites
+
+- **Node.js 20.12+** (the repository pins Node 20 via `.nvmrc`).
+- **pnpm**.
+- **PostgreSQL** is only needed for the paid/server-sync path and the database scripts; the free tier is fully client-side and needs no database.
+
+### Installation
+
+1. Clone the repository:
+
 ```bash
-cd /Users/lucassilbernagel/Documents/development/side-projects/budget-planner
-npx bmad-method install
+git clone https://github.com/LucasSilbernagel/budget-planner.git
+cd budget-planner
 ```
 
-When prompted:
-- Select **BMad Method** module
-- Choose your AI tool (Claude Code, Cursor, etc.)
-- Accept defaults for other settings
+2. Install dependencies:
 
-### 3. Begin Analysis Phase
-After installation, use the `bmad-help` skill to get started:
-```
-bmad-help I have a product document for a budget planner. Where should I start?
+```bash
+pnpm install
 ```
 
-## Project Structure (After BMAD Installation)
+3. Set up environment variables.
+   Copy `apps/web/.env.example` to `apps/web/.env` and fill in values as needed (see [Environment Variables](#environment-variables) below).
+   The free-tier app runs without any of these set.
 
-```
-budget-planner/
-├── _bmad/                          # BMAD configuration and agents
-│   ├── core/
-│   ├── bmm/
-│   └── ...
-├── _bmad-output/                   # Generated artifacts
-│   ├── planning-artifacts/
-│   │   ├── PRD.md                  # Product Requirements Document
-│   │   ├── architecture.md         # Technical architecture
-│   │   └── epics/                  # Epic and story files
-│   ├── implementation-artifacts/
-│   │   └── sprint-status.yaml      # Sprint tracking
-│   └── project-context.md          # Implementation rules
-├── product-document.md             # Your product document (to be added)
-└── README.md
+4. Start the development server:
+
+```bash
+pnpm dev
 ```
 
-## Recommended Workflow
+5. Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-Based on having a detailed product document, here's your optimal path:
+### Environment Variables
 
-### Phase 1: Analysis (Optional but Recommended)
-Since you already have a product document, you can either:
+All variables are optional in development; the app falls back to safe defaults and the free tier needs none of them.
+A full production or paid-tier deployment additionally requires the server secrets below (session signing, magic-link email, and Paddle billing), all validated in `packages/config/src/schema.ts`.
 
-1. **Use `bmad-product-brief`** - Quick guided session to extract key insights from your document
-2. **Use `bmad-prfaq`** - Rigorous validation of your product concept
-3. **Skip to Phase 2** - Go directly to PRD creation
+| Variable | Scope | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | Server | PostgreSQL connection string. A local instance in development; DanubeData PostgreSQL (EU) in production. Only needed for the paid/server-sync path. |
+| `SESSION_SECRET` | Server | HMAC-SHA256 key for signed session cookies. **Required in production** - authentication fails closed if it is missing or shorter than 32 characters. Generate with `openssl rand -hex 32`. In development it may be omitted (an insecure fallback is used with a warning). |
+| `SITE_URL` | Server | Public HTTPS origin of the deployed app. **Required in production** - it fails closed if the value is missing, `localhost`, or non-HTTPS, because magic-link emails build absolute links from it. Defaults to `http://localhost:5173` in development. |
+| `EMAIL_API_KEY` | Server | API key for the EU transactional-email provider (Brevo) that sends magic-link login emails. Required in production for the paid tier - the mailer fails closed outside development. A runtime secret; never commit it. |
+| `EMAIL_FROM` | Server | Verified sender address for magic-link emails. Defaults to `no-reply@budgetplanner.eu`. |
+| `PADDLE_ENVIRONMENT` | Server | Selects the Paddle billing environment, `sandbox` or `production`. Defaults to `sandbox`. |
+| `PADDLE_API_KEY` | Server | Paddle billing API key for the paid tier. A runtime secret. |
+| `PADDLE_WEBHOOK_SECRET` | Server | Secret used to verify Paddle billing webhook signatures. A runtime secret. |
+| `VITE_ETHICALADS_PUBLISHER_ID` | Client | Public identifier that ships in the client bundle, not a secret. Enables privacy-respecting, cookie-free ads for non-premium users. When unset, no ads are rendered. |
+| `VITE_FORMSPARK_FORM_ID` | Client | Public identifier for the in-app contact form, not a secret. When unset, the contact form shows "temporarily unavailable." |
 
-### Phase 2: Planning (Required)
-```
-bmad-prd Create
-```
-This will create your Product Requirements Document. You can feed your existing product document as input.
+The Paddle billing variables back the paid-tier checkout and are being finalized in the billing integration work (story 5-3); the full set is defined in `packages/config/src/schema.ts`.
 
-### Phase 3: Solutioning
-```
-bmad-create-architecture
-bmad-create-epics-and-stories
-bmad-check-implementation-readiness
-```
+## Available Scripts
 
-### Phase 4: Implementation
-```
-bmad-sprint-planning
-# Then for each story:
-bmad-create-story
-bmad-dev-story
-bmad-code-review
-```
+Run these from the repository root unless noted otherwise.
 
-## Using Your Product Document
+- `pnpm dev` - Start the web app in development (alias for `pnpm --filter web dev`) on port 5173.
+- `pnpm build` - Build the web app for production.
+- `pnpm --filter web start` - Serve the production build (runs `node server-entry.mjs`); see [Deployment](#deployment-and-data-sovereignty).
+- `pnpm lint` - Run Biome checks and validate the TypeScript project references.
+- `pnpm lint:fix` - Apply Biome autofixes.
+- `pnpm format` - Format the codebase with Biome.
+- `pnpm type-check` - Type-check the web app.
+- `pnpm type-check:all` - Type-check every workspace package.
+- `pnpm test` / `pnpm test:unit` - Run the unit test suites across packages (Vitest).
+- `pnpm test:watch` - Run unit tests in watch mode.
+- `pnpm test:e2e` - Run the end-to-end tests (Playwright).
 
-Your product document can be used in several ways:
+Database scripts live in the `packages/db` workspace:
 
-1. **As input to `bmad-product-brief`** - The agent will extract and organize key information
-2. **As input to `bmad-prd`** - The PRD workflow can incorporate your existing document
-3. **As a reference in `_bmad-output/project-context.md`** - Add it as a knowledge source
+- `pnpm --filter db db:generate` - Generate Drizzle migrations from the schema.
+- `pnpm --filter db db:migrate` - Apply pending migrations.
+- `pnpm --filter db db:studio` - Open Drizzle Studio.
 
-## Resources
+## Deployment and Data Sovereignty
 
-- [BMAD Documentation](https://docs.bmad-method.org/)
-- [Getting Started Guide](https://docs.bmad-method.org/tutorials/getting-started/)
-- [Workflow Map](https://docs.bmad-method.org/reference/workflow-map/)
-- [BMAD Discord Community](https://discord.gg/gk8jAdXWmj)
+The app builds to a single TanStack Start SSR server.
+`pnpm build` emits `dist/server/server.js` (a web-standard fetch handler) and the `dist/client/` assets.
+`pnpm --filter web start` then runs `node server-entry.mjs`, a thin self-listening `node:http` wrapper that binds `$PORT` (default 8080), serves `dist/client/`, and delegates SSR and `/api/*` to the built handler.
 
-## Next Steps
+The intended production topology (see `_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md`) is:
 
-1. ✅ Project folder created
-2. ✅ Monorepo structure initialized (pnpm workspaces)
-3. ⏳ Upgrade Node.js to 20.12+
-4. ⏳ Install BMAD Method
-5. ⏳ Add your product document to the folder
-6. ⏳ Run `bmad-help` for personalized guidance
+- **App server:** DanubeData Rapids SSR (Falkenstein, Germany / EU).
+- **Database:** DanubeData PostgreSQL (Germany / EU).
+- **Billing:** Paddle (UK, acting as Merchant of Record) - Paddle handles billing only, not authentication.
+- **Authentication:** app-owned email magic-link login.
+- **Ads:** EthicalAds (Germany / EU), cookie-free, non-premium users only.
 
----
+The data model is EU-only with a zero-US-residency posture.
+The free tier stores everything client-side (localStorage / IndexedDB) with no account and no server calls.
+The paid tier syncs data to the EU-hosted PostgreSQL database behind authenticated sessions.
 
-## Monorepo Structure (Implemented)
+There is one documented exception to the zero-US-residency rule: the in-app contact form uses Formspark, which stores submissions in Ireland (EU) but relies on a US-owned cloud subprocessor (AWS), leaving it exposed to the US CLOUD Act.
+It only ever transmits free-text feedback (never financial data), and the exception is recorded in `_bmad-output/planning-artifacts/adr/ADR-004-contact-form-formspark-exception.md`.
 
-This project now has a **monorepo structure with pnpm workspaces** as defined in Story 1.1.
-
-### Workspace Configuration
+## Project Structure
 
 ```
 budget-planner/
-├── pnpm-workspace.yaml          # Workspace configuration
-├── package.json                 # Root package.json with scripts
-├── tsconfig.json                # Root TypeScript config
-├── .npmrc                       # pnpm configuration
-├── README.md                    # This file
 ├── apps/
-│   └── web/                     # TanStack Start frontend
-│       ├── package.json
-│       ├── tsconfig.json
+│   └── web/                 # TanStack Start SSR app (frontend + /api/* server routes)
 │       └── src/
-│           └── index.tsx
-└── packages/
-    ├── core/                    # Shared utilities & calculations
-    │   ├── package.json
-    │   ├── tsconfig.json
-    │   └── src/
-    │       └── index.ts
-    ├── db/                      # Database schema & ORM
-    │   ├── package.json
-    │   ├── tsconfig.json
-    │   └── src/
-    │       └── index.ts
-    └── config/                  # Centralized configuration
-        ├── package.json
-        ├── tsconfig.json
-        └── src/
-            └── index.ts
+│           ├── routes/      # File-based routes (pages and /api server routes)
+│           ├── components/
+│           ├── server/      # Server-side API handlers
+│           └── stores/      # Zustand stores
+├── packages/
+│   ├── core/                # Shared finance, calculation, format, and sync utilities (@budget-planner/core)
+│   ├── db/                  # Drizzle schema, migrations, and PostgreSQL client (@budget-planner/db)
+│   └── config/              # Zod-validated configuration (@budget-planner/config)
+├── _bmad-output/            # Planning and implementation artifacts (BMAD)
+├── pnpm-workspace.yaml
+└── package.json
 ```
 
-### Package Descriptions
+## License
 
-| Package | Purpose | Dependencies |
-|---------|---------|--------------|
-| `@budget-planner/web` | Frontend (TanStack Start + React 19) | React, TanStack, Zustand, Recharts, Radix |
-| `@budget-planner/db` | Database (Drizzle ORM + PostgreSQL) | Drizzle ORM, pg |
-| `@budget-planner/config` | Configuration (Zod validation) | Zod |
-| `@budget-planner/core` | Shared utilities & calculations | TypeScript types from db/config |
+Copyright (c) 2026 Lucas Silbernagel. All rights reserved.
 
-### Available Scripts
+The source is published for portfolio and demonstration purposes only.
+You are welcome to read the code, but no permission is granted to copy, modify, redistribute, or deploy it.
+See the [LICENSE](./LICENSE) file for the full terms.
 
-```bash
-# Install all dependencies
-pnpm install
+## Contact
 
-# Development
-pnpm dev              # Start frontend
-pnpm dev:web          # Start web app
-pnpm dev:db           # Start db package
-pnpm dev:config       # Start config package
-pnpm dev:core         # Start core package
+For questions, feedback, or feature requests:
 
-# Build
-pnpm build            # Build frontend
-pnpm build:all        # Build all packages
-
-# Quality Checks
-pnpm lint             # Run Biome linter
-pnpm lint:fix         # Fix linting issues
-pnpm type-check       # Type-check all packages
-
-# Testing
-pnpm test             # Run all tests
-pnpm test:unit        # Run unit tests
-pnpm test:e2e         # Run E2E tests
-```
-
-### Adding New Dependencies
-
-```bash
-# Add to a specific package
-pnpm --filter web add react-router-dom
-pnpm --filter db add drizzle-orm
-
-# Add shared dependency (hoisted to root)
-pnpm add -D typescript biome
-```
-
-### Verification
-
-To verify the monorepo setup works correctly:
-
-```bash
-# Test pnpm install
-pnpm install
-
-# Check workspace structure
-pnpm ls --depth -1
-
-# Test TypeScript compilation
-pnpm type-check
-```
-
----
-
-## Implementation Status
-
-- ✅ **Story 1.1**: Monorepo structure with pnpm workspaces - **IN PROGRESS**
-- ⏳ **Story 1.2**: TanStack Start frontend initialization - Pending
-- ⏳ **Story 1.3**: Database schema for income/expense entities - Pending
-- ⏳ **Story 1.4**: Implement income source CRUD operations - Pending
-
-See `_bmad-output/implementation-artifacts/sprint-status.yaml` for complete sprint tracking.
+- Use the in-app contact form at the `/contact` route.
+- Open an issue on [GitHub](https://github.com/LucasSilbernagel/budget-planner/issues).
