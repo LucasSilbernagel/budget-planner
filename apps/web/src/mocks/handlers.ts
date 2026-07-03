@@ -2,9 +2,12 @@
  * MSW request handlers.
  *
  * All external service calls MUST be intercepted in tests — no real network
- * requests are permitted (NFR8). These handlers cover the two third-party
- * services the app talks to:
- *   - Paddle  (billing / checkout / subscription APIs) — UK
+ * requests are permitted (NFR8). These handlers cover every third-party service
+ * the app talks to:
+ *   - Formspark (contact-form submissions) — Ireland/EU (AWS-US subprocessor, ADR-004)
+ *   - counter.dev (cookieless analytics script + beacons) — ADR-005
+ *   - Brevo (transactional magic-link email) — EU/France
+ *   - Paddle (billing / checkout / subscription APIs) — UK
  *   - EthicalAds (ad decision endpoint) — Germany/EU
  *
  * Handlers use RegExp matchers so both production and sandbox hosts are
@@ -24,6 +27,15 @@ export const handlers = [
   http.post(/^https?:\/\/submit-form\.com\//, () =>
     HttpResponse.json({ success: true }, { status: 200 })
   ),
+
+  // --- counter.dev: cookieless analytics script + beacons (Story 10-1) ---
+  // The analytics tag loads https://cdn.counter.dev/script.js (a real SSR
+  // <script data-id>) which then beacons GET /track + POST /trackpage. All are
+  // intercepted so no real analytics call happens in CI and
+  // onUnhandledRequest:'error' does not trip. counter.dev is cookieless and
+  // sends only visitor metadata (referrer/screen/id/utcoffset/pathname), never
+  // financial data — the recorded scoped exception. See ADR-005.
+  http.all(/^https?:\/\/([^/]+\.)?counter\.dev\//, () => new HttpResponse(null, { status: 204 })),
 
   // --- Brevo (Sendinblue, EU/France): transactional email send (Story 5-16) ---
   // Magic-link emails go through Brevo's EU endpoint. Intercepted here so no

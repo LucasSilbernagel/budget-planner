@@ -6,6 +6,7 @@ import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
 import { ThemeProvider } from '../components/theme/ThemeProvider'
 import { MetadataProvider } from '../context/metadata-context'
+import { buildAnalyticsScripts } from '../lib/analytics/counter'
 import { StoreHydration } from '../lib/store-hydration'
 import { THEME_STORAGE_KEY } from '../stores/themeStore'
 import appCss from '../styles/global.css?url'
@@ -50,6 +51,12 @@ export const Route = createRootRoute({
       // origin; makes the app installable + drives standalone launch.
       { rel: 'manifest', href: '/manifest.webmanifest' },
     ],
+    // Cookieless counter.dev analytics (story 10-1, FR28). Emitted here as a
+    // real SSR <script data-id> by <Scripts /> so counter.dev's
+    // `document.currentScript` data-id read works (a DOM-injected tag would be
+    // read as null). Omitted entirely when VITE_COUNTERDEV_ID is unset. See
+    // lib/analytics/counter.ts + ADR-005.
+    scripts: buildAnalyticsScripts(),
   }),
   component: RootComponent,
 })

@@ -23,4 +23,16 @@ describe('MSW external-service interception', () => {
     )
     await expect(res.json()).resolves.toMatchObject({ id: 'msw-mock-ad' })
   })
+
+  it('mocks the counter.dev analytics script asset (Story 10-1)', async () => {
+    const res = await fetch('https://cdn.counter.dev/script.js')
+    expect(res.status).toBe(204)
+  })
+
+  it('mocks the counter.dev /track + /trackpage beacons (Story 10-1)', async () => {
+    const track = await fetch('https://counter.dev/track')
+    expect(track.status).toBe(204)
+    const trackpage = await fetch('https://counter.dev/trackpage', { method: 'POST' })
+    expect(trackpage.status).toBe(204)
+  })
 })
