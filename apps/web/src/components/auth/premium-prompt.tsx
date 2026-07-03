@@ -26,6 +26,12 @@ export interface PremiumPromptProps {
   message?: string
   /** Whether to show as a dialog/modal */
   asDialog?: boolean
+  /**
+   * Where the upgrade call-to-action links. Defaults to `/login` (the shipped
+   * behavior). Story 7-2 passes `/pricing` from `PremiumFeatureGate` so the
+   * locked-feature CTA leads to the public value/pricing page (DECISION 2).
+   */
+  upgradeHref?: string
   /** Callback when user clicks upgrade */
   onUpgradeClick?: () => void
   /** Callback when user clicks close/dismiss */
@@ -72,14 +78,15 @@ export function PremiumPrompt({
   featureName,
   message = DEFAULT_MESSAGE,
   asDialog = false,
+  upgradeHref = '/login',
   onUpgradeClick,
   onClose,
 }: PremiumPromptProps): React.ReactElement {
-  const handleUpgradeClick = (e: React.MouseEvent) => {
-    e.preventDefault()
+  const handleUpgradeClick = () => {
+    // Navigation to `upgradeHref` is handled natively by the <Link>. This hook
+    // stays so callers can run side effects (e.g. analytics) on upgrade; it must
+    // NOT preventDefault, or the CTA would never navigate.
     onUpgradeClick?.()
-    // In production, this would redirect to Paddle checkout
-    // For now, we'll just show a message
   }
 
   const handleClose = (e: React.MouseEvent) => {
@@ -98,6 +105,7 @@ export function PremiumPrompt({
         <PremiumPromptContent
           featureName={featureName}
           message={message}
+          upgradeHref={upgradeHref}
           onUpgradeClick={handleUpgradeClick}
           onClose={handleClose}
         />
@@ -109,6 +117,7 @@ export function PremiumPrompt({
     <PremiumPromptContent
       featureName={featureName}
       message={message}
+      upgradeHref={upgradeHref}
       onUpgradeClick={handleUpgradeClick}
       onClose={handleClose}
     />
@@ -122,6 +131,7 @@ export function PremiumPrompt({
 interface PremiumPromptContentProps {
   featureName?: string
   message: string
+  upgradeHref: string
   onUpgradeClick: (e: React.MouseEvent) => void
   onClose: (e: React.MouseEvent) => void
 }
@@ -129,6 +139,7 @@ interface PremiumPromptContentProps {
 function PremiumPromptContent({
   featureName,
   message,
+  upgradeHref,
   onUpgradeClick,
   onClose,
 }: PremiumPromptContentProps): React.ReactElement {
@@ -184,7 +195,7 @@ function PremiumPromptContent({
       {/* CTA Button */}
       <div className="flex flex-col sm:flex-row gap-2">
         <Link
-          to="/login"
+          to={upgradeHref}
           className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow hover:bg-blue-700 transition-colors text-center"
           onClick={onUpgradeClick}
         >

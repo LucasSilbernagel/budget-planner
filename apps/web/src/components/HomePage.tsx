@@ -33,6 +33,7 @@ import { useFormattedAmount } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useCategoryDrillDown } from './finance/category-drill-down'
 import { TimePeriodFilter } from './finance/time-period-filter'
+import { PremiumFeatureGate } from './premium'
 import { CurrencyToggle } from './settings/currency-toggle'
 
 // Colors for the charts
@@ -728,6 +729,27 @@ export function HomePage() {
               </a>
             </div>
           </section>
+
+          {/* Premium features — discoverable but locked for free users (story
+              7-2, FR24). Paid users get the working link; everyone else sees the
+              feature with a lock badge and an upgrade prompt. Enforcement stays
+              server-side (the /forecasting loader + session gate). */}
+          <section className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Premium Features</h2>
+            <PremiumFeatureGate
+              featureName="Advanced Forecasting"
+              className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100"
+              locked={<PremiumFeatureLabel />}
+            >
+              <a
+                href="/forecasting"
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100"
+              >
+                <PremiumFeatureLabel />
+                <span className="text-sm font-medium text-blue-700 whitespace-nowrap">Open →</span>
+              </a>
+            </PremiumFeatureGate>
+          </section>
         </main>
 
         {/* The version and the "Report Issue / Feedback" link now live in the
@@ -735,5 +757,21 @@ export function HomePage() {
             own stopgap footer block. */}
       </div>
     </div>
+  )
+}
+
+/**
+ * Shared label for the Advanced Forecasting premium entry, rendered identically
+ * in both the unlocked (link) and locked (gate button) states so the two look
+ * the same apart from the lock badge the gate adds.
+ */
+function PremiumFeatureLabel(): React.ReactElement {
+  return (
+    <span className="flex flex-col">
+      <span className="font-medium text-gray-800">Advanced Forecasting</span>
+      <span className="text-sm text-gray-500">
+        Scenario modeling, projections, and saved forecasts
+      </span>
+    </span>
   )
 }
