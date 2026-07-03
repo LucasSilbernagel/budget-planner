@@ -2,9 +2,8 @@ import {
   type CurrencyCode,
   type CurrencyMode,
   type CurrencyOptions,
-  DEFAULT_LOCALE,
   formatCurrency as formatCurrencyCore,
-  resolveLocale,
+  localeForCurrency,
 } from '@budget-planner/core'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -13,23 +12,9 @@ import { persist } from 'zustand/middleware'
 interface CurrencyState {
   mode: CurrencyMode
   currency: CurrencyCode
-  /**
-   * BCP-47 locale that drives Intl.NumberFormat output in explicit-symbols mode
-   * (story 4-7). Always a supported locale code (see core `resolveLocale`).
-   */
-  locale: string
-  /**
-   * True once the user has explicitly chosen a locale. Browser auto-detection
-   * (see `detectBrowserLocale`) only applies while this is false, so a user's
-   * deliberate choice is never overwritten on a later visit.
-   */
-  localeUserSet: boolean
   setMode: (mode: CurrencyMode) => void
   setCurrency: (currency: CurrencyCode) => void
-  setLocale: (locale: string) => void
   toggleMode: () => void
-  /** Apply the browser's locale unless the user has set one explicitly. */
-  detectBrowserLocale: () => void
 }
 
 // Default values
@@ -38,27 +23,14 @@ interface CurrencyState {
 const DEFAULT_MODE: CurrencyMode = 'none'
 const DEFAULT_CURRENCY: CurrencyCode = 'NONE'
 
-/**
- * Reads the browser's preferred language without throwing on the server (SSR)
- * or in non-browser environments. Returns undefined when unavailable so the
- * caller can fall back to {@link DEFAULT_LOCALE}.
- */
-function readBrowserLocale(): string | undefined {
-  if (typeof navigator === 'undefined') return undefined
-  return navigator.languages?.[0] ?? navigator.language
-}
-
 export const useCurrencyStore = create<CurrencyState>()(
   persist(
-    (set, get) => ({
-      // Initial state. `locale` MUST be deterministic here (not navigator-derived):
-      // it is the value rendered on the server and on the first client paint, so
-      // a browser-derived default would cause a hydration mismatch. Detection
-      // happens after rehydration via detectBrowserLocale / onRehydrateStorage.
+    (set) => ({
+      // Initial state is fully deterministic (no navigator-derived values), so
+      // server and first client paint agree — no hydration mismatch. The display
+      // locale is derived from `currency` (see localeForCurrency), not stored.
       mode: DEFAULT_MODE,
       currency: DEFAULT_CURRENCY,
-      locale: DEFAULT_LOCALE,
-      localeUserSet: false,
 
       // Set currency display mode
       setMode: (mode) => {
@@ -70,46 +42,35 @@ export const useCurrencyStore = create<CurrencyState>()(
         set({ currency })
       },
 
-      // Set locale (explicit user choice). Normalized to a supported locale and
-      // flagged so auto-detection won't override it later.
-      setLocale: (locale) => {
-        set({ locale: resolveLocale(locale), localeUserSet: true })
-      },
-
       // Toggle between currency modes
       toggleMode: () => {
         set((state) => ({
           mode: state.mode === 'symbol' ? 'none' : 'symbol',
         }))
       },
-
-      // Apply the browser's locale as a sensible default, but never override an
-      // explicit user choice (story 4-7 Task 2: detect + allow override).
-      detectBrowserLocale: () => {
-        if (get().localeUserSet) return
-        // No-op when the environment exposes no locale (SSR / non-browser):
-        // resolveLocale(undefined) would otherwise clobber a good value with the
-        // en-US fallback.
-        const detected = readBrowserLocale()
-        if (!detected) return
-        set({ locale: resolveLocale(detected) })
-      },
     }),
     {
       name: 'budget-planner-currency-prefs-v1',
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
+      // v1 (Story 8-1): the locale dimension is gone — formatting is now derived
+      // from `currency`. Strip the obsolete locale/localeUserSet keys from any
+      // legacy persisted blob so it migrates cleanly to currency-driven formatting.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as { mode?: CurrencyMode; currency?: CurrencyCode }
+        // Coalesce per field: a corrupt/partial blob missing mode/currency must
+        // fall back to the deterministic defaults, not shallow-merge `undefined`
+        // over them (zustand's default merge spreads undefined keys).
+        return {
+          mode: state?.mode ?? DEFAULT_MODE,
+          currency: state?.currency ?? DEFAULT_CURRENCY,
+        }
+      },
       partialize: (state) => ({
         mode: state.mode,
         currency: state.currency,
-        locale: state.locale,
-        localeUserSet: state.localeUserSet,
       }),
-      // After client rehydration, auto-detect the browser locale for users who
-      // have not made an explicit choice. Runs once per rehydrate() call.
-      onRehydrateStorage: () => (state) => {
-        state?.detectBrowserLocale()
-      },
     }
   )
 )
@@ -119,13 +80,14 @@ export const useCurrencyMode = () => useCurrencyStore((state) => state.mode)
 
 export const useCurrencyCode = () => useCurrencyStore((state) => state.currency)
 
-export const useCurrencyLocale = () => useCurrencyStore((state) => state.locale)
-
 export const useCurrencyPreferences = () =>
   useCurrencyStore((state) => ({
     mode: state.mode,
     currency: state.currency,
-    locale: state.locale,
+    // Display locale is derived from the selected currency (story 8-1): a pure
+    // function of `currency`, so the returned shape stays { mode, currency, locale }
+    // and every downstream consumer keeps working unchanged.
+    locale: localeForCurrency(state.currency),
   }))
 
 // Helper to get formatted value based on current preferences

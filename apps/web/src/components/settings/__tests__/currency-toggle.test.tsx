@@ -4,21 +4,17 @@ import { useCurrencyStore } from '../../../stores/currencyStore'
 import { CurrencyToggle } from '../currency-toggle'
 
 /**
- * CurrencyToggle component tests (story 4-6, Task 4).
+ * CurrencyToggle component tests (story 4-6, Task 4; updated by story 8-1).
  *
  * Covers AC-1 (currency-less default), AC-2 (switching to explicit symbols and
- * choosing a currency). AC-3 persistence is provided by the store middleware
- * and covered at the store/integration level.
+ * choosing a currency). Since story 8-1 the currency selection alone drives
+ * formatting — there is no separate locale control. AC-3 persistence is provided
+ * by the store middleware and covered at the store/integration level.
  */
 describe('CurrencyToggle', () => {
   beforeEach(() => {
     // Reset the shared (singleton) store to its currency-less defaults.
-    useCurrencyStore.setState({
-      mode: 'none',
-      currency: 'NONE',
-      locale: 'en-US',
-      localeUserSet: false,
-    })
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
   })
 
   it('defaults to symbols off (currency-less) with no currency picker', () => {
@@ -79,30 +75,20 @@ describe('CurrencyToggle', () => {
     expect(screen.queryByRole('combobox', { name: /currency/i })).not.toBeInTheDocument()
   })
 
-  // --- Locale selector (story 4-7) ---
+  // --- No separate locale control (story 8-1) ---
 
-  it('shows a locale picker only in symbol mode', async () => {
+  it('never renders a locale selector, even in symbol mode', async () => {
     const user = userEvent.setup()
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     renderWithProviders(<CurrencyToggle />)
 
-    // currency-less default: no locale picker
+    // The currency select is present, but the retired Locale control is not.
+    expect(screen.getByRole('combobox', { name: /currency/i })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: /locale/i })).not.toBeInTheDocument()
 
+    // Toggling mode off and on must not resurrect it either.
     await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
-    expect(screen.getByRole('combobox', { name: /locale/i })).toBeInTheDocument()
-  })
-
-  it('reflects the current locale and updates the store on change', async () => {
-    const user = userEvent.setup()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR', locale: 'en-US' })
-    renderWithProviders(<CurrencyToggle />)
-
-    const localePicker = screen.getByRole('combobox', { name: /locale/i })
-    expect(localePicker).toHaveValue('en-US')
-
-    await user.selectOptions(localePicker, 'de-DE')
-
-    expect(useCurrencyStore.getState().locale).toBe('de-DE')
-    expect(useCurrencyStore.getState().localeUserSet).toBe(true)
+    await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
+    expect(screen.queryByRole('combobox', { name: /locale/i })).not.toBeInTheDocument()
   })
 })
