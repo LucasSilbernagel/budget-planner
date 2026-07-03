@@ -2,6 +2,7 @@ import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-r
 import type { ReactNode } from 'react'
 import { AdPlacement } from '../components/ads/AdPlacement'
 import { Footer } from '../components/layout/Footer'
+import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
 import { MetadataProvider } from '../context/metadata-context'
 import { StoreHydration } from '../lib/store-hydration'
@@ -13,18 +14,24 @@ export const Route = createRootRoute({
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
       { title: 'Budget Planner' },
+      // Drives the standalone titlebar color when installed as a PWA (story 7-1,
+      // AC-2). Matches the manifest theme_color and the accent green.
+      { name: 'theme-color', content: '#16a34a' },
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
       // Favicon set (story 6-5). Modern browsers pick the SVG; the .ico is the
       // legacy fallback and the sized PNGs cover browsers that ignore SVG icons.
       // The 512 maskable PNG is intentionally NOT linked here — it is consumed by
-      // the PWA manifest that story 7-1 will add.
+      // the PWA manifest (story 7-1) as a maskable icon, never as a favicon.
       { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
       { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16.png' },
       { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
       { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+      // PWA web app manifest (story 7-1). Served self-hosted from our own EU
+      // origin; makes the app installable + drives standalone launch.
+      { rel: 'manifest', href: '/manifest.webmanifest' },
     ],
   }),
   component: RootComponent,
@@ -46,6 +53,9 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body suppressHydrationWarning>
         <StoreHydration />
+        {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
+            (dynamic import in an effect), renders nothing. */}
+        <RegisterSW />
         {/* Mounts multi-device sync for authenticated paid sessions only
             (story 5-15): free/unauthenticated users get no service and no
             network. Renders nothing — pure wiring. */}

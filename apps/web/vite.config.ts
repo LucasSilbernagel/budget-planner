@@ -4,6 +4,13 @@ import { fileURLToPath } from 'url'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { VitePWA } from 'vite-plugin-pwa'
+import {
+  pwaGlobPatterns,
+  pwaManifest,
+  pwaNavigateFallbackDenylist,
+  pwaRuntimeCaching,
+} from './pwa.config.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -28,6 +35,39 @@ export default defineConfig({
       router: { routeFileIgnorePattern: '(__tests__|\\.(test|spec)\\.)' },
     }),
     viteReact(),
+    // Progressive Web App support (story 7-1). MUST be the LAST plugin so it sees
+    // the finished client graph. Here the plugin emits the web app manifest and
+    // serves the DEV service worker (devOptions); the PRODUCTION sw.js is emitted
+    // by scripts/generate-sw.mjs post-build, because under TanStack Start's
+    // multi-environment build the plugin's own generateSW step is gated out (see
+    // pwa.config.mjs). Both use the shared Workbox options so dev/prod match.
+    // The plugin is a DEV-ONLY dependency and everything it produces is static
+    // and self-hosted — no runtime third-party/US service, so NFR1/NFR2 hold.
+    VitePWA({
+      // A new build's service worker takes over automatically (skipWaiting +
+      // clientsClaim are implied by autoUpdate), so users never see a stale build
+      // and no manual "reload to update" prompt is needed (AC-4).
+      registerType: 'autoUpdate',
+      // This app has NO index.html — the document head is built from
+      // src/routes/__root.tsx. The plugin's default HTML injection has nothing to
+      // inject into, so disable it: the manifest <link> + theme-color <meta> are
+      // added manually in __root.tsx and the SW is registered via
+      // `virtual:pwa-register` in components/pwa/RegisterSW.tsx.
+      injectRegister: false,
+      strategies: 'generateSW',
+      manifestFilename: 'manifest.webmanifest',
+      workbox: {
+        globPatterns: pwaGlobPatterns,
+        runtimeCaching: pwaRuntimeCaching,
+        navigateFallbackDenylist: pwaNavigateFallbackDenylist,
+      },
+      manifest: pwaManifest,
+      // Emit the manifest + a dev SW under the Vite dev server too — Playwright
+      // boots `pnpm dev`, so without this the registration/manifest e2e would
+      // have nothing to assert against. Genuine offline/precache behavior only
+      // exists in a real build (see e2e/pwa.spec.ts offline note).
+      devOptions: { enabled: true, type: 'module' },
+    }),
   ],
   resolve: {
     // Array form so order is deterministic: more-specific `find`s must precede

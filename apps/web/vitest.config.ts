@@ -51,6 +51,13 @@ export default defineConfig({
         find: /^@budget-planner\/db/,
         replacement: resolve(__dirname, '../../packages/db/src'),
       },
+      // vite-plugin-pwa's virtual module is only provided by the app/build vite
+      // config, not the test runner. Point it at a spyable test double so the
+      // RegisterSW component test can render + assert registration (story 7-1).
+      {
+        find: 'virtual:pwa-register',
+        replacement: resolve(__dirname, './src/test/pwa-register-mock.ts'),
+      },
       { find: '@', replacement: resolve(__dirname, './src') },
     ],
   },

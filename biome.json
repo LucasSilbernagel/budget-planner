@@ -54,6 +54,7 @@
     "ignore": [
       "node_modules",
       "dist",
+      "dev-dist",
       ".pnpm-store",
       "pnpm-lock.yaml",
       "**/*.d.ts",

@@ -4,6 +4,9 @@ src/routeTree.gen.ts
 .nitro/
 .output/
 dist/
+# vite-plugin-pwa dev-mode service worker output (story 7-1); the production
+# service worker is emitted into dist/client/ by scripts/generate-sw.mjs.
+dev-dist/
 
 # Playwright e2e artifacts
 playwright-report/

@@ -32,6 +32,12 @@ beforeAll(async () => {
   // them with the correct image MIME type (contents are irrelevant here).
   await writeFile(join(clientDir, 'favicon-32.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
   await writeFile(join(clientDir, 'favicon.ico'), Buffer.from([0x00, 0x00, 0x01, 0x00]))
+  // PWA artifacts emitted by vite-plugin-pwa (story 7-1): the manifest must be
+  // served as application/manifest+json, and the service-worker scripts must not
+  // be long-cached (AC-1/AC-4).
+  await writeFile(join(clientDir, 'manifest.webmanifest'), '{"name":"Budget Planner"}')
+  await writeFile(join(clientDir, 'sw.js'), '/* service worker */')
+  await writeFile(join(clientDir, 'workbox-abc123.js'), '/* workbox runtime */')
 })
 
 afterAll(async () => {
@@ -73,6 +79,45 @@ describe('resolveStaticAsset', () => {
     expect(asset).not.toBeNull()
     expect(asset.contentType).toBe('image/x-icon')
     expect(asset.cacheControl).toBe('public, max-age=3600')
+  })
+
+  it('serves the PWA manifest as application/manifest+json (story 7-1)', async () => {
+    const asset = await resolveStaticAsset('/manifest.webmanifest', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.contentType).toBe('application/manifest+json')
+    // A plain root file — short cache, not the SW no-cache treatment.
+    expect(asset.cacheControl).toBe('public, max-age=3600')
+  })
+
+  it('serves the service worker (/sw.js) with no-cache so redeploys are not stale (AC-4)', async () => {
+    const asset = await resolveStaticAsset('/sw.js', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.contentType).toBe('text/javascript; charset=utf-8')
+    expect(asset.cacheControl).toBe('no-cache')
+  })
+
+  it('serves the Workbox runtime (/workbox-*.js) with no-cache (AC-4)', async () => {
+    const asset = await resolveStaticAsset('/workbox-abc123.js', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.cacheControl).toBe('no-cache')
+  })
+
+  it('keeps hashed /assets/* immutable even for a .js like sw.js name', async () => {
+    // The no-cache rule is root-scoped: a hashed chunk under /assets stays
+    // immutable (never matched as a service worker).
+    const asset = await resolveStaticAsset('/assets/app-abc123.js', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.cacheControl).toBe('public, max-age=31536000, immutable')
+  })
+
+  it('classifies cache-control from the resolved file, not the raw pathname (encoded-slash)', async () => {
+    // `/assets/..%2fsw.js` decodes+normalizes to sw.js on disk. Cache-control must
+    // follow the resolved file (no-cache for the SW), not the raw `/assets/` prefix
+    // — otherwise the service worker could be served immutable and defeat AC-4.
+    const asset = await resolveStaticAsset('/assets/..%2fsw.js', clientDir)
+    expect(asset).not.toBeNull()
+    expect(asset.contentType).toBe('text/javascript; charset=utf-8')
+    expect(asset.cacheControl).toBe('no-cache')
   })
 
   it('rejects path traversal escaping the client dir', async () => {

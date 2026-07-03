@@ -18,7 +18,7 @@
 
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { extname, join, normalize, sep } from 'node:path'
+import { extname, join, normalize, relative, sep } from 'node:path'
 import { Readable, pipeline } from 'node:stream'
 
 /**
@@ -47,6 +47,10 @@ const CONTENT_TYPES = {
   '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
   '.wasm': 'application/wasm',
+  // PWA web app manifest (story 7-1). Browsers reject the manifest unless it is
+  // served as JSON/manifest+json; without this it would fall back to
+  // application/octet-stream and the install prompt would never appear.
+  '.webmanifest': 'application/manifest+json',
 }
 
 /**
@@ -55,6 +59,36 @@ const CONTENT_TYPES = {
  */
 function contentTypeFor(ext) {
   return CONTENT_TYPES[ext.toLowerCase()] ?? 'application/octet-stream'
+}
+
+/**
+ * Root-level service-worker scripts emitted by vite-plugin-pwa / Workbox
+ * (`/sw.js` and the `/workbox-<hash>.js` runtime). These must NOT be pinned by a
+ * long cache: a stale service worker can otherwise keep an old build alive and
+ * defeat the auto-update / no-stale-build guarantee (story 7-1, AC-4). Matched
+ * at the client root only — hashed `/assets/*` chunks stay immutable.
+ *
+ * @param {string} pathname URL pathname
+ * @returns {boolean}
+ */
+function isServiceWorkerScript(pathname) {
+  return pathname === '/sw.js' || /^\/workbox-[^/]+\.js$/.test(pathname)
+}
+
+/**
+ * Resolve the Cache-Control header for a static asset path.
+ *
+ * @param {string} pathname URL pathname
+ * @returns {string}
+ */
+function cacheControlFor(pathname) {
+  if (isServiceWorkerScript(pathname)) {
+    // Always revalidate so a redeploy's new SW is picked up promptly (AC-4).
+    return 'no-cache'
+  }
+  return pathname.startsWith('/assets/')
+    ? 'public, max-age=31536000, immutable'
+    : 'public, max-age=3600'
 }
 
 /**
@@ -103,9 +137,15 @@ export async function resolveStaticAsset(pathname, clientDir) {
     return null
   }
 
-  const cacheControl = pathname.startsWith('/assets/')
-    ? 'public, max-age=31536000, immutable'
-    : 'public, max-age=3600'
+  // Classify cache-control from the RESOLVED path (relative to the client root),
+  // never the raw request pathname. An encoded-slash request like
+  // `/assets/..%2fsw.js` decodes+normalizes to `sw.js` on disk, but its raw
+  // pathname still starts with `/assets/` — classifying off that would mis-tag the
+  // service worker as `immutable` and defeat the AC-4 no-stale guarantee for any
+  // shared/CDN cache. Deriving from `candidate` keeps the header consistent with
+  // the bytes actually served.
+  const resolvedPathname = `/${relative(root, candidate).split(sep).join('/')}`
+  const cacheControl = cacheControlFor(resolvedPathname)
 
   return {
     filePath: candidate,

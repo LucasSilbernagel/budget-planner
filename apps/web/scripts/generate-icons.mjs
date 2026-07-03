@@ -73,11 +73,17 @@ async function main() {
   const svg = await readFile(sourcePath)
 
   // Standard square PNGs used by browser tabs and the iOS home screen.
+  // pwa-192/pwa-512 are the `any`-purpose PWA manifest icons (story 7-1): Chrome
+  // and Android require a plain 192 and 512 icon for installability, distinct
+  // from the maskable 512 below. They keep their alpha (transparent corners) —
+  // NOT opaque and NOT the maskable safe-zone treatment.
   const squarePngs = [
     { size: 16, name: 'favicon-16.png' },
     { size: 32, name: 'favicon-32.png' },
     // apple-touch must be opaque — iOS composites transparency onto black.
     { size: 180, name: 'apple-touch-icon.png', opaque: true },
+    { size: 192, name: 'pwa-192.png' },
+    { size: 512, name: 'pwa-512.png' },
   ]
   for (const { size, name, opaque } of squarePngs) {
     await writeFile(join(publicDir, name), await renderPng(svg, size, { opaque }))
@@ -102,7 +108,7 @@ async function main() {
   await writeFile(join(publicDir, 'favicon.ico'), ico)
 
   process.stdout.write(
-    'Generated favicon-16.png, favicon-32.png, apple-touch-icon.png, icon-512-maskable.png, favicon.ico\n'
+    'Generated favicon-16.png, favicon-32.png, apple-touch-icon.png, pwa-192.png, pwa-512.png, icon-512-maskable.png, favicon.ico\n'
   )
 }
 
