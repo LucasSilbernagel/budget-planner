@@ -1,13 +1,13 @@
 import { APP_VERSION } from '../../utils/version'
 import { ThemeToggle } from '../settings/theme-toggle'
-import { FeedbackLink } from './FeedbackLink'
 
 /**
- * Global application footer (story 4-8, FR13 / UX-DR5; story 4-9, FR14 / UX-DR6;
+ * Global application footer (story 4-8, FR13 / UX-DR5; story 9-1, FR27;
  * story 5-13 compliance links).
  *
  * Renders once at the root layout so the application version, the in-app
- * "Documentation" link (story 4-10), the GitHub "Report Issue / Feedback" link,
+ * "Documentation" link (story 4-10), the in-app "Contact" link (story 9-1,
+ * which replaced the old GitHub feedback link from story 4-9),
  * AND the Paddle-required compliance pages (Pricing, Terms, Privacy, Refund —
  * story 5-13) are available on every page. The version comes from `APP_VERSION`,
  * which is inlined at build time from package.json, so it updates automatically
@@ -62,14 +62,19 @@ export function Footer() {
         >
           Refund Policy
         </a>
-        <FeedbackLink />
+        <a
+          href="/contact"
+          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          Contact
+        </a>
         {/* Copyright notice (story 6-9). The year is computed at render time so
             it stays correct year over year (AC-1) rather than being hardcoded.
             "Copyright <year>" and the author link are grouped in one <span>; it
             wraps as a unit against the other footer items, though the internal
             space may itself break at very narrow widths (still graceful, AC-5).
-            The external author link follows the established FeedbackLink
-            convention (target/rel + an aria-label ending in "(opens in a new
+            The external author link follows the app's new-tab link convention
+            (target/rel + an aria-label ending in "(opens in a new
             tab)"). suppressHydrationWarning covers the negligible case where an
             SSR render and client hydration straddle New Year midnight and the
             year differs — the value still updates, this just silences the warning. */}

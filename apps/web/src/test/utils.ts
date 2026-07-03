@@ -43,7 +43,7 @@ export function renderWithProviders(
  * Components that read the current location (e.g. via `useLocation`) need a
  * router in scope. This builds a throwaway in-memory router whose root route
  * renders `ui`, with `path` seeding the initial location so tests can assert
- * location-derived output (story 4-9 FeedbackLink, etc.).
+ * location-derived output.
  */
 export function renderWithRouter(
   ui: ReactElement,

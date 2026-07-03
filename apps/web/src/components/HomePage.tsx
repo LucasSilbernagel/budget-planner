@@ -770,9 +770,10 @@ export function HomePage() {
           </section>
         </main>
 
-        {/* The version and the "Report Issue / Feedback" link now live in the
-            global <Footer> (story 4-8 + 4-9), so the page no longer renders its
-            own stopgap footer block. */}
+        {/* The version and the in-app "Contact" link now live in the global
+            <Footer> (story 4-8; story 9-1 replaced the old GitHub feedback link
+            from story 4-9), so the page no longer renders its own stopgap
+            footer block. */}
       </div>
     </div>
   )

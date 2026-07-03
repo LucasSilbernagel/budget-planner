@@ -14,6 +14,17 @@
 import { http, HttpResponse } from 'msw'
 
 export const handlers = [
+  // --- Formspark (submit-form.com): contact-form submissions (Story 9-1) ---
+  // The contact form POSTs client-side to https://submit-form.com/{FORM_ID}.
+  // Intercepted so no real submission happens in CI and onUnhandledRequest:'error'
+  // does not trip; per-test handlers override to assert the posted payload.
+  // NOTE: Formspark stores in Ireland (EU) but its subprocessor AWS is US-owned —
+  // the one documented, scoped NFR1/NFR2 exception (free-text feedback only, no
+  // financial data). See ADR-004.
+  http.post(/^https?:\/\/submit-form\.com\//, () =>
+    HttpResponse.json({ success: true }, { status: 200 })
+  ),
+
   // --- Brevo (Sendinblue, EU/France): transactional email send (Story 5-16) ---
   // Magic-link emails go through Brevo's EU endpoint. Intercepted here so no
   // real send happens in CI (NFR8); per-test handlers override to assert payloads.

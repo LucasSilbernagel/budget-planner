@@ -13,7 +13,13 @@ declare const __APP_VERSION__: string
  * `ImportMetaEnv` so `import.meta.env.VITE_ETHICALADS_PUBLISHER_ID` is typed.
  * The EthicalAds publisher id is a public identifier; it is intentionally
  * shipped to the client bundle.
+ *
+ * `VITE_FORMSPARK_FORM_ID` (story 9-1) is likewise a *public* identifier — the
+ * Formspark form id ships in client HTML on the submit URL by design, so it is
+ * not a secret. When unset (local dev / before the Formspark form exists) the
+ * contact form degrades gracefully rather than posting to an undefined endpoint.
  */
 interface ImportMetaEnv {
   readonly VITE_ETHICALADS_PUBLISHER_ID?: string
+  readonly VITE_FORMSPARK_FORM_ID?: string
 }

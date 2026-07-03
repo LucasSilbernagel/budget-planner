@@ -21,12 +21,12 @@ vi.mock('../../../hooks/usePremiumAccess', () => ({
 import { Footer } from '../Footer'
 
 /**
- * Footer component tests (story 4-8, AC-1; story 4-9, AC-1; story 7-3 toggle).
+ * Footer component tests (story 4-8, AC-1; story 9-1, AC-1; story 7-3 toggle).
  *
  * Covers: the footer renders as an accessible landmark, displays the
- * application version sourced from package.json, and exposes the global
- * "Report Issue / Feedback" link on every page. Rendered within a router since
- * the embedded FeedbackLink reads the current location.
+ * application version sourced from package.json, and exposes the global in-app
+ * "Contact" link on every page (story 9-1, which replaced the old GitHub
+ * feedback link). Rendered within a router since footer links resolve routes.
  */
 describe('Footer', () => {
   it('renders a contentinfo landmark', async () => {
@@ -46,11 +46,19 @@ describe('Footer', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the global feedback link', async () => {
+  it('renders the global in-app contact link (story 9-1)', async () => {
     renderWithRouter(<Footer />)
+    const link = await screen.findByRole('link', { name: /^contact$/i })
+    expect(link).toHaveAttribute('href', '/contact')
+  })
+
+  it('no longer exposes the old GitHub feedback link (story 9-1)', async () => {
+    renderWithRouter(<Footer />)
+    // Wait for the async footer content, then assert the removed affordance is gone.
+    await screen.findByRole('contentinfo')
     expect(
-      await screen.findByRole('link', { name: /report an issue or share feedback/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('link', { name: /report an issue or share feedback/i })
+    ).not.toBeInTheDocument()
   })
 
   it('renders the global documentation link (story 4-10)', async () => {
