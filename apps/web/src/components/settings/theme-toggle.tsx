@@ -16,8 +16,9 @@ import { PremiumFeatureGate } from '../premium'
  * - loading (SSR + first client paint) → the gate's neutral skeleton; the live
  *   switch is never rendered until the tier resolves (fail-closed).
  *
- * Placement: a single instance in the global {@link Footer} (DECISION 2), which
- * sidesteps 7-2's deferred single-open-`Modal` limitation.
+ * Placement: a single instance on the consolidated `/settings` surface (story
+ * 11-6; relocated from the global {@link Footer}). Keeping exactly one instance
+ * (DECISION 2) sidesteps 7-2's deferred single-open-`Modal` limitation.
  */
 export interface ThemeToggleProps {
   /** Extra classes for the control (e.g. layout/spacing from the host). */

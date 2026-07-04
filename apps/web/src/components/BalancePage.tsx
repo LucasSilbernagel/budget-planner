@@ -8,7 +8,6 @@ import {
 } from '../stores'
 import type { FinanceType } from '../stores/balanceStore'
 import { useFormattedAmount } from '../stores/currencyStore'
-import { CurrencyToggle } from './settings/currency-toggle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
@@ -233,12 +232,11 @@ export function BalancePage() {
   return (
     <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <header className="mb-8">
           <div>
             <h1 className="font-bold text-heading text-3xl">Balance Tracking</h1>
             <p className="mt-2 text-body">Monitor your investments and debts</p>
           </div>
-          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

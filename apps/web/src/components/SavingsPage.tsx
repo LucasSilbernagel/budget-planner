@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
-import { CurrencyToggle } from './settings/currency-toggle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
@@ -170,12 +169,11 @@ export function SavingsPage() {
   return (
     <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
-        <header className="flex flex-wrap justify-between items-start gap-4 mb-8">
+        <header className="mb-8">
           <div>
             <h1 className="font-bold text-heading text-3xl">Savings Goals</h1>
             <p className="mt-2 text-body">Track and manage your savings targets</p>
           </div>
-          <CurrencyToggle className="flex-shrink-0 mt-1" />
         </header>
 
         <main className="space-y-6">

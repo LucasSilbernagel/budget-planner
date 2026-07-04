@@ -44,6 +44,19 @@ test('marks the current section active and leaves others inactive', async ({ pag
   await expect(nav.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current')
 })
 
+test('reaches the consolidated settings surface from the nav', async ({ page }) => {
+  await page.goto('/income')
+  await page.waitForLoadState('networkidle')
+
+  const nav = page.getByRole('navigation', { name: 'Primary' })
+  await nav.getByRole('link', { name: 'Settings' }).click()
+  await expect(page).toHaveURL(/\/settings$/)
+
+  // The settings surface hosts the relocated display controls (story 11-6).
+  await expect(page.getByRole('heading', { name: /^settings$/i })).toBeVisible()
+  await expect(page.getByRole('group', { name: /currency display/i })).toBeVisible()
+})
+
 test('stays usable at a narrow mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await page.goto('/expenses')

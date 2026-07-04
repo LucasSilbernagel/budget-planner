@@ -34,7 +34,6 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { useCategoryDrillDown } from './finance/category-drill-down'
 import { TimePeriodFilter } from './finance/time-period-filter'
 import { PremiumFeatureGate } from './premium'
-import { CurrencyToggle } from './settings/currency-toggle'
 
 // Colors for the charts
 const INCOME_COLOR = '#10B981'
@@ -346,14 +345,13 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Budget Planner</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
               Track your income and expenses with ease
             </p>
           </div>
-          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">
