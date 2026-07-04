@@ -44,9 +44,11 @@ test('AC-4: a persisted dark theme is applied before hydration (no flash of ligh
 test('AC-3: a free visitor sees the dark-mode toggle locked and the app stays light', async ({
   page,
 }) => {
-  await page.goto('/')
+  // The dark-mode toggle now lives on the consolidated settings surface
+  // (story 11-6), relocated from the global footer.
+  await page.goto('/settings')
 
-  // The footer toggle resolves to the locked control for a free/unauthenticated
+  // The settings toggle resolves to the locked control for a free/unauthenticated
   // user (after the in-flight tier check's neutral skeleton).
   const lockedToggle = page.getByRole('button', { name: /dark mode — premium, locked/i })
   await expect(lockedToggle).toBeVisible()

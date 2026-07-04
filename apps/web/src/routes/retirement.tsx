@@ -3,7 +3,6 @@ import React from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import RetirementForm from '../components/RetirementForm'
 import RetirementTimelineChart from '../components/RetirementTimelineChart'
-import { CurrencyToggle } from '../components/settings/currency-toggle'
 
 export const Route = createFileRoute('/retirement')({
   component: RetirementPage,
@@ -29,14 +28,13 @@ function RetirementPage() {
       <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <header className="mb-12 flex flex-wrap items-start justify-between gap-4">
+          <header className="mb-12">
             <div>
               <h1 className="text-4xl font-bold text-gray-900 mb-4">Retirement Planner</h1>
               <p className="text-xl text-gray-600">
                 Calculate if your investment assets can safely yield your desired retirement income.
               </p>
             </div>
-            <CurrencyToggle className="mt-2 flex-shrink-0" />
           </header>
 
           {/* Main Content Grid */}
