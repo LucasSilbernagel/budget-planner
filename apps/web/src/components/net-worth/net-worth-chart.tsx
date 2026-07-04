@@ -328,7 +328,7 @@ export function NetWorthChartEmptyState() {
           Add Expenses
         </a>
         <a
-          href="/balance-tracking"
+          href="/balance"
           className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-md transition-colors"
         >
           Add Assets

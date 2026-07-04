@@ -2,7 +2,7 @@
  * Pure client-side validation for the in-app contact form (story 9-1, AC-2).
  *
  * Mirrors the app's established inline field-level error pattern (see
- * {@link AddSavingsGoalForm} / `validateSavingsGoal`): a pure function that
+ * `validateSavingsGoal` in @budget-planner/core): a pure function that
  * takes the raw field values and returns an array of `{ field, message }`
  * errors (empty when valid), so the component can drive `aria-invalid`,
  * `aria-describedby`, and `role="alert"` output without any `alert()` popups
