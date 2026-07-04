@@ -1,3 +1,4 @@
+import { AccountSection } from './account-section'
 import { CurrencyToggle } from './currency-toggle'
 import { ThemeToggle } from './theme-toggle'
 
@@ -57,6 +58,11 @@ export function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* Account controls (sign-out + self-serve deletion) — story 10-5.
+          Renders only for authenticated users; free/unauthenticated visitors
+          see just the Display section above. */}
+      <AccountSection />
     </div>
   )
 }
