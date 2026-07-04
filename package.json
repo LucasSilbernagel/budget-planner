@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Budget Planner - Personal finance tracking application",
   "private": true,
+  "packageManager": "pnpm@10.34.3",
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
