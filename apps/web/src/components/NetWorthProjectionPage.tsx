@@ -12,7 +12,6 @@ import {
 } from 'recharts'
 import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
-import { CurrencyToggle } from './settings/currency-toggle'
 
 // Calculate initial net worth from current data
 function calculateInitialNetWorth(
@@ -114,14 +113,13 @@ export function NetWorthProjectionPage() {
   return (
     <div className="bg-gray-50 p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
-        <header className="flex flex-wrap justify-between items-start gap-4 mb-8">
+        <header className="mb-8">
           <div>
             <h1 className="font-bold text-gray-900 text-3xl">Net Worth Projection</h1>
             <p className="mt-2 text-gray-600">
               Visualize your financial future based on current data
             </p>
           </div>
-          <CurrencyToggle className="flex-shrink-0 mt-1" />
         </header>
 
         <main className="space-y-6">

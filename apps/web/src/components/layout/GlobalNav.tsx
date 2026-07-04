@@ -28,7 +28,14 @@ import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
  */
 
 /** Registered route paths the nav links to — a subset of the app's route tree. */
-type NavPath = '/' | '/income' | '/expenses' | '/savings' | '/balance' | '/net-worth-projection'
+type NavPath =
+  | '/'
+  | '/income'
+  | '/expenses'
+  | '/savings'
+  | '/balance'
+  | '/net-worth-projection'
+  | '/settings'
 
 interface NavItem {
   label: string
@@ -47,6 +54,10 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Savings', to: '/savings' },
   { label: 'Balance', to: '/balance' },
   { label: 'Projections', to: '/net-worth-projection' },
+  // Consolidated settings surface (story 11-6): the single home for the currency
+  // and premium-gated dark-mode controls that used to be scattered across page
+  // headers and the footer.
+  { label: 'Settings', to: '/settings' },
 ]
 
 export function GlobalNav() {
@@ -87,8 +98,9 @@ export function GlobalNav() {
       {/* `flex-wrap`: SSR + the first client render always emit this top bar
           (useIsNarrowViewport is false until after mount), so on a phone it is
           briefly visible before hydration swaps in the bottom bar. Without
-          wrapping, the six items overflow a 320px viewport and push the document
-          wider than the screen during that flash. Wrapping keeps it contained. */}
+          wrapping, the seven items overflow a 320px viewport and push the
+          document wider than the screen during that flash. Wrapping keeps it
+          contained. */}
       <ul className="mx-auto flex max-w-6xl flex-wrap gap-1 px-4 py-2">
         {NAV_ITEMS.map((item) => (
           <li key={item.to}>

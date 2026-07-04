@@ -15,8 +15,8 @@ import { useCurrencyStore } from '../../stores/currencyStore'
  *
  * Preference is held in the global, localStorage-persisted currency store, so a
  * single instance controls formatting across the whole app and the choice
- * survives navigation (AC-3). The component is self-contained and reusable, so
- * it can be dropped into any page header.
+ * survives navigation (AC-3). Since story 11-6 this single instance lives on the
+ * consolidated `/settings` surface rather than in each page header.
  */
 
 // 'NONE' is the currency-less sentinel; it is not a selectable symbol currency.
@@ -62,7 +62,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
       // (≤320px) widths instead of growing to its single-line max-content width.
       className={`flex max-w-full flex-wrap items-center gap-3 ${className ?? ''}`.trim()}
     >
-      <span id={labelId} className="text-sm font-medium text-gray-700">
+      <span id={labelId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
         Currency symbols
       </span>
 
@@ -73,7 +73,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
         aria-labelledby={labelId}
         onClick={handleToggle}
         className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-          symbolsOn ? 'bg-blue-600' : 'bg-gray-300'
+          symbolsOn ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
         }`}
       >
         <span
@@ -85,13 +85,13 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
       </button>
 
       {symbolsOn && (
-        <label className="flex items-center gap-1 text-sm text-gray-700">
+        <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
           <span className="sr-only">Currency</span>
           <select
             aria-label="Currency"
             value={currency === 'NONE' ? 'USD' : currency}
             onChange={handleCurrencyChange}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
           >
             {SELECTABLE_CURRENCIES.map((code: string) => (
               <option key={code} value={code}>

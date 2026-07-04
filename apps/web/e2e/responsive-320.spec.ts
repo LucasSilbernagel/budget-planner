@@ -33,6 +33,7 @@ const ROUTES = [
   '/net-worth-projection',
   '/retirement',
   '/forecasting',
+  '/settings',
   '/profiles',
   '/login',
   '/pricing',
@@ -63,8 +64,9 @@ test.describe('no horizontal overflow at 320px', () => {
       const response = await page.goto(route)
       expect(response?.ok(), `expected ${route} to load`).toBeTruthy()
 
-      // Allow the client bundle to hydrate so client-only layout (charts,
-      // currency toggle controls) is measured, not just the SSR markup.
+      // Allow the client bundle to hydrate so client-only layout (charts, the
+      // settings controls, currency-formatted figures) is measured, not just the
+      // SSR markup.
       await page.waitForLoadState('networkidle')
 
       // Guard against a spurious pass: a route that hydrates blank or to an
@@ -80,7 +82,9 @@ test.describe('no horizontal overflow at 320px', () => {
   // its empty state. This seeds free-tier data (localStorage only, no auth) so
   // the data-dependent widgets — the Recharts pie/bar charts and the large
   // `text-2xl` overview figures — actually render, then re-checks overflow with
-  // the currency symbols turned on (the widest CurrencyToggle state).
+  // the currency symbols turned on (the widest currency-formatted figures). It
+  // also visits /settings, where the CurrencyToggle now lives (story 11-6), to
+  // guard its widest control layout (currency select revealed in symbol mode).
   //
   // It deliberately seeds MANY distinct expense/income categories so the pie
   // renders many slices: that is the path where the narrow-viewport change
@@ -171,5 +175,15 @@ test.describe('no horizontal overflow at 320px', () => {
       }
     })
     expect(clip.ok, `pie legend clips its container: ${JSON.stringify(clip)}`).toBeTruthy()
+
+    // The CurrencyToggle's widest layout (currency <select> revealed in symbol
+    // mode) now lives on /settings, not the page headers. The seeded symbol-mode
+    // preference persists across this navigation, so this exercises that widest
+    // control state at 320px.
+    const settingsResponse = await page.goto('/settings')
+    expect(settingsResponse?.ok()).toBeTruthy()
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('combobox', { name: /currency/i })).toBeVisible()
+    await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/settings (symbol mode)')
   })
 })

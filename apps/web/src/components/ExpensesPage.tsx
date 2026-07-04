@@ -2,7 +2,6 @@ import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
-import { CurrencyToggle } from './settings/currency-toggle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
@@ -169,12 +168,11 @@ export function ExpensesPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
             <p className="text-gray-600 mt-2">Track and categorize your spending</p>
           </div>
-          <CurrencyToggle className="mt-1 flex-shrink-0" />
         </header>
 
         <main className="space-y-6">

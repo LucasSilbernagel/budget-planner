@@ -29,6 +29,7 @@ const SECTIONS: readonly [label: RegExp, href: string][] = [
   [/^savings$/i, '/savings'],
   [/^balance$/i, '/balance'],
   [/^projections$/i, '/net-worth-projection'],
+  [/^settings$/i, '/settings'],
 ]
 
 describe('GlobalNav', () => {
@@ -46,7 +47,7 @@ describe('GlobalNav', () => {
     expect(link).toHaveAttribute('href', href)
   })
 
-  it('exposes exactly the six top-level sections (no premium entry in the nav)', async () => {
+  it('exposes exactly the seven top-level sections (no premium entry in the nav)', async () => {
     const { GlobalNav } = await import('../GlobalNav')
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
