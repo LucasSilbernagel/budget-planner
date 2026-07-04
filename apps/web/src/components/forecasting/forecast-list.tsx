@@ -220,11 +220,11 @@ export function ForecastList({
         <h2
           ref={headingRef}
           tabIndex={-1}
-          className="text-2xl font-bold text-gray-800 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="text-2xl font-bold text-subheading rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           My Saved Forecasts
         </h2>
-        <p className="text-gray-500 mt-1">Manage your saved forecasting scenarios</p>
+        <p className="text-muted mt-1">Manage your saved forecasting scenarios</p>
       </div>
 
       {/* Empty State */}
@@ -232,7 +232,7 @@ export function ForecastList({
 
       {/* Toolbar */}
       {forecasts.length > 0 && (
-        <div className="bg-gray-50 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="surface-inset rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
           {/* Search */}
           <div className="flex-1 min-w-[200px]">
             <label htmlFor="search" className="sr-only">
@@ -246,7 +246,7 @@ export function ForecastList({
                 placeholder="Search forecasts..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
@@ -254,7 +254,7 @@ export function ForecastList({
           {/* Selection Info */}
           <div className="flex items-center gap-4">
             {selectedCount > 0 && (
-              <span className="text-sm text-gray-600">{selectedCount} selected</span>
+              <span className="text-sm text-body">{selectedCount} selected</span>
             )}
 
             {/* Bulk Actions */}
@@ -262,7 +262,7 @@ export function ForecastList({
               type="button"
               onClick={handleBulkDelete}
               disabled={selectedCount === 0}
-              className="px-4 py-2 bg-red-100 text-red-600 text-sm font-medium rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 text-sm font-medium rounded-lg hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Delete Selected
             </button>
@@ -272,68 +272,68 @@ export function ForecastList({
 
       {/* Table */}
       {filteredForecasts.length > 0 && (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-x-auto">
+        <div className="surface rounded-xl shadow-lg border border-default overflow-x-auto">
           {/* Table Header */}
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="surface-inset">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   <input
                     type="checkbox"
                     checked={selectedCount === totalCount && totalCount > 0}
                     onChange={toggleAllSelection}
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
                     aria-label="Select all"
                   />
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   <button
                     type="button"
-                    className="flex items-center uppercase cursor-pointer hover:text-gray-700"
+                    className="flex items-center uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
                     onClick={() => toggleSortDirection('name')}
                   >
                     Name
                     <span className="ml-1">{getSortIndicator('name')}</span>
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   Description
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   <button
                     type="button"
-                    className="flex items-center uppercase cursor-pointer hover:text-gray-700"
+                    className="flex items-center uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
                     onClick={() => toggleSortDirection('date')}
                   >
                     Created
                     <span className="ml-1">{getSortIndicator('date')}</span>
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   <button
                     type="button"
-                    className="flex items-center uppercase cursor-pointer hover:text-gray-700"
+                    className="flex items-center uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
                     onClick={() => toggleSortDirection('netWorth')}
                   >
                     Ending Net Worth
                     <span className="ml-1">{getSortIndicator('netWorth')}</span>
                   </button>
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
 
             {/* Table Body */}
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
               {filteredForecasts.map((forecast) => (
                 // biome-ignore lint/a11y/useKeyWithClickEvents: row click is a pointer convenience; keyboard users select via the per-row aria-labeled checkbox in the first cell.
                 <tr
                   key={forecast.id}
                   onClick={() => toggleSelection(forecast.id)}
-                  className={`cursor-pointer hover:bg-gray-50 transition-colors ${
-                    selectedIds.has(forecast.id) ? 'bg-blue-50' : ''
+                  className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors ${
+                    selectedIds.has(forecast.id) ? 'bg-blue-50 dark:bg-blue-950/40' : ''
                   }`}
                 >
                   {/* Selection */}
@@ -343,37 +343,37 @@ export function ForecastList({
                       checked={selectedIds.has(forecast.id)}
                       onChange={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
                       aria-label={`Select ${forecast.name}`}
                     />
                   </td>
 
                   {/* Name */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-800">
+                    <div className="text-sm font-medium text-subheading">
                       {truncate(forecast.name, 40)}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">v{forecast.version ?? 1}</div>
+                    <div className="text-xs text-muted mt-1">v{forecast.version ?? 1}</div>
                   </td>
 
                   {/* Description */}
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-600">
+                    <div className="text-sm text-body">
                       {truncate(forecast.description || 'No description', 60)}
                     </div>
                   </td>
 
                   {/* Created Date */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-600">{formatDate(forecast.createdAt)}</div>
+                    <div className="text-sm text-body">{formatDate(forecast.createdAt)}</div>
                   </td>
 
                   {/* Ending Net Worth */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-semibold text-gray-800">
+                    <div className="text-sm font-semibold text-subheading">
                       {formatCurrency(forecast.result.summary.endingNetWorth)}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-muted mt-1">
                       +{formatCurrency(forecast.result.summary.totalGrowth)}
                     </div>
                   </td>
@@ -388,7 +388,7 @@ export function ForecastList({
                             e.stopPropagation()
                             handleLoad(forecast)
                           }}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors"
                           title="Load"
                         >
                           <LoadIcon className="w-4 h-4" />
@@ -397,7 +397,7 @@ export function ForecastList({
                       <button
                         type="button"
                         onClick={(e) => handleDelete(forecast.id, e)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
                         title="Delete"
                       >
                         <DeleteIcon className="w-4 h-4" />
@@ -413,7 +413,7 @@ export function ForecastList({
 
       {/* Results Count */}
       {forecasts.length > 0 && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted">
           Showing {filteredForecasts.length} of {forecasts.length} forecasts
           {searchQuery && ` (filtered by "${searchQuery}")`}
         </p>
@@ -444,15 +444,15 @@ export function ForecastList({
  */
 function EmptyState(): React.ReactElement {
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-12 text-center">
-      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    <div className="surface rounded-xl shadow-lg border border-default p-12 text-center">
+      <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
         <FolderIcon className="w-8 h-8 text-gray-400" />
       </div>
-      <h3 className="text-lg font-semibold text-gray-800 mb-2">No Saved Forecasts</h3>
-      <p className="text-gray-500 text-sm mb-4">
+      <h3 className="text-lg font-semibold text-subheading mb-2">No Saved Forecasts</h3>
+      <p className="text-muted text-sm mb-4">
         Create and save your first forecasting scenario to get started.
       </p>
-      <p className="text-gray-400 text-xs">
+      <p className="text-faint text-xs">
         Saved forecasts are stored securely in DanubeData (Germany - EU)
       </p>
     </div>
