@@ -31,10 +31,10 @@ permissions:
   contents: read
 
 env:
-  # Pin toolchain to match local dev: .nvmrc (Node 20, engines >=20.12.0) and
-  # pnpm 7 (pnpm-lock.yaml is lockfileVersion 5.4).
+  # Pin Node to match local dev: .nvmrc (Node 20, engines >=20.12.0).
+  # pnpm version is NOT pinned here - it comes from the `packageManager` field
+  # in package.json (pnpm@10.34.3), which pnpm/action-setup reads automatically.
   NODE_VERSION: '20'
-  PNPM_VERSION: '7.33.7'
 
 jobs:
   lint:
@@ -45,9 +45,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
+        # Version is read from the `packageManager` field in package.json
+        # (single source of truth). Do NOT also pass `version:` here - pnpm
+        # action-setup errors on a conflict (ERR_PNPM_BAD_PM_VERSION).
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -72,9 +73,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
+        # Version is read from the `packageManager` field in package.json
+        # (single source of truth). Do NOT also pass `version:` here - pnpm
+        # action-setup errors on a conflict (ERR_PNPM_BAD_PM_VERSION).
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -100,9 +102,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
+        # Version is read from the `packageManager` field in package.json
+        # (single source of truth). Do NOT also pass `version:` here - pnpm
+        # action-setup errors on a conflict (ERR_PNPM_BAD_PM_VERSION).
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
