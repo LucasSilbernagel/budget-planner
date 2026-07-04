@@ -703,42 +703,27 @@ export function HomePage() {
             </section>
           )}
 
-          {/* Navigation to CRUD pages */}
+          {/* Navigation to CRUD pages. Non-color-dependent tiles (story 11-3,
+              WCAG 1.4.1 "Use of Color"): a neutral surface + an always-visible
+              label + a distinct accent-colored category icon. The accent hue is
+              a secondary scannability cue on the icon only, never the sole way
+              to tell destinations apart, and the old danger-red Expenses fill is
+              gone — red stays reserved for destructive controls like delete. */}
           <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
               Manage Your Finances
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <a
-                href="/income"
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-center"
-              >
-                Income
-              </a>
-              <a
-                href="/expenses"
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-center"
-              >
-                Expenses
-              </a>
-              <a
-                href="/savings"
-                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-center"
-              >
-                Savings
-              </a>
-              <a
-                href="/balance"
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-center"
-              >
-                Balance
-              </a>
-              <a
-                href="/net-worth-projection"
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-center"
-              >
-                Projections
-              </a>
+              {SECTION_TILES.map(({ href, label, Icon, accentClass }) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 font-medium text-gray-800 transition-colors hover:border-gray-300 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-100 dark:hover:bg-gray-700"
+                >
+                  <Icon className={`h-5 w-5 shrink-0 ${accentClass}`} />
+                  {label}
+                </a>
+              ))}
             </div>
           </section>
 
@@ -774,6 +759,164 @@ export function HomePage() {
             footer block. */}
       </div>
     </div>
+  )
+}
+
+/**
+ * Primary section-navigation tiles for the Home dashboard (story 11-3).
+ *
+ * Each destination is distinguished by its label and a distinct category icon;
+ * the accent hue is applied to the icon only, as a secondary scannability cue,
+ * so no information is conveyed by color alone (WCAG 1.4.1). Expenses uses an
+ * amber accent rather than danger-red on purpose — red stays reserved for
+ * genuinely destructive actions (e.g. delete) elsewhere in the app, so a plain
+ * navigation control must never read as destructive.
+ */
+interface SectionTile {
+  href: string
+  label: string
+  Icon: (props: { className: string }) => React.ReactElement
+  /** Tailwind text-color classes (light + dark) applied to the icon only. */
+  accentClass: string
+}
+
+const SECTION_TILES: readonly SectionTile[] = [
+  {
+    href: '/income',
+    label: 'Income',
+    Icon: IncomeIcon,
+    accentClass: 'text-green-600 dark:text-green-400',
+  },
+  {
+    href: '/expenses',
+    label: 'Expenses',
+    Icon: ExpensesIcon,
+    accentClass: 'text-amber-600 dark:text-amber-400',
+  },
+  {
+    href: '/savings',
+    label: 'Savings',
+    Icon: SavingsIcon,
+    accentClass: 'text-purple-600 dark:text-purple-400',
+  },
+  {
+    href: '/balance',
+    label: 'Balance',
+    Icon: BalanceIcon,
+    accentClass: 'text-blue-600 dark:text-blue-400',
+  },
+  {
+    href: '/net-worth-projection',
+    label: 'Projections',
+    Icon: ProjectionsIcon,
+    accentClass: 'text-indigo-600 dark:text-indigo-400',
+  },
+]
+
+/**
+ * Category icons for the section-navigation tiles. Each is decorative
+ * (`aria-hidden`) — the visible tile label is the announced name — and inherits
+ * its color from the tile's accent class via `currentColor`, matching the inline
+ * SVG idiom used elsewhere (e.g. PremiumLockBadge). Distinct shapes give each
+ * destination a non-color differentiator.
+ */
+function IncomeIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+      />
+    </svg>
+  )
+}
+
+function ExpensesIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+      />
+    </svg>
+  )
+}
+
+function SavingsIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"
+      />
+    </svg>
+  )
+}
+
+function BalanceIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 01-2.031.352 5.988 5.988 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L18.75 4.971zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L5.25 4.971z"
+      />
+    </svg>
+  )
+}
+
+function ProjectionsIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
+      />
+    </svg>
   )
 }
 

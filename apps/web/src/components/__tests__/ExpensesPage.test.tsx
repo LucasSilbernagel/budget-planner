@@ -61,3 +61,28 @@ describe('ExpensesPage inline validation', () => {
     expect(expenses[0]).toMatchObject({ name: 'Rent', amount: 150000 })
   })
 })
+
+/**
+ * Danger-color reservation (story 11-3, AC-2).
+ *
+ * These are additive, non-destructive actions, so they must not wear the
+ * danger-red fill that reads as "delete" (red stays reserved for the row Delete
+ * control and its ConfirmDialog).
+ */
+describe('ExpensesPage safe-action buttons are not danger-red', () => {
+  beforeEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  it('the "+ Add Expense" and modal submit buttons use no red fill', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    const addButton = screen.getByRole('button', { name: '+ Add Expense' })
+    expect(addButton.className).not.toMatch(/bg-red-(600|700)/)
+
+    await user.click(addButton)
+    const submit = within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expense' })
+    expect(submit.className).not.toMatch(/bg-red-(600|700)/)
+  })
+})

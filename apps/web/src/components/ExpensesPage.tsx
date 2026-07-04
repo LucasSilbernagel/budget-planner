@@ -189,7 +189,7 @@ export function ExpensesPage() {
                 ref={addButtonRef}
                 type="button"
                 onClick={openAddModal}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors whitespace-nowrap"
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors whitespace-nowrap"
               >
                 + Add Expense
               </button>
@@ -393,7 +393,7 @@ export function ExpensesPage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? 'Saving...' : editingId !== null ? 'Save Changes' : 'Add Expense'}
               </button>
