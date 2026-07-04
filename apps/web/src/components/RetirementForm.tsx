@@ -507,12 +507,12 @@ function RetirementFormInner({
       <div className="space-y-4">
         {/* Monthly Income Input */}
         <div>
-          <label htmlFor="monthlyIncome" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="monthlyIncome" className="block text-sm font-medium text-label mb-2">
             Desired Monthly Retirement Income
             <span className="text-orange-500 ml-1">*</span>
           </label>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
               {currency === 'USD' ? '$' : currency}
             </span>
             <input
@@ -526,23 +526,18 @@ function RetirementFormInner({
               placeholder="0.00"
               min="0"
               step="0.01"
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
               aria-required="true"
               aria-label="Desired monthly retirement income"
               disabled={isLoading}
             />
           </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Enter the monthly income you want in retirement
-          </p>
+          <p className="text-sm text-muted mt-1">Enter the monthly income you want in retirement</p>
         </div>
 
         {/* Annual Return Rate Input */}
         <div>
-          <label
-            htmlFor="annualReturnRate"
-            className="block text-sm font-medium text-gray-700 mb-2"
-          >
+          <label htmlFor="annualReturnRate" className="block text-sm font-medium text-label mb-2">
             Expected Annual Return Rate
             <span className="text-orange-500 ml-1">*</span>
           </label>
@@ -558,21 +553,26 @@ function RetirementFormInner({
               placeholder="6.0"
               min="0"
               step="0.01"
-              className="w-full pr-10 pl-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
+              className="w-full pr-10 pl-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
               aria-required="true"
               aria-label="Expected annual return rate"
               disabled={isLoading}
             />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">%</span>
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+              %
+            </span>
           </div>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted mt-1">
             Enter the expected annual rate of return on your investments
           </p>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700" role="alert">
+          <div
+            className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg text-red-700 dark:text-red-300"
+            role="alert"
+          >
             {error}
           </div>
         )}
@@ -581,41 +581,47 @@ function RetirementFormInner({
         {requiredAssets !== null && !error && (
           <div className="space-y-4">
             {/* Main Result */}
-            <div className="p-6 bg-green-50 border border-green-200 rounded-xl">
-              <h3 className="text-lg font-semibold text-green-800 mb-2">
+            <div className="p-6 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-xl">
+              <h3 className="text-lg font-semibold text-green-800 dark:text-green-300 mb-2">
                 Required Retirement Assets
               </h3>
-              <div className="text-4xl font-bold text-green-700">
+              <div className="text-4xl font-bold text-green-700 dark:text-green-300">
                 {formatAmount(requiredAssets)}
               </div>
-              <p className="text-sm text-green-600 mt-2">
+              <p className="text-sm text-green-600 dark:text-green-400 mt-2">
                 You need <strong>{formatAmount(requiredAssets)}</strong> in retirement assets to
                 safely withdraw
                 <strong>{formatAmount(parseCurrencyToCents(monthlyIncomeInput))}/month</strong>
                 at a <strong>{parsePercentageToDecimal(annualReturnRateInput) * 100}%</strong>{' '}
                 annual return rate.
               </p>
-              <p className="text-xs text-green-500 mt-2">
+              <p className="text-xs text-green-500 dark:text-green-400 mt-2">
                 Calculation uses Safe Withdrawal Model: FV = Ir × (12 / r)
               </p>
             </div>
 
             {/* Retirement Insights - Integration with existing data */}
             {preFillFromExistingData && retirementInsights && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h4 className="font-semibold text-blue-800 mb-3">Your Retirement Progress</h4>
+              <div className="p-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-lg">
+                <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-3">
+                  Your Retirement Progress
+                </h4>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-700">Current Investment Assets:</span>
-                    <span className="font-medium text-blue-800">
+                    <span className="text-sm text-blue-700 dark:text-blue-300">
+                      Current Investment Assets:
+                    </span>
+                    <span className="font-medium text-blue-800 dark:text-blue-200">
                       {formatAmount(retirementInsights.currentAssets)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-700">Gap to Goal:</span>
+                    <span className="text-sm text-blue-700 dark:text-blue-300">Gap to Goal:</span>
                     <span
                       className={`font-medium ${
-                        retirementInsights.gap >= 0 ? 'text-red-600' : 'text-green-600'
+                        retirementInsights.gap >= 0
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-green-600 dark:text-green-400'
                       }`}
                     >
                       {retirementInsights.gap >= 0
@@ -624,10 +630,12 @@ function RetirementFormInner({
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-700">Status:</span>
+                    <span className="text-sm text-blue-700 dark:text-blue-300">Status:</span>
                     <span
                       className={`font-medium ${
-                        retirementInsights.onTrack ? 'text-green-600' : 'text-orange-600'
+                        retirementInsights.onTrack
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-orange-600 dark:text-orange-400'
                       }`}
                     >
                       {retirementInsights.onTrack ? '✓ On Track' : '⚠ Needs Attention'}
@@ -636,14 +644,16 @@ function RetirementFormInner({
                   {retirementInsights.yearsToGoalAtCurrentRate !== null &&
                     retirementInsights.yearsToGoalAtCurrentRate > 0 && (
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-blue-700">Years to Goal:</span>
-                        <span className="font-medium text-blue-800">
+                        <span className="text-sm text-blue-700 dark:text-blue-300">
+                          Years to Goal:
+                        </span>
+                        <span className="font-medium text-blue-800 dark:text-blue-200">
                           ≈ {retirementInsights.yearsToGoalAtCurrentRate} years
                         </span>
                       </div>
                     )}
                   {!retirementInsights.onTrack && retirementInsights.gapPercentage > 0 && (
-                    <p className="text-xs text-blue-600 mt-2">
+                    <p className="text-xs text-blue-600 dark:text-blue-300 mt-2">
                       You need {retirementInsights.gapPercentage}% more to reach your goal.
                     </p>
                   )}

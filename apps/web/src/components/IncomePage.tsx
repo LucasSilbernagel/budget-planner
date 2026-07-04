@@ -167,22 +167,22 @@ export function IncomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+    <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Income Sources</h1>
-            <p className="text-gray-600 mt-2">Manage your income streams and track your earnings</p>
+            <h1 className="text-3xl font-bold text-heading">Income Sources</h1>
+            <p className="text-body mt-2">Manage your income streams and track your earnings</p>
           </div>
         </header>
 
         <main className="space-y-6">
           {/* Stats Card */}
-          <section className="bg-white rounded-lg shadow-md p-6">
+          <section className="surface rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">Total Income</h2>
-                <p className="text-3xl font-bold text-green-600 mt-2">
+                <h2 className="text-xl font-semibold text-subheading">Total Income</h2>
+                <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
                   {formatAmount(totalIncome)}
                 </p>
               </div>
@@ -198,44 +198,44 @@ export function IncomePage() {
           </section>
 
           {/* Income Sources List */}
-          <section className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6">Your Income Sources</h2>
+          <section className="surface rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-subheading mb-6">Your Income Sources</h2>
 
             {incomeSources.length === 0 ? (
-              <div className="bg-gray-50 rounded-lg p-8 text-center">
-                <p className="text-gray-500 mb-4">No income sources yet</p>
-                <p className="text-sm text-gray-400">Click "Add Income Source" to get started</p>
+              <div className="surface-inset rounded-lg p-8 text-center">
+                <p className="text-muted mb-4">No income sources yet</p>
+                <p className="text-sm text-faint">Click "Add Income Source" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="surface-inset">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Name
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Amount
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Frequency
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
                     {incomeSources.map((source) => (
-                      <tr key={source.id} className="hover:bg-gray-50">
+                      <tr key={source.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{source.name}</div>
+                          <div className="text-sm font-medium text-heading">{source.name}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">{formatAmount(source.amount)}</div>
+                          <div className="text-sm text-muted">{formatAmount(source.amount)}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
                             {source.frequency}
                           </span>
                         </td>
@@ -243,14 +243,14 @@ export function IncomePage() {
                           <button
                             type="button"
                             onClick={() => openEditModal(source)}
-                            className="text-blue-600 hover:text-blue-900 mr-4"
+                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(source.id)}
-                            className="text-red-600 hover:text-red-900"
+                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                           >
                             Delete
                           </button>
@@ -267,13 +267,13 @@ export function IncomePage() {
         {/* Add/Edit Modal */}
         <Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="income-modal-title">
           <div className="flex justify-between items-center mb-6">
-            <h3 id="income-modal-title" className="text-lg font-medium text-gray-900">
+            <h3 id="income-modal-title" className="text-lg font-medium text-heading">
               {editingId !== null ? 'Edit Income Source' : 'Add Income Source'}
             </h3>
             <button
               type="button"
               onClick={closeModal}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200"
               aria-label="Close"
             >
               <svg
@@ -295,7 +295,7 @@ export function IncomePage() {
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="name" className="block text-sm font-medium text-label mb-1">
                 Name *
               </label>
               <input
@@ -304,10 +304,10 @@ export function IncomePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Salary, Freelance, Investment"
-                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none ${
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                    : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                    : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
                 }`}
                 aria-invalid={hasFieldError('name')}
                 aria-required
@@ -327,12 +327,12 @@ export function IncomePage() {
             </div>
 
             <div>
-              <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="amount" className="block text-sm font-medium text-label mb-1">
                 Amount *
               </label>
               <div className="relative rounded-md shadow-sm">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 text-sm">$</span>
+                  <span className="text-muted text-sm">$</span>
                 </div>
                 <input
                   type="number"
@@ -341,10 +341,10 @@ export function IncomePage() {
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none ${
+                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('amount')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
                   }`}
                   aria-invalid={hasFieldError('amount')}
                   aria-required
@@ -365,14 +365,14 @@ export function IncomePage() {
             </div>
 
             <div>
-              <label htmlFor="frequency" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="frequency" className="block text-sm font-medium text-label mb-1">
                 Frequency *
               </label>
               <select
                 id="frequency"
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as Frequency)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 required
               >
                 {FREQUENCY_OPTIONS.map((option) => (
@@ -387,7 +387,7 @@ export function IncomePage() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
               >
                 Cancel
               </button>

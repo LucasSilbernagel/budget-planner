@@ -144,20 +144,20 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
       isOpen
       onClose={onClose}
       labelledBy="create-profile-title"
-      className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+      className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b border-gray-200">
+      <div className="flex items-center justify-between p-6 border-b border-default">
         <div>
-          <h2 id="create-profile-title" className="text-xl font-bold text-gray-900">
+          <h2 id="create-profile-title" className="text-xl font-bold text-heading">
             Create New Profile
           </h2>
-          <p className="text-gray-600 mt-1">Organize your finances for different purposes</p>
+          <p className="text-body mt-1">Organize your finances for different purposes</p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
+          className="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
           aria-label="Close"
         >
           <svg
@@ -193,8 +193,10 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                 clipRule="evenodd"
               />
             </svg>
-            <h3 className="text-lg font-semibold text-green-800">Profile Created!</h3>
-            <p className="text-green-600 mt-2">
+            <h3 className="text-lg font-semibold text-green-800 dark:text-green-300">
+              Profile Created!
+            </h3>
+            <p className="text-green-600 dark:text-green-400 mt-2">
               Your new profile has been created and is ready to use.
             </p>
           </div>
@@ -202,10 +204,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
           <>
             {/* Name field */}
             <div>
-              <label
-                htmlFor="profile-name"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <label htmlFor="profile-name" className="block text-sm font-medium text-label mb-1">
                 Profile Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -215,18 +214,20 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                 onChange={(e) => handleChange('name', e.target.value)}
                 placeholder="e.g., Personal, Business, Investments"
                 maxLength={255}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
-                  errors.name ? 'border-red-500' : 'border-gray-300'
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  errors.name ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               />
-              {errors.name && <p className="text-sm text-red-600 mt-1">{errors.name}</p>}
+              {errors.name && (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.name}</p>
+              )}
             </div>
 
             {/* Description field */}
             <div>
               <label
                 htmlFor="profile-description"
-                className="block text-sm font-medium text-gray-700 mb-1"
+                className="block text-sm font-medium text-label mb-1"
               >
                 Description
               </label>
@@ -237,15 +238,15 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                 placeholder="Briefly describe the purpose of this profile (optional)"
                 maxLength={500}
                 rows={3}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none ${
-                  errors.description ? 'border-red-500' : 'border-gray-300'
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  errors.description ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               />
-              <p className="text-xs text-gray-500 mt-1 text-right">
+              <p className="text-xs text-muted mt-1 text-right">
                 {form.description.length}/500 characters
               </p>
               {errors.description && (
-                <p className="text-sm text-red-600 mt-1">{errors.description}</p>
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.description}</p>
               )}
             </div>
 
@@ -253,7 +254,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
             <div>
               <label
                 htmlFor="profile-currency"
-                className="block text-sm font-medium text-gray-700 mb-1"
+                className="block text-sm font-medium text-label mb-1"
               >
                 Currency
               </label>
@@ -261,7 +262,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                 id="profile-currency"
                 value={form.currency}
                 onChange={(e) => handleChange('currency', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 {CURRENCY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -272,8 +273,8 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
             </div>
 
             {/* Info message */}
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700">
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
                 💡 <strong>Note:</strong> This profile will initially contain no financial data. You
                 can add income, expenses, and other data after creating it.
               </p>
@@ -281,8 +282,8 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
             {/* Form error */}
             {errors.form && (
-              <div className="p-3 bg-red-50 rounded-lg">
-                <p className="text-sm text-red-700">{errors.form}</p>
+              <div className="p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
+                <p className="text-sm text-red-700 dark:text-red-300">{errors.form}</p>
               </div>
             )}
 
@@ -291,7 +292,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 transition-colors"
               >
                 Cancel
               </button>

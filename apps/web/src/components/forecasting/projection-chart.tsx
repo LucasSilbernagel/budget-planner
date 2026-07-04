@@ -22,6 +22,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useChartColors } from '../../lib/chartTheme'
 import { useFormattedAmount } from '../../stores/currencyStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 
@@ -122,17 +123,24 @@ interface CustomTooltipProps {
 
 function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.ReactElement | null {
   const formatCurrency = useFormattedAmount()
+  // Theme-aware fallback so a series without an explicit color stays legible on
+  // the dark tooltip surface (gray-700 default would be near-invisible there).
+  const chartColors = useChartColors()
   if (!active || !payload || !payload.length) return null
 
   return (
-    <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-3">
-      <p className="text-gray-500 text-sm">{formatYear(Number(label))}</p>
+    <div className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3">
+      <p className="text-muted text-sm">{formatYear(Number(label))}</p>
       <div className="mt-2 space-y-1">
         {payload.map((entry) => (
-          <p key={entry.dataKey} className="text-sm" style={{ color: entry.color || '#374151' }}>
+          <p
+            key={entry.dataKey}
+            className="text-sm"
+            style={{ color: entry.color || chartColors.tooltipText }}
+          >
             <span
               className="inline-block w-2 h-2 rounded-full mr-2"
-              style={{ backgroundColor: entry.color || '#374151' }}
+              style={{ backgroundColor: entry.color || chartColors.tooltipText }}
             />
             {entry.name}: {formatCurrency(entry.value)}
           </p>
@@ -155,6 +163,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.Re
 export function ProjectionChart(): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
+  const chartColors = useChartColors()
   const [config, setConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
   const [sampleResult, setSampleResult] = useState<ForecastingResult | null>(null)
 
@@ -200,10 +209,8 @@ export function ProjectionChart(): React.ReactElement {
       <div className="space-y-6">
         {/* Header */}
         <div className="mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">Forecast Projections</h2>
-          <p className="text-gray-500 mt-1">
-            Visual comparison of baseline vs. scenario projections
-          </p>
+          <h2 className="text-2xl font-bold text-subheading">Forecast Projections</h2>
+          <p className="text-muted mt-1">Visual comparison of baseline vs. scenario projections</p>
         </div>
 
         {/* Chart Controls */}
@@ -212,7 +219,9 @@ export function ProjectionChart(): React.ReactElement {
             type="button"
             onClick={() => toggleOption('showGrid')}
             className={`px-3 py-1 text-sm rounded-md ${
-              config.showGrid ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+              config.showGrid
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}
           >
             Grid
@@ -221,7 +230,9 @@ export function ProjectionChart(): React.ReactElement {
             type="button"
             onClick={() => toggleOption('showLegend')}
             className={`px-3 py-1 text-sm rounded-md ${
-              config.showLegend ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+              config.showLegend
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}
           >
             Legend
@@ -230,7 +241,9 @@ export function ProjectionChart(): React.ReactElement {
             type="button"
             onClick={() => toggleOption('showTooltip')}
             className={`px-3 py-1 text-sm rounded-md ${
-              config.showTooltip ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+              config.showTooltip
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
             }`}
           >
             Tooltips
@@ -238,27 +251,41 @@ export function ProjectionChart(): React.ReactElement {
         </div>
 
         {/* Chart Container */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4">
+        <div className="surface rounded-xl shadow-lg border border-default p-4">
           {chartData.length === 0 ? (
-            <div className="flex items-center justify-center h-[400px] text-gray-500">
+            <div className="flex items-center justify-center h-[400px] text-muted">
               No projection data available
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={chartHeight}>
               <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                {config.showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />}
+                {config.showGrid && (
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+                )}
 
                 <XAxis
                   dataKey="year"
                   tickFormatter={formatYear}
-                  label={{ value: 'Time (Years)', position: 'insideBottom', offset: -5 }}
-                  tick={{ fontSize: 12, fill: '#9ca3af' }}
+                  label={{
+                    value: 'Time (Years)',
+                    position: 'insideBottom',
+                    offset: -5,
+                    fill: chartColors.axis,
+                  }}
+                  tick={{ fontSize: 12, fill: chartColors.axis }}
+                  stroke={chartColors.axis}
                 />
 
                 <YAxis
                   tickFormatter={formatCurrency}
-                  label={{ value: 'Net Worth', angle: -90, position: 'insideLeft' }}
-                  tick={{ fontSize: 12, fill: '#9ca3af' }}
+                  label={{
+                    value: 'Net Worth',
+                    angle: -90,
+                    position: 'insideLeft',
+                    fill: chartColors.axis,
+                  }}
+                  tick={{ fontSize: 12, fill: chartColors.axis }}
+                  stroke={chartColors.axis}
                   domain={['dataMin - 100000', 'dataMax + 100000']}
                 />
 
@@ -295,7 +322,7 @@ export function ProjectionChart(): React.ReactElement {
                 {/* Reference line at current net worth */}
                 <ReferenceLine
                   y={chartData[0]?.baselineNetWorth}
-                  label={{ value: 'Starting', fill: '#374151', fontSize: 10 }}
+                  label={{ value: 'Starting', fill: chartColors.axis, fontSize: 10 }}
                   stroke="#9ca3af"
                   strokeDasharray="3 3"
                 />
@@ -357,11 +384,15 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
   const isPositive = change >= 0
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4">
-      <dt className="text-sm font-medium text-gray-500">{label}</dt>
-      <dd className="mt-1 text-lg font-semibold text-gray-800">{value}</dd>
+    <div className="surface-inset rounded-lg p-4">
+      <dt className="text-sm font-medium text-muted">{label}</dt>
+      <dd className="mt-1 text-lg font-semibold text-subheading">{value}</dd>
       {change !== 0 && (
-        <p className={`mt-1 text-xs font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+        <p
+          className={`mt-1 text-xs font-medium ${
+            isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          }`}
+        >
           {isPositive ? '+' : ''}
           {changeFormatted}
         </p>

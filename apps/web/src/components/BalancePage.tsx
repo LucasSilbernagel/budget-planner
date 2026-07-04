@@ -18,8 +18,16 @@ function formatAmountForInput(cents: number): string {
 
 // Type options for the select dropdown
 const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
-  { value: 'investment', label: 'Investment', color: 'bg-green-100 text-green-800' },
-  { value: 'debt', label: 'Debt', color: 'bg-red-100 text-red-800' },
+  {
+    value: 'investment',
+    label: 'Investment',
+    color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+  },
+  {
+    value: 'debt',
+    label: 'Debt',
+    color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+  },
 ]
 
 export function BalancePage() {
@@ -216,24 +224,26 @@ export function BalancePage() {
   // Get type label and color for display
   const getTypeDisplay = (type: FinanceType) => {
     const option = TYPE_OPTIONS.find((o) => o.value === type)
-    return option ? option : { label: type, color: 'bg-gray-100 text-gray-800' }
+    return option
+      ? option
+      : { label: type, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' }
   }
 
   return (
-    <div className="bg-gray-50 p-4 sm:p-8 min-h-screen">
+    <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
         <header className="mb-8">
           <div>
-            <h1 className="font-bold text-gray-900 text-3xl">Balance Tracking</h1>
-            <p className="mt-2 text-gray-600">Monitor your investments and debts</p>
+            <h1 className="font-bold text-heading text-3xl">Balance Tracking</h1>
+            <p className="mt-2 text-body">Monitor your investments and debts</p>
           </div>
         </header>
 
         <main className="space-y-6">
           {/* Stats Cards */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
+          <section className="surface shadow-md p-6 rounded-lg">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-              <h2 className="font-semibold text-gray-800 text-xl">Financial Overview</h2>
+              <h2 className="font-semibold text-subheading text-xl">Financial Overview</h2>
               <button
                 ref={addButtonRef}
                 type="button"
@@ -245,21 +255,25 @@ export function BalancePage() {
               </button>
             </div>
             <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-gray-500 text-sm">Total Investments</p>
-                <p className="mt-1 font-bold text-green-600 text-2xl">
+              <div className="surface-inset p-4 rounded-lg">
+                <p className="text-muted text-sm">Total Investments</p>
+                <p className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl">
                   {formatAmount(totalInvestments)}
                 </p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-gray-500 text-sm">Total Debts</p>
-                <p className="mt-1 font-bold text-red-600 text-2xl">{formatAmount(totalDebts)}</p>
+              <div className="surface-inset p-4 rounded-lg">
+                <p className="text-muted text-sm">Total Debts</p>
+                <p className="mt-1 font-bold text-red-600 dark:text-red-400 text-2xl">
+                  {formatAmount(totalDebts)}
+                </p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-gray-500 text-sm">Net Worth</p>
+              <div className="surface-inset p-4 rounded-lg">
+                <p className="text-muted text-sm">Net Worth</p>
                 <p
                   className={`text-2xl font-bold mt-1 ${
-                    netWorth >= 0 ? 'text-green-600' : 'text-red-600'
+                    netWorth >= 0
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-red-600 dark:text-red-400'
                   }`}
                 >
                   {formatAmount(netWorth)}
@@ -269,50 +283,50 @@ export function BalancePage() {
           </section>
 
           {/* Balance Entries List */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
+          <section className="surface shadow-md p-6 rounded-lg">
             <h2
               ref={listHeadingRef}
               tabIndex={-1}
-              className="mb-6 font-semibold text-gray-800 text-xl rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mb-6 font-semibold text-subheading text-xl rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               Your Balance Entries
             </h2>
 
             {balanceEntries.length === 0 ? (
-              <div className="bg-gray-50 p-8 rounded-lg text-center">
-                <p className="mb-4 text-gray-500">No balance entries recorded yet</p>
-                <p className="text-gray-400 text-sm">Click "Add Balance Entry" to get started</p>
+              <div className="surface-inset p-8 rounded-lg text-center">
+                <p className="mb-4 text-muted">No balance entries recorded yet</p>
+                <p className="text-faint text-sm">Click "Add Balance Entry" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="divide-y divide-gray-200 min-w-full">
-                  <thead className="bg-gray-50">
+                <table className="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
+                  <thead className="surface-inset">
                     <tr>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Type
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Name
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Current Balance
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Max Contribution
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Monthly Contribution
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-right uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
                     {balanceEntries.map((entry) => {
                       const typeDisplay = getTypeDisplay(entry.type)
                       return (
-                        <tr key={entry.id} className="hover:bg-gray-50">
+                        <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${typeDisplay.color}`}
@@ -321,22 +335,22 @@ export function BalancePage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-medium text-gray-900 text-sm">{entry.name}</div>
+                            <div className="font-medium text-heading text-sm">{entry.name}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-gray-500 text-sm">
+                            <div className="text-muted text-sm">
                               {formatAmount(entry.currentBalance)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-gray-500 text-sm">
+                            <div className="text-muted text-sm">
                               {entry.maxContributionLimit !== null
                                 ? formatAmount(entry.maxContributionLimit)
                                 : 'None'}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-gray-500 text-sm">
+                            <div className="text-muted text-sm">
                               {formatAmount(entry.monthlyContribution)}
                             </div>
                           </td>
@@ -344,14 +358,14 @@ export function BalancePage() {
                             <button
                               type="button"
                               onClick={() => openEditModal(entry)}
-                              className="mr-4 text-blue-600 hover:text-blue-900"
+                              className="mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDelete(entry.id)}
-                              className="text-red-600 hover:text-red-900"
+                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                             >
                               Delete
                             </button>
@@ -372,16 +386,16 @@ export function BalancePage() {
           onClose={closeModal}
           labelledBy="balance-modal-title"
           finalFocusRef={addButtonRef}
-          className="bg-white shadow-xl p-6 rounded-lg w-full max-w-md"
+          className="bg-white dark:bg-gray-800 dark:text-gray-100 shadow-xl p-6 rounded-lg w-full max-w-md"
         >
           <div className="flex justify-between items-center mb-6">
-            <h3 id="balance-modal-title" className="font-medium text-gray-900 text-lg">
+            <h3 id="balance-modal-title" className="font-medium text-heading text-lg">
               {editingId !== null ? 'Edit Balance Entry' : 'Add Balance Entry'}
             </h3>
             <button
               type="button"
               onClick={closeModal}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200"
               aria-label="Close"
             >
               <svg
@@ -403,14 +417,14 @@ export function BalancePage() {
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
-              <label htmlFor="type" className="block mb-1 font-medium text-gray-700 text-sm">
+              <label htmlFor="type" className="block mb-1 font-medium text-label text-sm">
                 Type *
               </label>
               <select
                 id="type"
                 value={type}
                 onChange={(e) => setType(e.target.value as FinanceType)}
-                className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                 required
               >
                 {TYPE_OPTIONS.map((option) => (
@@ -422,7 +436,7 @@ export function BalancePage() {
             </div>
 
             <div>
-              <label htmlFor="name" className="block mb-1 font-medium text-gray-700 text-sm">
+              <label htmlFor="name" className="block mb-1 font-medium text-label text-sm">
                 Name *
               </label>
               <input
@@ -431,10 +445,10 @@ export function BalancePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., 401k, Student Loan, Credit Card"
-                className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none w-full ${
+                className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                    : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
                 }`}
                 aria-invalid={hasFieldError('name')}
                 aria-required
@@ -454,15 +468,12 @@ export function BalancePage() {
             </div>
 
             <div>
-              <label
-                htmlFor="currentBalance"
-                className="block mb-1 font-medium text-gray-700 text-sm"
-              >
+              <label htmlFor="currentBalance" className="block mb-1 font-medium text-label text-sm">
                 Current Balance *
               </label>
               <div className="relative shadow-sm rounded-md">
                 <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-gray-500 text-sm">$</span>
+                  <span className="text-muted text-sm">$</span>
                 </div>
                 <input
                   type="number"
@@ -471,10 +482,10 @@ export function BalancePage() {
                   onChange={(e) => setCurrentBalance(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full ${
+                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('currentBalance')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                      : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
                   }`}
                   aria-invalid={hasFieldError('currentBalance')}
                   aria-required
@@ -499,13 +510,13 @@ export function BalancePage() {
             <div>
               <label
                 htmlFor="maxContributionLimit"
-                className="block mb-1 font-medium text-gray-700 text-sm"
+                className="block mb-1 font-medium text-label text-sm"
               >
                 Max Contribution Limit (Optional)
               </label>
               <div className="relative shadow-sm rounded-md">
                 <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-gray-500 text-sm">$</span>
+                  <span className="text-muted text-sm">$</span>
                 </div>
                 <input
                   type="number"
@@ -514,10 +525,10 @@ export function BalancePage() {
                   onChange={(e) => setMaxContributionLimit(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full ${
+                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('maxContributionLimit')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                      : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
                   }`}
                   aria-invalid={hasFieldError('maxContributionLimit')}
                   aria-describedby={
@@ -543,13 +554,13 @@ export function BalancePage() {
             <div>
               <label
                 htmlFor="monthlyContribution"
-                className="block mb-1 font-medium text-gray-700 text-sm"
+                className="block mb-1 font-medium text-label text-sm"
               >
                 Monthly Contribution *
               </label>
               <div className="relative shadow-sm rounded-md">
                 <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-gray-500 text-sm">$</span>
+                  <span className="text-muted text-sm">$</span>
                 </div>
                 <input
                   type="number"
@@ -558,10 +569,10 @@ export function BalancePage() {
                   onChange={(e) => setMonthlyContribution(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full ${
+                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('monthlyContribution')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                      : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
                   }`}
                   aria-invalid={hasFieldError('monthlyContribution')}
                   aria-required
@@ -589,7 +600,7 @@ export function BalancePage() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="hover:bg-gray-50 px-4 py-2 border border-gray-300 rounded-md text-gray-700"
+                className="hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200"
               >
                 Cancel
               </button>

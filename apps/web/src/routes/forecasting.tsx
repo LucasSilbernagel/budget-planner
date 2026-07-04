@@ -287,7 +287,7 @@ function ForecastingPage(): React.ReactElement {
   // Show premium prompt if user doesn't have access
   if (!status.hasAccess) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen surface-sunken flex items-center justify-center p-4">
         <PremiumPrompt
           featureName="Advanced Forecasting"
           message="Access powerful financial forecasting tools including scenario modeling, goal tracking, and save/load functionality."
@@ -299,7 +299,7 @@ function ForecastingPage(): React.ReactElement {
 
   // Main premium content
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen surface-sunken">
       {/* Header */}
       <PageHeader />
 
@@ -311,7 +311,7 @@ function ForecastingPage(): React.ReactElement {
         </div>
 
         {/* Tab Content */}
-        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-8">
+        <div className="surface rounded-xl shadow-lg p-4 sm:p-8">
           {activeTab === 'scenarios' && <ScenarioBuilder onSave={handleSaveForecast} />}
 
           {activeTab === 'projections' && <ProjectionChart />}
@@ -342,12 +342,12 @@ function ForecastingPage(): React.ReactElement {
  */
 function PageHeader(): React.ReactElement {
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <header className="surface border-b border-default sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Financial Forecasting</h1>
-            <p className="text-gray-500 text-sm mt-1">
+            <h1 className="text-2xl font-bold text-subheading">Financial Forecasting</h1>
+            <p className="text-muted text-sm mt-1">
               Advanced tools for modeling your financial future
             </p>
           </div>
@@ -365,7 +365,7 @@ function PageHeader(): React.ReactElement {
  */
 function PremiumBadge(): React.ReactElement {
   return (
-    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
       <CrownIcon className="w-3 h-3 mr-1.5" />
       Premium Feature
     </span>
@@ -401,7 +401,7 @@ const tabs: { id: ForecastingTab; label: string; description: string }[] = [
 function TabNavigation({ activeTab, onTabChange }: TabNavigationProps): React.ReactElement {
   return (
     <div className="flex flex-col sm:flex-row gap-4">
-      <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
+      <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -409,8 +409,8 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps): React.Re
             onClick={() => onTabChange(tab.id)}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               activeTab === tab.id
-                ? 'bg-white text-gray-800 shadow-sm'
-                : 'text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                ? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-100'
             }`}
           >
             <span className="flex items-center">
@@ -420,7 +420,7 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps): React.Re
           </button>
         ))}
       </div>
-      <div className="text-sm text-gray-500 hidden sm:block">
+      <div className="text-sm text-muted hidden sm:block">
         {tabs.find((t) => t.id === activeTab)?.description}
       </div>
     </div>
@@ -450,8 +450,8 @@ function getTabIcon(tabId: ForecastingTab, isActive: boolean): React.ReactElemen
  */
 function PageFooter(): React.ReactElement {
   return (
-    <footer className="mt-8 pt-6 border-t border-gray-200 text-center">
-      <p className="text-xs text-gray-400">
+    <footer className="mt-8 pt-6 border-t border-default text-center">
+      <p className="text-xs text-faint">
         All forecasting calculations performed server-side • Data stored in Germany (EU)
       </p>
     </footer>
@@ -465,7 +465,7 @@ function LoadingSpinner(): React.ReactElement {
   return (
     <div className="flex items-center justify-center space-x-2">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      <span className="text-gray-600">Loading...</span>
+      <span className="text-body">Loading...</span>
     </div>
   )
 }
