@@ -5,8 +5,8 @@
  * are delivered client-side to Formspark (`submit-form.com`) via a native
  * `fetch` POST using a *public* form id — there is no server route, no mailer,
  * and no secret in the client (AC-4). The fetch/async-state shape mirrors
- * {@link MagicLinkForm}; the inline field-level validation mirrors
- * {@link AddSavingsGoalForm} (no `alert()` — forbidden since story 6-8).
+ * {@link MagicLinkForm}; the inline field-level validation mirrors the app's
+ * established inline validation pattern (no `alert()` — forbidden since story 6-8).
  *
  * Data sovereignty (AC-3): Formspark stores submissions in Ireland (EU) but its
  * subprocessor AWS is US-owned, so this is the one CLOUD-Act-exposed path in the

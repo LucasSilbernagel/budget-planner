@@ -26,7 +26,7 @@ export function SavingsPage() {
   const [currentBalance, setCurrentBalance] = useState('')
 
   // Inline field-validation error state (replaces browser alert() popups).
-  // Mirrors the canonical pattern in AddSavingsGoalForm: an errors map plus
+  // Mirrors the app's canonical inline-validation pattern: an errors map plus
   // hasFieldError/getFieldError helpers and re-validate-on-change after the
   // first submit attempt.
   type FieldName = 'name' | 'targetAmount' | 'currentBalance'
