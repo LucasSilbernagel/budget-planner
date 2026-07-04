@@ -624,34 +624,6 @@ export function BalancePage() {
             </>
           }
         />
-
-        {/* Navigation */}
-        <div className="flex flex-wrap gap-4 mt-8">
-          <a
-            href="/"
-            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
-          >
-            Back to Home
-          </a>
-          <a
-            href="/income"
-            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
-          >
-            View Income
-          </a>
-          <a
-            href="/expenses"
-            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
-          >
-            View Expenses
-          </a>
-          <a
-            href="/savings"
-            className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-md text-gray-800 transition-colors"
-          >
-            View Savings
-          </a>
-        </div>
       </div>
     </div>
   )

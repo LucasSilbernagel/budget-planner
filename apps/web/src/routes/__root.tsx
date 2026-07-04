@@ -2,6 +2,7 @@ import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-r
 import type { ReactNode } from 'react'
 import { AdPlacement } from '../components/ads/AdPlacement'
 import { Footer } from '../components/layout/Footer'
+import { GlobalNav } from '../components/layout/GlobalNav'
 import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
 import { ThemeProvider } from '../components/theme/ThemeProvider'
@@ -98,8 +99,15 @@ function RootDocument({ children }: { children: ReactNode }) {
             URL (story 4-12): URL-only, in-memory, no cookies/localStorage. */}
         <MetadataProvider>
           {/* Column layout so the global Footer is pushed to the bottom of the
-              viewport on short pages (mt-auto) yet flows after content on long ones. */}
-          <div className="flex min-h-screen flex-col">
+              viewport on short pages (mt-auto) yet flows after content on long ones.
+              `pb-16 sm:pb-0` reserves space on narrow viewports for GlobalNav's
+              fixed bottom tab bar (story 11-1) so it never covers the footer;
+              desktop renders GlobalNav as a top bar and needs no padding. */}
+          <div className="flex min-h-screen flex-col pb-16 sm:pb-0">
+            {/* Persistent primary navigation (story 11-1): rendered once here so
+                every route shares it. Top bar on desktop, fixed bottom tab bar on
+                narrow/PWA viewports. */}
+            <GlobalNav />
             {children}
             {/* Global, unobtrusive ad slot. Renders only for non-premium users
                 (story 4-11): unauthenticated/free see ads; active-premium do not. */}

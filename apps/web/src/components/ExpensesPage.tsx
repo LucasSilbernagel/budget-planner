@@ -419,22 +419,6 @@ export function ExpensesPage() {
             </>
           }
         />
-
-        {/* Navigation */}
-        <div className="mt-8 flex flex-wrap gap-4">
-          <a
-            href="/"
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-          >
-            Back to Home
-          </a>
-          <a
-            href="/income"
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-          >
-            View Income
-          </a>
-        </div>
       </div>
     </div>
   )
