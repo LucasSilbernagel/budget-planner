@@ -84,7 +84,12 @@ export function GlobalNav() {
       aria-label="Primary"
       className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
     >
-      <ul className="mx-auto flex max-w-6xl gap-1 px-4 py-2">
+      {/* `flex-wrap`: SSR + the first client render always emit this top bar
+          (useIsNarrowViewport is false until after mount), so on a phone it is
+          briefly visible before hydration swaps in the bottom bar. Without
+          wrapping, the six items overflow a 320px viewport and push the document
+          wider than the screen during that flash. Wrapping keeps it contained. */}
+      <ul className="mx-auto flex max-w-6xl flex-wrap gap-1 px-4 py-2">
         {NAV_ITEMS.map((item) => (
           <li key={item.to}>
             <Link
