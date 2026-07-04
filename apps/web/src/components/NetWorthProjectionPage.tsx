@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
 import { CurrencyToggle } from './settings/currency-toggle'
@@ -63,6 +64,8 @@ export function NetWorthProjectionPage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Theme-aware Recharts chrome so the chart stays legible on the dark card.
+  const chartColors = useChartColors()
 
   // Calculate initial net worth
   const initialNetWorth = calculateInitialNetWorth(incomeSources, expenses, balanceEntries)
@@ -112,32 +115,30 @@ export function NetWorthProjectionPage() {
   const hasData = balanceEntries.length > 0 || incomeSources.length > 0
 
   return (
-    <div className="bg-gray-50 p-4 sm:p-8 min-h-screen">
+    <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
         <header className="flex flex-wrap justify-between items-start gap-4 mb-8">
           <div>
-            <h1 className="font-bold text-gray-900 text-3xl">Net Worth Projection</h1>
-            <p className="mt-2 text-gray-600">
-              Visualize your financial future based on current data
-            </p>
+            <h1 className="font-bold text-heading text-3xl">Net Worth Projection</h1>
+            <p className="mt-2 text-body">Visualize your financial future based on current data</p>
           </div>
           <CurrencyToggle className="flex-shrink-0 mt-1" />
         </header>
 
         <main className="space-y-6">
           {/* Current Net Worth */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-4 font-semibold text-gray-800 text-xl">Current Net Worth</h2>
+          <section className="surface shadow-md p-6 rounded-lg">
+            <h2 className="mb-4 font-semibold text-subheading text-xl">Current Net Worth</h2>
             <div className="gap-4 grid grid-cols-1 md:grid-cols-2">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-gray-500 text-sm">Current Net Worth</p>
-                <p className="mt-1 font-bold text-purple-600 text-2xl">
+              <div className="surface-inset p-4 rounded-lg">
+                <p className="text-muted text-sm">Current Net Worth</p>
+                <p className="mt-1 font-bold text-purple-600 dark:text-purple-400 text-2xl">
                   {formatAmount(initialNetWorth)}
                 </p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-gray-500 text-sm">Annual Net Income</p>
-                <p className="mt-1 font-bold text-green-600 text-2xl">
+              <div className="surface-inset p-4 rounded-lg">
+                <p className="text-muted text-sm">Annual Net Income</p>
+                <p className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl">
                   {formatAmount(annualNetIncome)}
                 </p>
               </div>
@@ -145,12 +146,12 @@ export function NetWorthProjectionPage() {
           </section>
 
           {/* Projection Parameters */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-4 font-semibold text-gray-800 text-xl">Projection Parameters</h2>
+          <section className="surface shadow-md p-6 rounded-lg">
+            <h2 className="mb-4 font-semibold text-subheading text-xl">Projection Parameters</h2>
 
             <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
               <div>
-                <label htmlFor="years" className="block mb-1 font-medium text-gray-700 text-sm">
+                <label htmlFor="years" className="block mb-1 font-medium text-label text-sm">
                   Projection Period (years)
                 </label>
                 <input
@@ -160,15 +161,12 @@ export function NetWorthProjectionPage() {
                   onChange={(e) => setYears(Math.max(1, parseInt(e.target.value) || 1))}
                   min="1"
                   max="50"
-                  className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="returnRate"
-                  className="block mb-1 font-medium text-gray-700 text-sm"
-                >
+                <label htmlFor="returnRate" className="block mb-1 font-medium text-label text-sm">
                   Annual Return Rate (%)
                 </label>
                 <input
@@ -179,14 +177,14 @@ export function NetWorthProjectionPage() {
                   min="0.1"
                   max="100"
                   step="0.01"
-                  className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="additionalContribution"
-                  className="block mb-1 font-medium text-gray-700 text-sm"
+                  className="block mb-1 font-medium text-label text-sm"
                 >
                   Additional Annual Contribution ($)
                 </label>
@@ -199,29 +197,29 @@ export function NetWorthProjectionPage() {
                   }
                   min="0"
                   step="100"
-                  className="shadow-sm px-3 py-2 border border-gray-300 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
                 />
               </div>
             </div>
           </section>
 
           {/* Net Worth Projection Chart */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-4 font-semibold text-gray-800 text-xl">Net Worth Projection</h2>
+          <section className="surface shadow-md p-6 rounded-lg">
+            <h2 className="mb-4 font-semibold text-subheading text-xl">Net Worth Projection</h2>
 
             {!hasData ? (
-              <div className="bg-gray-50 p-8 rounded-lg text-center">
-                <p className="mb-4 text-gray-500">Insufficient data for projection</p>
-                <p className="text-gray-400 text-sm">
+              <div className="surface-inset p-8 rounded-lg text-center">
+                <p className="mb-4 text-muted">Insufficient data for projection</p>
+                <p className="text-faint text-sm">
                   Add income sources, expenses, or balance entries to see your financial projection
                 </p>
               </div>
             ) : !isRateValid ? (
-              <div className="bg-gray-50 p-8 rounded-lg text-center">
-                <p className="mb-4 text-gray-500">
+              <div className="surface-inset p-8 rounded-lg text-center">
+                <p className="mb-4 text-muted">
                   Enter an annual return rate of at least 0.1% to see your projection
                 </p>
-                <p className="text-gray-400 text-sm">
+                <p className="text-faint text-sm">
                   The return rate must be at least 0.1% for the compound projection to calculate.
                 </p>
               </div>
@@ -229,15 +227,29 @@ export function NetWorthProjectionPage() {
               <div className="h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                     <XAxis
                       dataKey="year"
-                      label={{ value: 'Years', position: 'insideBottom', offset: -5 }}
+                      label={{
+                        value: 'Years',
+                        position: 'insideBottom',
+                        offset: -5,
+                        fill: chartColors.axis,
+                      }}
+                      tick={{ fill: chartColors.axis }}
+                      stroke={chartColors.axis}
                     />
                     <YAxis
                       dataKey="netWorth"
-                      label={{ value: 'Net Worth ($)', angle: -90, position: 'insideLeft' }}
+                      label={{
+                        value: 'Net Worth ($)',
+                        angle: -90,
+                        position: 'insideLeft',
+                        fill: chartColors.axis,
+                      }}
                       tickFormatter={(value) => formatAmount(value * 100)}
+                      tick={{ fill: chartColors.axis }}
+                      stroke={chartColors.axis}
                     />
                     <Tooltip
                       formatter={(value: number, name: string, _item: unknown) => {
@@ -247,8 +259,16 @@ export function NetWorthProjectionPage() {
                         return [value, name]
                       }}
                       labelFormatter={(label) => `Year ${label}`}
+                      contentStyle={{
+                        backgroundColor: chartColors.tooltipBg,
+                        border: `1px solid ${chartColors.tooltipBorder}`,
+                        borderRadius: 8,
+                        color: chartColors.tooltipText,
+                      }}
+                      labelStyle={{ color: chartColors.tooltipText }}
+                      itemStyle={{ color: chartColors.tooltipText }}
                     />
-                    <Legend />
+                    <Legend wrapperStyle={{ color: chartColors.axis }} />
                     <Line
                       type="monotone"
                       dataKey="netWorth"
@@ -266,8 +286,8 @@ export function NetWorthProjectionPage() {
 
           {/* Projection Summary */}
           {hasData && chartData.length > 0 && (
-            <section className="bg-white shadow-md p-6 rounded-lg">
-              <h2 className="mb-4 font-semibold text-gray-800 text-xl">Projection Summary</h2>
+            <section className="surface shadow-md p-6 rounded-lg">
+              <h2 className="mb-4 font-semibold text-subheading text-xl">Projection Summary</h2>
               <div className="gap-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
                 {projection
                   .filter(
@@ -277,9 +297,9 @@ export function NetWorthProjectionPage() {
                       index === projection.length - 1
                   )
                   .map((item, _index) => (
-                    <div key={item.year} className="bg-gray-50 p-4 rounded-lg">
-                      <p className="text-gray-500 text-sm">Year {item.year}</p>
-                      <p className="font-bold text-purple-600 text-lg">
+                    <div key={item.year} className="surface-inset p-4 rounded-lg">
+                      <p className="text-muted text-sm">Year {item.year}</p>
+                      <p className="font-bold text-purple-600 dark:text-purple-400 text-lg">
                         {formatAmount(item.endingBalance)}
                       </p>
                     </div>
@@ -289,9 +309,11 @@ export function NetWorthProjectionPage() {
           )}
 
           {/* Information */}
-          <section className="bg-blue-50 shadow-md p-6 rounded-lg">
-            <h3 className="mb-2 font-medium text-blue-800 text-lg">How It Works</h3>
-            <p className="text-blue-700 text-sm">
+          <section className="bg-blue-50 dark:bg-blue-950/40 shadow-md p-6 rounded-lg">
+            <h3 className="mb-2 font-medium text-blue-800 dark:text-blue-300 text-lg">
+              How It Works
+            </h3>
+            <p className="text-blue-700 dark:text-blue-300 text-sm">
               This projection uses compound interest calculations based on your current net worth,
               annual net income, and the return rate you specify. The formula accounts for both
               capital appreciation and regular contributions to give you a realistic view of your

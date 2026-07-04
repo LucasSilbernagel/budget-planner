@@ -25,13 +25,58 @@
   .btn {
     @apply px-4 py-2 rounded-md text-sm font-medium;
   }
-  
+
   .btn-primary {
     @apply bg-blue-600 text-white hover:bg-blue-700;
   }
-  
+
   .btn-secondary {
     @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+  }
+
+  /* --- Semantic surface + text tokens (story 11-2, AC-4) ---
+     Each token pairs the existing light value with the dark palette established
+     by stories 7-3 and 11-1 (gray-800 cards on a gray-900 canvas; gray-100/300
+     text; gray-400 for muted text — never gray-500, which is sub-AA on a dark
+     card, a contrast bug 7-3's review caught; gray-700 borders). Purpose: define
+     dark mode ONCE here instead of re-applying `dark:` utilities on every page,
+     so future pages stop drifting light-only (the root cause this story closes).
+     Color-only, so they compose with layout utilities (rounded/shadow/padding).
+     Light values are unchanged from before this story (AC-6). */
+  .surface {
+    @apply bg-white dark:bg-gray-800;
+  }
+  .surface-sunken {
+    @apply bg-gray-50 dark:bg-gray-900;
+  }
+  /* A panel nested on a `.surface` card (thead, empty-state, stat tile): reads a
+     touch lighter than the gray-800 card it sits on rather than matching the
+     gray-900 page canvas. */
+  .surface-inset {
+    @apply bg-gray-50 dark:bg-gray-700/40;
+  }
+
+  .text-heading {
+    @apply text-gray-900 dark:text-gray-100;
+  }
+  .text-subheading {
+    @apply text-gray-800 dark:text-gray-100;
+  }
+  .text-label {
+    @apply text-gray-700 dark:text-gray-300;
+  }
+  .text-body {
+    @apply text-gray-600 dark:text-gray-300;
+  }
+  .text-muted {
+    @apply text-gray-500 dark:text-gray-400;
+  }
+  .text-faint {
+    @apply text-gray-400 dark:text-gray-400;
+  }
+
+  .border-default {
+    @apply border-gray-200 dark:border-gray-700;
   }
 }
 

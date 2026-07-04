@@ -168,23 +168,23 @@ export function SavingsPage() {
   }
 
   return (
-    <div className="bg-gray-50 p-4 sm:p-8 min-h-screen">
+    <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
         <header className="flex flex-wrap justify-between items-start gap-4 mb-8">
           <div>
-            <h1 className="font-bold text-gray-900 text-3xl">Savings Goals</h1>
-            <p className="mt-2 text-gray-600">Track and manage your savings targets</p>
+            <h1 className="font-bold text-heading text-3xl">Savings Goals</h1>
+            <p className="mt-2 text-body">Track and manage your savings targets</p>
           </div>
           <CurrencyToggle className="flex-shrink-0 mt-1" />
         </header>
 
         <main className="space-y-6">
           {/* Stats Card */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
+          <section className="surface shadow-md p-6 rounded-lg">
             <div className="flex md:flex-row flex-col md:justify-between md:items-center gap-4">
               <div>
-                <h2 className="font-semibold text-gray-800 text-xl">Total Savings</h2>
-                <p className="mt-2 font-bold text-purple-600 text-3xl">
+                <h2 className="font-semibold text-subheading text-xl">Total Savings</h2>
+                <p className="mt-2 font-bold text-purple-600 dark:text-purple-400 text-3xl">
                   {formatAmount(totalSavings)}
                 </p>
               </div>
@@ -200,77 +200,75 @@ export function SavingsPage() {
           </section>
 
           {/* Savings Goals List */}
-          <section className="bg-white shadow-md p-6 rounded-lg">
-            <h2 className="mb-6 font-semibold text-gray-800 text-xl">Your Savings Goals</h2>
+          <section className="surface shadow-md p-6 rounded-lg">
+            <h2 className="mb-6 font-semibold text-subheading text-xl">Your Savings Goals</h2>
 
             {savingsGoals.length === 0 ? (
-              <div className="bg-gray-50 p-8 rounded-lg text-center">
-                <p className="mb-4 text-gray-500">No savings goals recorded yet</p>
-                <p className="text-gray-400 text-sm">Click "Add Savings Goal" to get started</p>
+              <div className="surface-inset p-8 rounded-lg text-center">
+                <p className="mb-4 text-muted">No savings goals recorded yet</p>
+                <p className="text-faint text-sm">Click "Add Savings Goal" to get started</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="divide-y divide-gray-200 min-w-full">
-                  <thead className="bg-gray-50">
+                <table className="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
+                  <thead className="surface-inset">
                     <tr>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Name
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Target
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Current Balance
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-left uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Progress
                       </th>
-                      <th className="px-6 py-3 font-medium text-gray-500 text-xs text-right uppercase tracking-wider">
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
                     {savingsGoals.map((goal) => {
                       const progress = getSavingsProgress(goal.id)
                       return (
-                        <tr key={goal.id} className="hover:bg-gray-50">
+                        <tr key={goal.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-medium text-gray-900 text-sm">{goal.name}</div>
+                            <div className="font-medium text-heading text-sm">{goal.name}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-gray-500 text-sm">
+                            <div className="text-muted text-sm">
                               {formatAmount(goal.targetAmount)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-gray-500 text-sm">
+                            <div className="text-muted text-sm">
                               {formatAmount(goal.currentBalance)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="bg-gray-200 rounded-full w-full h-2">
+                            <div className="bg-gray-200 dark:bg-gray-700 rounded-full w-full h-2">
                               <div
                                 className="bg-purple-600 rounded-full h-2"
                                 style={{ width: `${progress}%` }}
                               />
                             </div>
-                            <div className="mt-1 text-gray-500 text-xs text-center">
-                              {progress}%
-                            </div>
+                            <div className="mt-1 text-muted text-xs text-center">{progress}%</div>
                           </td>
                           <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => openEditModal(goal)}
-                              className="mr-4 text-blue-600 hover:text-blue-900"
+                              className="mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDelete(goal.id)}
-                              className="text-red-600 hover:text-red-900"
+                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                             >
                               Delete
                             </button>
@@ -288,13 +286,13 @@ export function SavingsPage() {
         {/* Add/Edit Modal */}
         <Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="savings-modal-title">
           <div className="flex justify-between items-center mb-6">
-            <h3 id="savings-modal-title" className="font-medium text-gray-900 text-lg">
+            <h3 id="savings-modal-title" className="font-medium text-heading text-lg">
               {editingId !== null ? 'Edit Savings Goal' : 'Add Savings Goal'}
             </h3>
             <button
               type="button"
               onClick={closeModal}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200"
               aria-label="Close"
             >
               <svg
@@ -316,7 +314,7 @@ export function SavingsPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
-              <label htmlFor="name" className="block mb-1 font-medium text-gray-700 text-sm">
+              <label htmlFor="name" className="block mb-1 font-medium text-label text-sm">
                 Name *
               </label>
               <input
@@ -325,10 +323,10 @@ export function SavingsPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Emergency Fund, Vacation, New Car"
-                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none ${
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                    : 'border-gray-300 focus:ring-purple-500 focus:border-purple-500'
+                    : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
                 }`}
                 aria-invalid={hasFieldError('name')}
                 aria-required
@@ -348,15 +346,12 @@ export function SavingsPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="targetAmount"
-                className="block mb-1 font-medium text-gray-700 text-sm"
-              >
+              <label htmlFor="targetAmount" className="block mb-1 font-medium text-label text-sm">
                 Target Amount *
               </label>
               <div className="relative shadow-sm rounded-md">
                 <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-gray-500 text-sm">$</span>
+                  <span className="text-muted text-sm">$</span>
                 </div>
                 <input
                   type="number"
@@ -365,10 +360,10 @@ export function SavingsPage() {
                   onChange={(e) => setTargetAmount(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none ${
+                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('targetAmount')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-300 focus:ring-purple-500 focus:border-purple-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
                   }`}
                   aria-invalid={hasFieldError('targetAmount')}
                   aria-required
@@ -391,15 +386,12 @@ export function SavingsPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="currentBalance"
-                className="block mb-1 font-medium text-gray-700 text-sm"
-              >
+              <label htmlFor="currentBalance" className="block mb-1 font-medium text-label text-sm">
                 Current Balance
               </label>
               <div className="relative shadow-sm rounded-md">
                 <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-gray-500 text-sm">$</span>
+                  <span className="text-muted text-sm">$</span>
                 </div>
                 <input
                   type="number"
@@ -408,10 +400,10 @@ export function SavingsPage() {
                   onChange={(e) => setCurrentBalance(e.target.value)}
                   placeholder="0.00"
                   step="0.01"
-                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none ${
+                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('currentBalance')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-300 focus:ring-purple-500 focus:border-purple-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
                   }`}
                   aria-invalid={hasFieldError('currentBalance')}
                   aria-describedby={
@@ -436,7 +428,7 @@ export function SavingsPage() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="hover:bg-gray-50 px-4 py-2 border border-gray-300 rounded-md text-gray-700"
+                className="hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200"
               >
                 Cancel
               </button>

@@ -440,22 +440,20 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
     <div className="space-y-8">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Scenario Builder</h2>
-        <p className="text-gray-500 mt-1">
-          Create and configure your financial forecasting scenario
-        </p>
+        <h2 className="text-2xl font-bold text-subheading">Scenario Builder</h2>
+        <p className="text-muted mt-1">Create and configure your financial forecasting scenario</p>
       </div>
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       {/* Scenario Configuration */}
-      <section className="bg-gray-50 rounded-xl p-6 space-y-6">
-        <h3 className="text-lg font-semibold text-gray-800">Scenario Settings</h3>
+      <section className="surface-inset rounded-xl p-6 space-y-6">
+        <h3 className="text-lg font-semibold text-subheading">Scenario Settings</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Scenario Name */}
@@ -538,9 +536,9 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       </section>
 
       {/* Income Items */}
-      <section className="bg-gray-50 rounded-xl p-6 space-y-4">
+      <section className="surface-inset rounded-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-800">Income Sources</h3>
+          <h3 className="text-lg font-semibold text-subheading">Income Sources</h3>
           <button
             type="button"
             onClick={addIncomeItem}
@@ -566,9 +564,9 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       </section>
 
       {/* Expense Items */}
-      <section className="bg-gray-50 rounded-xl p-6 space-y-4">
+      <section className="surface-inset rounded-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-800">Expense Categories</h3>
+          <h3 className="text-lg font-semibold text-subheading">Expense Categories</h3>
           <button
             type="button"
             onClick={addExpenseItem}
@@ -594,9 +592,9 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       </section>
 
       {/* One-Time Events */}
-      <section className="bg-gray-50 rounded-xl p-6 space-y-4">
+      <section className="surface-inset rounded-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-800">One-Time Events</h3>
+          <h3 className="text-lg font-semibold text-subheading">One-Time Events</h3>
           <button
             type="button"
             onClick={addOneTimeEvent}
@@ -607,7 +605,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
         </div>
 
         {oneTimeEvents.length === 0 ? (
-          <p className="text-gray-500 text-sm">No one-time events configured</p>
+          <p className="text-muted text-sm">No one-time events configured</p>
         ) : (
           <div className="space-y-4">
             {oneTimeEvents.map((event) => (
@@ -625,8 +623,8 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
 
       {/* Results Summary */}
       {result && (
-        <section className="bg-blue-50 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Forecast Summary</h3>
+        <section className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6">
+          <h3 className="text-lg font-semibold text-subheading mb-4">Forecast Summary</h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
@@ -665,7 +663,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
       {isCalculating && (
         <div className="flex items-center justify-center py-4">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
-          <span className="ml-2 text-gray-600">Calculating forecast...</span>
+          <span className="ml-2 text-body">Calculating forecast...</span>
         </div>
       )}
     </div>
@@ -726,7 +724,7 @@ function InputField({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-label mb-1">{label}</label>
       <input
         type={type}
         value={internalValue}
@@ -736,7 +734,7 @@ function InputField({
         max={max}
         step={step}
         inputMode={inputMode}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
       />
     </div>
   )
@@ -770,34 +768,32 @@ function FinancialItemRow({
   }
 
   return (
-    <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+    <div className="surface rounded-lg p-4 shadow-sm border border-default">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <label className="block text-sm font-medium text-label mb-1">Name</label>
           <input
             type="text"
             value={item.name}
             onChange={(e) => onUpdate('name', e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
             placeholder="Income/Expense name"
           />
         </div>
 
         {/* Amount */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+          <label className="block text-sm font-medium text-label mb-1">Amount</label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">
-              $
-            </span>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
             <input
               type="number"
               value={item.amount / 100}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
-              className="w-full px-6 py-1.5 border border-gray-300 rounded text-sm"
+              className="w-full px-6 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
               placeholder="0.00"
             />
           </div>
@@ -805,11 +801,11 @@ function FinancialItemRow({
 
         {/* Frequency */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+          <label className="block text-sm font-medium text-label mb-1">Frequency</label>
           <select
             value={item.frequency}
             onChange={(e) => onUpdate('frequency', e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
           >
             {frequencyOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -824,7 +820,7 @@ function FinancialItemRow({
           <button
             type="button"
             onClick={onDelete}
-            className="px-2 py-1.5 bg-red-100 text-red-600 rounded text-xs font-medium hover:bg-red-200 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
           >
             Remove
           </button>
@@ -867,34 +863,32 @@ function OneTimeEventRow({
   }
 
   return (
-    <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+    <div className="surface rounded-lg p-4 shadow-sm border border-default">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Event Name</label>
+          <label className="block text-sm font-medium text-label mb-1">Event Name</label>
           <input
             type="text"
             value={event.name}
             onChange={(e) => onUpdate(event.id, 'name', e.target.value)}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
             placeholder="Bonus, Windfall, etc."
           />
         </div>
 
         {/* Amount */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+          <label className="block text-sm font-medium text-label mb-1">Amount</label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">
-              $
-            </span>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
             <input
               type="number"
               value={event.amount / 100}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
-              className="w-full px-6 py-1.5 border border-gray-300 rounded text-sm"
+              className="w-full px-6 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
               placeholder="0.00"
             />
           </div>
@@ -902,7 +896,7 @@ function OneTimeEventRow({
 
         {/* Year */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+          <label className="block text-sm font-medium text-label mb-1">Year</label>
           <input
             type="number"
             value={event.year}
@@ -910,7 +904,7 @@ function OneTimeEventRow({
             min={1}
             max={maxYear}
             step={1}
-            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
           />
         </div>
 
@@ -919,7 +913,7 @@ function OneTimeEventRow({
           <button
             type="button"
             onClick={() => onDelete(event.id)}
-            className="px-2 py-1.5 bg-red-100 text-red-600 rounded text-xs font-medium hover:bg-red-200 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
           >
             Remove
           </button>
@@ -940,9 +934,17 @@ interface StatCardProps {
 
 function StatCard({ label, value, highlight }: StatCardProps): React.ReactElement {
   return (
-    <div className={`rounded-lg p-4 text-center ${highlight ? 'bg-white shadow' : 'bg-blue-100'}`}>
-      <dt className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</dt>
-      <dd className={`mt-1 text-lg font-semibold ${highlight ? 'text-blue-600' : 'text-gray-800'}`}>
+    <div
+      className={`rounded-lg p-4 text-center ${
+        highlight ? 'bg-white dark:bg-gray-800 shadow' : 'bg-blue-100 dark:bg-blue-900/40'
+      }`}
+    >
+      <dt className="text-xs font-medium text-muted uppercase tracking-wider">{label}</dt>
+      <dd
+        className={`mt-1 text-lg font-semibold ${
+          highlight ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-100'
+        }`}
+      >
         {value}
       </dd>
     </div>
