@@ -12,9 +12,10 @@
  * is exactly what SSR-only smoke misses (project memory, 4-11).
  */
 
-import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
+import { useIncomeStore } from '../../stores'
 
 const usePremiumAccess = vi.fn()
 
@@ -128,5 +129,71 @@ describe('HomePage section navigation (story 11-3)', () => {
     // Expenses specifically swapped danger-red → amber (AC-2), applied as an icon accent (AC-3).
     const expensesIcon = screen.getByRole('link', { name: 'Expenses' }).querySelector('svg')
     expect(expensesIcon?.getAttribute('class')).toMatch(/text-amber-/)
+  })
+})
+
+/**
+ * Financial Overview copy (story 11-4, "Match between the system and the real
+ * world"). The stat cards used to surface internal normalization vocabulary
+ * ("(Monthly Normalized)", a bare "Raw: …" sub-line). These tests assert the
+ * plain-language labels and that the monthly-conversion explanation is available
+ * progressively via an info affordance rather than a jargon-y sub-line.
+ */
+describe('HomePage financial overview copy (story 11-4)', () => {
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  it('AC-1: stat cards read "(per month)" in plain language with no "Normalized"/"Raw" jargon', () => {
+    render(<HomePage />)
+    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
+    expect(screen.getByText('Total Expenses (per month)')).toBeInTheDocument()
+    expect(screen.queryByText(/Normalized/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Raw:/)).not.toBeInTheDocument()
+  })
+
+  it('AC-2: a normalized non-monthly amount drops the "Raw:" line and reveals the conversion (with the raw total) progressively on focus', async () => {
+    // A weekly amount normalizes to ~4.33× its entry, so the monthly figure
+    // differs from what was entered and the info affordance renders.
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'test-weekly',
+          userId: 0,
+          name: 'Weekly gig',
+          amount: 10000,
+          frequency: 'weekly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+    render(<HomePage />)
+
+    // No bare engineering sub-line.
+    expect(screen.queryByText(/^Raw:/)).not.toBeInTheDocument()
+
+    // Progressive disclosure: the explanation is not present until the trigger is
+    // focused/hovered — no tooltip and no association at rest.
+    const trigger = screen.getByRole('button', {
+      name: /more information about the monthly income figure/i,
+    })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(trigger).not.toHaveAttribute('aria-describedby')
+
+    // On focus, the tooltip appears, is associated for assistive tech, explains the
+    // conversion, and surfaces the raw entered total.
+    fireEvent.focus(trigger)
+    const tooltip = await screen.findByRole('tooltip')
+    expect(trigger).toHaveAttribute('aria-describedby')
+    expect(tooltip).toHaveTextContent(
+      /convert weekly and annual amounts to a monthly figure so totals are comparable/i
+    )
+    expect(tooltip).toHaveTextContent(/entered total before conversion/i)
   })
 })

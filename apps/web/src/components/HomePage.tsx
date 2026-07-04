@@ -13,7 +13,7 @@ import type {
   RechartsDataItem,
   TimePeriodPreset,
 } from '@budget-planner/core/finance/visualization'
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useId, useRef, useEffect } from 'react'
 import {
   Bar,
   BarChart,
@@ -306,12 +306,12 @@ export function HomePage() {
   // Use normalized values for income and expenses to ensure consistent comparison
   const netWorthBarData = [
     {
-      category: 'Income (Normalized)',
+      category: 'Income (monthly)',
       amount: totalNormalizedIncome,
       fill: INCOME_COLOR,
     },
     {
-      category: 'Expenses (Normalized)',
+      category: 'Expenses (monthly)',
       amount: -totalNormalizedExpenses,
       fill: EXPENSE_COLOR,
     },
@@ -362,28 +362,36 @@ export function HomePage() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Total Income (Monthly Normalized)
+                <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                  Total Income (per month)
+                  {totalNormalizedIncome !== totalIncomeRaw && (
+                    <InfoTooltip
+                      label="More information about the monthly income figure"
+                      text={`We convert weekly and annual amounts to a monthly figure so totals are comparable. Entered total before conversion: ${formatAmount(
+                        totalIncomeRaw
+                      )}.`}
+                    />
+                  )}
                 </p>
                 <p className="text-2xl font-bold text-green-600">
                   {formatAmount(totalNormalizedIncome)}
                 </p>
-                {totalNormalizedIncome !== totalIncomeRaw && (
-                  <p className="text-xs text-gray-400 mt-1">Raw: {formatAmount(totalIncomeRaw)}</p>
-                )}
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Total Expenses (Monthly Normalized)
+                <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                  Total Expenses (per month)
+                  {totalNormalizedExpenses !== totalExpensesRaw && (
+                    <InfoTooltip
+                      label="More information about the monthly expenses figure"
+                      text={`We convert weekly and annual amounts to a monthly figure so totals are comparable. Entered total before conversion: ${formatAmount(
+                        totalExpensesRaw
+                      )}.`}
+                    />
+                  )}
                 </p>
                 <p className="text-2xl font-bold text-red-600">
                   {formatAmount(totalNormalizedExpenses)}
                 </p>
-                {totalNormalizedExpenses !== totalExpensesRaw && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Raw: {formatAmount(totalExpensesRaw)}
-                  </p>
-                )}
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Net Period Income</p>
@@ -812,6 +820,118 @@ const SECTION_TILES: readonly SectionTile[] = [
     accentClass: 'text-indigo-600 dark:text-indigo-400',
   },
 ]
+
+/**
+ * Small accessible info affordance (story 11-4). Reveals a plain-language
+ * explanation on hover or keyboard focus — progressive disclosure — instead of
+ * leading the card with a bare, jargon-y sub-line.
+ *
+ * Accessibility (hardened in code review):
+ * - Hover and focus are tracked independently (`open = hovered || focused`) so a
+ *   mouse-leave never hides a tooltip the keyboard user still has focused, and a
+ *   blur never hides one the mouse is still over. Escape dismisses without moving
+ *   focus.
+ * - A short close delay plus hover handlers on the bubble let the pointer travel
+ *   from the trigger onto the bubble without it vanishing, so the content stays
+ *   hoverable (WCAG 1.4.13).
+ * - The bubble is rendered only while open and positioned `fixed` with its left
+ *   clamped to the viewport, so it can neither contribute to horizontal overflow
+ *   nor clip off-screen at 320px regardless of which card edge the icon sits near.
+ * - `aria-describedby` is wired only while the bubble exists.
+ */
+function InfoTooltip({ label, text }: { label: string; text: string }): React.ReactElement {
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const tooltipId = useId()
+  const open = hovered || focused
+
+  const openHover = (): void => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    setHovered(true)
+  }
+  // Delay the close so the pointer can cross the small gap onto the bubble
+  // (which re-opens via its own onMouseEnter) before it unmounts.
+  const closeHoverSoon = (): void => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = setTimeout(() => setHovered(false), 120)
+  }
+
+  // Position the bubble in viewport space, clamped so it never overflows either
+  // edge. Runs after the trigger is laid out and whenever the tooltip opens.
+  useEffect(() => {
+    if (!open || !triggerRef.current) return
+    const rect = triggerRef.current.getBoundingClientRect()
+    const margin = 8
+    const width = Math.min(224, window.innerWidth - margin * 2)
+    const centered = rect.left + rect.width / 2 - width / 2
+    const left = Math.max(margin, Math.min(centered, window.innerWidth - width - margin))
+    setCoords({ top: rect.bottom + 4, left, width })
+  }, [open])
+
+  useEffect(() => () => clearTimeout(closeTimer.current), [])
+
+  return (
+    <span
+      className="inline-flex align-middle"
+      onMouseEnter={openHover}
+      onMouseLeave={closeHoverSoon}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:text-gray-200"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            if (closeTimer.current) clearTimeout(closeTimer.current)
+            setHovered(false)
+            setFocused(false)
+          }
+        }}
+      >
+        <InfoIcon className="h-4 w-4" />
+      </button>
+      {open && coords && (
+        <span
+          role="tooltip"
+          id={tooltipId}
+          onMouseEnter={openHover}
+          onMouseLeave={closeHoverSoon}
+          style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width }}
+          className="z-20 rounded-md bg-gray-900 px-3 py-2 text-left text-xs font-normal text-gray-100 shadow-lg dark:bg-gray-700"
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function InfoIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M11.25 11.25h.75v3.75m-.75 0h1.5M12 8.25h.008v.008H12V8.25zM21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  )
+}
 
 /**
  * Category icons for the section-navigation tiles. Each is decorative
