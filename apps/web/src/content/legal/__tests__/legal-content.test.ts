@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { LEGAL_PAGES, PRICING_PAGE, getLegalPage } from '../index'
 
 /**
- * Legal/commercial content registry tests (story 5-13, AC-2/AC-4).
+ * Legal/commercial content registry tests (story 5-13, updated in story 10-3).
  *
  * Confirms the registry exposes the four Paddle-required pages with well-formed
- * bodies loaded from the static `.md` files, that slug lookup behaves, and that
- * the pricing page carries the Merchant-of-Record disclosure and an explicit
- * (non-fabricated) price placeholder.
+ * bodies loaded from the static `.md` files, that slug lookup behaves, that the
+ * pricing page carries the Merchant-of-Record disclosure and the finalized EUR
+ * pricing, and that no unresolved DRAFT/placeholder tokens remain (10-3 AC-1).
  */
 describe('LEGAL_PAGES', () => {
   it('exposes the pricing, terms, privacy, and refund pages', () => {
@@ -44,6 +44,13 @@ describe('LEGAL_PAGES', () => {
       expect(firstHeading).not.toBe(page.title)
     }
   })
+
+  it('contains no unresolved DRAFT banner or bracketed placeholder (10-3 AC-1)', () => {
+    for (const page of LEGAL_PAGES) {
+      expect(page.content).not.toMatch(/DRAFT — pending legal review/)
+      expect(page.content).not.toMatch(/\[(?:DATE|PRICE|CONFIRM)\b[^\]]*\]/)
+    }
+  })
 })
 
 describe('getLegalPage', () => {
@@ -62,8 +69,9 @@ describe('pricing page content (AC-4)', () => {
     expect(PRICING_PAGE.content).toMatch(/Merchant of Record/i)
   })
 
-  it('uses an explicit price placeholder rather than a fabricated amount', () => {
-    expect(PRICING_PAGE.content).toMatch(/\[PRICE —[^\]]*\]/)
+  it('states the finalized EUR pricing (monthly and annual)', () => {
+    expect(PRICING_PAGE.content).toMatch(/€10 per month/)
+    expect(PRICING_PAGE.content).toMatch(/€100 per year/)
   })
 
   it('describes both the free and premium tiers', () => {

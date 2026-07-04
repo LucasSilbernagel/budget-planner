@@ -14,12 +14,14 @@ forecasting.
 - Retirement modelling
 - Currency-less or localized currency display
 
-Your data on the free tier is stored **only in your browser** (localStorage /
-IndexedDB). It never leaves your device and we never see it.
+Your data on the free tier is stored **only in your browser** (in its local
+storage). It never leaves your device and we never see it.
 
 ### Premium
 
-**[PRICE — confirm against the live Paddle product before launch] per month.**
+**€10 per month, or €100 per year (two months free).**
+
+Prices are shown in euros; at checkout Paddle displays and charges the equivalent in your local currency.
 
 Everything in Free, plus:
 
@@ -29,9 +31,8 @@ Everything in Free, plus:
   household)
 - **Premium forecasting** — advanced projections and saved scenarios
 
-> **Note:** the final price, currency, and any trial terms shown above are pending
-> confirmation against our live billing product. This page will reflect the exact
-> amount you are charged before checkout.
+> **Note:** the exact amount and currency you are charged are confirmed by Paddle
+> at checkout before you pay.
 
 ### Billing & payments
 
@@ -40,6 +41,6 @@ and **Merchant of Record**. Paddle securely processes your payment and is
 responsible for collecting and remitting any applicable sales tax or VAT. Your
 payment receipt and billing communications come from Paddle.
 
-You can cancel at any time. See our [Refund &amp; Cancellation Policy](/refund) for
+You can cancel at any time. See our [Refund & Cancellation Policy](/refund) for
 details on cancellations and refunds, our [Terms of Service](/terms), and our
 [Privacy Policy](/privacy).
