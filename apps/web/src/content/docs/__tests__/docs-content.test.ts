@@ -37,3 +37,60 @@ describe('getDocPage', () => {
     expect(getDocPage('does-not-exist')).toBeUndefined()
   })
 })
+
+/**
+ * Content-accuracy guards (story 10-4).
+ *
+ * These lock in the corrections made when the docs were reconciled against the
+ * shipped app so a future edit can't silently reintroduce a stale claim. They
+ * assert facts, not prose, so wording can still evolve freely.
+ */
+describe('documentation content accuracy (story 10-4)', () => {
+  const contentFor = (slug: string): string => {
+    const page = getDocPage(slug)
+    if (!page) throw new Error(`missing expected doc page: ${slug}`)
+    return page.content
+  }
+
+  it('no page references the "Financial Health" score removed in story 11-5', () => {
+    for (const page of DOC_PAGES) {
+      expect(page.content.toLowerCase()).not.toContain('financial health')
+    }
+  })
+
+  it('the FAQ locates the currency control on /settings, not an old page header', () => {
+    const faq = contentFor('faq')
+    expect(faq).toContain('/settings')
+    expect(faq).not.toContain('in the page header')
+  })
+
+  it('the FAQ discloses the cookieless (counter.dev) analytics posture', () => {
+    expect(contentFor('faq').toLowerCase()).toContain('counter.dev')
+  })
+
+  it('the FAQ routes support requests to the in-app contact form and links the Privacy Policy', () => {
+    const faq = contentFor('faq')
+    expect(faq).toContain('/contact')
+    expect(faq).toContain('/privacy')
+  })
+
+  it('every internal doc link targets a real app route', () => {
+    // The routes referenced by the docs; each exists under apps/web/src/routes.
+    const knownRoutes = new Set([
+      '/docs/getting-started',
+      '/docs/features',
+      '/docs/faq',
+      '/privacy',
+      '/settings',
+      '/contact',
+      '/net-worth-projection',
+      '/retirement',
+    ])
+    const internalLink = /\]\((\/[^)]*)\)/g
+    for (const page of DOC_PAGES) {
+      for (const match of page.content.matchAll(internalLink)) {
+        expect(knownRoutes.has(match[1])).toBe(true)
+      }
+    }
+  })
+})

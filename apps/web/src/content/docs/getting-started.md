@@ -25,16 +25,16 @@ line up correctly.
 
 ### See your overview
 
-The home page brings everything together: your normalized monthly income and
-expenses, your net period income, your net worth, and a financial health
-score. Charts break your money down by category so you can see where it goes
-at a glance.
+The home page brings everything together: your income and expenses on a common
+monthly basis, your net period income, and your net worth. Charts break your
+money down by category so you can see where it goes at a glance.
 
 ### Next steps
 
 - Track progress toward goals on the **Savings** page.
 - Record investments and debts on the **Balance** page.
-- Explore long-term outlooks on the **Projections** and **Retirement** pages.
+- Look ahead with the [**Projections**](/net-worth-projection) page and the
+  [**retirement planner**](/retirement).
 
 Read the [Features](/docs/features) guide for a full tour, or check the
 [FAQ](/docs/faq) if you have questions.
