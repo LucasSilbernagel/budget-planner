@@ -197,3 +197,47 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     expect(tooltip).toHaveTextContent(/entered total before conversion/i)
   })
 })
+
+/**
+ * Financial Overview no longer surfaces the opaque "Financial Health" score
+ * (story 11-5, "Aesthetic-and-minimalist design" + Trust). The score was a
+ * single uninterpretable percentage derived from arbitrary constants; it was
+ * removed rather than explained. These tests assert the card is gone and the
+ * overview grid reflows to the four remaining cards with no empty column.
+ */
+describe('HomePage financial overview — no Financial Health score (story 11-5)', () => {
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  it('AC-1/AC-2: the "Financial Health" card and its percentage are gone', () => {
+    render(<HomePage />)
+    expect(screen.queryByText('Financial Health')).not.toBeInTheDocument()
+    // No stray "NN%" score value remains in the overview.
+    expect(screen.queryByText(/^\d+%$/)).not.toBeInTheDocument()
+  })
+
+  it('AC-1: the four remaining overview cards still render', () => {
+    render(<HomePage />)
+    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
+    expect(screen.getByText('Total Expenses (per month)')).toBeInTheDocument()
+    expect(screen.getByText('Net Period Income')).toBeInTheDocument()
+    expect(screen.getByText('Net Worth')).toBeInTheDocument()
+  })
+
+  it('AC-1: the overview grid reflows to four columns (no 5-column gap on desktop)', () => {
+    render(<HomePage />)
+    const heading = screen.getByRole('heading', { name: 'Financial Overview' })
+    const grid = heading.parentElement?.querySelector('div.grid')
+    expect(grid).not.toBeNull()
+    expect(grid?.className).toContain('md:grid-cols-4')
+    expect(grid?.className).not.toContain('md:grid-cols-5')
+    // Exactly four stat cards under the overview grid.
+    expect(grid?.children.length).toBe(4)
+  })
+})

@@ -42,56 +42,6 @@ const SAVINGS_COLOR = '#8B5CF6'
 const INVESTMENT_COLOR = '#3B82F6'
 const DEBT_COLOR = '#DC2626'
 
-/**
- * Calculates a financial health score based on various financial metrics
- * Score is out of 100 points
- * Uses NORMALIZED values for income and expenses to ensure accurate ratios
- */
-function calculateFinancialHealthScore(
-  totalNormalizedIncome: number,
-  totalNormalizedExpenses: number,
-  totalSavings: number,
-  totalInvestments: number,
-  totalDebts: number
-): number {
-  let score = 0
-
-  // Income vs Expenses ratio (max 40 points) - using NORMALIZED values
-  if (totalNormalizedIncome > 0) {
-    const expenseRatio = totalNormalizedExpenses / totalNormalizedIncome
-    if (expenseRatio <= 0.5) {
-      score += 40
-    } else if (expenseRatio <= 0.8) {
-      score += 30
-    } else if (expenseRatio <= 1.0) {
-      score += 20
-    } else {
-      score += 10
-    }
-  } else {
-    score += 0
-  }
-
-  // Savings health (max 30 points)
-  if (totalSavings > 0) {
-    score += Math.min(30, totalSavings / 10000) // $100 = 1 point, max 30
-  }
-
-  // Investment health (max 20 points)
-  if (totalInvestments > 0) {
-    score += Math.min(20, totalInvestments / 5000) // $50 = 1 point, max 20
-  }
-
-  // Debt management (max 10 points)
-  if (totalDebts === 0) {
-    score += 10
-  } else if (totalInvestments > totalDebts) {
-    score += 5
-  }
-
-  return Math.min(100, Math.round(score))
-}
-
 export function HomePage() {
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
@@ -332,16 +282,6 @@ export function HomePage() {
     },
   ].filter((item) => item.amount !== 0)
 
-  // Calculate overall financial health score (0-100)
-  // Using normalized values for accurate income/expense ratio
-  const financialHealthScore = calculateFinancialHealthScore(
-    totalNormalizedIncome,
-    totalNormalizedExpenses,
-    totalSavings,
-    totalInvestments,
-    totalDebts
-  )
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
@@ -360,7 +300,7 @@ export function HomePage() {
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
               Financial Overview
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
                   Total Income (per month)
@@ -412,10 +352,6 @@ export function HomePage() {
                 >
                   {formatAmount(netWorth)}
                 </p>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Financial Health</p>
-                <p className="text-2xl font-bold text-blue-600">{financialHealthScore}%</p>
               </div>
             </div>
           </section>
