@@ -15,7 +15,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
-import { useExpenseStore, useIncomeStore, useOverviewDurationStore } from '../../stores'
+import {
+  useExpenseStore,
+  useIncomeStore,
+  useOverviewDurationStore,
+  useSavingsStore,
+} from '../../stores'
 
 const usePremiumAccess = vi.fn()
 
@@ -479,5 +484,94 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     // The annual figures are no longer shown.
     expect(screen.queryByText('5199.96')).not.toBeInTheDocument()
     expect(screen.queryByText('99.96')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Asset & Liability breakdown pie removed (story 12-4, UX-DR21).
+ *
+ * The dashboard used to render an "Asset & Liability Breakdown" pie beside the
+ * income-vs-expense pie, plotting Savings/Investments/Debts as three slices of
+ * one whole. It was (a) redundant with the "Financial Category Summary" bar
+ * chart directly below — the same three figures — and (b) conceptually muddled
+ * (debts, a liability, shown as a proportional slice of an "asset" whole).
+ * Product approved removing it; the bar chart is now the sole carrier of those
+ * figures. These tests assert the pie is gone, the bar chart remains, and only
+ * the single, distinctly-named income-vs-expense breakdown pie survives (the two
+ * pies previously shared one accessible name — a11y defect + test landmine).
+ *
+ * Assertions target the section <h2> headings, which render deterministically in
+ * jsdom, rather than the Recharts SVG (which needs real layout to render).
+ */
+describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
+  function seedIncomeAndSavings(): void {
+    // Income makes the visualization block render (hasData). A funded savings
+    // goal is exactly the kind of figure the removed pie plotted, so seeding it
+    // proves the pie is gone even when its data exists.
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-1',
+          userId: 0,
+          name: 'Salary',
+          amount: 500000,
+          frequency: 'monthly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 1,
+          name: 'Emergency Fund',
+          targetAmount: 1000000,
+          currentBalance: 250000,
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+  }
+
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  })
+
+  it('AC-3: the redundant "Asset & Liability Breakdown" pie and its heading are gone', () => {
+    seedIncomeAndSavings()
+    render(<HomePage />)
+    expect(
+      screen.queryByRole('heading', { name: /asset & liability breakdown/i })
+    ).not.toBeInTheDocument()
+  })
+
+  it('AC-2: the "Financial Category Summary" bar chart remains as the sole carrier of the Savings/Investments/Debts figures', () => {
+    seedIncomeAndSavings()
+    render(<HomePage />)
+    expect(screen.getByRole('heading', { name: /financial category summary/i })).toBeInTheDocument()
+  })
+
+  it('AC-2: only the single, distinctly-named income-vs-expense breakdown pie survives (no duplicate accessible name)', () => {
+    seedIncomeAndSavings()
+    render(<HomePage />)
+    expect(
+      screen.getByRole('heading', { name: /income vs expense breakdown/i })
+    ).toBeInTheDocument()
+    // The asset pie was the only other "breakdown" chart; its removal leaves a
+    // single, distinctly-named breakdown section.
+    expect(screen.queryByRole('heading', { name: /asset & liability breakdown/i })).toBeNull()
   })
 })

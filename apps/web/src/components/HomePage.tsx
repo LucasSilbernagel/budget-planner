@@ -28,6 +28,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
 import {
@@ -67,6 +68,10 @@ export function HomePage() {
   // Below Tailwind `sm` (≤639px) charts must drop their desktop-width chrome
   // (vertical right legend, wide Y-axis) so the plot area stays usable at 320px.
   const isNarrowViewport = useIsNarrowViewport()
+
+  // Theme-aware Recharts chrome (axis/grid/tooltip) for the summary bar chart so
+  // it stays legible on the dark `.surface` card (story 11-2 / 12-4 AC-2).
+  const chartColors = useChartColors()
 
   // Calculate normalized totals for consistent monthly comparison
   // This ensures income and expenses with different frequencies are comparable
@@ -260,25 +265,6 @@ export function HomePage() {
     [allCategoryData]
   )
 
-  // Prepare data for the asset breakdown pie chart
-  const assetBreakdownData = [
-    {
-      name: 'Savings',
-      value: totalSavings,
-      color: SAVINGS_COLOR,
-    },
-    {
-      name: 'Investments',
-      value: totalInvestments,
-      color: INVESTMENT_COLOR,
-    },
-    {
-      name: 'Debts',
-      value: totalDebts,
-      color: DEBT_COLOR,
-    },
-  ].filter((item) => item.value > 0)
-
   // Prepare data for the net worth over time bar chart (simplified)
   // This shows current state of different financial categories
   // Use normalized values for income and expenses to ensure consistent comparison
@@ -394,246 +380,208 @@ export function HomePage() {
           {/* Enhanced Visualizations */}
           {hasData ? (
             <>
-              {/* Row 1: Two pie charts side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Enhanced Income vs Expense Breakdown (Story 3-3) */}
-                <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-                      Income vs Expense Breakdown
-                    </h2>
-                    {/* Monthly/Annually cadence toggle (story 12-3, UX-DR20),
+              {/* Income vs Expense category breakdown (Story 3-3). Formerly the
+                  left of a two-pie row; the redundant "Asset & Liability
+                  Breakdown" pie that sat beside it was removed in story 12-4, so
+                  this is now a full-width section stacked above the bar chart. */}
+              <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+                    Income vs Expense Breakdown
+                  </h2>
+                  {/* Monthly/Annually cadence toggle (story 12-3, UX-DR20),
                         replacing the six date-range presets. The native select
                         matches the dark-mode + a11y idiom of the overview
                         selector (12-2) and settings/currency-toggle, and adds the
                         dark-mode support the old TimePeriodFilter lacked
                         (Epic 11.2). */}
-                    <div className="flex items-center space-x-2">
-                      <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
-                        <span className="sr-only">Show breakdown per</span>
-                        <select
-                          aria-label="Show breakdown per"
-                          value={chartPeriod}
-                          onChange={(e) => setChartPeriod(e.target.value as 'monthly' | 'annually')}
-                          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                        >
-                          <option value="monthly">Monthly</option>
-                          <option value="annually">Annually</option>
-                        </select>
-                      </label>
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
+                      <span className="sr-only">Show breakdown per</span>
+                      <select
+                        aria-label="Show breakdown per"
+                        value={chartPeriod}
+                        onChange={(e) => setChartPeriod(e.target.value as 'monthly' | 'annually')}
+                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="annually">Annually</option>
+                      </select>
+                    </label>
                   </div>
+                </div>
 
-                  {/* Drill-down breadcrumb navigation */}
-                  {isDrillDownActive && breadcrumb.length > 0 && (
-                    <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <nav
-                          className="flex items-center space-x-2"
-                          aria-label="drill-down-breadcrumb"
-                        >
-                          <button
-                            type="button"
-                            onClick={resetDrillDown}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                          >
-                            🏠 All Categories
-                          </button>
-                          {breadcrumb.map((item) => (
-                            <React.Fragment key={`${item.type}-${item.name}`}>
-                              <span className="text-gray-400">→</span>
-                              <span className="text-sm text-gray-600">{item.name}</span>
-                            </React.Fragment>
-                          ))}
-                        </nav>
+                {/* Drill-down breadcrumb navigation */}
+                {isDrillDownActive && breadcrumb.length > 0 && (
+                  <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <nav
+                        className="flex items-center space-x-2"
+                        aria-label="drill-down-breadcrumb"
+                      >
                         <button
                           type="button"
-                          onClick={drillUp}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium whitespace-nowrap"
+                          onClick={resetDrillDown}
+                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                         >
-                          ← Back
+                          🏠 All Categories
                         </button>
-                      </div>
+                        {breadcrumb.map((item) => (
+                          <React.Fragment key={`${item.type}-${item.name}`}>
+                            <span className="text-gray-400">→</span>
+                            <span className="text-sm text-gray-600">{item.name}</span>
+                          </React.Fragment>
+                        ))}
+                      </nav>
+                      <button
+                        type="button"
+                        onClick={drillUp}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium whitespace-nowrap"
+                      >
+                        ← Back
+                      </button>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  <div className="h-[350px]">
-                    <ErrorBoundary
-                      fallback={<div className="p-4 text-red-600">Chart error occurred</div>}
-                    >
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart aria-label="Financial category breakdown chart" role="img">
-                          <Pie
-                            data={allCategoryData}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            outerRadius={isNarrowViewport ? 70 : 80}
-                            fill="#8884d8"
-                            dataKey="value"
-                            nameKey="name"
-                            // At ≤320px the outer slice labels extend past the
-                            // chart container and force horizontal page overflow;
-                            // the legend (moved to the bottom on narrow) and the
-                            // tooltip carry the same information instead.
-                            label={
-                              isNarrowViewport
-                                ? false
-                                : ({ name, percent }) => {
-                                    // Show name and percentage, handle long names
-                                    const displayName =
-                                      name.length > 15 ? `${name.substring(0, 12)}...` : name
-                                    return `${displayName}: ${(percent * 100).toFixed(1)}%`
-                                  }
-                            }
-                            onClick={(_data, index, _event) => {
-                              // Handle chart segment click for drill-down
-                              const clickedItem = allCategoryData[index]
-                              if (clickedItem?.name) {
-                                // Extract type from the data or use a default
-                                const itemType = clickedItem.type ?? 'expense'
-                                drillDown(clickedItem.name, itemType)
-                              }
-                            }}
-                          >
-                            {allCategoryData.map((entry, index) => {
-                              const percentage =
-                                totalChartAmount > 0
-                                  ? ((entry.value / totalChartAmount) * 100).toFixed(1)
-                                  : '0'
-                              return (
-                                <Cell
-                                  key={`${entry.type}-${entry.category}`}
-                                  fill={
-                                    entry.fill ||
-                                    entry.color ||
-                                    CATEGORY_COLORS[index % CATEGORY_COLORS.length]
-                                  } // CATEGORY_COLORS is a const array with 16 colors
-                                  stroke="#fff"
-                                  strokeWidth={2}
-                                  aria-label={`${entry.name}: ${formatAmount(
-                                    entry.value
-                                  )} (${percentage}%)`}
-                                />
-                              )
-                            })}
-                          </Pie>
-                          <Tooltip
-                            formatter={(
-                              value: number,
-                              name: string,
-                              payload: {
-                                payload: RechartsDataItem & {
-                                  originalAmount?: number
-                                  count?: number
+                {/* This pie used to sit in a half-width column beside the (now
+                    removed, story 12-4) asset pie. As a full-width card it would
+                    leave a large empty gutter, so cap the plot+legend to a
+                    centered max-width to keep it balanced. */}
+                <div className="h-[350px] max-w-3xl mx-auto">
+                  <ErrorBoundary
+                    fallback={<div className="p-4 text-red-600">Chart error occurred</div>}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart aria-label="Income and expense category breakdown chart" role="img">
+                        <Pie
+                          data={allCategoryData}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          outerRadius={isNarrowViewport ? 70 : 80}
+                          fill="#8884d8"
+                          dataKey="value"
+                          nameKey="name"
+                          // At ≤320px the outer slice labels extend past the
+                          // chart container and force horizontal page overflow;
+                          // the legend (moved to the bottom on narrow) and the
+                          // tooltip carry the same information instead.
+                          label={
+                            isNarrowViewport
+                              ? false
+                              : ({ name, percent }) => {
+                                  // Show name and percentage, handle long names
+                                  const displayName =
+                                    name.length > 15 ? `${name.substring(0, 12)}...` : name
+                                  return `${displayName}: ${(percent * 100).toFixed(1)}%`
                                 }
-                              }
-                            ) => {
-                              if (payload?.payload) {
-                                const data = payload.payload
-                                const amount = data.originalAmount ?? value
-                                return [
-                                  `${name}: ${formatAmount(amount)}`,
-                                  `Type: ${data.type ?? 'N/A'}`,
-                                  `Count: ${data.count ?? 1}`,
-                                  `Percentage: ${
-                                    totalChartAmount > 0
-                                      ? ((value / totalChartAmount) * 100).toFixed(1)
-                                      : '0'
-                                  }%`,
-                                ]
-                              }
-                              return [formatAmount(value), name]
-                            }}
-                          />
-                          <Legend
-                            layout={isNarrowViewport ? 'horizontal' : 'vertical'}
-                            align={isNarrowViewport ? 'center' : 'right'}
-                            verticalAlign={isNarrowViewport ? 'bottom' : 'middle'}
-                            wrapperStyle={isNarrowViewport ? undefined : { paddingLeft: '20px' }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </ErrorBoundary>
-                  </div>
-
-                  {/* Category breakdown summary */}
-                  {allCategoryData.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                      <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                        Top Categories
-                      </h3>
-                      <div className="space-y-1">
-                        {allCategoryData
-                          .sort((a, b) => b.value - a.value)
-                          .slice(0, 5)
-                          .map((item) => (
-                            <div
-                              key={`${item.type}-${item.category}`}
-                              className="flex justify-between text-xs"
-                            >
-                              <span className="flex items-center">
-                                <span
-                                  className="w-2 h-2 rounded-full mr-2"
-                                  style={{ backgroundColor: item.fill || item.color }}
-                                />
-                                {item.name}
-                              </span>
-                              <span>{formatAmount(item.value)}</span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {/* Asset Breakdown */}
-                <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
-                    Asset & Liability Breakdown
-                  </h2>
-                  <div className="h-[350px]">
-                    <ErrorBoundary
-                      fallback={<div className="p-4 text-red-600">Chart error occurred</div>}
-                    >
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart aria-label="Financial category breakdown chart" role="img">
-                          <Pie
-                            data={assetBreakdownData}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            outerRadius={isNarrowViewport ? 70 : 80}
-                            fill="#8884d8"
-                            dataKey="value"
-                            nameKey="name"
-                            // Suppress outer labels at ≤320px (they overflow the
-                            // container); legend + tooltip convey the breakdown.
-                            label={
-                              isNarrowViewport
-                                ? false
-                                : ({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`
+                          }
+                          onClick={(_data, index, _event) => {
+                            // Handle chart segment click for drill-down
+                            const clickedItem = allCategoryData[index]
+                            if (clickedItem?.name) {
+                              // Extract type from the data or use a default
+                              const itemType = clickedItem.type ?? 'expense'
+                              drillDown(clickedItem.name, itemType)
                             }
-                          >
-                            {assetBreakdownData.map((entry) => (
-                              <Cell key={entry.name} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value: number, name: string) => [
-                              formatAmount(value as number),
-                              name,
-                            ]}
-                          />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </ErrorBoundary>
-                  </div>
-                </section>
-              </div>
+                          }}
+                        >
+                          {allCategoryData.map((entry, index) => {
+                            const percentage =
+                              totalChartAmount > 0
+                                ? ((entry.value / totalChartAmount) * 100).toFixed(1)
+                                : '0'
+                            return (
+                              <Cell
+                                key={`${entry.type}-${entry.category}`}
+                                fill={
+                                  entry.fill ||
+                                  entry.color ||
+                                  CATEGORY_COLORS[index % CATEGORY_COLORS.length]
+                                } // CATEGORY_COLORS is a const array with 16 colors
+                                stroke="#fff"
+                                strokeWidth={2}
+                                aria-label={`${entry.name}: ${formatAmount(
+                                  entry.value
+                                )} (${percentage}%)`}
+                              />
+                            )
+                          })}
+                        </Pie>
+                        <Tooltip
+                          formatter={(
+                            value: number,
+                            name: string,
+                            payload: {
+                              payload: RechartsDataItem & {
+                                originalAmount?: number
+                                count?: number
+                              }
+                            }
+                          ) => {
+                            if (payload?.payload) {
+                              const data = payload.payload
+                              const amount = data.originalAmount ?? value
+                              return [
+                                `${name}: ${formatAmount(amount)}`,
+                                `Type: ${data.type ?? 'N/A'}`,
+                                `Count: ${data.count ?? 1}`,
+                                `Percentage: ${
+                                  totalChartAmount > 0
+                                    ? ((value / totalChartAmount) * 100).toFixed(1)
+                                    : '0'
+                                }%`,
+                              ]
+                            }
+                            return [formatAmount(value), name]
+                          }}
+                        />
+                        <Legend
+                          layout={isNarrowViewport ? 'horizontal' : 'vertical'}
+                          align={isNarrowViewport ? 'center' : 'right'}
+                          verticalAlign={isNarrowViewport ? 'bottom' : 'middle'}
+                          wrapperStyle={isNarrowViewport ? undefined : { paddingLeft: '20px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </ErrorBoundary>
+                </div>
 
-              {/* Row 2: Full width bar chart */}
+                {/* Category breakdown summary */}
+                {allCategoryData.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                      Top Categories
+                    </h3>
+                    <div className="space-y-1">
+                      {allCategoryData
+                        .sort((a, b) => b.value - a.value)
+                        .slice(0, 5)
+                        .map((item) => (
+                          <div
+                            key={`${item.type}-${item.category}`}
+                            className="flex justify-between text-xs"
+                          >
+                            <span className="flex items-center">
+                              <span
+                                className="w-2 h-2 rounded-full mr-2"
+                                style={{ backgroundColor: item.fill || item.color }}
+                              />
+                              {item.name}
+                            </span>
+                            <span>{formatAmount(item.value)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Financial Category Summary bar chart. After the redundant
+                  "Asset & Liability Breakdown" pie was removed (story 12-4), this
+                  is the sole carrier of the current Savings / Investments / Debts
+                  figures (alongside monthly Income / Expenses). */}
               <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
                   Financial Category Summary
@@ -641,11 +589,20 @@ export function HomePage() {
                 {netWorthBarData.length > 0 ? (
                   <div className="h-[350px]">
                     <ErrorBoundary
-                      fallback={<div className="p-4 text-red-600">Chart error occurred</div>}
+                      fallback={
+                        <div className="p-4 text-red-600 dark:text-red-400">
+                          Chart error occurred
+                        </div>
+                      }
                     >
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={netWorthBarData} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" />
+                          {/* Recharts' default axis/grid/tooltip strokes are only
+                              legible on a light canvas; route them through the
+                              shared chartTheme so the surviving summary chart is
+                              readable on the dark `.surface` card too (story 11-2
+                              / 12-4 AC-2 dark-mode constraint). */}
+                          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                           <XAxis
                             type="number"
                             domain={[
@@ -653,17 +610,27 @@ export function HomePage() {
                               (dataMax: number) => Math.max(0, dataMax + 100),
                             ]}
                             tickFormatter={(value) => formatAmount(value)}
+                            tick={{ fontSize: 12, fill: chartColors.axis }}
+                            stroke={chartColors.axis}
                           />
                           <YAxis
                             dataKey="category"
                             type="category"
                             width={isNarrowViewport ? 72 : 120}
-                            tick={{ fontSize: isNarrowViewport ? 11 : 12 }}
+                            tick={{ fontSize: isNarrowViewport ? 11 : 12, fill: chartColors.axis }}
+                            stroke={chartColors.axis}
                           />
                           <Tooltip
                             formatter={(value: number, name: string) => [formatAmount(value), name]}
+                            contentStyle={{
+                              backgroundColor: chartColors.tooltipBg,
+                              border: `1px solid ${chartColors.tooltipBorder}`,
+                              color: chartColors.tooltipText,
+                            }}
+                            labelStyle={{ color: chartColors.tooltipText }}
+                            itemStyle={{ color: chartColors.tooltipText }}
                           />
-                          <Legend />
+                          <Legend wrapperStyle={{ color: chartColors.tooltipText }} />
                           <Bar dataKey="amount" name="Amount">
                             {netWorthBarData.map((entry) => (
                               <Cell key={entry.category} fill={entry.fill} />
