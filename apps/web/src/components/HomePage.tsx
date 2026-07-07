@@ -1,19 +1,19 @@
-import { calculateNetIncomeResult, denormalizeFromMonthly } from '@budget-planner/core/finance'
+import {
+  calculateNetIncomeResult,
+  denormalizeFromMonthly,
+  normalizeToMonthly,
+} from '@budget-planner/core/finance'
 import {
   CATEGORY_COLORS,
   aggregateByCategoryAndType,
-  filterByDateRange,
   generateColorMap,
-  getDateRangeForPreset,
   toPieChartData,
 } from '@budget-planner/core/finance/visualization'
 import type {
-  DateRange,
   FinancialDataPoint,
   RechartsDataItem,
-  TimePeriodPreset,
 } from '@budget-planner/core/finance/visualization'
-import React, { useState, useMemo, useCallback, useId, useRef, useEffect } from 'react'
+import React, { useState, useMemo, useId, useRef, useEffect } from 'react'
 import {
   Bar,
   BarChart,
@@ -37,7 +37,6 @@ import {
 } from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useCategoryDrillDown } from './finance/category-drill-down'
-import { TimePeriodFilter } from './finance/time-period-filter'
 import { PremiumFeatureGate } from './premium'
 
 // Card-label suffix for the selected overview duration (story 12-2). "monthly"
@@ -106,12 +105,15 @@ export function HomePage() {
   const hasData = incomeSources.length > 0 || expenses.length > 0
 
   // ============================================================================
-  // Enhanced Visualization State (Story 3-3)
+  // Enhanced Visualization State (Story 3-3, simplified in 12-3)
   // ============================================================================
 
-  // Time period filtering state
-  const [timePeriodPreset, setTimePeriodPreset] = useState<TimePeriodPreset>('last-month')
-  const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined)
+  // Income vs Expense Breakdown cadence (story 12-3). Replaces the old six
+  // date-range presets with a plain Monthly/Annually toggle, defaulting to
+  // Annually (UX-DR20). Unlike the overview duration selector (12-2) this control
+  // has NO persistence AC and is independent of it, so component-local state is
+  // correct and simplest — do not reuse overviewDurationStore.
+  const [chartPeriod, setChartPeriod] = useState<'monthly' | 'annually'>('annually')
 
   // Convert stores data to FinancialDataPoint format for visualization utilities
   const financialData = useMemo<FinancialDataPoint[]>(() => {
@@ -174,7 +176,28 @@ export function HomePage() {
     return data
   }, [incomeSources, expenses])
 
-  // Drill-down state for category navigation
+  // Re-express each entry at the chosen cadence BEFORE aggregation (story 12-3,
+  // AC-2). The breakdown previously summed raw entered amounts and ignored
+  // frequency entirely, so a weekly $100 and an annual $100 rendered as equal
+  // slices. We normalize every entry to monthly then denormalize to the target
+  // cadence, reusing the core frequency engine (annually ⇒ monthly ×12) rather
+  // than re-deriving any factors. Values stay integer cents, so formatAmount and
+  // the currency mode are unaffected.
+  const periodScaledData = useMemo<FinancialDataPoint[]>(
+    () =>
+      financialData.map((point) => {
+        const monthly = normalizeToMonthly(point.amount, point.frequency)
+        const scaled =
+          chartPeriod === 'annually'
+            ? denormalizeFromMonthly(monthly, 'annually') // monthly ×12
+            : monthly
+        return { ...point, amount: scaled }
+      }),
+    [financialData, chartPeriod]
+  )
+
+  // Drill-down state for category navigation (fed the period-scaled data so
+  // drilled figures stay consistent with the selected cadence).
   const {
     currentData: drillDownCurrentData,
     breadcrumb,
@@ -182,31 +205,12 @@ export function HomePage() {
     drillUp,
     reset: resetDrillDown,
     isActive: isDrillDownActive,
-  } = useCategoryDrillDown(financialData)
+  } = useCategoryDrillDown(periodScaledData)
 
-  // Handle time period change
-  const handleTimePeriodChange = useCallback(
-    (preset: TimePeriodPreset, customRange?: DateRange) => {
-      setTimePeriodPreset(preset)
-      setCustomDateRange(customRange)
-    },
-    []
-  )
-
-  // Get current date range
-  const currentDateRange = useMemo(() => {
-    return customDateRange || getDateRangeForPreset(timePeriodPreset)
-  }, [timePeriodPreset, customDateRange])
-
-  // Filter data by date range (currently all data since we don't have dates)
-  const filteredData = useMemo(() => {
-    return filterByDateRange(financialData, currentDateRange)
-  }, [financialData, currentDateRange])
-
-  // Get data for current drill-down level or use filtered data
+  // Get data for current drill-down level or the full period-scaled dataset.
   const displayData = useMemo(() => {
-    return isDrillDownActive ? drillDownCurrentData : filteredData
-  }, [isDrillDownActive, drillDownCurrentData, filteredData])
+    return isDrillDownActive ? drillDownCurrentData : periodScaledData
+  }, [isDrillDownActive, drillDownCurrentData, periodScaledData])
 
   // Aggregate data by category and type
   const aggregatedData = useMemo(() => {
@@ -394,17 +398,29 @@ export function HomePage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Enhanced Income vs Expense Breakdown (Story 3-3) */}
                 <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
                       Income vs Expense Breakdown
                     </h2>
+                    {/* Monthly/Annually cadence toggle (story 12-3, UX-DR20),
+                        replacing the six date-range presets. The native select
+                        matches the dark-mode + a11y idiom of the overview
+                        selector (12-2) and settings/currency-toggle, and adds the
+                        dark-mode support the old TimePeriodFilter lacked
+                        (Epic 11.2). */}
                     <div className="flex items-center space-x-2">
-                      <TimePeriodFilter
-                        selectedPreset={timePeriodPreset}
-                        customRange={customDateRange}
-                        onTimePeriodChange={handleTimePeriodChange}
-                        size="sm"
-                      />
+                      <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
+                        <span className="sr-only">Show breakdown per</span>
+                        <select
+                          aria-label="Show breakdown per"
+                          value={chartPeriod}
+                          onChange={(e) => setChartPeriod(e.target.value as 'monthly' | 'annually')}
+                          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                        >
+                          <option value="monthly">Monthly</option>
+                          <option value="annually">Annually</option>
+                        </select>
+                      </label>
                     </div>
                   </div>
 

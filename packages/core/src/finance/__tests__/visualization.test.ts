@@ -14,11 +14,8 @@ import {
   CATEGORY_COLORS,
   type CategoryAggregate,
   DEFAULT_COLORS,
-  type DateRange,
   type DrillDownState,
   type FinancialDataPoint,
-  // Constants
-  TIME_PERIOD_PRESETS,
   // Category Aggregation
   aggregateByCategory,
   aggregateByCategoryAndType,
@@ -27,18 +24,14 @@ import {
   drillDownToCategory,
   drillToRoot,
   drillUp,
-  filterByDateRange,
   generateColorMap,
   // Color Utilities
   getColorForCategory,
   getDataForDrillDownLevel,
-  // Time Period Filtering
-  getDateRangeForPreset,
   // Data Formatting Utilities
   getPercentageOfTotal,
   getTopCategories,
   groupSmallCategories,
-  isDateInRange,
   isDrillDownActive,
   sanitizeFinancialData,
   toBarChartData,
@@ -68,8 +61,6 @@ afterEach(() => {
 // ============================================================================
 // Test Data
 // ============================================================================
-
-const mockDate = new Date(FIXED_TEST_TIMESTAMP)
 
 const mockFinancialData: FinancialDataPoint[] = [
   {
@@ -128,56 +119,9 @@ const mockFinancialData: FinancialDataPoint[] = [
   },
 ]
 
-const mockFinancialDataNoDates: FinancialDataPoint[] = [
-  {
-    id: 'inc-1',
-    name: 'Salary',
-    amount: 500000,
-    frequency: 'monthly',
-    category: 'Salary',
-    type: 'income',
-  },
-  {
-    id: 'exp-1',
-    name: 'Rent',
-    amount: -150000,
-    frequency: 'monthly',
-    category: 'Housing',
-    type: 'expense',
-  },
-]
-
 // ============================================================================
 // Constants Tests
 // ============================================================================
-
-describe('TIME_PERIOD_PRESETS', () => {
-  it('should have all required presets with correct labels and days', () => {
-    expect(TIME_PERIOD_PRESETS).toHaveProperty('last-month')
-    expect(TIME_PERIOD_PRESETS['last-month'].label).toBe('Last Month')
-    expect(TIME_PERIOD_PRESETS['last-month'].days).toBe(30)
-
-    expect(TIME_PERIOD_PRESETS).toHaveProperty('last-3-months')
-    expect(TIME_PERIOD_PRESETS['last-3-months'].label).toBe('Last 3 Months')
-    expect(TIME_PERIOD_PRESETS['last-3-months'].days).toBe(90)
-
-    expect(TIME_PERIOD_PRESETS).toHaveProperty('last-6-months')
-    expect(TIME_PERIOD_PRESETS['last-6-months'].label).toBe('Last 6 Months')
-    expect(TIME_PERIOD_PRESETS['last-6-months'].days).toBe(180)
-
-    expect(TIME_PERIOD_PRESETS).toHaveProperty('year-to-date')
-    expect(TIME_PERIOD_PRESETS['year-to-date'].label).toBe('Year to Date')
-    expect(TIME_PERIOD_PRESETS['year-to-date'].days).toBe(0) // Special handling
-
-    expect(TIME_PERIOD_PRESETS).toHaveProperty('last-year')
-    expect(TIME_PERIOD_PRESETS['last-year'].label).toBe('Last Year')
-    expect(TIME_PERIOD_PRESETS['last-year'].days).toBe(365)
-
-    expect(TIME_PERIOD_PRESETS).toHaveProperty('custom')
-    expect(TIME_PERIOD_PRESETS.custom.label).toBe('Custom Range')
-    expect(TIME_PERIOD_PRESETS.custom.days).toBe(0) // Special handling
-  })
-})
 
 describe('CATEGORY_COLORS', () => {
   it('should have at least 10 color options', () => {
@@ -203,124 +147,6 @@ describe('DEFAULT_COLORS', () => {
   it('should use green for income and red for expense', () => {
     expect(DEFAULT_COLORS.income).toMatch(/^#[0-9A-Fa-f]{6}$/)
     expect(DEFAULT_COLORS.expense).toMatch(/^#[0-9A-Fa-f]{6}$/)
-  })
-})
-
-// ============================================================================
-// Time Period Filtering Tests
-// ============================================================================
-
-describe('getDateRangeForPreset', () => {
-  beforeEach(() => {
-    // Mock Date to have consistent test results
-    vi.setSystemTime(mockDate)
-  })
-
-  it('should return correct date range for last-month preset', () => {
-    const range = getDateRangeForPreset('last-month')
-    expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate.getTime()).toBe(new Date('2026-05-18T12:00:00Z').getTime())
-  })
-
-  it('should return correct date range for last-3-months preset', () => {
-    const range = getDateRangeForPreset('last-3-months')
-    expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate.getTime()).toBe(new Date('2026-03-18T12:00:00Z').getTime())
-  })
-
-  it('should return correct date range for last-6-months preset', () => {
-    const range = getDateRangeForPreset('last-6-months')
-    expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate.getTime()).toBe(new Date('2025-12-18T12:00:00Z').getTime())
-  })
-
-  it('should return correct date range for year-to-date preset', () => {
-    const range = getDateRangeForPreset('year-to-date')
-    expect(range.endDate).toEqual(mockDate)
-    expect(range.startDate).toEqual(new Date('2026-01-01T00:00:00Z'))
-  })
-
-  it('should return correct date range for last-year preset', () => {
-    const range = getDateRangeForPreset('last-year')
-    expect(range.endDate).toEqual(new Date('2026-06-18T12:00:00Z'))
-    expect(range.startDate).toEqual(new Date('2025-06-18T12:00:00Z'))
-  })
-
-  it('should return default last-month range for custom preset without customRange', () => {
-    const range = getDateRangeForPreset('custom')
-    expect(range).toEqual(getDateRangeForPreset('last-month'))
-  })
-
-  it('should return custom range when provided for custom preset', () => {
-    const customRange: DateRange = {
-      startDate: new Date('2026-01-01'),
-      endDate: new Date('2026-06-30'),
-    }
-    const range = getDateRangeForPreset('custom', customRange)
-    expect(range).toEqual(customRange)
-  })
-})
-
-describe('isDateInRange', () => {
-  const range: DateRange = {
-    startDate: new Date('2026-06-01'),
-    endDate: new Date('2026-06-30'),
-  }
-
-  it('should return true for date within range', () => {
-    const testDate = new Date('2026-06-15')
-    expect(isDateInRange(testDate, range)).toBe(true)
-  })
-
-  it('should return true for date equal to start date', () => {
-    const testDate = new Date('2026-06-01')
-    expect(isDateInRange(testDate, range)).toBe(true)
-  })
-
-  it('should return true for date equal to end date', () => {
-    const testDate = new Date('2026-06-30')
-    expect(isDateInRange(testDate, range)).toBe(true)
-  })
-
-  it('should return false for date before range', () => {
-    const testDate = new Date('2026-05-31')
-    expect(isDateInRange(testDate, range)).toBe(false)
-  })
-
-  it('should return false for date after range', () => {
-    const testDate = new Date('2026-07-01')
-    expect(isDateInRange(testDate, range)).toBe(false)
-  })
-})
-
-describe('filterByDateRange', () => {
-  const range: DateRange = {
-    startDate: new Date('2026-06-01'),
-    endDate: new Date('2026-06-30'),
-  }
-
-  it('should filter data to include only items within date range', () => {
-    const filtered = filterByDateRange(mockFinancialData, range)
-
-    // Should include items from June 2026
-    expect(filtered.some((item) => item.id === 'inc-1')).toBe(true) // 2026-06-01
-    expect(filtered.some((item) => item.id === 'inc-2')).toBe(true) // 2026-06-15
-    expect(filtered.some((item) => item.id === 'exp-1')).toBe(true) // 2026-06-01
-    expect(filtered.some((item) => item.id === 'exp-2')).toBe(true) // 2026-06-10
-
-    // Should exclude items from May 2026 and January 2026
-    expect(filtered.some((item) => item.id === 'exp-3')).toBe(false) // 2026-05-01
-    expect(filtered.some((item) => item.id === 'inc-3')).toBe(false) // 2026-01-01
-  })
-
-  it('should include items without dates', () => {
-    const filtered = filterByDateRange(mockFinancialDataNoDates, range)
-    expect(filtered.length).toBe(mockFinancialDataNoDates.length)
-  })
-
-  it('should return empty array for empty input', () => {
-    const filtered = filterByDateRange([], range)
-    expect(filtered).toEqual([])
   })
 })
 

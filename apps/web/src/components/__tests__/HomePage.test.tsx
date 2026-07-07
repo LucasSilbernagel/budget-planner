@@ -382,3 +382,102 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
   })
 })
+
+/**
+ * Income vs Expense Breakdown period control (story 12-3, UX-DR20).
+ *
+ * The six date-range presets are replaced with a plain Monthly/Annually toggle
+ * defaulting to Annually, and the chart now re-aggregates through the core
+ * frequency engine instead of summing raw amounts. This control is independent
+ * of the overview duration selector (12-2) and has NO persistence.
+ *
+ * Currency mode defaults to `none`, so the "Top Categories" figures print as
+ * (cents / 100).toFixed(2). Seeding two income sources with EQUAL raw amounts
+ * (10000c) but different frequencies proves normalization is applied: a weekly
+ * entry and an annual entry must NOT render as equal slices.
+ *   weekly  10000c → monthly round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5199.96"
+ *   annual  10000c → monthly round(10000 × 1/12) = 833c   → annually ×12 = 9996c   → "99.96"
+ * Switching to Monthly divides each annual figure by 12: "433.33" and "8.33".
+ */
+describe('HomePage income-vs-expense breakdown period control (story 12-3)', () => {
+  function seedMixedFrequencyIncome(): void {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-weekly',
+          userId: 0,
+          name: 'Weekly gig',
+          amount: 10000,
+          frequency: 'weekly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+        {
+          id: 'inc-annual',
+          userId: 0,
+          name: 'Annual bonus',
+          amount: 10000,
+          frequency: 'annually',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+  }
+
+  function breakdownSelect(): HTMLSelectElement {
+    return screen.getByRole('combobox', { name: /show breakdown per/i }) as HTMLSelectElement
+  }
+
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  })
+
+  it('AC-1: offers only Monthly and Annually, defaulting to Annually, with no preset labels', () => {
+    seedMixedFrequencyIncome()
+    render(<HomePage />)
+
+    const select = breakdownSelect()
+    expect(select.value).toBe('annually')
+
+    const optionValues = Array.from(select.options).map((o) => o.value)
+    expect(optionValues).toEqual(['monthly', 'annually'])
+    const optionLabels = Array.from(select.options).map((o) => o.textContent)
+    expect(optionLabels).toEqual(['Monthly', 'Annually'])
+
+    // The old six-preset control and its labels are gone.
+    expect(screen.queryByText(/Last Month/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Last 3 Months/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Year to Date/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Custom Range/i)).not.toBeInTheDocument()
+  })
+
+  it('AC-2: category figures are frequency-normalized and re-express when the period changes', () => {
+    seedMixedFrequencyIncome()
+    render(<HomePage />)
+
+    // Annually (default): equal raw amounts render as UNEQUAL, normalized slices.
+    expect(screen.getByText('5199.96')).toBeInTheDocument() // weekly 10000c/yr
+    expect(screen.getByText('99.96')).toBeInTheDocument() // annual 10000c/yr
+    // Not the raw sum — a raw-amount chart would show both as "100.00".
+    expect(screen.queryByText('100.00')).not.toBeInTheDocument()
+
+    // Switch to Monthly: each figure becomes the Annually value ÷ 12.
+    fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
+    expect(breakdownSelect().value).toBe('monthly')
+    expect(screen.getByText('433.33')).toBeInTheDocument() // 5199.96 ÷ 12
+    expect(screen.getByText('8.33')).toBeInTheDocument() // 99.96 ÷ 12
+    // The annual figures are no longer shown.
+    expect(screen.queryByText('5199.96')).not.toBeInTheDocument()
+    expect(screen.queryByText('99.96')).not.toBeInTheDocument()
+  })
+})

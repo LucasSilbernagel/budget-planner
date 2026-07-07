@@ -14,25 +14,6 @@ import type { Frequency } from './normalization'
 // ============================================================================
 
 /**
- * Time period filter preset options
- */
-type TimePeriodPreset =
-  | 'last-month'
-  | 'last-3-months'
-  | 'last-6-months'
-  | 'year-to-date'
-  | 'last-year'
-  | 'custom'
-
-/**
- * Date range for filtering
- */
-interface DateRange {
-  startDate: Date
-  endDate: Date
-}
-
-/**
  * Financial data point with category and time information
  */
 interface FinancialDataPoint {
@@ -86,18 +67,6 @@ interface DrillDownState {
 // ============================================================================
 
 /**
- * Time period preset configurations (in days)
- */
-const TIME_PERIOD_PRESETS: Record<TimePeriodPreset, { label: string; days: number }> = {
-  'last-month': { label: 'Last Month', days: 30 },
-  'last-3-months': { label: 'Last 3 Months', days: 90 },
-  'last-6-months': { label: 'Last 6 Months', days: 180 },
-  'year-to-date': { label: 'Year to Date', days: 0 }, // Special handling
-  'last-year': { label: 'Last Year', days: 365 },
-  custom: { label: 'Custom Range', days: 0 }, // Special handling
-}
-
-/**
  * Default color palette for categories
  * Expanded to 16 colors to support users with many categories
  */
@@ -130,144 +99,6 @@ const DEFAULT_COLORS = {
   savings: '#8B5CF6',
   investment: '#3B82F6',
   debt: '#DC2626',
-}
-
-// ============================================================================
-// Time Period Filtering
-// ============================================================================
-
-/**
- * Get date range for a time period preset
- * Uses UTC to ensure consistent timezone handling across browsers
- */
-function getDateRangeForPreset(preset: TimePeriodPreset, customRange?: DateRange): DateRange {
-  // Use the current time as-is to preserve the time component (for tests with mocked dates)
-  const now = new Date()
-
-  // Helper to create a Date with UTC components preserving time
-  const createUTCDateWithTime = (
-    year: number,
-    month: number,
-    date: number,
-    hours = 0,
-    minutes = 0,
-    seconds = 0,
-    ms = 0
-  ) => new Date(Date.UTC(year, month, date, hours, minutes, seconds, ms))
-
-  const nowTime = now.getTime()
-  const nowUTCComponents = {
-    year: now.getUTCFullYear(),
-    month: now.getUTCMonth(),
-    date: now.getUTCDate(),
-    hours: now.getUTCHours(),
-    minutes: now.getUTCMinutes(),
-    seconds: now.getUTCSeconds(),
-    ms: now.getUTCMilliseconds(),
-  }
-
-  switch (preset) {
-    case 'last-month':
-      return {
-        startDate: createUTCDateWithTime(
-          nowUTCComponents.year,
-          nowUTCComponents.month - 1,
-          nowUTCComponents.date,
-          nowUTCComponents.hours,
-          nowUTCComponents.minutes,
-          nowUTCComponents.seconds,
-          nowUTCComponents.ms
-        ),
-        endDate: new Date(nowTime), // Clone to prevent mutation
-      }
-
-    case 'last-3-months':
-      return {
-        startDate: createUTCDateWithTime(
-          nowUTCComponents.year,
-          nowUTCComponents.month - 3,
-          nowUTCComponents.date,
-          nowUTCComponents.hours,
-          nowUTCComponents.minutes,
-          nowUTCComponents.seconds,
-          nowUTCComponents.ms
-        ),
-        endDate: new Date(nowTime), // Clone to prevent mutation
-      }
-
-    case 'last-6-months':
-      return {
-        startDate: createUTCDateWithTime(
-          nowUTCComponents.year,
-          nowUTCComponents.month - 6,
-          nowUTCComponents.date,
-          nowUTCComponents.hours,
-          nowUTCComponents.minutes,
-          nowUTCComponents.seconds,
-          nowUTCComponents.ms
-        ),
-        endDate: new Date(nowTime), // Clone to prevent mutation
-      }
-
-    case 'year-to-date':
-      return {
-        startDate: new Date(Date.UTC(nowUTCComponents.year, 0, 1)),
-        endDate: new Date(nowTime), // Clone to prevent mutation
-      }
-
-    case 'last-year':
-      return {
-        startDate: createUTCDateWithTime(
-          nowUTCComponents.year - 1,
-          nowUTCComponents.month,
-          nowUTCComponents.date,
-          nowUTCComponents.hours,
-          nowUTCComponents.minutes,
-          nowUTCComponents.seconds,
-          nowUTCComponents.ms
-        ),
-        endDate: new Date(nowTime), // Clone to prevent mutation
-      }
-
-    case 'custom':
-      if (customRange) {
-        // Return a copy to ensure immutability
-        return {
-          startDate: new Date(customRange.startDate.getTime()),
-          endDate: new Date(customRange.endDate.getTime()),
-        }
-      }
-      // Fallback to last month
-      return {
-        startDate: createUTCDateWithTime(
-          nowUTCComponents.year,
-          nowUTCComponents.month - 1,
-          nowUTCComponents.date,
-          nowUTCComponents.hours,
-          nowUTCComponents.minutes,
-          nowUTCComponents.seconds,
-          nowUTCComponents.ms
-        ),
-        endDate: new Date(nowTime),
-      }
-  }
-}
-
-/**
- * Check if a date falls within a date range
- */
-function isDateInRange(date: Date, range: DateRange): boolean {
-  return date >= range.startDate && date <= range.endDate
-}
-
-/**
- * Filter financial data by date range
- */
-function filterByDateRange(data: FinancialDataPoint[], range: DateRange): FinancialDataPoint[] {
-  return data.filter((item) => {
-    if (!item.date) return true // Include items without dates
-    return isDateInRange(item.date, range)
-  })
 }
 
 // ============================================================================
@@ -735,22 +566,11 @@ function sanitizeFinancialData(data: FinancialDataPoint[]): FinancialDataPoint[]
 // Export
 // ============================================================================
 
-export type {
-  TimePeriodPreset,
-  DateRange,
-  FinancialDataPoint,
-  CategoryAggregate,
-  RechartsDataItem,
-  DrillDownState,
-}
+export type { FinancialDataPoint, CategoryAggregate, RechartsDataItem, DrillDownState }
 
 export {
-  TIME_PERIOD_PRESETS,
   CATEGORY_COLORS,
   DEFAULT_COLORS,
-  getDateRangeForPreset,
-  isDateInRange,
-  filterByDateRange,
   aggregateByCategory,
   aggregateByCategoryAndType,
   getTopCategories,
