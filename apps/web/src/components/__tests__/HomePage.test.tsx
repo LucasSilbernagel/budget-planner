@@ -12,10 +12,10 @@
  * is exactly what SSR-only smoke misses (project memory, 4-11).
  */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
-import { useIncomeStore } from '../../stores'
+import { useExpenseStore, useIncomeStore, useOverviewDurationStore } from '../../stores'
 
 const usePremiumAccess = vi.fn()
 
@@ -149,10 +149,12 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     useIncomeStore.setState({ incomeSources: [] })
   })
 
-  it('AC-1: stat cards read "(per month)" in plain language with no "Normalized"/"Raw" jargon', () => {
+  it('AC-1: stat cards read in plain language with no "Normalized"/"Raw" jargon', () => {
     render(<HomePage />)
-    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
-    expect(screen.getByText('Total Expenses (per month)')).toBeInTheDocument()
+    // The duration suffix ("(per week/month/year)") is chosen by the story 12-2
+    // selector; the plain-language intent is duration-agnostic.
+    expect(screen.getByText(/^Total Income \(per (week|month|year)\)$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Total Expenses \(per (week|month|year)\)$/)).toBeInTheDocument()
     expect(screen.queryByText(/Normalized/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/^Raw:/)).not.toBeInTheDocument()
   })
@@ -181,7 +183,7 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     // Progressive disclosure: the explanation is not present until the trigger is
     // focused/hovered — no tooltip and no association at rest.
     const trigger = screen.getByRole('button', {
-      name: /more information about the monthly income figure/i,
+      name: /more information about the income figure/i,
     })
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     expect(trigger).not.toHaveAttribute('aria-describedby')
@@ -192,7 +194,7 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     const tooltip = await screen.findByRole('tooltip')
     expect(trigger).toHaveAttribute('aria-describedby')
     expect(tooltip).toHaveTextContent(
-      /convert weekly and annual amounts to a monthly figure so totals are comparable/i
+      /convert weekly, monthly, and annual amounts to a common period so your totals are comparable/i
     )
     expect(tooltip).toHaveTextContent(/entered total before conversion/i)
   })
@@ -224,8 +226,8 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
 
   it('AC-1: the three remaining overview cards still render', () => {
     render(<HomePage />)
-    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
-    expect(screen.getByText('Total Expenses (per month)')).toBeInTheDocument()
+    expect(screen.getByText(/^Total Income \(per (week|month|year)\)$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Total Expenses \(per (week|month|year)\)$/)).toBeInTheDocument()
     expect(screen.getByText('Net Worth')).toBeInTheDocument()
   })
 
@@ -237,11 +239,146 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
   it('AC-2: the overview grid reflows to three columns (no 4-column gap on desktop)', () => {
     render(<HomePage />)
     const heading = screen.getByRole('heading', { name: 'Financial Overview' })
-    const grid = heading.parentElement?.querySelector('div.grid')
+    // The heading now shares a flex row with the duration selector (story 12-2),
+    // so locate the stat grid from the enclosing section rather than the heading's
+    // immediate parent.
+    const grid = heading.closest('section')?.querySelector('div.grid')
     expect(grid).not.toBeNull()
     expect(grid?.className).toContain('md:grid-cols-3')
     expect(grid?.className).not.toContain('md:grid-cols-4')
     // Exactly three stat cards under the overview grid.
     expect(grid?.children.length).toBe(3)
+  })
+})
+
+/**
+ * Global income/expense duration selector (story 12-2, FR31).
+ *
+ * A single control on the Financial Overview re-expresses Total Income and Total
+ * Expenses Weekly / Monthly / Annually, defaulting to Annually. The choice lives
+ * in a persisted store (single source of truth), so it survives remount — one
+ * control drives both figures with no per-card duplication.
+ *
+ * Currency mode defaults to `none`, so formatted amounts are `(cents/100).toFixed(2)`:
+ * a monthly-normalized 120000c income → 14400.00 annually, 1200.00 monthly,
+ * 276.92 weekly (120000 ÷ 52/12, rounded).
+ */
+describe('HomePage overview duration selector (story 12-2)', () => {
+  function seedMonthly(): void {
+    // Monthly amounts normalize 1:1, so raw === normalized (no InfoTooltip) and
+    // the denormalized display values are exact and easy to reason about.
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-monthly',
+          userId: 0,
+          name: 'Salary',
+          amount: 120000,
+          frequency: 'monthly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-monthly',
+          userId: 0,
+          name: 'Rent',
+          amount: 60000,
+          frequency: 'monthly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+  }
+
+  function incomeCard(): HTMLElement {
+    return screen
+      .getByText(/^Total Income \(per (week|month|year)\)$/)
+      .closest('div.bg-gray-50') as HTMLElement
+  }
+
+  function expenseCard(): HTMLElement {
+    return screen
+      .getByText(/^Total Expenses \(per (week|month|year)\)$/)
+      .closest('div.bg-gray-50') as HTMLElement
+  }
+
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  })
+
+  it('AC-1: renders one selector defaulting to Annually, with annual card labels', () => {
+    render(<HomePage />)
+
+    const select = screen.getByRole('combobox', {
+      name: /show income and expenses per/i,
+    }) as HTMLSelectElement
+    expect(select.value).toBe('annually')
+
+    // Exactly one duration selector (no per-card duplication).
+    expect(screen.getAllByRole('combobox', { name: /show income and expenses per/i })).toHaveLength(
+      1
+    )
+    expect(screen.getByText('Total Income (per year)')).toBeInTheDocument()
+    expect(screen.getByText('Total Expenses (per year)')).toBeInTheDocument()
+  })
+
+  it('AC-1/AC-2: figures start annual and re-express when the duration changes', () => {
+    seedMonthly()
+    render(<HomePage />)
+
+    // Default: annual figures (monthly × 12).
+    expect(within(incomeCard()).getByText('14400.00')).toBeInTheDocument()
+    expect(within(expenseCard()).getByText('7200.00')).toBeInTheDocument()
+
+    // Switch to Monthly: labels and figures follow the one control.
+    fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
+      target: { value: 'monthly' },
+    })
+    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
+    expect(within(incomeCard()).getByText('1200.00')).toBeInTheDocument()
+    expect(within(expenseCard()).getByText('600.00')).toBeInTheDocument()
+
+    // Switch to Weekly: monthly ÷ (52/12), rounded to the cent.
+    fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
+      target: { value: 'weekly' },
+    })
+    expect(screen.getByText('Total Income (per week)')).toBeInTheDocument()
+    expect(within(incomeCard()).getByText('276.92')).toBeInTheDocument()
+    expect(within(expenseCard()).getByText('138.46')).toBeInTheDocument()
+  })
+
+  it('AC-3: the selection is a single source of truth that survives remount', () => {
+    const { unmount } = render(<HomePage />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
+      target: { value: 'monthly' },
+    })
+    expect(
+      (screen.getByRole('combobox', { name: /show income and expenses per/i }) as HTMLSelectElement)
+        .value
+    ).toBe('monthly')
+
+    // Navigate away and back: a fresh mount reads the choice from the store.
+    unmount()
+    render(<HomePage />)
+    const select = screen.getByRole('combobox', {
+      name: /show income and expenses per/i,
+    }) as HTMLSelectElement
+    expect(select.value).toBe('monthly')
+    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
   })
 })

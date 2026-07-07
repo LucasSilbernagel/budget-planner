@@ -3,6 +3,7 @@ import { useBalanceStore } from '../stores/balanceStore'
 import { useCurrencyStore } from '../stores/currencyStore'
 import { useExpenseStore } from '../stores/expenseStore'
 import { useIncomeStore } from '../stores/incomeStore'
+import { useOverviewDurationStore } from '../stores/overviewDurationStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useSavingsStore } from '../stores/savingsStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -31,6 +32,7 @@ export function StoreHydration() {
       useCurrencyStore,
       useProfileStore,
       useThemeStore,
+      useOverviewDurationStore,
     ]
 
     for (const store of stores) {

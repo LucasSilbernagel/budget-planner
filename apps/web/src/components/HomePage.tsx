@@ -1,4 +1,4 @@
-import { calculateNetIncomeResult } from '@budget-planner/core/finance'
+import { calculateNetIncomeResult, denormalizeFromMonthly } from '@budget-planner/core/finance'
 import {
   CATEGORY_COLORS,
   aggregateByCategoryAndType,
@@ -30,10 +30,24 @@ import {
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useFormattedAmount } from '../stores/currencyStore'
+import {
+  type OverviewDuration,
+  useOverviewDuration,
+  useSetOverviewDuration,
+} from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useCategoryDrillDown } from './finance/category-drill-down'
 import { TimePeriodFilter } from './finance/time-period-filter'
 import { PremiumFeatureGate } from './premium'
+
+// Card-label suffix for the selected overview duration (story 12-2). "monthly"
+// keeps the original "(per month)" copy so the surviving cards read naturally at
+// every duration.
+const DURATION_LABEL: Record<OverviewDuration, string> = {
+  weekly: '(per week)',
+  monthly: '(per month)',
+  annually: '(per year)',
+}
 
 // Colors for the charts
 const INCOME_COLOR = '#10B981'
@@ -64,6 +78,17 @@ export function HomePage() {
 
   const totalNormalizedIncome = netIncomeResult.grossIncome
   const totalNormalizedExpenses = netIncomeResult.totalExpenses
+
+  // Global duration selector (story 12-2, FR31). One control, persisted in its
+  // own store, drives BOTH the Total Income and Total Expenses cards — no
+  // per-card duplication. Values are stored monthly-normalized; we re-express
+  // them at the chosen duration via the core denormalizer (annually ×12, weekly
+  // ÷(52/12)), reusing the frequency engine rather than re-deriving factors.
+  // Amounts stay in cents, so `formatAmount` (currency mode/locale) is unchanged.
+  const duration = useOverviewDuration()
+  const setDuration = useSetOverviewDuration()
+  const incomeForDuration = denormalizeFromMonthly(totalNormalizedIncome, duration)
+  const expensesForDuration = denormalizeFromMonthly(totalNormalizedExpenses, duration)
 
   // Calculate totals for non-normalized display (raw amounts)
   const totalIncomeRaw = incomeSources.reduce((sum, source) => sum + source.amount, 0)
@@ -296,40 +321,57 @@ export function HomePage() {
         <main className="space-y-6">
           {/* Quick Stats */}
           <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
-              Financial Overview
-            </h2>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+                Financial Overview
+              </h2>
+              {/* One global duration selector (story 12-2). Drives both the Total
+                  Income and Total Expenses cards from a single source of truth. */}
+              <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
+                <span className="sr-only">Show income and expenses per</span>
+                <select
+                  aria-label="Show income and expenses per"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value as OverviewDuration)}
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="annually">Annually</option>
+                </select>
+              </label>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-                  Total Income (per month)
+                  {`Total Income ${DURATION_LABEL[duration]}`}
                   {totalNormalizedIncome !== totalIncomeRaw && (
                     <InfoTooltip
-                      label="More information about the monthly income figure"
-                      text={`We convert weekly and annual amounts to a monthly figure so totals are comparable. Entered total before conversion: ${formatAmount(
+                      label="More information about the income figure"
+                      text={`We convert weekly, monthly, and annual amounts to a common period so your totals are comparable. Entered total before conversion: ${formatAmount(
                         totalIncomeRaw
                       )}.`}
                     />
                   )}
                 </p>
                 <p className="text-2xl font-bold text-green-600">
-                  {formatAmount(totalNormalizedIncome)}
+                  {formatAmount(incomeForDuration)}
                 </p>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-                  Total Expenses (per month)
+                  {`Total Expenses ${DURATION_LABEL[duration]}`}
                   {totalNormalizedExpenses !== totalExpensesRaw && (
                     <InfoTooltip
-                      label="More information about the monthly expenses figure"
-                      text={`We convert weekly and annual amounts to a monthly figure so totals are comparable. Entered total before conversion: ${formatAmount(
+                      label="More information about the expenses figure"
+                      text={`We convert weekly, monthly, and annual amounts to a common period so your totals are comparable. Entered total before conversion: ${formatAmount(
                         totalExpensesRaw
                       )}.`}
                     />
                   )}
                 </p>
                 <p className="text-2xl font-bold text-red-600">
-                  {formatAmount(totalNormalizedExpenses)}
+                  {formatAmount(expensesForDuration)}
                 </p>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
