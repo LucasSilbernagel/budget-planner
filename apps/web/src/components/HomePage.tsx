@@ -64,7 +64,6 @@ export function HomePage() {
 
   const totalNormalizedIncome = netIncomeResult.grossIncome
   const totalNormalizedExpenses = netIncomeResult.totalExpenses
-  const netPeriodIncome = netIncomeResult.netIncome
 
   // Calculate totals for non-normalized display (raw amounts)
   const totalIncomeRaw = incomeSources.reduce((sum, source) => sum + source.amount, 0)
@@ -300,7 +299,7 @@ export function HomePage() {
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
               Financial Overview
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
                   Total Income (per month)
@@ -331,16 +330,6 @@ export function HomePage() {
                 </p>
                 <p className="text-2xl font-bold text-red-600">
                   {formatAmount(totalNormalizedExpenses)}
-                </p>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Net Period Income</p>
-                <p
-                  className={`text-2xl font-bold ${
-                    netPeriodIncome >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  {formatAmount(netPeriodIncome)}
                 </p>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">

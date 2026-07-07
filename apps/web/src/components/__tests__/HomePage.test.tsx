@@ -222,22 +222,26 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
     expect(screen.queryByText(/^\d+%$/)).not.toBeInTheDocument()
   })
 
-  it('AC-1: the four remaining overview cards still render', () => {
+  it('AC-1: the three remaining overview cards still render', () => {
     render(<HomePage />)
     expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
     expect(screen.getByText('Total Expenses (per month)')).toBeInTheDocument()
-    expect(screen.getByText('Net Period Income')).toBeInTheDocument()
     expect(screen.getByText('Net Worth')).toBeInTheDocument()
   })
 
-  it('AC-1: the overview grid reflows to four columns (no 5-column gap on desktop)', () => {
+  it('AC-1: the "Net Period Income" card and its figure are gone', () => {
+    render(<HomePage />)
+    expect(screen.queryByText('Net Period Income')).not.toBeInTheDocument()
+  })
+
+  it('AC-2: the overview grid reflows to three columns (no 4-column gap on desktop)', () => {
     render(<HomePage />)
     const heading = screen.getByRole('heading', { name: 'Financial Overview' })
     const grid = heading.parentElement?.querySelector('div.grid')
     expect(grid).not.toBeNull()
-    expect(grid?.className).toContain('md:grid-cols-4')
-    expect(grid?.className).not.toContain('md:grid-cols-5')
-    // Exactly four stat cards under the overview grid.
-    expect(grid?.children.length).toBe(4)
+    expect(grid?.className).toContain('md:grid-cols-3')
+    expect(grid?.className).not.toContain('md:grid-cols-4')
+    // Exactly three stat cards under the overview grid.
+    expect(grid?.children.length).toBe(3)
   })
 })
