@@ -1,6 +1,7 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { AdPlacement } from '../components/ads/AdPlacement'
+import { AuthIndicator } from '../components/auth/auth-indicator'
 import { Footer } from '../components/layout/Footer'
 import { GlobalNav } from '../components/layout/GlobalNav'
 import { RegisterSW } from '../components/pwa/RegisterSW'
@@ -104,6 +105,12 @@ function RootDocument({ children }: { children: ReactNode }) {
               fixed bottom tab bar (story 11-1) so it never covers the footer;
               desktop renders GlobalNav as a top bar and needs no padding. */}
           <div className="flex min-h-screen flex-col pb-16 sm:pb-0">
+            {/* Persistent signed-in / Premium indicator (story 13-2): a slim top
+                strip above the nav, on every viewport, so a signed-in user always
+                sees they are logged in (with a Premium marker when active) without
+                opening Settings. Fetch-based + SSR-safe; kept out of GlobalNav so
+                the 320px mobile tab bar is not crowded. */}
+            <AuthIndicator />
             {/* Persistent primary navigation (story 11-1): rendered once here so
                 every route shares it. Top bar on desktop, fixed bottom tab bar on
                 narrow/PWA viewports. */}

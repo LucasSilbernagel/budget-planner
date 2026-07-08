@@ -9,11 +9,11 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
  * Home for the self-serve account-deletion control (AC-4), folded into the
  * story 11-6 settings surface rather than a standalone `/account` route
  * (resolved decision #1, 2026-07-04). Also surfaces sign-out — before this
- * there was NO signed-in place to log out (the `AuthStatus` component was
- * orphaned; the app has no `QueryClientProvider`, so it could not be rendered
- * as-is). This component therefore uses a plain `fetch('/api/auth/me')` rather
- * than react-query, which also avoids the client-bundled `checkPremiumAccessServer`
- * "Buffer is not defined" hazard.
+ * there was NO signed-in place to log out. This component uses a plain
+ * `fetch('/api/auth/me')` rather than react-query (the app mounts no
+ * `QueryClientProvider`), which also avoids the client-bundled
+ * `checkPremiumAccessServer` "Buffer is not defined" hazard. The same
+ * fetch pattern backs the persistent `AuthIndicator` (story 13-2).
  *
  * AC-4: the whole section renders ONLY for an authenticated user — free /
  * unauthenticated visitors (and the pre-resolution loading state) see nothing,
