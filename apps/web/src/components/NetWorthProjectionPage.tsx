@@ -1,4 +1,5 @@
 import { calculateCompoundingProjection } from '@budget-planner/core'
+import { currencySymbol } from '@budget-planner/core/format/currency'
 import { useState } from 'react'
 import {
   CartesianGrid,
@@ -12,7 +13,7 @@ import {
 } from 'recharts'
 import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
-import { useFormattedAmount } from '../stores/currencyStore'
+import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 
 // Calculate initial net worth from current data
 function calculateInitialNetWorth(
@@ -63,6 +64,9 @@ export function NetWorthProjectionPage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Show the selected currency's symbol in the amount label, or nothing in
+  // currency-less mode — never a hard-coded "$" (story 14-3).
+  const { mode, currency } = useCurrencyPreferences()
   // Theme-aware Recharts chrome so the chart stays legible on the dark card.
   const chartColors = useChartColors()
 
@@ -184,7 +188,8 @@ export function NetWorthProjectionPage() {
                   htmlFor="additionalContribution"
                   className="block mb-1 font-medium text-label text-sm"
                 >
-                  Additional Annual Contribution ($)
+                  Additional Annual Contribution
+                  {mode === 'symbol' ? ` (${currencySymbol(currency)})` : ''}
                 </label>
                 <input
                   type="number"

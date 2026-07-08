@@ -1,5 +1,6 @@
 import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { useCurrencyStore } from '../../stores/currencyStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { IncomePage } from '../IncomePage'
 
@@ -121,5 +122,90 @@ describe('IncomePage inline validation', () => {
     const sources = useIncomeStore.getState().incomeSources
     expect(sources).toHaveLength(1)
     expect(sources[0]).toMatchObject({ name: 'Freelance', amount: 10000 })
+  })
+})
+
+/**
+ * IncomePage currency-input formatting tests (story 14-3).
+ *
+ * Proves the amount input shows the selected currency's symbol only in symbols
+ * mode (never a hard-coded "$"), and that a locale-grouped entry both parses to
+ * the correct integer cents on submit and re-echoes grouped on blur. This is the
+ * representative wiring for the four money add/edit forms.
+ */
+describe('IncomePage currency input formatting (story 14-3)', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+  })
+
+  it('shows no currency symbol on the amount input in currency-less mode', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByText('$')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('€')).not.toBeInTheDocument()
+  })
+
+  it('shows the selected currency symbol (not $) on the amount input in symbols mode', async () => {
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('€')).toBeInTheDocument()
+    expect(within(dialog).queryByText('$')).not.toBeInTheDocument()
+  })
+
+  it('parses a grouped amount to the correct integer cents on submit', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByTestId('income-name-input'), 'Bonus')
+    await user.type(within(dialog).getByTestId('income-amount-input'), '1,234,567.89')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useIncomeStore.getState().incomeSources[0]).toMatchObject({
+      name: 'Bonus',
+      amount: 123456789,
+    })
+  })
+
+  it('re-echoes the amount with locale grouping on blur', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+    await user.type(amountInput, '1234567.89')
+    await user.tab()
+
+    await waitFor(() => expect(amountInput).toHaveValue('1,234,567.89'))
+  })
+
+  it('does not clobber non-numeric input to "0.00" on blur (review patch)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+    await user.type(amountInput, 'abc')
+    await user.tab()
+
+    // The typo is left visible for inline validation, not silently rewritten.
+    await waitFor(() => expect(amountInput).toHaveValue('abc'))
   })
 })

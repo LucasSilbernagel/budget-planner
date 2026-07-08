@@ -1,13 +1,13 @@
+import {
+  currencySymbol,
+  formatForInputDisplay,
+  parseFromInput,
+} from '@budget-planner/core/format/currency'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores'
-import { useFormattedAmount } from '../stores/currencyStore'
+import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
-
-// Format amount for input display (without currency symbol)
-function formatAmountForInput(cents: number): string {
-  return (cents / 100).toFixed(2)
-}
 
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
@@ -17,6 +17,18 @@ export function SavingsPage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Currency preferences drive the input symbol affordance and locale-aware
+  // grouping/parsing (story 14-3). Currency-less mode shows no symbol and groups
+  // with the neutral en-US locale (per the store).
+  const { mode, currency, locale } = useCurrencyPreferences()
+
+  // Re-echo an amount field in grouped, locale-aware form on blur. Leave an empty
+  // field empty, and do NOT clobber non-numeric garbage to "0.00" (a value with no
+  // digit is left as typed so the typo stays visible for inline validation).
+  const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
+    if (value.trim() === '' || !/\d/.test(value)) return
+    setter(formatForInputDisplay(parseFromInput(value, locale), locale))
+  }
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -43,16 +55,16 @@ export function SavingsPage() {
     if (!name.trim()) {
       next.name = 'Please enter a name for the savings goal'
     }
-    const targetInCents = Math.round(parseFloat(targetAmount) * 100)
-    if (Number.isNaN(targetInCents) || targetInCents <= 0) {
+    const targetInCents = parseFromInput(targetAmount, locale)
+    if (targetInCents <= 0) {
       next.targetAmount = 'Please enter a valid positive target amount'
     }
-    const balanceInCents = Math.round(parseFloat(currentBalance || '0') * 100)
-    if (Number.isNaN(balanceInCents) || balanceInCents < 0) {
+    const balanceInCents = parseFromInput(currentBalance, locale)
+    if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
     }
     return next
-  }, [name, targetAmount, currentBalance])
+  }, [name, targetAmount, currentBalance, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -96,8 +108,8 @@ export function SavingsPage() {
   }) => {
     setEditingId(goal.id)
     setName(goal.name)
-    setTargetAmount(formatAmountForInput(goal.targetAmount))
-    setCurrentBalance(formatAmountForInput(goal.currentBalance))
+    setTargetAmount(formatForInputDisplay(goal.targetAmount, locale))
+    setCurrentBalance(formatForInputDisplay(goal.currentBalance, locale))
     clearErrors()
     setIsModalOpen(true)
   }
@@ -137,8 +149,8 @@ export function SavingsPage() {
 
       const newGoal = {
         name: name.trim(),
-        targetAmount: Math.round(parseFloat(targetAmount) * 100),
-        currentBalance: Math.round(parseFloat(currentBalance || '0') * 100),
+        targetAmount: parseFromInput(targetAmount, locale),
+        currentBalance: parseFromInput(currentBalance, locale),
       }
 
       if (editingId !== null) {
@@ -348,17 +360,22 @@ export function SavingsPage() {
                 Target Amount *
               </label>
               <div className="relative shadow-sm rounded-md">
-                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-muted text-sm">$</span>
-                </div>
+                {mode === 'symbol' && (
+                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                  </div>
+                )}
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="targetAmount"
                   value={targetAmount}
                   onChange={(e) => setTargetAmount(e.target.value)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setTargetAmount)}
                   placeholder="0.00"
-                  step="0.01"
-                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  className={`w-full px-3 py-2 ${
+                    mode === 'symbol' ? 'pl-7' : ''
+                  } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('targetAmount')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
@@ -388,17 +405,22 @@ export function SavingsPage() {
                 Current Balance
               </label>
               <div className="relative shadow-sm rounded-md">
-                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-muted text-sm">$</span>
-                </div>
+                {mode === 'symbol' && (
+                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                  </div>
+                )}
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="currentBalance"
                   value={currentBalance}
                   onChange={(e) => setCurrentBalance(e.target.value)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setCurrentBalance)}
                   placeholder="0.00"
-                  step="0.01"
-                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  className={`w-full px-3 py-2 ${
+                    mode === 'symbol' ? 'pl-7' : ''
+                  } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('currentBalance')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'

@@ -7,6 +7,7 @@
  */
 
 import type { NetWorthProjectionInput, TimeHorizon } from '@budget-planner/core'
+import { formatForInput, parseFromInput } from '@budget-planner/core/format/currency'
 import React from 'react'
 
 // ============================================================================
@@ -130,9 +131,24 @@ const DEFAULT_SCENARIOS: Scenario[] = [
   },
 ]
 
+/**
+ * Control configs for the scenario builder (story 14-3).
+ *
+ * The three currency controls format/parse through the shared core helpers
+ * (`formatForInput`/`parseFromInput`) instead of a hard-coded
+ * `Intl.NumberFormat('en-US', { currency: 'USD' })`, so no forced-USD formatting.
+ * These render in a native `type="number"` control, whose value is always a plain
+ * en-US-canonical (`.`-decimal, ungrouped) number string — so formatting stays
+ * ungrouped and parsing is locale-neutral (passing a display locale here would
+ * misread the number input's canonical `.` as a group separator). Non-currency
+ * controls (percentages, time horizon) are unchanged.
+ *
+ * NOTE: `ScenarioControls` is currently an orphan (unmounted — see deferred-work.md);
+ * symbol affordance + locale grouping await a text-input conversion of `NumberControl`.
+ */
 const CONTROLS: ControlConfig[] = [
   {
-    label: 'Current Assets ($)',
+    label: 'Current Assets',
     key: 'currentAssetsCents',
     type: 'number',
     min: 0,
@@ -140,17 +156,14 @@ const CONTROLS: ControlConfig[] = [
     description: 'Your current total assets (investments, savings, etc.)',
     formatValue: (value: number | string | undefined) => {
       if (typeof value === 'number') {
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-        }).format(value / 100)
+        return formatForInput(value)
       }
       return typeof value === 'string' ? value : ''
     },
-    parseValue: (value: string) => Math.round(parseFloat(value) * 100),
+    parseValue: (value: string) => parseFromInput(value),
   },
   {
-    label: 'Current Liabilities ($)',
+    label: 'Current Liabilities',
     key: 'currentLiabilitiesCents',
     type: 'number',
     min: 0,
@@ -158,17 +171,14 @@ const CONTROLS: ControlConfig[] = [
     description: 'Your current total liabilities (debts, loans, etc.)',
     formatValue: (value: number | string | undefined) => {
       if (typeof value === 'number') {
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-        }).format(value / 100)
+        return formatForInput(value)
       }
       return typeof value === 'string' ? value : ''
     },
-    parseValue: (value: string) => Math.round(parseFloat(value) * 100),
+    parseValue: (value: string) => parseFromInput(value),
   },
   {
-    label: 'Monthly Net Income ($)',
+    label: 'Monthly Net Income',
     key: 'monthlyNetIncomeCents',
     type: 'number',
     min: -1000000,
@@ -177,15 +187,11 @@ const CONTROLS: ControlConfig[] = [
     description: 'Your monthly income minus expenses (can be negative)',
     formatValue: (value: number | string | undefined) => {
       if (typeof value === 'number') {
-        const sign = value < 0 ? '-' : ''
-        return `${sign}${new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-        }).format(Math.abs(value) / 100)}`
+        return formatForInput(value)
       }
       return typeof value === 'string' ? value : ''
     },
-    parseValue: (value: string) => Math.round(parseFloat(value) * 100),
+    parseValue: (value: string) => parseFromInput(value),
   },
   {
     label: 'Asset Return Rate (%)',

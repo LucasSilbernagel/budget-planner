@@ -184,6 +184,37 @@ export function formatForInput(cents: number): string {
 }
 
 /**
+ * Formats a value in cents for an editable currency input's *display* echo:
+ * grouped, locale-aware, and always symbol-less (the currency symbol is a
+ * separate UI affordance, not part of the editable string) — story 14-3.
+ *
+ * Mirrors the currency-less branch of {@link formatCurrency} (Intl decimal style,
+ * two fixed decimals, defensive `try/catch → toFixed(2)` fallback, non-finite
+ * guard) so an input's blur/pre-fill echo groups identically to how the amount
+ * displays read-only. The paired reader {@link parseFromInput} accepts the same
+ * locale so the grouped string round-trips back to exact integer cents.
+ *
+ * @param cents - Value in cents.
+ * @param locale - BCP-47 locale (defaults to en-US, the neutral currency-less locale).
+ * @returns Grouped, symbol-less string for input display (e.g. `1,234,567.89`
+ *   en-US, `1.234.567,89` de-DE).
+ */
+export function formatForInputDisplay(cents: number, locale = 'en-US'): string {
+  const dollars = Number.isFinite(cents) ? cents / 100 : 0
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'decimal',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(dollars)
+  } catch {
+    // An exotic/invalid locale must never crash a render; fall back to the
+    // ungrouped fixed-decimal string (mirrors formatCurrency's fallbacks).
+    return dollars.toFixed(2)
+  }
+}
+
+/**
  * Parses a value from input string to cents
  * Handles various input formats including negative values for debts.
  *
@@ -196,15 +227,24 @@ export function formatForInput(cents: number): string {
  * - "1." -> 100 cents
  * - "" -> 0 cents
  *
+ * When a `locale` is supplied, the string is first canonicalized from that
+ * locale's grouping/decimal convention to en-US form so grouped input round-trips
+ * without the '.'-as-decimal assumption below corrupting it (story 14-3):
+ * - de-DE "1.234,56" -> 123456 cents (group '.', decimal ',')
+ * - de-CH "1'234.56" -> 123456 cents (group '’'/apostrophe, decimal '.')
+ * - en-IN "1,23,456.78" -> 12345678 cents (Indian grouping)
+ *
  * Rejected formats:
  * - "1.2.3" (multiple decimal points) -> 0
  * - "1e10" (scientific notation) -> 0
  * - NaN or Infinity -> 0
  *
  * @param value - Input string (e.g., "123.45" or "123")
+ * @param locale - Optional BCP-47 locale whose grouping/decimal separators the
+ *   input uses. Omit for en-US-style input (backward compatible).
  * @returns Value in cents (integer), or 0 if invalid
  */
-export function parseFromInput(value: string): number {
+export function parseFromInput(value: string, locale?: string): number {
   if (!value || value.trim() === '') return 0
 
   // Reject scientific notation BEFORE stripping — the regex below would remove
@@ -213,8 +253,25 @@ export function parseFromInput(value: string): number {
   // letters in garbage input (e.g. "100 each") don't reject otherwise-parseable digits.
   if (/\d[eE][+-]?\d/.test(value)) return 0
 
+  // Canonicalize locale grouping/decimal to en-US form BEFORE stripping, so a
+  // comma-decimal ("1.234,56") or apostrophe/Indian-grouped string parses to the
+  // right cents. Without this, the `[^\d.-]` strip + '.'-decimal logic below would
+  // read de-DE "1.234,56" as "1.234" -> 123 cents (a 100000x corruption).
+  let normalized = value
+  if (locale) {
+    try {
+      const parts = new Intl.NumberFormat(locale).formatToParts(11111.1)
+      const groupSep = parts.find((p) => p.type === 'group')?.value
+      const decimalSep = parts.find((p) => p.type === 'decimal')?.value
+      if (groupSep) normalized = normalized.split(groupSep).join('')
+      if (decimalSep && decimalSep !== '.') normalized = normalized.split(decimalSep).join('.')
+    } catch {
+      // Invalid/exotic locale: fall through with the raw value (en-US assumptions).
+    }
+  }
+
   // Remove all non-numeric characters except decimal point and minus sign
-  const cleaned = value.replace(/[^\d.-]/g, '')
+  const cleaned = normalized.replace(/[^\d.-]/g, '')
 
   // Reject if multiple decimal points
   if ((cleaned.match(/\./g) || []).length > 1) return 0

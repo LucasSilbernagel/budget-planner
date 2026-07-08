@@ -5,6 +5,7 @@ import {
 import {
   type CurrencyCode,
   type CurrencyMode,
+  currencySymbol,
   formatCurrency,
 } from '@budget-planner/core/format/currency'
 import React, { useState, useMemo, useCallback } from 'react'
@@ -356,15 +357,19 @@ function RetirementTimelineChartInner({
             Current Savings
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-              $
-            </span>
+            {mode === 'symbol' && (
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                {currencySymbol(currency)}
+              </span>
+            )}
             <input
               type="number"
               id="principal"
               value={principal}
               onChange={handlePrincipalChange}
-              className="w-full pl-7 pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className={`w-full ${
+                mode === 'symbol' ? 'pl-7' : 'pl-2'
+              } pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
               min="0"
               step="1000"
             />
@@ -376,15 +381,19 @@ function RetirementTimelineChartInner({
             Annual Contribution
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-              $
-            </span>
+            {mode === 'symbol' && (
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                {currencySymbol(currency)}
+              </span>
+            )}
             <input
               type="number"
               id="contribution"
               value={contribution}
               onChange={handleContributionChange}
-              className="w-full pl-7 pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className={`w-full ${
+                mode === 'symbol' ? 'pl-7' : 'pl-2'
+              } pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
               min="0"
               step="1000"
             />

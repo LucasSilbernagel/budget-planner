@@ -20,6 +20,7 @@ import {
   formatAmount,
   formatCurrency,
   formatForInput,
+  formatForInputDisplay,
   getSupportedCurrencies,
   isCurrencySupported,
   parseFromInput,
@@ -250,6 +251,77 @@ describe('Currency Formatting', () => {
 
     it('returns 0 for empty input', () => {
       expect(parseFromInput('')).toBe(0)
+    })
+  })
+
+  describe('formatForInputDisplay (story 14-3: grouped symbol-less input echo)', () => {
+    // ICU may use a narrow no-break space (U+202F) as the group separator.
+    const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
+
+    it('groups a large value in en-US by default (no symbol)', () => {
+      expect(formatForInputDisplay(123456789)).toBe('1,234,567.89')
+    })
+
+    it('groups per de-DE locale with comma decimal (no symbol)', () => {
+      expect(normalizeSpaces(formatForInputDisplay(123456789, 'de-DE'))).toBe('1.234.567,89')
+    })
+
+    it('uses Indian grouping for en-IN (no symbol)', () => {
+      expect(formatForInputDisplay(12345678, 'en-IN')).toBe('1,23,456.78')
+    })
+
+    it('keeps two fixed decimals for whole and sub-dollar amounts', () => {
+      expect(formatForInputDisplay(500000)).toBe('5,000.00')
+      expect(formatForInputDisplay(5)).toBe('0.05')
+    })
+
+    it('renders non-finite input as grouped zero (no NaN)', () => {
+      expect(formatForInputDisplay(Number.NaN)).toBe('0.00')
+      expect(formatForInputDisplay(Number.POSITIVE_INFINITY)).toBe('0.00')
+    })
+
+    it('falls back to ungrouped toFixed for an invalid locale (never throws)', () => {
+      expect(formatForInputDisplay(123456, 'not-a-locale!!')).toBe('1234.56')
+    })
+  })
+
+  describe('parseFromInput - locale-aware grouping (story 14-3)', () => {
+    it('parses en-US grouped input to cents', () => {
+      expect(parseFromInput('1,234,567.89', 'en-US')).toBe(123456789)
+    })
+
+    it('parses de-DE grouped comma-decimal input to cents', () => {
+      expect(parseFromInput('1.234.567,89', 'de-DE')).toBe(123456789)
+    })
+
+    it('parses de-DE plain comma-decimal input (no grouping) to cents', () => {
+      expect(parseFromInput('1234,56', 'de-DE')).toBe(123456)
+    })
+
+    it('parses en-IN Indian-grouped input to cents', () => {
+      expect(parseFromInput('1,23,456.78', 'en-IN')).toBe(12345678)
+    })
+
+    it('round-trips format -> parse for de-DE without precision loss', () => {
+      const cents = 987654321
+      expect(parseFromInput(formatForInputDisplay(cents, 'de-DE'), 'de-DE')).toBe(cents)
+    })
+
+    it('round-trips format -> parse for en-IN without precision loss', () => {
+      const cents = 12345678
+      expect(parseFromInput(formatForInputDisplay(cents, 'en-IN'), 'en-IN')).toBe(cents)
+    })
+
+    it('preserves negatives (debts) under a comma-decimal locale', () => {
+      expect(parseFromInput('-1.234,56', 'de-DE')).toBe(-123456)
+    })
+
+    it('falls back to en-US assumptions for an invalid locale (never throws)', () => {
+      expect(parseFromInput('1,000.50', 'not-a-locale!!')).toBe(100050)
+    })
+
+    it('is backward compatible when no locale is passed', () => {
+      expect(parseFromInput('1,000.50')).toBe(100050)
     })
   })
 

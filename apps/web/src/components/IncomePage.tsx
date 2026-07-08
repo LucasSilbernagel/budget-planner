@@ -1,7 +1,12 @@
+import {
+  currencySymbol,
+  formatForInputDisplay,
+  parseFromInput,
+} from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
-import { useFormattedAmount } from '../stores/currencyStore'
+import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
@@ -18,6 +23,18 @@ export function IncomePage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Currency preferences drive the input's symbol affordance and locale-aware
+  // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
+  // grouping uses the neutral en-US locale (per the store).
+  const { mode, currency, locale } = useCurrencyPreferences()
+
+  // Re-echo an amount field in grouped, locale-aware form on blur. Leave an empty
+  // field empty, and do NOT clobber non-numeric garbage to "0.00" (a value with no
+  // digit is left as typed so the typo stays visible for inline validation).
+  const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
+    if (value.trim() === '' || !/\d/.test(value)) return
+    setter(formatForInputDisplay(parseFromInput(value, locale), locale))
+  }
   const totalIncome = useTotalIncome()
   const { addIncomeSource, updateIncomeSource, deleteIncomeSource } = useIncomeStore()
 
@@ -46,12 +63,12 @@ export function IncomePage() {
     if (!name.trim()) {
       next.name = 'Please enter a name for the income source'
     }
-    const amountInCents = Math.round(parseFloat(amount) * 100)
-    if (Number.isNaN(amountInCents) || amountInCents <= 0) {
+    const amountInCents = parseFromInput(amount, locale)
+    if (amountInCents <= 0) {
       next.amount = 'Please enter a valid positive amount'
     }
     return next
-  }, [name, amount])
+  }, [name, amount, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -137,7 +154,7 @@ export function IncomePage() {
 
       const newSource = {
         name: name.trim(),
-        amount: Math.round(parseFloat(amount) * 100),
+        amount: parseFromInput(amount, locale),
         frequency,
       }
 
@@ -331,17 +348,22 @@ export function IncomePage() {
                 Amount *
               </label>
               <div className="relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-muted text-sm">$</span>
-                </div>
+                {mode === 'symbol' && (
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                  </div>
+                )}
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="amount"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setAmount)}
                   placeholder="0.00"
-                  step="0.01"
-                  className={`w-full px-3 py-2 pl-7 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  className={`w-full px-3 py-2 ${
+                    mode === 'symbol' ? 'pl-7' : ''
+                  } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('amount')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'

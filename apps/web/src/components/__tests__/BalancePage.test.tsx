@@ -87,7 +87,9 @@ describe('BalancePage add balance entry button', () => {
 
     const addDialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
     expect(within(addDialog).getByLabelText(/name/i)).toHaveValue('')
-    expect(within(addDialog).getByLabelText(/current balance/i)).toHaveValue(null)
+    // Currency inputs are now type="text" (story 14-3, for locale-aware grouping),
+    // so an empty field reports '' rather than a number input's null.
+    expect(within(addDialog).getByLabelText(/current balance/i)).toHaveValue('')
   })
 
   it('restores focus to the Add button after the modal closes (AC-5)', async () => {

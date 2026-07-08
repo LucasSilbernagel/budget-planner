@@ -1,3 +1,8 @@
+import {
+  currencySymbol,
+  formatForInputDisplay,
+  parseFromInput,
+} from '@budget-planner/core/format/currency'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   useBalanceEntries,
@@ -7,14 +12,9 @@ import {
   useTotalInvestmentBalance as useTotalInvestments,
 } from '../stores'
 import type { FinanceType } from '../stores/balanceStore'
-import { useFormattedAmount } from '../stores/currencyStore'
+import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
-
-// Format amount for input display (without currency symbol)
-function formatAmountForInput(cents: number): string {
-  return (cents / 100).toFixed(2)
-}
 
 // Type options for the select dropdown
 const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
@@ -39,6 +39,18 @@ export function BalancePage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Currency preferences drive the input symbol affordance and locale-aware
+  // grouping/parsing (story 14-3). Currency-less mode shows no symbol and groups
+  // with the neutral en-US locale (per the store).
+  const { mode, currency, locale } = useCurrencyPreferences()
+
+  // Re-echo an amount field in grouped, locale-aware form on blur. Leave an empty
+  // field empty, and do NOT clobber non-numeric garbage to "0.00" (a value with no
+  // digit is left as typed so the typo stays visible for inline validation).
+  const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
+    if (value.trim() === '' || !/\d/.test(value)) return
+    setter(formatForInputDisplay(parseFromInput(value, locale), locale))
+  }
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -68,24 +80,24 @@ export function BalancePage() {
     if (!name.trim()) {
       next.name = 'Please enter a name for the balance entry'
     }
-    const balanceInCents = Math.round(parseFloat(currentBalance || '0') * 100)
-    if (Number.isNaN(balanceInCents) || balanceInCents < 0) {
+    const balanceInCents = parseFromInput(currentBalance, locale)
+    if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
     }
     // Max contribution limit is optional: empty is valid, only validate a
     // provided value.
     if (maxContributionLimit && maxContributionLimit.trim() !== '') {
-      const parsed = Math.round(parseFloat(maxContributionLimit) * 100)
-      if (Number.isNaN(parsed) || parsed < 0) {
+      const parsed = parseFromInput(maxContributionLimit, locale)
+      if (parsed < 0) {
         next.maxContributionLimit = 'Please enter a valid non-negative max contribution limit'
       }
     }
-    const monthlyInCents = Math.round(parseFloat(monthlyContribution || '0') * 100)
-    if (Number.isNaN(monthlyInCents) || monthlyInCents < 0) {
+    const monthlyInCents = parseFromInput(monthlyContribution, locale)
+    if (monthlyInCents < 0) {
       next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
     }
     return next
-  }, [name, currentBalance, maxContributionLimit, monthlyContribution])
+  }, [name, currentBalance, maxContributionLimit, monthlyContribution, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -138,11 +150,13 @@ export function BalancePage() {
     setEditingId(entry.id)
     setType(entry.type)
     setName(entry.name)
-    setCurrentBalance(formatAmountForInput(entry.currentBalance))
+    setCurrentBalance(formatForInputDisplay(entry.currentBalance, locale))
     setMaxContributionLimit(
-      entry.maxContributionLimit !== null ? formatAmountForInput(entry.maxContributionLimit) : ''
+      entry.maxContributionLimit !== null
+        ? formatForInputDisplay(entry.maxContributionLimit, locale)
+        : ''
     )
-    setMonthlyContribution(formatAmountForInput(entry.monthlyContribution))
+    setMonthlyContribution(formatForInputDisplay(entry.monthlyContribution, locale))
     clearErrors()
     setIsModalOpen(true)
   }
@@ -185,15 +199,15 @@ export function BalancePage() {
 
       const maxLimitInCents =
         maxContributionLimit && maxContributionLimit.trim() !== ''
-          ? Math.round(parseFloat(maxContributionLimit) * 100)
+          ? parseFromInput(maxContributionLimit, locale)
           : null
 
       const newEntry = {
         type,
         name: name.trim(),
-        currentBalance: Math.round(parseFloat(currentBalance || '0') * 100),
+        currentBalance: parseFromInput(currentBalance, locale),
         maxContributionLimit: maxLimitInCents,
-        monthlyContribution: Math.round(parseFloat(monthlyContribution || '0') * 100),
+        monthlyContribution: parseFromInput(monthlyContribution, locale),
       }
 
       if (editingId !== null) {
@@ -472,17 +486,22 @@ export function BalancePage() {
                 Current Balance *
               </label>
               <div className="relative shadow-sm rounded-md">
-                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-muted text-sm">$</span>
-                </div>
+                {mode === 'symbol' && (
+                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                  </div>
+                )}
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="currentBalance"
                   value={currentBalance}
                   onChange={(e) => setCurrentBalance(e.target.value)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setCurrentBalance)}
                   placeholder="0.00"
-                  step="0.01"
-                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  className={`shadow-sm px-3 py-2 ${
+                    mode === 'symbol' ? 'pl-7' : ''
+                  } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('currentBalance')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
@@ -515,17 +534,22 @@ export function BalancePage() {
                 Max Contribution Limit (Optional)
               </label>
               <div className="relative shadow-sm rounded-md">
-                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-muted text-sm">$</span>
-                </div>
+                {mode === 'symbol' && (
+                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                  </div>
+                )}
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="maxContributionLimit"
                   value={maxContributionLimit}
                   onChange={(e) => setMaxContributionLimit(e.target.value)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setMaxContributionLimit)}
                   placeholder="0.00"
-                  step="0.01"
-                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  className={`shadow-sm px-3 py-2 ${
+                    mode === 'symbol' ? 'pl-7' : ''
+                  } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('maxContributionLimit')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
@@ -559,17 +583,22 @@ export function BalancePage() {
                 Monthly Contribution *
               </label>
               <div className="relative shadow-sm rounded-md">
-                <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                  <span className="text-muted text-sm">$</span>
-                </div>
+                {mode === 'symbol' && (
+                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                  </div>
+                )}
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="monthlyContribution"
                   value={monthlyContribution}
                   onChange={(e) => setMonthlyContribution(e.target.value)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyContribution)}
                   placeholder="0.00"
-                  step="0.01"
-                  className={`shadow-sm px-3 py-2 pl-7 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  className={`shadow-sm px-3 py-2 ${
+                    mode === 'symbol' ? 'pl-7' : ''
+                  } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('monthlyContribution')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'

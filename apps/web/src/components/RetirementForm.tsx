@@ -1,4 +1,9 @@
-import { formatCurrency } from '@budget-planner/core/format/currency'
+import {
+  currencySymbol,
+  formatCurrency,
+  formatForInputDisplay,
+  parseFromInput,
+} from '@budget-planner/core/format/currency'
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useFinancialCalculations } from '../hooks/useFinancialCalculations'
 import { useBalanceStore } from '../stores/balanceStore'
@@ -87,7 +92,7 @@ function parsePercentageToDecimal(value: string): number {
  * @throws Error for invalid currency format (null/undefined, multiple decimal points, negative values,
  *        non-numeric characters, scientific notation, Infinity, or values exceeding safe integer)
  */
-function parseCurrencyToCents(value: string): number {
+function parseCurrencyToCents(value: string, locale?: string): number {
   // Handle null/undefined
   if (value == null) {
     throw new Error('Invalid currency: value cannot be null or undefined')
@@ -97,7 +102,23 @@ function parseCurrencyToCents(value: string): number {
     return 0
   }
 
-  const trimmed = value.trim()
+  let trimmed = value.trim()
+
+  // Canonicalize locale grouping/decimal to en-US form BEFORE stripping, so a
+  // grouped/comma-decimal input (e.g. de-DE "1.234,56") parses to the right
+  // cents instead of being corrupted by the '.'-as-decimal assumption below
+  // (story 14-3). Mirrors core parseFromInput's locale handling.
+  if (locale) {
+    try {
+      const parts = new Intl.NumberFormat(locale).formatToParts(11111.1)
+      const groupSep = parts.find((p) => p.type === 'group')?.value
+      const decimalSep = parts.find((p) => p.type === 'decimal')?.value
+      if (groupSep) trimmed = trimmed.split(groupSep).join('')
+      if (decimalSep && decimalSep !== '.') trimmed = trimmed.split(decimalSep).join('.')
+    } catch {
+      // Invalid/exotic locale: fall through with the raw value (en-US assumptions).
+    }
+  }
 
   // Check for negative values
   if (trimmed.startsWith('-')) {
@@ -326,7 +347,7 @@ function RetirementFormInner({
     }
 
     try {
-      monthlyIncomeCents = parseCurrencyToCents(monthlyIncomeInput)
+      monthlyIncomeCents = parseCurrencyToCents(monthlyIncomeInput, locale)
     } catch (_e) {
       // If parsing fails, we cannot calculate years to goal
       monthlyIncomeCents = 0
@@ -359,6 +380,7 @@ function RetirementFormInner({
     monthlyIncomeInput,
     annualReturnRateInput,
     calculateYearsToGoal,
+    locale,
   ])
 
   // Format amount using current currency preferences
@@ -419,7 +441,7 @@ function RetirementFormInner({
 
     try {
       // Strict validation: if parsing fails, show error (Decision A)
-      const monthlyIncomeCents = parseCurrencyToCents(monthlyIncomeInput)
+      const monthlyIncomeCents = parseCurrencyToCents(monthlyIncomeInput, locale)
       const annualReturnRate = parsePercentageToDecimal(annualReturnRateInput)
 
       // Validate that we got valid numbers
@@ -471,6 +493,7 @@ function RetirementFormInner({
     onCalculate,
     retirement.data,
     sanitizeDisplayError,
+    locale,
   ])
 
   // Trigger onCalculate when hook succeeds (fallback for cases where promise doesn't resolve)
@@ -498,6 +521,21 @@ function RetirementFormInner({
     setMonthlyIncomeInput(e.target.value)
   }, [])
 
+  // On blur, re-echo the income in grouped, locale-aware form and run the
+  // calculation. Leave an empty field empty and don't clobber non-numeric garbage
+  // to "0.00" (no digit → left as typed) so the typo stays visible; this also keeps
+  // the echoed field consistent with what `calculate`'s stricter parser will reject.
+  // The reformat uses the non-throwing core parser so it can never throw inside the
+  // state updater. For any digit-bearing value both parsers agree on the cents.
+  const handleMonthlyIncomeBlur = useCallback(() => {
+    setMonthlyIncomeInput((prev) =>
+      prev.trim() === '' || !/\d/.test(prev)
+        ? prev
+        : formatForInputDisplay(parseFromInput(prev, locale), locale)
+    )
+    calculate()
+  }, [calculate, locale])
+
   const handleReturnRateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setAnnualReturnRateInput(e.target.value)
   }, [])
@@ -512,21 +550,23 @@ function RetirementFormInner({
             <span className="text-orange-500 ml-1">*</span>
           </label>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-              {currency === 'USD' ? '$' : currency}
-            </span>
+            {mode === 'symbol' && (
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                {currencySymbol(currency)}
+              </span>
+            )}
             <input
-              type="number"
+              type="text"
               id="monthlyIncome"
               name="monthlyIncome"
               value={monthlyIncomeInput}
               onChange={handleMonthlyIncomeChange}
-              onBlur={calculate}
+              onBlur={handleMonthlyIncomeBlur}
               inputMode="decimal"
               placeholder="0.00"
-              min="0"
-              step="0.01"
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors"
+              className={`w-full ${
+                mode === 'symbol' ? 'pl-10' : 'pl-4'
+              } pr-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors`}
               aria-required="true"
               aria-label="Desired monthly retirement income"
               disabled={isLoading}
