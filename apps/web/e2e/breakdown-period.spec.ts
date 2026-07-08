@@ -8,9 +8,9 @@ import { expect, test } from '@playwright/test'
  * Monthly/Annually control changes. The chart normalizes each entry through the
  * core frequency engine, so the "Top Categories" figures must update on toggle.
  *
- * Currency mode defaults to `none`, so figures print as (cents / 100).toFixed(2).
- * A single weekly 10000c income re-expresses as:
- *   monthly  round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5199.96"
+ * Currency mode defaults to `none`, so figures print as locale-grouped decimals
+ * (story 14-2). A single weekly 10000c income re-expresses as:
+ *   monthly  round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5,199.96"
  *   monthly                                 43333c            → "433.33"
  *
  * Requires browser binaries:
@@ -66,12 +66,13 @@ test('breakdown control defaults to Annually, offers only Monthly/Annually, and 
     .locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Income vs Expense Breakdown' }) })
 
-  // Annually: the weekly figure is normalized (weekly × 52/12 × 12), not raw.
-  await expect(breakdown.getByText('5199.96')).toBeVisible()
+  // Annually: the weekly figure is normalized (weekly × 52/12 × 12), not raw,
+  // and grouped by the currency-less formatter (story 14-2).
+  await expect(breakdown.getByText('5,199.96')).toBeVisible()
 
   // Switch to Monthly — the hydrated chart re-aggregates client-side.
   await selector.selectOption('monthly')
   await expect(selector).toHaveValue('monthly')
   await expect(breakdown.getByText('433.33')).toBeVisible()
-  await expect(breakdown.getByText('5199.96')).toHaveCount(0)
+  await expect(breakdown.getByText('5,199.96')).toHaveCount(0)
 })

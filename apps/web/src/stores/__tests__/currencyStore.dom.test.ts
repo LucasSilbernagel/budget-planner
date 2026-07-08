@@ -44,10 +44,24 @@ describe('currencyStore (story 8-1)', () => {
       expect(result.current(100000)).toBe('$1,000.00')
     })
 
-    it('leaves currency-less mode as raw numbers (AC-5)', () => {
+    it('leaves currency-less mode as grouped raw numbers (AC-5; story 14-2 grouping)', () => {
       useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
       const { result } = renderHook(() => useFormattedAmount())
-      expect(result.current(100000)).toBe('1000.00')
+      expect(result.current(100000)).toBe('1,000.00')
+    })
+
+    it('groups currency-less amounts with a neutral en-US locale even when a symbol currency is still retained (story 14-2 review)', () => {
+      // The toggle leaves `currency` set when symbols are switched off, so
+      // { mode:'none', currency:'EUR' } is reachable. Currency-less "raw numbers"
+      // must NOT inherit EUR's de-DE format (1.234.567,89) — they stay en-US.
+      useCurrencyStore.setState({ mode: 'none', currency: 'EUR' })
+      const { result } = renderHook(() => useFormattedAmount())
+      expect(result.current(123456789)).toBe('1,234,567.89')
+
+      // Same for a non-Western-grouping currency like INR (would be 12,34,567.89).
+      useCurrencyStore.setState({ mode: 'none', currency: 'INR' })
+      const { result: inr } = renderHook(() => useFormattedAmount())
+      expect(inr.current(123456789)).toBe('1,234,567.89')
     })
   })
 

@@ -369,16 +369,17 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     seedMonthly()
     render(<HomePage />)
 
-    // Default: annual figures (monthly × 12).
-    expect(within(incomeCard()).getByText('14400.00')).toBeInTheDocument()
-    expect(within(expenseCard()).getByText('7200.00')).toBeInTheDocument()
+    // Default: annual figures (monthly × 12). Currency-less mode groups
+    // thousands (story 14-2), so 4+ digit figures carry a comma separator.
+    expect(within(incomeCard()).getByText('14,400.00')).toBeInTheDocument()
+    expect(within(expenseCard()).getByText('7,200.00')).toBeInTheDocument()
 
     // Switch to Monthly: labels and figures follow the one control.
     fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
       target: { value: 'monthly' },
     })
     expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
-    expect(within(incomeCard()).getByText('1200.00')).toBeInTheDocument()
+    expect(within(incomeCard()).getByText('1,200.00')).toBeInTheDocument()
     expect(within(expenseCard()).getByText('600.00')).toBeInTheDocument()
 
     // Switch to Weekly: monthly ÷ (52/12), rounded to the cent.
@@ -421,10 +422,10 @@ describe('HomePage overview duration selector (story 12-2)', () => {
  * of the overview duration selector (12-2) and has NO persistence.
  *
  * Currency mode defaults to `none`, so the "Top Categories" figures print as
- * (cents / 100).toFixed(2). Seeding two income sources with EQUAL raw amounts
- * (10000c) but different frequencies proves normalization is applied: a weekly
- * entry and an annual entry must NOT render as equal slices.
- *   weekly  10000c → monthly round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5199.96"
+ * locale-grouped decimals (story 14-2). Seeding two income sources with EQUAL
+ * raw amounts (10000c) but different frequencies proves normalization is
+ * applied: a weekly entry and an annual entry must NOT render as equal slices.
+ *   weekly  10000c → monthly round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5,199.96"
  *   annual  10000c → monthly round(10000 × 1/12) = 833c   → annually ×12 = 9996c   → "99.96"
  * Switching to Monthly divides each annual figure by 12: "433.33" and "8.33".
  */
@@ -495,7 +496,8 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     render(<HomePage />)
 
     // Annually (default): equal raw amounts render as UNEQUAL, normalized slices.
-    expect(screen.getByText('5199.96')).toBeInTheDocument() // weekly 10000c/yr
+    // Currency-less mode groups thousands (story 14-2): 519996c → "5,199.96".
+    expect(screen.getByText('5,199.96')).toBeInTheDocument() // weekly 10000c/yr
     expect(screen.getByText('99.96')).toBeInTheDocument() // annual 10000c/yr
     // Not the raw sum — a raw-amount chart would show both as "100.00".
     expect(screen.queryByText('100.00')).not.toBeInTheDocument()
@@ -503,10 +505,10 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     // Switch to Monthly: each figure becomes the Annually value ÷ 12.
     fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
     expect(breakdownSelect().value).toBe('monthly')
-    expect(screen.getByText('433.33')).toBeInTheDocument() // 5199.96 ÷ 12
+    expect(screen.getByText('433.33')).toBeInTheDocument() // 5,199.96 ÷ 12
     expect(screen.getByText('8.33')).toBeInTheDocument() // 99.96 ÷ 12
     // The annual figures are no longer shown.
-    expect(screen.queryByText('5199.96')).not.toBeInTheDocument()
+    expect(screen.queryByText('5,199.96')).not.toBeInTheDocument()
     expect(screen.queryByText('99.96')).not.toBeInTheDocument()
   })
 })

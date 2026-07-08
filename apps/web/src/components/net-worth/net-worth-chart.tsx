@@ -182,13 +182,11 @@ function CustomTooltip({ active, payload, label, scenarios, formatAmount }: Cust
     return null
   }
 
-  // Fallback for formatAmount in case of undefined prop
-  const safeFormat =
-    formatAmount ||
-    ((cents: number) => {
-      if (!Number.isFinite(cents)) return '0'
-      return (cents / 100).toFixed(2)
-    })
+  // `formatAmount` is a required prop, always supplied from `useFormattedAmount()`
+  // (story 14-2), so every tooltip figure routes through the shared core formatter
+  // and inherits locale-aware grouping. No bespoke `.toFixed()` fallback — that
+  // would silently emit ungrouped, hard-coded-decimal output.
+  const safeFormat = formatAmount
 
   // Find the month index from the label
   const monthMatch = label?.match(/^(\d+)\.(\d+)$/)

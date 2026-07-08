@@ -37,8 +37,11 @@ describe('Currency Formatting', () => {
   })
 
   describe('formatCurrency - currency-less mode (AC-1)', () => {
-    it('renders raw numeric value with no symbol when mode is none', () => {
-      expect(formatCurrency(123456, { mode: 'none' })).toBe('1234.56')
+    // Story 14-2: currency-less mode now groups via Intl.NumberFormat (decimal
+    // style), so 4+ digit magnitudes carry the locale's thousands separator.
+    // Sub-1000 values, zero, and negatives are unaffected by grouping.
+    it('renders grouped numeric value with no symbol when mode is none', () => {
+      expect(formatCurrency(123456, { mode: 'none' })).toBe('1,234.56')
     })
 
     it('renders raw value when currency is NONE even if mode is symbol', () => {
@@ -46,7 +49,7 @@ describe('Currency Formatting', () => {
     })
 
     it('uses currency-less behaviour with no options (default)', () => {
-      // No options => DEFAULT mode 'none' => raw number
+      // No options => DEFAULT mode 'none' => grouped raw number (sub-1000, no separator)
       expect(formatCurrency(99900)).toBe('999.00')
     })
 
@@ -61,6 +64,54 @@ describe('Currency Formatting', () => {
     it('guards non-finite input (NaN/Infinity) → 0.00 instead of "NaN"', () => {
       expect(formatCurrency(Number.NaN, { mode: 'none' })).toBe('0.00')
       expect(formatCurrency(Number.POSITIVE_INFINITY, { mode: 'none' })).toBe('0.00')
+    })
+  })
+
+  describe('formatCurrency - currency-less grouping (story 14-2, AC-2/AC-3)', () => {
+    // ICU may emit a narrow-NBSP (U+202F) or NBSP (U+00A0) group separator for
+    // some locales (e.g. de-DE / fr-FR); normalize to a plain space so the
+    // assertions express the human-visible result.
+    const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
+
+    it('groups a large currency-less value in the default (en-US) locale', () => {
+      expect(formatCurrency(123456789, { mode: 'none' })).toBe('1,234,567.89')
+    })
+
+    it('groups a currency-less value per an explicit non-en-US locale (de-DE)', () => {
+      const result = formatCurrency(123456789, { mode: 'none', locale: 'de-DE' })
+      expect(normalizeSpaces(result)).toBe('1.234.567,89')
+    })
+
+    it('never contains a currency symbol in currency-less mode', () => {
+      const result = formatCurrency(123456789, { mode: 'none' })
+      expect(result).not.toMatch(/[$€£¥]/)
+    })
+
+    it('groups a very large near-MAX_SAFE_INTEGER value with no NaN/Infinity', () => {
+      // Number.MAX_SAFE_INTEGER / 100 is exactly 90071992547409.90625 as an
+      // IEEE-754 double; Intl.NumberFormat renders it to 2 digits as ...409.90.
+      // (`toFixed(2)` would give ...409.91 — an engine-dependent last-cent
+      // divergence that only appears at ~$90T magnitudes, far beyond any real
+      // budget figure.) The point of the test is that it groups cleanly with no
+      // NaN/Infinity, not the trailing cent.
+      const result = formatCurrency(Number.MAX_SAFE_INTEGER, { mode: 'none' })
+      expect(result).not.toMatch(/NaN|Infinity|undefined/)
+      expect(result).toBe('90,071,992,547,409.90')
+    })
+
+    it('renders non-finite input as the locale-grouped zero', () => {
+      expect(formatCurrency(Number.NaN, { mode: 'none' })).toBe('0.00')
+      expect(formatCurrency(Number.POSITIVE_INFINITY, { mode: 'none', locale: 'de-DE' })).toBe(
+        '0,00'
+      )
+    })
+
+    it('falls back to ungrouped toFixed(2) when the locale is invalid (never throws)', () => {
+      // An exotic/invalid locale must not crash a render; the catch path returns
+      // the plain fixed-decimal string. `not-a-locale!!` throws RangeError inside
+      // Intl.NumberFormat, so this exercises the catch and asserts its output.
+      expect(() => formatCurrency(123456, { mode: 'none', locale: 'not-a-locale!!' })).not.toThrow()
+      expect(formatCurrency(123456, { mode: 'none', locale: 'not-a-locale!!' })).toBe('1234.56')
     })
   })
 
@@ -137,6 +188,18 @@ describe('Currency Formatting', () => {
       const us = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'en-US' })
       const de = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
       expect(us).not.toBe(de)
+    })
+
+    // Story 14-2: lock large-value grouping in symbols mode against regressions.
+    it('groups a large USD value as $1,234,567.89', () => {
+      expect(formatCurrency(123456789, { mode: 'symbol', currency: 'USD', locale: 'en-US' })).toBe(
+        '$1,234,567.89'
+      )
+    })
+
+    it('groups a large EUR value per de-DE as 1.234.567,89 €', () => {
+      const result = formatCurrency(123456789, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
+      expect(normalizeSpaces(result)).toBe('1.234.567,89 €')
     })
   })
 

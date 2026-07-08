@@ -2,6 +2,7 @@ import {
   type CurrencyCode,
   type CurrencyMode,
   type CurrencyOptions,
+  DEFAULT_LOCALE,
   canonicalizeCurrency,
   formatCurrency as formatCurrencyCore,
   localeForCurrency,
@@ -92,7 +93,15 @@ export const useCurrencyPreferences = () =>
     // Display locale is derived from the selected currency (story 8-1): a pure
     // function of `currency`, so the returned shape stays { mode, currency, locale }
     // and every downstream consumer keeps working unchanged.
-    locale: localeForCurrency(state.currency),
+    //
+    // Currency-less mode has no currency, so it must NOT inherit a retained
+    // currency's regional locale (story 14-2 review): the toggle leaves `currency`
+    // set when symbols are switched off, so `{ mode:'none', currency:'EUR' }` is
+    // reachable and would otherwise render raw numbers as `1.234.567,89`
+    // (German comma-decimal) or Indian 2-2-3 grouping. Currency-less grouping is
+    // fixed to the neutral DEFAULT_LOCALE so raw numbers read consistently
+    // (`1,234,567.89`) regardless of any previously-picked symbol currency.
+    locale: state.mode === 'none' ? DEFAULT_LOCALE : localeForCurrency(state.currency),
   }))
 
 // Helper to get formatted value based on current preferences

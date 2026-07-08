@@ -75,8 +75,21 @@ export function formatCurrency(cents: number, options: Partial<CurrencyOptions> 
   const dollars = Number.isFinite(cents) ? cents / 100 : 0
 
   if (mode === 'none' || currency === 'NONE') {
-    // Currency-less mode: return raw number
-    return dollars.toFixed(2)
+    // Currency-less mode: grouped raw number with no currency symbol, per the
+    // resolved locale (story 14-2). `toFixed(2)` never groups, so large figures
+    // read as USD-style unformatted digits; Intl.NumberFormat with decimal style
+    // applies the locale's thousands separator while keeping two fixed decimals.
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: 'decimal',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(dollars)
+    } catch {
+      // An exotic/invalid locale must never crash a render; fall back to the
+      // ungrouped fixed-decimal string (mirrors the symbols-mode fallback below).
+      return dollars.toFixed(2)
+    }
   }
 
   // Abbreviated format for large values
