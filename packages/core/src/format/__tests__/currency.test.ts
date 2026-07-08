@@ -15,6 +15,7 @@ import {
   CONSOLIDATED_CURRENCIES,
   DEFAULT_CURRENCY_OPTIONS,
   canonicalizeCurrency,
+  currencyDisplayLabel,
   currencySymbol,
   formatAmount,
   formatCurrency,
@@ -248,6 +249,59 @@ describe('Currency Formatting', () => {
         'BRL',
         'ZAR',
       ])
+    })
+  })
+
+  describe('currencyDisplayLabel (story 14-1: symbol picker, UX-DR16)', () => {
+    it('renders unambiguous currencies as their bare symbol', () => {
+      expect(currencyDisplayLabel('USD')).toBe('$')
+      expect(currencyDisplayLabel('EUR')).toBe('€')
+      expect(currencyDisplayLabel('GBP')).toBe('£')
+      expect(currencyDisplayLabel('INR')).toBe('₹')
+    })
+
+    it('never presents a selectable currency by its bare ISO code', () => {
+      // The whole point of UX-DR16: the picker must not read as US-centric codes.
+      // CHF is the one sanctioned exception (its ISO code IS its conventional
+      // symbol), asserted explicitly by the dedicated test below, so it is
+      // excluded here rather than dressed up with a meaningless sentinel.
+      for (const code of getSupportedCurrencies().filter((c) => c !== 'NONE' && c !== 'CHF')) {
+        expect(currencyDisplayLabel(code)).not.toBe(code)
+      }
+    })
+
+    it('disambiguates the shared ¥ glyph (JPY vs CNY) with the ISO code', () => {
+      // JPY and CNY were deliberately NOT consolidated (they format differently),
+      // yet currencySymbol() maps both to ¥ — so the label must distinguish them.
+      const jpy = currencyDisplayLabel('JPY')
+      const cny = currencyDisplayLabel('CNY')
+      expect(jpy).toContain('¥')
+      expect(cny).toContain('¥')
+      expect(jpy).toContain('JPY')
+      expect(cny).toContain('CNY')
+      expect(jpy).not.toBe(cny)
+    })
+
+    it('suffixes the ISO code for alphabetic single-letter symbols (ZAR → "R ZAR")', () => {
+      expect(currencyDisplayLabel('ZAR')).toBe('R ZAR')
+    })
+
+    it('shows a letters-only symbol that equals its code once, without a redundant suffix (CHF)', () => {
+      expect(currencyDisplayLabel('CHF')).toBe('CHF')
+    })
+
+    it('keeps a distinct glyph symbol bare even if it shares a leading letter (BRL → "R$")', () => {
+      expect(currencyDisplayLabel('BRL')).toBe('R$')
+    })
+
+    it('produces a mutually distinct label for every selectable currency (no two options alike)', () => {
+      const labels = getSupportedCurrencies()
+        .filter((c) => c !== 'NONE')
+        .map((c) => currencyDisplayLabel(c))
+      expect(new Set(labels).size).toBe(labels.length)
+      for (const label of labels) {
+        expect(label.trim().length).toBeGreaterThan(0)
+      }
     })
   })
 

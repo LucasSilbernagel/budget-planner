@@ -296,3 +296,47 @@ export function canonicalizeCurrency(code: CurrencyCode): CurrencyCode {
 export function getSupportedCurrencies(): CurrencyCode[] {
   return ['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CHF', 'INR', 'BRL', 'ZAR']
 }
+
+/**
+ * Human-visible label for a currency in the symbols picker (story 14-1, UX-DR16).
+ *
+ * The picker presents currencies by SYMBOL, not by nationality-tagged ISO code.
+ * But a bare symbol is not always unambiguous, so this returns the symbol plus a
+ * disambiguating ISO-code suffix ONLY where the symbol alone would be unclear:
+ *
+ * - Distinct glyph, unique among selectable currencies → bare symbol
+ *   (`USD → "$"`, `EUR → "€"`, `GBP → "£"`, `INR → "₹"`, `BRL → "R$"`).
+ * - Symbol shared by more than one selectable currency → `"<symbol> <CODE>"`
+ *   (`JPY → "¥ JPY"`, `CNY → "¥ CNY"` — deliberately not consolidated in 8-2
+ *   because they format differently, yet both map to `¥`).
+ * - Alphabetic (letters-only) symbol → `"<symbol> <CODE>"` so it does not read as
+ *   an accidental code collision (`ZAR → "R ZAR"`), except when the symbol already
+ *   equals the code (`CHF → "CHF"`), where a suffix would be redundant.
+ *
+ * The returned string is itself screen-reader-legible, so the picker does not have
+ * to rely on `aria-label` on `<option>` (inconsistently supported). The picker
+ * keeps the ISO code as each option's `value`; only the display changes.
+ *
+ * Pure and isomorphic (no DOM/navigator/env) — SSR-safe, belongs in core.
+ *
+ * @param code - A currency code.
+ * @returns The symbol-first display label.
+ */
+export function currencyDisplayLabel(code: CurrencyCode): string {
+  const symbol = currencySymbol(code)
+
+  // A letters-only symbol that already equals its code (e.g. CHF) is its own
+  // unambiguous label; a "CHF CHF" suffix would be redundant.
+  if (symbol === code) return symbol
+
+  const isAlphabeticSymbol = /^[A-Za-z]+$/.test(symbol)
+  const sharesGlyph =
+    getSupportedCurrencies().filter((other) => other !== 'NONE' && currencySymbol(other) === symbol)
+      .length > 1
+
+  if (sharesGlyph || isAlphabeticSymbol) {
+    return `${symbol} ${code}`
+  }
+
+  return symbol
+}

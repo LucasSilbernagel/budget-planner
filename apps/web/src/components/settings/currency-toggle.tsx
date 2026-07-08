@@ -1,4 +1,4 @@
-import { getSupportedCurrencies } from '@budget-planner/core'
+import { currencyDisplayLabel, getSupportedCurrencies } from '@budget-planner/core'
 import { type ChangeEvent, useId } from 'react'
 import { useCurrencyStore } from '../../stores/currencyStore'
 
@@ -93,9 +93,15 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
             onChange={handleCurrencyChange}
             className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
           >
+            {/*
+              Story 14-1 (UX-DR16): present each currency by its SYMBOL, not its
+              nationality-tagged ISO code. The option `value` stays the ISO code so
+              the store/persistence/sync contract (story 8-2) is unchanged; only the
+              visible, screen-reader-legible label changes via currencyDisplayLabel.
+            */}
             {SELECTABLE_CURRENCIES.map((code: string) => (
               <option key={code} value={code}>
-                {code}
+                {currencyDisplayLabel(code)}
               </option>
             ))}
           </select>

@@ -88,6 +88,55 @@ describe('CurrencyToggle', () => {
     expect(screen.queryByRole('combobox', { name: /currency/i })).not.toBeInTheDocument()
   })
 
+  // --- Symbol presentation (story 14-1, UX-DR16) ---
+
+  it('presents currencies by symbol, not by bare ISO code', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CurrencyToggle />)
+    await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
+
+    const options = screen.getAllByRole('option') as HTMLOptionElement[]
+    const byValue = new Map(options.map((o) => [o.value, o.textContent?.trim() ?? '']))
+
+    // The USD option shows the dollar symbol; no option is labelled by its bare code.
+    expect(byValue.get('USD')).toBe('$')
+    expect(byValue.get('EUR')).toBe('€')
+    expect(byValue.get('GBP')).toBe('£')
+    for (const [value, label] of byValue) {
+      // CHF is the one currency whose symbol IS its code, so "CHF" is its correct
+      // symbol label (not a leftover ISO code). Every other option must differ.
+      if (value === 'CHF') continue
+      expect(label).not.toBe(value)
+    }
+  })
+
+  it('keeps JPY and CNY distinguishable despite the shared ¥ glyph', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CurrencyToggle />)
+    await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
+
+    const options = screen.getAllByRole('option') as HTMLOptionElement[]
+    const jpy = options.find((o) => o.value === 'JPY')?.textContent?.trim()
+    const cny = options.find((o) => o.value === 'CNY')?.textContent?.trim()
+
+    expect(jpy).toBeTruthy()
+    expect(cny).toBeTruthy()
+    expect(jpy).not.toBe(cny)
+    expect(jpy).toContain('JPY')
+    expect(cny).toContain('CNY')
+  })
+
+  it('still writes the ISO code (not the symbol) to the store when a symbol is picked', async () => {
+    const user = userEvent.setup()
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+    renderWithProviders(<CurrencyToggle />)
+
+    // Select by value — the underlying option value must remain the ISO code.
+    await user.selectOptions(screen.getByRole('combobox', { name: /currency/i }), 'EUR')
+
+    expect(useCurrencyStore.getState().currency).toBe('EUR')
+  })
+
   // --- No separate locale control (story 8-1) ---
 
   it('never renders a locale selector, even in symbol mode', async () => {
