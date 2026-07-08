@@ -708,6 +708,27 @@ export function HomePage() {
                 </span>
               </a>
             </PremiumFeatureGate>
+
+            {/* Custom Profiles — surfaced-but-locked next to Advanced Forecasting
+                (story 13-3, AC-1/AC-4), consistent with how the other Premium
+                feature is presented. Resolves the /profiles nav-orphan; enforcement
+                stays server-side (the profile server functions' tier guard) + the
+                /profiles route gate. */}
+            <PremiumFeatureGate
+              featureName="Custom Profiles"
+              className="mt-3 flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
+              locked={<CustomProfilesFeatureLabel />}
+            >
+              <a
+                href="/profiles"
+                className="mt-3 flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
+              >
+                <CustomProfilesFeatureLabel />
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                  Open →
+                </span>
+              </a>
+            </PremiumFeatureGate>
           </section>
         </main>
 
@@ -1001,6 +1022,22 @@ function PremiumFeatureLabel(): React.ReactElement {
       <span className="font-medium text-gray-800 dark:text-gray-100">Advanced Forecasting</span>
       <span className="text-sm text-gray-500 dark:text-gray-400">
         Scenario modeling, projections, and saved forecasts
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Shared label for the Custom Profiles premium entry (story 13-3), rendered
+ * identically in both the unlocked (link) and locked (gate button) states so the
+ * two look the same apart from the lock badge the gate adds.
+ */
+function CustomProfilesFeatureLabel(): React.ReactElement {
+  return (
+    <span className="flex flex-col">
+      <span className="font-medium text-gray-800 dark:text-gray-100">Custom Profiles</span>
+      <span className="text-sm text-gray-500 dark:text-gray-400">
+        Separate sets of finances you can switch between, synced across devices
       </span>
     </span>
   )

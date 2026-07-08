@@ -46,6 +46,16 @@ export async function createProfile(
       }
     }
 
+    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
+    // feature, so a non-active subscription is denied at the server boundary —
+    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    if (sessionResult.data.subscriptionStatus !== 'active') {
+      return {
+        success: false,
+        error: 'Premium feature: Please upgrade to manage custom profiles',
+      }
+    }
+
     const userId = sessionResult.data.userId
 
     // Validate input
@@ -120,6 +130,16 @@ export async function getProfiles(request: Request): Promise<ApiResult<UserProfi
       }
     }
 
+    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
+    // feature, so a non-active subscription is denied at the server boundary —
+    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    if (sessionResult.data.subscriptionStatus !== 'active') {
+      return {
+        success: false,
+        error: 'Premium feature: Please upgrade to manage custom profiles',
+      }
+    }
+
     const userId = sessionResult.data.userId
 
     const profiles = await db
@@ -157,6 +177,16 @@ export async function getProfile(
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
+      }
+    }
+
+    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
+    // feature, so a non-active subscription is denied at the server boundary —
+    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    if (sessionResult.data.subscriptionStatus !== 'active') {
+      return {
+        success: false,
+        error: 'Premium feature: Please upgrade to manage custom profiles',
       }
     }
 
@@ -208,6 +238,16 @@ export async function updateProfile(
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
+      }
+    }
+
+    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
+    // feature, so a non-active subscription is denied at the server boundary —
+    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    if (sessionResult.data.subscriptionStatus !== 'active') {
+      return {
+        success: false,
+        error: 'Premium feature: Please upgrade to manage custom profiles',
       }
     }
 
@@ -302,6 +342,16 @@ export async function deleteProfile(request: Request, profileId: string): Promis
       }
     }
 
+    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
+    // feature, so a non-active subscription is denied at the server boundary —
+    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    if (sessionResult.data.subscriptionStatus !== 'active') {
+      return {
+        success: false,
+        error: 'Premium feature: Please upgrade to manage custom profiles',
+      }
+    }
+
     const userId = sessionResult.data.userId
 
     // Check if profile exists and belongs to user (and is not a tombstone — 4-18)
@@ -378,6 +428,16 @@ export async function setDefaultProfile(
       return {
         success: false,
         error: sessionResult.error || 'Authentication required',
+      }
+    }
+
+    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
+    // feature, so a non-active subscription is denied at the server boundary —
+    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    if (sessionResult.data.subscriptionStatus !== 'active') {
+      return {
+        success: false,
+        error: 'Premium feature: Please upgrade to manage custom profiles',
       }
     }
 

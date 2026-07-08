@@ -51,10 +51,13 @@ describe('HomePage premium discovery', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
-    expect(
-      screen.getByRole('button', { name: /advanced forecasting — premium, locked/i })
-    ).toBeInTheDocument()
-    expect(screen.getByText('Premium')).toBeInTheDocument()
+    // Scope the badge to the forecasting control: the Premium Features section
+    // now also carries a locked Custom Profiles entry (story 13-3), so there is
+    // more than one "Premium" badge on the page for a free user.
+    const forecasting = screen.getByRole('button', {
+      name: /advanced forecasting — premium, locked/i,
+    })
+    expect(within(forecasting).getByText('Premium')).toBeInTheDocument()
     // Not a usable link for free users.
     expect(screen.queryByRole('link', { name: /advanced forecasting/i })).not.toBeInTheDocument()
   })
@@ -67,6 +70,27 @@ describe('HomePage premium discovery', () => {
     expect(link).toHaveAttribute('href', '/forecasting')
     expect(screen.queryByText('Premium')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /premium, locked/i })).not.toBeInTheDocument()
+  })
+
+  it('AC-1: shows Custom Profiles locked with a Premium badge for a free user (13-3)', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    render(<HomePage />)
+
+    const profiles = screen.getByRole('button', { name: /custom profiles — premium, locked/i })
+    expect(within(profiles).getByText('Premium')).toBeInTheDocument()
+    // Not a usable link for free users.
+    expect(screen.queryByRole('link', { name: /custom profiles/i })).not.toBeInTheDocument()
+  })
+
+  it('AC-3: shows a working /profiles link with no badge for a paid user (13-3)', () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<HomePage />)
+
+    const link = screen.getByRole('link', { name: /custom profiles/i })
+    expect(link).toHaveAttribute('href', '/profiles')
+    expect(
+      screen.queryByRole('button', { name: /custom profiles — premium, locked/i })
+    ).not.toBeInTheDocument()
   })
 })
 
