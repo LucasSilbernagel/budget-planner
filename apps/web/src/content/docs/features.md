@@ -22,10 +22,16 @@ a Premium tier that adds multi-device syncing and a few extras.
 
 ### Premium tier
 
-- **Multi-device sync** so your data follows you across devices.
-- **Custom profiles** for separating different financial scenarios.
-- **Advanced forecasting** with scenario modeling for deeper what-if planning.
+- **Multi-device sync** — your data is securely stored and synced across all your
+  devices, so your plan follows you from phone to laptop. Synced data lives on
+  servers in the European Union (see below).
+- **Custom profiles** — keep separate sets of finances, such as personal versus
+  household, and switch between them without mixing the numbers.
+- **Advanced forecasting** — advanced net-worth projections plus scenario
+  modeling and saved, reloadable forecasts, so you can compare different what-if
+  plans side by side.
 - **Dark mode** — a dark theme you can switch on from the Settings page.
+- **No ads** — signed-in Premium users are not shown ads.
 
 ### Privacy and data location
 

@@ -42,13 +42,18 @@ export interface PremiumPromptProps {
 // Constants
 // ============================================================================
 
+// All four render (see `.slice(0, 4)` below), followed by a generic
+// "+ more features coming soon" row. Keep these to benefits the app actually
+// delivers (Story 13.1); no overpromises. Scenario modeling and saved forecasts
+// are folded into "Advanced Forecasting" rather than padding the list. Ad
+// removal is a real Premium benefit but is intentionally NOT listed here: a
+// 5th item would fall outside the `.slice(0, 4)` and read as "coming soon",
+// misrepresenting a shipped feature. It is stated on the Features/Pricing pages.
 const PREMIUM_FEATURES = [
-  'Advanced Forecasting Tools',
   'Multi-Device Data Sync',
   'Custom User Profiles',
-  'Scenario Modeling',
-  'Save & Load Forecasts',
-  'Priority Support',
+  'Advanced Forecasting & Scenario Modeling',
+  'Dark Mode',
 ]
 
 const DEFAULT_MESSAGE =

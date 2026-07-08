@@ -74,6 +74,33 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).toContain('/privacy')
   })
 
+  // The Features page splits into a Free section and a Premium section; the two
+  // guards below assert *which* section a claim lives in, not just that a
+  // substring appears somewhere on the page.
+  const featureSections = () => {
+    const content = getDocPage('features')?.content ?? ''
+    const premiumIndex = content.indexOf('### Premium tier')
+    if (premiumIndex === -1) throw new Error('Features page is missing the Premium tier section')
+    return {
+      free: content.slice(0, premiumIndex).toLowerCase(),
+      premium: content.slice(premiumIndex).toLowerCase(),
+    }
+  }
+
+  it('the Features page states ad removal under Premium (mirrors the Privacy Policy, story 13-1)', () => {
+    // AC-2: the Premium section must explicitly say ads are removed for Premium
+    // users, consistent with privacy.md ("Signed-in Premium users are not shown ads").
+    expect(featureSections().premium).toContain('no ads')
+  })
+
+  it('the Features page keeps Retirement modeling under the Free tier (story 13-1, AC-4)', () => {
+    // AC-4 do-not-regress guard: retirement stays Free (decided 2026-07-06) — it
+    // must appear in the Free section and NOT be advertised under Premium.
+    const { free, premium } = featureSections()
+    expect(free).toContain('retirement modeling')
+    expect(premium).not.toContain('retirement modeling')
+  })
+
   it('every internal doc link targets a real app route', () => {
     // The routes referenced by the docs; each exists under apps/web/src/routes.
     const knownRoutes = new Set([

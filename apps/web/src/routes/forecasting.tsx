@@ -2,7 +2,7 @@
  * Forecasting Page Route
  *
  * Premium feature route for advanced financial forecasting tools.
- * Provides scenario modeling, goal tracking, and financial projections.
+ * Provides scenario modeling and saved, reloadable net-worth forecasts.
  *
  * Route: /forecasting
  * Access: Premium users only (paid tier)
@@ -290,7 +290,7 @@ function ForecastingPage(): React.ReactElement {
       <div className="min-h-screen surface-sunken flex items-center justify-center p-4">
         <PremiumPrompt
           featureName="Advanced Forecasting"
-          message="Access powerful financial forecasting tools including scenario modeling, goal tracking, and save/load functionality."
+          message="Access advanced financial forecasting, including scenario modeling and saved, reloadable forecasts for deeper what-if planning."
           asDialog={false}
         />
       </div>
