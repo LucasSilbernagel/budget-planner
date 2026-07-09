@@ -167,7 +167,9 @@ const expenseSchema = z.object({
 
 const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
-  targetAmount: z.number().int(),
+  // Optional/nullable (Story 16-1): a positive integer ⇒ goal, null ⇒ account
+  // (no target). Mirrors balanceTracking.maxContributionLimit's optional shape.
+  targetAmount: z.number().int().positive().nullable().optional(),
   currentBalance: z.number().int().default(0),
   userId: z.string().uuid(),
 })

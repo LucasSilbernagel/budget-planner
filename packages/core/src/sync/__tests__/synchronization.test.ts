@@ -126,6 +126,37 @@ describe('Synchronization Service', () => {
       const state = service.getState()
       expect(state.pendingOperations).toHaveLength(1)
     })
+
+    // Story 16-1: a goal-less savings account carries targetAmount: null. The
+    // queue-time validation (syncOperationDataSchema) must accept null, else a
+    // paid-tier account create/update ZodError-fails at the gate and silently
+    // never syncs.
+    it('should queue a savings account with a null targetAmount (create)', async () => {
+      const operation = await service.queueCreate(
+        'savingsGoal',
+        'acc-1',
+        { name: 'Checking Buffer', targetAmount: null, currentBalance: 250000 },
+        testUserId
+      )
+
+      expect(operation.type).toBe('create')
+      expect(operation.data).toMatchObject({ targetAmount: null, currentBalance: 250000 })
+      expect(service.getState().pendingOperations).toHaveLength(1)
+    })
+
+    it('should queue clearing a goal target to null (update → account)', async () => {
+      const operation = await service.queueUpdate(
+        'savingsGoal',
+        'goal-1',
+        { targetAmount: null },
+        testUserId,
+        1
+      )
+
+      expect(operation.type).toBe('update')
+      expect(operation.data).toMatchObject({ targetAmount: null })
+      expect(service.getState().pendingOperations).toHaveLength(1)
+    })
   })
 
   describe('Conflict Detection', () => {

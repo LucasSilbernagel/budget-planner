@@ -172,7 +172,10 @@ export const savingsGoals = pgTable(
       .references(() => userProfiles.id)
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    targetAmount: integer('targetAmount').notNull(), // Target amount in cents (> 0 required)
+    // Nullable (Story 16-1): null ⇒ savings account (no target), a positive
+    // integer ⇒ goal. Mirrors balanceTracking.maxContributionLimit's optional
+    // shape so "no target" is an absent value, not a sentinel 0.
+    targetAmount: integer('targetAmount'), // Target amount in cents (> 0 if provided; null = account)
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
@@ -184,10 +187,11 @@ export const savingsGoals = pgTable(
       table.userId,
       table.profileId
     ),
-    // CHECK constraints: targetAmount must be positive, currentBalance must be non-negative
+    // CHECK constraints: targetAmount must be positive if provided (null = account,
+    // Story 16-1), currentBalance must be non-negative
     targetAmountPositive: check(
       'savingsGoals_targetAmount_positive',
-      sql`${table.targetAmount} > 0`
+      sql`${table.targetAmount} IS NULL OR ${table.targetAmount} > 0`
     ),
     currentBalanceNonNegative: check(
       'savingsGoals_currentBalance_non_negative',

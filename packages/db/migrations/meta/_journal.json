@@ -43,6 +43,13 @@
       "when": 1782785292164,
       "tag": "0005_mute_proemial_gods",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783627114986,
+      "tag": "0006_flawless_leader",
+      "breakpoints": true
     }
   ]
 }

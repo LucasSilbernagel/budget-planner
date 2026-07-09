@@ -64,3 +64,69 @@ describe('SavingsPage inline validation', () => {
     expect(goals[0]).toMatchObject({ name: 'Emergency Fund', targetAmount: 500000 })
   })
 })
+
+/**
+ * Story 16-1: goal-less savings accounts (null target). The account toggle hides
+ * the target field, an account submits with targetAmount: null and no target
+ * error, and an account row renders no progress bar (N/A) instead of "0%".
+ */
+describe('SavingsPage — savings accounts (Story 16-1)', () => {
+  beforeEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('account toggle hides the target amount field', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    expect(screen.getByTestId('savings-target-amount-input')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    expect(screen.queryByTestId('savings-target-amount-input')).not.toBeInTheDocument()
+  })
+
+  it('submits an account with targetAmount: null and no target error', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Checking Buffer')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('savings-target-amount-error')).not.toBeInTheDocument()
+
+    const goals = useSavingsStore.getState().savingsGoals
+    expect(goals).toHaveLength(1)
+    expect(goals[0]).toMatchObject({ name: 'Checking Buffer', targetAmount: null })
+  })
+
+  it('renders no progress bar (N/A) and an "Account" badge for an account row', () => {
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'acc-1',
+          name: 'Checking Buffer',
+          targetAmount: null,
+          currentBalance: 250000,
+          createdAt: new Date('2026-01-01').toISOString(),
+          updatedAt: new Date('2026-01-01').toISOString(),
+        },
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-progress-na-acc-1')).toHaveTextContent('N/A')
+    expect(screen.getByTestId('savings-badge-acc-1')).toHaveTextContent('Account')
+    // No "%" progress readout is rendered for an account.
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+  })
+})

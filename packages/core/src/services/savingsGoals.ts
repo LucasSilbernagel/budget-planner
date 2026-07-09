@@ -29,12 +29,14 @@ export interface ClientSavingsGoal {
   // the old negative-integer temp id.
   id: string
   name: string
-  targetAmount: number // In cents
+  // null ⇒ savings account (no target); a positive integer ⇒ goal (Story 16-1).
+  // "No target" is an absent value, never a sentinel 0.
+  targetAmount: number | null // In cents (null = account)
   currentBalance: number // In cents
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
-  // Optional UI display fields
-  progress?: number // Percentage (0-100)
+  // Optional UI display fields (progress is null for accounts)
+  progress?: number | null // Percentage (0-100), or null for accounts
   status?: SavingsGoalStatus
 }
 
@@ -43,22 +45,33 @@ export interface ClientSavingsGoal {
  */
 export interface ClientNewSavingsGoal {
   name: string
-  targetAmount: number // In cents
+  targetAmount: number | null // In cents (null = account, no target)
   currentBalance: number // In cents
 }
 
 /**
  * Savings Goal Status for UI display
+ * 'account' signals a goal-less savings account (no target, no progress).
  */
-export type SavingsGoalStatus = 'on-track' | 'behind' | 'complete' | 'not-started'
+export type SavingsGoalStatus = 'on-track' | 'behind' | 'complete' | 'not-started' | 'account'
 
 /**
  * Savings Goal with progress calculation
- * Used for display purposes
+ * Used for display purposes. `progress` is null for accounts (no target).
  */
 export interface SavingsGoalWithProgress extends ClientSavingsGoal {
-  progress: number // Percentage (0-100)
+  progress: number | null // Percentage (0-100), or null for accounts
   status: SavingsGoalStatus
+}
+
+/**
+ * Type guard: an entry is a savings account (no target) when targetAmount is null.
+ * Single source of truth for the goal-vs-account discriminator (Story 16-1).
+ */
+export function isSavingsAccount(goal: {
+  targetAmount: number | null
+}): boolean {
+  return goal.targetAmount == null
 }
 
 /**
@@ -72,7 +85,7 @@ export type DatabaseSavingsGoal = DbSavingsGoal
  */
 export interface CreateSavingsGoalInput {
   name: string
-  targetAmount: number // In cents
+  targetAmount: number | null // In cents (null = account, no target)
   currentBalance: number // In cents
   userId?: number // Optional for free tier (null), required for paid tier
 }
@@ -84,7 +97,7 @@ export interface CreateSavingsGoalInput {
 export interface UpdateSavingsGoalInput {
   id: string // uuid PK (Story 5-14) — shared client/server identity
   name?: string
-  targetAmount?: number // In cents
+  targetAmount?: number | null // In cents (null = clear target → account)
   currentBalance?: number // In cents
 }
 
@@ -134,8 +147,18 @@ export function getStatusFromProgress(progress: number): SavingsGoalStatus {
  * @returns SavingsGoalWithProgress with calculated fields
  */
 export function withProgress(savingsGoal: ClientSavingsGoal): SavingsGoalWithProgress {
+  // Accounts (no target) have no meaningful progress — return it as absent
+  // (null), never 0, so the UI can distinguish "account" from "0% of a goal".
+  if (isSavingsAccount(savingsGoal)) {
+    return {
+      ...savingsGoal,
+      progress: null,
+      status: 'account',
+    }
+  }
+
   const progress = calculateSavingsGoalProgress(
-    savingsGoal.targetAmount,
+    savingsGoal.targetAmount as number,
     savingsGoal.currentBalance
   )
   return {
@@ -166,11 +189,17 @@ export interface ValidationError {
  *
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
- * - targetAmount: Required, positive integer (in cents)
- * - currentBalance: Required, non-negative integer (in cents), <= targetAmount
+ * - targetAmount: Optional. When provided (goal), must be a positive integer (in
+ *   cents). When null/absent (account, Story 16-1), the target checks are skipped.
+ * - currentBalance: Required, non-negative integer (in cents). Must be
+ *   <= targetAmount only for goals (skipped for accounts).
  */
 export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): ValidationError[] {
   const errors: ValidationError[] = []
+
+  // An entry is a goal only when a non-null target is provided; null/undefined
+  // means a savings account (no target) and the target checks are skipped.
+  const isGoal = input.targetAmount !== undefined && input.targetAmount !== null
 
   // Name validation
   if (input.name === undefined || input.name === null || input.name.trim() === '') {
@@ -187,25 +216,21 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
     })
   }
 
-  // Target amount validation
-  if (input.targetAmount === undefined || input.targetAmount === null) {
-    errors.push({
-      field: 'targetAmount',
-      message: 'Target amount is required',
-      value: input.targetAmount,
-    })
-  } else if (typeof input.targetAmount !== 'number' || !Number.isInteger(input.targetAmount)) {
-    errors.push({
-      field: 'targetAmount',
-      message: 'Target amount must be an integer (in cents)',
-      value: input.targetAmount,
-    })
-  } else if (input.targetAmount <= 0) {
-    errors.push({
-      field: 'targetAmount',
-      message: 'Target amount must be positive',
-      value: input.targetAmount,
-    })
+  // Target amount validation — only for goals (a provided, non-null target).
+  if (isGoal) {
+    if (typeof input.targetAmount !== 'number' || !Number.isInteger(input.targetAmount)) {
+      errors.push({
+        field: 'targetAmount',
+        message: 'Target amount must be an integer (in cents)',
+        value: input.targetAmount,
+      })
+    } else if (input.targetAmount <= 0) {
+      errors.push({
+        field: 'targetAmount',
+        message: 'Target amount must be positive',
+        value: input.targetAmount,
+      })
+    }
   }
 
   // Current balance validation
@@ -227,7 +252,12 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
       message: 'Current balance cannot be negative',
       value: input.currentBalance,
     })
-  } else if (input.targetAmount !== undefined && input.currentBalance > input.targetAmount) {
+  } else if (
+    isGoal &&
+    typeof input.targetAmount === 'number' &&
+    input.currentBalance > input.targetAmount
+  ) {
+    // "Balance exceeds target" only applies to goals — an account has no target.
     errors.push({
       field: 'currentBalance',
       message: 'Current balance cannot exceed target amount',

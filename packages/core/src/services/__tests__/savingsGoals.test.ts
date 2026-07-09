@@ -7,6 +7,7 @@ import {
   filterSavingsGoals,
   generateSavingsGoalTempId,
   getStatusFromProgress,
+  isSavingsAccount,
   isValidSavingsGoal,
   resetSavingsGoalTempId,
   sortByCreationDate,
@@ -191,15 +192,15 @@ describe('savingsGoals service', () => {
       ).toBe(true)
     })
 
-    it('should return error for missing targetAmount', () => {
+    it('treats a missing targetAmount as an account, not an error (Story 16-1)', () => {
+      // Nullable target is the single source of truth: an absent target means a
+      // goal-less savings account, so validation must NOT require one.
       const input = {
         name: 'Test',
         currentBalance: 50000,
       }
       const errors = validateSavingsGoal(input)
-      expect(
-        errors.some((e) => e.field === 'targetAmount' && e.message === 'Target amount is required')
-      ).toBe(true)
+      expect(errors.some((e) => e.field === 'targetAmount')).toBe(false)
     })
 
     it('should return error for negative targetAmount', () => {
@@ -513,6 +514,99 @@ describe('savingsGoals service', () => {
       const result2 = toClientSavingsGoal(input)
 
       expect(result1.id).not.toBe(result2.id)
+    })
+  })
+
+  // Story 16-1: goal-less savings accounts (null target). Progress must be
+  // ABSENT (null) for accounts, never 0 (0 reads as "0% toward a goal").
+  describe('savings accounts (no target, Story 16-1)', () => {
+    const account: ClientSavingsGoal = {
+      id: 'acc-1',
+      name: 'Checking Buffer',
+      targetAmount: null,
+      currentBalance: 42000,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    describe('isSavingsAccount', () => {
+      it('returns true when targetAmount is null', () => {
+        expect(isSavingsAccount({ targetAmount: null })).toBe(true)
+      })
+
+      it('returns false for a goal with a positive target', () => {
+        expect(isSavingsAccount({ targetAmount: 100000 })).toBe(false)
+      })
+    })
+
+    describe('withProgress', () => {
+      it('returns null progress (not 0) and status "account" for an account', () => {
+        const result = withProgress(account)
+        expect(result.progress).toBeNull()
+        expect(result.progress).not.toBe(0)
+        expect(result.status).toBe('account')
+        expect(result.currentBalance).toBe(42000)
+      })
+
+      it('still computes numeric progress for a goal', () => {
+        const goal: ClientSavingsGoal = { ...account, targetAmount: 100000, currentBalance: 60000 }
+        const result = withProgress(goal)
+        expect(result.progress).toBe(60)
+        expect(result.status).toBe('on-track')
+      })
+    })
+
+    describe('validateSavingsGoal', () => {
+      it('accepts an account (null target) with just a name and balance', () => {
+        const errors = validateSavingsGoal({
+          name: 'Buffer',
+          targetAmount: null,
+          currentBalance: 42000,
+        })
+        expect(errors).toEqual([])
+      })
+
+      it('does not require a target for an account', () => {
+        const errors = validateSavingsGoal({
+          name: 'Buffer',
+          targetAmount: null,
+          currentBalance: 0,
+        })
+        expect(errors.some((e) => e.field === 'targetAmount')).toBe(false)
+      })
+
+      it('skips the "balance exceeds target" check for accounts', () => {
+        // A goal would reject balance > target; an account has no ceiling.
+        const errors = validateSavingsGoal({
+          name: 'Buffer',
+          targetAmount: null,
+          currentBalance: 9_999_999,
+        })
+        expect(errors).toEqual([])
+      })
+
+      it('still rejects a goal with a missing/zero target', () => {
+        const missing = validateSavingsGoal({ name: 'Goal', targetAmount: 0, currentBalance: 0 })
+        expect(missing.some((e) => e.field === 'targetAmount')).toBe(true)
+      })
+
+      it('still enforces balance <= target for goals', () => {
+        const errors = validateSavingsGoal({
+          name: 'Goal',
+          targetAmount: 100000,
+          currentBalance: 200000,
+        })
+        expect(errors.some((e) => e.field === 'currentBalance')).toBe(true)
+      })
+
+      it('still rejects a negative balance on an account', () => {
+        const errors = validateSavingsGoal({
+          name: 'Buffer',
+          targetAmount: null,
+          currentBalance: -1,
+        })
+        expect(errors.some((e) => e.field === 'currentBalance')).toBe(true)
+      })
     })
   })
 })

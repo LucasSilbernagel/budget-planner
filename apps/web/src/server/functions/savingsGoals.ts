@@ -36,7 +36,7 @@ export interface ApiResult<T> {
  */
 export interface CreateSavingsGoalInput {
   name: string
-  targetAmount: number // In cents
+  targetAmount: number | null // In cents (null = account, no target — Story 16-1)
   currentBalance: number // In cents
   userId: string // Required for paid tier (from users table)
   profileId: string // Profile ID for data isolation (required for paid tier) - UUID
@@ -48,15 +48,16 @@ export interface CreateSavingsGoalInput {
 export interface UpdateSavingsGoalInput {
   id: number
   name?: string
-  targetAmount?: number // In cents
+  targetAmount?: number | null // In cents (null = clear target → account)
   currentBalance?: number // In cents
 }
 
 /**
  * Output type for savings goal (with calculated fields)
+ * `progress` is null for accounts (no target).
  */
 export interface SavingsGoalOutput extends DbSavingsGoal {
-  progress: number
+  progress: number | null
   status: string
 }
 
@@ -84,9 +85,17 @@ function getStatus(progress: number): string {
 }
 
 /**
- * Add progress and status to database savings goal
+ * Add progress and status to database savings goal.
+ * Accounts (null target, Story 16-1) have absent progress (null), not 0%.
  */
 function withProgress(goal: DbSavingsGoal): SavingsGoalOutput {
+  if (goal.targetAmount == null) {
+    return {
+      ...goal,
+      progress: null,
+      status: 'account',
+    }
+  }
   const progress = calculateProgress(goal.targetAmount, goal.currentBalance)
   return {
     ...goal,
@@ -217,7 +226,10 @@ export async function createSavingsGoal(
       }
     }
 
-    if (!input.targetAmount || input.targetAmount <= 0) {
+    // Target is optional (Story 16-1): null/undefined ⇒ account. Only validate
+    // when a target is actually provided (a goal).
+    const hasTarget = input.targetAmount !== undefined && input.targetAmount !== null
+    if (hasTarget && (input.targetAmount as number) <= 0) {
       return {
         success: false,
         error: 'Target amount must be positive',
@@ -231,7 +243,8 @@ export async function createSavingsGoal(
           error: 'Current balance cannot be negative',
         }
       }
-      if (input.currentBalance > input.targetAmount) {
+      // "Balance exceeds target" applies to goals only — an account has no target.
+      if (hasTarget && input.currentBalance > (input.targetAmount as number)) {
         return {
           success: false,
           error: 'Current balance cannot exceed target amount',
@@ -239,14 +252,14 @@ export async function createSavingsGoal(
       }
     }
 
-    // Insert into database
+    // Insert into database (null target = account)
     const [newGoal] = await db
       .insert(savingsGoals)
       .values({
         userId: input.userId,
         profileId: input.profileId,
         name: input.name.trim(),
-        targetAmount: input.targetAmount,
+        targetAmount: input.targetAmount ?? null,
         currentBalance: input.currentBalance ?? 0,
       })
       .returning()
@@ -316,7 +329,9 @@ export async function updateSavingsGoal(
       }
     }
 
-    if (input.targetAmount !== undefined) {
+    // A provided non-null target must be positive; null clears it to an account
+    // and undefined leaves the existing value untouched (Story 16-1).
+    if (input.targetAmount !== undefined && input.targetAmount !== null) {
       if (input.targetAmount <= 0) {
         return {
           success: false,
@@ -325,27 +340,38 @@ export async function updateSavingsGoal(
       }
     }
 
-    if (input.currentBalance !== undefined) {
-      if (input.currentBalance < 0) {
-        return {
-          success: false,
-          error: 'Current balance cannot be negative',
-        }
-      }
-      if (input.currentBalance > (input.targetAmount ?? existingGoal[0].targetAmount)) {
-        return {
-          success: false,
-          error: 'Current balance cannot exceed target amount',
-        }
+    if (input.currentBalance !== undefined && input.currentBalance < 0) {
+      return {
+        success: false,
+        error: 'Current balance cannot be negative',
       }
     }
 
-    // Update in database
+    // Effective values after this update: an explicit input wins (incl. a null
+    // target that clears a goal → account), otherwise the existing row's value.
+    const effectiveTarget =
+      input.targetAmount !== undefined ? input.targetAmount : existingGoal[0].targetAmount
+    const effectiveBalance =
+      input.currentBalance !== undefined ? input.currentBalance : existingGoal[0].currentBalance
+
+    // Enforce the ceiling against the POST-update balance vs target regardless of
+    // which field was supplied, so a target-only update (e.g. lowering a goal's
+    // target, or converting an account to a goal) can't leave balance > target.
+    // Accounts (null target) have no ceiling.
+    if (effectiveTarget != null && effectiveBalance > effectiveTarget) {
+      return {
+        success: false,
+        error: 'Current balance cannot exceed target amount',
+      }
+    }
+
+    // Update in database (allow persisting null target to convert a goal → account)
     const [updatedGoal] = await db
       .update(savingsGoals)
       .set({
         name: input.name !== undefined ? input.name.trim() : existingGoal[0].name,
-        targetAmount: input.targetAmount ?? existingGoal[0].targetAmount,
+        targetAmount:
+          input.targetAmount !== undefined ? input.targetAmount : existingGoal[0].targetAmount,
         currentBalance: input.currentBalance ?? existingGoal[0].currentBalance,
         updatedAt: new Date(),
       })

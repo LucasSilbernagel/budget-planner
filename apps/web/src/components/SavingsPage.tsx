@@ -32,8 +32,12 @@ export function SavingsPage() {
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  // ids are uuid strings (Story 5-14); keep this typed as string.
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
+  // Goal-less "savings account" toggle (Story 16-1): when true, there is no target
+  // and the target field is hidden and not validated; the entry saves with targetAmount: null.
+  const [isAccount, setIsAccount] = useState(false)
   const [targetAmount, setTargetAmount] = useState('')
   const [currentBalance, setCurrentBalance] = useState('')
 
@@ -55,16 +59,19 @@ export function SavingsPage() {
     if (!name.trim()) {
       next.name = 'Please enter a name for the savings goal'
     }
-    const targetInCents = parseFromInput(targetAmount, locale)
-    if (targetInCents <= 0) {
-      next.targetAmount = 'Please enter a valid positive target amount'
+    // A savings account has no target, so the target check is skipped entirely.
+    if (!isAccount) {
+      const targetInCents = parseFromInput(targetAmount, locale)
+      if (targetInCents <= 0) {
+        next.targetAmount = 'Please enter a valid positive target amount'
+      }
     }
     const balanceInCents = parseFromInput(currentBalance, locale)
     if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
     }
     return next
-  }, [name, targetAmount, currentBalance, locale])
+  }, [name, isAccount, targetAmount, currentBalance, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -77,6 +84,7 @@ export function SavingsPage() {
       if (editingId === null) {
         // Adding new: reset all fields
         setName('')
+        setIsAccount(false)
         setTargetAmount('')
         setCurrentBalance('')
       }
@@ -99,16 +107,19 @@ export function SavingsPage() {
     setIsModalOpen(true)
   }
 
-  // Open modal for editing existing savings goal
+  // Open modal for editing existing savings goal (or account)
   const openEditModal = (goal: {
-    id: number
+    id: string
     name: string
-    targetAmount: number
+    targetAmount: number | null
     currentBalance: number
   }) => {
     setEditingId(goal.id)
     setName(goal.name)
-    setTargetAmount(formatForInputDisplay(goal.targetAmount, locale))
+    // null target ⇒ account: hide the target field and leave it blank.
+    const account = goal.targetAmount == null
+    setIsAccount(account)
+    setTargetAmount(account ? '' : formatForInputDisplay(goal.targetAmount as number, locale))
     setCurrentBalance(formatForInputDisplay(goal.currentBalance, locale))
     clearErrors()
     setIsModalOpen(true)
@@ -119,6 +130,7 @@ export function SavingsPage() {
     setIsModalOpen(false)
     setEditingId(null)
     setName('')
+    setIsAccount(false)
     setTargetAmount('')
     setCurrentBalance('')
     clearErrors()
@@ -129,7 +141,7 @@ export function SavingsPage() {
 
   // Delete confirmation state (themed dialog replaces browser confirm()). The
   // "Add" button is a stable focus target after a confirmed delete (AC-5).
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const pendingDeleteName = savingsGoals.find((g) => g.id === pendingDeleteId)?.name ?? ''
 
@@ -149,7 +161,8 @@ export function SavingsPage() {
 
       const newGoal = {
         name: name.trim(),
-        targetAmount: parseFromInput(targetAmount, locale),
+        // Account (Story 16-1): persist an absent target as null, never 0.
+        targetAmount: isAccount ? null : parseFromInput(targetAmount, locale),
         currentBalance: parseFromInput(currentBalance, locale),
       }
 
@@ -166,7 +179,7 @@ export function SavingsPage() {
   }
 
   // Open the themed delete confirmation for a savings goal
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     setPendingDeleteId(id)
   }
 
@@ -242,15 +255,31 @@ export function SavingsPage() {
                   </thead>
                   <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
                     {savingsGoals.map((goal) => {
+                      // Account (Story 16-1): null target ⇒ absent progress (not 0%).
+                      const isAccountRow = goal.targetAmount == null
                       const progress = getSavingsProgress(goal.id)
                       return (
                         <tr key={goal.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-medium text-heading text-sm">{goal.name}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-heading text-sm">{goal.name}</span>
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs ${
+                                  isAccountRow
+                                    ? 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
+                                    : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                                }`}
+                                data-testid={`savings-badge-${goal.id}`}
+                              >
+                                {isAccountRow ? 'Account' : 'Goal'}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-muted text-sm">
-                              {formatAmount(goal.targetAmount)}
+                              {goal.targetAmount == null
+                                ? 'No target'
+                                : formatAmount(goal.targetAmount)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -259,13 +288,26 @@ export function SavingsPage() {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="bg-gray-200 dark:bg-gray-700 rounded-full w-full h-2">
+                            {progress == null ? (
                               <div
-                                className="bg-purple-600 rounded-full h-2"
-                                style={{ width: `${progress}%` }}
-                              />
-                            </div>
-                            <div className="mt-1 text-muted text-xs text-center">{progress}%</div>
+                                className="text-muted text-sm text-center"
+                                data-testid={`savings-progress-na-${goal.id}`}
+                              >
+                                N/A
+                              </div>
+                            ) : (
+                              <>
+                                <div className="bg-gray-200 dark:bg-gray-700 rounded-full w-full h-2">
+                                  <div
+                                    className="bg-purple-600 rounded-full h-2"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                                <div className="mt-1 text-muted text-xs text-center">
+                                  {progress}%
+                                </div>
+                              </>
+                            )}
                           </td>
                           <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
                             <button
@@ -355,50 +397,66 @@ export function SavingsPage() {
               )}
             </div>
 
-            <div>
-              <label htmlFor="targetAmount" className="block mb-1 font-medium text-label text-sm">
-                Target Amount *
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                id="isAccount"
+                checked={isAccount}
+                onChange={(e) => setIsAccount(e.target.checked)}
+                className="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-2 focus:ring-purple-500"
+                data-testid="savings-is-account-toggle"
+              />
+              <label htmlFor="isAccount" className="text-label text-sm">
+                This is just an account balance (no target)
               </label>
-              <div className="relative shadow-sm rounded-md">
-                {mode === 'symbol' && (
-                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
-                  </div>
-                )}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  id="targetAmount"
-                  value={targetAmount}
-                  onChange={(e) => setTargetAmount(e.target.value)}
-                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setTargetAmount)}
-                  placeholder="0.00"
-                  className={`w-full px-3 py-2 ${
-                    mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
-                    hasFieldError('targetAmount')
-                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
-                  }`}
-                  aria-invalid={hasFieldError('targetAmount')}
-                  aria-required
-                  aria-describedby={
-                    hasFieldError('targetAmount') ? 'savings-target-amount-error' : undefined
-                  }
-                  data-testid="savings-target-amount-input"
-                />
-              </div>
-              {hasFieldError('targetAmount') && (
-                <p
-                  id="savings-target-amount-error"
-                  className="mt-1 text-red-600 dark:text-red-400 text-sm"
-                  role="alert"
-                  data-testid="savings-target-amount-error"
-                >
-                  {getFieldError('targetAmount')}
-                </p>
-              )}
             </div>
+
+            {!isAccount && (
+              <div>
+                <label htmlFor="targetAmount" className="block mb-1 font-medium text-label text-sm">
+                  Target Amount *
+                </label>
+                <div className="relative shadow-sm rounded-md">
+                  {mode === 'symbol' && (
+                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                      <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    id="targetAmount"
+                    value={targetAmount}
+                    onChange={(e) => setTargetAmount(e.target.value)}
+                    onBlur={(e) => reformatAmountOnBlur(e.target.value, setTargetAmount)}
+                    placeholder="0.00"
+                    className={`w-full px-3 py-2 ${
+                      mode === 'symbol' ? 'pl-7' : ''
+                    } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                      hasFieldError('targetAmount')
+                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
+                    }`}
+                    aria-invalid={hasFieldError('targetAmount')}
+                    aria-required
+                    aria-describedby={
+                      hasFieldError('targetAmount') ? 'savings-target-amount-error' : undefined
+                    }
+                    data-testid="savings-target-amount-input"
+                  />
+                </div>
+                {hasFieldError('targetAmount') && (
+                  <p
+                    id="savings-target-amount-error"
+                    className="mt-1 text-red-600 dark:text-red-400 text-sm"
+                    role="alert"
+                    data-testid="savings-target-amount-error"
+                  >
+                    {getFieldError('targetAmount')}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div>
               <label htmlFor="currentBalance" className="block mb-1 font-medium text-label text-sm">

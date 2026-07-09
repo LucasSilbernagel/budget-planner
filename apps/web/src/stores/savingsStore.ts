@@ -26,7 +26,7 @@ interface SavingsState {
   getSavingsGoalsWithProgress: () => SavingsGoalWithProgress[]
   getTotalSavings: () => number
   getTotalTargetAmount: () => number
-  getSavingsProgress: (id: string) => number // Returns percentage (0-100)
+  getSavingsProgress: (id: string) => number | null // Percentage (0-100), null for accounts
   getOverallProgress: () => number // Returns percentage across all goals
 }
 
@@ -112,28 +112,35 @@ export const useSavingsStore = create<SavingsState>()(
         return get().savingsGoals.map(withProgress)
       },
 
-      // Calculate total savings (sum of all current balances)
+      // Calculate total savings (sum of ALL current balances — accounts included)
       getTotalSavings: () => {
         return get().savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
       },
 
-      // Calculate total target amount across all goals
+      // Calculate total target amount across goals only. Accounts (null target,
+      // Story 16-1) contribute no target and are excluded.
       getTotalTargetAmount: () => {
-        return get().savingsGoals.reduce((sum, goal) => sum + goal.targetAmount, 0)
+        return get().savingsGoals.reduce((sum, goal) => sum + (goal.targetAmount ?? 0), 0)
       },
 
-      // Calculate progress percentage for a specific savings goal
+      // Calculate progress percentage for a specific savings goal. Returns null
+      // for an account (no target) — "no target" is absent progress, not 0%.
       getSavingsProgress: (id: string) => {
         const goal = get().savingsGoals.find((g) => g.id === id)
-        if (!goal || goal.targetAmount === 0) return 0
+        if (!goal) return 0
+        // Account (no target): progress is absent, not 0%.
+        if (goal.targetAmount == null) return null
+        // Legacy guard: a 0 target still yields 0% (never divide by zero).
+        if (goal.targetAmount === 0) return 0
         return Math.min(100, Math.round((goal.currentBalance / goal.targetAmount) * 100))
       },
 
-      // Calculate overall progress percentage across all savings goals
+      // Calculate overall progress across GOALS only. An account balance must not
+      // count toward goal progress (neither numerator nor denominator).
       getOverallProgress: () => {
-        const state = get()
-        const totalBalance = state.savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
-        const totalTarget = state.savingsGoals.reduce((sum, goal) => sum + goal.targetAmount, 0)
+        const goals = get().savingsGoals.filter((goal) => goal.targetAmount != null)
+        const totalBalance = goals.reduce((sum, goal) => sum + goal.currentBalance, 0)
+        const totalTarget = goals.reduce((sum, goal) => sum + (goal.targetAmount ?? 0), 0)
         if (totalTarget <= 0) return 0
         return Math.min(100, Math.round((totalBalance / totalTarget) * 100))
       },

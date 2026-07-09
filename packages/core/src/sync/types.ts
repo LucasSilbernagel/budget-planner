@@ -68,7 +68,8 @@ const PG_INT32_MIN = -2_147_483_648
  *
  * Numeric bounds mirror the database CHECK constraints (see packages/db/schema.ts)
  * so invalid amounts are rejected client-side instead of failing the INSERT/UPDATE:
- * - amount / targetAmount / maxContributionLimit: must be > 0
+ * - amount / maxContributionLimit: must be > 0
+ * - targetAmount: > 0 for a goal, or null for a goal-less savings account (Story 16-1)
  * - monthlyContribution: must be >= 0
  * - currentBalance: may be negative (debt balances) but must fit in int32
  */
@@ -76,7 +77,9 @@ export const syncOperationDataSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   amount: z.number().int().positive().max(PG_INT32_MAX).optional(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).optional(),
-  targetAmount: z.number().int().positive().max(PG_INT32_MAX).optional(),
+  // null ⇒ savings account (no target); a positive int ⇒ goal. Must allow null
+  // or a paid-tier account create/update ZodError-fails at the sync-queue gate.
+  targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable().optional(),
   currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX).optional(),
   type: z.enum(['investment', 'debt']).optional(),
   maxContributionLimit: z.number().int().positive().max(PG_INT32_MAX).optional(),
