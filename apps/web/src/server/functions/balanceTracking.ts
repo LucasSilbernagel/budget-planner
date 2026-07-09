@@ -13,7 +13,7 @@
 
 import { logger } from '@/lib/logger'
 import { db } from '@budget-planner/db'
-import type { BalanceTracking, NewBalanceTracking } from '@budget-planner/db'
+import type { BalanceTracking, Frequency, NewBalanceTracking } from '@budget-planner/db'
 import { balanceTracking } from '@budget-planner/db/src/schema'
 import { and, eq } from 'drizzle-orm'
 
@@ -30,7 +30,8 @@ export interface CreateBalanceTrackingServerInput {
   name: string
   currentBalance: number // In cents
   maxContributionLimit?: number // In cents, optional
-  monthlyContribution: number // In cents
+  monthlyContribution: number // In cents — amount at `frequency` cadence (Story 16-2)
+  frequency?: Frequency // Cadence of monthlyContribution (Story 16-2); defaults to 'monthly'
   profileId: string // Profile ID for data isolation (required for paid tier) - UUID
 }
 
@@ -43,7 +44,8 @@ export interface UpdateBalanceTrackingServerInput {
   name?: string
   currentBalance?: number // In cents
   maxContributionLimit?: number // In cents, optional
-  monthlyContribution?: number // In cents
+  monthlyContribution?: number // In cents — amount at `frequency` cadence (Story 16-2)
+  frequency?: Frequency // Cadence of monthlyContribution (Story 16-2)
 }
 
 /**
@@ -186,6 +188,7 @@ export async function createBalanceTrackingEntry(
       currentBalance: input.currentBalance,
       maxContributionLimit: input.maxContributionLimit,
       monthlyContribution: input.monthlyContribution,
+      frequency: input.frequency ?? 'monthly', // Story 16-2: cadence of the contribution
     }
 
     const result = await db.insert(balanceTracking).values(newEntry).returning()
@@ -256,6 +259,7 @@ export async function updateBalanceTrackingEntry(
       updateData.maxContributionLimit = input.maxContributionLimit
     if (input.monthlyContribution !== undefined)
       updateData.monthlyContribution = input.monthlyContribution
+    if (input.frequency !== undefined) updateData.frequency = input.frequency // Story 16-2
 
     const result = await db.update(balanceTracking).set(updateData).where(whereClause).returning()
 

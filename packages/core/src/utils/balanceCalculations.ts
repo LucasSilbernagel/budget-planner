@@ -5,6 +5,12 @@
  * Works with investment and debt types.
  *
  * Architecture Requirement: All monetary values in cents (integers) to avoid floating-point precision issues.
+ *
+ * Story 16-2: these functions operate on a MONTHLY contribution basis. Since a
+ * balance-tracking entry can now carry a non-monthly frequency, callers MUST pass
+ * the monthly-equivalent (via `monthlyContributionCents` in services/balanceTracking),
+ * NOT the raw `monthlyContribution`. Keeping normalization at the call site leaves
+ * these pure per-month calculators unchanged.
  */
 
 /**

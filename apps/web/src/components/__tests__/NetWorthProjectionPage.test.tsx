@@ -30,6 +30,7 @@ describe('NetWorthProjectionPage annual return rate input', () => {
       currentBalance,
       maxContributionLimit: null,
       monthlyContribution: 0,
+      frequency: 'monthly',
     })
   }
 

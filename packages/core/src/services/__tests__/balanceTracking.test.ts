@@ -14,6 +14,7 @@ import {
   generateBalanceTrackingTempId,
   getTypeDisplayProperties,
   isValidBalanceTracking,
+  monthlyContributionCents,
   resetBalanceTrackingTempId,
   sortByCreationDate,
   toClientBalanceTracking,
@@ -36,6 +37,7 @@ describe('validateBalanceTracking', () => {
       name: 'Test Investment',
       currentBalance: 100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     }
     const errors = validateBalanceTracking(input)
     expect(errors.length).toBe(0)
@@ -94,12 +96,14 @@ describe('validateBalanceTracking', () => {
       name: 'Investment',
       currentBalance: 100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     }
     const debt: ClientNewBalanceTracking = {
       type: 'debt',
       name: 'Debt',
       currentBalance: -100000,
       monthlyContribution: 50000,
+      frequency: 'weekly',
     }
     expect(validateBalanceTracking(investment).length).toBe(0)
     expect(validateBalanceTracking(debt).length).toBe(0)
@@ -136,6 +140,7 @@ describe('validateBalanceTracking', () => {
       name: 'Test Debt',
       currentBalance: -100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     }
     const errors = validateBalanceTracking(input)
     expect(errors.length).toBe(0)
@@ -176,6 +181,7 @@ describe('validateBalanceTracking', () => {
       name: 'Test',
       currentBalance: 100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     }
     const errors = validateBalanceTracking(input)
     expect(errors.length).toBe(0)
@@ -187,6 +193,7 @@ describe('validateBalanceTracking', () => {
       name: 'Test',
       currentBalance: 100000,
       monthlyContribution: 0,
+      frequency: 'monthly',
     }
     const errors = validateBalanceTracking(input)
     expect(errors.length).toBe(0)
@@ -200,6 +207,7 @@ describe('isValidBalanceTracking', () => {
       name: 'Test',
       currentBalance: 100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     }
     expect(isValidBalanceTracking(input)).toBe(true)
   })
@@ -209,6 +217,125 @@ describe('isValidBalanceTracking', () => {
       name: '',
     }
     expect(isValidBalanceTracking(input)).toBe(false)
+  })
+})
+
+// Story 16-2: contribution frequency validation + normalization
+describe('validateBalanceTracking - frequency (Story 16-2)', () => {
+  const base: ClientNewBalanceTracking = {
+    type: 'investment',
+    name: 'Test',
+    currentBalance: 100000,
+    monthlyContribution: 50000,
+    frequency: 'monthly',
+  }
+
+  it('should fail validation when frequency is missing', () => {
+    const { frequency: _omitted, ...withoutFrequency } = base
+    const errors = validateBalanceTracking(withoutFrequency)
+    expect(errors.some((e) => e.field === 'frequency')).toBe(true)
+  })
+
+  it('should fail validation for an invalid frequency', () => {
+    const input = {
+      ...base,
+      frequency: 'daily' as unknown as ClientNewBalanceTracking['frequency'],
+    }
+    const errors = validateBalanceTracking(input)
+    expect(errors.some((e) => e.field === 'frequency')).toBe(true)
+  })
+
+  it.each(['weekly', 'biweekly', 'monthly', 'annually'] as const)(
+    'should pass validation for %s',
+    (frequency) => {
+      const errors = validateBalanceTracking({ ...base, frequency })
+      expect(errors.length).toBe(0)
+    }
+  )
+})
+
+describe('monthlyContributionCents (Story 16-2)', () => {
+  // 50000 cents at each cadence, normalized to a monthly base (Math.round):
+  //   weekly ×52/12, biweekly ×26/12, monthly ×1, annually ×1/12
+  it('normalizes a weekly contribution to its monthly equivalent', () => {
+    expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'weekly' })).toBe(
+      216667
+    )
+  })
+
+  it('normalizes a biweekly contribution to its monthly equivalent', () => {
+    expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'biweekly' })).toBe(
+      108333
+    )
+  })
+
+  it('leaves a monthly contribution unchanged', () => {
+    expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'monthly' })).toBe(
+      50000
+    )
+  })
+
+  it('normalizes an annual contribution to its monthly equivalent', () => {
+    expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'annually' })).toBe(
+      4167
+    )
+  })
+
+  it('treats a legacy entry with no frequency as monthly (guard)', () => {
+    // Pre-migration rows may reach core without a frequency; normalization would
+    // otherwise throw. The guard keeps them as their current value.
+    const legacy = { monthlyContribution: 50000 } as Pick<
+      ClientBalanceTracking,
+      'monthlyContribution' | 'frequency'
+    >
+    expect(monthlyContributionCents(legacy)).toBe(50000)
+  })
+
+  it('coerces an unrecognized frequency to monthly instead of throwing (review E1)', () => {
+    // A corrupt value (tampered localStorage / future enum-rollback) must NOT throw
+    // — this runs inside withTimeline during render with no ErrorBoundary.
+    const corrupt = {
+      monthlyContribution: 50000,
+      frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
+    }
+    expect(() => monthlyContributionCents(corrupt)).not.toThrow()
+    expect(monthlyContributionCents(corrupt)).toBe(50000)
+  })
+})
+
+describe('withTimeline - frequency normalization (Story 16-2)', () => {
+  it('feeds the monthly-equivalent contribution into months-to-limit', () => {
+    // Weekly 50000 → 216667/month. With a 650000 limit from 0: ceil(650000/216667) = 3.
+    // A raw (un-normalized) 50000 would wrongly yield ceil(650000/50000) = 13.
+    const entry: ClientBalanceTracking = {
+      id: 'test-uuid',
+      type: 'investment',
+      name: 'Weekly investor',
+      currentBalance: 0,
+      maxContributionLimit: 650000,
+      monthlyContribution: 50000,
+      frequency: 'weekly',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    }
+    expect(withTimeline(entry).monthsToLimit).toBe(3)
+  })
+
+  it('does not throw when an entry carries a corrupt frequency (review E1)', () => {
+    const entry: ClientBalanceTracking = {
+      id: 'test-uuid',
+      type: 'investment',
+      name: 'Corrupt',
+      currentBalance: 0,
+      maxContributionLimit: 100000,
+      monthlyContribution: 50000,
+      frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    }
+    // Coerced to monthly (50000): ceil(100000 / 50000) = 2.
+    expect(() => withTimeline(entry)).not.toThrow()
+    expect(withTimeline(entry).monthsToLimit).toBe(2)
   })
 })
 

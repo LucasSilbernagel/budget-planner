@@ -50,6 +50,13 @@
       "when": 1783627114986,
       "tag": "0006_flawless_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783637385143,
+      "tag": "0007_organic_puck",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@
  */
 
 import type { BalanceTracking as DbBalanceTracking, FinanceType } from '@budget-planner/db'
+import { type Frequency, normalizeToMonthly } from '../finance/normalization'
 import {
   DebtCalculationResult,
   DebtSubType,
@@ -37,7 +38,8 @@ export interface ClientBalanceTracking {
   name: string
   currentBalance: number // In cents (can be negative for debts)
   maxContributionLimit?: number // In cents, optional
-  monthlyContribution: number // In cents (default 0)
+  monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
+  frequency: Frequency // Cadence of monthlyContribution (Story 16-2); normalize before aggregating
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
   // Optional UI display fields
@@ -55,7 +57,8 @@ export interface ClientNewBalanceTracking {
   name: string
   currentBalance: number // In cents
   maxContributionLimit?: number // In cents, optional
-  monthlyContribution: number // In cents (default 0)
+  monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
+  frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   // Debt-specific fields
   debtSubType?: DebtSubType // Sub-type for debt entries
   originalBalance?: number // Original loan amount in cents (for mortgage/loan)
@@ -89,7 +92,8 @@ export interface CreateBalanceTrackingInput {
   name: string
   currentBalance: number // In cents
   maxContributionLimit?: number // In cents, optional
-  monthlyContribution: number // In cents
+  monthlyContribution: number // In cents — amount at `frequency` cadence (Story 16-2)
+  frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   userId?: number // Optional for free tier (null), required for paid tier
 }
 
@@ -103,7 +107,8 @@ export interface UpdateBalanceTrackingInput {
   name?: string
   currentBalance?: number // In cents
   maxContributionLimit?: number // In cents, optional
-  monthlyContribution?: number // In cents
+  monthlyContribution?: number // In cents — amount at `frequency` cadence (Story 16-2)
+  frequency?: Frequency // Cadence of monthlyContribution (Story 16-2)
 }
 
 /**
@@ -132,6 +137,36 @@ export interface BalanceTrackingFilter {
  * Re-exports from balanceCalculations for convenience
  */
 export { calculateMonthsToLimit } from '../utils/balanceCalculations'
+
+/**
+ * The valid contribution cadences (Story 16-2), mirroring the DB `frequencyEnum`.
+ * Single source shared by validation and the normalization chokepoint.
+ */
+export const VALID_FREQUENCIES: readonly Frequency[] = ['weekly', 'biweekly', 'monthly', 'annually']
+
+/**
+ * Monthly-equivalent of an entry's contribution, in cents (Story 16-2).
+ *
+ * This is the SINGLE place a balance-tracking contribution is normalized to a
+ * monthly base. Every timeline/projection/aggregation consumer MUST route through
+ * it instead of reading `monthlyContribution` raw — the stored value is the amount
+ * at `frequency` cadence, not necessarily monthly.
+ *
+ * An unrecognized frequency (null/undefined from a legacy pre-migration row, or a
+ * corrupt value from user-editable localStorage / a future enum-rollback) is coerced
+ * to `'monthly'`. `normalizeToMonthly` THROWS on an invalid frequency, and this runs
+ * inside `withTimeline` during render (no ErrorBoundary), so a bad value must degrade
+ * to the sane default rather than crash the page.
+ *
+ * @param entry - Object carrying the raw contribution and its cadence
+ * @returns The monthly-equivalent contribution in cents (rounded)
+ */
+export function monthlyContributionCents(
+  entry: Pick<ClientBalanceTracking, 'monthlyContribution' | 'frequency'>
+): number {
+  const frequency = VALID_FREQUENCIES.includes(entry.frequency) ? entry.frequency : 'monthly'
+  return normalizeToMonthly(entry.monthlyContribution, frequency)
+}
 
 /**
  * Determine display type properties based on FinanceType
@@ -189,10 +224,14 @@ export function getTypeDisplayProperties(type: FinanceType):
  * @returns BalanceTrackingWithTimeline with calculated fields
  */
 export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithTimeline {
+  // Story 16-2: normalize the contribution to its monthly equivalent before feeding
+  // the monthly-math timeline/debt calculators (they stay purely "per month").
+  const monthlyContribution = monthlyContributionCents(entry)
+
   const monthsToLimit = calculateMonthsToLimit(
     entry.currentBalance,
     entry.maxContributionLimit,
-    entry.monthlyContribution
+    monthlyContribution
   )
 
   // Calculate debt-specific metrics if this is a debt
@@ -205,7 +244,7 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
     const result = calculateDebtMetrics(
       entry.currentBalance,
       entry.maxContributionLimit,
-      entry.monthlyContribution,
+      monthlyContribution,
       entry.debtSubType,
       entry.originalBalance
     )
@@ -284,6 +323,21 @@ export function validateBalanceTracking(
       field: 'type',
       message: 'Type must be either "investment" or "debt"',
       value: input.type,
+    })
+  }
+
+  // Frequency validation (Story 16-2): required, must be a valid cadence
+  if (input.frequency === undefined || input.frequency === null) {
+    errors.push({
+      field: 'frequency',
+      message: 'Frequency is required',
+      value: input.frequency,
+    })
+  } else if (!VALID_FREQUENCIES.includes(input.frequency)) {
+    errors.push({
+      field: 'frequency',
+      message: 'Frequency must be one of: weekly, biweekly, monthly, annually',
+      value: input.frequency,
     })
   }
 

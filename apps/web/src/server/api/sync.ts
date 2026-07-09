@@ -180,6 +180,10 @@ const balanceTrackingSchema = z.object({
   currentBalance: z.number().int().default(0),
   maxContributionLimit: z.number().int().optional(),
   monthlyContribution: z.number().int().default(0),
+  // Story 16-2: cadence of the contribution. Defaults to 'monthly' so pre-frequency
+  // paid-tier rows round-trip. Server gate — must mirror the client gate in
+  // packages/core/src/sync/types.ts (syncOperationDataSchema already carries `frequency`).
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
   userId: z.string().uuid(),
 })
 

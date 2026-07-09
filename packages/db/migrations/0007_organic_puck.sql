@@ -1,0 +1,1 @@
+ALTER TABLE "balanceTracking" ADD COLUMN "frequency" "frequency" DEFAULT 'monthly' NOT NULL;

@@ -3,6 +3,7 @@ import {
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
+import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   useBalanceEntries,
@@ -30,6 +31,20 @@ const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
   },
 ]
 
+// Contribution-frequency options for the select dropdown (Story 16-2).
+// Reuses the shared frequency enum; the normalization engine converts to a monthly
+// base for all timeline/projection math.
+const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Bi-weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'annually', label: 'Annually' },
+]
+
+// Human-readable label for a stored frequency value (falls back to the raw value).
+const frequencyLabel = (frequency: Frequency): string =>
+  FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label ?? frequency
+
 export function BalancePage() {
   const balanceEntries = useBalanceEntries()
   const totalInvestments = useTotalInvestments()
@@ -54,12 +69,14 @@ export function BalancePage() {
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  // uuid PK (Story 5-14) — ids are strings, not numbers.
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [type, setType] = useState<FinanceType>('investment')
   const [name, setName] = useState('')
   const [currentBalance, setCurrentBalance] = useState('')
   const [maxContributionLimit, setMaxContributionLimit] = useState('')
   const [monthlyContribution, setMonthlyContribution] = useState('')
+  const [frequency, setFrequency] = useState<Frequency>('monthly')
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -140,12 +157,13 @@ export function BalancePage() {
 
   // Open modal for editing existing balance entry
   const openEditModal = (entry: {
-    id: number
+    id: string
     type: FinanceType
     name: string
     currentBalance: number
     maxContributionLimit: number | null
     monthlyContribution: number
+    frequency: Frequency
   }) => {
     setEditingId(entry.id)
     setType(entry.type)
@@ -157,6 +175,7 @@ export function BalancePage() {
         : ''
     )
     setMonthlyContribution(formatForInputDisplay(entry.monthlyContribution, locale))
+    setFrequency(entry.frequency ?? 'monthly')
     clearErrors()
     setIsModalOpen(true)
   }
@@ -170,6 +189,7 @@ export function BalancePage() {
     setCurrentBalance('')
     setMaxContributionLimit('')
     setMonthlyContribution('')
+    setFrequency('monthly')
     clearErrors()
   }
 
@@ -179,7 +199,7 @@ export function BalancePage() {
   // Delete confirmation state (themed dialog replaces browser confirm()). Focus
   // returns to the list heading after a confirmed delete removes the triggering
   // row (the Add button is a separate focus target used on modal close).
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const listHeadingRef = useRef<HTMLHeadingElement>(null)
   const pendingDeleteName = balanceEntries.find((e) => e.id === pendingDeleteId)?.name ?? ''
 
@@ -208,6 +228,7 @@ export function BalancePage() {
         currentBalance: parseFromInput(currentBalance, locale),
         maxContributionLimit: maxLimitInCents,
         monthlyContribution: parseFromInput(monthlyContribution, locale),
+        frequency,
       }
 
       if (editingId !== null) {
@@ -223,7 +244,7 @@ export function BalancePage() {
   }
 
   // Open the themed delete confirmation for a balance entry
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     setPendingDeleteId(id)
   }
 
@@ -329,7 +350,7 @@ export function BalancePage() {
                         Max Contribution
                       </th>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Monthly Contribution
+                        Contribution
                       </th>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
                         Actions
@@ -366,6 +387,9 @@ export function BalancePage() {
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-muted text-sm">
                               {formatAmount(entry.monthlyContribution)}
+                            </div>
+                            <div className="text-faint text-xs">
+                              {frequencyLabel(entry.frequency)}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
@@ -580,7 +604,7 @@ export function BalancePage() {
                 htmlFor="monthlyContribution"
                 className="block mb-1 font-medium text-label text-sm"
               >
-                Monthly Contribution *
+                Contribution *
               </label>
               <div className="relative shadow-sm rounded-md">
                 {mode === 'symbol' && (
@@ -623,6 +647,26 @@ export function BalancePage() {
                   {getFieldError('monthlyContribution')}
                 </p>
               )}
+            </div>
+
+            <div>
+              <label htmlFor="frequency" className="block mb-1 font-medium text-label text-sm">
+                Contribution Frequency *
+              </label>
+              <select
+                id="frequency"
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as Frequency)}
+                className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
+                required
+                data-testid="balance-frequency-select"
+              >
+                {FREQUENCY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="flex justify-end gap-3 pt-4">

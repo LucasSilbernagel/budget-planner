@@ -9,7 +9,13 @@
  */
 
 import { db } from '@budget-planner/db'
-import type { BalanceTracking, Expense, IncomeSource, SavingsGoal } from '@budget-planner/db'
+import type {
+  BalanceTracking,
+  Expense,
+  Frequency,
+  IncomeSource,
+  SavingsGoal,
+} from '@budget-planner/db'
 import {
   balanceTracking,
   expenses,
@@ -111,6 +117,7 @@ export interface CreateBalanceTrackingInput {
   currentBalance: number
   maxContributionLimit?: number | null
   monthlyContribution: number
+  frequency?: Frequency // Story 16-2: cadence of the contribution; defaults to 'monthly'
   profileId: string
 }
 
@@ -123,6 +130,7 @@ export interface UpdateBalanceTrackingInput {
   type?: 'investment' | 'debt'
   name?: string
   currentBalance?: number
+  frequency?: Frequency // Story 16-2: cadence of the contribution
   maxContributionLimit?: number | null
   monthlyContribution?: number
   profileId: string
@@ -772,6 +780,7 @@ export async function createBalanceTracking(
         currentBalance: data.currentBalance,
         maxContributionLimit: data.maxContributionLimit ?? null,
         monthlyContribution: data.monthlyContribution ?? 0,
+        frequency: data.frequency ?? 'monthly', // Story 16-2: cadence of the contribution
         createdAt: new Date(),
         updatedAt: new Date(),
       })

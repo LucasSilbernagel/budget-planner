@@ -107,12 +107,16 @@ describe('syncBridge — paid tier (handle registered)', () => {
           currentBalance: 10000,
           monthlyContribution: 500,
           maxContributionLimit: 20000,
+          frequency: 'biweekly',
         },
         expected: {
           type: 'investment',
           name: 'Brokerage',
           currentBalance: 10000,
           monthlyContribution: 500,
+          // Story 16-2: the contribution cadence MUST be forwarded, else the server
+          // defaults every synced entry to 'monthly' and non-monthly picks are lost.
+          frequency: 'biweekly',
           maxContributionLimit: 20000,
           userId: SESSION_USER_ID,
         },
@@ -141,6 +145,18 @@ describe('syncBridge — paid tier (handle registered)', () => {
     })
     const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
     expect('maxContributionLimit' in payload).toBe(false)
+  })
+
+  it('defaults a missing frequency to monthly in the payload (Story 16-2)', () => {
+    syncEntityCreate('balanceTracking', {
+      id: 'b3',
+      type: 'debt',
+      name: 'Loan',
+      currentBalance: -5000,
+      monthlyContribution: 100,
+    })
+    const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
+    expect(payload.frequency).toBe('monthly')
   })
 
   it('update derives baseVersion from the pre-edit updatedAt (causal LWW)', () => {

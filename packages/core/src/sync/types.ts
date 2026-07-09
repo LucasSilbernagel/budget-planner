@@ -42,6 +42,9 @@ export const balanceTrackingSchema = z.object({
   currentBalance: z.number().int().default(0),
   maxContributionLimit: z.number().int().optional(),
   monthlyContribution: z.number().int().default(0),
+  // Story 16-2: cadence of the contribution (defaults to 'monthly'). Mirrors the
+  // server gate in apps/web/src/server/api/sync.ts.
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
   userId: z.string().uuid(),
 })
 

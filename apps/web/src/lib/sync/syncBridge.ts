@@ -115,6 +115,9 @@ function toServerPayload(
         name: entity['name'],
         currentBalance: entity['currentBalance'],
         monthlyContribution: entity['monthlyContribution'] ?? 0,
+        // Story 16-2: forward the contribution cadence, else paid-tier syncs silently
+        // drop it and the server defaults every synced entry to 'monthly'.
+        frequency: entity['frequency'] ?? 'monthly',
         userId,
       }
       // Optional column — only forward when present (the schema rejects null but

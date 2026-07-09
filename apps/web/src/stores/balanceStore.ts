@@ -102,16 +102,18 @@ export const useBalanceStore = create<BalanceState>()(
         id: string,
         data: Partial<ClientNewBalanceTracking>
       ): ClientBalanceTracking | null => {
-        // Validate input
-        const errors = validateBalanceTracking(data)
-        if (errors.length > 0) {
-          console.warn('Validation errors:', errors)
-          return null
-        }
-
         // Find the pre-edit entry (also the baseVersion source for sync).
         const previous = get().entries.find((e) => e.id === id)
         if (!previous) {
+          return null
+        }
+
+        // Validate the MERGED entry (the shape actually persisted), not the raw
+        // partial — a partial that omits a required field (e.g. `frequency`, or
+        // name/type) is still valid when the existing value fills it in.
+        const errors = validateBalanceTracking({ ...previous, ...data })
+        if (errors.length > 0) {
+          console.warn('Validation errors:', errors)
           return null
         }
 
@@ -181,10 +183,20 @@ export const useBalanceStore = create<BalanceState>()(
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
       // v1 (Story 5-14): convert any legacy negative-integer ids to fresh uuids.
-      version: 1,
+      // v2 (Story 16-2): backfill a default `frequency` of 'monthly' for legacy rows
+      // (pre-frequency entries were implicitly monthly). Required, not optional — the
+      // normalization engine throws on an undefined frequency, so an un-backfilled row
+      // would crash the timeline math.
+      version: 2,
       migrate: (persisted) => {
         const state = persisted as { entries?: ClientBalanceTracking[] }
-        return { entries: withUuidIds(state?.entries) }
+        const withIds = withUuidIds(state?.entries)
+        return {
+          entries: withIds.map((entry) => ({
+            ...entry,
+            frequency: entry.frequency ?? 'monthly',
+          })),
+        }
       },
       partialize: (state) => ({
         entries: state.entries,

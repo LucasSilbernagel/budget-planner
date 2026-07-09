@@ -216,7 +216,13 @@ export const balanceTracking = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
     maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)
-    monthlyContribution: integer('monthlyContribution').notNull().default(0), // Monthly contribution in cents (>= 0 required)
+    // Contribution amount in cents (>= 0 required). Story 16-2: no longer implicitly
+    // monthly — `frequency` (below) is its cadence; the monthly-equivalent is derived
+    // via the normalization engine. Column name retained for call-site stability.
+    monthlyContribution: integer('monthlyContribution').notNull().default(0),
+    // Story 16-2: cadence of `monthlyContribution`, reusing the shared frequency enum.
+    // Defaults to 'monthly' so existing rows preserve their current (monthly) behavior.
+    frequency: frequencyEnum('frequency').notNull().default('monthly'),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),

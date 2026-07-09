@@ -54,7 +54,7 @@ describe('BalancePage add balance entry button', () => {
 
     await user.type(within(dialog).getByLabelText(/name/i), 'My 401k')
     await user.type(within(dialog).getByLabelText(/current balance/i), '1500')
-    await user.type(within(dialog).getByLabelText(/monthly contribution/i), '250')
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '250')
     await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
 
     // Modal closes and the new entry is rendered in the list.
@@ -72,6 +72,7 @@ describe('BalancePage add balance entry button', () => {
       currentBalance: 100000,
       maxContributionLimit: null,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     })
     renderWithProviders(<BalancePage />)
 
@@ -101,6 +102,35 @@ describe('BalancePage add balance entry button', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => expect(addButton).toHaveFocus())
+  })
+
+  // Story 16-2: contribution frequency selection round-trips through create + edit.
+  it('creates an entry with a chosen frequency and round-trips it on edit', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    // Create with a non-default (biweekly) frequency.
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    await user.type(within(dialog).getByLabelText(/name/i), 'Brokerage')
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '250')
+    await user.selectOptions(within(dialog).getByTestId('balance-frequency-select'), 'biweekly')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0].frequency).toBe('biweekly')
+
+    // Reopen for edit — the select reflects the stored value.
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const editDialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    expect(within(editDialog).getByTestId('balance-frequency-select')).toHaveValue('biweekly')
+
+    // Change it and save — the new value persists.
+    await user.selectOptions(within(editDialog).getByTestId('balance-frequency-select'), 'weekly')
+    await user.click(within(editDialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0].frequency).toBe('weekly')
   })
 })
 
