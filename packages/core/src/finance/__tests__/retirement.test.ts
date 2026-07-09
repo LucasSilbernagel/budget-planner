@@ -16,6 +16,7 @@ import {
   calculateRequiredAssets,
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
+  toMonthlyIncomeCents,
 } from '../retirement'
 
 describe('Retirement Modeler', () => {
@@ -411,6 +412,63 @@ describe('Retirement Modeler', () => {
     it('should handle negative zero in retirement calculations', () => {
       const result = calculateRequiredAssets(-0, 0.06)
       expect(Object.is(result, -0)).toBe(true)
+    })
+  })
+
+  // Story 15.2: annual↔monthly boundary conversion (AC-2 / NFR3).
+  // The Safe Withdrawal Model core stays monthly-only; this helper divides an
+  // annual figure by 12 at the boundary so entering annual == entering annual/12
+  // monthly, numerically.
+  describe('toMonthlyIncomeCents (annual/monthly boundary)', () => {
+    it('passes a monthly amount through unchanged (identity)', () => {
+      expect(toMonthlyIncomeCents(500000, 'monthly')).toBe(500000)
+      expect(toMonthlyIncomeCents(0, 'monthly')).toBe(0)
+    })
+
+    it('converts an annual amount to Math.round(annualCents / 12)', () => {
+      // $60,000/yr = 6,000,000¢ → 500,000¢ = $5,000/mo
+      expect(toMonthlyIncomeCents(6000000, 'annual')).toBe(500000)
+      // $10,000/yr = 1,000,000¢ → round(1,000,000 / 12) = 83,333¢
+      expect(toMonthlyIncomeCents(1000000, 'annual')).toBe(83333)
+    })
+
+    it('rounds to the nearest cent (never truncates)', () => {
+      // 100¢/yr → round(100/12) = round(8.333) = 8¢
+      expect(toMonthlyIncomeCents(100, 'annual')).toBe(8)
+      // 1000¢/yr → round(1000/12) = round(83.333) = 83¢
+      expect(toMonthlyIncomeCents(1000, 'annual')).toBe(83)
+    })
+
+    it('throws for a non-finite amount', () => {
+      expect(() => toMonthlyIncomeCents(Number.NaN, 'annual')).toThrow('finite')
+      expect(() => toMonthlyIncomeCents(Number.POSITIVE_INFINITY, 'monthly')).toThrow('finite')
+    })
+
+    it('is numerically equivalent to entering annual/12 as a monthly amount (end-to-end)', () => {
+      // $60,000/yr @ 6% → $5,000/mo → $1,000,000 required assets
+      const annualCents = 6000000
+      const rate = 0.06
+
+      const viaAnnual = calculateRequiredAssets(toMonthlyIncomeCents(annualCents, 'annual'), rate)
+      const viaMonthly = calculateRequiredAssets(Math.round(annualCents / 12), rate)
+
+      expect(viaAnnual).toBe(viaMonthly)
+      expect(viaAnnual).toBe(100000000) // $1,000,000 in cents
+    })
+
+    it('annual equivalence holds across representative values and rates', () => {
+      const cases: Array<{ annualCents: number; rate: number }> = [
+        { annualCents: 12000000, rate: 0.04 }, // $120k/yr @ 4%
+        { annualCents: 3000000, rate: 0.05 }, // $30k/yr @ 5%
+        { annualCents: 1000000, rate: 0.07 }, // $10k/yr @ 7%
+        { annualCents: 999999, rate: 0.06 }, // odd cents, forces rounding
+      ]
+
+      for (const { annualCents, rate } of cases) {
+        const viaHelper = calculateRequiredAssets(toMonthlyIncomeCents(annualCents, 'annual'), rate)
+        const viaDivide = calculateRequiredAssets(Math.round(annualCents / 12), rate)
+        expect(viaHelper).toBe(viaDivide)
+      }
     })
   })
 })

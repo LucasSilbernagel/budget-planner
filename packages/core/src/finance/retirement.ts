@@ -152,6 +152,36 @@ export function calculateRequiredAssets(monthlyIncome: number, annualReturnRate:
 }
 
 /**
+ * Whether a desired retirement-income figure is entered as a monthly or an
+ * annual amount.
+ */
+export type IncomeBasis = 'monthly' | 'annual'
+
+/**
+ * Converts a desired retirement-income amount to the monthly figure the Safe
+ * Withdrawal Model expects, applied AT THE BOUNDARY so the SWM core
+ * (`calculateRequiredAssets` / `calculateRetirementRequirement`) stays
+ * monthly-only and unchanged.
+ *
+ * Annual amounts are divided by 12 and rounded to the nearest cent, so entering
+ * an annual figure is numerically equal to entering `annual / 12` as a monthly
+ * amount: `monthly = Math.round(annualCents / 12)`. Monthly amounts pass through
+ * unchanged.
+ *
+ * @param amountCents - Entered desired-income amount in cents
+ * @param basis - Whether the entered amount is a 'monthly' or 'annual' figure
+ * @returns Monthly income in cents
+ * @throws Error if amountCents is not a finite number
+ */
+export function toMonthlyIncomeCents(amountCents: number, basis: IncomeBasis): number {
+  if (!Number.isFinite(amountCents)) {
+    throw new Error('Income amount must be a finite number')
+  }
+
+  return basis === 'annual' ? Math.round(amountCents / 12) : amountCents
+}
+
+/**
  * Calculates how much monthly income can be safely withdrawn from a given asset value
  * Reverse calculation: Ir = FV × (r / 12)
  *

@@ -46,8 +46,9 @@ function RetirementPage() {
                   Calculate Your Retirement Needs
                 </h2>
                 <p className="text-body mb-8">
-                  Enter your desired monthly retirement income and expected return rate to calculate
-                  the required future value of your assets using the Safe Withdrawal Model.
+                  Enter your desired retirement income (monthly or annual) and expected return rate
+                  to calculate the required future value of your assets using the Safe Withdrawal
+                  Model.
                 </p>
 
                 <RetirementForm />

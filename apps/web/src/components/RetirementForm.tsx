@@ -1,3 +1,4 @@
+import { type IncomeBasis, toMonthlyIncomeCents } from '@budget-planner/core/finance/retirement'
 import {
   currencySymbol,
   formatCurrency,
@@ -218,6 +219,12 @@ function RetirementFormInner({
   const [monthlyIncomeInput, setMonthlyIncomeInput] = useState<string>(defaultMonthlyIncome)
   const [annualReturnRateInput, setAnnualReturnRateInput] = useState('6.0')
 
+  // Whether the entered desired income is a monthly or an annual figure.
+  // Default 'monthly' preserves the form's original behavior (story 15.2).
+  // The Safe Withdrawal Model core stays monthly-only; annual entries are
+  // converted at the boundary via toMonthlyIncomeCents before any calc.
+  const [incomeBasis, setIncomeBasis] = useState<IncomeBasis>('monthly')
+
   // Update state when dependencies change
   useEffect(() => {
     if (preFillFromExistingData) {
@@ -315,6 +322,21 @@ function RetirementFormInner({
     [validatedSavingsRate]
   )
 
+  // The entered desired income re-interpreted as monthly cents under the current
+  // basis. Computed once and reused by BOTH the years-to-goal insight and the
+  // result-explanation text so the two can never diverge from each other or from
+  // what calculate() sends to the Safe Withdrawal Model (story 15.2 regression
+  // trap: monthlyIncomeInput is read in three places, all must honor incomeBasis).
+  // Returns null when the raw input can't be parsed (mirrors the non-throwing
+  // handling the insights memo already used).
+  const monthlyEquivalentCents = useMemo(() => {
+    try {
+      return toMonthlyIncomeCents(parseCurrencyToCents(monthlyIncomeInput, locale), incomeBasis)
+    } catch (_e) {
+      return null
+    }
+  }, [monthlyIncomeInput, incomeBasis, locale])
+
   // Retirement insights based on existing data
   const retirementInsights = useMemo(() => {
     if (requiredAssets === null) {
@@ -335,22 +357,17 @@ function RetirementFormInner({
           : 100
 
     // Calculate years to goal using current savings rate
-    // Parse the annual return rate and monthly income with error handling
+    // Parse the annual return rate with error handling; the monthly-equivalent
+    // income (basis-converted) is shared via monthlyEquivalentCents so annual
+    // mode doesn't silently break the years-to-goal math.
     let parsedReturnRate = 0
-    let monthlyIncomeCents = 0
+    const monthlyIncomeCents = monthlyEquivalentCents ?? 0
 
     try {
       parsedReturnRate = parsePercentageToDecimal(annualReturnRateInput)
     } catch (_e) {
       // If parsing fails, we cannot calculate years to goal
       parsedReturnRate = 0
-    }
-
-    try {
-      monthlyIncomeCents = parseCurrencyToCents(monthlyIncomeInput, locale)
-    } catch (_e) {
-      // If parsing fails, we cannot calculate years to goal
-      monthlyIncomeCents = 0
     }
 
     // Calculate years to goal if we have valid inputs
@@ -377,10 +394,9 @@ function RetirementFormInner({
   }, [
     requiredAssets,
     totalInvestmentAssets,
-    monthlyIncomeInput,
+    monthlyEquivalentCents,
     annualReturnRateInput,
     calculateYearsToGoal,
-    locale,
   ])
 
   // Format amount using current currency preferences
@@ -428,7 +444,7 @@ function RetirementFormInner({
 
     // If inputs are empty, show appropriate error
     if (!monthlyIncomeInput || monthlyIncomeInput.trim() === '') {
-      setError('Please enter a monthly income')
+      setError('Please enter a retirement income')
       setRequiredAssets(null)
       return
     }
@@ -441,12 +457,14 @@ function RetirementFormInner({
 
     try {
       // Strict validation: if parsing fails, show error (Decision A)
-      const monthlyIncomeCents = parseCurrencyToCents(monthlyIncomeInput, locale)
+      const enteredIncomeCents = parseCurrencyToCents(monthlyIncomeInput, locale)
       const annualReturnRate = parsePercentageToDecimal(annualReturnRateInput)
 
-      // Validate that we got valid numbers
-      if (monthlyIncomeCents === 0) {
-        setError('Please enter a valid monthly income (must be greater than 0)')
+      // Apply the > 0 check to the ENTERED value (before basis conversion) so
+      // "0" errors in both modes and the message isn't triggered by a tiny
+      // annual value that rounds to 0¢ monthly (AC-4).
+      if (enteredIncomeCents === 0) {
+        setError('Please enter a valid retirement income (must be greater than 0)')
         setRequiredAssets(null)
         return
       }
@@ -456,6 +474,10 @@ function RetirementFormInner({
         setRequiredAssets(null)
         return
       }
+
+      // Convert to the monthly figure the Safe Withdrawal Model expects, at the
+      // boundary. The SWM core stays monthly-only and unchanged.
+      const monthlyIncomeCents = toMonthlyIncomeCents(enteredIncomeCents, incomeBasis)
 
       // Generate unique ID for this calculation to track it reliably
       const calculationId = Math.random().toString(36).substring(2, 11)
@@ -489,6 +511,7 @@ function RetirementFormInner({
   }, [
     monthlyIncomeInput,
     annualReturnRateInput,
+    incomeBasis,
     calculateRetirement,
     onCalculate,
     retirement.data,
@@ -540,13 +563,31 @@ function RetirementFormInner({
     setAnnualReturnRateInput(e.target.value)
   }, [])
 
+  // Switching the basis must NOT rewrite the typed number — only its meaning
+  // changes ("60000" stays "60000", it just now means per-year).
+  const handleIncomeBasisChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setIncomeBasis(e.target.value as IncomeBasis)
+  }, [])
+
+  // When the basis flips after a result is already on screen, recompute so the
+  // displayed figure can never reflect the previous basis (AC-3, no silent unit
+  // mismatch). Keyed on incomeBasis only: this render already rebuilt `calculate`
+  // with the new basis, so the effect calls the up-to-date closure. Depending on
+  // `calculate`/`requiredAssets` would re-run this on every keystroke instead.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional recompute-on-basis-switch; calculate is rebuilt with the new basis before this runs, and adding it (or requiredAssets) would recompute on every input change.
+  useEffect(() => {
+    if (requiredAssets !== null) {
+      calculate()
+    }
+  }, [incomeBasis])
+
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-2xl space-y-6" noValidate>
       <div className="space-y-4">
-        {/* Monthly Income Input */}
+        {/* Desired Retirement Income Input (monthly or annual, per the basis selector) */}
         <div>
           <label htmlFor="monthlyIncome" className="block text-sm font-medium text-label mb-2">
-            Desired Monthly Retirement Income
+            Desired Retirement Income
             <span className="text-orange-500 ml-1">*</span>
           </label>
           <div className="relative">
@@ -568,11 +609,30 @@ function RetirementFormInner({
                 mode === 'symbol' ? 'pl-10' : 'pl-4'
               } pr-4 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg transition-colors`}
               aria-required="true"
-              aria-label="Desired monthly retirement income"
+              aria-label="Desired retirement income"
               disabled={isLoading}
             />
           </div>
-          <p className="text-sm text-muted mt-1">Enter the monthly income you want in retirement</p>
+          {/* Basis selector: is the amount above monthly or annual? */}
+          <div className="mt-2">
+            <label htmlFor="incomeBasis" className="block text-sm font-medium text-label mb-1">
+              Income period
+            </label>
+            <select
+              id="incomeBasis"
+              value={incomeBasis}
+              onChange={handleIncomeBasisChange}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              disabled={isLoading}
+            >
+              <option value="monthly">Monthly</option>
+              <option value="annual">Annual</option>
+            </select>
+          </div>
+          <p className="text-sm text-muted mt-1">
+            Enter the {incomeBasis === 'annual' ? 'annual' : 'monthly'} income you want in
+            retirement
+          </p>
         </div>
 
         {/* Annual Return Rate Input */}
@@ -630,10 +690,10 @@ function RetirementFormInner({
               </div>
               <p className="text-sm text-green-600 dark:text-green-400 mt-2">
                 You need <strong>{formatAmount(requiredAssets)}</strong> in retirement assets to
-                safely withdraw
-                <strong>{formatAmount(parseCurrencyToCents(monthlyIncomeInput))}/month</strong>
-                at a <strong>{parsePercentageToDecimal(annualReturnRateInput) * 100}%</strong>{' '}
-                annual return rate.
+                safely withdraw <strong>{formatAmount(monthlyEquivalentCents ?? 0)}/month</strong>{' '}
+                (based on your {incomeBasis === 'annual' ? 'annual' : 'monthly'} entry) at a{' '}
+                <strong>{parsePercentageToDecimal(annualReturnRateInput) * 100}%</strong> annual
+                return rate.
               </p>
               <p className="text-xs text-green-500 dark:text-green-400 mt-2">
                 Calculation uses Safe Withdrawal Model: FV = Ir × (12 / r)
