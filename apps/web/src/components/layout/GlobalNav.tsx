@@ -35,6 +35,7 @@ type NavPath =
   | '/savings'
   | '/balance'
   | '/net-worth-projection'
+  | '/retirement'
   | '/settings'
 
 interface NavItem {
@@ -54,6 +55,10 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Savings', to: '/savings' },
   { label: 'Balance', to: '/balance' },
   { label: 'Projections', to: '/net-worth-projection' },
+  // Retirement Planner (story 15-1): promoted from a docs-only, nav-orphan route
+  // to a first-class destination. Grouped with the other forward-looking planning
+  // surface (Projections); stays FREE (Epic 15 is UX-only, no premium gate).
+  { label: 'Retirement', to: '/retirement' },
   // Consolidated settings surface (story 11-6): the single home for the currency
   // and premium-gated dark-mode controls that used to be scattered across page
   // headers and the footer.
@@ -98,7 +103,7 @@ export function GlobalNav() {
       {/* `flex-wrap`: SSR + the first client render always emit this top bar
           (useIsNarrowViewport is false until after mount), so on a phone it is
           briefly visible before hydration swaps in the bottom bar. Without
-          wrapping, the seven items overflow a 320px viewport and push the
+          wrapping, the eight items overflow a 320px viewport and push the
           document wider than the screen during that flash. Wrapping keeps it
           contained. */}
       <ul className="mx-auto flex max-w-6xl flex-wrap gap-1 px-4 py-2">

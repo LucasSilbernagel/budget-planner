@@ -44,6 +44,23 @@ test('marks the current section active and leaves others inactive', async ({ pag
   await expect(nav.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current')
 })
 
+test('reaches the Retirement Planner from the nav in one click', async ({ page }) => {
+  await page.goto('/income')
+  await page.waitForLoadState('networkidle')
+
+  // Story 15-1: /retirement was a docs-only nav-orphan; it is now a first-class
+  // nav destination, reachable in a single click and marked active on arrival.
+  const nav = page.getByRole('navigation', { name: 'Primary' })
+  await nav.getByRole('link', { name: 'Retirement' }).click()
+  await expect(page).toHaveURL(/\/retirement$/)
+
+  await expect(nav.getByRole('link', { name: 'Retirement' })).toHaveAttribute(
+    'aria-current',
+    'page'
+  )
+  await expect(page.getByRole('heading', { name: /retirement planner/i })).toBeVisible()
+})
+
 test('reaches the consolidated settings surface from the nav', async ({ page }) => {
   await page.goto('/income')
   await page.waitForLoadState('networkidle')
@@ -64,6 +81,15 @@ test('stays usable at a narrow mobile viewport', async ({ page }) => {
 
   const nav = page.getByRole('navigation', { name: 'Primary' })
   await expect(nav).toBeVisible()
+
+  // AC-3 (story 15-1): the extra Retirement entry must not push the document
+  // wider than the 320px viewport in the bottom-tab layout. The bottom bar's
+  // `min-w-0 flex-1` tabs shrink to fit, so there is no horizontal overflow.
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth
+  )
+  expect(overflows).toBe(false)
+  await expect(nav.getByRole('link', { name: 'Retirement' })).toBeVisible()
 
   await nav.getByRole('link', { name: 'Savings' }).click()
   await expect(page).toHaveURL(/\/savings$/)
