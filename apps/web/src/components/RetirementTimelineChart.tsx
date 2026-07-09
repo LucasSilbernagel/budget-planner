@@ -351,14 +351,14 @@ function RetirementTimelineChartInner({
   return (
     <div className="space-y-6">
       {/* Controls */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 surface-inset rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 surface-inset rounded-lg">
         <div>
-          <label htmlFor="principal" className="block text-xs font-medium text-body mb-1">
+          <label htmlFor="principal" className="block text-sm font-medium text-label mb-1">
             Current Savings
           </label>
-          <div className="relative">
+          <div className="relative rounded-md shadow-sm">
             {mode === 'symbol' && (
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">
                 {currencySymbol(currency)}
               </span>
             )}
@@ -367,9 +367,9 @@ function RetirementTimelineChartInner({
               id="principal"
               value={principal}
               onChange={handlePrincipalChange}
-              className={`w-full ${
-                mode === 'symbol' ? 'pl-7' : 'pl-2'
-              } pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+              className={`w-full py-2 ${
+                mode === 'symbol' ? 'pl-7 pr-3' : 'px-3'
+              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
               min="0"
               step="1000"
             />
@@ -377,12 +377,12 @@ function RetirementTimelineChartInner({
         </div>
 
         <div>
-          <label htmlFor="contribution" className="block text-xs font-medium text-body mb-1">
+          <label htmlFor="contribution" className="block text-sm font-medium text-label mb-1">
             Annual Contribution
           </label>
-          <div className="relative">
+          <div className="relative rounded-md shadow-sm">
             {mode === 'symbol' && (
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">
                 {currencySymbol(currency)}
               </span>
             )}
@@ -391,9 +391,9 @@ function RetirementTimelineChartInner({
               id="contribution"
               value={contribution}
               onChange={handleContributionChange}
-              className={`w-full ${
-                mode === 'symbol' ? 'pl-7' : 'pl-2'
-              } pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+              className={`w-full py-2 ${
+                mode === 'symbol' ? 'pl-7 pr-3' : 'px-3'
+              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
               min="0"
               step="1000"
             />
@@ -401,28 +401,28 @@ function RetirementTimelineChartInner({
         </div>
 
         <div>
-          <label htmlFor="returnRate" className="block text-xs font-medium text-body mb-1">
+          <label htmlFor="returnRate" className="block text-sm font-medium text-label mb-1">
             Return Rate
           </label>
-          <div className="relative">
+          <div className="relative rounded-md shadow-sm">
             <input
               type="number"
               id="returnRate"
               value={returnRate}
               onChange={handleReturnRateChange}
-              className="w-full pl-2 pr-7 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full py-2 pl-3 pr-7 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               min="0"
               max="100"
               step="0.1"
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted text-sm">
               %
             </span>
           </div>
         </div>
 
         <div>
-          <label htmlFor="years" className="block text-xs font-medium text-body mb-1">
+          <label htmlFor="years" className="block text-sm font-medium text-label mb-1">
             Years
           </label>
           <input
@@ -430,14 +430,14 @@ function RetirementTimelineChartInner({
             id="years"
             value={years}
             onChange={handleYearsChange}
-            className="w-full pl-2 pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min="0"
             max="100"
           />
         </div>
 
         <div>
-          <label htmlFor="currentAge" className="block text-xs font-medium text-body mb-1">
+          <label htmlFor="currentAge" className="block text-sm font-medium text-label mb-1">
             Current Age
           </label>
           <input
@@ -445,14 +445,14 @@ function RetirementTimelineChartInner({
             id="currentAge"
             value={currentAgeState}
             onChange={handleCurrentAgeChange}
-            className="w-full pl-2 pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min="18"
             max="120"
           />
         </div>
 
         <div>
-          <label htmlFor="retirementAge" className="block text-xs font-medium text-body mb-1">
+          <label htmlFor="retirementAge" className="block text-sm font-medium text-label mb-1">
             Retirement Age
           </label>
           <input
@@ -460,7 +460,7 @@ function RetirementTimelineChartInner({
             id="retirementAge"
             value={retirementAgeState}
             onChange={handleRetirementAgeChange}
-            className="w-full pl-2 pr-2 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min={currentAgeState + 1}
             max="120"
           />
@@ -470,7 +470,7 @@ function RetirementTimelineChartInner({
           <button
             type="button"
             onClick={resetToDefaults}
-            className="w-full text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 py-1.5 px-2 rounded transition-colors"
+            className="w-full py-2 px-3 border border-transparent rounded-md text-sm font-medium leading-6 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
           >
             Reset
           </button>
@@ -496,7 +496,7 @@ function RetirementTimelineChartInner({
             <YAxis
               dataKey="endingBalance"
               label={{
-                value: 'Assets (USD)',
+                value: 'Assets',
                 angle: -90,
                 position: 'insideLeft',
                 offset: 10,
@@ -540,8 +540,8 @@ function RetirementTimelineChartInner({
       <div className="p-4 surface-inset rounded-lg">
         <p className="text-sm text-body">
           <strong>Projection Summary:</strong> Starting with{' '}
-          {formatChartCurrency(principal * 100, mode, currency, locale)}
-          at age {currentAgeState}, with a {returnRate}% annual return and
+          {formatChartCurrency(principal * 100, mode, currency, locale)} at age {currentAgeState},
+          with a {returnRate}% annual return and{' '}
           {formatChartCurrency(contribution * 100, mode, currency, locale)} annual contributions,
           your assets could grow to{' '}
           <strong>
@@ -551,7 +551,7 @@ function RetirementTimelineChartInner({
               currency,
               locale
             )}
-          </strong>
+          </strong>{' '}
           in {years} years at age {currentAgeState + years}.
         </p>
       </div>
