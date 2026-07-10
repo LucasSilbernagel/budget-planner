@@ -4,6 +4,7 @@ import { AdPlacement } from '../components/ads/AdPlacement'
 import { AuthIndicator } from '../components/auth/auth-indicator'
 import { Footer } from '../components/layout/Footer'
 import { GlobalNav } from '../components/layout/GlobalNav'
+import { InstallPrompt } from '../components/pwa/InstallPrompt'
 import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
 import { ThemeProvider } from '../components/theme/ThemeProvider'
@@ -92,6 +93,10 @@ function RootDocument({ children }: { children: ReactNode }) {
         {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
             (dynamic import in an effect), renders nothing. */}
         <RegisterSW />
+        {/* Unobtrusive PWA install affordance (story 17-1): client-only + SSR-safe,
+            renders nothing until the browser fires `beforeinstallprompt`, and
+            self-suppresses when already installed or recently dismissed. */}
+        <InstallPrompt />
         {/* Mounts multi-device sync for authenticated paid sessions only
             (story 5-15): free/unauthenticated users get no service and no
             network. Renders nothing — pure wiring. */}
