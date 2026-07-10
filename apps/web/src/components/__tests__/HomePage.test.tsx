@@ -162,6 +162,66 @@ describe('HomePage section navigation (story 11-3)', () => {
 })
 
 /**
+ * Overview tiles vs. the mobile bottom nav (story 18-3, UX-DR24).
+ *
+ * Below 640px, GlobalNav renders a fixed bottom bar that already links
+ * Income/Expenses/Savings/Balance/Projections — the exact five destinations of
+ * the "Manage Your Finances" tiles. To stop the overview duplicating navigation
+ * the persistent bottom bar already provides, the section is hidden below
+ * Tailwind's `sm` breakpoint (640px, the `useIsNarrowViewport` boundary) and
+ * shown again at `sm:` and up (where only a top bar renders).
+ *
+ * The hide is pure CSS (`hidden sm:block`), not the `isNarrowViewport` JS boolean
+ * — that returns `false` on the server and first client render, so a JS-gated
+ * hide would render the tiles then drop them after mount (a visible flash on
+ * mobile). Because it is CSS-only, the tiles stay in the DOM, so jsdom (which
+ * renders at the desktop default) still sees every tile — no destination becomes
+ * unreachable.
+ */
+describe('HomePage overview tiles hidden below the bottom-nav breakpoint (story 18-3)', () => {
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+  })
+
+  it('AC-2: the "Manage Your Finances" section is CSS-hidden below 640px and shown at sm+', () => {
+    render(<HomePage />)
+    const section = screen.getByRole('heading', { name: 'Manage Your Finances' }).closest('section')
+    expect(section).not.toBeNull()
+    // `hidden sm:block`: display:none below 640px (bottom bar covers those links),
+    // display:block at ≥640px. Pure CSS keeps it SSR-safe with no mount flash.
+    // Assert class-token membership, not a substring: `/\bhidden\b/` would also
+    // match `overflow-hidden`/`sm:hidden` (a `-` or `:` is a regex word boundary),
+    // so it could stay green even if the standalone `hidden` utility were dropped.
+    const classes = section?.className.split(/\s+/) ?? []
+    expect(classes).toContain('hidden')
+    expect(classes).toContain('sm:block')
+  })
+
+  it('AC-3: all five tile destinations stay in the DOM (CSS hide only — nothing orphaned)', () => {
+    render(<HomePage />)
+    // Scope to the tiles section so each assertion proves the *tile* link is
+    // present (not some other same-named nav link), and stays unambiguous even
+    // if a bottom nav carrying the same five destinations is ever mounted in the
+    // same render tree (a page-wide getByRole would then throw on a double match).
+    const section = screen.getByRole('heading', { name: 'Manage Your Finances' }).closest('section')
+    expect(section).not.toBeNull()
+    const tiles = [
+      { label: 'Income', href: '/income' },
+      { label: 'Expenses', href: '/expenses' },
+      { label: 'Savings', href: '/savings' },
+      { label: 'Balance', href: '/balance' },
+      { label: 'Projections', href: '/net-worth-projection' },
+    ] as const
+    for (const { label, href } of tiles) {
+      expect(within(section as HTMLElement).getByRole('link', { name: label })).toHaveAttribute(
+        'href',
+        href
+      )
+    }
+  })
+})
+
+/**
  * Financial Overview copy (story 11-4, "Match between the system and the real
  * world"). The stat cards used to surface internal normalization vocabulary
  * ("(Monthly Normalized)", a bare "Raw: …" sub-line). These tests assert the

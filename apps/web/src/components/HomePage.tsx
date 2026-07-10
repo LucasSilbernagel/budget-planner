@@ -666,8 +666,18 @@ export function HomePage() {
               label + a distinct accent-colored category icon. The accent hue is
               a secondary scannability cue on the icon only, never the sole way
               to tell destinations apart, and the old danger-red Expenses fill is
-              gone — red stays reserved for destructive controls like delete. */}
-          <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              gone — red stays reserved for destructive controls like delete.
+
+              Hidden below `sm` (640px) via `hidden sm:block` (story 18-3,
+              UX-DR24): below that width GlobalNav renders the fixed bottom bar,
+              which already links these same five destinations
+              (Income/Expenses/Savings/Balance/Projections), so the tiles are
+              pure duplication there. CSS-only on purpose — the `useIsNarrowViewport`
+              boolean is `false` on the server and first client render, so a
+              JS-gated hide would flash the tiles in then out after mount. No
+              destination is lost: all five remain in the bottom nav (<640px) and
+              the tiles themselves return at ≥640px (2-col) and `md:` (5-col). */}
+          <section className="hidden bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 sm:block">
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
               Manage Your Finances
             </h2>
