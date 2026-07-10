@@ -681,7 +681,14 @@ export function HomePage() {
             <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
               Manage Your Finances
             </h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {/* Two columns until `lg` (1024px), five across only at ≥1024px
+                (story 18-1). At the old `md:` (768px) five-column step each tile
+                got ~50px of label width, so every label broke mid-word
+                ("Incom/e", "Projec/tions"); waiting for `lg:` keeps the labels on
+                one line — 2-col columns are wide (~286px+) and the 5-col columns
+                at ≥1024px are wide enough for "Projections". The label still
+                carries `min-w-0 break-words` below as a safety net. */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               {SECTION_TILES.map(({ href, label, Icon, accentClass }) => (
                 <a
                   key={href}
@@ -689,7 +696,16 @@ export function HomePage() {
                   className="flex items-center gap-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 font-medium text-gray-800 transition-colors hover:border-gray-300 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-100 dark:hover:bg-gray-700"
                 >
                   <Icon className={`h-5 w-5 shrink-0 ${accentClass}`} />
-                  {label}
+                  {/* Wrap the label so it can shrink and break INSIDE the button
+                      (story 18-1, UX-DR22). As a bare text node the label was an
+                      anonymous flex item with `min-width: auto` (min-content =
+                      the whole unbreakable word), so a column narrower than the
+                      word pushed the label — and the page — wider. `min-w-0`
+                      lets the item shrink below its content size and
+                      `break-words` (`overflow-wrap: break-word`) lets a long
+                      single word break rather than overflow. The icon keeps
+                      `shrink-0` so it never collapses when the label wraps. */}
+                  <span className="min-w-0 break-words">{label}</span>
                 </a>
               ))}
             </div>

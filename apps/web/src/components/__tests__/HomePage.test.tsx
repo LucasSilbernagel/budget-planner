@@ -162,6 +162,65 @@ describe('HomePage section navigation (story 11-3)', () => {
 })
 
 /**
+ * Section-navigation tile labels stay inside their buttons (story 18-1, UX-DR22).
+ *
+ * Each tile is a `flex` anchor with an icon + a text label. When the label was a
+ * bare text node it became an anonymous flex item whose default `min-width: auto`
+ * (min-content = the whole unbreakable word) could not shrink or break, so a
+ * column narrower than the word pushed the label — and the page — wider. The fix
+ * wraps the label in a `min-w-0 break-words` span so a long single word can shrink
+ * and break WITHIN the button at every width the tiles render (post-18-3 that is
+ * ≥640px, but the guard holds at any width), while the icon keeps `shrink-0` so it
+ * never collapses when the label wraps.
+ *
+ * jsdom has no layout engine (it cannot measure overflow or evaluate media
+ * queries), so this asserts the structural tokens that make the label robust,
+ * using class-token MEMBERSHIP rather than a substring regex — `/break-words/`
+ * would false-match nothing here, but the 18-3 review established the split-on-
+ * whitespace idiom as the safe way to assert a Tailwind utility is present
+ * (`/\bhidden\b/` false-matched `overflow-hidden`). The label staying on one line
+ * (no mid-word break) is verified at runtime in `e2e/overview-tiles.spec.ts` at
+ * 768px (two-column) and 1024px (narrowest five-column).
+ */
+describe('HomePage section-navigation tile labels (story 18-1)', () => {
+  const SECTIONS = [
+    { label: 'Income' },
+    { label: 'Expenses' },
+    { label: 'Savings' },
+    { label: 'Balance' },
+    { label: 'Projections' },
+  ] as const
+
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+  })
+
+  it('AC-1/AC-2: each tile label can shrink and break inside the button (min-w-0 break-words)', () => {
+    render(<HomePage />)
+    for (const { label } of SECTIONS) {
+      const tile = screen.getByRole('link', { name: label })
+      // The label is wrapped in its own element carrying the shrink/break tokens;
+      // find the element whose text is exactly the label (not the whole anchor,
+      // whose text also includes nothing else visible but whose classes are the
+      // layout classes).
+      const labelEl = within(tile).getByText(label)
+      const classes = labelEl.className.split(/\s+/)
+      expect(classes).toContain('min-w-0')
+      expect(classes).toContain('break-words')
+    }
+  })
+
+  it('AC-2: the icon keeps shrink-0 so it never collapses when the label wraps', () => {
+    render(<HomePage />)
+    for (const { label } of SECTIONS) {
+      const icon = screen.getByRole('link', { name: label }).querySelector('svg')
+      expect(icon).not.toBeNull()
+      expect((icon?.getAttribute('class') ?? '').split(/\s+/)).toContain('shrink-0')
+    }
+  })
+})
+
+/**
  * Overview tiles vs. the mobile bottom nav (story 18-3, UX-DR24).
  *
  * Below 640px, GlobalNav renders a fixed bottom bar that already links
