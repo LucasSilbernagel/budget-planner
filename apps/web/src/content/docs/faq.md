@@ -47,10 +47,13 @@ Yes. Budget Planner supports a currency-less mode that shows raw numbers, and
 an explicit mode that formats amounts with locale-aware symbols. You can switch
 modes from the [Settings](/settings) page.
 
-### Can I import or export my data?
+### Does Budget Planner track my actual spending?
 
-Import and export are planned for a future release. Today, Free tier data is
-stored locally and Premium data syncs across your devices automatically.
+No. Budget Planner is a planning tool for the figures you enter yourself. It
+does not connect to your bank or credit card, and it does not import
+transactions or track what you actually spend. If you want to record and
+categorise real spending, use a dedicated spend tracker such as Lunch Money.
+Non-US options exist too if data residency matters to you.
 
 Still stuck? Head back to [Getting started](/docs/getting-started), browse the
 [Features](/docs/features) guide, or reach us through the [contact

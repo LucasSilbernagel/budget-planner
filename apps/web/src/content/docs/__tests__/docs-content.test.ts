@@ -80,6 +80,23 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).toContain('/privacy')
   })
 
+  it('the FAQ no longer advertises the phantom import/export feature (story 17-3, AC-1)', () => {
+    // The app has no import/export feature, so the "planned for a future release"
+    // entry was misleading and was removed. Guard both the old phrasing and the
+    // word "export" (which the app never supports) so a reworded reintroduction
+    // ("export your data", "CSV export") still trips this. "import" is NOT guarded
+    // because the copy legitimately says the app does not *import* transactions.
+    const faq = contentFor('faq').toLowerCase()
+    expect(faq).not.toContain('import or export')
+    expect(faq).not.toContain('export')
+  })
+
+  it('the FAQ frames Budget Planner as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
+    const faq = contentFor('faq')
+    expect(faq.toLowerCase()).toContain('planning tool')
+    expect(faq).toContain('Lunch Money')
+  })
+
   // The Features page splits into a Free section and a Premium section; the two
   // guards below assert *which* section a claim lives in, not just that a
   // substring appears somewhere on the page.
