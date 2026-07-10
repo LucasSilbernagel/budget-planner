@@ -99,4 +99,32 @@ describe('purgeLocalFinancialData', () => {
     h.queueClear.mockRejectedValueOnce(new Error('storage error'))
     await expect(purgeLocalFinancialData('user-9')).resolves.toBeUndefined()
   })
+
+  // Story 17-2: the same purge now backs the all-users "Clear local data" control.
+  // Free / unauthenticated users have NO userId and NO sync queue, so the queue
+  // step must be skipped rather than build a bogus `bp-sync-queue-undefined` key.
+  it('with no userId resets all five stores but does NOT touch the sync queue', async () => {
+    await purgeLocalFinancialData()
+
+    expect(h.incomeSetState).toHaveBeenCalledWith({ incomeSources: [] })
+    expect(h.incomeClear).toHaveBeenCalledTimes(1)
+    expect(h.expenseSetState).toHaveBeenCalledWith({ expenses: [] })
+    expect(h.expenseClear).toHaveBeenCalledTimes(1)
+    expect(h.savingsSetState).toHaveBeenCalledWith({ savingsGoals: [] })
+    expect(h.savingsClear).toHaveBeenCalledTimes(1)
+    expect(h.profileReset).toHaveBeenCalledTimes(1)
+    expect(h.profileClear).toHaveBeenCalledTimes(1)
+    expect(h.balanceReset).toHaveBeenCalledTimes(1)
+    expect(h.balanceClear).toHaveBeenCalledTimes(1)
+
+    // No session → no per-user queue → createSyncQueue must never be called.
+    expect(h.createSyncQueue).not.toHaveBeenCalled()
+    expect(h.queueClear).not.toHaveBeenCalled()
+  })
+
+  it('with an empty-string userId also skips the sync queue', async () => {
+    await purgeLocalFinancialData('')
+    expect(h.incomeClear).toHaveBeenCalledTimes(1)
+    expect(h.createSyncQueue).not.toHaveBeenCalled()
+  })
 })

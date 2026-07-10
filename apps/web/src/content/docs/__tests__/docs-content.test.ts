@@ -64,6 +64,12 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).not.toContain('in the page header')
   })
 
+  it('the FAQ documents the in-app "Clear local data" control (story 17-2)', () => {
+    // The reset/clear answer must lead with the in-app control, not only point at
+    // the browser's own privacy settings.
+    expect(contentFor('faq')).toContain('Clear local data')
+  })
+
   it('the FAQ discloses the cookieless (counter.dev) analytics posture', () => {
     expect(contentFor('faq').toLowerCase()).toContain('counter.dev')
   })

@@ -13,7 +13,7 @@
  */
 
 import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
 
 const usePremiumAccess = vi.fn()
@@ -24,6 +24,13 @@ vi.mock('../../../hooks/usePremiumAccess', () => ({
 
 vi.mock('../../auth/premium-prompt', () => ({
   PremiumPrompt: () => <div data-testid="premium-prompt" />,
+}))
+
+// AccountSection is a separate unit (10-5) with its own session fetch + router
+// deps and its own test. Stub it here so this suite stays focused on the page's
+// composition and does not warn about `useRouter` outside a RouterProvider.
+vi.mock('../account-section', () => ({
+  AccountSection: () => <div data-testid="account-section" />,
 }))
 
 import { SettingsPage } from '../settings-page'
@@ -41,9 +48,23 @@ function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   })
 }
 
+// Both AccountSection (10-5) and LocalDataSection (17-2) resolve the session via
+// `fetch('/api/auth/me')` on mount. Stub it to a no-session response so the mounted
+// SettingsPage neither hits the MSW "unhandled request" path nor makes a real call.
+const originalFetch = global.fetch
+
 beforeEach(() => {
   vi.clearAllMocks()
+  global.fetch = vi.fn((input: RequestInfo | URL) => {
+    if (String(input).includes('/api/auth/me')) {
+      return Promise.resolve(new Response(JSON.stringify({ user: null }), { status: 200 }))
+    }
+    return Promise.resolve(new Response('{}', { status: 200 }))
+  }) as typeof global.fetch
   mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+})
+afterEach(() => {
+  global.fetch = originalFetch
 })
 
 describe('SettingsPage', () => {
@@ -70,5 +91,13 @@ describe('SettingsPage', () => {
       /dark mode/i.test(el.getAttribute('aria-label') ?? el.textContent ?? '')
     )
     expect(darkModeSwitches).toHaveLength(1)
+  })
+
+  // Story 17-2: the "Clear local data" control is for EVERY user, unlike the
+  // auth-gated Premium "Delete account" control.
+  it('surfaces the all-users "Clear local data" control, even for a free/unauthenticated user (17-2 AC-1)', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
+    render(<SettingsPage />)
+    expect(screen.getByRole('button', { name: /clear local data/i })).toBeInTheDocument()
   })
 })

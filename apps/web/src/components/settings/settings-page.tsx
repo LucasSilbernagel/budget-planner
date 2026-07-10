@@ -1,5 +1,6 @@
 import { AccountSection } from './account-section'
 import { CurrencyToggle } from './currency-toggle'
+import { LocalDataSection } from './local-data-section'
 import { ThemeToggle } from './theme-toggle'
 
 /**
@@ -59,9 +60,14 @@ export function SettingsPage() {
         </div>
       </section>
 
+      {/* Clear local data — story 17-2. Available to EVERY user (rendered
+          outside the auth-gated AccountSection below), distinct from the
+          Premium "Delete account" control: this wipes only this device. */}
+      <LocalDataSection />
+
       {/* Account controls (sign-out + self-serve deletion) — story 10-5.
           Renders only for authenticated users; free/unauthenticated visitors
-          see just the Display section above. */}
+          see just the Display + Local data sections above. */}
       <AccountSection />
     </div>
   )

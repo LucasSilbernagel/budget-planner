@@ -21,14 +21,16 @@ The full list of the services we use is in the [Privacy Policy](/privacy).
 
 ### How do I reset or clear my data?
 
-Free tier data lives in your browser's local storage. You can clear it from
-your browser's privacy settings (for example, in Chrome: *Settings → Privacy
-and security → Clear browsing data → Cached/site data*). Clearing site data
-removes your locally stored entries.
+Open the [Settings](/settings) page and use **Clear local data**. It removes
+everything Budget Planner has stored in this browser (your income, expenses,
+savings, balances and profiles), asks you to confirm first, and only affects
+this device. As a fallback you can still clear it from your browser's own
+privacy settings (for example, in Chrome: *Settings → Privacy and security →
+Clear browsing data → Cached/site data*).
 
-On the Premium tier you can delete your account and all of your synced data from
-the [Settings](/settings) page. That permanently removes your data from our EU
-database, in line with the [Privacy Policy](/privacy).
+On the Premium tier you can also delete your account and all of your synced data
+from the [Settings](/settings) page. That permanently removes your data from our
+EU database, in line with the [Privacy Policy](/privacy).
 
 ### Why do my totals differ from the raw amounts I entered?
 
