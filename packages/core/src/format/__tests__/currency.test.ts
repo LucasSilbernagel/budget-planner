@@ -252,6 +252,22 @@ describe('Currency Formatting', () => {
     it('returns 0 for empty input', () => {
       expect(parseFromInput('')).toBe(0)
     })
+
+    /**
+     * Regression lock for the Epic-6 "Infinity into store" HIGH (story 6-8),
+     * incidentally fixed by story 14-3 when the money inputs were routed through
+     * parseFromInput on both the validation guard and the store-write path. An
+     * overflowing/non-finite amount must coerce to 0 *before* any page guard sees it,
+     * so a positive-amount field shows its "valid positive amount" error and a balance
+     * field stores a finite 0 — never Infinity. This test pins that contract so a
+     * future refactor away from parseFromInput on the four entry pages (Income,
+     * Expenses, Savings, Balance) cannot silently reintroduce the 6-8 leak.
+     */
+    it('coerces overflowing / non-finite amounts to 0 (regression: story 6-8 leak, fixed by 14-3)', () => {
+      expect(parseFromInput('1e309')).toBe(0) // parses to Infinity via exponent
+      expect(parseFromInput('1e999')).toBe(0)
+      expect(parseFromInput('Infinity')).toBe(0) // letters stripped → NaN → 0
+    })
   })
 
   describe('formatForInputDisplay (story 14-3: grouped symbol-less input echo)', () => {

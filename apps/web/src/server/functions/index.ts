@@ -10,10 +10,6 @@
 // Re-export financial calculation server functions
 export * from './financial'
 
-// Re-export data server functions (balance tracking, savings goals)
-export * from './balanceTracking'
-export * from './savingsGoals'
-
 // Re-export forecasting profile server functions (premium feature)
 export * from './forecastingProfiles'
 

@@ -175,8 +175,14 @@ export function InstallPrompt() {
   return (
     <section
       ref={affordanceRef}
+      // Mobile offset must clear the story-18-2 two-row (`grid-cols-4`, 4×2 ≈ 89px)
+      // GlobalNav bottom bar plus `env(safe-area-inset-bottom)`, so it is kept in
+      // lockstep with the `__root.tsx` `pb-[calc(6rem_+_env(safe-area-inset-bottom))]`
+      // reserve and the nav's own inset (a bare 64px `bottom-16` overlapped the bar).
+      // If `NAV_ITEMS` count changes the nav's row count, revisit this together with
+      // those (same coupling `GlobalNav.tsx` documents). `sm:` is a top bar → `sm:bottom-4`.
       aria-label="Install Budget Planner"
-      className="fixed bottom-16 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
+      className="fixed bottom-[calc(6rem_+_env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">

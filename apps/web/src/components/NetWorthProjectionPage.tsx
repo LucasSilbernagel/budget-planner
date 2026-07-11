@@ -57,6 +57,34 @@ function quantizeRatePercent(raw: string): number {
   return Math.round(clamped * 100) / 100
 }
 
+/**
+ * The compounding model rejects a projection longer than MAX_PROJECTION_YEARS (100)
+ * with a throw, and this calc runs unconditionally on every render. A `type="number"`
+ * field still accepts a *typed* value beyond its `max` attribute, so clamp the parsed
+ * years to the field's own stated window [1, 50] — comfortably below the core's throw
+ * threshold — before it can reach the calculation.
+ */
+function clampYears(raw: string): number {
+  return Math.min(50, Math.max(1, Number.parseInt(raw, 10) || 1))
+}
+
+/**
+ * Additional contribution is entered in whole currency units; the page multiplies it
+ * by 100 (cents) before feeding the core calc, which throws on a non-finite value and
+ * again if the per-year balance exceeds the safe-integer limit. A `type="number"` field
+ * accepts exponent text (e.g. `1e999` → Infinity), so reject non-finite input (→ 0) and
+ * cap over-large finite input well under MAX_SAFE_INTEGER/100 so neither the `* 100` nor
+ * the compounding loop can overflow the core's guard.
+ */
+const MAX_CONTRIBUTION = 1_000_000_000 // 1e9 units — sane upper bound, cap * 100 stays a safe integer
+function sanitizeContribution(raw: string): number {
+  const parsed = Number.parseFloat(raw)
+  if (!Number.isFinite(parsed)) {
+    return 0
+  }
+  return Math.min(MAX_CONTRIBUTION, Math.max(0, parsed))
+}
+
 export function NetWorthProjectionPage() {
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
@@ -160,7 +188,7 @@ export function NetWorthProjectionPage() {
                   type="number"
                   id="years"
                   value={years}
-                  onChange={(e) => setYears(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => setYears(clampYears(e.target.value))}
                   min="1"
                   max="50"
                   className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
@@ -195,9 +223,7 @@ export function NetWorthProjectionPage() {
                   type="number"
                   id="additionalContribution"
                   value={additionalContribution}
-                  onChange={(e) =>
-                    setAdditionalContribution(Math.max(0, parseFloat(e.target.value) || 0))
-                  }
+                  onChange={(e) => setAdditionalContribution(sanitizeContribution(e.target.value))}
                   min="0"
                   step="100"
                   className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
