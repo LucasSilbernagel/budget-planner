@@ -1,4 +1,4 @@
-import { renderWithRouter, screen } from '@/test/utils'
+import { renderWithRouter, screen, within } from '@/test/utils'
 import { describe, expect, it, vi } from 'vitest'
 import { APP_VERSION } from '../../../utils/version'
 
@@ -96,5 +96,26 @@ describe('Footer', () => {
     // Assert the visible attribution text too — the accessible name above is
     // driven by aria-label, so this guards against the link text being emptied.
     expect(link).toHaveTextContent('Lucas Silbernagel')
+  })
+
+  // Story 18-2: at 320px the footer stacks vertically; the six legal links are
+  // grouped in a wrapper so they read as a spaced cluster (comfortable tap
+  // rhythm) rather than a cramped run-together stack. The wrapper carries
+  // `sm:contents` so at >=640px it dissolves and the links rejoin the single
+  // wrapping row exactly as before — the desktop layout is unchanged.
+  it('groups the legal links in a cluster that dissolves at >=640px (story 18-2)', async () => {
+    renderWithRouter(<Footer />)
+    const contact = await screen.findByRole('link', { name: /^contact$/i })
+    const group = contact.parentElement
+    // Class-token membership, not substring (18-1/18-3 lesson).
+    const tokens = (group?.className ?? '').split(/\s+/)
+    expect(tokens).toContain('sm:contents')
+    // All six legal links live in that grouping wrapper.
+    const hrefs = within(group as HTMLElement)
+      .getAllByRole('link')
+      .map((l) => l.getAttribute('href'))
+    expect(hrefs).toEqual(
+      expect.arrayContaining(['/pricing', '/docs', '/terms', '/privacy', '/refund', '/contact'])
+    )
   })
 })

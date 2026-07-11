@@ -22,49 +22,60 @@ export function Footer() {
       {/* The premium-gated dark-mode toggle moved to the consolidated /settings
           surface (story 11-6). It remains a single global instance there, per
           story 7-3 DECISION 2 (one gate → one Modal). */}
-      <div className="flex flex-col items-center justify-center gap-1 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
+      {/* At 320px this stacks vertically (story 18-2): the base `gap-3` gives the
+          three groups — brand/version, the legal-link cluster, and copyright —
+          comfortable vertical rhythm instead of the old cramped `gap-1` (4px)
+          run-together stack. At >=640px `sm:flex-row sm:flex-wrap sm:gap-x-3
+          sm:gap-y-1` restores the single wrapping row (unchanged from before). */}
+      <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
         {/* Brand stays a plain text node so it's announced; the label is scoped
             to the version span so screen readers say "version 0.0.1" rather than
             spelling out the decorative "v". */}
         <span>
           Budget Planner <span aria-label={`version ${APP_VERSION}`}>v{APP_VERSION}</span>
         </span>
-        <a
-          href="/pricing"
-          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Pricing
-        </a>
-        <a
-          href="/docs"
-          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Documentation
-        </a>
-        <a
-          href="/terms"
-          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Terms of Service
-        </a>
-        <a
-          href="/privacy"
-          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Privacy Policy
-        </a>
-        <a
-          href="/refund"
-          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Refund Policy
-        </a>
-        <a
-          href="/contact"
-          className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Contact
-        </a>
+        {/* Legal/nav links grouped as a comfortably-spaced cluster on the 320px
+            stacked layout (story 18-2). `sm:contents` dissolves this wrapper at
+            >=640px (display: contents) so the six links rejoin the outer wrapping
+            row exactly as before — the desktop footer layout is unchanged. */}
+        <div className="flex flex-col items-center gap-2 sm:contents">
+          <a
+            href="/pricing"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Pricing
+          </a>
+          <a
+            href="/docs"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Documentation
+          </a>
+          <a
+            href="/terms"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Terms of Service
+          </a>
+          <a
+            href="/privacy"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="/refund"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Refund Policy
+          </a>
+          <a
+            href="/contact"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Contact
+          </a>
+        </div>
         {/* Copyright notice (story 6-9). The year is computed at render time so
             it stays correct year over year (AC-1) rather than being hardcoded.
             "Copyright <year>" and the author link are grouped in one <span>; it

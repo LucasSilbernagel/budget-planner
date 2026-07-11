@@ -106,10 +106,13 @@ function RootDocument({ children }: { children: ReactNode }) {
         <MetadataProvider>
           {/* Column layout so the global Footer is pushed to the bottom of the
               viewport on short pages (mt-auto) yet flows after content on long ones.
-              `pb-16 sm:pb-0` reserves space on narrow viewports for GlobalNav's
-              fixed bottom tab bar (story 11-1) so it never covers the footer;
-              desktop renders GlobalNav as a top bar and needs no padding. */}
-          <div className="flex min-h-screen flex-col pb-16 sm:pb-0">
+              The narrow reserve keeps GlobalNav's fixed bottom tab bar (story 11-1)
+              from covering the footer; the bar is a two-row 4-column grid (~89px at
+              320px, story 18-2), so the reserve is 6rem (96px, was `pb-16`/64px)
+              plus `env(safe-area-inset-bottom)` — the same inset the bar itself
+              pads by, so the two stay in lockstep (0 on non-notched devices).
+              Desktop renders GlobalNav as a top bar and needs no padding. */}
+          <div className="flex min-h-screen flex-col pb-[calc(6rem_+_env(safe-area-inset-bottom))] sm:pb-0">
             {/* Persistent signed-in / Premium indicator (story 13-2): a slim top
                 strip above the nav, on every viewport, so a signed-in user always
                 sees they are logged in (with a Premium marker when active) without

@@ -91,4 +91,50 @@ describe('GlobalNav', () => {
     vi.doUnmock('../../../hooks/useIsNarrowViewport')
     vi.resetModules()
   })
+
+  // Story 18-2: eight destinations cannot fit one legible row at 320px (each
+  // cell would be ~40px and every label overflowed/overlapped its neighbour).
+  // The mobile bottom bar lays the eight items out as a 4-column grid (4x2) so
+  // each cell is ~80px at 320px and every label stays single-line and tappable.
+  // jsdom has no layout engine, so this asserts the grid class tokens rather
+  // than measured geometry (real 320px fit is verified in e2e/chrome-320.spec.ts).
+  it('lays the mobile bottom bar out as a 4-column grid (story 18-2)', async () => {
+    vi.resetModules()
+    vi.doMock('../../../hooks/useIsNarrowViewport', () => ({
+      useIsNarrowViewport: () => true,
+    }))
+    const { GlobalNav } = await import('../GlobalNav')
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    const list = nav.querySelector('ul')
+    // Class-token membership (split on whitespace), not substring: a regex like
+    // /grid/ would false-match `grid-cols-4`/`bg-grid`, and `-`/`:` are regex
+    // word boundaries (18-1/18-3 lesson).
+    const tokens = (list?.className ?? '').split(/\s+/)
+    expect(tokens).toContain('grid')
+    expect(tokens).toContain('grid-cols-4')
+    vi.doUnmock('../../../hooks/useIsNarrowViewport')
+    vi.resetModules()
+  })
+
+  // Story 18-2 (review follow-ups): the two-row fixed bar pads by the iOS
+  // `safe-area-inset-bottom` so its bottom row clears the home indicator, and
+  // each anchor is `h-full` so it fills its stretched grid cell (the active
+  // background and centering hold when a row grows under text-zoom/wrap).
+  // jsdom has no layout engine, so assert the class tokens (real behaviour is
+  // exercised in e2e/chrome-320.spec.ts + on-device).
+  it('pads for the safe-area inset and stretches each mobile cell (story 18-2)', async () => {
+    vi.resetModules()
+    vi.doMock('../../../hooks/useIsNarrowViewport', () => ({
+      useIsNarrowViewport: () => true,
+    }))
+    const { GlobalNav } = await import('../GlobalNav')
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    expect(nav.className.split(/\s+/)).toContain('pb-[env(safe-area-inset-bottom)]')
+    const anchor = within(nav).getByRole('link', { name: /^overview$/i })
+    expect(anchor.className.split(/\s+/)).toContain('h-full')
+    vi.doUnmock('../../../hooks/useIsNarrowViewport')
+    vi.resetModules()
+  })
 })
