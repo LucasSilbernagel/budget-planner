@@ -64,11 +64,15 @@ beforeEach(() => {
 })
 
 describe('PremiumFeatureGate', () => {
-  it('renders a neutral skeleton while the tier is loading (no children, no lock)', () => {
+  it('while loading shows the tier-agnostic label but no children, lock, or prompt', () => {
     mockStatus({ isLoading: true })
     renderGate()
 
-    expect(screen.getByTestId('premium-gate-skeleton')).toBeInTheDocument()
+    const skeleton = screen.getByTestId('premium-gate-skeleton')
+    expect(skeleton).toBeInTheDocument()
+    // The shared label is shown (settling content, not a blank box)...
+    expect(skeleton).toHaveTextContent('Advanced Forecasting')
+    // ...but fail-closed: no unlocked children, no lock button, no upgrade prompt.
     expect(screen.queryByTestId('unlocked-link')).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-gate-locked')).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()

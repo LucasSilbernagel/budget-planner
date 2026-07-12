@@ -197,23 +197,27 @@ function RetirementFormInner({
       .reduce((sum, entry) => sum + Math.max(entry.currentBalance, 0), 0)
   }, [balanceEntries])
 
-  // Calculate total monthly income from all sources (normalized to monthly)
-  const totalMonthlyIncome = useMemo(() => {
+  // Sum of all income-source amounts, in CENTS (getTotalIncome is a raw cents
+  // total, not a frequency-normalized one). Used only to seed a default target.
+  const totalIncomeCents = useMemo(() => {
     return getTotalIncome()
   }, [getTotalIncome])
 
   // Validate savingsRate prop
   const validatedSavingsRate = Math.min(Math.max(savingsRate, 0), 1)
 
-  // Pre-fill values from existing data if enabled
-  // Calculate default monthly income based on total income and savings rate
+  // Pre-fill a default desired-income target: a share of current income.
+  // `totalIncomeCents` is in CENTS, but this field holds a currency-UNITS string
+  // (parseCurrencyToCents multiplies it back up to cents on read). So convert
+  // cents → a units display string with the same formatter the field uses on
+  // blur; otherwise the raw cents value renders 100× too large (e.g. half of
+  // $10,000 prefilled as "500,000" instead of "5,000.00").
   const defaultMonthlyIncome = useMemo(() => {
-    if (preFillFromExistingData && totalMonthlyIncome > 0) {
-      // Use configurable savings rate as default retirement income target
-      return (totalMonthlyIncome * validatedSavingsRate).toFixed(0)
+    if (preFillFromExistingData && totalIncomeCents > 0) {
+      return formatForInputDisplay(Math.round(totalIncomeCents * validatedSavingsRate), locale)
     }
     return ''
-  }, [preFillFromExistingData, totalMonthlyIncome, validatedSavingsRate])
+  }, [preFillFromExistingData, totalIncomeCents, validatedSavingsRate, locale])
 
   // Initialize state with the default value
   const [monthlyIncomeInput, setMonthlyIncomeInput] = useState<string>(defaultMonthlyIncome)

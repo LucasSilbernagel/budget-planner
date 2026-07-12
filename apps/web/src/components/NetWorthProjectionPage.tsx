@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
@@ -268,17 +269,18 @@ export function NetWorthProjectionPage() {
                       tick={{ fill: chartColors.axis }}
                       stroke={chartColors.axis}
                     />
+                    {/* Compact, mode-aware tick labels (K/M/B, no cents). Full
+                        grouped amounts overflow the narrow vertical axis and clip
+                        to fragments; the tooltip below still shows the precise
+                        figure. The rotated "Net Worth ($)" axis title was removed
+                        with them — it overlapped the ticks and merely restated the
+                        section heading, legend, and tooltip. */}
                     <YAxis
                       dataKey="netWorth"
-                      label={{
-                        value: 'Net Worth ($)',
-                        angle: -90,
-                        position: 'insideLeft',
-                        fill: chartColors.axis,
-                      }}
-                      tickFormatter={(value) => formatAmount(value * 100)}
+                      tickFormatter={(value) => formatCompactAxisTick(value, mode, currency)}
                       tick={{ fill: chartColors.axis }}
                       stroke={chartColors.axis}
+                      width={72}
                     />
                     <Tooltip
                       formatter={(value: number, name: string, _item: unknown) => {

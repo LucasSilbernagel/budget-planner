@@ -13,10 +13,13 @@
  * bypassing this UI still hits the server gate.
  *
  * Three render states (fail-closed — unknown/errored/loading tier ⇒ NOT premium):
- *   - `status.isLoading` (SSR + first client paint) → a neutral, tier-agnostic
- *     skeleton. Server and first client render are identical here, so hydration
- *     is stable, and paid users never see a lock flash before their status
- *     resolves (DECISION 3). Never the children, never the upgrade affordance.
+ *   - `status.isLoading` (SSR + first client paint) → the tier-agnostic feature
+ *     label (the copy both resolved states share), gently pulsing inside the
+ *     resolved control's exact footprint. Server and first client render are
+ *     identical here, so hydration is stable; paid users never see a lock flash
+ *     before their status resolves (DECISION 3); and the card reads as content
+ *     settling rather than a blank grey box. Never the children, never the lock
+ *     badge, never the upgrade affordance.
  *   - resolved `hasAccess === true` → the unlocked {@link children}, no lock UI.
  *   - resolved `!hasAccess` (free, past_due, canceled, unauthenticated, OR an
  *     errored check) → the locked presentation: a button showing {@link locked}
@@ -67,22 +70,21 @@ export function PremiumFeatureGate({
   const { status } = usePremiumAccess()
   const [isPromptOpen, setIsPromptOpen] = useState(false)
 
-  // Tier not yet known (SSR + first client paint): neutral, tier-agnostic
-  // skeleton. Identical on server and first client render → hydration-safe, and
-  // fail-closed (never leaks premium children to a not-yet-verified user).
+  // Tier not yet known (SSR + first client paint): render the tier-agnostic
+  // label inside the resolved control's exact footprint (from `className`) so
+  // the card looks like settling content, not a blank grey box, and the layout
+  // never jumps when the tier resolves. `animate-pulse` signals the pending
+  // state; `aria-hidden` keeps this transient placeholder out of the a11y tree.
+  // Identical on server + first client render → hydration-safe, and fail-closed:
+  // never the premium children, never the lock badge, never the upgrade prompt.
   if (status.isLoading) {
     return (
       <div
         aria-hidden="true"
-        className="animate-pulse rounded-md bg-gray-200 dark:bg-gray-700"
+        className={`animate-pulse ${className ?? ''}`}
         data-testid="premium-gate-skeleton"
       >
-        {/* Reserve the resolved control's exact footprint (padding/layout from
-            `className`) so the layout does not jump when the tier resolves —
-            without painting its interactive colors/hover onto the placeholder.
-            `invisible` (visibility:hidden) suppresses the caller's background,
-            border and hover on the loading box. */}
-        <span className={`invisible ${className ?? ''}`}>{locked}</span>
+        {locked}
       </div>
     )
   }

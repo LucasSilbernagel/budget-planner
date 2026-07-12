@@ -1,6 +1,7 @@
 import { renderWithProviders, screen, userEvent, waitFor } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../stores/currencyStore'
+import { useIncomeStore } from '../../stores/incomeStore'
 import { RetirementForm } from '../RetirementForm'
 
 /**
@@ -156,5 +157,53 @@ describe('RetirementForm — annual/monthly income basis (story 15.2)', () => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
     expect(screen.queryByText('Required Retirement Assets')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Prefilled desired-income default (UX review #6).
+ *
+ * `getTotalIncome()` returns a total in CENTS, but the desired-income field holds
+ * a currency-UNITS string. The default therefore had to divide back to units: a
+ * regression guard against re-introducing the 100×-too-large prefill (e.g. half
+ * of $10,000/mo rendering as "500,000" instead of "5,000.00"). This path was
+ * previously untested — every other test disables the prefill — which is how the
+ * bug shipped.
+ */
+describe('RetirementForm — prefilled desired-income default (UX review #6)', () => {
+  beforeEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  it('prefills half of current income in whole units, not raw cents', () => {
+    // $10,000/mo income (1,000,000 cents). Default savingsRate 0.5 → $5,000/mo.
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-1',
+          userId: 0,
+          name: 'Salary',
+          amount: 1_000_000,
+          frequency: 'monthly',
+          createdAt: '2026-07-11T00:00:00.000Z',
+          updatedAt: '2026-07-11T00:00:00.000Z',
+        },
+      ],
+    })
+
+    renderWithProviders(<RetirementForm />)
+
+    const income = screen.getByLabelText('Desired retirement income') as HTMLInputElement
+    // Correct: cents (500,000) converted to a units display string.
+    expect(income).toHaveValue('5,000.00')
+    // The pre-fix bug rendered the raw cents figure (100× too large).
+    expect(income.value).not.toBe('500000')
+    expect(income).not.toHaveValue('500,000.00')
   })
 })

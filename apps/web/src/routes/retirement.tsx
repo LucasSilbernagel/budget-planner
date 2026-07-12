@@ -48,7 +48,8 @@ function RetirementPage() {
                 <p className="text-body mb-8">
                   Enter your desired retirement income (monthly or annual) and expected return rate
                   to calculate the required future value of your assets using the Safe Withdrawal
-                  Model.
+                  Model. This is a standalone calculation; its return rate is separate from the one
+                  in the Retirement Timeline Projection.
                 </p>
 
                 <RetirementForm />
@@ -93,6 +94,8 @@ function RetirementPage() {
                 <p className="text-body mb-8">
                   Visualize how your assets will grow over time and when you can safely retire.
                   Adjust the inputs to see how different scenarios affect your retirement timeline.
+                  These inputs, including this return rate, are independent of the Retirement Needs
+                  calculator.
                 </p>
 
                 <RetirementTimelineChart />

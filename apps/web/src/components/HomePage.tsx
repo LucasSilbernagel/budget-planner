@@ -28,16 +28,16 @@ import {
   YAxis,
 } from 'recharts'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { formatCompactAxisTick, niceAxisTicks } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
-import { useFormattedAmount } from '../stores/currencyStore'
+import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import {
   type OverviewDuration,
   useOverviewDuration,
   useSetOverviewDuration,
 } from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
-import { useCategoryDrillDown } from './finance/category-drill-down'
 import { PremiumFeatureGate } from './premium'
 
 // Card-label suffix for the selected overview duration (story 12-2). "monthly"
@@ -64,6 +64,9 @@ export function HomePage() {
 
   // Use currency formatting from store (respects user preferences)
   const formatAmount = useFormattedAmount()
+  // Currency mode/symbol for the compact bar-chart axis ticks (formatAmount
+  // always carries cents, which the narrow value axis has no room for).
+  const { mode, currency } = useCurrencyPreferences()
 
   // Below Tailwind `sm` (≤639px) charts must drop their desktop-width chrome
   // (vertical right legend, wide Y-axis) so the plot area stays usable at 320px.
@@ -201,28 +204,12 @@ export function HomePage() {
     [financialData, chartPeriod]
   )
 
-  // Drill-down state for category navigation (fed the period-scaled data so
-  // drilled figures stay consistent with the selected cadence).
-  const {
-    currentData: drillDownCurrentData,
-    breadcrumb,
-    drillDown,
-    drillUp,
-    reset: resetDrillDown,
-    isActive: isDrillDownActive,
-  } = useCategoryDrillDown(periodScaledData)
-
-  // Get data for current drill-down level or the full period-scaled dataset.
-  const displayData = useMemo(() => {
-    return isDrillDownActive ? drillDownCurrentData : periodScaledData
-  }, [isDrillDownActive, drillDownCurrentData, periodScaledData])
-
-  // Aggregate data by category and type
+  // Aggregate the period-scaled data into income and expense category buckets.
   const aggregatedData = useMemo(() => {
-    return aggregateByCategoryAndType(displayData)
-  }, [displayData])
+    return aggregateByCategoryAndType(periodScaledData)
+  }, [periodScaledData])
 
-  // Generate color map for categories
+  // Stable color per category, shared across both breakdown pies.
   const categoryColors = useMemo(() => {
     const allCategories = [
       ...(aggregatedData.get('income') || []).map((d) => d.category),
@@ -231,7 +218,10 @@ export function HomePage() {
     return generateColorMap(allCategories)
   }, [aggregatedData])
 
-  // Convert to pie chart data for Recharts
+  // One pie dataset per type (UX review #4). Income and expenses are separate
+  // wholes, so each pie carries only its own type and its slices sum to that
+  // type's total — a category's percentage is measured against the right
+  // denominator instead of income + expenses combined.
   const incomeData = useMemo(() => {
     return toPieChartData(aggregatedData.get('income') || [], categoryColors)
   }, [aggregatedData, categoryColors])
@@ -240,43 +230,31 @@ export function HomePage() {
     return toPieChartData(aggregatedData.get('expense') || [], categoryColors)
   }, [aggregatedData, categoryColors])
 
-  // Prepare data for the income vs expense pie chart (using NORMALIZED values)
-  const _incomeVsExpenseData = [
-    {
-      name: 'Income',
-      value: totalNormalizedIncome,
-      color: INCOME_COLOR,
-    },
-    {
-      name: 'Expenses',
-      value: totalNormalizedExpenses,
-      color: EXPENSE_COLOR,
-    },
-  ].filter((item) => item.value > 0)
-
-  // Enhanced data with category breakdowns (Story 3-3)
-  const allCategoryData = useMemo(() => {
-    return [...incomeData, ...expenseData]
-  }, [incomeData, expenseData])
-
-  // Calculate total amount for pie chart (memoized to avoid O(n^2) recalculation)
-  const totalChartAmount = useMemo(
-    () => allCategoryData.reduce((sum, item) => sum.value + item.value, 0),
-    [allCategoryData]
+  // Each pie's own 100% denominator (also shown as the pie's total figure).
+  const totalIncomeChart = useMemo(
+    () => incomeData.reduce((sum, item) => sum + item.value, 0),
+    [incomeData]
+  )
+  const totalExpenseChart = useMemo(
+    () => expenseData.reduce((sum, item) => sum + item.value, 0),
+    [expenseData]
   )
 
-  // Prepare data for the net worth over time bar chart (simplified)
-  // This shows current state of different financial categories
-  // Use normalized values for income and expenses to ensure consistent comparison
+  // Financial Category Summary bars. Income and expenses follow the same
+  // overview duration selector as the cards above (story 12-2), so the whole
+  // dashboard speaks one period — the bars and their labels re-express at the
+  // chosen cadence (`incomeForDuration`/`expensesForDuration`) instead of being
+  // hard-coded to monthly while the cards read "per year". Savings, investments,
+  // and debts are point-in-time balances, so they carry no period suffix.
   const netWorthBarData = [
     {
-      category: 'Income (monthly)',
-      amount: totalNormalizedIncome,
+      category: `Income ${DURATION_LABEL[duration]}`,
+      amount: incomeForDuration,
       fill: INCOME_COLOR,
     },
     {
-      category: 'Expenses (monthly)',
-      amount: -totalNormalizedExpenses,
+      category: `Expenses ${DURATION_LABEL[duration]}`,
+      amount: -expensesForDuration,
       fill: EXPENSE_COLOR,
     },
     {
@@ -296,28 +274,33 @@ export function HomePage() {
     },
   ].filter((item) => item.amount !== 0)
 
+  // Round, evenly-spaced axis ticks (cents), clamped to include a 0 baseline for
+  // the diverging bars. Replaces the old `dataMin-100 … dataMax+100` domain,
+  // whose exact data-derived endpoints rendered as arbitrary values like
+  // "-2,551.00 … 7,801.00".
+  const barTicks = niceAxisTicks(
+    Math.min(0, ...netWorthBarData.map((d) => d.amount)),
+    Math.max(0, ...netWorthBarData.map((d) => d.amount))
+  )
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
+    <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
         <header className="mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Budget Planner</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Track your income and expenses with ease
-            </p>
+            <h1 className="text-3xl font-bold text-heading">Budget Planner</h1>
+            <p className="text-body mt-2">Track your income and expenses with ease</p>
           </div>
         </header>
 
         <main className="space-y-6">
           {/* Quick Stats */}
-          <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <section className="surface rounded-lg shadow-md p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-                Financial Overview
-              </h2>
+              <h2 className="text-xl font-semibold text-subheading">Financial Overview</h2>
               {/* One global duration selector (story 12-2). Drives both the Total
                   Income and Total Expenses cards from a single source of truth. */}
-              <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
+              <label className="flex items-center gap-1 text-sm text-label">
                 <span className="sr-only">Show income and expenses per</span>
                 <select
                   aria-label="Show income and expenses per"
@@ -332,8 +315,8 @@ export function HomePage() {
               </label>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+              <div className="surface-inset rounded-lg p-4">
+                <p className="flex items-center gap-1 text-sm text-muted">
                   {`Total Income ${DURATION_LABEL[duration]}`}
                   {totalNormalizedIncome !== totalIncomeRaw && (
                     <InfoTooltip
@@ -348,8 +331,8 @@ export function HomePage() {
                   {formatAmount(incomeForDuration)}
                 </p>
               </div>
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+              <div className="surface-inset rounded-lg p-4">
+                <p className="flex items-center gap-1 text-sm text-muted">
                   {`Total Expenses ${DURATION_LABEL[duration]}`}
                   {totalNormalizedExpenses !== totalExpensesRaw && (
                     <InfoTooltip
@@ -364,8 +347,14 @@ export function HomePage() {
                   {formatAmount(expensesForDuration)}
                 </p>
               </div>
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Net Worth</p>
+              <div className="surface-inset rounded-lg p-4">
+                <p className="flex items-center gap-1 text-sm text-muted">
+                  Net Worth
+                  <InfoTooltip
+                    label="More information about net worth"
+                    text="Net worth is what you own minus what you owe: your investments minus your debts, tracked on the Balance page. Income and expenses aren't counted here."
+                  />
+                </p>
                 <p
                   className={`text-2xl font-bold ${
                     netWorth >= 0 ? 'text-purple-600' : 'text-red-600'
@@ -373,6 +362,22 @@ export function HomePage() {
                 >
                   {formatAmount(netWorth)}
                 </p>
+                {/* Explain a $0 net worth next to real income/expenses: it is $0
+                    because no investments or debts have been added yet, not
+                    because something is broken. Self-removes once any balance
+                    exists. */}
+                {hasData && balanceEntries.length === 0 && (
+                  <p className="mt-1 text-xs text-faint">
+                    Add investments or debts on the{' '}
+                    <a
+                      href="/balance"
+                      className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      Balance
+                    </a>{' '}
+                    page to track this.
+                  </p>
+                )}
               </div>
             </div>
           </section>
@@ -380,210 +385,66 @@ export function HomePage() {
           {/* Enhanced Visualizations */}
           {hasData ? (
             <>
-              {/* Income vs Expense category breakdown (Story 3-3). Formerly the
-                  left of a two-pie row; the redundant "Asset & Liability
-                  Breakdown" pie that sat beside it was removed in story 12-4, so
-                  this is now a full-width section stacked above the bar chart. */}
-              <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              {/* Income and expense category breakdowns as TWO separate pies
+                  (UX review #4). Summing income and expense slices into one 100%
+                  pie made every percentage meaningless — a category's share was
+                  measured against income + expenses combined, two different
+                  wholes. Each pie now sums to its own type's total. The former
+                  click-to-drill-down was removed with the single pie: the entry
+                  forms capture no category distinct from the item name
+                  (category ?? name === name), so a drill only ever re-showed the
+                  clicked item itself, and one shared drill cannot span two
+                  independent pies. */}
+              <section className="surface rounded-lg shadow-md p-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+                  <h2 className="text-xl font-semibold text-subheading">
                     Income vs Expense Breakdown
                   </h2>
-                  {/* Monthly/Annually cadence toggle (story 12-3, UX-DR20),
-                        replacing the six date-range presets. The native select
-                        matches the dark-mode + a11y idiom of the overview
-                        selector (12-2) and settings/currency-toggle, and adds the
-                        dark-mode support the old TimePeriodFilter lacked
-                        (Epic 11.2). */}
-                  <div className="flex items-center space-x-2">
-                    <label className="flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300">
-                      <span className="sr-only">Show breakdown per</span>
-                      <select
-                        aria-label="Show breakdown per"
-                        value={chartPeriod}
-                        onChange={(e) => setChartPeriod(e.target.value as 'monthly' | 'annually')}
-                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                      >
-                        <option value="monthly">Monthly</option>
-                        <option value="annually">Annually</option>
-                      </select>
-                    </label>
-                  </div>
+                  {/* Monthly/Annually cadence toggle (story 12-3, UX-DR20). The
+                      native select matches the dark-mode + a11y idiom of the
+                      overview selector (12-2). */}
+                  <label className="flex items-center gap-1 text-sm text-label">
+                    <span className="sr-only">Show breakdown per</span>
+                    <select
+                      aria-label="Show breakdown per"
+                      value={chartPeriod}
+                      onChange={(e) => setChartPeriod(e.target.value as 'monthly' | 'annually')}
+                      className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="annually">Annually</option>
+                    </select>
+                  </label>
                 </div>
 
-                {/* Drill-down breadcrumb navigation */}
-                {isDrillDownActive && breadcrumb.length > 0 && (
-                  <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <nav
-                        className="flex items-center space-x-2"
-                        aria-label="drill-down-breadcrumb"
-                      >
-                        <button
-                          type="button"
-                          onClick={resetDrillDown}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                        >
-                          🏠 All Categories
-                        </button>
-                        {breadcrumb.map((item) => (
-                          <React.Fragment key={`${item.type}-${item.name}`}>
-                            <span className="text-gray-400">→</span>
-                            <span className="text-sm text-gray-600">{item.name}</span>
-                          </React.Fragment>
-                        ))}
-                      </nav>
-                      <button
-                        type="button"
-                        onClick={drillUp}
-                        className="text-blue-600 hover:text-blue-800 text-sm font-medium whitespace-nowrap"
-                      >
-                        ← Back
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* This pie used to sit in a half-width column beside the (now
-                    removed, story 12-4) asset pie. As a full-width card it would
-                    leave a large empty gutter, so cap the plot+legend to a
-                    centered max-width to keep it balanced. */}
-                <div className="h-[350px] max-w-3xl mx-auto">
-                  <ErrorBoundary
-                    fallback={<div className="p-4 text-red-600">Chart error occurred</div>}
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart aria-label="Income and expense category breakdown chart" role="img">
-                        <Pie
-                          data={allCategoryData}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          outerRadius={isNarrowViewport ? 70 : 80}
-                          fill="#8884d8"
-                          dataKey="value"
-                          nameKey="name"
-                          // At ≤320px the outer slice labels extend past the
-                          // chart container and force horizontal page overflow;
-                          // the legend (moved to the bottom on narrow) and the
-                          // tooltip carry the same information instead.
-                          label={
-                            isNarrowViewport
-                              ? false
-                              : ({ name, percent }) => {
-                                  // Show name and percentage, handle long names
-                                  const displayName =
-                                    name.length > 15 ? `${name.substring(0, 12)}...` : name
-                                  return `${displayName}: ${(percent * 100).toFixed(1)}%`
-                                }
-                          }
-                          onClick={(_data, index, _event) => {
-                            // Handle chart segment click for drill-down
-                            const clickedItem = allCategoryData[index]
-                            if (clickedItem?.name) {
-                              // Extract type from the data or use a default
-                              const itemType = clickedItem.type ?? 'expense'
-                              drillDown(clickedItem.name, itemType)
-                            }
-                          }}
-                        >
-                          {allCategoryData.map((entry, index) => {
-                            const percentage =
-                              totalChartAmount > 0
-                                ? ((entry.value / totalChartAmount) * 100).toFixed(1)
-                                : '0'
-                            return (
-                              <Cell
-                                key={`${entry.type}-${entry.category}`}
-                                fill={
-                                  entry.fill ||
-                                  entry.color ||
-                                  CATEGORY_COLORS[index % CATEGORY_COLORS.length]
-                                } // CATEGORY_COLORS is a const array with 16 colors
-                                stroke="#fff"
-                                strokeWidth={2}
-                                aria-label={`${entry.name}: ${formatAmount(
-                                  entry.value
-                                )} (${percentage}%)`}
-                              />
-                            )
-                          })}
-                        </Pie>
-                        <Tooltip
-                          formatter={(
-                            value: number,
-                            name: string,
-                            payload: {
-                              payload: RechartsDataItem & {
-                                originalAmount?: number
-                                count?: number
-                              }
-                            }
-                          ) => {
-                            if (payload?.payload) {
-                              const data = payload.payload
-                              const amount = data.originalAmount ?? value
-                              return [
-                                `${name}: ${formatAmount(amount)}`,
-                                `Type: ${data.type ?? 'N/A'}`,
-                                `Count: ${data.count ?? 1}`,
-                                `Percentage: ${
-                                  totalChartAmount > 0
-                                    ? ((value / totalChartAmount) * 100).toFixed(1)
-                                    : '0'
-                                }%`,
-                              ]
-                            }
-                            return [formatAmount(value), name]
-                          }}
-                        />
-                        <Legend
-                          layout={isNarrowViewport ? 'horizontal' : 'vertical'}
-                          align={isNarrowViewport ? 'center' : 'right'}
-                          verticalAlign={isNarrowViewport ? 'bottom' : 'middle'}
-                          wrapperStyle={isNarrowViewport ? undefined : { paddingLeft: '20px' }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </ErrorBoundary>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <BreakdownPie
+                    title="Income by source"
+                    data={incomeData}
+                    total={totalIncomeChart}
+                    emptyLabel="No income to break down yet"
+                    accentClass="text-green-600 dark:text-green-400"
+                    isNarrow={isNarrowViewport}
+                    formatAmount={formatAmount}
+                  />
+                  <BreakdownPie
+                    title="Expenses by category"
+                    data={expenseData}
+                    total={totalExpenseChart}
+                    emptyLabel="No expenses to break down yet"
+                    accentClass="text-red-600 dark:text-red-400"
+                    isNarrow={isNarrowViewport}
+                    formatAmount={formatAmount}
+                  />
                 </div>
-
-                {/* Category breakdown summary */}
-                {allCategoryData.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                      Top Categories
-                    </h3>
-                    <div className="space-y-1">
-                      {allCategoryData
-                        .sort((a, b) => b.value - a.value)
-                        .slice(0, 5)
-                        .map((item) => (
-                          <div
-                            key={`${item.type}-${item.category}`}
-                            className="flex justify-between text-xs"
-                          >
-                            <span className="flex items-center">
-                              <span
-                                className="w-2 h-2 rounded-full mr-2"
-                                style={{ backgroundColor: item.fill || item.color }}
-                              />
-                              {item.name}
-                            </span>
-                            <span>{formatAmount(item.value)}</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
               </section>
 
               {/* Financial Category Summary bar chart. After the redundant
                   "Asset & Liability Breakdown" pie was removed (story 12-4), this
                   is the sole carrier of the current Savings / Investments / Debts
                   figures (alongside monthly Income / Expenses). */}
-              <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
+              <section className="surface rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-semibold text-subheading mb-4">
                   Financial Category Summary
                 </h2>
                 {netWorthBarData.length > 0 ? (
@@ -603,20 +464,23 @@ export function HomePage() {
                               readable on the dark `.surface` card too (story 11-2
                               / 12-4 AC-2 dark-mode constraint). */}
                           <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+                          {/* Round ticks (amounts are cents) with a compact,
+                              cents-dropping label — the full formatAmount value
+                              carries ".00" the narrow axis has no room for. */}
                           <XAxis
                             type="number"
-                            domain={[
-                              (dataMin: number) => Math.min(0, dataMin - 100),
-                              (dataMax: number) => Math.max(0, dataMax + 100),
-                            ]}
-                            tickFormatter={(value) => formatAmount(value)}
+                            domain={[barTicks[0], barTicks[barTicks.length - 1]]}
+                            ticks={barTicks}
+                            tickFormatter={(value) =>
+                              formatCompactAxisTick(value / 100, mode, currency)
+                            }
                             tick={{ fontSize: 12, fill: chartColors.axis }}
                             stroke={chartColors.axis}
                           />
                           <YAxis
                             dataKey="category"
                             type="category"
-                            width={isNarrowViewport ? 72 : 120}
+                            width={isNarrowViewport ? 76 : 132}
                             tick={{ fontSize: isNarrowViewport ? 11 : 12, fill: chartColors.axis }}
                             stroke={chartColors.axis}
                           />
@@ -641,22 +505,38 @@ export function HomePage() {
                     </ErrorBoundary>
                   </div>
                 ) : (
-                  <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-8 text-center">
-                    <p className="text-gray-500 dark:text-gray-400">No financial data to display</p>
+                  <div className="surface-inset rounded-lg p-8 text-center">
+                    <p className="text-muted">No financial data to display</p>
                   </div>
                 )}
               </section>
             </>
           ) : (
-            <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-8 text-center">
-                <p className="text-gray-500 dark:text-gray-400 mb-4">
-                  No data available for visualization
+            <section className="surface rounded-lg shadow-md p-6">
+              <div className="surface-inset rounded-lg p-8 text-center">
+                <p className="mb-1 text-lg font-medium text-subheading">Let's set up your budget</p>
+                <p className="mb-6 text-sm text-muted">
+                  Add your income and expenses and your financial overview will appear here.
                 </p>
-                <p className="text-sm text-gray-400 dark:text-gray-500">
-                  Add income sources, expenses, savings goals, or balance entries to see your
-                  financial overview
-                </p>
+                {/* Primary onboarding action. The empty dashboard is the first
+                    screen a new user sees; without a direct call to action they
+                    had to discover the nav or the (hidden-on-mobile) section
+                    tiles on their own. Green matches the app's primary-action
+                    color used on the "Add" buttons across the CRUD pages. */}
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <a
+                    href="/income"
+                    className="inline-flex items-center rounded-md bg-green-600 px-4 py-2 font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                  >
+                    + Add income
+                  </a>
+                  <a
+                    href="/expenses"
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 font-medium text-gray-800 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+                  >
+                    + Add expense
+                  </a>
+                </div>
               </div>
             </section>
           )}
@@ -677,10 +557,8 @@ export function HomePage() {
               JS-gated hide would flash the tiles in then out after mount. No
               destination is lost: all five remain in the bottom nav (<640px) and
               the tiles themselves return at ≥640px (2-col) and `md:` (5-col). */}
-          <section className="hidden bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 sm:block">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
-              Manage Your Finances
-            </h2>
+          <section className="hidden surface rounded-lg shadow-md p-6 sm:block">
+            <h2 className="text-xl font-semibold text-subheading mb-4">Manage Your Finances</h2>
             {/* Two columns until `lg` (1024px), five across only at ≥1024px
                 (story 18-1). At the old `md:` (768px) five-column step each tile
                 got ~50px of label width, so every label broke mid-word
@@ -715,10 +593,8 @@ export function HomePage() {
               7-2, FR24). Paid users get the working link; everyone else sees the
               feature with a lock badge and an upgrade prompt. Enforcement stays
               server-side (the /forecasting loader + session gate). */}
-          <section className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
-              Premium Features
-            </h2>
+          <section className="surface rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
             <PremiumFeatureGate
               featureName="Advanced Forecasting"
               className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
@@ -763,6 +639,133 @@ export function HomePage() {
             from story 4-9), so the page no longer renders its own stopgap
             footer block. */}
       </div>
+    </div>
+  )
+}
+
+interface BreakdownPieProps {
+  /** Sub-heading shown above the pie (e.g. "Income by source"). */
+  title: string
+  /** Pie slices for a SINGLE type, already period-scaled. */
+  data: RechartsDataItem[]
+  /** Sum of `data` values — the pie's own 100% denominator, also shown as its total. */
+  total: number
+  /** Message shown when this type has no entries. */
+  emptyLabel: string
+  /** Tailwind text-color classes for the total figure (income green / expense red). */
+  accentClass: string
+  /** Narrow viewport: drop in-plot slice labels so they cannot overflow at 320px. */
+  isNarrow: boolean
+  formatAmount: (cents: number) => string
+}
+
+/**
+ * One category-breakdown pie for a single financial type (income OR expense),
+ * with its own correct 100% denominator (UX review #4). The color-keyed list
+ * below the plot doubles as the legend and carries the per-category amounts, so
+ * those figures render as plain text — which the period-control test asserts,
+ * since Recharts' SVG is not laid out under jsdom.
+ */
+function BreakdownPie({
+  title,
+  data,
+  total,
+  emptyLabel,
+  accentClass,
+  isNarrow,
+  formatAmount,
+}: BreakdownPieProps): React.ReactElement {
+  const sorted = [...data].sort((a, b) => b.value - a.value)
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-subheading">{title}</h3>
+        {data.length > 0 && (
+          <span className={`text-sm font-semibold ${accentClass}`}>{formatAmount(total)}</span>
+        )}
+      </div>
+      {data.length === 0 ? (
+        <div className="surface-inset flex h-[240px] items-center justify-center rounded-lg p-6 text-center">
+          <p className="text-sm text-muted">{emptyLabel}</p>
+        </div>
+      ) : (
+        <>
+          <div className="h-[240px]">
+            <ErrorBoundary
+              fallback={
+                <div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>
+              }
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart aria-label={`${title} breakdown chart`} role="img">
+                  <Pie
+                    data={data}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    innerRadius={isNarrow ? 42 : 55}
+                    outerRadius={isNarrow ? 70 : 85}
+                    fill="#8884d8"
+                    dataKey="value"
+                    nameKey="name"
+                    // Drop in-plot labels on narrow so they cannot push past the
+                    // container at 320px; the list below still names every slice.
+                    label={
+                      isNarrow
+                        ? false
+                        : ({ name, percent }) => {
+                            const short = name.length > 14 ? `${name.substring(0, 11)}...` : name
+                            return `${short}: ${(percent * 100).toFixed(1)}%`
+                          }
+                    }
+                  >
+                    {data.map((entry, index) => (
+                      <Cell
+                        key={`${entry.type}-${entry.name}`}
+                        fill={
+                          entry.fill ||
+                          entry.color ||
+                          CATEGORY_COLORS[index % CATEGORY_COLORS.length]
+                        }
+                        stroke="#fff"
+                        strokeWidth={2}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number, name: string) => [
+                      `${formatAmount(value)}${
+                        total > 0 ? ` (${((value / total) * 100).toFixed(1)}%)` : ''
+                      }`,
+                      name,
+                    ]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </ErrorBoundary>
+          </div>
+          <ul className="mt-3 space-y-1">
+            {sorted.map((item, index) => (
+              <li
+                key={`${item.type}-${item.name}`}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{
+                      backgroundColor:
+                        item.fill || item.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                    }}
+                  />
+                  <span className="truncate text-body">{item.name}</span>
+                </span>
+                <span className="shrink-0 text-muted">{formatAmount(item.value)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   )
 }
@@ -1045,8 +1048,8 @@ function ProjectionsIcon({ className }: { className: string }): React.ReactEleme
 function PremiumFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
-      <span className="font-medium text-gray-800 dark:text-gray-100">Advanced Forecasting</span>
-      <span className="text-sm text-gray-500 dark:text-gray-400">
+      <span className="font-medium text-subheading">Advanced Forecasting</span>
+      <span className="text-sm text-muted">
         Scenario modeling, projections, and saved forecasts
       </span>
     </span>
@@ -1061,8 +1064,8 @@ function PremiumFeatureLabel(): React.ReactElement {
 function CustomProfilesFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
-      <span className="font-medium text-gray-800 dark:text-gray-100">Custom Profiles</span>
-      <span className="text-sm text-gray-500 dark:text-gray-400">
+      <span className="font-medium text-subheading">Custom Profiles</span>
+      <span className="text-sm text-muted">
         Separate sets of finances you can switch between, synced across devices
       </span>
     </span>

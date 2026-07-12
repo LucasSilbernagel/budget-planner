@@ -19,6 +19,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -480,7 +481,10 @@ function RetirementTimelineChartInner({
       {/* Chart */}
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
         <ResponsiveContainer width="100%" height={400}>
-          <LineChart data={chartData} margin={{ top: 20, right: 20, left: 20, bottom: 20 }}>
+          {/* Extra right margin so the "Retirement" reference-line label, which
+              sits at the far-right final year in the default scenario (retire at
+              the end of the projection), is not clipped by the container edge. */}
+          <LineChart data={chartData} margin={{ top: 20, right: 64, left: 20, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis
               dataKey="year"
@@ -502,10 +506,11 @@ function RetirementTimelineChartInner({
                 offset: 10,
                 fill: chartColors.axis,
               }}
-              tickFormatter={(value) => formatChartCurrency(value, mode, currency, locale)}
+              tickFormatter={(value) => formatCompactAxisTick(value, mode, currency)}
               tick={{ fontSize: 12, fill: chartColors.axis }}
               stroke={chartColors.axis}
               domain={[0, 'auto']}
+              width={72}
             />
             <Tooltip
               content={<CustomTooltip mode={mode} currency={currency} locale={locale} />}

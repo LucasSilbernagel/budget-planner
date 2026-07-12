@@ -6,7 +6,10 @@ import { expect, test } from '@playwright/test'
  * Drives the hydrated Home dashboard to prove what SSR/HTML smoke and mocked
  * unit tests cannot: the client-side re-aggregation that runs when the
  * Monthly/Annually control changes. The chart normalizes each entry through the
- * core frequency engine, so the "Top Categories" figures must update on toggle.
+ * core frequency engine, so the per-category breakdown figures must update on
+ * toggle. A single seeded income means the pie's total equals its one category,
+ * so that figure renders twice in the section (total + legend row) — the
+ * visibility checks use `.first()`; the disappearance check counts all matches.
  *
  * Currency mode defaults to `none`, so figures print as locale-grouped decimals
  * (story 14-2). A single weekly 10000c income re-expresses as:
@@ -68,11 +71,11 @@ test('breakdown control defaults to Annually, offers only Monthly/Annually, and 
 
   // Annually: the weekly figure is normalized (weekly × 52/12 × 12), not raw,
   // and grouped by the currency-less formatter (story 14-2).
-  await expect(breakdown.getByText('5,199.96')).toBeVisible()
+  await expect(breakdown.getByText('5,199.96').first()).toBeVisible()
 
   // Switch to Monthly — the hydrated chart re-aggregates client-side.
   await selector.selectOption('monthly')
   await expect(selector).toHaveValue('monthly')
-  await expect(breakdown.getByText('433.33')).toBeVisible()
+  await expect(breakdown.getByText('433.33').first()).toBeVisible()
   await expect(breakdown.getByText('5,199.96')).toHaveCount(0)
 })

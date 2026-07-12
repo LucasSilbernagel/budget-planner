@@ -446,13 +446,13 @@ describe('HomePage overview duration selector (story 12-2)', () => {
   function incomeCard(): HTMLElement {
     return screen
       .getByText(/^Total Income \(per (week|month|year)\)$/)
-      .closest('div.bg-gray-50') as HTMLElement
+      .closest('div.surface-inset') as HTMLElement
   }
 
   function expenseCard(): HTMLElement {
     return screen
       .getByText(/^Total Expenses \(per (week|month|year)\)$/)
-      .closest('div.bg-gray-50') as HTMLElement
+      .closest('div.surface-inset') as HTMLElement
   }
 
   beforeEach(() => {
@@ -641,11 +641,11 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
  * chart directly below — the same three figures — and (b) conceptually muddled
  * (debts, a liability, shown as a proportional slice of an "asset" whole).
  * Product approved removing it; the bar chart is now the sole carrier of those
- * figures. These tests assert the pie is gone, the bar chart remains, and only
- * the single, distinctly-named income-vs-expense breakdown pie survives (the two
- * pies previously shared one accessible name — a11y defect + test landmine).
+ * figures. These tests assert the asset pie is gone, the bar chart remains, and
+ * the income/expense breakdown renders as two separate, distinctly-headed pies
+ * (UX review #4 split it so each has its own correct 100% denominator).
  *
- * Assertions target the section <h2> headings, which render deterministically in
+ * Assertions target the section/sub-headings, which render deterministically in
  * jsdom, rather than the Recharts SVG (which needs real layout to render).
  */
 describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
@@ -709,14 +709,18 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
     expect(screen.getByRole('heading', { name: /financial category summary/i })).toBeInTheDocument()
   })
 
-  it('AC-2: only the single, distinctly-named income-vs-expense breakdown pie survives (no duplicate accessible name)', () => {
+  it('AC-2/UX-#4: income and expenses render as two separately-headed breakdown pies (asset & liability pie still gone)', () => {
     seedIncomeAndSavings()
     render(<HomePage />)
+    // The section keeps its "Income vs Expense Breakdown" heading...
     expect(
       screen.getByRole('heading', { name: /income vs expense breakdown/i })
     ).toBeInTheDocument()
-    // The asset pie was the only other "breakdown" chart; its removal leaves a
-    // single, distinctly-named breakdown section.
+    // ...but income and expenses are now split into two sub-pies, each with its
+    // own correct 100% denominator and a distinct sub-heading (UX review #4).
+    expect(screen.getByRole('heading', { name: /income by source/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /expenses by category/i })).toBeInTheDocument()
+    // The removed asset & liability pie stays gone.
     expect(screen.queryByRole('heading', { name: /asset & liability breakdown/i })).toBeNull()
   })
 })
