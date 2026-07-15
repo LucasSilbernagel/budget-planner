@@ -28,6 +28,15 @@ test('free visitor sees Advanced Forecasting locked and can open the upgrade pro
   await expect(page.getByText('Premium', { exact: true }).first()).toBeVisible()
 
   // Activating the locked feature opens the upgrade prompt instead of navigating.
-  await lockedFeature.click()
-  await expect(page.getByRole('heading', { name: /go premium/i })).toBeVisible()
+  // The resolved locked control now paints in the SSR HTML (story UX-1), so it is
+  // clickable in the brief window before React hydrates and wires up its onClick.
+  // Retry the click until the prompt opens (and stop clicking once it has) — the
+  // Playwright-recommended way to act on a control that may not yet be hydrated.
+  const goPremium = page.getByRole('heading', { name: /go premium/i })
+  await expect(async () => {
+    if (!(await goPremium.isVisible())) {
+      await lockedFeature.click()
+    }
+    await expect(goPremium).toBeVisible({ timeout: 1000 })
+  }).toPass()
 })

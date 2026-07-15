@@ -28,6 +28,7 @@ import {
 } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
 import { AuthIndicator } from '../auth-indicator'
 
 const originalFetch = global.fetch
@@ -200,6 +201,73 @@ describe('AuthIndicator', () => {
     renderWithRouter(<AuthIndicator />)
 
     expect(await screen.findByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/login')
+    expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('AuthIndicator — SSR seed (story UX-1)', () => {
+  /**
+   * Hold `/api/auth/me` open so the post-mount refetch never resolves: whatever
+   * the strip shows is coming from the SSR seed, proving the FIRST paint is
+   * already correct rather than resolving after a round-trip.
+   */
+  function stubFetchPending() {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/auth/me')) {
+        return new Promise<Response>(() => {})
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+  }
+
+  function renderSeeded(seed: SessionSeed | null) {
+    return renderWithRouter(
+      <SessionSeedProvider seed={seed}>
+        <AuthIndicator />
+      </SessionSeedProvider>
+    )
+  }
+
+  it('paints the email + Premium marker for an active seed while the refetch is pending — AC-2, AC-3', async () => {
+    stubFetchPending()
+    renderSeeded({
+      isAuthenticated: true,
+      userId: 'user-1',
+      email: 'user@example.com',
+      subscriptionStatus: 'active',
+    })
+
+    // The resolved state appears even though `/api/auth/me` never resolves, so it
+    // is the SSR seed — not a round-trip — driving the first paint (no flip).
+    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(screen.getByText(/^premium$/i)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
+  })
+
+  it('paints the email but NO Premium marker for a free seed while the refetch is pending — AC-3', async () => {
+    stubFetchPending()
+    renderSeeded({
+      isAuthenticated: true,
+      userId: 'user-1',
+      email: 'user@example.com',
+      subscriptionStatus: 'free',
+    })
+
+    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
+  })
+
+  it('paints the "Sign in" affordance for a signed-out seed while the refetch is pending — AC-2', async () => {
+    stubFetchPending()
+    renderSeeded({
+      isAuthenticated: false,
+      userId: null,
+      email: null,
+      subscriptionStatus: null,
+    })
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/login')
+    expect(screen.queryByText(/@/)).not.toBeInTheDocument()
     expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
   })
 })

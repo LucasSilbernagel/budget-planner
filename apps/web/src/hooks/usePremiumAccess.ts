@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { type SessionSeed, useSessionSeed } from '../context/session-seed'
 
 // ============================================================================
 // Type Definitions
@@ -55,6 +56,32 @@ const defaultStatus: PremiumAccessStatus = {
 }
 
 /**
+ * Derive the resolved premium status from the SSR session seed (story UX-1) so
+ * `status.isLoading` starts `false` with the correct value on the first paint —
+ * no skeleton flash, and paid users never flash a lock (7-2 DECISION 3).
+ *
+ * No seed → the fail-closed loading default (resolved after mount by a client
+ * check). A signed-out seed resolves to a not-authenticated, no-access status.
+ * Access requires an *active* subscription; every other state is fail-closed to
+ * no access, matching {@link checkPremiumAccessServer}.
+ */
+function seedToStatus(seed: SessionSeed | null): PremiumAccessStatus {
+  if (!seed) {
+    return defaultStatus
+  }
+  return {
+    // Gate access on authentication too, so a malformed seed can never yield
+    // premium for a not-authenticated session — fail-closed by construction, not
+    // by luck of what the resolver emits (code review 2026-07-14).
+    hasAccess: seed.isAuthenticated && seed.subscriptionStatus === 'active',
+    subscriptionStatus: seed.isAuthenticated ? seed.subscriptionStatus ?? 'free' : null,
+    isLoading: false,
+    error: null,
+    isAuthenticated: seed.isAuthenticated,
+  }
+}
+
+/**
  * Custom hook for checking premium feature access
  *
  * @returns Premium access status and check function
@@ -73,7 +100,13 @@ export function usePremiumAccess(): {
   checkAccess: () => Promise<PremiumAccessCheckResult>
   refresh: () => Promise<void>
 } {
-  const [status, setStatus] = useState<PremiumAccessStatus>(defaultStatus)
+  // Seed the initial status from the SSR-resolved session (story UX-1). Read once
+  // as an initializer so a later provider change can never clobber a resolved
+  // status. When there is no seed (resolver could not verify, or rendered outside
+  // the provider) we keep the fail-closed loading default and resolve via the
+  // client check below.
+  const seed = useSessionSeed()
+  const [status, setStatus] = useState<PremiumAccessStatus>(() => seedToStatus(seed))
 
   /**
    * Check premium access by calling server function
@@ -150,10 +183,16 @@ export function usePremiumAccess(): {
     await checkAccess()
   }, [checkAccess])
 
-  // Check access on mount
+  // Resolve access on mount ONLY when there is no SSR seed. With a seed the first
+  // paint is already correct (story UX-1) and re-checking would reintroduce the
+  // flash (and, in the browser, a needless server round-trip). Explicit
+  // checkAccess()/refresh() callers (e.g. the forecasting route) are unaffected.
   useEffect(() => {
+    if (seed) {
+      return
+    }
     checkAccess()
-  }, [checkAccess])
+  }, [checkAccess, seed])
 
   return { status, checkAccess, refresh }
 }

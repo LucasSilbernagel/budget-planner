@@ -1,5 +1,6 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
 
 /**
  * Persistent signed-in / Premium indicator (Story 13-2).
@@ -26,10 +27,15 @@ import { useEffect, useState } from 'react'
  * does not reset to the loading state, so a signed-in user sees no flicker while
  * browsing.
  *
- * SSR-safety (AC-5): the session is fetched only after mount, so the server HTML
- * and the first client render are identical (both the neutral pre-resolution
- * state) — no hydration mismatch. The outer strip always renders with a reserved
- * min-height, so resolving the session swaps inner content without shifting
+ * First-paint resolution (story UX-1): the strip's initial state is seeded from
+ * the session the root loader resolves server-side (see context/session-seed), so
+ * the server HTML and the first client render already show the correct state — no
+ * neutral-placeholder→content flip. Hydration stays stable because the seed is
+ * identical on the server and at the client's first render (it is the loader data
+ * serialized into the SSR payload). When no seed is available (rendered outside
+ * the provider, e.g. unit tests), it falls back to the pre-UX-1 loading state that
+ * resolves via the post-mount fetch. The outer strip always renders with a
+ * reserved min-height, so any state change swaps inner content without shifting
  * layout, and the strip never pushes the document past a 320px viewport.
  */
 
@@ -43,6 +49,30 @@ type AuthState =
   | { status: 'loading' }
   | { status: 'unauthenticated' }
   | { status: 'authenticated'; user: CurrentUser }
+
+/**
+ * Map the SSR-resolved session seed to the initial auth state so the first frame
+ * is already correct (story UX-1). No seed → the neutral loading state (resolved
+ * after mount by the fetch). An authenticated seed must carry a usable email for
+ * the same reason `fetchCurrentUser` guards it: the authenticated render derefs
+ * `user.email`, so a seed missing it is treated as signed-out.
+ */
+function seedToAuthState(seed: SessionSeed | null): AuthState {
+  if (!seed) {
+    return { status: 'loading' }
+  }
+  if (seed.isAuthenticated && seed.email) {
+    return {
+      status: 'authenticated',
+      user: {
+        userId: seed.userId ?? '',
+        email: seed.email,
+        subscriptionStatus: seed.subscriptionStatus ?? 'free',
+      },
+    }
+  }
+  return { status: 'unauthenticated' }
+}
 
 async function fetchCurrentUser(): Promise<CurrentUser | null> {
   const response = await fetch('/api/auth/me')
@@ -62,7 +92,11 @@ async function fetchCurrentUser(): Promise<CurrentUser | null> {
 }
 
 export function AuthIndicator() {
-  const [authState, setAuthState] = useState<AuthState>({ status: 'loading' })
+  // Seed the initial state from the SSR-resolved session so the first paint is
+  // already correct (story UX-1). Read once as an initializer — the per-navigation
+  // fetch below owns freshness thereafter.
+  const seed = useSessionSeed()
+  const [authState, setAuthState] = useState<AuthState>(() => seedToAuthState(seed))
   // Re-resolve on every navigation so the strip never shows a stale identity
   // after a client-side sign-out (which navigates without remounting the root).
   const pathname = useRouterState({ select: (state) => state.location.pathname })

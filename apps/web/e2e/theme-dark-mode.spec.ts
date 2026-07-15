@@ -57,8 +57,17 @@ test('AC-3: a free visitor sees the dark-mode toggle locked and the app stays li
   await expect(lockedToggle.getByText('Premium', { exact: true })).toBeVisible()
 
   // Activating it opens the upgrade prompt rather than switching the theme.
-  await lockedToggle.click()
-  await expect(page.getByRole('heading', { name: /go premium/i })).toBeVisible()
+  // The resolved locked control now paints in the SSR HTML (story UX-1), so it is
+  // clickable in the brief window before React hydrates and wires up its onClick.
+  // Retry the click until the prompt opens (and stop clicking once it has) — the
+  // Playwright-recommended way to act on a control that may not yet be hydrated.
+  const goPremium = page.getByRole('heading', { name: /go premium/i })
+  await expect(async () => {
+    if (!(await goPremium.isVisible())) {
+      await lockedToggle.click()
+    }
+    await expect(goPremium).toBeVisible({ timeout: 1000 })
+  }).toPass()
 
   // The app stays light for free users (AC-3): no dark class on <html>.
   await expect(page.locator('html')).not.toHaveClass(/dark/)

@@ -9,8 +9,10 @@ import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
 import { ThemeProvider } from '../components/theme/ThemeProvider'
 import { MetadataProvider } from '../context/metadata-context'
+import { type SessionSeed, SessionSeedProvider } from '../context/session-seed'
 import { buildAnalyticsScripts } from '../lib/analytics/counter'
 import { StoreHydration } from '../lib/store-hydration'
+import { getSessionSeed } from '../server/api/auth/session-seed'
 import { THEME_STORAGE_KEY } from '../stores/themeStore'
 import appCss from '../styles/global.css?url'
 
@@ -30,6 +32,17 @@ import appCss from '../styles/global.css?url'
 const NO_FLASH_THEME_SCRIPT = `(function(){try{var raw=localStorage.getItem('${THEME_STORAGE_KEY}');if(!raw)return;var parsed=JSON.parse(raw);var theme=parsed&&parsed.state&&parsed.state.theme;if(theme==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`
 
 export const Route = createRootRoute({
+  // Resolve the session ONCE, server-side, so the first painted frame is already
+  // correct for the auth strip and the premium feature gates (story UX-1, AC-1).
+  // `getSessionSeed` is a server function: during SSR it runs in-process and its
+  // result hydrates to the client; the descendant components consume it as an
+  // initial value. `staleTime: Infinity` keeps the seed from being re-fetched
+  // (no RPC) on client-side navigations — the auth strip owns per-navigation
+  // freshness via its own /api/auth/me refetch (AC-4), and the premium seed is
+  // read once at first paint. The server-only resolver never reaches the client
+  // bundle (AC-5) — see server/api/auth/session-seed.
+  loader: () => getSessionSeed(),
+  staleTime: Number.POSITIVE_INFINITY,
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -65,14 +78,19 @@ export const Route = createRootRoute({
 })
 
 function RootComponent() {
+  // The session resolved once server-side by the root loader (story UX-1). Passed
+  // down so the auth strip + premium gates paint their resolved state on the
+  // first frame. `null` when the resolver could not verify the session — see
+  // `getSessionSeed`; consumers then fall back to their own client check.
+  const seed = Route.useLoaderData()
   return (
-    <RootDocument>
+    <RootDocument seed={seed}>
       <Outlet />
     </RootDocument>
   )
 }
 
-function RootDocument({ children }: { children: ReactNode }) {
+function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSeed | null }) {
   return (
     // suppressHydrationWarning: the no-flash script mutates <html>'s className
     // before hydration (adds `.dark`), which the server HTML does not carry.
@@ -86,25 +104,31 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body suppressHydrationWarning>
         <StoreHydration />
-        {/* Syncs the persisted theme onto <html class="dark"> and enforces the
-            premium fail-safe-to-light for non-paying users (story 7-3). Renders
-            nothing. */}
-        <ThemeProvider />
-        {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
+        {/* The session resolved once server-side by the root loader (story UX-1),
+            provided as an initial seed so the auth strip (below) and every
+            usePremiumAccess consumer (ThemeProvider's dark-mode gate, AdPlacement,
+            the premium feature gates) paint their resolved state on the first
+            frame instead of a placeholder that flips after a client round-trip. */}
+        <SessionSeedProvider seed={seed}>
+          {/* Syncs the persisted theme onto <html class="dark"> and enforces the
+              premium fail-safe-to-light for non-paying users (story 7-3). Renders
+              nothing. */}
+          <ThemeProvider />
+          {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
             (dynamic import in an effect), renders nothing. */}
-        <RegisterSW />
-        {/* Unobtrusive PWA install affordance (story 17-1): client-only + SSR-safe,
+          <RegisterSW />
+          {/* Unobtrusive PWA install affordance (story 17-1): client-only + SSR-safe,
             renders nothing until the browser fires `beforeinstallprompt`, and
             self-suppresses when already installed or recently dismissed. */}
-        <InstallPrompt />
-        {/* Mounts multi-device sync for authenticated paid sessions only
+          <InstallPrompt />
+          {/* Mounts multi-device sync for authenticated paid sessions only
             (story 5-15): free/unauthenticated users get no service and no
             network. Renders nothing — pure wiring. */}
-        <SyncProvider />
-        {/* Captures privacy-respecting acquisition metadata from the landing
+          <SyncProvider />
+          {/* Captures privacy-respecting acquisition metadata from the landing
             URL (story 4-12): URL-only, in-memory, no cookies/localStorage. */}
-        <MetadataProvider>
-          {/* Column layout so the global Footer is pushed to the bottom of the
+          <MetadataProvider>
+            {/* Column layout so the global Footer is pushed to the bottom of the
               viewport on short pages (mt-auto) yet flows after content on long ones.
               The narrow reserve keeps GlobalNav's fixed bottom tab bar (story 11-1)
               from covering the footer; the bar is a two-row 4-column grid (~89px at
@@ -112,24 +136,25 @@ function RootDocument({ children }: { children: ReactNode }) {
               plus `env(safe-area-inset-bottom)` — the same inset the bar itself
               pads by, so the two stay in lockstep (0 on non-notched devices).
               Desktop renders GlobalNav as a top bar and needs no padding. */}
-          <div className="flex min-h-screen flex-col pb-[calc(6rem_+_env(safe-area-inset-bottom))] sm:pb-0">
-            {/* Persistent signed-in / Premium indicator (story 13-2): a slim top
+            <div className="flex min-h-screen flex-col pb-[calc(6rem_+_env(safe-area-inset-bottom))] sm:pb-0">
+              {/* Persistent signed-in / Premium indicator (story 13-2): a slim top
                 strip above the nav, on every viewport, so a signed-in user always
                 sees they are logged in (with a Premium marker when active) without
                 opening Settings. Fetch-based + SSR-safe; kept out of GlobalNav so
                 the 320px mobile tab bar is not crowded. */}
-            <AuthIndicator />
-            {/* Persistent primary navigation (story 11-1): rendered once here so
+              <AuthIndicator />
+              {/* Persistent primary navigation (story 11-1): rendered once here so
                 every route shares it. Top bar on desktop, fixed bottom tab bar on
                 narrow/PWA viewports. */}
-            <GlobalNav />
-            {children}
-            {/* Global, unobtrusive ad slot. Renders only for non-premium users
+              <GlobalNav />
+              {children}
+              {/* Global, unobtrusive ad slot. Renders only for non-premium users
                 (story 4-11): unauthenticated/free see ads; active-premium do not. */}
-            <AdPlacement />
-            <Footer />
-          </div>
-        </MetadataProvider>
+              <AdPlacement />
+              <Footer />
+            </div>
+          </MetadataProvider>
+        </SessionSeedProvider>
         <Scripts />
       </body>
     </html>
