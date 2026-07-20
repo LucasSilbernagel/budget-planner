@@ -16,7 +16,7 @@
  * Graceful degrade: when `VITE_FORMSPARK_FORM_ID` is unset (local dev / before
  * the Formspark form exists) the form still renders, but submitting shows a
  * friendly "temporarily unavailable" message instead of POSTing to an undefined
- * endpoint — the same philosophy as {@link EthicalAds}.
+ * endpoint.
  */
 
 import { useState } from 'react'

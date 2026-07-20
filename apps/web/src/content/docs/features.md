@@ -3,6 +3,9 @@
 Budget Planner is split into a Free tier that runs entirely on your device and
 a Premium tier that adds multi-device syncing and a few extras.
 
+**No ads, no trackers — ever.** Budget Planner shows no advertising and embeds
+no third-party trackers, for every visitor on both tiers.
+
 ### Free tier
 
 - **Income and expense tracking** with weekly, biweekly, monthly, and annual
@@ -31,7 +34,6 @@ a Premium tier that adds multi-device syncing and a few extras.
   modeling and saved, reloadable forecasts, so you can compare different what-if
   plans side by side.
 - **Dark mode** — a dark theme you can switch on from the Settings page.
-- **No ads** — signed-in Premium users are not shown ads.
 
 ### Privacy and data location
 

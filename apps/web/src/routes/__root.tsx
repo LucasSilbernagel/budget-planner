@@ -1,6 +1,5 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { AdPlacement } from '../components/ads/AdPlacement'
 import { AuthIndicator } from '../components/auth/auth-indicator'
 import { Footer } from '../components/layout/Footer'
 import { GlobalNav } from '../components/layout/GlobalNav'
@@ -95,8 +94,8 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
         <StoreHydration />
         {/* The session resolved once server-side by the root loader (story UX-1),
             provided as an initial seed so the auth strip (below) and every
-            usePremiumAccess consumer (ThemeProvider's dark-mode gate, AdPlacement,
-            the premium feature gates) paint their resolved state on the first
+            usePremiumAccess consumer (ThemeProvider's dark-mode gate and the
+            premium feature gates) paint their resolved state on the first
             frame instead of a placeholder that flips after a client round-trip. */}
         <SessionSeedProvider seed={seed}>
           {/* Syncs the persisted theme onto <html class="dark"> and enforces the
@@ -137,9 +136,6 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
                 narrow/PWA viewports. */}
               <GlobalNav />
               {children}
-              {/* Global, unobtrusive ad slot. Renders only for non-premium users
-                (story 4-11): unauthenticated/free see ads; active-premium do not. */}
-              <AdPlacement />
               <Footer />
             </div>
           </MetadataProvider>

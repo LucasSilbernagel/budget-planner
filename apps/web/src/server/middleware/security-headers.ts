@@ -47,24 +47,23 @@ export const THEME_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  *
  * - `script-src`   'self' + the per-request `'nonce-…'` (TanStack Start's inline
  *                  runtime scripts) + the inline theme script (by hash) + Paddle.js
- *                  CDN (`cdn.paddle.com`), counter.dev analytics (`cdn.counter.dev`),
- *                  EthicalAds (`media.ethicalads.io`). No `'unsafe-inline'`.
+ *                  CDN (`cdn.paddle.com`) and counter.dev analytics
+ *                  (`cdn.counter.dev`). No `'unsafe-inline'`.
  * - `style-src`    'self' 'unsafe-inline' — React inline `style=` attributes and
  *                  Recharts-injected attribute styles are NOT coverable by a hash
  *                  or nonce (those apply to <style>/<script> elements, not element
  *                  style attributes), so `'unsafe-inline'` is accepted for STYLES
  *                  ONLY. Scripts stay strict.
  * - `connect-src`  same-origin `/api/*`, Formspark contact POST
- *                  (`submit-form.com`), counter.dev beacon, EthicalAds
- *                  impressions, Paddle checkout.
- * - `frame-src`/`child-src`  Paddle checkout overlay + EthicalAds iframes.
+ *                  (`submit-form.com`), counter.dev beacon, Paddle checkout.
+ * - `frame-src`/`child-src`  Paddle checkout overlay.
  * - `worker-src`   'self' — the PWA service worker (`sw.js`, story 7-1) is
  *                  same-origin. This MUST be explicit: `worker-src` falls back to
  *                  `child-src` (not `default-src`), and `child-src` is set for
- *                  Paddle/ad frames and does NOT include 'self', so without this
+ *                  Paddle frames and does NOT include 'self', so without this
  *                  the service worker registration is blocked.
  * - `manifest-src` 'self' — the self-hosted `/manifest.webmanifest` (story 7-1).
- * - `img-src`      app/data-URI images + ad images.
+ * - `img-src`      app/data-URI images.
  * - `font-src`     self-hosted / data-URI fonts.
  * - `frame-ancestors 'none'`  modern clickjacking defense (kept alongside the
  *                  legacy `X-Frame-Options: DENY` for old UAs). Governs US being
@@ -85,13 +84,13 @@ export function buildContentSecurityPolicy(nonce: string): string {
   }
   return [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' '${THEME_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev https://media.ethicalads.io`,
+    `script-src 'self' 'nonce-${nonce}' '${THEME_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data: https://*.ethicalads.io`,
+    `img-src 'self' data:`,
     `font-src 'self' data:`,
-    `connect-src 'self' https://submit-form.com https://counter.dev https://*.ethicalads.io https://*.paddle.com`,
-    'frame-src https://*.paddle.com https://*.ethicalads.io',
-    'child-src https://*.paddle.com https://*.ethicalads.io',
+    `connect-src 'self' https://submit-form.com https://counter.dev https://*.paddle.com`,
+    'frame-src https://*.paddle.com',
+    'child-src https://*.paddle.com',
     `worker-src 'self'`,
     `manifest-src 'self'`,
     `base-uri 'self'`,

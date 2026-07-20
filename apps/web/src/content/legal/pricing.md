@@ -31,7 +31,6 @@ Everything in Free, plus:
   household)
 - **Premium forecasting** — advanced projections and saved scenarios
 - **Dark mode** — a dark theme you can switch on from the Settings page
-- **No ads** — signed-in Premium users are not shown ads
 
 > **Note:** the exact amount and currency you are charged are confirmed by Paddle
 > at checkout before you pay.

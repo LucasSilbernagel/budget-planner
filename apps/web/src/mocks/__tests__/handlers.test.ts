@@ -17,13 +17,6 @@ describe('MSW external-service interception', () => {
     await expect(res.json()).resolves.toMatchObject({ mocked: true })
   })
 
-  it('mocks EthicalAds decision requests', async () => {
-    const res = await fetch(
-      'https://server.ethicalads.io/api/v1/decision/?publisher=budget-planner'
-    )
-    await expect(res.json()).resolves.toMatchObject({ id: 'msw-mock-ad' })
-  })
-
   it('mocks the counter.dev analytics script asset (Story 10-1)', async () => {
     const res = await fetch('https://cdn.counter.dev/script.js')
     expect(res.status).toBe(204)

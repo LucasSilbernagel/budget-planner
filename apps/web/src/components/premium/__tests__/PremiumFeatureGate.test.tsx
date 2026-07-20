@@ -9,7 +9,7 @@
  *
  * `usePremiumAccess` is mocked to drive each tier; `PremiumPrompt` is stubbed to
  * a marker so this test stays focused on the gating logic (and needs no router
- * context for the prompt's <Link>). Mirrors the style of AdPlacement.test.tsx.
+ * context for the prompt's <Link>).
  */
 
 import { fireEvent, render, screen } from '@testing-library/react'

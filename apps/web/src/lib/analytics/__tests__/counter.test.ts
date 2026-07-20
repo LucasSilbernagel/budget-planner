@@ -4,8 +4,8 @@
  * Covers: the SSR head `scripts` entry is built with the correct src + data-id
  * when the site id is configured, and degrades to `[]` (no script emitted) when
  * the id is unset or whitespace-only. The site id is read at call time (not
- * module scope) so tests can stub it via `vi.stubEnv` — mirrors the EthicalAds
- * publisher-id pattern.
+ * module scope) so tests can stub it via `vi.stubEnv` — mirrors the Formspark
+ * form-id pattern.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

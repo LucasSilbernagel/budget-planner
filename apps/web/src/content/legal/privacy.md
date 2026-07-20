@@ -24,7 +24,7 @@ Some third parties we rely on operate outside the EU — most notably our paymen
 
 ## Cookies and device storage
 
-We keep on-device storage to the minimum needed to run the Service, and we do **not** use advertising or cross-site tracking cookies.
+We keep on-device storage to the minimum needed to run the Service. **We show no ads and use no advertising or cross-site tracking** — for every visitor, on every tier.
 What we store on your device falls into a few strictly-necessary or functional categories:
 
 - **Sign-in cookies (Premium only)** — when you log in, we set a `session` cookie and a short-lived `ml_csrf` login-security cookie.
@@ -52,12 +52,6 @@ Brevo receives only the email address needed to deliver your login link and neve
 When you use our [contact form](/contact), your message is delivered through **Formspark** (`submit-form.com`).
 Formspark stores submissions in Ireland (EU) but relies on a US-based subprocessor (AWS), so this is one narrowly-scoped path where data may be handled outside the EU.
 It carries only the free-text feedback you choose to send — never your financial data — and you control what you put in it.
-
-## Advertising
-
-Visitors who are not signed in may see ads served by **EthicalAds**, a privacy-respecting ad network.
-Per EthicalAds' stated policy, it does not use cookies or personalised tracking; because its script runs as a third party, we disclose it here as a processor for signed-out visitors.
-Signed-in Premium users are not shown ads.
 
 ## Analytics
 

@@ -4,7 +4,7 @@
  * SERVER-ONLY. Sends the magic-link email through Brevo (Sendinblue), a
  * France-based provider with EU-only data centers, so a recipient's email
  * address (personal data) never leaves the EU — same data-sovereignty posture
- * as DanubeData and EthicalAds (NFR1, NFR2).
+ * as DanubeData (NFR1, NFR2).
  *
  * Implemented as a thin `fetch` call (no SDK dependency) to keep the dependency
  * surface minimal, mirroring the project's "Node crypto / fetch, no JWT dep"

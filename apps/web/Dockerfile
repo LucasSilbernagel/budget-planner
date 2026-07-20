@@ -28,12 +28,6 @@ FROM base AS build
 # used (Story 5-2, AC-1 — a dev-runtime bundle throws `jsxDEV is not a function`).
 COPY . .
 RUN NODE_ENV=development pnpm install --frozen-lockfile
-# Build-time PUBLIC var (Story 4-11): inlined into the client bundle by Vite, so
-# it must be present at BUILD, not runtime. Supply with
-# `--build-arg VITE_ETHICALADS_PUBLISHER_ID=...`; absent → ads simply don't
-# render (it is a public id, not a secret).
-ARG VITE_ETHICALADS_PUBLISHER_ID=""
-ENV VITE_ETHICALADS_PUBLISHER_ID=$VITE_ETHICALADS_PUBLISHER_ID
 RUN pnpm --filter @budget-planner/web build
 
 # --- Runtime stage ----------------------------------------------------------

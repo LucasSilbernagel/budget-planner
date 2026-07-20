@@ -3,9 +3,9 @@
  *
  * Reusable presentation-layer gate that makes a premium feature *discoverable
  * but locked* for non-paying users, rather than hiding it. It is driven entirely
- * by {@link usePremiumAccess} — the same server-verified tier signal that
- * {@link AdPlacement} and the `/forecasting` route use — so ads, routes and
- * feature gates can never disagree about a user's tier.
+ * by {@link usePremiumAccess} — the same server-verified tier signal that the
+ * `/forecasting` route uses — so routes and feature gates can never disagree
+ * about a user's tier.
  *
  * This is a PRESENTATION layer only: it never calls premium server functions and
  * is not a security boundary. Real enforcement stays server-side (the

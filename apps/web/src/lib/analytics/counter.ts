@@ -11,7 +11,7 @@
  * `document.currentScript === null` and the `data-id` unread → silent no-op).
  *
  * The site id is a *public* identifier (it ships in client HTML by design, like
- * `VITE_ETHICALADS_PUBLISHER_ID`), so exposing it to the bundle is intentional
+ * the Formspark form id), so exposing it to the bundle is intentional
  * and not a secret leak (NFR7). It is read at call time (not module scope) so
  * tests can stub it via `vi.stubEnv`, and trimmed so a stray-whitespace `.env`
  * value degrades to "no analytics" rather than emitting `data-id=" "`. When

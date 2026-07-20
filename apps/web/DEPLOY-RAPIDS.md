@@ -129,12 +129,6 @@ so each value is set a single time.
 | `EMAIL_FROM` | optional | Defaults to `no-reply@budgetplanner.eu`. |
 | `PORT` / `HOST` | platform | `PORT` injected by Knative (entry defaults 8080 / `0.0.0.0`). |
 
-### Build-time public vars (NOT runtime secrets)
-
-| Variable | Notes |
-|---|---|
-| `VITE_ETHICALADS_PUBLISHER_ID` | **Inlined into the client bundle at build time** (Story 4-11). Public id, not a secret. Must be present during `pnpm --filter web build` (i.e. in the Docker build stage / CI build env), **not** injected at runtime. |
-
 Generate the session secret:
 
 ```bash

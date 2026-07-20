@@ -8,7 +8,6 @@
  *   - counter.dev (cookieless analytics script + beacons) — ADR-005
  *   - Brevo (transactional magic-link email) — EU/France
  *   - Paddle (billing / checkout / subscription APIs) — UK
- *   - EthicalAds (ad decision endpoint) — Germany/EU
  *
  * Handlers use RegExp matchers so both production and sandbox hosts are
  * covered without enumerating every path.
@@ -52,21 +51,6 @@ export const handlers = [
       mocked: true,
       data: {},
       meta: { request_id: 'msw-mock-request' },
-    })
-  ),
-
-  // --- EthicalAds: decision endpoint + widget script + view/click pixels ---
-  // Match any ethicalads.io host (media./server./g.ethicalads.io) so a real
-  // widget load does not slip past and trip onUnhandledRequest:'error'.
-  http.all(/^https?:\/\/([^/]+\.)?ethicalads\.io\//, () =>
-    HttpResponse.json({
-      id: 'msw-mock-ad',
-      text: 'Mocked ad — no real ad request was made.',
-      body: 'Mocked ad — no real ad request was made.',
-      image: null,
-      link: 'https://example.test/mock-ad',
-      view_url: 'https://example.test/mock-view',
-      nonce: 'msw-mock-nonce',
     })
   ),
 ]

@@ -110,10 +110,13 @@ describe('documentation content accuracy (story 10-4)', () => {
     }
   }
 
-  it('the Features page states ad removal under Premium (mirrors the Privacy Policy, story 13-1)', () => {
-    // AC-2: the Premium section must explicitly say ads are removed for Premium
-    // users, consistent with privacy.md ("Signed-in Premium users are not shown ads").
-    expect(featureSections().premium).toContain('no ads')
+  it('the Features page states no ads universally, not as a Premium perk (story 25-1)', () => {
+    // Story 25-1 removed all advertising: "no ads" is now an unconditional trait
+    // of the whole app, not a paywalled benefit. Assert the statement appears on
+    // the page but is NOT scoped to the Premium section.
+    const content = getDocPage('features')?.content ?? ''
+    expect(content.toLowerCase()).toContain('no ads')
+    expect(featureSections().premium).not.toContain('no ads')
   })
 
   it('the Features page keeps Retirement modeling under the Free tier (story 13-1, AC-4)', () => {

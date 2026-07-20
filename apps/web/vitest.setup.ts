@@ -2,7 +2,7 @@
  * Global Vitest setup for @budget-planner/web.
  *
  * - Registers @testing-library/jest-dom custom matchers (toBeInTheDocument, …)
- * - Starts the MSW server so all external calls (Paddle, EthicalAds) are mocked
+ * - Starts the MSW server so all external calls (Paddle, counter.dev) are mocked
  * - Cleans up the React Testing Library DOM after each test (jsdom only)
  *
  * This file runs for every test regardless of environment, so the RTL cleanup

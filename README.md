@@ -80,7 +80,6 @@ A full production or paid-tier deployment additionally requires the server secre
 | `PADDLE_ENVIRONMENT` | Server | Selects the Paddle billing environment, `sandbox` or `production`. Defaults to `sandbox`. |
 | `PADDLE_API_KEY` | Server | Paddle billing API key for the paid tier. A runtime secret. |
 | `PADDLE_WEBHOOK_SECRET` | Server | Secret used to verify Paddle billing webhook signatures. A runtime secret. |
-| `VITE_ETHICALADS_PUBLISHER_ID` | Client | Public identifier that ships in the client bundle, not a secret. Enables privacy-respecting, cookie-free ads for non-premium users. When unset, no ads are rendered. |
 | `VITE_FORMSPARK_FORM_ID` | Client | Public identifier for the in-app contact form, not a secret. When unset, the contact form shows "temporarily unavailable." |
 
 The Paddle billing variables back the paid-tier checkout and are being finalized in the billing integration work (story 5-3); the full set is defined in `packages/config/src/schema.ts`.
@@ -119,7 +118,7 @@ The intended production topology (see `_bmad-output/planning-artifacts/adr/ADR-0
 - **Database:** DanubeData PostgreSQL (Germany / EU).
 - **Billing:** Paddle (UK, acting as Merchant of Record) - Paddle handles billing only, not authentication.
 - **Authentication:** app-owned email magic-link login.
-- **Ads:** EthicalAds (Germany / EU), cookie-free, non-premium users only.
+- **Ads:** none — the app shows no ads and no third-party trackers, for every tier.
 
 The data model is EU-only with a zero-US-residency posture.
 The free tier stores everything client-side (localStorage / IndexedDB) with no account and no server calls.

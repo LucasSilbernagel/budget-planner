@@ -89,7 +89,7 @@ jobs:
 
       # No package pre-build needed: vitest aliases @budget-planner/* to their
       # TypeScript source (apps/web/vitest.config.ts), so tests run against src.
-      # External services (Paddle, EthicalAds) are mocked via MSW; the db client
+      # External services (Paddle) are mocked via MSW; the db client
       # connects lazily, so no real database is required (NFR8).
       - name: Run unit tests
         run: pnpm test:unit

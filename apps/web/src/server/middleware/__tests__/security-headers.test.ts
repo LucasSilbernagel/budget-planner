@@ -78,19 +78,19 @@ describe('applySecurityHeaders', () => {
       expect(d['base-uri']).toBe(`'self'`)
       expect(d['form-action']).toBe(`'self'`)
       // worker-src MUST be explicit 'self': it falls back to child-src (set for
-      // Paddle/ad frames, no 'self'), not default-src, so the same-origin PWA
+      // Paddle frames, no 'self'), not default-src, so the same-origin PWA
       // service worker would otherwise be blocked (story 7-1).
       expect(d['worker-src']).toBe(`'self'`)
       expect(d['manifest-src']).toBe(`'self'`)
     })
 
-    it('allows exactly the real script origins (self, nonce, theme hash, Paddle, counter.dev, EthicalAds) and no unsafe-inline for scripts', () => {
+    it('allows exactly the real script origins (self, nonce, theme hash, Paddle, counter.dev) and no unsafe-inline for scripts', () => {
       const d = parseCsp(csp ?? '')
       expect(d['script-src']).toContain(`'self'`)
       expect(d['script-src']).toContain(`'nonce-${TEST_NONCE}'`)
       expect(d['script-src']).toContain('https://cdn.paddle.com')
       expect(d['script-src']).toContain('https://cdn.counter.dev')
-      expect(d['script-src']).toContain('https://media.ethicalads.io')
+      expect(d['script-src']).not.toContain('ethicalads')
       expect(d['script-src']).not.toContain(`'unsafe-inline'`)
     })
 
@@ -102,11 +102,13 @@ describe('applySecurityHeaders', () => {
     it('allows the real connect / frame / img / font origins', () => {
       const d = parseCsp(csp ?? '')
       expect(d['connect-src']).toBe(
-        `'self' https://submit-form.com https://counter.dev https://*.ethicalads.io https://*.paddle.com`
+        `'self' https://submit-form.com https://counter.dev https://*.paddle.com`
       )
-      expect(d['frame-src']).toBe('https://*.paddle.com https://*.ethicalads.io')
-      expect(d['img-src']).toBe(`'self' data: https://*.ethicalads.io`)
+      expect(d['frame-src']).toBe('https://*.paddle.com')
+      expect(d['img-src']).toBe(`'self' data:`)
       expect(d['font-src']).toBe(`'self' data:`)
+      // Story 25-1 removed all advertising — no ad-network origin survives anywhere.
+      expect(csp ?? '').not.toContain('ethicalads')
     })
 
     // AC-5: the sha256 pinned in the CSP must always match the exact script the

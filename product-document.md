@@ -45,10 +45,7 @@ Budget Planner is a comprehensive financial management application designed to h
   - Automated local tax/VAT remittances
 
 #### Advertising
-- **Provider:** EthicalAds (Germany/EU-based)
-- **Type:** Contextual, privacy-respecting advertising
-- **Target:** Unauthenticated users
-- **Features:** No invasive cookie tracking
+- **None.** The app shows no ads and embeds no third-party trackers, for every visitor on every tier (Story 25.1 removed the former EthicalAds integration; reverses FR20 / Story 4.11).
 
 ---
 
@@ -299,7 +296,7 @@ pnpm --filter web dev
 | Test Type | Tool | Scope | Purpose |
 |-----------|------|-------|---------|
 | **Unit Tests** | Vitest | Mathematical modules | Continuous structural validation |
-| **Mock Testing** | Mock Service Worker (MSW) | Network requests | Intercept Paddle & EthicalAds calls |
+| **Mock Testing** | Mock Service Worker (MSW) | Network requests | Intercept Paddle calls |
 | **E2E Tests** | Playwright | UI interactions | Multi-currency flow simulations |
 
 **Test Modules:**
@@ -338,7 +335,6 @@ pnpm --filter web dev
 | **P3** | Testing infrastructure | Core features |
 | **P3** | CI/CD pipeline | Testing |
 | **P3** | Paddle integration | Paid tier |
-| **P3** | EthicalAds integration | Free tier |
 
 ---
 
@@ -348,7 +344,6 @@ pnpm --filter web dev
 |---------|----------|--------|---------|
 | **Hosting** | DanubeData | EU (Germany) | Database & Compute |
 | **Payments** | Paddle | UK | Billing & Taxes |
-| **Ads** | EthicalAds | Germany/EU | Privacy-respecting ads |
 | **Frontend Host** | Netlify | Western Europe | Static hosting |
 
 ---
