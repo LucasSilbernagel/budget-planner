@@ -1,6 +1,17 @@
 import { createRouter as createTanStackRouter } from '@tanstack/react-router'
 import { NotFoundPage } from './components/NotFoundPage'
 import { routeTree } from './routeTree.gen'
+import { CSP_NONCE_GLOBAL_KEY } from './server/csp-nonce-key'
+
+/**
+ * Read the active request's CSP nonce (SSR only) from the getter that the
+ * server-only `server/csp-nonce` module registers on `globalThis`. Kept as a
+ * plain global read so this isomorphic file never imports the node-only module.
+ */
+function readServerCspNonce(): string | undefined {
+  const getter = (globalThis as Record<string, unknown>)[CSP_NONCE_GLOBAL_KEY]
+  return typeof getter === 'function' ? (getter as () => string | undefined)() : undefined
+}
 
 /**
  * Router factory consumed by TanStack Start's generated SSR + client entries.
@@ -9,6 +20,14 @@ import { routeTree } from './routeTree.gen'
  * files under `src/routes`.
  */
 export function getRouter() {
+  // During SSR, read this request's CSP nonce (set by the security-headers
+  // middleware in `start.ts`) and hand it to the framework, which stamps it on
+  // its inline runtime scripts and emits a `<meta property="csp-nonce">` the
+  // client reads back — so a strict `script-src 'nonce-…'` allows them (story
+  // sec-1). `import.meta.env.SSR` folds to `false` on the client, dropping the
+  // branch (and any reference to the server-only global) from the client bundle.
+  const nonce = import.meta.env.SSR ? readServerCspNonce() : undefined
+
   const router = createTanStackRouter({
     routeTree,
     defaultPreload: 'intent',
@@ -17,6 +36,7 @@ export function getRouter() {
     // theme-aware 404 (story 6-4); otherwise TanStack falls back to its generic
     // `<p>Not Found</p>`.
     defaultNotFoundComponent: NotFoundPage,
+    ssr: { nonce },
   })
 
   return router

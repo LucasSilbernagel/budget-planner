@@ -12,24 +12,13 @@ import { MetadataProvider } from '../context/metadata-context'
 import { type SessionSeed, SessionSeedProvider } from '../context/session-seed'
 import { buildAnalyticsScripts } from '../lib/analytics/counter'
 import { StoreHydration } from '../lib/store-hydration'
+// Single source of truth for the inline no-flash theme bootstrap. Shared with
+// the CSP builder (server/middleware/security-headers.ts), which hashes this
+// exact string to pin the `script-src` — keep it imported, never re-inline it
+// here (a divergent copy would silently break the strict CSP; story sec-1).
+import { NO_FLASH_THEME_SCRIPT } from '../lib/theme/no-flash-theme-script'
 import { getSessionSeed } from '../server/api/auth/session-seed'
-import { THEME_STORAGE_KEY } from '../stores/themeStore'
 import appCss from '../styles/global.css?url'
-
-/**
- * No-flash theme bootstrap (story 7-3, AC-4). Runs synchronously in <head>
- * before first paint: reads the persisted theme from localStorage and adds the
- * `.dark` class to <html> so a paid user's dark preference paints correctly on
- * the very first frame — no flash of light before React hydrates. Wrapped in
- * try/catch so blocked or corrupt storage never throws (mirrors StoreHydration's
- * swallow-errors discipline). ThemeProvider reconciles + enforces the
- * premium-gate correction after mount.
- *
- * The storage key comes from `THEME_STORAGE_KEY` (single source of truth in
- * themeStore); the persisted `{ state: { theme } }` shape is still hard-parsed
- * here because this runs before any module can load. See that constant's JSDoc.
- */
-const NO_FLASH_THEME_SCRIPT = `(function(){try{var raw=localStorage.getItem('${THEME_STORAGE_KEY}');if(!raw)return;var parsed=JSON.parse(raw);var theme=parsed&&parsed.state&&parsed.state.theme;if(theme==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`
 
 export const Route = createRootRoute({
   // Resolve the session ONCE, server-side, so the first painted frame is already
