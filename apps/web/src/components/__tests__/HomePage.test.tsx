@@ -115,188 +115,47 @@ describe('HomePage tagline (story 25-4)', () => {
 })
 
 /**
- * Section-navigation tiles (story 11-3, WCAG 1.4.1 "Use of Color").
+ * Overview "Manage Your Finances" tiles removed on desktop (story 19-1, UX-DR26).
  *
- * The "Manage Your Finances" grid used to render each destination as a solid
- * `bg-*-600` fill — with Expenses in danger-red, which reads as a destructive
- * action. These tests assert destinations are distinguished by a non-color cue
- * (an accessible label plus a decorative category icon) and that no tile relies
- * on a saturated full-color fill, so the information survives a grayscale view.
+ * The tile grid linked Income/Expenses/Savings/Balance/Projections — the exact
+ * five destinations the desktop top-bar GlobalNav already links at ≥640px, so on
+ * the overview it was a second copy of the primary menu. Story 18-3 had already
+ * hidden the section below 640px (the fixed bottom nav covers those links there);
+ * story 19-1 removes it on desktop too, so the section is gone at every width.
+ * Nothing is orphaned — every destination stays reachable via the top bar
+ * (≥640px) and the fixed bottom bar (<640px), both owned by GlobalNav (which is
+ * not rendered in this component-level harness).
+ *
+ * These assertions replace the former story-11-3 (color-as-meaning), 18-1
+ * (label-overflow) and 18-3 (hidden-below-640px) tile blocks, all of which
+ * asserted the now-removed tiles' presence/styling and would be vacuous.
  */
-describe('HomePage section navigation (story 11-3)', () => {
-  const SECTIONS = [
-    { label: 'Income', href: '/income' },
-    { label: 'Expenses', href: '/expenses' },
-    { label: 'Savings', href: '/savings' },
-    { label: 'Balance', href: '/balance' },
-    { label: 'Projections', href: '/net-worth-projection' },
-  ] as const
-
-  beforeEach(() => {
-    // These tiles are tier-independent, but HomePage reads usePremiumAccess.
-    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
-  })
-
-  it('AC-1/AC-4: every section is a labelled link pointing at its route', () => {
-    render(<HomePage />)
-    for (const { label, href } of SECTIONS) {
-      expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', href)
-    }
-  })
-
-  it('AC-1/AC-4: every tile carries a decorative icon so color is not the sole cue', () => {
-    render(<HomePage />)
-    for (const { label } of SECTIONS) {
-      const tile = screen.getByRole('link', { name: label })
-      // The label alone names the link; a decorative (aria-hidden) icon adds a
-      // second, non-color differentiator.
-      expect(tile.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
-    }
-  })
-
-  it('AC-1/AC-2: no tile uses a saturated full-color fill, and Expenses is not danger-red', () => {
-    render(<HomePage />)
-    for (const { label } of SECTIONS) {
-      const tile = screen.getByRole('link', { name: label })
-      expect(tile.className).not.toMatch(/bg-(red|green|purple|blue|indigo)-(600|700)/)
-    }
-    // Danger-red stays reserved for destructive controls (delete), never navigation.
-    const expenses = screen.getByRole('link', { name: 'Expenses' })
-    expect(expenses.className).not.toMatch(/red/)
-  })
-
-  it('AC-2/AC-3: the accent is carried by the icon; Expenses is amber and no tile icon is danger-red', () => {
-    render(<HomePage />)
-    // The neutral wrapper never carries an accent, so assert on the icon node
-    // that actually does — otherwise an icon-accent regression to red would
-    // slip past the wrapper-only checks above.
-    for (const { label } of SECTIONS) {
-      const icon = screen.getByRole('link', { name: label }).querySelector('svg')
-      expect(icon).not.toBeNull()
-      expect(icon?.getAttribute('class')).not.toMatch(/text-red-/)
-    }
-    // Expenses specifically swapped danger-red → amber (AC-2), applied as an icon accent (AC-3).
-    const expensesIcon = screen.getByRole('link', { name: 'Expenses' }).querySelector('svg')
-    expect(expensesIcon?.getAttribute('class')).toMatch(/text-amber-/)
-  })
-})
-
-/**
- * Section-navigation tile labels stay inside their buttons (story 18-1, UX-DR22).
- *
- * Each tile is a `flex` anchor with an icon + a text label. When the label was a
- * bare text node it became an anonymous flex item whose default `min-width: auto`
- * (min-content = the whole unbreakable word) could not shrink or break, so a
- * column narrower than the word pushed the label — and the page — wider. The fix
- * wraps the label in a `min-w-0 break-words` span so a long single word can shrink
- * and break WITHIN the button at every width the tiles render (post-18-3 that is
- * ≥640px, but the guard holds at any width), while the icon keeps `shrink-0` so it
- * never collapses when the label wraps.
- *
- * jsdom has no layout engine (it cannot measure overflow or evaluate media
- * queries), so this asserts the structural tokens that make the label robust,
- * using class-token MEMBERSHIP rather than a substring regex — `/break-words/`
- * would false-match nothing here, but the 18-3 review established the split-on-
- * whitespace idiom as the safe way to assert a Tailwind utility is present
- * (`/\bhidden\b/` false-matched `overflow-hidden`). The label staying on one line
- * (no mid-word break) is verified at runtime in `e2e/overview-tiles.spec.ts` at
- * 768px (two-column) and 1024px (narrowest five-column).
- */
-describe('HomePage section-navigation tile labels (story 18-1)', () => {
-  const SECTIONS = [
-    { label: 'Income' },
-    { label: 'Expenses' },
-    { label: 'Savings' },
-    { label: 'Balance' },
-    { label: 'Projections' },
-  ] as const
-
+describe('HomePage "Manage Your Finances" tiles removed (story 19-1)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    // Force the empty-state branch so the assertions are independent of any
+    // persisted store data — the removed section rendered regardless of data.
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
   })
 
-  it('AC-1/AC-2: each tile label can shrink and break inside the button (min-w-0 break-words)', () => {
+  it('AC-2: the "Manage Your Finances" section is not rendered', () => {
     render(<HomePage />)
-    for (const { label } of SECTIONS) {
-      const tile = screen.getByRole('link', { name: label })
-      // The label is wrapped in its own element carrying the shrink/break tokens;
-      // find the element whose text is exactly the label (not the whole anchor,
-      // whose text also includes nothing else visible but whose classes are the
-      // layout classes).
-      const labelEl = within(tile).getByText(label)
-      const classes = labelEl.className.split(/\s+/)
-      expect(classes).toContain('min-w-0')
-      expect(classes).toContain('break-words')
-    }
+    // A DOM-presence check: the section was fully removed (not CSS-hidden), so
+    // its heading is absent from the render tree. jsdom has no layout engine, so
+    // this asserts non-rendering rather than any width-specific behavior — the
+    // "gone at every width" guarantee comes from the removal itself, since there
+    // is no longer a `hidden sm:block` branch that could reintroduce it.
+    expect(screen.queryByRole('heading', { name: 'Manage Your Finances' })).toBeNull()
   })
 
-  it('AC-2: the icon keeps shrink-0 so it never collapses when the label wraps', () => {
+  it('AC-2/AC-3: the tile-only "Projections" destination link is no longer on the overview', () => {
     render(<HomePage />)
-    for (const { label } of SECTIONS) {
-      const icon = screen.getByRole('link', { name: label }).querySelector('svg')
-      expect(icon).not.toBeNull()
-      expect((icon?.getAttribute('class') ?? '').split(/\s+/)).toContain('shrink-0')
-    }
-  })
-})
-
-/**
- * Overview tiles vs. the mobile bottom nav (story 18-3, UX-DR24).
- *
- * Below 640px, GlobalNav renders a fixed bottom bar that already links
- * Income/Expenses/Savings/Balance/Projections — the exact five destinations of
- * the "Manage Your Finances" tiles. To stop the overview duplicating navigation
- * the persistent bottom bar already provides, the section is hidden below
- * Tailwind's `sm` breakpoint (640px, the `useIsNarrowViewport` boundary) and
- * shown again at `sm:` and up (where only a top bar renders).
- *
- * The hide is pure CSS (`hidden sm:block`), not the `isNarrowViewport` JS boolean
- * — that returns `false` on the server and first client render, so a JS-gated
- * hide would render the tiles then drop them after mount (a visible flash on
- * mobile). Because it is CSS-only, the tiles stay in the DOM, so jsdom (which
- * renders at the desktop default) still sees every tile — no destination becomes
- * unreachable.
- */
-describe('HomePage overview tiles hidden below the bottom-nav breakpoint (story 18-3)', () => {
-  beforeEach(() => {
-    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
-  })
-
-  it('AC-2: the "Manage Your Finances" section is CSS-hidden below 640px and shown at sm+', () => {
-    render(<HomePage />)
-    const section = screen.getByRole('heading', { name: 'Manage Your Finances' }).closest('section')
-    expect(section).not.toBeNull()
-    // `hidden sm:block`: display:none below 640px (bottom bar covers those links),
-    // display:block at ≥640px. Pure CSS keeps it SSR-safe with no mount flash.
-    // Assert class-token membership, not a substring: `/\bhidden\b/` would also
-    // match `overflow-hidden`/`sm:hidden` (a `-` or `:` is a regex word boundary),
-    // so it could stay green even if the standalone `hidden` utility were dropped.
-    const classes = section?.className.split(/\s+/) ?? []
-    expect(classes).toContain('hidden')
-    expect(classes).toContain('sm:block')
-  })
-
-  it('AC-3: all five tile destinations stay in the DOM (CSS hide only — nothing orphaned)', () => {
-    render(<HomePage />)
-    // Scope to the tiles section so each assertion proves the *tile* link is
-    // present (not some other same-named nav link), and stays unambiguous even
-    // if a bottom nav carrying the same five destinations is ever mounted in the
-    // same render tree (a page-wide getByRole would then throw on a double match).
-    const section = screen.getByRole('heading', { name: 'Manage Your Finances' }).closest('section')
-    expect(section).not.toBeNull()
-    const tiles = [
-      { label: 'Income', href: '/income' },
-      { label: 'Expenses', href: '/expenses' },
-      { label: 'Savings', href: '/savings' },
-      { label: 'Balance', href: '/balance' },
-      { label: 'Projections', href: '/net-worth-projection' },
-    ] as const
-    for (const { label, href } of tiles) {
-      expect(within(section as HTMLElement).getByRole('link', { name: label })).toHaveAttribute(
-        'href',
-        href
-      )
-    }
+    // "Projections" was unique to the removed tile grid; the surviving overview
+    // surfaces (stat cards, empty-state CTAs, Premium section) never use that
+    // label. Its absence proves the tile grid is gone without coupling to the
+    // persistent nav (owned by GlobalNav, not rendered in this harness).
+    expect(screen.queryByRole('link', { name: 'Projections' })).toBeNull()
   })
 })
 
