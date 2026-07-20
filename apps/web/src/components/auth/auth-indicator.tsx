@@ -161,8 +161,10 @@ export function AuthIndicator() {
           <span className="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">
             {authState.user.email}
           </span>
-          {authState.user.subscriptionStatus === 'active' && (
+          {(authState.user.subscriptionStatus === 'active' ||
+            authState.user.subscriptionStatus === 'lifetime') && (
             // Text label, not color/icon alone (Story 11-3 / WCAG 1.4.1).
+            // Both an active subscription and a lifetime purchase (25-2) are Premium.
             <span className="shrink-0 rounded-full bg-green-600 px-2 py-0.5 text-xs font-semibold text-white dark:bg-green-500">
               Premium
             </span>

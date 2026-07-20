@@ -233,7 +233,7 @@ async function getAuthenticatedUser(request: Request): Promise<FinancialApiResul
   }
 
   // Check if user has access to premium features
-  if (user.subscriptionStatus !== 'active') {
+  if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
     return {
       success: false,
       code: 'PREMIUM',

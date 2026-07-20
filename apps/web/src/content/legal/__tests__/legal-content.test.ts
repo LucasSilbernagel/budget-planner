@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { LEGAL_PAGES, PRICING_PAGE, getLegalPage } from '../index'
 
 /**
- * Legal/commercial content registry tests (story 5-13, updated in story 10-3).
+ * Legal/commercial content registry tests (story 5-13, updated in stories 10-3, 25-2).
  *
  * Confirms the registry exposes the four Paddle-required pages with well-formed
  * bodies loaded from the static `.md` files, that slug lookup behaves, that the
  * pricing page carries the Merchant-of-Record disclosure and the finalized EUR
- * pricing, and that no unresolved DRAFT/placeholder tokens remain (10-3 AC-1).
+ * pricing (€39/yr + €99 lifetime, no monthly — story 25-2), and that no unresolved
+ * DRAFT/placeholder tokens remain (10-3 AC-1).
  */
 describe('LEGAL_PAGES', () => {
   it('exposes the pricing, terms, privacy, and refund pages', () => {
@@ -69,9 +70,13 @@ describe('pricing page content (AC-4)', () => {
     expect(PRICING_PAGE.content).toMatch(/Merchant of Record/i)
   })
 
-  it('states the finalized EUR pricing (monthly and annual)', () => {
-    expect(PRICING_PAGE.content).toMatch(/€10 per month/)
-    expect(PRICING_PAGE.content).toMatch(/€100 per year/)
+  it('states the finalized EUR pricing (annual + lifetime, no monthly) — story 25-2', () => {
+    expect(PRICING_PAGE.content).toMatch(/€39 per year/)
+    expect(PRICING_PAGE.content).toMatch(/€99/)
+    expect(PRICING_PAGE.content).toMatch(/lifetime/i)
+    // Monthly plan dropped (25-2 AC-1): no per-month pricing remains anywhere.
+    expect(PRICING_PAGE.content).not.toMatch(/per month/)
+    expect(PRICING_PAGE.content).not.toMatch(/€10\b/)
   })
 
   it('describes both the free and premium tiers', () => {

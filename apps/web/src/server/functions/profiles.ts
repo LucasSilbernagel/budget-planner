@@ -49,7 +49,10 @@ export async function createProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a non-active subscription is denied at the server boundary —
     // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (sessionResult.data.subscriptionStatus !== 'active') {
+    if (
+      sessionResult.data.subscriptionStatus !== 'active' &&
+      sessionResult.data.subscriptionStatus !== 'lifetime'
+    ) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to manage custom profiles',
@@ -133,7 +136,10 @@ export async function getProfiles(request: Request): Promise<ApiResult<UserProfi
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a non-active subscription is denied at the server boundary —
     // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (sessionResult.data.subscriptionStatus !== 'active') {
+    if (
+      sessionResult.data.subscriptionStatus !== 'active' &&
+      sessionResult.data.subscriptionStatus !== 'lifetime'
+    ) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to manage custom profiles',
@@ -183,7 +189,10 @@ export async function getProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a non-active subscription is denied at the server boundary —
     // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (sessionResult.data.subscriptionStatus !== 'active') {
+    if (
+      sessionResult.data.subscriptionStatus !== 'active' &&
+      sessionResult.data.subscriptionStatus !== 'lifetime'
+    ) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to manage custom profiles',
@@ -244,7 +253,10 @@ export async function updateProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a non-active subscription is denied at the server boundary —
     // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (sessionResult.data.subscriptionStatus !== 'active') {
+    if (
+      sessionResult.data.subscriptionStatus !== 'active' &&
+      sessionResult.data.subscriptionStatus !== 'lifetime'
+    ) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to manage custom profiles',
@@ -345,7 +357,10 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a non-active subscription is denied at the server boundary —
     // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (sessionResult.data.subscriptionStatus !== 'active') {
+    if (
+      sessionResult.data.subscriptionStatus !== 'active' &&
+      sessionResult.data.subscriptionStatus !== 'lifetime'
+    ) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to manage custom profiles',
@@ -434,7 +449,10 @@ export async function setDefaultProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a non-active subscription is denied at the server boundary —
     // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (sessionResult.data.subscriptionStatus !== 'active') {
+    if (
+      sessionResult.data.subscriptionStatus !== 'active' &&
+      sessionResult.data.subscriptionStatus !== 'lifetime'
+    ) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to manage custom profiles',

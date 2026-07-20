@@ -2,7 +2,7 @@
  * Forecasting Profiles Server Functions
  *
  * Server-side CRUD operations for premium forecasting profiles.
- * Only available for paid tier users (subscriptionStatus === 'active').
+ * Only available for paid tier users (subscriptionStatus 'active' or 'lifetime').
  *
  * Architecture: TanStack Start Server Functions
  * Database: Drizzle ORM with DanubeData PostgreSQL (Germany - EU)
@@ -138,7 +138,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 /**
  * Create a new forecasting profile
- * Requires premium access (subscriptionStatus === 'active')
+ * Requires premium access (subscriptionStatus 'active' or 'lifetime')
  */
 export async function createForecastingProfile(
   request: Request,
@@ -165,7 +165,7 @@ export async function createForecastingProfile(
     }
 
     // Check premium access
-    if (user.subscriptionStatus !== 'active') {
+    if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to access forecasting profile management',

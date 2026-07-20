@@ -22,6 +22,13 @@ export const envSchema = z.object({
   PADDLE_API_KEY: z.string().optional(),
   PADDLE_PUBLIC_KEY: z.string().optional(),
   PADDLE_WEBHOOK_SECRET: z.string().optional(),
+  // Paddle price IDs for the two Premium plans (story 25-2): the recurring
+  // €39/yr annual plan and the one-time €99 lifetime license. Kept out of source
+  // (never hardcoded) so the same build points at sandbox or production prices.
+  // PADDLE_LIFETIME_PRICE_ID is what the webhook keys off to recognise a
+  // one-time lifetime purchase and grant permanent Premium (see webhooks/paddle.ts).
+  PADDLE_ANNUAL_PRICE_ID: z.string().optional(),
+  PADDLE_LIFETIME_PRICE_ID: z.string().optional(),
 
   // Database (Scaleway PostgreSQL)
   DATABASE_URL: z.string().optional(),
@@ -82,6 +89,10 @@ export interface PaddleConfig {
   apiKey: string | undefined
   publicKey: string | undefined
   webhookSecret: string | undefined
+  /** Paddle price ID for the recurring €39/yr annual plan (story 25-2). */
+  annualPriceId: string | undefined
+  /** Paddle price ID for the one-time €99 lifetime license (story 25-2). */
+  lifetimePriceId: string | undefined
   isConfigured: boolean
 }
 
@@ -98,6 +109,8 @@ export function getPaddleConfig(): PaddleConfig {
     apiKey: env.PADDLE_API_KEY,
     publicKey: env.PADDLE_PUBLIC_KEY,
     webhookSecret: env.PADDLE_WEBHOOK_SECRET,
+    annualPriceId: env.PADDLE_ANNUAL_PRICE_ID,
+    lifetimePriceId: env.PADDLE_LIFETIME_PRICE_ID,
     isConfigured,
   }
 }

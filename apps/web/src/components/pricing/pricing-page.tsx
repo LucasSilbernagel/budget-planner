@@ -49,9 +49,9 @@ export function PricingPageView(): React.ReactElement {
             />
             <PlanCard
               name="Premium"
-              price="€10"
-              priceSuffix="/ month"
-              priceNote="or €100 / year — two months free"
+              price="€39"
+              priceSuffix="/ year"
+              priceNote="or €99 once — lifetime license"
               tagline="Everything in Free, plus:"
               features={PREMIUM_FEATURES}
               ctaLabel="Get Premium"
@@ -62,8 +62,9 @@ export function PricingPageView(): React.ReactElement {
           </section>
 
           <p className="text-center text-sm text-gray-500">
-            Cancel anytime. Billed securely by Paddle, our Merchant of Record. Prices shown in EUR;
-            Paddle charges the equivalent in your local currency at checkout.
+            The annual plan cancels anytime; the lifetime license is a one-time purchase. Billed
+            securely by Paddle, our Merchant of Record. Prices shown in EUR; Paddle charges the
+            equivalent in your local currency at checkout.
           </p>
 
           {/* Full details, billing, and legal — the authoritative copy, rendered
@@ -94,9 +95,9 @@ const PREMIUM_FEATURES: readonly string[] = [
 
 interface PlanCardProps {
   name: string
-  /** Headline price, e.g. "€0" or "€10". */
+  /** Headline price, e.g. "€0" or "€39". */
   price: string
-  /** Cadence shown next to the price, e.g. "forever" or "/ month". */
+  /** Cadence shown next to the price, e.g. "forever" or "/ year". */
   priceSuffix: string
   /** Optional secondary pricing line, e.g. the annual option. */
   priceNote?: string

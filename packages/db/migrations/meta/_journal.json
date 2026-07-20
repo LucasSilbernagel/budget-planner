@@ -64,6 +64,13 @@
       "when": 1784570260999,
       "tag": "0008_true_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784580423839,
+      "tag": "0009_absent_molten_man",
+      "breakpoints": true
     }
   ]
 }

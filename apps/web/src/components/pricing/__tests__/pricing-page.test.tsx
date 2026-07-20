@@ -41,3 +41,19 @@ describe('PricingPageView benefit lists', () => {
     expect(within(card('Free')).getByText('Dark mode')).toBeInTheDocument()
   })
 })
+
+describe('PricingPageView pricing (story 25-2)', () => {
+  it('shows the Premium card as €39 / year with a €99 lifetime note — no monthly', () => {
+    render(<PricingPageView />)
+    const premium = within(card('Premium'))
+
+    expect(premium.getByText('€39')).toBeInTheDocument()
+    expect(premium.getByText('/ year')).toBeInTheDocument()
+    expect(premium.getByText(/€99 once — lifetime license/)).toBeInTheDocument()
+
+    // The dropped monthly model must not resurface on this surface (AC-1).
+    expect(premium.queryByText('€10')).not.toBeInTheDocument()
+    expect(premium.queryByText(/\/ month/)).not.toBeInTheDocument()
+    expect(premium.queryByText(/two months free/)).not.toBeInTheDocument()
+  })
+})

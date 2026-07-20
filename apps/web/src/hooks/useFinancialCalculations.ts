@@ -111,7 +111,10 @@ function detectUserTier(): UserTier {
     // SSR guard: JSON.parse can throw if userSession is malformed
     const userData = userSession ? JSON.parse(userSession) : null
 
-    if (userData && userData.subscriptionStatus === 'active') {
+    if (
+      userData &&
+      (userData.subscriptionStatus === 'active' || userData.subscriptionStatus === 'lifetime')
+    ) {
       return 'paid'
     }
 

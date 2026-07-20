@@ -30,7 +30,7 @@
 import { type ReactNode, createContext, useContext } from 'react'
 
 /** Subscription status shape shared with the server session + premium hook. */
-export type SeedSubscriptionStatus = 'free' | 'active' | 'past_due' | 'canceled' | null
+export type SeedSubscriptionStatus = 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
 
 export interface SessionSeed {
   /** Whether the request carried a valid authenticated session. */

@@ -47,7 +47,7 @@ export interface UserSession {
   userId: string
   email: string
   paddleId: string
-  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled'
+  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime'
   currency: string
   isAuthenticated: boolean
   name?: string

@@ -1,0 +1,1 @@
+ALTER TYPE "subscriptionStatus" ADD VALUE 'lifetime';

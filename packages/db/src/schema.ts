@@ -47,6 +47,10 @@ export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
   'active',
   'past_due',
   'canceled',
+  // Permanent Premium from a one-time lifetime purchase (story 25-2). Distinct
+  // from 'active' so a subscription-lifecycle event (e.g. cancelling a redundant
+  // annual sub after buying lifetime) can NEVER downgrade a lifetime buyer.
+  'lifetime',
 ])
 
 // Currency enum for user currency preferences

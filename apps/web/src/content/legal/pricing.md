@@ -20,7 +20,7 @@ storage). It never leaves your device and we never see it.
 
 ### Premium
 
-**€10 per month, or €100 per year (two months free).**
+**€39 per year, or €99 once for a lifetime license.**
 
 Prices are shown in euros; at checkout Paddle displays and charges the equivalent in your local currency.
 
@@ -37,11 +37,12 @@ Everything in Free, plus:
 
 ### Billing & payments
 
-Payments and subscriptions are handled by **Paddle.com**, our authorised reseller
-and **Merchant of Record**. Paddle securely processes your payment and is
-responsible for collecting and remitting any applicable sales tax or VAT. Your
-payment receipt and billing communications come from Paddle.
+Payments are handled by **Paddle.com**, our authorised reseller and
+**Merchant of Record**. Paddle securely processes your payment and is responsible
+for collecting and remitting any applicable sales tax or VAT. Your payment receipt
+and billing communications come from Paddle.
 
-You can cancel at any time. See our [Refund & Cancellation Policy](/refund) for
-details on cancellations and refunds, our [Terms of Service](/terms), and our
-[Privacy Policy](/privacy).
+The annual plan is a recurring subscription you can **cancel at any time**; the
+lifetime license is a **one-time purchase** with nothing to cancel. See our
+[Refund & Cancellation Policy](/refund) for details on cancellations and refunds,
+our [Terms of Service](/terms), and our [Privacy Policy](/privacy).

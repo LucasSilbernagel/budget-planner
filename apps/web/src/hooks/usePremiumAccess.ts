@@ -22,7 +22,7 @@ export interface PremiumAccessStatus {
   /** Whether user has access to premium features */
   hasAccess: boolean
   /** User's subscription status */
-  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | null
+  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
   /** Whether the check is currently loading */
   isLoading: boolean
   /** Error message if check failed */
@@ -36,7 +36,7 @@ export interface PremiumAccessStatus {
  */
 export interface PremiumAccessCheckResult {
   hasAccess: boolean
-  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | null
+  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
   isAuthenticated: boolean
 }
 
@@ -72,8 +72,11 @@ function seedToStatus(seed: SessionSeed | null): PremiumAccessStatus {
   return {
     // Gate access on authentication too, so a malformed seed can never yield
     // premium for a not-authenticated session — fail-closed by construction, not
-    // by luck of what the resolver emits (code review 2026-07-14).
-    hasAccess: seed.isAuthenticated && seed.subscriptionStatus === 'active',
+    // by luck of what the resolver emits (code review 2026-07-14). Both an active
+    // subscription and a permanent lifetime purchase (story 25-2) are entitled.
+    hasAccess:
+      seed.isAuthenticated &&
+      (seed.subscriptionStatus === 'active' || seed.subscriptionStatus === 'lifetime'),
     subscriptionStatus: seed.isAuthenticated ? seed.subscriptionStatus ?? 'free' : null,
     isLoading: false,
     error: null,
@@ -235,7 +238,7 @@ function getRequestContext(): Request {
 export function usePremiumRouteAccess(): {
   canAccess: boolean
   isLoading: boolean
-  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | null
+  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
   isAuthenticated: boolean
 } {
   const { status } = usePremiumAccess()

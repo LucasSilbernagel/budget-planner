@@ -64,7 +64,7 @@ export async function calculateForecastServer(
     }
 
     // Check if user has access to premium features
-    if (user.subscriptionStatus !== 'active') {
+    if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to access forecasting tools',
@@ -129,7 +129,7 @@ export async function calculateGoalTimelineServer(
     }
 
     // Check if user has access to premium features
-    if (user.subscriptionStatus !== 'active') {
+    if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to access goal tracking',
@@ -186,7 +186,9 @@ export async function checkPremiumAccessServer(
     return {
       success: true,
       data: {
-        hasAccess: user.subscriptionStatus === 'active',
+        // Both an active subscription and a permanent lifetime purchase
+        // (story 25-2) grant premium access.
+        hasAccess: user.subscriptionStatus === 'active' || user.subscriptionStatus === 'lifetime',
         subscriptionStatus: user.subscriptionStatus,
       },
     }
