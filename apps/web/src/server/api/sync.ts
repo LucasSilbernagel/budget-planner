@@ -16,6 +16,7 @@
  */
 
 import { logger } from '@/lib/logger'
+import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
@@ -24,7 +25,6 @@ import {
   balanceTracking,
   expenses,
   incomeSources,
-  rateLimits,
   savingsGoals,
   userProfiles,
 } from '@budget-planner/db'
@@ -323,84 +323,28 @@ export const PAID_SYNC_STATUSES = ['active', 'past_due']
 export async function checkRateLimit(
   userId: string
 ): Promise<{ allowed: boolean; remaining: number }> {
-  const now = Date.now()
-  const windowStart = new Date(now - RATE_LIMIT_CONFIG.windowMs)
-
-  try {
-    // Get or create rate limit entry for this user
-    const existing = await db
-      .select()
-      .from(rateLimits)
-      .where(and(eq(rateLimits.userId, userId), gt(rateLimits.windowStart, windowStart)))
-      .limit(1)
-
-    let requestCount = 0
-    let rateLimitId: number | undefined
-
-    if (existing.length > 0) {
-      requestCount = existing[0].requestCount
-      rateLimitId = existing[0].id
-    }
-
-    // Check if limit exceeded
-    if (requestCount >= RATE_LIMIT_CONFIG.maxRequests) {
-      return { allowed: false, remaining: 0 }
-    }
-
-    // Increment or create the rate limit entry
-    const newCount = requestCount + 1
-
-    if (rateLimitId) {
-      // Update existing entry
-      await db
-        .update(rateLimits)
-        .set({
-          requestCount: newCount,
-          updatedAt: new Date(now),
-        })
-        .where(eq(rateLimits.id, rateLimitId))
-    } else {
-      // Create new entry
-      await db.insert(rateLimits).values({
-        userId,
-        requestCount: 1,
-        windowStart: new Date(now),
-        createdAt: new Date(now),
-        updatedAt: new Date(now),
-      })
-    }
-
-    return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - newCount }
-  } catch (error) {
-    // If database fails, fall back to in-memory rate limiting
-    // This ensures the feature still works even if rateLimits table is not available
-    // Sanitize error to avoid exposing sensitive database information
-    const sanitizedError = error instanceof Error ? error.message : String(error)
-    logger.error('[RateLimit] Database error, falling back to in-memory', { error: sanitizedError })
-
-    // In-memory fallback
-    const validEntries = rateLimitStore.filter((entry) => entry.resetTime > now)
-    rateLimitStore.length = 0
-    rateLimitStore.push(...validEntries)
-
-    const userRequests = validEntries.filter((entry) => entry.userId === userId)
-    const requestCount = userRequests.length
-
-    if (requestCount >= RATE_LIMIT_CONFIG.maxRequests) {
-      return { allowed: false, remaining: 0 }
-    }
-
-    rateLimitStore.push({
-      userId,
-      count: requestCount + 1,
-      resetTime: now + RATE_LIMIT_CONFIG.windowMs,
-    })
-
-    return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - requestCount - 1 }
-  }
+  // Story SEC-2: the per-user sync limiter now shares the ONE atomic DB-backed
+  // primitive (`checkDbRateLimit`, scope `sync`) with the auth limiters — a
+  // single, cross-instance-safe implementation instead of the former inline
+  // read-then-write (which could race and under-count across instances).
+  const decision = await checkDbRateLimit({
+    scope: 'sync',
+    subject: userId,
+    // Populate the FK so account erasure (account.ts deletes rateLimits by
+    // userId) still removes this user's sync counters.
+    userId,
+    windowMs: RATE_LIMIT_CONFIG.windowMs,
+    maxAttempts: RATE_LIMIT_CONFIG.maxRequests,
+    onDbError: (now) => syncInMemoryFallback(userId, now),
+  })
+  return { allowed: decision.allowed, remaining: decision.remaining }
 }
 
-// Fallback in-memory store for when database is unavailable
+// Bounded per-instance in-memory store — the DB-error fallback for the sync
+// limiter ONLY (auth limiters fail closed instead). It is NOT cross-instance by
+// definition; it keeps the paid sync path available during a transient DB outage
+// rather than fail closed, and it still enforces the same window/max (it never
+// silently allows unlimited attempts).
 interface RateLimitEntry {
   userId: string
   count: number
@@ -408,6 +352,27 @@ interface RateLimitEntry {
 }
 
 const rateLimitStore: RateLimitEntry[] = []
+
+function syncInMemoryFallback(
+  userId: string,
+  now: number
+): { allowed: boolean; remaining: number } {
+  const validEntries = rateLimitStore.filter((entry) => entry.resetTime > now)
+  rateLimitStore.length = 0
+  rateLimitStore.push(...validEntries)
+
+  const requestCount = validEntries.filter((entry) => entry.userId === userId).length
+  if (requestCount >= RATE_LIMIT_CONFIG.maxRequests) {
+    return { allowed: false, remaining: 0 }
+  }
+
+  rateLimitStore.push({
+    userId,
+    count: requestCount + 1,
+    resetTime: now + RATE_LIMIT_CONFIG.windowMs,
+  })
+  return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - requestCount - 1 }
+}
 
 // ============================================================================
 // Database Operations (DanubeData PostgreSQL)

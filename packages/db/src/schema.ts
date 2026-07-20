@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core'
@@ -269,15 +270,31 @@ export const userProfiles = pgTable(
   })
 )
 
-// Rate Limit table - for server-side rate limiting
-// Stores request counts per user for rate limiting purposes
+// Rate Limit table - unified server-side rate limiting (Story SEC-2).
+//
+// One fixed-window counter per (scope, subject, windowStart) bucket, shared
+// across app instances so horizontal scaling can't multiply the effective limit.
+// Backs BOTH the sync per-user limiter AND the auth limiters (magic-link
+// request per-IP/per-email, verify per-IP, Paddle callback per-IP), replacing
+// the former in-memory single-instance `sliding-window.ts`.
+//
+// - `scope`   namespaces buckets so an IP/email/user can never consume another
+//             bucket's budget: 'ip' | 'email' | 'login-verify' | 'paddle-cb' | 'sync'.
+// - `subject` is the bucket key within a scope (IP string, lowercased email, or userId).
+// - `userId`  is populated ONLY for the 'sync' scope (FK → users), so account
+//             erasure (account.ts) still removes a user's sync counters; it is
+//             NULL for IP/email buckets, which have no owning user.
+// - `windowStart` is the fixed bucket boundary (floor(now / windowMs) * windowMs);
+//             the UNIQUE (scope, subject, windowStart) index is the ON CONFLICT
+//             target for the atomic upsert in server/rate-limit/db-window.ts.
 export const rateLimits = pgTable(
   'rateLimits',
   {
     id: serial('id').primaryKey(),
-    userId: uuid('userId')
-      .references(() => users.id)
-      .notNull(),
+    // Nullable now: only 'sync' rows carry an owning user; IP/email rows do not.
+    userId: uuid('userId').references(() => users.id),
+    scope: varchar('scope', { length: 32 }).notNull(),
+    subject: text('subject').notNull(),
     requestCount: integer('requestCount').default(0).notNull(),
     windowStart: timestamp('windowStart').defaultNow().notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
@@ -285,6 +302,12 @@ export const rateLimits = pgTable(
   },
   (table) => ({
     userIdIdx: index('rateLimits_userId_idx').on(table.userId),
+    // Atomic-upsert conflict target: one row per bucket.
+    scopeSubjectWindowIdx: uniqueIndex('rateLimits_scope_subject_window_idx').on(
+      table.scope,
+      table.subject,
+      table.windowStart
+    ),
   })
 )
 

@@ -10,15 +10,16 @@
  * (signup is Paddle Billing checkout, Story 5-3).
  *
  * Rate limited per IP (burst control) and per email (anti email-bombing), both
- * via the shared sliding-window limiter. In-memory / single-instance — see the
- * limiter module + deferred-work.md for the Rapids multi-instance caveat.
+ * via the shared atomic DB-backed limiter (Story SEC-2), so the limits hold
+ * across app instances. Authoritative enforcement belongs at the Rapids edge
+ * (deferred-work.md).
  */
 
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 import { clientIpForRateLimit } from '@/routes/api/auth/paddle/callback'
 import { requestMagicLink } from '@/server/api/auth/magic-link'
-import { createSlidingWindowLimiter } from '@/server/rate-limit/sliding-window'
+import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { getSiteUrl } from '@budget-planner/config'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
@@ -27,24 +28,9 @@ import { json } from '@tanstack/react-start'
 const MAX_EMAIL_LENGTH = 254
 
 // Per-IP: short burst window mirroring the Paddle callback.
-const ipLimiter = createSlidingWindowLimiter({
-  windowMs: 60 * 1000,
-  maxAttempts: 5,
-  maxKeys: 10_000,
-})
-
+const IP_LIMIT = { windowMs: 60 * 1000, maxAttempts: 5 } as const
 // Per-email: a wider window so one address cannot be mail-bombed with links.
-const emailLimiter = createSlidingWindowLimiter({
-  windowMs: 15 * 60 * 1000,
-  maxAttempts: 5,
-  maxKeys: 10_000,
-})
-
-/** Test-only: reset both in-memory limiters between cases. */
-export function _resetLoginRequestRateLimiters(): void {
-  ipLimiter.reset()
-  emailLimiter.reset()
-}
+const EMAIL_LIMIT = { windowMs: 15 * 60 * 1000, maxAttempts: 5 } as const
 
 /** The single generic success body — identical for every non-error outcome. */
 const GENERIC_OK = { success: true } as const
@@ -52,16 +38,20 @@ const GENERIC_OK = { success: true } as const
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   const now = Date.now()
 
-  // Per-IP burst limit (best-effort; skipped when no proxy IP is present so a
-  // header-less deploy doesn't collapse every caller into one shared bucket).
+  // Per-IP burst limit (best-effort; skipped when no trustworthy proxy IP is
+  // present so a header-less deploy doesn't collapse every caller into one
+  // shared bucket).
   const ip = clientIpForRateLimit(request)
-  if (ip && ipLimiter.check(ip, now)) {
-    return json(
-      { success: false, error: 'Too many requests. Please try again later.' },
-      {
-        status: 429,
-      }
-    )
+  if (ip) {
+    const ipLimit = await checkDbRateLimit({ scope: 'ip', subject: ip, now, ...IP_LIMIT })
+    if (!ipLimit.allowed) {
+      return json(
+        { success: false, error: 'Too many requests. Please try again later.' },
+        {
+          status: 429,
+        }
+      )
+    }
   }
 
   let body: unknown
@@ -85,9 +75,16 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     return json(GENERIC_OK)
   }
 
-  // Per-email throttle. On exceed we still return the generic 200 (no send, no
-  // enumeration) rather than a distinguishable status.
-  if (emailLimiter.check(emailKey, now)) {
+  // Per-email throttle (never skippable — the email key always applies, even
+  // when the IP was unknown). On exceed we still return the generic 200 (no
+  // send, no enumeration) rather than a distinguishable status.
+  const emailLimit = await checkDbRateLimit({
+    scope: 'email',
+    subject: emailKey,
+    now,
+    ...EMAIL_LIMIT,
+  })
+  if (!emailLimit.allowed) {
     return json(GENERIC_OK)
   }
 

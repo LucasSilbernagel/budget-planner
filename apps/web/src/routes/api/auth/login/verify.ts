@@ -30,7 +30,7 @@ import { logger } from '@/lib/logger'
 import { clientIpForRateLimit } from '@/routes/api/auth/paddle/callback'
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
 import { signSession } from '@/server/api/auth/session'
-import { createSlidingWindowLimiter } from '@/server/rate-limit/sliding-window'
+import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { createFileRoute } from '@tanstack/react-router'
 
 /** 7-day session lifetime, matching the Paddle callback. */
@@ -43,17 +43,9 @@ const CSRF_COOKIE_PATH = '/api/auth/login/verify'
 const INVALID_REDIRECT = '/login?error=invalid_or_expired'
 
 // Per-IP limiter on the consuming POST: bounds DB-write churn / amplification on
-// the token-consumption endpoint (token guessing itself is infeasible at 256-bit).
-const verifyLimiter = createSlidingWindowLimiter({
-  windowMs: 60 * 1000,
-  maxAttempts: 10,
-  maxKeys: 10_000,
-})
-
-/** Test-only: reset the in-memory verify limiter between cases. */
-export function _resetVerifyRateLimiter(): void {
-  verifyLimiter.reset()
-}
+// the token-consumption endpoint (token guessing itself is infeasible at
+// 256-bit). Shared atomic DB store (Story SEC-2) → holds across app instances.
+const VERIFY_LIMIT = { windowMs: 60 * 1000, maxAttempts: 10 } as const
 
 function isProduction(): boolean {
   return process.env.NODE_ENV === 'production'
@@ -161,8 +153,11 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
  */
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   const ip = clientIpForRateLimit(request)
-  if (ip && verifyLimiter.check(ip, Date.now())) {
-    return new Response('Too many requests. Please try again later.', { status: 429 })
+  if (ip) {
+    const limit = await checkDbRateLimit({ scope: 'login-verify', subject: ip, ...VERIFY_LIMIT })
+    if (!limit.allowed) {
+      return new Response('Too many requests. Please try again later.', { status: 429 })
+    }
   }
 
   let form: FormData

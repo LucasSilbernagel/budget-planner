@@ -10,6 +10,28 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { checkDbRateLimit, buckets } = vi.hoisted(() => {
+  const buckets = new Map<string, number>()
+  const checkDbRateLimit = vi.fn(
+    async ({
+      scope,
+      subject,
+      maxAttempts,
+    }: {
+      scope: string
+      subject: string
+      maxAttempts: number
+    }) => {
+      const key = `${scope}:${subject}`
+      const count = (buckets.get(key) ?? 0) + 1
+      buckets.set(key, count)
+      return { allowed: count <= maxAttempts, remaining: Math.max(0, maxAttempts - count) }
+    }
+  )
+  return { checkDbRateLimit, buckets }
+})
+
+vi.mock('@/server/rate-limit/db-window', () => ({ checkDbRateLimit }))
 vi.mock('@/server/api/auth/magic-link', () => ({
   peekMagicLink: vi.fn(),
   verifyMagicLink: vi.fn(),
@@ -17,7 +39,10 @@ vi.mock('@/server/api/auth/magic-link', () => ({
 
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
 import { verifySession } from '@/server/api/auth/session'
-import { GET, POST, _resetVerifyRateLimiter } from '../verify'
+import { GET, POST } from '../verify'
+
+// Default trusted-hop count (0 = rightmost) resolves a lone XFF value to the client IP.
+const CLIENT_IP = { 'x-forwarded-for': '203.0.113.9' }
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 
@@ -54,7 +79,7 @@ const cookieValue = (setCookie: string | null, name: string): string | null => {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  _resetVerifyRateLimiter()
+  buckets.clear()
 })
 
 describe('GET /api/auth/login/verify (read-only interstitial)', () => {
@@ -173,12 +198,19 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
     expect(res.headers.get('Location')).toBe('/login?error=invalid_or_expired')
   })
 
-  it('rate-limits the consume endpoint per IP', async () => {
-    const ip = { 'x-forwarded-for': '203.0.113.9' }
+  it('rate-limits the consume endpoint per IP (10/60s via the shared store, AC-2)', async () => {
     let last: Response | undefined
     for (let i = 0; i < 11; i++) {
-      last = await postVerify({ token: 't', csrf: 'm' }, 'ml_csrf=m', ip)
+      last = await postVerify({ token: 't', csrf: 'm' }, 'ml_csrf=m', CLIENT_IP)
     }
     expect(last?.status).toBe(429)
+    expect(checkDbRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: 'login-verify',
+        subject: '203.0.113.9',
+        windowMs: 60_000,
+        maxAttempts: 10,
+      })
+    )
   })
 })

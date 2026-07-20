@@ -19,157 +19,173 @@
  * Security: State token validation, HTTP-only cookies, Secure flag in production
  */
 
+import { logger } from '@/lib/logger'
 import { handlePaddleCallback } from '@/server/api/auth/paddle'
 import { signSession } from '@/server/api/auth/session'
-import { createSlidingWindowLimiter } from '@/server/rate-limit/sliding-window'
+import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 /**
- * Per-IP sliding-window rate limiter for the OAuth callback.
+ * Per-IP rate limit for the OAuth callback: 5 attempts / 60s.
  *
- * Uses the shared sliding-window limiter (extracted in Story 5-16). It keeps an
- * independent attempt log per IP and enforces RATE_LIMIT_MAX_ATTEMPTS within the
- * window — replacing an earlier single-global-slot limiter that was defeated by
- * alternating two IPs.
- *
- * Pre-auth there is no authenticated principal, so the client IP (from the
- * platform's forwarded header) is the only available key. In-memory is adequate
- * for a single-instance container; replace with a shared store (e.g. Redis) if
- * the callback is ever horizontally scaled.
+ * Backed by the shared atomic DB store (Story SEC-2), so the limit holds across
+ * app instances — pre-auth there is no principal, so the client IP is the only
+ * key. Authoritative enforcement still belongs at the Rapids edge (deferred-work.md).
  */
 const RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
 const RATE_LIMIT_MAX_ATTEMPTS = 5
-const MAX_TRACKED_IPS = 10_000
-const callbackLimiter = createSlidingWindowLimiter({
-  windowMs: RATE_LIMIT_WINDOW_MS,
-  maxAttempts: RATE_LIMIT_MAX_ATTEMPTS,
-  maxKeys: MAX_TRACKED_IPS,
-})
 
-/** Test-only: clear the in-memory attempt log between cases. */
-export function _resetCallbackRateLimiter(): void {
-  callbackLimiter.reset()
+/**
+ * Number of trusted proxy hops the platform edge appends to the RIGHT of
+ * X-Forwarded-For.
+ *
+ * DEFAULT 0 = trust the rightmost hop — the entry our immediately-upstream proxy
+ * appends, which under this app's single-append-proxy topology is the real peer
+ * IP (matching the long-standing behavior). Because the proxy appends AFTER any
+ * client-supplied entries, a client that prepends forged hops cannot control the
+ * rightmost value. Set `RATE_LIMIT_TRUSTED_PROXY_HOPS` to N>0 only if the edge is
+ * known to append N of its OWN hops on the right (e.g. a Knative internal chain),
+ * so the real client IP is read N entries in from the right. The exact count is
+ * platform-specific — confirm against Rapids before overriding (pairs with 5-2).
+ */
+function trustedProxyHops(): number {
+  const raw = Number.parseInt(process.env['RATE_LIMIT_TRUSTED_PROXY_HOPS'] ?? '', 10)
+  return Number.isInteger(raw) && raw >= 0 ? raw : 0
 }
+
+/** Max plausible length of an IP literal (IPv6 + zone-id headroom). */
+const MAX_IP_LENGTH = 64
 
 /**
  * Best-effort client IP for pre-auth rate limiting.
  *
- * SECURITY: `x-forwarded-for` is client-supplied and spoofable, so this limiter
- * is defense-in-depth ONLY — the real access control is the signed session +
- * DB-authoritative subscription, never this. We take the RIGHTMOST hop (the
- * entry appended by our immediately-upstream trusted proxy) instead of the raw
- * header: behind a single trusted proxy that appends the real peer IP, a client
- * that pre-seeds a fake `x-forwarded-for` still gets the genuine IP appended to
- * the right. Authoritative rate limiting belongs at the Rapids edge layer (see
- * deferred-work.md).
+ * SECURITY: `x-forwarded-for` is client-supplied, so this is defense-in-depth
+ * ONLY — real access control is the signed session + DB-authoritative
+ * subscription, never this.
  *
- * Returns null when no proxy IP is present so the caller SKIPS limiting rather
- * than collapsing every header-less request into one shared bucket (which would
- * globally lock out logins).
+ * We read the hop `trustedProxyHops()` positions in from the RIGHT (default 0 =
+ * rightmost, the value our upstream proxy appends). Indexing from the right means
+ * a client PREPENDING forged entries cannot shift which hop we read — the
+ * forgeries land further left and are ignored. An implausibly long value (not an
+ * IP) is rejected so it can't become a giant rate-limit key / oversized index
+ * entry. When no trustworthy hop can be derived we fall through (→ x-real-ip,
+ * else null) rather than trust a forgeable value.
+ *
+ * Returns null when no trustworthy proxy IP is present so the caller SKIPS
+ * limiting rather than collapsing every header-less request into one shared
+ * bucket (which would globally lock out logins).
  */
 export function clientIpForRateLimit(request: Request): string | null {
   const xff = request.headers.get('x-forwarded-for')
   if (xff) {
-    const rightmost = xff.split(',').pop()?.trim()
-    if (rightmost) {
-      return rightmost
+    const hops = xff
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter(Boolean)
+    const idx = hops.length - 1 - trustedProxyHops()
+    const clientHop = idx >= 0 ? hops[idx] : undefined
+    if (clientHop && clientHop.length <= MAX_IP_LENGTH) {
+      return clientHop
+    }
+    if (hops.length > 0) {
+      // XFF present but yielded no trustworthy hop (too short for the configured
+      // trusted-hop count, or an implausibly long value). Observe rather than
+      // silently disabling limiting (AC-5); debug level so a flood of forged
+      // headers can't itself become a log-amplification vector. Falls through so
+      // the caller still applies any other key (e.g. email) and skips IP limiting.
+      logger.debug('[RateLimit] x-forwarded-for present but no trusted client hop', {
+        hopCount: hops.length,
+      })
     }
   }
-  return request.headers.get('x-real-ip')?.trim() || null
+  const realIp = request.headers.get('x-real-ip')?.trim()
+  return realIp && realIp.length <= MAX_IP_LENGTH ? realIp : null
 }
 
-/**
- * Record an attempt for `ip` and report whether it exceeds the window limit.
- * Returns true when the request should be rejected (limit already reached).
- *
- * Thin wrapper over the shared sliding-window limiter; exported for unit testing
- * (the route handler is the only production caller). The memory-bound /
- * degrade-open behaviour now lives in the shared limiter.
- */
-export function isRateLimited(ip: string, now: number): boolean {
-  return callbackLimiter.check(ip, now)
+export const GET = async ({ request }: { request: Request }): Promise<Response> => {
+  const url = new URL(request.url)
+  const code = url.searchParams.get('code')
+  const state = url.searchParams.get('state')
+
+  // Rate limiting (per-IP best-effort, 5/60s via the shared atomic DB store).
+  // Skipped when no trustworthy proxy IP is present so a header-less deploy
+  // doesn't lock out every login through one shared bucket.
+  const ip = clientIpForRateLimit(request)
+  if (ip) {
+    const limit = await checkDbRateLimit({
+      scope: 'paddle-cb',
+      subject: ip,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      maxAttempts: RATE_LIMIT_MAX_ATTEMPTS,
+    })
+    if (!limit.allowed) {
+      return json(
+        { success: false, error: 'Too many requests. Please try again later.' },
+        { status: 429 }
+      )
+    }
+  }
+
+  // Validate code parameter
+  if (!code) {
+    return json({ success: false, error: 'Authorization code is required' }, { status: 400 })
+  }
+
+  // Validate code format (should be a non-empty string, typically alphanumeric)
+  if (typeof code !== 'string' || code.length < 10 || code.length > 200) {
+    return json({ success: false, error: 'Invalid authorization code format' }, { status: 400 })
+  }
+
+  // Validate state parameter (required for CSRF protection)
+  if (!state) {
+    return json(
+      { success: false, error: 'State parameter is required for security' },
+      { status: 400 }
+    )
+  }
+
+  // Validate state format
+  if (typeof state !== 'string' || state.length < 10 || state.length > 100) {
+    return json({ success: false, error: 'Invalid state parameter format' }, { status: 400 })
+  }
+
+  const result = await handlePaddleCallback(code, state)
+
+  if (!result.success) {
+    return json({ success: false, error: result.error }, { status: 400 })
+  }
+
+  // Create secure session cookie.
+  // The cookie carries an HMAC-signed identity token (Story 5-7), NOT raw JSON,
+  // so it cannot be forged or tampered with. Subscription status and currency
+  // are intentionally NOT embedded — they are resolved authoritatively from the
+  // database on each request in validateSessionToken().
+  const isProduction = process.env.NODE_ENV === 'production'
+  const sessionToken = signSession({
+    userId: result.data.userId,
+    paddleId: result.data.paddleId,
+    email: result.data.email,
+  })
+
+  const maxAge = 7 * 24 * 60 * 60 // 7 days
+  const secureFlag = isProduction ? '; Secure' : ''
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: '/',
+      'Set-Cookie': `session=${encodeURIComponent(
+        sessionToken
+      )}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=${maxAge}`,
+    },
+  })
 }
 
 export const Route = createFileRoute('/api/auth/paddle/callback')({
   server: {
     handlers: {
-      GET: async ({ request }) => {
-        const url = new URL(request.url)
-        const code = url.searchParams.get('code')
-        const state = url.searchParams.get('state')
-
-        // Rate limiting (per-IP best-effort, enforces RATE_LIMIT_MAX_ATTEMPTS per
-        // window). Skipped when no proxy IP is present so a header-less deploy
-        // doesn't lock out every login through one shared bucket.
-        const ip = clientIpForRateLimit(request)
-        const now = Date.now()
-        if (ip && isRateLimited(ip, now)) {
-          return json(
-            { success: false, error: 'Too many requests. Please try again later.' },
-            { status: 429 }
-          )
-        }
-
-        // Validate code parameter
-        if (!code) {
-          return json({ success: false, error: 'Authorization code is required' }, { status: 400 })
-        }
-
-        // Validate code format (should be a non-empty string, typically alphanumeric)
-        if (typeof code !== 'string' || code.length < 10 || code.length > 200) {
-          return json(
-            { success: false, error: 'Invalid authorization code format' },
-            { status: 400 }
-          )
-        }
-
-        // Validate state parameter (required for CSRF protection)
-        if (!state) {
-          return json(
-            { success: false, error: 'State parameter is required for security' },
-            { status: 400 }
-          )
-        }
-
-        // Validate state format
-        if (typeof state !== 'string' || state.length < 10 || state.length > 100) {
-          return json({ success: false, error: 'Invalid state parameter format' }, { status: 400 })
-        }
-
-        const result = await handlePaddleCallback(code, state)
-
-        if (!result.success) {
-          return json({ success: false, error: result.error }, { status: 400 })
-        }
-
-        // Create secure session cookie.
-        // The cookie carries an HMAC-signed identity token (Story 5-7), NOT raw JSON,
-        // so it cannot be forged or tampered with. Subscription status and currency
-        // are intentionally NOT embedded — they are resolved authoritatively from the
-        // database on each request in validateSessionToken().
-        const isProduction = process.env.NODE_ENV === 'production'
-        const sessionToken = signSession({
-          userId: result.data.userId,
-          paddleId: result.data.paddleId,
-          email: result.data.email,
-        })
-
-        const maxAge = 7 * 24 * 60 * 60 // 7 days
-        const secureFlag = isProduction ? '; Secure' : ''
-
-        const response = new Response(null, {
-          status: 302,
-          headers: {
-            Location: '/',
-            'Set-Cookie': `session=${encodeURIComponent(
-              sessionToken
-            )}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=${maxAge}`,
-          },
-        })
-
-        return response
-      },
+      GET,
     },
   },
 })
