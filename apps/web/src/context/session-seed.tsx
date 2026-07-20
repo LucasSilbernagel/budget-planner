@@ -3,8 +3,8 @@
  *
  * Carries the session that `routes/__root.tsx`'s loader resolves ONCE, server-side,
  * so the components that render account-specific state — the {@link AuthIndicator}
- * strip and every {@link usePremiumAccess} consumer (premium feature gates, ads,
- * the dark-mode gate) — can paint their resolved state on the very first frame
+ * strip and every {@link usePremiumAccess} consumer (the premium feature gates)
+ * — can paint their resolved state on the very first frame
  * instead of a neutral placeholder that flips to real content after a client-side
  * round-trip.
  *

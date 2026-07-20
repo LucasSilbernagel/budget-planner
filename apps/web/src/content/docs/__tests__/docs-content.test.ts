@@ -119,6 +119,14 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(featureSections().premium).not.toContain('no ads')
   })
 
+  it('the Features page lists Dark mode under the Free tier, not Premium (story 25-3)', () => {
+    // Story 25-3 moved dark mode to Free: it must appear in the Free section and
+    // NOT be advertised under Premium.
+    const { free, premium } = featureSections()
+    expect(free).toContain('dark mode')
+    expect(premium).not.toContain('dark mode')
+  })
+
   it('the Features page keeps Retirement modeling under the Free tier (story 13-1, AC-4)', () => {
     // AC-4 do-not-regress guard: retirement stays Free (decided 2026-07-06) — it
     // must appear in the Free section and NOT be advertised under Premium.

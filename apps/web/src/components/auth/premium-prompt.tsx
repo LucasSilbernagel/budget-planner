@@ -42,18 +42,17 @@ export interface PremiumPromptProps {
 // Constants
 // ============================================================================
 
-// All four render (see `.slice(0, 4)` below), followed by a generic
-// "+ more features coming soon" row. Keep these to benefits the app actually
-// delivers (Story 13.1); no overpromises. Scenario modeling and saved forecasts
-// are folded into "Advanced Forecasting" rather than padding the list. Ad
-// removal is a real Premium benefit but is intentionally NOT listed here: a
-// 5th item would fall outside the `.slice(0, 4)` and read as "coming soon",
-// misrepresenting a shipped feature. It is stated on the Features/Pricing pages.
+// The canonical Premium benefit set — exactly these three, matched across every
+// surface that advertises Premium (HomePage, Features, Pricing) per Epic 20 /
+// Story 25.3. Keep to benefits the app actually delivers (Story 13.1); no
+// overpromises and no "coming soon" padding. Scenario modeling and saved
+// forecasts are folded into "Advanced Forecasting". Dark mode is NOT here — it
+// is a free feature for all users (Story 25.3); ad-freeness is universal, not a
+// perk (Story 25.1).
 const PREMIUM_FEATURES = [
   'Multi-Device Data Sync',
   'Custom User Profiles',
   'Advanced Forecasting & Scenario Modeling',
-  'Dark Mode',
 ]
 
 const DEFAULT_MESSAGE =
@@ -190,7 +189,7 @@ function PremiumPromptContent({
           What you get:
         </h3>
         <ul className="space-y-2">
-          {PREMIUM_FEATURES.slice(0, 4).map((feature, _index) => (
+          {PREMIUM_FEATURES.map((feature) => (
             <li
               key={feature}
               className="flex items-center text-sm text-gray-600 dark:text-gray-400"
@@ -199,9 +198,6 @@ function PremiumPromptContent({
               {feature}
             </li>
           ))}
-          <li className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-            <span className="w-4 h-4 mr-2 flex-shrink-0" />+ more features coming soon
-          </li>
         </ul>
       </div>
 

@@ -24,8 +24,8 @@ import { expect, test } from '@playwright/test'
  * page-level and per-tile overflow as cheap sanity checks.
  *
  * Overflow/wrapping is theme-independent (identical box sizing in light and dark;
- * dark mode only recolors), and dark mode is premium-gated here, so the guard
- * runs in the default theme.
+ * dark mode only recolors), and dark mode is off by default here, so the guard
+ * runs in the default (light) theme.
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium

@@ -1,7 +1,8 @@
 /**
  * themeStore tests (story 7-3, FR23).
  *
- * The store is the source of truth for the premium dark-mode preference. These
+ * The store is the source of truth for the dark-mode preference (a free feature
+ * for every user since story 25-3). These
  * tests pin the three behaviors the rest of the feature relies on:
  *   - a deterministic `'light'` default (SSR-safe: the value must be identical
  *     on the server and first client paint — no navigator/OS derivation);

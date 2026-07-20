@@ -9,7 +9,7 @@ import { ThemeToggle } from './theme-toggle'
  *
  * Before this story the display preferences were scattered: the `CurrencyToggle`
  * was duplicated in every page header (implying page scope even though it changes
- * currency globally) and the premium-gated `ThemeToggle` was buried in the global
+ * currency globally) and the `ThemeToggle` was buried in the global
  * footer. This surface gives them one predictable home reached from the
  * persistent `GlobalNav` (story 11-1) — Consistency & standards; Recognition
  * rather than recall.

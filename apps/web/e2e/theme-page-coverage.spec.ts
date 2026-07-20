@@ -8,14 +8,12 @@ import { expect, test } from '@playwright/test'
  * canvas" bug this story closes, which mocked unit tests and SSR-HTML smoke both
  * miss (project memory, 4-11).
  *
- * Verified TIER-INDEPENDENTLY by forcing the `.dark` class onto `<html>` after
- * hydration (the "seed the `.dark` class" approach the story's Testing standards
- * prescribe). This deliberately does NOT rely on a persisted premium preference
- * surviving `ThemeProvider`'s tier fail-safe: the theme store is left at its
- * 'light' default, so the fail-safe never runs `setTheme` (it only fires when the
- * store theme is 'dark'), and once our class is applied nothing strips it. The
- * result is robust to the `Buffer is not defined` preview-runtime premium-check
- * gap (project memory) — it tests the CSS/theming, not that runtime bug.
+ * Verified by forcing the `.dark` class onto `<html>` after hydration (the "seed
+ * the `.dark` class" approach the story's Testing standards prescribe). The theme
+ * store is left at its 'light' default, so `ThemeProvider`'s mount effect applies
+ * 'light' exactly once and then nothing changes the store — once our `.dark` class
+ * is applied nothing strips it. Dark mode is free for every user (story 25-3), so
+ * no tier check ever touches the theme; this tests the CSS/theming in isolation.
  */
 
 // The palette the global.css tokens compile to under `.dark`.

@@ -14,7 +14,7 @@ The paid tier adds authenticated, EU-hosted multi-device sync.
 - **Retirement modeler** using a safe-withdrawal model, plus a forward-looking **net-worth projection** with compounding.
 - **Savings goals and balance tracking** with clear progress visualizations.
 - **Currency control** that formats amounts using the selected currency's regional default.
-- **Premium-gated dark mode** and **advanced forecasting**, surfaced in a discoverable locked state for free users.
+- **Dark mode** for every user (free), plus **Premium advanced forecasting** surfaced in a discoverable locked state for free users.
 - **Progressive Web App (PWA)** support with offline shell caching and installability.
 - **Multi-device sync** for paid users, backed by EU-hosted PostgreSQL.
 - **In-app documentation** and an **in-app contact form**.

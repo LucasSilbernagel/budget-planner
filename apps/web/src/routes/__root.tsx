@@ -94,13 +94,13 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
         <StoreHydration />
         {/* The session resolved once server-side by the root loader (story UX-1),
             provided as an initial seed so the auth strip (below) and every
-            usePremiumAccess consumer (ThemeProvider's dark-mode gate and the
-            premium feature gates) paint their resolved state on the first
-            frame instead of a placeholder that flips after a client round-trip. */}
+            usePremiumAccess consumer (the premium feature gates) paint their
+            resolved state on the first frame instead of a placeholder that flips
+            after a client round-trip. */}
         <SessionSeedProvider seed={seed}>
-          {/* Syncs the persisted theme onto <html class="dark"> and enforces the
-              premium fail-safe-to-light for non-paying users (story 7-3). Renders
-              nothing. */}
+          {/* Syncs the persisted theme onto <html class="dark"> (story 7-3;
+              dark mode moved to Free in story 25-3, so no tier fail-safe).
+              Renders nothing. */}
           <ThemeProvider />
           {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
             (dynamic import in an effect), renders nothing. */}

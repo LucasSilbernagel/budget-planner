@@ -9,7 +9,7 @@ import { CreateProfileDialog } from '../profiles/create-profile'
  * `create-profile` and the `BalancePage` add/edit modal — must supply their own
  * dark surface, because overriding the default drops the `dark:bg-gray-800`
  * Modal now ships. 7-3's review deferred exactly these two (a light card
- * floating on the dark canvas for a paid user in dark mode); this guards them
+ * floating on the dark canvas for a user in dark mode); this guards them
  * from regressing. jsdom can't compute Tailwind, so we assert the `dark:` class
  * that drives the dark surface is present on the dialog card.
  */

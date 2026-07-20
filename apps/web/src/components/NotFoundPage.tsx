@@ -17,13 +17,11 @@ import { Link } from '@tanstack/react-router'
  *
  * Theme: this page is part of story 7.3's guaranteed dark-mode surface set (AC-2)
  * and carries `dark:` variants keyed off Tailwind's class strategy (the `.dark`
- * class the premium theme toggle sets on `<html>`). The variants are `dark:`
+ * class the theme toggle sets on `<html>`). The variants are `dark:`
  * (class-driven) rather than `prefers-color-scheme`-driven, so the page follows
  * the in-app theme, not the OS. On the very first paint the no-flash `<head>`
- * script applies whatever theme is persisted (including a stale `dark` from a
- * since-lapsed user) before the client-only tier check resolves; `ThemeProvider`
- * then corrects non-premium users back to light (AC-3). Steady state: dark shows
- * only while a paid user has dark mode enabled.
+ * script applies whatever theme is persisted; dark mode is free for every user
+ * (story 25-3), so the chosen theme is simply honored — no tier check reverts it.
  *
  * Scope note: the docs section keeps its own contextual not-found (`DocNotFound`
  * in `routes/docs/$docId.tsx`, rendered inside `DocsLayout`) by design. This

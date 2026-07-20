@@ -7,9 +7,10 @@
  * scope is spelled out (AC-2), and that exactly one theme toggle instance is
  * mounted (story 7-3 DECISION 2).
  *
- * `usePremiumAccess` is mocked to a paid tier so the ThemeToggle renders its live
- * `role="switch"`; the currency control uses the real store. Mirrors
- * settings/__tests__/theme-toggle.test.tsx.
+ * Dark mode is free for every user (story 25-3), so the default tier here is a
+ * free/unauthenticated visitor and the ThemeToggle still renders its live
+ * `role="switch"`. The `usePremiumAccess` mock is retained only to keep any
+ * incidental consumer deterministic; the currency control uses the real store.
  */
 
 import { render, screen } from '@testing-library/react'
@@ -61,7 +62,7 @@ beforeEach(() => {
     }
     return Promise.resolve(new Response('{}', { status: 200 }))
   }) as typeof global.fetch
-  mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+  mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
 })
 afterEach(() => {
   global.fetch = originalFetch
@@ -82,11 +83,12 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/applies everywhere amounts are shown/i)).toBeInTheDocument()
   })
 
-  it('hosts exactly one theme toggle instance (7-3 DECISION 2), working for a paid user', () => {
+  it('hosts exactly one theme toggle instance (7-3 DECISION 2), live for a free user (25-3)', () => {
     render(<SettingsPage />)
     const switches = screen.getAllByRole('switch')
     // Two switches total: the currency-symbols switch and the dark-mode switch.
-    // Crucially only ONE dark-mode switch (a second would remount the gate Modal).
+    // Dark mode is free (25-3), so the switch is live for this free/unauthenticated
+    // user; exactly ONE dark-mode switch must be mounted.
     const darkModeSwitches = switches.filter((el) =>
       /dark mode/i.test(el.getAttribute('aria-label') ?? el.textContent ?? '')
     )

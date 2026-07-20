@@ -63,8 +63,8 @@ const NAV_ITEMS: readonly NavItem[] = [
   // surface (Projections); stays FREE (Epic 15 is UX-only, no premium gate).
   { label: 'Retirement', to: '/retirement' },
   // Consolidated settings surface (story 11-6): the single home for the currency
-  // and premium-gated dark-mode controls that used to be scattered across page
-  // headers and the footer.
+  // and dark-mode controls that used to be scattered across page headers and the
+  // footer.
   { label: 'Settings', to: '/settings' },
 ]
 

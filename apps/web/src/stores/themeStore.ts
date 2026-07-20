@@ -4,10 +4,10 @@ import { persist } from 'zustand/middleware'
 /**
  * Display theme (story 7-3, FR23).
  *
- * `light` is the product default; `dark` is a premium-gated opt-in surfaced via
- * the footer theme toggle. The active theme is reflected onto a `.dark` class on
- * `<html>` (see `components/theme/ThemeProvider`), which drives Tailwind's
- * class-based dark variants.
+ * `light` is the product default; `dark` is a free opt-in for every user
+ * (story 25-3) surfaced via the Settings theme toggle. The active theme is
+ * reflected onto a `.dark` class on `<html>` (see `components/theme/ThemeProvider`),
+ * which drives Tailwind's class-based dark variants.
  */
 export type Theme = 'light' | 'dark'
 
@@ -28,7 +28,7 @@ interface ThemeState {
   toggleTheme: () => void
 }
 
-// Light is the product default (AC-3: free users always stay light).
+// Light is the product default (the deterministic SSR / first-paint value).
 const DEFAULT_THEME: Theme = 'light'
 
 export const useThemeStore = create<ThemeState>()(

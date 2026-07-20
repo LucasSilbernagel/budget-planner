@@ -13,6 +13,7 @@ forecasting.
 - Income-vs-expense breakdown and net-worth projection charts
 - Retirement modelling
 - Currency-less or localized currency display
+- Dark mode
 
 Your data on the free tier is stored **only in your browser** (in its local
 storage). It never leaves your device and we never see it.
@@ -30,7 +31,6 @@ Everything in Free, plus:
 - **Custom profiles** — keep separate sets of finances (e.g. personal vs.
   household)
 - **Premium forecasting** — advanced projections and saved scenarios
-- **Dark mode** — a dark theme you can switch on from the Settings page
 
 > **Note:** the exact amount and currency you are charged are confirmed by Paddle
 > at checkout before you pay.

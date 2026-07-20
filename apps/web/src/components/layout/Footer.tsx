@@ -19,9 +19,9 @@ import { APP_VERSION } from '../../utils/version'
 export function Footer() {
   return (
     <footer className="mt-auto border-t border-gray-200 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-      {/* The premium-gated dark-mode toggle moved to the consolidated /settings
-          surface (story 11-6). It remains a single global instance there, per
-          story 7-3 DECISION 2 (one gate → one Modal). */}
+      {/* The dark-mode toggle moved to the consolidated /settings surface
+          (story 11-6). It remains a single global instance there, per story 7-3
+          DECISION 2. */}
       {/* At 320px this stacks vertically (story 18-2): the base `gap-3` gives the
           three groups — brand/version, the legal-link cluster, and copyright —
           comfortable vertical rhythm instead of the old cramped `gap-1` (4px)

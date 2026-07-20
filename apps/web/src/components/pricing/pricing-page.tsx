@@ -14,7 +14,7 @@ import { MarkdownRenderer } from '../docs/markdown-renderer'
  * The upgrade CTA points at `/login`, matching the app's shipped convention (the
  * account/subscription flow lives there, and `PremiumPrompt` defaults there);
  * the free CTA returns to the app, which needs no account. The dashboard's
- * `PremiumFeatureGate` and the settings dark-mode lock already route users here,
+ * `PremiumFeatureGate` (Forecasting / Custom Profiles) already routes users here,
  * so this page is the funnel's conversion surface.
  *
  * Styled light, consistent with its sibling commercial/legal pages (Terms,
@@ -82,6 +82,7 @@ const FREE_FEATURES: readonly string[] = [
   'Net income and savings-capacity calculations',
   'Income-vs-expense and net-worth projection charts',
   'Retirement modelling',
+  'Dark mode',
   'Private local storage — your data never leaves your device',
 ]
 
@@ -89,8 +90,6 @@ const PREMIUM_FEATURES: readonly string[] = [
   'Multi-device sync, securely stored in the EU',
   'Custom profiles (e.g. personal vs. household)',
   'Advanced forecasting and saved scenarios',
-  'Dark mode',
-  'No ads',
 ]
 
 interface PlanCardProps {

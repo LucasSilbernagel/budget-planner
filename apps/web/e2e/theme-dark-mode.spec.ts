@@ -1,27 +1,26 @@
 import { expect, test } from '@playwright/test'
 
 /**
- * Premium dark-mode E2E (story 7-3, FR23).
+ * Dark-mode E2E (story 7-3; dark mode moved to the Free tier in story 25-3).
  *
  * These drive the REAL hydration path (not a mocked hook), the exact surface
  * that SSR-HTML smoke and mocked-only unit tests miss (project memory, 4-11):
- *   - the no-flash guarantee (AC-4): the blocking <head> script applies `.dark`
- *     to <html> synchronously, before hydration and before the async premium
- *     check runs, so a persisted dark preference paints on the first frame.
- *   - the locked free-tier affordance (AC-3): a first-time (unauthenticated)
- *     visitor sees the dark-mode toggle locked + discoverable, activating it
- *     opens the upgrade prompt, and the app stays light.
+ *   - the no-flash guarantee: the blocking <head> script applies `.dark` to
+ *     <html> synchronously, before hydration, so a persisted dark preference
+ *     paints on the first frame.
+ *   - dark mode as a free feature (25-3 AC-1/AC-2): a first-time (unauthenticated)
+ *     visitor gets a live toggle, can switch to dark, and the choice persists
+ *     across reload with no tier check reverting it to light.
  */
 
 const THEME_KEY = 'budget-planner-theme-prefs-v1'
 
-test('AC-4: a persisted dark theme is applied before hydration (no flash of light)', async ({
+test('no-flash: a persisted dark theme is applied before hydration (no flash of light)', async ({
   page,
 }) => {
   // Seed the persisted preference and capture <html>'s class exactly at
-  // DOMContentLoaded — after the blocking <head> script has run but before the
-  // async client-side premium check can resolve (and possibly correct a free
-  // user back to light). This pins the first-paint state deterministically.
+  // DOMContentLoaded — after the blocking <head> script has run but before
+  // hydration. This pins the first-paint state deterministically.
   await page.addInitScript(
     ([key]) => {
       window.localStorage.setItem(key, JSON.stringify({ state: { theme: 'dark' }, version: 0 }))
@@ -41,46 +40,39 @@ test('AC-4: a persisted dark theme is applied before hydration (no flash of ligh
   expect(classAtFirstPaint).toContain('dark')
 })
 
-test('AC-3: a free visitor sees the dark-mode toggle locked and the app stays light', async ({
+test('25-3 AC-1/AC-2: a free visitor can toggle dark mode and it persists across reload', async ({
   page,
 }) => {
-  // The dark-mode toggle now lives on the consolidated settings surface
-  // (story 11-6), relocated from the global footer.
+  // The dark-mode toggle lives on the consolidated settings surface (story 11-6).
   await page.goto('/settings')
 
-  // The settings toggle resolves to the locked control for a free/unauthenticated
-  // user (after the in-flight tier check's neutral skeleton).
-  const lockedToggle = page.getByRole('button', { name: /dark mode — premium, locked/i })
-  await expect(lockedToggle).toBeVisible()
+  // Dark mode is free for everyone (25-3): the surface exposes a LIVE switch, not
+  // a locked premium affordance — and there is no upgrade prompt.
+  const toggle = page.getByRole('switch', { name: /dark mode/i })
+  await expect(toggle).toBeVisible()
+  await expect(page.getByRole('heading', { name: /go premium/i })).toHaveCount(0)
 
-  // The lock badge is discoverable within the toggle (FR24 — not hidden).
-  await expect(lockedToggle.getByText('Premium', { exact: true })).toBeVisible()
-
-  // Activating it opens the upgrade prompt rather than switching the theme.
-  // The resolved locked control now paints in the SSR HTML (story UX-1), so it is
-  // clickable in the brief window before React hydrates and wires up its onClick.
-  // Retry the click until the prompt opens (and stop clicking once it has) — the
-  // Playwright-recommended way to act on a control that may not yet be hydrated.
-  const goPremium = page.getByRole('heading', { name: /go premium/i })
-  await expect(async () => {
-    if (!(await goPremium.isVisible())) {
-      await lockedToggle.click()
-    }
-    await expect(goPremium).toBeVisible({ timeout: 1000 })
-  }).toPass()
-
-  // The app stays light for free users (AC-3): no dark class on <html>.
+  // Starts light.
   await expect(page.locator('html')).not.toHaveClass(/dark/)
-})
 
-// NOTE (code review 2026-07-03): the DECISION-3 *correction* of a stale persisted
-// `dark` for an authoritatively-resolved not-premium user (force light + clear the
-// stored value) is intentionally NOT e2e'd here. It only fires when the tier check
-// resolves cleanly (`error === null`), but the premium-access server function does
-// not resolve in the Playwright preview runtime (`Buffer is not defined`), so every
-// check errors — and under the reviewed fail-safe rule an *unverifiable* check
-// preserves the preference rather than wiping it (so a transient error can't
-// silently downgrade a paid user). Both branches are unit-covered in
-// components/theme/__tests__/ThemeProvider.test.tsx (authoritative not-premium →
-// light+clear; errored check → dark preserved). A real correction e2e is blocked by
-// the same missing paid/authenticated-session harness noted for 5-15 AC-4 / 5-6.
+  // Toggling applies dark to <html>. The switch may paint in SSR HTML before React
+  // wires its onClick, so retry until the theme flips (Playwright's recommended way
+  // to act on a possibly-unhydrated control); only click while still light so the
+  // action stays idempotent toward dark.
+  await expect(async () => {
+    const isDark = ((await page.locator('html').getAttribute('class')) ?? '').includes('dark')
+    if (!isDark) await toggle.click()
+    await expect(page.locator('html')).toHaveClass(/dark/, { timeout: 1000 })
+  }).toPass()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+
+  // The choice persists across a reload with NO fail-safe reverting it to light
+  // (the removed story 7-3 premium correction). The no-flash <head> script paints
+  // dark on the first frame for this free/unauthenticated user.
+  await page.reload()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect(page.getByRole('switch', { name: /dark mode/i })).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+})

@@ -7,8 +7,8 @@ export default {
   // variants previously followed the OS `prefers-color-scheme` (Tailwind's
   // default `media` strategy); they now respond to a `.dark` class on `<html>`
   // that the in-app theme toggle drives. This is a deliberate behavior change:
-  // dark mode is opt-in via the premium toggle rather than OS-driven, so free
-  // users (who never toggle) stay light regardless of their OS setting (AC-3/AC-5).
+  // dark mode is opt-in via the in-app toggle rather than OS-driven, so users
+  // who never toggle stay light regardless of their OS setting.
   darkMode: 'class',
   theme: {
     extend: {},

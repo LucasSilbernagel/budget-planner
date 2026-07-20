@@ -1,73 +1,42 @@
 /**
- * ThemeToggle tests (story 7-3, FR23).
+ * ThemeToggle tests (story 7-3; dark mode moved to the Free tier in story 25-3).
  *
- * The toggle is a thin consumer of story 7-2's PremiumFeatureGate (AC-4), so
- * these tests assert the gated behavior end to end:
- *   - loading → the gate's neutral skeleton, never a live switch (fail-closed).
- *   - paid → a working `role="switch"` that flips the theme store.
- *   - free → a locked, discoverable affordance + Premium badge whose activation
- *     opens the upgrade prompt with the `/pricing` CTA.
- *
- * `usePremiumAccess` is mocked to drive each tier and `PremiumPrompt` is stubbed
- * to a marker (no router needed), mirroring PremiumFeatureGate.test.tsx.
+ * Dark mode is now a free feature for every user, so the toggle has no tier
+ * gating: it renders a live `role="switch"` for everyone, flipping the persisted
+ * theme store. These tests assert the working switch + persistence — there is no
+ * loading skeleton, no locked affordance, no Premium badge, and no upgrade prompt.
  */
 
 import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
-import { useThemeStore } from '../../../stores/themeStore'
-
-const usePremiumAccess = vi.fn()
-
-vi.mock('../../../hooks/usePremiumAccess', () => ({
-  usePremiumAccess: () => usePremiumAccess(),
-}))
-
-const premiumPromptProps = vi.fn()
-
-vi.mock('../../auth/premium-prompt', () => ({
-  PremiumPrompt: (props: Record<string, unknown>) => {
-    premiumPromptProps(props)
-    return <div data-testid="premium-prompt" />
-  },
-}))
-
+import { beforeEach, describe, expect, it } from 'vitest'
+import { THEME_STORAGE_KEY, useThemeStore } from '../../../stores/themeStore'
 import { ThemeToggle } from '../theme-toggle'
 
-function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
-  const status: PremiumAccessStatus = {
-    hasAccess: false,
-    subscriptionStatus: null,
-    isLoading: false,
-    error: null,
-    isAuthenticated: false,
-    ...overrides,
-  }
-  usePremiumAccess.mockReturnValue({ status })
-}
-
 beforeEach(() => {
-  vi.clearAllMocks()
   useThemeStore.setState({ theme: 'light' })
+  try {
+    localStorage.removeItem(THEME_STORAGE_KEY)
+  } catch {
+    // localStorage may be unavailable in some environments; ignore.
+  }
 })
 
 describe('ThemeToggle', () => {
-  it('renders the gate skeleton while the tier is loading (no live switch)', () => {
-    mockStatus({ isLoading: true })
+  it('renders a live switch for every user (no gating, badge, or skeleton)', () => {
     render(<ThemeToggle />)
 
-    expect(screen.getByTestId('premium-gate-skeleton')).toBeInTheDocument()
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    expect(screen.getByRole('switch')).toBeInTheDocument()
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    // No premium chrome survives the ungating.
+    expect(screen.queryByText('Premium')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('premium-gate-skeleton')).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-gate-locked')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
   })
 
-  it('paid: renders a working switch that toggles the theme store', () => {
-    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+  it('toggles the theme store on click and back', () => {
     render(<ThemeToggle />)
-
     const toggle = screen.getByRole('switch')
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
-    expect(screen.queryByText('Premium')).not.toBeInTheDocument()
 
     fireEvent.click(toggle)
     expect(useThemeStore.getState().theme).toBe('dark')
@@ -78,39 +47,23 @@ describe('ThemeToggle', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('free: renders a locked affordance with a Premium badge (no live switch)', () => {
-    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+  it('persists a chosen dark theme to localStorage (survives reload; no fail-safe reverts it)', () => {
     render(<ThemeToggle />)
 
-    expect(screen.getByRole('button', { name: /dark mode — premium, locked/i })).toBeInTheDocument()
-    expect(screen.getByText('Premium')).toBeInTheDocument()
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch'))
+    expect(useThemeStore.getState().theme).toBe('dark')
+
+    // The persist middleware writes the partialized `{ state: { theme } }` shape
+    // that the no-flash <head> bootstrap reads on the next load.
+    const persisted = localStorage.getItem(THEME_STORAGE_KEY)
+    expect(persisted).toBeTruthy()
+    expect(JSON.parse(persisted ?? '{}').state.theme).toBe('dark')
   })
 
-  it('free: activating the locked toggle opens the upgrade prompt (CTA → /pricing)', () => {
-    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+  it('keeps focus-visible affordance (focus:ring-2, WCAG 2.4.7)', () => {
     render(<ThemeToggle />)
-
-    expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /dark mode — premium, locked/i }))
-
-    expect(screen.getByTestId('premium-prompt')).toBeInTheDocument()
-    expect(premiumPromptProps).toHaveBeenCalledWith(
-      expect.objectContaining({
-        asDialog: true,
-        featureName: 'Dark mode',
-        upgradeHref: '/pricing',
-      })
-    )
-    // A free user's locked toggle never mutates the theme.
-    expect(useThemeStore.getState().theme).toBe('light')
-  })
-
-  it('fails closed: renders locked when the tier check errored', () => {
-    mockStatus({ hasAccess: false, error: 'check failed', subscriptionStatus: null })
-    render(<ThemeToggle />)
-
-    expect(screen.getByTestId('premium-gate-locked')).toBeInTheDocument()
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    // The ring width class must be present — ring color alone + outline-none is an
+    // invisible focus state (recurring Epic 15 a11y regression).
+    expect(screen.getByRole('switch').className).toContain('focus:ring-2')
   })
 })
