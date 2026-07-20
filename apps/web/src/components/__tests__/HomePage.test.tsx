@@ -95,6 +95,26 @@ describe('HomePage premium discovery', () => {
 })
 
 /**
+ * Privacy-first tagline (story 25-4, AC-1).
+ *
+ * The overview header leads with the tagline "The budget planner that never
+ * sees your money" as the primary message beneath the app-name heading. This is
+ * tier-independent, so a single free-user render is sufficient.
+ */
+describe('HomePage tagline (story 25-4)', () => {
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+  })
+
+  it('AC-1: surfaces the privacy-first tagline while keeping the app name', () => {
+    render(<HomePage />)
+    expect(screen.getByText('The budget planner that never sees your money')).toBeInTheDocument()
+    // The app name still appears as the header heading.
+    expect(screen.getByRole('heading', { name: 'Budget Planner', level: 1 })).toBeInTheDocument()
+  })
+})
+
+/**
  * Section-navigation tiles (story 11-3, WCAG 1.4.1 "Use of Color").
  *
  * The "Manage Your Finances" grid used to render each destination as a solid

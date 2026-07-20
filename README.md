@@ -1,5 +1,7 @@
 # Budget Planner
 
+**The budget planner that never sees your money.**
+
 Budget Planner is a privacy-first personal budgeting and financial-planning web app.
 It helps you track income and expenses, set savings goals, monitor account balances, and model long-term outcomes like retirement and net worth.
 The free tier runs entirely in your browser with no account and no server calls, so your financial data never leaves your device.

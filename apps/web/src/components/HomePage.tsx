@@ -289,7 +289,7 @@ export function HomePage() {
         <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-heading">Budget Planner</h1>
-            <p className="text-body mt-2">Track your income and expenses with ease</p>
+            <p className="text-lg text-body mt-2">The budget planner that never sees your money</p>
           </div>
         </header>
 

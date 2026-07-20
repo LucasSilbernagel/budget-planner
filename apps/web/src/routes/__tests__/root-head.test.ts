@@ -20,6 +20,10 @@ function headScripts() {
   return Route.options.head?.({} as never)?.scripts ?? []
 }
 
+function headMeta() {
+  return Route.options.head?.({} as never)?.meta ?? []
+}
+
 afterEach(() => {
   vi.unstubAllEnvs()
 })
@@ -36,5 +40,31 @@ describe('__root head() analytics wiring', () => {
     vi.stubEnv('VITE_COUNTERDEV_ID', '')
     const scripts = headScripts()
     expect(scripts.some((s) => s.src === COUNTERDEV_SCRIPT_SRC)).toBe(false)
+  })
+})
+
+/**
+ * Privacy-first tagline in page metadata (story 25-4, AC-2).
+ *
+ * The <title> and a meta description must both carry the tagline so the
+ * social/search preview conveys the privacy promise. Asserted against the head
+ * config directly (no SSR render needed).
+ */
+describe('__root head() tagline metadata (story 25-4)', () => {
+  const TAGLINE = 'the budget planner that never sees your money'
+
+  it('AC-2: the document title carries the tagline', () => {
+    const meta = headMeta()
+    const titleEntry = meta.find((m) => 'title' in m) as { title?: string } | undefined
+    expect(titleEntry?.title?.toLowerCase()).toContain(TAGLINE)
+  })
+
+  it('AC-2: a meta description is present and built around the tagline', () => {
+    const meta = headMeta()
+    const description = meta.find((m) => m.name === 'description') as
+      | { content?: string }
+      | undefined
+    expect(description).toBeDefined()
+    expect(description?.content?.toLowerCase()).toContain(TAGLINE)
   })
 })
