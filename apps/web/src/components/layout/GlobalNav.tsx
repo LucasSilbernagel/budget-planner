@@ -121,15 +121,24 @@ export function GlobalNav() {
   return (
     <nav
       aria-label="Primary"
-      className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+      // Desktop-row chrome (border + background) lives on the `__root.tsx`
+      // wrapper so the nav and the account indicator read as ONE bar (story
+      // 19-3). The `max-sm:` chrome here only paints during the brief mobile
+      // pre-hydration flash: SSR + the first client render emit this top bar
+      // (useIsNarrowViewport is false until after mount) before the bottom bar
+      // swaps in, so it needs its own border/background at <640px where the
+      // `sm:`-gated wrapper chrome is inert.
+      className="max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {/* `flex-wrap`: SSR + the first client render always emit this top bar
           (useIsNarrowViewport is false until after mount), so on a phone it is
           briefly visible before hydration swaps in the bottom bar. Without
           wrapping, the eight items overflow a 320px viewport and push the
           document wider than the screen during that flash. Wrapping keeps it
-          contained. */}
-      <ul className="mx-auto flex max-w-6xl flex-wrap gap-1 px-4 py-2">
+          contained. The `max-w-6xl` content column is now owned by the
+          `__root.tsx` row wrapper (story 19-3); at the mobile flash width the
+          list is full-width with its own `px-4`, unchanged from before. */}
+      <ul className="flex flex-wrap gap-1 px-4 py-2">
         {NAV_ITEMS.map((item) => (
           <li key={item.to}>
             <Link

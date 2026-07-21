@@ -131,16 +131,32 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
               pads by, so the two stay in lockstep (0 on non-notched devices).
               Desktop renders GlobalNav as a top bar and needs no padding. */}
             <div className="flex min-h-screen flex-col pb-[calc(6rem_+_env(safe-area-inset-bottom))] sm:pb-0">
-              {/* Persistent signed-in / Premium indicator (story 13-2): a slim top
-                strip above the nav, on every viewport, so a signed-in user always
-                sees they are logged in (with a Premium marker when active) without
-                opening Settings. Fetch-based + SSR-safe; kept out of GlobalNav so
-                the 320px mobile tab bar is not crowded. */}
-              <AuthIndicator />
-              {/* Persistent primary navigation (story 11-1): rendered once here so
-                every route shares it. Top bar on desktop, fixed bottom tab bar on
-                narrow/PWA viewports. */}
-              <GlobalNav />
+              {/* Desktop (≥640px): the primary nav and the account/sign-in
+                indicator share ONE bar — nav links leading (left), the indicator
+                trailing (right-aligned) — so the top of the app reads as a single
+                navigation row instead of two stacked strips (story 19-3). The
+                outer wrapper owns the shared bar chrome (border + background) at
+                `sm:`; the inner wrapper centres the row on the app's `max-w-6xl`
+                content column. Below `sm:` both wrappers are inert (their utility
+                classes are all `sm:`-gated): GlobalNav renders its fixed BOTTOM
+                tab bar (out of flow) and AuthIndicator renders as a full-width top
+                strip, each carrying its own chrome via `max-sm:`, so the indicator
+                is never crowded into the 320px bottom bar (story 13-2 rationale). */}
+              <div className="sm:border-b sm:border-gray-200 sm:bg-white dark:sm:border-gray-700 dark:sm:bg-gray-800">
+                <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
+                  {/* Persistent primary navigation (story 11-1): rendered once here
+                    so every route shares it. Leading (left) on the desktop row; a
+                    fixed bottom tab bar on narrow/PWA viewports. */}
+                  <GlobalNav />
+                  {/* Persistent signed-in / Premium indicator (story 13-2):
+                    trailing (right) on the desktop row so a signed-in user always
+                    sees they are logged in (with a Premium marker when active)
+                    without opening Settings; a slim top strip on narrow viewports.
+                    Fetch-based + SSR-safe; kept out of GlobalNav so the 320px
+                    mobile tab bar is not crowded. */}
+                  <AuthIndicator />
+                </div>
+              </div>
               {children}
               <Footer />
             </div>

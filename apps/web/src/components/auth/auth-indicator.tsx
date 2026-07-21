@@ -5,11 +5,14 @@ import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
 /**
  * Persistent signed-in / Premium indicator (Story 13-2).
  *
- * Mounted once in `routes/__root.tsx` as a slim top strip above `GlobalNav`, so
- * every route carries an always-visible signal of session state: a signed-in
- * user sees their email and — only when their subscription is active — a
- * "Premium" marker; a signed-out visitor sees a "Sign in" affordance and nothing
- * account-specific.
+ * Mounted once in `routes/__root.tsx`, so every route carries an always-visible
+ * signal of session state: a signed-in user sees their email and — only when
+ * their subscription is active — a "Premium" marker; a signed-out visitor sees a
+ * "Sign in" affordance and nothing account-specific. On desktop (≥640px) it sits
+ * on the SAME row as the primary nav, trailing/right-aligned (story 19-3); below
+ * `sm:` it is a full-width top strip above the content (GlobalNav's bottom tab
+ * bar carries the nav on mobile). It is kept out of `GlobalNav` so the 320px
+ * mobile tab bar is not crowded (story 13-2).
  *
  * Session resolution mirrors `settings/account-section.tsx`: a plain
  * `fetch('/api/auth/me')` in a mount effect, NOT `@tanstack/react-query` (the
@@ -130,10 +133,14 @@ export function AuthIndicator() {
       // Reserve height on every render (incl. SSR + the loading state) so
       // resolving the session never shifts layout. `justify-end` keeps the
       // indicator right-aligned; `min-w-0` + `truncate` on the email guard 320px.
+      // The bar chrome (border + background) is `max-sm:`-scoped: below 640px
+      // this is a standalone top strip and needs its own border/bg, but on the
+      // desktop row it inherits the shared chrome from the `__root.tsx` wrapper
+      // so the nav and this indicator read as one bar (story 19-3).
       data-auth-indicator
       role="status"
       aria-label="Account status"
-      className="flex min-h-[2rem] items-center justify-end gap-2 border-b border-gray-200 bg-white px-4 text-sm dark:border-gray-700 dark:bg-gray-800"
+      className="flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {authState.status === 'loading' && (
         // Neutral placeholder: identical on server + first client render, holds
