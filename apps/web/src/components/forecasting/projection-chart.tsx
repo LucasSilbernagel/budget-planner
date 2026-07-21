@@ -5,12 +5,11 @@
  * Shows baseline vs. scenario projections for comparison.
  *
  * Architecture: React Component with Recharts
- * Data Sovereignty: Client-side visualization of server-calculated data
+ * Data Sovereignty: Client-side visualization of client-calculated data
  */
 
-import { type ForecastingResult, calculateFinancialForecast } from '@budget-planner/core'
-import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
-import React, { useState, useMemo } from 'react'
+import type { ForecastingResult } from '@budget-planner/core'
+import React, { useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -155,46 +154,30 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.Re
 // ============================================================================
 
 /**
+ * Props for ProjectionChart component
+ */
+export interface ProjectionChartProps {
+  /**
+   * The forecast to visualize, lifted from the Scenario Builder. When null (no
+   * scenario has produced a result yet), a neutral empty state is shown instead
+   * of fabricated sample data (story bug-3).
+   */
+  result: ForecastingResult | null
+}
+
+/**
  * Projection Chart Component
  *
- * Visualizes financial forecasting data with baseline vs. scenario comparison.
+ * Visualizes the user's forecasting result with baseline vs. scenario comparison.
  * Supports interactive exploration of projection data.
  */
-export function ProjectionChart(): React.ReactElement {
+export function ProjectionChart({ result }: ProjectionChartProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
   const chartColors = useChartColors()
   const [config, setConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
-  const [sampleResult, setSampleResult] = useState<ForecastingResult | null>(null)
 
-  // Generate sample data for demonstration
-  useMemo(() => {
-    // Create sample financial data
-    const sampleIncome: NormalizableFinancialItem[] = [
-      { name: 'Salary', amount: 500000, frequency: 'monthly' },
-    ]
-    const sampleExpenses: NormalizableFinancialItem[] = [
-      { name: 'Expenses', amount: 300000, frequency: 'monthly' },
-    ]
-
-    const sampleScenario = {
-      name: 'Sample Scenario',
-      incomeGrowthRate: 0.03,
-      expenseGrowthRate: 0.02,
-    }
-
-    const sampleData = {
-      income: sampleIncome,
-      expenses: sampleExpenses,
-      savings: 500000,
-      investments: 1000000,
-    }
-
-    const result = calculateFinancialForecast(sampleData, sampleScenario, 10)
-    setSampleResult(result)
-  }, [])
-
-  const chartData = convertToChartData(sampleResult)
+  const chartData = convertToChartData(result)
 
   // Calculate chart dimensions
   const chartHeight = 400
@@ -253,8 +236,8 @@ export function ProjectionChart(): React.ReactElement {
         {/* Chart Container */}
         <div className="surface rounded-xl shadow-lg border border-default p-4">
           {chartData.length === 0 ? (
-            <div className="flex items-center justify-center h-[400px] text-muted">
-              No projection data available
+            <div className="flex items-center justify-center h-[400px] text-muted text-center px-4">
+              Build a scenario in the Scenario Builder to see its projection here.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={chartHeight}>
@@ -331,31 +314,32 @@ export function ProjectionChart(): React.ReactElement {
           )}
         </div>
 
-        {/* Summary Statistics */}
-        {sampleResult && (
+        {/* Summary Statistics — gated on chartData (not just `result`) so an
+            empty-arrays result can't show the cards alongside the empty state. */}
+        {result && chartData.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
               label="Starting Net Worth"
-              value={formatCurrency(sampleResult.summary.startingNetWorth)}
+              value={formatCurrency(result.summary.startingNetWorth)}
               change={0}
             />
             <SummaryCard
               label="Ending Net Worth"
-              value={formatCurrency(sampleResult.summary.endingNetWorth)}
-              change={sampleResult.summary.totalGrowth}
-              positive={sampleResult.summary.totalGrowth >= 0}
+              value={formatCurrency(result.summary.endingNetWorth)}
+              change={result.summary.totalGrowth}
+              positive={result.summary.totalGrowth >= 0}
             />
             <SummaryCard
               label="Total Growth"
-              value={formatCurrency(sampleResult.summary.totalGrowth)}
+              value={formatCurrency(result.summary.totalGrowth)}
               change={0}
-              positive={sampleResult.summary.totalGrowth >= 0}
+              positive={result.summary.totalGrowth >= 0}
             />
             <SummaryCard
               label="Avg Annual Growth"
-              value={formatCurrency(Math.round(sampleResult.summary.averageAnnualGrowth))}
+              value={formatCurrency(Math.round(result.summary.averageAnnualGrowth))}
               change={0}
-              positive={sampleResult.summary.averageAnnualGrowth >= 0}
+              positive={result.summary.averageAnnualGrowth >= 0}
             />
           </div>
         )}

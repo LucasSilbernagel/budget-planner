@@ -8,7 +8,8 @@
  * Access: Premium users only (paid tier)
  *
  * Architecture: TanStack Start file-based routing with React
- * Data Sovereignty: Server-side calculations, data in DanubeData (Germany - EU)
+ * Data Sovereignty: Forecasts are computed client-side; saved forecasts are
+ * stored in DanubeData (Germany - EU).
  */
 
 import type { ForecastingResult, ForecastingScenario } from '@budget-planner/core'
@@ -64,6 +65,17 @@ export const Route = createFileRoute('/forecasting')({
 type ForecastingTab = 'scenarios' | 'projections' | 'saved'
 
 /**
+ * Builder inputs that are NOT part of ForecastingScenario but are needed to
+ * faithfully reopen a saved forecast (savings/investments/years). Persisted in
+ * the scenarioData JSON blob alongside { scenario, result } (story bug-3).
+ */
+export interface ScenarioInputs {
+  savings: number
+  investments: number
+  years: number
+}
+
+/**
  * Saved forecast with metadata
  */
 export interface SavedForecast {
@@ -72,6 +84,12 @@ export interface SavedForecast {
   description?: string
   scenario: ForecastingScenario
   result: ForecastingResult
+  /**
+   * Starting inputs the scenario type doesn't carry (savings/investments/years).
+   * Optional because forecasts saved before story bug-3 won't have it — reload
+   * defaults those fields in that case.
+   */
+  inputs?: ScenarioInputs
   /** Schema/model version from the persisted forecastingProfiles row. */
   version?: number
   createdAt: string
@@ -88,6 +106,7 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
     const parsed = JSON.parse(profile.scenarioData) as {
       scenario?: ForecastingScenario
       result?: ForecastingResult
+      inputs?: ScenarioInputs
     }
     // Validate the nested shape the saved-list UI actually dereferences
     // (result.summary.endingNetWorth / totalGrowth). A row that parses but is
@@ -96,12 +115,24 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
     if (!parsed?.scenario || !parsed?.result || !parsed.result.summary) {
       return null
     }
+    // Only surface inputs when well-formed; a corrupt/partial blob (e.g. NaN, a
+    // string, or years 0) falls back to defaults on reload — like a pre-bug-3 row
+    // — instead of seeding a bad state or a divide-by-zero in the core calc.
+    const inputs =
+      parsed.inputs &&
+      Number.isFinite(parsed.inputs.savings) &&
+      Number.isFinite(parsed.inputs.investments) &&
+      Number.isFinite(parsed.inputs.years) &&
+      parsed.inputs.years >= 1
+        ? parsed.inputs
+        : undefined
     return {
       id: String(profile.id),
       name: profile.name,
       description: profile.description ?? undefined,
       scenario: parsed.scenario,
       result: parsed.result,
+      inputs,
       version: profile.version,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,
@@ -124,8 +155,17 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
 function ForecastingPage(): React.ReactElement {
   const { status, checkAccess } = usePremiumAccess()
   const [activeTab, setActiveTab] = useState<ForecastingTab>('scenarios')
-  const [_savedForecasts, _setSavedForecasts] = useState<SavedForecast[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  // The latest forecast computed by the Scenario Builder, lifted here so the
+  // Projections tab reflects the user's real scenario instead of sample data
+  // (story bug-3).
+  const [scenarioResult, setScenarioResult] = useState<ForecastingResult | null>(null)
+  // The saved forecast the user chose to reopen ("My Forecasts" → Load). Drives
+  // the ScenarioBuilder's `key` + `initialForecast` so it remounts seeded.
+  const [loadedForecast, setLoadedForecast] = useState<SavedForecast | null>(null)
+  // Bumped on every Load so the builder remounts even when the SAME forecast is
+  // re-loaded (an id-only key would not change → stale edits would survive).
+  const [loadNonce, setLoadNonce] = useState(0)
 
   // Check premium access on mount
   useEffect(() => {
@@ -196,6 +236,7 @@ function ForecastingPage(): React.ReactElement {
       description?: string
       scenario: ForecastingScenario
       result: ForecastingResult
+      inputs: ScenarioInputs
     }): Promise<{ success: boolean; error?: string }> => {
       if (!defaultProfileId) {
         const error = 'No financial profile found. Create a profile before saving forecasts.'
@@ -213,7 +254,14 @@ function ForecastingPage(): React.ReactElement {
         const input = {
           name: forecast.name,
           description: forecast.description,
-          scenarioData: { scenario: forecast.scenario, result: forecast.result },
+          // Persist the builder inputs alongside scenario+result so the forecast
+          // reopens faithfully (story bug-3). scenarioData is a JSON blob, so this
+          // adds no schema/migration.
+          scenarioData: {
+            scenario: forecast.scenario,
+            result: forecast.result,
+            inputs: forecast.inputs,
+          },
           profileId: defaultProfileId,
         }
 
@@ -275,6 +323,16 @@ function ForecastingPage(): React.ReactElement {
     [defaultProfileId]
   )
 
+  // Reopen a saved forecast into the Scenario Builder (story bug-3). Seeds the
+  // builder (via key + initialForecast), shows its projection immediately, and
+  // switches to the builder tab so the user lands on the reloaded scenario.
+  const handleLoadForecast = useCallback((forecast: SavedForecast) => {
+    setLoadedForecast(forecast)
+    setLoadNonce((n) => n + 1)
+    setScenarioResult(forecast.result)
+    setActiveTab('scenarios')
+  }, [])
+
   // Show loading state
   if (isLoading) {
     return (
@@ -312,9 +370,21 @@ function ForecastingPage(): React.ReactElement {
 
         {/* Tab Content */}
         <div className="surface rounded-xl shadow-lg p-4 sm:p-8">
-          {activeTab === 'scenarios' && <ScenarioBuilder onSave={handleSaveForecast} />}
+          {/* The builder stays mounted (hidden when another tab is active) so
+              switching to Projections/Saved and back does NOT wipe unsaved edits.
+              Only a Load (via the nonce below) or a fresh session resets it. */}
+          <div className={activeTab === 'scenarios' ? '' : 'hidden'}>
+            <ScenarioBuilder
+              // Remount (resetting all internal state) on every Load — including
+              // re-loading the same forecast — so the builder re-seeds from it.
+              key={`${loadedForecast?.id ?? 'new'}-${loadNonce}`}
+              initialForecast={loadedForecast}
+              onSave={handleSaveForecast}
+              onResultChange={setScenarioResult}
+            />
+          </div>
 
-          {activeTab === 'projections' && <ProjectionChart />}
+          {activeTab === 'projections' && <ProjectionChart result={scenarioResult} />}
 
           {activeTab === 'saved' && (
             <ForecastList
@@ -322,6 +392,7 @@ function ForecastingPage(): React.ReactElement {
                 .map(mapToSavedForecast)
                 .filter((f): f is SavedForecast => f !== null)}
               onDelete={handleDeleteForecast}
+              onLoad={handleLoadForecast}
             />
           )}
         </div>
@@ -452,7 +523,7 @@ function PageFooter(): React.ReactElement {
   return (
     <footer className="mt-8 pt-6 border-t border-default text-center">
       <p className="text-xs text-faint">
-        All forecasting calculations performed server-side • Data stored in Germany (EU)
+        Forecasts calculated in your browser • Saved forecasts stored in Germany (EU)
       </p>
     </footer>
   )

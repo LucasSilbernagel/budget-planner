@@ -5,17 +5,21 @@
  * Includes income, expense, growth rate, and one-time event configuration.
  *
  * Architecture: React Component with Recharts for visualization
- * Data Sovereignty: Client-side input, server-side calculations
+ * Data Sovereignty: Client-side input and calculation; saved forecasts stored in
+ * the EU.
  */
 
 import {
   type ForecastingResult,
   type ForecastingScenario,
   calculateFinancialForecast,
+  currencySymbol,
+  parseFromInput,
 } from '@budget-planner/core'
 import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import { useFormattedAmount } from '../../stores/currencyStore'
+import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
+import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
 
 // ============================================================================
 // Constants
@@ -50,17 +54,33 @@ export interface OneTimeEvent {
 export interface ScenarioBuilderProps {
   /**
    * Callback when user saves a forecast. May return a result so the builder can
-   * surface a save failure (e.g. duplicate name) back to the user.
+   * surface a save failure (e.g. duplicate name) back to the user. `inputs`
+   * carries the savings/investments/years that are NOT part of ForecastingScenario
+   * so a saved forecast can be reopened faithfully (story bug-3).
    */
   onSave: (data: {
     name: string
     description?: string
     scenario: ForecastingScenario
     result: ForecastingResult
+    inputs: ScenarioInputs
   }) =>
     | { success: boolean; error?: string }
     | undefined
     | Promise<{ success: boolean; error?: string } | undefined>
+  /**
+   * Emits the latest computed forecast (or null while none/invalid) so the page
+   * can feed the Projections tab with the user's real scenario instead of sample
+   * data (story bug-3).
+   */
+  onResultChange?: (result: ForecastingResult | null) => void
+  /**
+   * When provided, seeds every field from a saved forecast so "My Forecasts" →
+   * Load reopens it into the builder (story bug-3). The parent remounts the
+   * builder (via `key`) when the loaded forecast changes, so these are read once
+   * in the state initializers.
+   */
+  initialForecast?: SavedForecast | null
 }
 
 /**
@@ -151,6 +171,44 @@ function formatPercentage(value: number): string {
   return `${(value * 100).toFixed(2)}%`
 }
 
+/**
+ * Rebuild local (id-carrying) financial items from a saved scenario's items so a
+ * loaded forecast can be edited. IDs are regenerated deterministically by index
+ * (the persisted scenario stores no ids). Returns [] when the saved scenario had
+ * no items of that kind.
+ */
+function itemsFromSaved(
+  items: NormalizableFinancialItem[] | undefined,
+  prefix: string
+): LocalFinancialItem[] {
+  if (!items || items.length === 0) return []
+  return items.map((item, index) => ({
+    ...item,
+    id: `${prefix}-loaded-${index}`,
+    // Coerce label/numerics defensively so a corrupt saved item can't seed a NaN
+    // amount or an uncontrolled input (review bug-3).
+    name: item.name ?? '',
+    amount: Number.isFinite(item.amount) ? item.amount : 0,
+    frequency: item.frequency ?? 'monthly',
+  }))
+}
+
+/**
+ * Rebuild local one-time events from a saved scenario. The persisted events may
+ * carry a `name` (the builder writes one) even though `ForecastingScenario` types
+ * `oneTimeEvents` as `{ year, amount }`; default the name when absent (e.g. an
+ * older saved row).
+ */
+function eventsFromSaved(events: ForecastingScenario['oneTimeEvents']): OneTimeEvent[] {
+  if (!events || events.length === 0) return []
+  return events.map((event, index) => ({
+    id: `event-loaded-${index}`,
+    year: event.year,
+    amount: event.amount,
+    name: (event as { name?: string }).name ?? 'One-time event',
+  }))
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -161,25 +219,69 @@ function formatPercentage(value: number): string {
  * Allows users to build and configure financial forecasting scenarios.
  * Calculates projections based on user input.
  */
-export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactElement {
+export function ScenarioBuilder({
+  onSave,
+  onResultChange,
+  initialForecast,
+}: ScenarioBuilderProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
-  // State for financial items
-  const [incomeItems, setIncomeItems] = useState<LocalFinancialItem[]>(DEFAULT_INCOME)
-  const [expenseItems, setExpenseItems] = useState<LocalFinancialItem[]>(DEFAULT_EXPENSES)
+  // Locale for parsing grouped/symbol input back to exact cents. parseFloat on a
+  // formatted string is lossy (`parseFloat('5,000.00') === 5`); the core
+  // parseFromInput helper strips grouping/symbols and canonicalizes the locale
+  // (story 14-3), so both money fields round-trip correctly.
+  const { locale } = useCurrencyPreferences()
+  // State for financial items. When a saved forecast is loaded, seed every field
+  // from it (the parent remounts this component via `key` on load, so these lazy
+  // initializers run once per load); a fresh builder falls back to the defaults.
+  const [incomeItems, setIncomeItems] = useState<LocalFinancialItem[]>(() =>
+    initialForecast ? itemsFromSaved(initialForecast.scenario.newIncome, 'income') : DEFAULT_INCOME
+  )
+  const [expenseItems, setExpenseItems] = useState<LocalFinancialItem[]>(() =>
+    initialForecast
+      ? itemsFromSaved(initialForecast.scenario.newExpenses, 'expense')
+      : DEFAULT_EXPENSES
+  )
 
   // State for scenario configuration
-  const [formData, setFormData] = useState<ScenarioFormData>(DEFAULT_FORM)
-  const [savings, setSavings] = useState<number>(DEFAULT_SAVINGS)
-  const [investments, setInvestments] = useState<number>(DEFAULT_INVESTMENTS)
-  const [oneTimeEvents, setOneTimeEvents] = useState<OneTimeEvent[]>([])
+  const [formData, setFormData] = useState<ScenarioFormData>(() =>
+    initialForecast
+      ? {
+          name: initialForecast.scenario.name,
+          description: initialForecast.scenario.description ?? '',
+          incomeGrowthRate: initialForecast.scenario.incomeGrowthRate,
+          expenseGrowthRate: initialForecast.scenario.expenseGrowthRate,
+          years: initialForecast.inputs?.years ?? DEFAULT_FORM.years,
+        }
+      : DEFAULT_FORM
+  )
+  const [savings, setSavings] = useState<number>(
+    () => initialForecast?.inputs?.savings ?? DEFAULT_SAVINGS
+  )
+  const [investments, setInvestments] = useState<number>(
+    () => initialForecast?.inputs?.investments ?? DEFAULT_INVESTMENTS
+  )
+  const [oneTimeEvents, setOneTimeEvents] = useState<OneTimeEvent[]>(() =>
+    initialForecast ? eventsFromSaved(initialForecast.scenario.oneTimeEvents) : []
+  )
 
-  // State for results
-  const [result, setResult] = useState<ForecastingResult | null>(null)
+  // State for results — seed from the loaded forecast so its summary shows
+  // immediately, before the debounced recompute runs.
+  const [result, setResult] = useState<ForecastingResult | null>(
+    () => initialForecast?.result ?? null
+  )
   const [isCalculating, setIsCalculating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Keep the latest onResultChange in a ref so the debounced recompute stays
+  // correct even if a caller passes a non-memoized callback (review bug-3):
+  // calculateForecast then needn't depend on the callback's identity.
+  const onResultChangeRef = useRef(onResultChange)
+  useEffect(() => {
+    onResultChangeRef.current = onResultChange
+  }, [onResultChange])
 
   // Calculate scenario whenever inputs change (with debounce)
   // biome-ignore lint/correctness/useExhaustiveDependencies: these are exactly the inputs the debounced calculateForecast (declared below) depends on; depending on calculateForecast itself would reference it before initialization (TDZ).
@@ -229,6 +331,11 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
 
       const newResult = calculateFinancialForecast(currentData, scenario, formData.years)
       setResult(newResult)
+      // Lift the fresh result to the page so the Projections tab reflects THIS
+      // scenario instead of sample data (story bug-3). Keep the last good result
+      // on error rather than blanking the chart. Read via ref so this callback's
+      // identity doesn't depend on the caller passing a stable onResultChange.
+      onResultChangeRef.current?.(newResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate forecast')
     } finally {
@@ -247,20 +354,27 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
   }, [])
 
   /**
-   * Handle savings change
+   * Handle savings change. The InputField's parseValue already converts the
+   * typed string to cents via parseFromInput, so store it directly — the old
+   * `Math.round(parseFloat(value) * 100)` re-scaled an already-cents value by
+   * another ×100 (a typed 5000 became $500,000).
    */
-  const handleSavingsChange = useCallback((value: string) => {
-    const cents = Math.round(parseFloat(value) * 100)
-    setSavings(cents)
-  }, [])
+  const handleSavingsChange = useCallback(
+    (value: string | number) => {
+      setSavings(typeof value === 'number' ? value : parseFromInput(value, locale))
+    },
+    [locale]
+  )
 
   /**
-   * Handle investments change
+   * Handle investments change (see handleSavingsChange — same double-×100 fix).
    */
-  const handleInvestmentsChange = useCallback((value: string) => {
-    const cents = Math.round(parseFloat(value) * 100)
-    setInvestments(cents)
-  }, [])
+  const handleInvestmentsChange = useCallback(
+    (value: string | number) => {
+      setInvestments(typeof value === 'number' ? value : parseFromInput(value, locale))
+    },
+    [locale]
+  )
 
   /**
    * Add new income item
@@ -414,6 +528,9 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
         description: formData.description || undefined,
         scenario,
         result,
+        // Persist the inputs that ForecastingScenario does not carry, so the
+        // forecast can be reopened faithfully (story bug-3).
+        inputs: { savings, investments, years: formData.years },
       })
       if (saveResult && !saveResult.success) {
         setError(saveResult.error || 'Failed to save forecast')
@@ -423,7 +540,17 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
     } finally {
       setIsSaving(false)
     }
-  }, [result, isSaving, formData, incomeItems, expenseItems, oneTimeEvents, onSave])
+  }, [
+    result,
+    isSaving,
+    formData,
+    incomeItems,
+    expenseItems,
+    oneTimeEvents,
+    savings,
+    investments,
+    onSave,
+  ])
 
   // Calculate summary statistics
   const summary = useMemo(() => {
@@ -519,7 +646,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
             type="text"
             inputMode="decimal"
             formatValue={formatCurrency}
-            parseValue={(v) => parseFloat(v) * 100}
+            parseValue={(v) => parseFromInput(v, locale)}
           />
 
           {/* Current Investments */}
@@ -530,7 +657,7 @@ export function ScenarioBuilder({ onSave }: ScenarioBuilderProps): React.ReactEl
             type="text"
             inputMode="decimal"
             formatValue={formatCurrency}
-            parseValue={(v) => parseFloat(v) * 100}
+            parseValue={(v) => parseFromInput(v, locale)}
           />
         </div>
       </section>
@@ -756,6 +883,11 @@ function FinancialItemRow({
   onUpdate,
   onDelete,
 }: FinancialItemRowProps): React.ReactElement {
+  // The amount prefix follows the user's currency mode: the selected currency's
+  // symbol in symbol mode, nothing in currency-less mode (a hard-coded `$` was
+  // wrong in neutral mode and for non-USD currencies).
+  const { mode, currency } = useCurrencyPreferences()
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value)
     // Validate: ensure value is a valid number and not negative
@@ -786,14 +918,20 @@ function FinancialItemRow({
         <div>
           <label className="block text-sm font-medium text-label mb-1">Amount</label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
+            {mode === 'symbol' && (
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
+                {currencySymbol(currency)}
+              </span>
+            )}
             <input
               type="number"
               value={item.amount / 100}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
-              className="w-full px-6 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
+              className={`w-full ${
+                mode === 'symbol' ? 'px-6' : 'px-2'
+              } py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
               placeholder="0.00"
             />
           </div>
@@ -846,6 +984,9 @@ function OneTimeEventRow({
   onDelete,
   maxYear,
 }: OneTimeEventRowProps): React.ReactElement {
+  // Currency-mode-aware amount prefix (see FinancialItemRow) — never a literal `$`.
+  const { mode, currency } = useCurrencyPreferences()
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value)
     // Validate: ensure value is a valid number and not negative
@@ -881,14 +1022,20 @@ function OneTimeEventRow({
         <div>
           <label className="block text-sm font-medium text-label mb-1">Amount</label>
           <div className="relative">
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">$</span>
+            {mode === 'symbol' && (
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
+                {currencySymbol(currency)}
+              </span>
+            )}
             <input
               type="number"
               value={event.amount / 100}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
-              className="w-full px-6 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
+              className={`w-full ${
+                mode === 'symbol' ? 'px-6' : 'px-2'
+              } py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
               placeholder="0.00"
             />
           </div>

@@ -83,4 +83,15 @@ describe('pricing page content (AC-4)', () => {
     expect(PRICING_PAGE.content).toMatch(/### Free/)
     expect(PRICING_PAGE.content).toMatch(/### Premium/)
   })
+
+  it('describes Premium forecasting honestly — no reload/side-by-side overpromise (story 20-1)', () => {
+    // Story 20-1: the pricing forecasting bullet must match what ships. Saved
+    // forecasts are a searchable list, not reloadable into the builder, and the
+    // Projections tab does not reflect the user's scenario — so no "reloadable"
+    // or "side by side" claims. Pin the honest phrasing so drift breaks a test.
+    expect(PRICING_PAGE.content).toMatch(/what-if scenarios/i)
+    expect(PRICING_PAGE.content).toMatch(/searchable\s+list/i)
+    expect(PRICING_PAGE.content).not.toMatch(/reloadable/i)
+    expect(PRICING_PAGE.content).not.toMatch(/side by side/i)
+  })
 })

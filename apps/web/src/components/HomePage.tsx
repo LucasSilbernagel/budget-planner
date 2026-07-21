@@ -867,7 +867,7 @@ function PremiumFeatureLabel(): React.ReactElement {
     <span className="flex flex-col">
       <span className="font-medium text-subheading">Advanced Forecasting</span>
       <span className="text-sm text-muted">
-        Scenario modeling, projections, and saved forecasts
+        What-if scenario modeling with saved, searchable forecasts
       </span>
     </span>
   )

@@ -135,6 +135,20 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(premium).not.toContain('retirement modeling')
   })
 
+  it('the Features page describes Advanced forecasting honestly (story 20-1)', () => {
+    // Story 20-1: the forecasting copy must describe only what ships. Saved
+    // forecasts are a searchable list — they are NOT reloadable back into the
+    // builder, and the Projections chart does not reflect the user's own
+    // scenario — so the copy must not promise "reloadable" forecasts or a
+    // "side by side" comparison view. Pin both the honest phrasing and the
+    // absence of the overpromising terms so future drift breaks a test.
+    const { premium } = featureSections()
+    expect(premium).toContain('what-if scenarios')
+    expect(premium).toContain('searchable list')
+    expect(premium).not.toContain('reloadable')
+    expect(premium).not.toContain('side by side')
+  })
+
   it('every internal doc link targets a real app route', () => {
     // The routes referenced by the docs; each exists under apps/web/src/routes.
     const knownRoutes = new Set([

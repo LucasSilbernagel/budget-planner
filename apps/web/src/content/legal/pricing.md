@@ -30,7 +30,8 @@ Everything in Free, plus:
   devices
 - **Custom profiles** — keep separate sets of finances (e.g. personal vs.
   household)
-- **Premium forecasting** — advanced projections and saved scenarios
+- **Premium forecasting** — build what-if scenarios and save them to a searchable
+  list you can review and compare
 
 > **Note:** the exact amount and currency you are charged are confirmed by Paddle
 > at checkout before you pay.

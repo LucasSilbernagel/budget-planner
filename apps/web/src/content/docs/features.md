@@ -31,9 +31,9 @@ no third-party trackers, for every visitor on both tiers.
   servers in the European Union (see below).
 - **Custom profiles** — keep separate sets of finances, such as personal versus
   household, and switch between them without mixing the numbers.
-- **Advanced forecasting** — advanced net-worth projections plus scenario
-  modeling and saved, reloadable forecasts, so you can compare different what-if
-  plans side by side.
+- **Advanced forecasting** — build detailed what-if scenarios from your income
+  and expense growth, one-time events, and current savings, then save each
+  forecast to a searchable list you can review and compare.
 
 ### Privacy and data location
 
