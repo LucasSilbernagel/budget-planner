@@ -570,6 +570,22 @@ export function HomePage() {
               are Epic 20's surface, kept untouched to avoid a merge collision. */}
           <section className="surface rounded-lg shadow-md p-4 sm:p-6">
             <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
+
+            {/* Multi-device sync — an account-wide Premium benefit, NOT an
+                openable page: there is no /sync route, so it is LISTED as static
+                copy rather than wrapped in a PremiumFeatureGate like the two
+                route-backed features below. No lock badge, link, or "Open →" —
+                it must not imply a page to open (story 20-2, CONTENT-G). The
+                neutral surface-inset treatment (no blue tile, no hover) reads as
+                a stated benefit, visually distinct from the clickable feature
+                tiles. Placed first so the section leads with the full canonical
+                benefit set; the two gated tiles keep their existing render order
+                (Advanced Forecasting then Custom Profiles) below it, and `mb-3`
+                spaces sync from them without touching their classes. */}
+            <div className="mb-3 flex w-full items-center gap-3 rounded-md border border-default surface-inset px-4 py-3">
+              <MultiDeviceSyncLabel />
+            </div>
+
             <PremiumFeatureGate
               featureName="Advanced Forecasting"
               className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
@@ -874,6 +890,25 @@ function PremiumFeatureLabel(): React.ReactElement {
 }
 
 /**
+ * Label for the Multi-device sync premium benefit (story 20-2, CONTENT-G).
+ * Unlike Advanced Forecasting / Custom Profiles, sync is an account-wide benefit
+ * with no route to open, so it is presented as a static listed benefit — never
+ * wrapped in a PremiumFeatureGate and never given a link or lock badge. Copy is
+ * kept consistent with the Features/Pricing "securely stored and synced" wording
+ * and claims nothing sync does not do.
+ */
+function MultiDeviceSyncLabel(): React.ReactElement {
+  return (
+    <span className="flex flex-col">
+      <span className="font-medium text-subheading">Multi-device sync</span>
+      <span className="text-sm text-muted">
+        Your data securely stored and synced across all your devices
+      </span>
+    </span>
+  )
+}
+
+/**
  * Shared label for the Custom Profiles premium entry (story 13-3), rendered
  * identically in both the unlocked (link) and locked (gate button) states so the
  * two look the same apart from the lock badge the gate adds.
@@ -883,7 +918,7 @@ function CustomProfilesFeatureLabel(): React.ReactElement {
     <span className="flex flex-col">
       <span className="font-medium text-subheading">Custom Profiles</span>
       <span className="text-sm text-muted">
-        Separate sets of finances you can switch between, synced across devices
+        Keep separate finances — e.g. personal vs. household — and switch without mixing the numbers
       </span>
     </span>
   )

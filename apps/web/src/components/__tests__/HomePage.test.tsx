@@ -106,6 +106,41 @@ describe('HomePage premium discovery', () => {
       screen.queryByRole('button', { name: /custom profiles — premium, locked/i })
     ).not.toBeInTheDocument()
   })
+
+  it('20-2: lists Multi-device sync as an account-wide benefit — not a link or a locked page', () => {
+    // Story 20-2 (CONTENT-G): the Premium section must present the full canonical
+    // benefit set. Multi-device sync is an account-wide benefit, NOT a route — so
+    // it is LISTED (static copy), never a PremiumFeatureGate. It must not be a
+    // link, not a "premium, locked" button, and must not add a third "Premium"
+    // lock badge (only Forecasting + Custom Profiles are gated tiles).
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    render(<HomePage />)
+
+    // The benefit is surfaced as text.
+    expect(screen.getByText('Multi-device sync')).toBeInTheDocument()
+    // …but never as an openable page or a lock affordance.
+    expect(screen.queryByRole('link', { name: /multi-device sync/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /multi-device sync — premium, locked/i })
+    ).not.toBeInTheDocument()
+    // Exactly the two gated tiles carry a lock badge — sync adds none.
+    expect(screen.getAllByText('Premium')).toHaveLength(2)
+  })
+
+  it('20-2: explains Custom Profiles with a concrete example (CONTENT-H)', () => {
+    // The Custom Profiles subtitle (shared by locked + unlocked states) must name
+    // a concrete use case so a user grasps what a profile is for, kept consistent
+    // with the Features/Pricing wording ("personal vs. household"). Pin the exact
+    // string so vague drift breaks this test.
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<HomePage />)
+
+    expect(
+      screen.getByText(
+        'Keep separate finances — e.g. personal vs. household — and switch without mixing the numbers'
+      )
+    ).toBeInTheDocument()
+  })
 })
 
 /**
