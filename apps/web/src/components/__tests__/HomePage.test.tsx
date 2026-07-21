@@ -115,6 +115,57 @@ describe('HomePage tagline (story 25-4)', () => {
 })
 
 /**
+ * Overview subtitle + mobile section padding (story 19-4, CONTENT-F / UX-DR32).
+ *
+ * Story 25-4 already claimed the header subtitle slot with the tagline, so the
+ * CONTENT-F "bird's-eye" line is ADDED as a SECONDARY subtitle beneath it (the
+ * tagline is preserved, not replaced). Mobile padding on the empty-state
+ * onboarding and Premium Features sections is tightened with responsive
+ * utilities (p-4 sm:p-6 / p-6 sm:p-8) so the ≥640px desktop spacing is unchanged.
+ *
+ * Padding is asserted by class-token membership (not substring regex) so a
+ * Tailwind class like `sm:p-6` cannot be mistaken for `p-6` (project memory,
+ * batch-4 lesson).
+ */
+describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+  })
+
+  it("AC-1: adds the bird's-eye secondary subtitle while keeping the 25-4 tagline", () => {
+    render(<HomePage />)
+    // Both lines coexist: the tagline (25-4) and the new supporting line (19-4).
+    expect(screen.getByText('The budget planner that never sees your money')).toBeInTheDocument()
+    expect(
+      screen.getByText("Get a bird's-eye view of your income, expenses, savings, and more!")
+    ).toBeInTheDocument()
+  })
+
+  it('AC-2: Premium Features section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
+    render(<HomePage />)
+    const section = screen
+      .getByRole('heading', { name: 'Premium Features', level: 2 })
+      .closest('section')
+    expect(section).not.toBeNull()
+    const tokens = (section as HTMLElement).className.split(/\s+/)
+    expect(tokens).toContain('p-4')
+    expect(tokens).toContain('sm:p-6')
+  })
+
+  it('AC-2: empty-state onboarding section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
+    // The onboarding section only renders when there is no income/expense data.
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    render(<HomePage />)
+    const section = screen.getByText("Let's set up your budget").closest('section')
+    expect(section).not.toBeNull()
+    const tokens = (section as HTMLElement).className.split(/\s+/)
+    expect(tokens).toContain('p-4')
+    expect(tokens).toContain('sm:p-6')
+  })
+})
+
+/**
  * Overview "Manage Your Finances" tiles removed on desktop (story 19-1, UX-DR26).
  *
  * The tile grid linked Income/Expenses/Savings/Balance/Projections — the exact

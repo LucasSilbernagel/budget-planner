@@ -290,6 +290,15 @@ export function HomePage() {
           <div>
             <h1 className="text-3xl font-bold text-heading">Budget Planner</h1>
             <p className="text-lg text-body mt-2">The budget planner that never sees your money</p>
+            {/* Secondary subtitle (story 19-4, CONTENT-F): supports the tagline
+                above with the bird's-eye value proposition. Kept smaller than the
+                tagline (default text vs its text-lg) so the hierarchy reads
+                tagline → supporting line. Story 25-4 already claimed the primary
+                subtitle slot with the tagline, so this is ADDED beneath it, not a
+                replacement. */}
+            <p className="text-body mt-2">
+              Get a bird's-eye view of your income, expenses, savings, and more!
+            </p>
           </div>
         </header>
 
@@ -512,8 +521,8 @@ export function HomePage() {
               </section>
             </>
           ) : (
-            <section className="surface rounded-lg shadow-md p-6">
-              <div className="surface-inset rounded-lg p-8 text-center">
+            <section className="surface rounded-lg shadow-md p-4 sm:p-6">
+              <div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
                 <p className="mb-1 text-lg font-medium text-subheading">Let's set up your budget</p>
                 <p className="mb-6 text-sm text-muted">
                   Add your income and expenses and your financial overview will appear here.
@@ -555,7 +564,11 @@ export function HomePage() {
               7-2, FR24). Paid users get the working link; everyone else sees the
               feature with a lock badge and an upgrade prompt. Enforcement stays
               server-side (the /forecasting loader + session gate). */}
-          <section className="surface rounded-lg shadow-md p-6">
+          {/* Padding tightened on mobile (story 19-4, UX-DR32): p-4 sm:p-6 keeps
+              the desktop (≥640px) spacing while reclaiming vertical space on
+              phones. Only this <section>'s padding changes here — its contents
+              are Epic 20's surface, kept untouched to avoid a merge collision. */}
+          <section className="surface rounded-lg shadow-md p-4 sm:p-6">
             <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
             <PremiumFeatureGate
               featureName="Advanced Forecasting"
