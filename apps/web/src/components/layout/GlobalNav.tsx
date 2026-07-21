@@ -57,10 +57,13 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Expenses', to: '/expenses' },
   { label: 'Savings', to: '/savings' },
   { label: 'Balance', to: '/balance' },
-  { label: 'Projections', to: '/net-worth-projection' },
+  // Story 19-2: label renamed "Projections" -> "Net Worth" so the nav matches the
+  // page's own H1 ("Net Worth Projection") and the app's "Net Worth" vocabulary.
+  // The route (`to`) is unchanged, so active-state/aria-current is unaffected.
+  { label: 'Net Worth', to: '/net-worth-projection' },
   // Retirement Planner (story 15-1): promoted from a docs-only, nav-orphan route
   // to a first-class destination. Grouped with the other forward-looking planning
-  // surface (Projections); stays FREE (Epic 15 is UX-only, no premium gate).
+  // surface (Net Worth); stays FREE (Epic 15 is UX-only, no premium gate).
   { label: 'Retirement', to: '/retirement' },
   // Consolidated settings surface (story 11-6): the single home for the currency
   // and dark-mode controls that used to be scattered across page headers and the
@@ -79,7 +82,7 @@ export function GlobalNav() {
       >
         {/* 4-column grid (4x2), not a single flex row (story 18-2). Eight
             destinations across a 320px viewport give a one-row flex layout only
-            ~40px per cell, where every label ("Projections", "Retirement", even
+            ~40px per cell, where every label ("Net Worth", "Retirement", even
             "Overview"/"Expenses") overflowed its cell and overlapped its
             neighbours. A 4-column grid gives ~80px cells at 320px, so each label
             stays single-line, legible and tappable (≥44px). The bar becomes two

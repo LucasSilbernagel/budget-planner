@@ -28,7 +28,7 @@ const SECTIONS: readonly [label: RegExp, href: string][] = [
   [/^expenses$/i, '/expenses'],
   [/^savings$/i, '/savings'],
   [/^balance$/i, '/balance'],
-  [/^projections$/i, '/net-worth-projection'],
+  [/^net worth$/i, '/net-worth-projection'],
   [/^retirement$/i, '/retirement'],
   [/^settings$/i, '/settings'],
 ]

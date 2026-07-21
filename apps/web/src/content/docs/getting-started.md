@@ -33,7 +33,7 @@ money down by category so you can see where it goes at a glance.
 
 - Track progress toward goals on the **Savings** page.
 - Record investments and debts on the **Balance** page.
-- Look ahead with the [**Projections**](/net-worth-projection) page and the
+- Look ahead with the [**Net Worth**](/net-worth-projection) page and the
   [**retirement planner**](/retirement).
 
 Read the [Features](/docs/features) guide for a full tour, or check the
