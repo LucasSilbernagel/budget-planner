@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import React from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import RetirementAccumulationPlanner from '../components/RetirementAccumulationPlanner'
 import RetirementForm from '../components/RetirementForm'
 import RetirementTimelineChart from '../components/RetirementTimelineChart'
 
@@ -32,10 +33,28 @@ function RetirementPage() {
             <div>
               <h1 className="text-4xl font-bold text-heading mb-4">Retirement Planner</h1>
               <p className="text-xl text-body">
-                Calculate if your investment assets can safely yield your desired retirement income.
+                Work out when you can retire and how big your nest egg will be, then explore the
+                safe withdrawal rate and long-term growth of your savings.
               </p>
             </div>
           </header>
+
+          {/* Accumulation Planner — the primary "when can I retire / how big is my
+              nest egg" tool, driven by the retirement accumulation solver. */}
+          <section className="mb-12 surface rounded-2xl shadow-lg p-6 sm:p-8">
+            <h2 className="text-2xl font-semibold text-subheading mb-2">When Can You Retire?</h2>
+            <p className="text-body mb-8">
+              Enter your plan below to see your earliest retirement age and projected nest egg.
+              Toggle between drawing your savings down to zero by your life expectancy and living
+              off returns forever.
+            </p>
+
+            <RetirementAccumulationPlanner />
+          </section>
+
+          {/* Supporting tools: the standalone Safe Withdrawal calculator and the
+              long-term growth timeline. */}
+          <h2 className="text-2xl font-semibold text-heading mb-6">More Retirement Tools</h2>
 
           {/* Main Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
