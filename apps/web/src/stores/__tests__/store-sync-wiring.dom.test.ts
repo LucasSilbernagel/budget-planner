@@ -133,6 +133,12 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
       name: 'Emergency',
       targetAmount: 1000000,
       currentBalance: 250000,
+      // Story 26.1: allocation mode is always forwarded (defaults to 'automatic'
+      // when the caller supplies none); no manual amount ⇒ monthlyAllocation is an
+      // explicit null (forwarded, not omitted — review 26-1 P1) so a later
+      // manual→automatic switch can reset the server value.
+      allocationMode: 'automatic',
+      monthlyAllocation: null,
       userId: SESSION_USER_ID,
     })
   })

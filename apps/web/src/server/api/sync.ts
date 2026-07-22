@@ -171,6 +171,15 @@ const savingsGoalSchema = z.object({
   // (no target). Mirrors balanceTracking.maxContributionLimit's optional shape.
   targetAmount: z.number().int().positive().nullable().optional(),
   currentBalance: z.number().int().default(0),
+  // Story 26.1: per-account allocation. `monthlyAllocation` nullable cents, bounded
+  // to the int32 column range (defense-in-depth: the enforced client gate in
+  // packages/core/src/sync/types.ts already caps it, but this untrusted-input gate
+  // must reject an over-range value rather than let the INSERT overflow).
+  // `allocationMode` defaults to 'automatic' on ingest so a payload omitting it
+  // matches the DB default (the client always emits it — an intentional asymmetry
+  // with the client gate's `.optional()`, not an exact mirror).
+  monthlyAllocation: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
+  allocationMode: z.enum(['manual', 'automatic']).default('automatic'),
   userId: z.string().uuid(),
 })
 

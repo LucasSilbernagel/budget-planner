@@ -107,6 +107,17 @@ function toServerPayload(
         name: entity['name'],
         targetAmount: entity['targetAmount'],
         currentBalance: entity['currentBalance'],
+        // Story 26.1: forward the allocation mode (default 'automatic'), else a
+        // paid-tier sync silently drops it and the server defaults every account.
+        allocationMode: entity['allocationMode'] ?? 'automatic',
+        // Forward the manual amount ALWAYS, including null — unlike the
+        // omit-when-null `maxContributionLimit` (whose server gate rejects null),
+        // this field's gates are both `.nullable()`, and null is a reachable state:
+        // switching an account manual→automatic must RESET the stored amount to null
+        // on the server + other devices. `updateEntity` does a partial `.set()`, so
+        // an omitted key would leave a stale prior amount (review 26-1 P1). Mirrors
+        // how `targetAmount` is always forwarded.
+        monthlyAllocation: entity['monthlyAllocation'] ?? null,
         userId,
       }
     case 'balanceTracking': {

@@ -90,11 +90,22 @@ describe('syncBridge — paid tier (handle registered)', () => {
     }> = [
       {
         type: 'savingsGoal',
-        entity: { id: 's1', name: 'Car', targetAmount: 200000, currentBalance: 5000 },
+        entity: {
+          id: 's1',
+          name: 'Car',
+          targetAmount: 200000,
+          currentBalance: 5000,
+          allocationMode: 'manual',
+          monthlyAllocation: 30000,
+        },
         expected: {
           name: 'Car',
           targetAmount: 200000,
           currentBalance: 5000,
+          // Story 26.1: the allocation mode is always forwarded; a manual amount
+          // is forwarded when present.
+          allocationMode: 'manual',
+          monthlyAllocation: 30000,
           userId: SESSION_USER_ID,
         },
       },
@@ -133,6 +144,53 @@ describe('syncBridge — paid tier (handle registered)', () => {
       syncEntityCreate(type, entity as { id: string })
       expect(handle.queueCreate).toHaveBeenCalledWith(type, entity.id, expected)
     }
+  })
+
+  it('defaults a missing savings allocationMode to automatic and sends monthlyAllocation: null (Story 26.1)', () => {
+    syncEntityCreate('savingsGoal', {
+      id: 's2',
+      name: 'Leftover',
+      targetAmount: null,
+      currentBalance: 0,
+    } as { id: string })
+    const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
+    expect(payload.allocationMode).toBe('automatic')
+    // An automatic account has no manual amount — the nullable column is forwarded
+    // as an EXPLICIT null (not omitted) so a manual→automatic switch resets it on
+    // the server + other devices (review 26-1 P1). Both gates are .nullable().
+    expect('monthlyAllocation' in payload).toBe(true)
+    expect(payload.monthlyAllocation).toBeNull()
+  })
+
+  it('a manual→automatic UPDATE forwards monthlyAllocation: null so the server clears the stale amount (Story 26.1, review P1)', () => {
+    // The account was manual with 30000¢; the user switched it to automatic, which
+    // sets the local monthlyAllocation to null. The UPDATE payload MUST carry the
+    // explicit null, or updateEntity's partial `.set()` leaves the stale 30000¢.
+    syncEntityUpdate(
+      'savingsGoal',
+      {
+        id: 's3',
+        name: 'Leftover',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'automatic',
+        monthlyAllocation: null,
+        updatedAt: '2026-06-28T00:00:00.000Z',
+      } as { id: string; updatedAt: string },
+      {
+        id: 's3',
+        name: 'Leftover',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'manual',
+        monthlyAllocation: 30000,
+        updatedAt: '2026-06-27T00:00:00.000Z',
+      } as { id: string; updatedAt: string }
+    )
+    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    expect(payload.allocationMode).toBe('automatic')
+    expect('monthlyAllocation' in payload).toBe(true)
+    expect(payload.monthlyAllocation).toBeNull()
   })
 
   it('omits an absent optional maxContributionLimit', () => {

@@ -150,10 +150,21 @@ export const useSavingsStore = create<SavingsState>()(
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
       // v1 (Story 5-14): convert any legacy negative-integer ids to fresh uuids.
-      version: 1,
+      // v2 (Story 26.1): backfill the allocation fields so pre-26.1 rows load as
+      // 'automatic' with no manual amount — the free-tier counterpart to the DB
+      // migration's server-side default. Non-destructive: existing values (incl.
+      // an already-set manual amount) are preserved.
+      version: 2,
       migrate: (persisted) => {
         const state = persisted as { savingsGoals?: ClientSavingsGoal[] }
-        return { savingsGoals: withUuidIds(state?.savingsGoals) }
+        const withIds = withUuidIds(state?.savingsGoals)
+        return {
+          savingsGoals: withIds.map((goal) => ({
+            ...goal,
+            allocationMode: goal.allocationMode ?? 'automatic',
+            monthlyAllocation: goal.monthlyAllocation ?? null,
+          })),
+        }
       },
       partialize: (state) => ({
         savingsGoals: state.savingsGoals,

@@ -71,6 +71,13 @@
       "when": 1784580423839,
       "tag": "0009_absent_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784736793073,
+      "tag": "0010_tranquil_risque",
+      "breakpoints": true
     }
   ]
 }

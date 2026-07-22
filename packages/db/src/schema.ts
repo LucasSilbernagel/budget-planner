@@ -40,6 +40,11 @@ export const frequencyEnum = pgEnum('frequency', ['weekly', 'biweekly', 'monthly
 // Values use snake_case as per architecture
 export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt'])
 
+// Allocation mode for savings accounts/goals (Story 26.1): a 'manual' account
+// holds a fixed monthlyAllocation; an 'automatic' account receives an even share
+// of the leftover pool (computed in Story 26.2). Defaults to 'automatic'.
+export const allocationModeEnum = pgEnum('allocationMode', ['manual', 'automatic'])
+
 // Subscription status enum for user accounts
 // Values use snake_case as per architecture
 export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
@@ -182,6 +187,13 @@ export const savingsGoals = pgTable(
     // shape so "no target" is an absent value, not a sentinel 0.
     targetAmount: integer('targetAmount'), // Target amount in cents (> 0 if provided; null = account)
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
+    // Per-account monthly allocation (Story 26.1). Nullable cents (>= 0 if
+    // provided; null = no manual amount) — mirrors targetAmount's optional shape.
+    monthlyAllocation: integer('monthlyAllocation'),
+    // Allocation mode (Story 26.1): 'manual' (fixed amount) or 'automatic' (even
+    // share of the leftover pool). NOT NULL default 'automatic' so pre-26.1 rows
+    // migrate non-destructively — mirrors balanceTracking.frequency's shape.
+    allocationMode: allocationModeEnum('allocationMode').notNull().default('automatic'),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
@@ -201,6 +213,14 @@ export const savingsGoals = pgTable(
     currentBalanceNonNegative: check(
       'savingsGoals_currentBalance_non_negative',
       sql`${table.currentBalance} >= 0`
+    ),
+    // Story 26.1: monthlyAllocation non-negative if provided (null = no manual
+    // amount). Doc-only, like the sibling checks — drizzle-kit 0.23 does not emit
+    // CHECK constraints to migrations; app-layer validation (validateSavingsGoal +
+    // the sync zod schemas) enforces the bound.
+    monthlyAllocationNonNegative: check(
+      'savingsGoals_monthlyAllocation_non_negative',
+      sql`${table.monthlyAllocation} IS NULL OR ${table.monthlyAllocation} >= 0`
     ),
   })
 )

@@ -12,7 +12,7 @@
 
 import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useSavingsStore } from '../savingsStore'
+import { SAVINGS_GOALS_STORAGE_KEY, useSavingsStore } from '../savingsStore'
 
 const base = {
   createdAt: new Date('2026-01-01').toISOString(),
@@ -82,5 +82,74 @@ describe('savingsStore — accounts vs goals (Story 16-1)', () => {
   it('getOverallProgress is 0 when there are only accounts (no targets)', () => {
     useSavingsStore.setState({ savingsGoals: [account] })
     expect(useSavingsStore.getState().getOverallProgress()).toBe(0)
+  })
+})
+
+/**
+ * Story 26.1: non-destructive v1→v2 persist migration. Existing saved rows (no
+ * allocation data) must load as 'automatic' with no manual amount, so the free
+ * tier matches the DB migration's server-side default.
+ */
+describe('savingsStore — v1→v2 allocation backfill (Story 26.1)', () => {
+  it("backfills allocationMode='automatic' and monthlyAllocation=null for a legacy v1 row", async () => {
+    // A v1-shaped persisted payload: uuid ids already, but no allocation fields.
+    localStorage.setItem(
+      SAVINGS_GOALS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: {
+          savingsGoals: [
+            {
+              id: 'legacy-uuid-1',
+              name: 'Old Vacation',
+              targetAmount: 100000,
+              currentBalance: 60000,
+              createdAt: '2024-01-01T00:00:00Z',
+              updatedAt: '2024-01-01T00:00:00Z',
+            },
+          ],
+        },
+      })
+    )
+
+    await useSavingsStore.persist.rehydrate()
+
+    const [goal] = useSavingsStore.getState().savingsGoals
+    expect(goal.allocationMode).toBe('automatic')
+    expect(goal.monthlyAllocation).toBeNull()
+    // Existing values are preserved unchanged.
+    expect(goal.name).toBe('Old Vacation')
+    expect(goal.targetAmount).toBe(100000)
+    expect(goal.currentBalance).toBe(60000)
+    expect(goal.id).toBe('legacy-uuid-1')
+  })
+
+  it('preserves an already-present manual allocation on migration', async () => {
+    localStorage.setItem(
+      SAVINGS_GOALS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: {
+          savingsGoals: [
+            {
+              id: 'legacy-uuid-2',
+              name: 'Rent',
+              targetAmount: null,
+              currentBalance: 0,
+              allocationMode: 'manual',
+              monthlyAllocation: 50000,
+              createdAt: '2024-01-01T00:00:00Z',
+              updatedAt: '2024-01-01T00:00:00Z',
+            },
+          ],
+        },
+      })
+    )
+
+    await useSavingsStore.persist.rehydrate()
+
+    const [goal] = useSavingsStore.getState().savingsGoals
+    expect(goal.allocationMode).toBe('manual')
+    expect(goal.monthlyAllocation).toBe(50000)
   })
 })

@@ -1,3 +1,4 @@
+import type { AllocationMode } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -40,12 +41,16 @@ export function SavingsPage() {
   const [isAccount, setIsAccount] = useState(false)
   const [targetAmount, setTargetAmount] = useState('')
   const [currentBalance, setCurrentBalance] = useState('')
+  // Per-account allocation (Story 26.1). 'automatic' (default) gets an even share
+  // of the leftover pool (computed in Story 26.2); 'manual' holds a fixed amount.
+  const [allocationMode, setAllocationMode] = useState<AllocationMode>('automatic')
+  const [monthlyAllocation, setMonthlyAllocation] = useState('')
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
   // hasFieldError/getFieldError helpers and re-validate-on-change after the
   // first submit attempt.
-  type FieldName = 'name' | 'targetAmount' | 'currentBalance'
+  type FieldName = 'name' | 'targetAmount' | 'currentBalance' | 'monthlyAllocation'
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
 
@@ -70,8 +75,16 @@ export function SavingsPage() {
     if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
     }
+    // Manual allocation must be non-negative. An automatic account ignores any
+    // amount, so the check is skipped entirely in automatic mode.
+    if (allocationMode === 'manual') {
+      const allocationInCents = parseFromInput(monthlyAllocation, locale)
+      if (allocationInCents < 0) {
+        next.monthlyAllocation = 'Please enter a valid non-negative monthly allocation'
+      }
+    }
     return next
-  }, [name, isAccount, targetAmount, currentBalance, locale])
+  }, [name, isAccount, targetAmount, currentBalance, allocationMode, monthlyAllocation, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -87,6 +100,8 @@ export function SavingsPage() {
         setIsAccount(false)
         setTargetAmount('')
         setCurrentBalance('')
+        setAllocationMode('automatic')
+        setMonthlyAllocation('')
       }
       // Editing: fields are set by openEditModal
     }
@@ -113,6 +128,8 @@ export function SavingsPage() {
     name: string
     targetAmount: number | null
     currentBalance: number
+    allocationMode?: AllocationMode
+    monthlyAllocation?: number | null
   }) => {
     setEditingId(goal.id)
     setName(goal.name)
@@ -121,6 +138,15 @@ export function SavingsPage() {
     setIsAccount(account)
     setTargetAmount(account ? '' : formatForInputDisplay(goal.targetAmount as number, locale))
     setCurrentBalance(formatForInputDisplay(goal.currentBalance, locale))
+    // Allocation (Story 26.1): default a legacy row (no mode) to 'automatic'; only
+    // prefill the amount for a manual account with a stored value.
+    const mode = goal.allocationMode ?? 'automatic'
+    setAllocationMode(mode)
+    setMonthlyAllocation(
+      mode === 'manual' && goal.monthlyAllocation != null
+        ? formatForInputDisplay(goal.monthlyAllocation, locale)
+        : ''
+    )
     clearErrors()
     setIsModalOpen(true)
   }
@@ -133,6 +159,8 @@ export function SavingsPage() {
     setIsAccount(false)
     setTargetAmount('')
     setCurrentBalance('')
+    setAllocationMode('automatic')
+    setMonthlyAllocation('')
     clearErrors()
   }
 
@@ -164,6 +192,12 @@ export function SavingsPage() {
         // Account (Story 16-1): persist an absent target as null, never 0.
         targetAmount: isAccount ? null : parseFromInput(targetAmount, locale),
         currentBalance: parseFromInput(currentBalance, locale),
+        // Allocation (Story 26.1): store the mode; a manual account persists its
+        // fixed amount (cents), an automatic account persists null (the leftover
+        // share is computed, never stored) — ignoring any stale typed value.
+        allocationMode,
+        monthlyAllocation:
+          allocationMode === 'manual' ? parseFromInput(monthlyAllocation, locale) : null,
       }
 
       if (editingId !== null) {
@@ -501,6 +535,79 @@ export function SavingsPage() {
                 </p>
               )}
             </div>
+
+            {/* Monthly allocation mode (Story 26.1) */}
+            <div>
+              <label htmlFor="allocationMode" className="block mb-1 font-medium text-label text-sm">
+                Monthly Allocation
+              </label>
+              <select
+                id="allocationMode"
+                value={allocationMode}
+                onChange={(e) => setAllocationMode(e.target.value as AllocationMode)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                data-testid="savings-allocation-mode-select"
+              >
+                <option value="automatic">Automatic (even share of leftover funds)</option>
+                <option value="manual">Manual (a fixed amount each month)</option>
+              </select>
+              <p className="mt-1 text-faint text-xs">
+                {allocationMode === 'automatic'
+                  ? 'This account receives an even share of whatever is left over each month.'
+                  : 'This account gets the fixed amount you set below each month.'}
+              </p>
+            </div>
+
+            {allocationMode === 'manual' && (
+              <div>
+                <label
+                  htmlFor="monthlyAllocation"
+                  className="block mb-1 font-medium text-label text-sm"
+                >
+                  Monthly Allocation Amount
+                </label>
+                <div className="relative shadow-sm rounded-md">
+                  {mode === 'symbol' && (
+                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                      <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    id="monthlyAllocation"
+                    value={monthlyAllocation}
+                    onChange={(e) => setMonthlyAllocation(e.target.value)}
+                    onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyAllocation)}
+                    placeholder="0.00"
+                    className={`w-full px-3 py-2 ${
+                      mode === 'symbol' ? 'pl-7' : ''
+                    } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                      hasFieldError('monthlyAllocation')
+                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
+                    }`}
+                    aria-invalid={hasFieldError('monthlyAllocation')}
+                    aria-describedby={
+                      hasFieldError('monthlyAllocation')
+                        ? 'savings-monthly-allocation-error'
+                        : undefined
+                    }
+                    data-testid="savings-monthly-allocation-input"
+                  />
+                </div>
+                {hasFieldError('monthlyAllocation') && (
+                  <p
+                    id="savings-monthly-allocation-error"
+                    className="mt-1 text-red-600 dark:text-red-400 text-sm"
+                    role="alert"
+                    data-testid="savings-monthly-allocation-error"
+                  >
+                    {getFieldError('monthlyAllocation')}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4">
               <button

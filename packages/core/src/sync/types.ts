@@ -12,6 +12,15 @@ import { z } from 'zod'
 // ============================================================================
 
 /**
+ * PostgreSQL 32-bit `integer` bounds. Monetary fields are stored as `integer`
+ * (cents), so client-side validation must reject values the DB cannot store to
+ * avoid "integer out of range" failures that would otherwise only surface at
+ * persistence time and be retried forever.
+ */
+const PG_INT32_MAX = 2_147_483_647
+const PG_INT32_MIN = -2_147_483_648
+
+/**
  * Zod schemas for validating entity data payloads
  * These ensure data structure matches expected format for each entity type
  */
@@ -33,6 +42,12 @@ export const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
   targetAmount: z.number().int(),
   currentBalance: z.number().int().default(0),
+  // Story 26.1: per-account allocation. `monthlyAllocation` is nullable cents
+  // (0..int32). `allocationMode` is `.optional()` here (the client emits it via
+  // syncBridge); the server gate uses `.default('automatic')` on ingest — an
+  // intentional asymmetry, not an exact mirror. Bound matches syncOperationDataSchema.
+  monthlyAllocation: z.number().int().min(0).max(PG_INT32_MAX).nullable().optional(),
+  allocationMode: z.enum(['manual', 'automatic']).optional(),
   userId: z.string().uuid(),
 })
 
@@ -57,15 +72,6 @@ export const userProfileSchema = z.object({
 })
 
 /**
- * PostgreSQL 32-bit `integer` bounds. Monetary fields are stored as `integer`
- * (cents), so client-side validation must reject values the DB cannot store to
- * avoid "integer out of range" failures that would otherwise only surface at
- * persistence time and be retried forever.
- */
-const PG_INT32_MAX = 2_147_483_647
-const PG_INT32_MIN = -2_147_483_648
-
-/**
  * Schema for sync operation data validation
  * Validates data structure based on entityType
  *
@@ -87,6 +93,11 @@ export const syncOperationDataSchema = z.object({
   type: z.enum(['investment', 'debt']).optional(),
   maxContributionLimit: z.number().int().positive().max(PG_INT32_MAX).optional(),
   monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX).optional(),
+  // Story 26.1: savings monthly allocation (nullable cents, >= 0) + mode. Bounds
+  // mirror the DB (allocationMode NOT NULL default 'automatic'; monthlyAllocation
+  // nullable). Absent from a payload is fine — both are optional here.
+  monthlyAllocation: z.number().int().min(0).max(PG_INT32_MAX).nullable().optional(),
+  allocationMode: z.enum(['manual', 'automatic']).optional(),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().optional(),
   currency: z

@@ -35,6 +35,12 @@ export interface ClientSavingsGoal {
   currentBalance: number // In cents
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
+  // Per-account monthly allocation (Story 26.1). Optional so legacy persisted rows
+  // (pre-26.1) and existing fixtures stay valid; read sites default an absent mode
+  // to 'automatic' (see `resolveAllocationMode`). `monthlyAllocation` is the fixed
+  // amount for 'manual' accounts (cents, >= 0) and null/ignored for 'automatic'.
+  allocationMode?: AllocationMode
+  monthlyAllocation?: number | null // In cents (null = no manual amount)
   // Optional UI display fields (progress is null for accounts)
   progress?: number | null // Percentage (0-100), or null for accounts
   status?: SavingsGoalStatus
@@ -47,6 +53,9 @@ export interface ClientNewSavingsGoal {
   name: string
   targetAmount: number | null // In cents (null = account, no target)
   currentBalance: number // In cents
+  // Allocation fields (Story 26.1); optional — absent ⇒ 'automatic' with no amount.
+  allocationMode?: AllocationMode
+  monthlyAllocation?: number | null // In cents (null = no manual amount)
 }
 
 /**
@@ -54,6 +63,19 @@ export interface ClientNewSavingsGoal {
  * 'account' signals a goal-less savings account (no target, no progress).
  */
 export type SavingsGoalStatus = 'on-track' | 'behind' | 'complete' | 'not-started' | 'account'
+
+/**
+ * Allocation mode for a savings account/goal (Story 26.1).
+ * - 'manual': the account holds a fixed `monthlyAllocation` (cents, >= 0).
+ * - 'automatic' (default): the account receives an even share of the leftover pool
+ *   computed in Story 26.2; any stored `monthlyAllocation` is ignored.
+ */
+export type AllocationMode = 'manual' | 'automatic'
+
+/** The allocation mode of a savings goal, defaulting an absent value to 'automatic'. */
+export function resolveAllocationMode(goal: { allocationMode?: AllocationMode }): AllocationMode {
+  return goal.allocationMode ?? 'automatic'
+}
 
 /**
  * Savings Goal with progress calculation
@@ -87,6 +109,8 @@ export interface CreateSavingsGoalInput {
   name: string
   targetAmount: number | null // In cents (null = account, no target)
   currentBalance: number // In cents
+  allocationMode?: AllocationMode // Story 26.1 (absent ⇒ 'automatic')
+  monthlyAllocation?: number | null // In cents (null = no manual amount)
   userId?: number // Optional for free tier (null), required for paid tier
 }
 
@@ -99,6 +123,8 @@ export interface UpdateSavingsGoalInput {
   name?: string
   targetAmount?: number | null // In cents (null = clear target → account)
   currentBalance?: number // In cents
+  allocationMode?: AllocationMode // Story 26.1
+  monthlyAllocation?: number | null // In cents (null = no manual amount)
 }
 
 /**
@@ -263,6 +289,40 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
       message: 'Current balance cannot exceed target amount',
       value: input.currentBalance,
     })
+  }
+
+  // Allocation validation (Story 26.1). The mode, when provided, must be a known
+  // value. A manual amount is constrained only in 'manual' mode — an 'automatic'
+  // account ignores any stored amount (it receives an even share of the leftover
+  // pool computed in Story 26.2), so a stale value must not raise an error.
+  if (input.allocationMode !== undefined) {
+    if (input.allocationMode !== 'manual' && input.allocationMode !== 'automatic') {
+      errors.push({
+        field: 'allocationMode',
+        message: 'Allocation mode must be "manual" or "automatic"',
+        value: input.allocationMode,
+      })
+    }
+  }
+
+  if (
+    input.allocationMode === 'manual' &&
+    input.monthlyAllocation !== undefined &&
+    input.monthlyAllocation !== null
+  ) {
+    if (typeof input.monthlyAllocation !== 'number' || !Number.isInteger(input.monthlyAllocation)) {
+      errors.push({
+        field: 'monthlyAllocation',
+        message: 'Monthly allocation must be an integer (in cents)',
+        value: input.monthlyAllocation,
+      })
+    } else if (input.monthlyAllocation < 0) {
+      errors.push({
+        field: 'monthlyAllocation',
+        message: 'Monthly allocation cannot be negative',
+        value: input.monthlyAllocation,
+      })
+    }
   }
 
   return errors

@@ -130,3 +130,91 @@ describe('SavingsPage — savings accounts (Story 16-1)', () => {
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * Story 26.1: per-account monthly allocation + mode. Automatic (default) hides the
+ * manual amount input and stores monthlyAllocation: null; manual reveals the input
+ * and stores the parsed cents; switching back to automatic ignores a typed amount.
+ */
+describe('SavingsPage — monthly allocation (Story 26.1)', () => {
+  beforeEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('defaults to automatic — the manual amount input is hidden and it stores null', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    // Automatic is selected by default; the manual amount input is not rendered.
+    expect(screen.getByTestId('savings-allocation-mode-select')).toHaveValue('automatic')
+    expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Leftover')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const goals = useSavingsStore.getState().savingsGoals
+    expect(goals).toHaveLength(1)
+    expect(goals[0]).toMatchObject({
+      name: 'Leftover',
+      allocationMode: 'automatic',
+      monthlyAllocation: null,
+    })
+  })
+
+  it('manual mode reveals the amount input and stores the parsed cents', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Rent Fund')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+
+    const amountInput = screen.getByTestId('savings-monthly-allocation-input')
+    expect(amountInput).toBeInTheDocument()
+    await user.type(amountInput, '250')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const goals = useSavingsStore.getState().savingsGoals
+    expect(goals).toHaveLength(1)
+    expect(goals[0]).toMatchObject({
+      name: 'Rent Fund',
+      allocationMode: 'manual',
+      monthlyAllocation: 25000, // $250 → cents
+    })
+  })
+
+  it('switching manual → automatic ignores a typed amount and stores null', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Flexible')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await user.type(screen.getByTestId('savings-monthly-allocation-input'), '999')
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'automatic')
+
+    // The amount input is hidden again once automatic is re-selected.
+    expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const goals = useSavingsStore.getState().savingsGoals
+    expect(goals[0]).toMatchObject({ allocationMode: 'automatic', monthlyAllocation: null })
+  })
+})

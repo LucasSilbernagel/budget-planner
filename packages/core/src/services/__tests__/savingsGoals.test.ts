@@ -610,3 +610,143 @@ describe('savingsGoals service', () => {
     })
   })
 })
+
+/**
+ * Story 26.1: per-account monthly allocation + allocation mode.
+ *
+ * Each savings account/goal can carry a nullable `monthlyAllocation` (cents, >= 0)
+ * and an `allocationMode` of 'manual' | 'automatic'. Manual accounts hold a fixed
+ * amount; automatic accounts get an even share of the leftover pool (computed in
+ * Story 26.2). Validation only constrains a manual amount; an automatic account
+ * ignores any stored amount.
+ */
+describe('savingsGoals — allocation fields (Story 26.1)', () => {
+  describe('Type Definitions', () => {
+    it('ClientSavingsGoal carries optional monthlyAllocation + allocationMode', () => {
+      const manual: ClientSavingsGoal = {
+        id: 'sg-1',
+        name: 'Vacation',
+        targetAmount: null,
+        currentBalance: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        allocationMode: 'manual',
+        monthlyAllocation: 25000, // $250/mo
+      }
+      const auto: ClientSavingsGoal = {
+        id: 'sg-2',
+        name: 'Leftover',
+        targetAmount: null,
+        currentBalance: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        allocationMode: 'automatic',
+        monthlyAllocation: null,
+      }
+      expect(manual.allocationMode).toBe('manual')
+      expect(manual.monthlyAllocation).toBe(25000)
+      expect(auto.allocationMode).toBe('automatic')
+      expect(auto.monthlyAllocation).toBeNull()
+    })
+
+    it('the allocation fields are optional (legacy shape still compiles)', () => {
+      const legacy: ClientNewSavingsGoal = {
+        name: 'Legacy',
+        targetAmount: null,
+        currentBalance: 0,
+      }
+      expect(legacy.allocationMode).toBeUndefined()
+      expect(legacy.monthlyAllocation).toBeUndefined()
+    })
+  })
+
+  describe('validateSavingsGoal — allocation', () => {
+    it('accepts automatic mode with no manual amount', () => {
+      const errors = validateSavingsGoal({
+        name: 'Leftover',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'automatic',
+        monthlyAllocation: null,
+      })
+      expect(errors).toEqual([])
+    })
+
+    it('accepts manual mode with a valid non-negative integer amount', () => {
+      const errors = validateSavingsGoal({
+        name: 'Rent',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'manual',
+        monthlyAllocation: 50000,
+      })
+      expect(errors).toEqual([])
+    })
+
+    it('accepts manual mode with a zero amount (>= 0)', () => {
+      const errors = validateSavingsGoal({
+        name: 'Rent',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'manual',
+        monthlyAllocation: 0,
+      })
+      expect(errors.some((e) => e.field === 'monthlyAllocation')).toBe(false)
+    })
+
+    it('rejects a negative manual amount', () => {
+      const errors = validateSavingsGoal({
+        name: 'Rent',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'manual',
+        monthlyAllocation: -1,
+      })
+      expect(errors.some((e) => e.field === 'monthlyAllocation')).toBe(true)
+    })
+
+    it('rejects a non-integer manual amount', () => {
+      const errors = validateSavingsGoal({
+        name: 'Rent',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'manual',
+        monthlyAllocation: 12.5,
+      })
+      expect(errors.some((e) => e.field === 'monthlyAllocation')).toBe(true)
+    })
+
+    it('ignores the manual amount when mode is automatic (no monthlyAllocation error)', () => {
+      // A stale negative amount left over from a prior manual entry must not
+      // produce an error once the account is switched to automatic.
+      const errors = validateSavingsGoal({
+        name: 'Leftover',
+        targetAmount: null,
+        currentBalance: 0,
+        allocationMode: 'automatic',
+        monthlyAllocation: -999,
+      })
+      expect(errors.some((e) => e.field === 'monthlyAllocation')).toBe(false)
+    })
+
+    it('rejects an invalid allocationMode value', () => {
+      const errors = validateSavingsGoal({
+        name: 'Rent',
+        targetAmount: null,
+        currentBalance: 0,
+        // @ts-expect-error — intentionally invalid mode for the guard test
+        allocationMode: 'weekly',
+      })
+      expect(errors.some((e) => e.field === 'allocationMode')).toBe(true)
+    })
+
+    it('accepts input with allocation fields omitted (backward compatible)', () => {
+      const errors = validateSavingsGoal({
+        name: 'Rent',
+        targetAmount: null,
+        currentBalance: 0,
+      })
+      expect(errors).toEqual([])
+    })
+  })
+})
