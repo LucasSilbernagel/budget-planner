@@ -1,20 +1,61 @@
-import type { AllocationMode } from '@budget-planner/core'
+import { type AllocationMode, solveAutomaticAllocations } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import {
+  useExpenses,
+  useIncomeSources,
+  useInvestmentEntries,
+  useSavingsGoals,
+  useSavingsStore,
+  useTotalSavings,
+} from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
+
+// Valid contribution cadences (mirrors the core Frequency enum). A persisted
+// investment `frequency` can be a corrupt/legacy non-null string — localStorage is
+// user-editable and the balance-store migrate only backfills *nullish* frequency —
+// and the solver's normalizer throws on an unknown frequency. Coerce a bad value to
+// 'monthly' at this boundary so it degrades instead of crashing the page, mirroring
+// the Balance page's `monthlyContributionCents`.
+const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
 
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
   const totalSavings = useTotalSavings()
   const { addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsProgress } =
     useSavingsStore()
+
+  // Leftover-allocation solver inputs (Story 26.3). Read the three other stores
+  // the pool depends on; investment contributions are the `type === 'investment'`
+  // balance entries mapped to { amount, frequency } (the solver normalizes them).
+  const incomeSources = useIncomeSources()
+  const expenses = useExpenses()
+  const investmentEntries = useInvestmentEntries()
+
+  // Recompute only when an input changes. `allocations` maps each AUTOMATIC
+  // account's id to its computed even-share (cents); manual accounts are absent,
+  // so membership discriminates the two modes for the per-row display below.
+  const { distributablePool, automaticAccountCount, allocations } = useMemo(
+    () =>
+      solveAutomaticAllocations({
+        incomeSources,
+        expenses,
+        investmentContributions: investmentEntries.map((entry) => ({
+          amount: entry.monthlyContribution,
+          // Degrade a corrupt persisted cadence to 'monthly' rather than letting the
+          // solver's validating normalizer throw during render (see KNOWN_FREQUENCIES).
+          frequency: KNOWN_FREQUENCIES.has(entry.frequency) ? entry.frequency : 'monthly',
+        })),
+        savingsAccounts: savingsGoals,
+      }),
+    [incomeSources, expenses, investmentEntries, savingsGoals]
+  )
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -254,6 +295,33 @@ export function SavingsPage() {
                 + Add Savings Goal
               </button>
             </div>
+
+            {/* Leftover split summary (Story 26.3). Shows the distributable pool
+                and how many automatic accounts share it; a calm note covers the
+                over-committed case (pool floored to 0 with automatic accounts). */}
+            <div className="mt-4 pt-4 border-gray-200 dark:border-gray-700 border-t">
+              <p className="text-body text-sm" data-testid="savings-leftover-summary">
+                {automaticAccountCount === 0 ? (
+                  <>
+                    <span className="font-semibold">{formatAmount(distributablePool)}/mo</span> is
+                    left over — no automatic accounts to split it. Set an account to “Automatic” to
+                    divide it up.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">{formatAmount(distributablePool)}/mo</span>{' '}
+                    split across {automaticAccountCount} automatic{' '}
+                    {automaticAccountCount === 1 ? 'account' : 'accounts'}
+                  </>
+                )}
+              </p>
+              {distributablePool === 0 && automaticAccountCount > 0 && (
+                <p className="mt-1 text-muted text-xs" data-testid="savings-overcommitted-note">
+                  There’s nothing left to distribute right now — automatic accounts receive $0 until
+                  your income exceeds your expenses, contributions, and fixed allocations.
+                </p>
+              )}
+            </div>
           </section>
 
           {/* Savings Goals List */}
@@ -280,6 +348,9 @@ export function SavingsPage() {
                         Current Balance
                       </th>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
+                        Monthly Allocation
+                      </th>
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Progress
                       </th>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
@@ -292,6 +363,18 @@ export function SavingsPage() {
                       // Account (Story 16-1): null target ⇒ absent progress (not 0%).
                       const isAccountRow = goal.targetAmount == null
                       const progress = getSavingsProgress(goal.id)
+                      // Allocation (Story 26.3): an account is automatic iff the
+                      // solver placed it in `allocations` (every automatic account
+                      // is present, value may be 0); manual accounts are absent and
+                      // show their stored fixed amount. (`in` rather than
+                      // Object.hasOwn to stay within the tsconfig lib target; ids
+                      // are uuids, so no Object.prototype key can collide.)
+                      const isAutomatic = goal.id in allocations
+                      // Clamp a (corrupt-data) negative manual amount to 0 so the row
+                      // matches the solver, which floors manual allocations at 0.
+                      const effectiveAllocation = isAutomatic
+                        ? allocations[goal.id] ?? 0
+                        : Math.max(0, goal.monthlyAllocation ?? 0)
                       return (
                         <tr key={goal.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -319,6 +402,22 @@ export function SavingsPage() {
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-muted text-sm">
                               {formatAmount(goal.currentBalance)}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="text-muted text-sm"
+                                data-testid={`savings-allocation-${goal.id}`}
+                              >
+                                {formatAmount(effectiveAllocation)}
+                              </span>
+                              <span
+                                className="inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs"
+                                data-testid={`savings-allocation-mode-${goal.id}`}
+                              >
+                                {isAutomatic ? 'Auto' : 'Fixed'}
+                              </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">

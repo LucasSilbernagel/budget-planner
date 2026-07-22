@@ -1,5 +1,8 @@
-import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
+import { act, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { useBalanceStore } from '../../stores/balanceStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useIncomeStore } from '../../stores/incomeStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { SavingsPage } from '../SavingsPage'
 
@@ -216,5 +219,205 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     const goals = useSavingsStore.getState().savingsGoals
     expect(goals[0]).toMatchObject({ allocationMode: 'automatic', monthlyAllocation: null })
+  })
+})
+
+/**
+ * Story 26.3: surface per-account allocations + the leftover split on the Savings
+ * page. The page reads four stores (income, expenses, investment contributions,
+ * savings accounts), runs the Story 26.2 `solveAutomaticAllocations` solver, and
+ * renders each account's effective monthly allocation (the fixed amount for manual
+ * accounts, the computed even-share for automatic ones), a leftover-split summary,
+ * and a calm over-committed note. All amounts are integer cents.
+ */
+describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
+  const ISO = '2026-01-01T00:00:00.000Z'
+
+  // Fully-typed store fixtures (the shared makeIncomeSource/makeExpense factories
+  // omit createdAt/updatedAt, which the Client* store types require).
+  const incomeRow = (amount: number, id = 'inc-1') => ({
+    id,
+    userId: 0,
+    name: 'Salary',
+    amount,
+    frequency: 'monthly' as const,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+  const expenseRow = (amount: number, id = 'exp-1') => ({
+    id,
+    userId: 0,
+    name: 'Rent',
+    amount,
+    frequency: 'monthly' as const,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+  const investmentRow = (monthlyContribution: number, id = 'inv-1') => ({
+    id,
+    type: 'investment' as const,
+    name: 'RRSP',
+    currentBalance: 0,
+    monthlyContribution,
+    frequency: 'monthly' as const,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+  const savingsRow = (over: {
+    id: string
+    name?: string
+    allocationMode?: 'manual' | 'automatic'
+    monthlyAllocation?: number | null
+  }) => ({
+    name: over.name ?? over.id,
+    targetAmount: null,
+    currentBalance: 0,
+    allocationMode: 'automatic' as 'manual' | 'automatic',
+    monthlyAllocation: null as number | null,
+    createdAt: ISO,
+    updatedAt: ISO,
+    ...over,
+  })
+
+  const resetStores = () => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  it('shows the leftover summary and each account’s effective allocation (AC-1, AC-2)', () => {
+    // income 500000 − expenses 150000 = net 350000; − 50000 contribution
+    // − 130000 manual = pool 170000 across 2 automatic → 85000 each. The manual
+    // fixed amount (130000) and the automatic share (85000) are DISTINCT so a
+    // manual↔automatic value swap would fail an assertion, not slip through.
+    useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(150000)] })
+    useBalanceStore.setState({ entries: [investmentRow(50000)] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsRow({ id: 'manual-1', allocationMode: 'manual', monthlyAllocation: 130000 }),
+        savingsRow({ id: 'auto-1', allocationMode: 'automatic' }),
+        savingsRow({ id: 'auto-2', allocationMode: 'automatic' }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    // Summary: pool 170000 (“1,700.00”) split across 2 automatic accounts.
+    const summary = screen.getByTestId('savings-leftover-summary')
+    expect(summary).toHaveTextContent(/1,700\.00/)
+    expect(summary).toHaveTextContent(/2 automatic accounts/)
+
+    // Manual account shows its fixed amount (130000 → “1,300.00”), tagged Fixed.
+    const manual = screen.getByTestId('savings-allocation-manual-1')
+    expect(manual).toHaveTextContent(/1,300\.00/)
+    expect(screen.getByTestId('savings-allocation-mode-manual-1')).toHaveTextContent(/Fixed/i)
+
+    // Each automatic account shows the even share (85000 → “850.00”), tagged Auto.
+    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/850\.00/)
+    expect(screen.getByTestId('savings-allocation-auto-2')).toHaveTextContent(/850\.00/)
+    expect(screen.getByTestId('savings-allocation-mode-auto-1')).toHaveTextContent(/Auto/i)
+
+    // No over-committed note when there is a positive pool.
+    expect(screen.queryByTestId('savings-overcommitted-note')).not.toBeInTheDocument()
+  })
+
+  it('handles a non-divisible pool with exact cents (largest-remainder)', () => {
+    // net 100 (“1.00”) across 3 automatic → 34 / 33 / 33, summing to 100.
+    useIncomeStore.setState({ incomeSources: [incomeRow(100)] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsRow({ id: 'a', allocationMode: 'automatic' }),
+        savingsRow({ id: 'b', allocationMode: 'automatic' }),
+        savingsRow({ id: 'c', allocationMode: 'automatic' }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-allocation-a')).toHaveTextContent(/0\.34/)
+    expect(screen.getByTestId('savings-allocation-b')).toHaveTextContent(/0\.33/)
+    expect(screen.getByTestId('savings-allocation-c')).toHaveTextContent(/0\.33/)
+  })
+
+  it('shows 0 for automatic accounts and a calm note when over-committed (AC-4)', () => {
+    // net 50000; manual 100000 exceeds it → pool floors to 0; autos get 0.
+    useIncomeStore.setState({ incomeSources: [incomeRow(200000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(150000)] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsRow({ id: 'manual-1', allocationMode: 'manual', monthlyAllocation: 100000 }),
+        savingsRow({ id: 'auto-1', allocationMode: 'automatic' }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/0\.00/)
+    expect(screen.getByTestId('savings-overcommitted-note')).toBeInTheDocument()
+  })
+
+  it('states there are no automatic accounts when every account is manual (AC-2)', () => {
+    useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsRow({ id: 'manual-1', allocationMode: 'manual', monthlyAllocation: 100000 }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    const summary = screen.getByTestId('savings-leftover-summary')
+    expect(summary).toHaveTextContent(/no automatic accounts/i)
+    expect(summary).not.toHaveTextContent(/split across 0/i)
+    // No over-committed note when there are no automatic accounts to receive a split.
+    expect(screen.queryByTestId('savings-overcommitted-note')).not.toBeInTheDocument()
+  })
+
+  it('recomputes the automatic share live when income changes (AC-3)', () => {
+    useIncomeStore.setState({ incomeSources: [incomeRow(100000)] })
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow({ id: 'auto-1', allocationMode: 'automatic' })],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    // Pool 100000 → the single automatic account gets all of it.
+    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/1,000\.00/)
+
+    // Raise income to 300000; the share updates with no reload.
+    act(() => {
+      useIncomeStore.setState({ incomeSources: [incomeRow(300000)] })
+    })
+    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/3,000\.00/)
+  })
+
+  it('degrades a corrupt investment frequency to monthly instead of crashing (review)', () => {
+    // A corrupt/legacy persisted frequency (localStorage is user-editable; migrate
+    // only backfills nullish) must not throw in the solver's normalizer at render.
+    useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
+    useBalanceStore.setState({
+      entries: [{ ...investmentRow(50000), frequency: 'daily' as unknown as 'monthly' }],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow({ id: 'auto-1', allocationMode: 'automatic' })],
+    })
+    // Renders without throwing; the bad frequency is treated as monthly, so the
+    // contribution stays 50000 → pool 450000 → the sole automatic account gets it.
+    renderWithProviders(<SavingsPage />)
+    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/4,500\.00/)
+  })
+
+  it('clamps a corrupt negative manual allocation to 0 in the row (review)', () => {
+    useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsRow({ id: 'manual-1', allocationMode: 'manual', monthlyAllocation: -5000 }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+    // Row shows 0.00 (matching the solver's Math.max(0, …) clamp), never "-50.00".
+    const manual = screen.getByTestId('savings-allocation-manual-1')
+    expect(manual).toHaveTextContent(/0\.00/)
+    expect(manual).not.toHaveTextContent(/-/)
   })
 })
