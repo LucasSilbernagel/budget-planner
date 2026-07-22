@@ -57,3 +57,50 @@ describe('PricingPageView pricing (story 25-2)', () => {
     expect(premium.queryByText(/two months free/)).not.toBeInTheDocument()
   })
 })
+
+describe('PricingPageView forecasting honesty (story 20-1, re-homed in 20-4)', () => {
+  it('never overpromises forecasting anywhere on the page — no reloadable / side-by-side', () => {
+    render(<PricingPageView />)
+
+    // The Premium card states the honest, shipped benefit…
+    expect(
+      within(card('Premium')).getByText('Advanced forecasting and saved scenarios')
+    ).toBeInTheDocument()
+
+    // …and nothing on the page — the cards OR the pricing.md prose the page also
+    // renders — overpromises the feature. Story 20-4 de-duped the prose: the
+    // positive honest description that legal-content.test.ts used to pin against
+    // the (now-removed) Premium bullet is re-homed to the card assertion above,
+    // and this page-wide negative check covers cards + prose together. (The raw
+    // prose still keeps its own negatives in legal-content.test.ts.)
+    expect(screen.queryByText(/reloadable/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/side by side/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('PricingPageView de-duplication + billing disclaimer (story 20-4)', () => {
+  it('states each plan/price once — the Free/Premium feature lists are not repeated in the prose', () => {
+    render(<PricingPageView />)
+
+    // The scannable comparison lives in the cards; the prose the page renders below
+    // must NOT re-list those same tier features (CONTENT-L). Each appears exactly
+    // once — the card — where before de-dup the prose repeated them (→ length 2).
+    expect(
+      screen.getByText('Track income, expenses, savings goals, and balances')
+    ).toBeInTheDocument()
+    expect(screen.getAllByText(/Track income, expenses/i)).toHaveLength(1) // Free card only, not prose
+    expect(screen.getAllByText(/Everything in Free, plus/i)).toHaveLength(1) // Premium card tagline only
+  })
+
+  it('keeps the balanced disclaimer line with its Paddle Merchant-of-Record + EUR disclosure', () => {
+    render(<PricingPageView />)
+
+    // The centered disclaimer <p> survives the layout change; its text (unique to
+    // the disclaimer, distinct from the prose wording) still carries the MoR + EUR
+    // disclosure required by Paddle.
+    expect(
+      screen.getByText(/Billed\s+securely by Paddle, our Merchant of Record/i)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Prices shown in EUR/i)).toBeInTheDocument()
+  })
+})

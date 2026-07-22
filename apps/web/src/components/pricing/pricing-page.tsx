@@ -61,7 +61,13 @@ export function PricingPageView(): React.ReactElement {
             />
           </section>
 
-          <p className="text-center text-sm text-gray-500">
+          {/* Constrained + balanced so the disclaimer doesn't orphan its last
+              few words across the full max-w-4xl container at desktop widths
+              (UX-DR29); `.text-balance` is defined in styles/global.css. This is a
+              short summary of the same Merchant-of-Record + EUR disclosures that
+              the pricing.md billing prose below states in full — not a duplicate
+              of it, so the two need not be kept word-for-word in sync. */}
+          <p className="mx-auto max-w-2xl text-balance text-center text-sm text-gray-500">
             The annual plan cancels anytime; the lifetime license is a one-time purchase. Billed
             securely by Paddle, our Merchant of Record. Prices shown in EUR; Paddle charges the
             equivalent in your local currency at checkout.

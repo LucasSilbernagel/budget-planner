@@ -1,42 +1,14 @@
 ## Simple, transparent pricing
 
-Budget Planner has two tiers. You can use the core planner for free, forever — and
-upgrade only if you want your data synced across devices and access to premium
-forecasting.
-
-### Free
-
-**Free, no account required.**
-
-- Track income, expenses, savings goals, and investment/debt balances
-- Net income, savings-capacity, and allocable-savings calculations
-- Income-vs-expense breakdown and net-worth projection charts
-- Retirement modelling
-- Currency-less or localized currency display
-- Dark mode
-
-Your data on the free tier is stored **only in your browser** (in its local
-storage). It never leaves your device and we never see it.
-
-### Premium
-
-**€39 per year, or €99 once for a lifetime license.**
-
-Prices are shown in euros; at checkout Paddle displays and charges the equivalent in your local currency.
-
-Everything in Free, plus:
-
-- **Multi-device sync** — your data is securely stored and synced across all your
-  devices
-- **Custom profiles** — keep separate sets of finances (e.g. personal vs.
-  household)
-- **Premium forecasting** — build what-if scenarios and save them to a searchable
-  list you can review and compare
-
-> **Note:** the exact amount and currency you are charged are confirmed by Paddle
-> at checkout before you pay.
+Budget Planner has two tiers. Use the core planner for free, forever — no account
+required — or upgrade to Premium for multi-device sync, custom profiles, and
+advanced forecasting. The plans are compared above.
 
 ### Billing & payments
+
+Premium is **€39 per year**, or **€99 once** for a **lifetime** license. Prices are
+shown in euros; at checkout Paddle displays and charges the equivalent in your local
+currency, and the exact amount and currency are confirmed before you pay.
 
 Payments are handled by **Paddle.com**, our authorised reseller and
 **Merchant of Record**. Paddle securely processes your payment and is responsible

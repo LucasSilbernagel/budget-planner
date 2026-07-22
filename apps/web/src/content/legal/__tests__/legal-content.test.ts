@@ -79,18 +79,26 @@ describe('pricing page content (AC-4)', () => {
     expect(PRICING_PAGE.content).not.toMatch(/€10\b/)
   })
 
-  it('describes both the free and premium tiers', () => {
-    expect(PRICING_PAGE.content).toMatch(/### Free/)
-    expect(PRICING_PAGE.content).toMatch(/### Premium/)
+  it('de-duplicates the plan comparison — prose carries billing/legal only, not the card feature lists (story 20-4, CONTENT-L)', () => {
+    // Story 20-4: the scannable Free/Premium feature lists + prices live in the
+    // PlanCards (pricing-page.tsx). This prose keeps only the uniquely-carried
+    // billing/legal detail, so the plan/benefit info is stated once, not twice.
+    expect(PRICING_PAGE.content).toMatch(/### Billing & payments/)
+    // The duplicated tier feature-list sections are gone…
+    expect(PRICING_PAGE.content).not.toMatch(/### Free/)
+    expect(PRICING_PAGE.content).not.toMatch(/### Premium/)
+    // …including the phrases that introduced the duplicated bullet lists.
+    expect(PRICING_PAGE.content).not.toMatch(/Everything in Free, plus/i)
+    expect(PRICING_PAGE.content).not.toMatch(/Track income, expenses/i)
   })
 
-  it('describes Premium forecasting honestly — no reload/side-by-side overpromise (story 20-1)', () => {
-    // Story 20-1: the pricing forecasting bullet must match what ships. Saved
-    // forecasts are a searchable list, not reloadable into the builder, and the
-    // Projections tab does not reflect the user's scenario — so no "reloadable"
-    // or "side by side" claims. Pin the honest phrasing so drift breaks a test.
-    expect(PRICING_PAGE.content).toMatch(/what-if scenarios/i)
-    expect(PRICING_PAGE.content).toMatch(/searchable\s+list/i)
+  it('never overpromises forecasting in the prose — no reloadable/side-by-side claim (story 20-1)', () => {
+    // Story 20-1's forecasting-honesty guarantee: saved forecasts are a
+    // searchable list, not reloadable into the builder, and the Projections tab
+    // does not reflect the user's scenario. The positive phrasing that used to be
+    // pinned here lived in the now-removed Premium bullet (de-duped in 20-4); the
+    // page-wide positive/negative guard is re-homed to pricing-page.test.tsx. This
+    // keeps the negative guarantee on the raw prose too.
     expect(PRICING_PAGE.content).not.toMatch(/reloadable/i)
     expect(PRICING_PAGE.content).not.toMatch(/side by side/i)
   })
