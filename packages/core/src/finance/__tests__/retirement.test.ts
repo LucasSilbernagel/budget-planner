@@ -11,11 +11,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   type CompoundingInput,
+  type RetirementAccumulationInput,
   type RetirementInput,
   calculateCompoundingProjection,
   calculateRequiredAssets,
+  calculateRequiredNestEgg,
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
+  projectAccumulatedNestEgg,
+  solveRetirementAccumulation,
   toMonthlyIncomeCents,
 } from '../retirement'
 
@@ -469,6 +473,248 @@ describe('Retirement Modeler', () => {
         const viaDivide = calculateRequiredAssets(Math.round(annualCents / 12), rate)
         expect(viaHelper).toBe(viaDivide)
       }
+    })
+  })
+})
+
+describe('Retirement Accumulation Solver (Story 26.6)', () => {
+  describe('projectAccumulatedNestEgg', () => {
+    it('reproduces the source-spreadsheet nest egg (~$788,649) at 202 months', () => {
+      // age 35, saved $59,541, $1,799/mo, 6% annual, run to 202 months.
+      // i = 0.06/12 = 0.005; (1.005)^202 ≈ 2.738699.
+      // principal FV = 59,541 × (1.005)^202     (monthly-compounded)
+      // annuity  FV = 1,799 × ((1.005)^202 − 1)/0.005  (ordinary/end-of-month)
+      // total ≈ $788,649.23 → $788,649 to the dollar (matches the spreadsheet).
+      const result = projectAccumulatedNestEgg(5_954_100, 179_900, 0.06, 202)
+
+      expect(Math.round(result / 100)).toBe(788_649)
+      // Closed-form exact cents (single round at the cents boundary).
+      expect(result).toBe(78_864_923)
+    })
+
+    it('computes monthly-compounded FV for a small horizon (hand-checked)', () => {
+      // principal $1,000, $100/mo, 12% annual → i = 0.01, n = 2.
+      // growth = 1.01^2 = 1.0201.
+      // FV = 1000 × 1.0201 + 100 × ((1.0201 − 1)/0.01) = 1020.10 + 100 × 2.01 = 1221.10
+      const result = projectAccumulatedNestEgg(100_000, 10_000, 0.12, 2)
+
+      expect(result).toBe(122_110) // $1,221.10 in cents
+    })
+
+    it('returns the principal unchanged when months = 0', () => {
+      expect(projectAccumulatedNestEgg(5_954_100, 179_900, 0.06, 0)).toBe(5_954_100)
+    })
+
+    it('degrades to linear accumulation at zero return', () => {
+      // 0% return: FV = principal + contribution × months, no compounding.
+      // $2,000 + $500/mo × 24 = $2,000 + $12,000 = $14,000
+      expect(projectAccumulatedNestEgg(200_000, 50_000, 0, 24)).toBe(1_400_000)
+    })
+
+    it('treats negative principal and contribution as zero (never negative)', () => {
+      expect(projectAccumulatedNestEgg(-100_000, -5_000, 0.06, 12)).toBe(0)
+    })
+
+    it('returns 0 for zero principal and zero contribution at any horizon (no false overflow)', () => {
+      // 0 saved + 0 contributed is always 0; must not trip the overflow guard even
+      // when (1+i)^months would overflow to Infinity (0 × Infinity = NaN).
+      expect(projectAccumulatedNestEgg(0, 0, 0.06, 200_000)).toBe(0)
+    })
+
+    it('throws on non-finite, negative, or non-integer inputs', () => {
+      expect(() => projectAccumulatedNestEgg(Number.NaN, 0, 0.06, 12)).toThrow('finite')
+      expect(() => projectAccumulatedNestEgg(1000, 0, -0.01, 12)).toThrow('non-negative')
+      expect(() => projectAccumulatedNestEgg(1000, 0, 0.06, -1)).toThrow('non-negative')
+      expect(() => projectAccumulatedNestEgg(1000, 0, 0.06, 12.5)).toThrow('integer')
+    })
+  })
+
+  describe('calculateRequiredNestEgg', () => {
+    it('deplete: required = yearsInRetirement × desiredAnnualIncome (exact cents)', () => {
+      // retire at 65, life expectancy 80 → 15 years × $40,000/yr = $600,000.
+      expect(calculateRequiredNestEgg(4_000_000, 0.06, 65, 80, 'deplete')).toBe(60_000_000)
+    })
+
+    it('deplete: works at zero return (growth = discount = 0 collapses the same way)', () => {
+      // 15 years × $40,000 = $600,000, independent of the rate under this convention.
+      expect(calculateRequiredNestEgg(4_000_000, 0, 65, 80, 'deplete')).toBe(60_000_000)
+    })
+
+    it('deplete: retirement age at/after life expectancy needs nothing', () => {
+      expect(calculateRequiredNestEgg(4_000_000, 0.06, 80, 80, 'deplete')).toBe(0)
+      expect(calculateRequiredNestEgg(4_000_000, 0.06, 85, 80, 'deplete')).toBe(0)
+    })
+
+    it('perpetual: equals the shipped Safe Withdrawal Model, independent of ages', () => {
+      // $60,000/yr at 6% → monthly $5,000 → FV = 5000 × (12/0.06) = $1,000,000.
+      const expected = calculateRequiredAssets(toMonthlyIncomeCents(6_000_000, 'annual'), 0.06)
+      expect(expected).toBe(100_000_000)
+
+      const required = calculateRequiredNestEgg(6_000_000, 0.06, 65, 80, 'perpetual')
+      expect(required).toBe(100_000_000)
+      // Life expectancy / retirement age must not affect the perpetual target.
+      expect(calculateRequiredNestEgg(6_000_000, 0.06, 40, 120, 'perpetual')).toBe(100_000_000)
+    })
+
+    it('perpetual: throws on a non-positive return rate (shipped contract)', () => {
+      expect(() => calculateRequiredNestEgg(6_000_000, 0, 65, 80, 'perpetual')).toThrow('positive')
+      expect(() => calculateRequiredNestEgg(6_000_000, -0.01, 65, 80, 'perpetual')).toThrow(
+        'positive'
+      )
+    })
+  })
+
+  describe('solveRetirementAccumulation', () => {
+    const baseInput: RetirementAccumulationInput = {
+      currentAge: 35,
+      currentSavedCents: 5_954_100, // $59,541
+      monthlySavingsCents: 179_900, // $1,799/mo
+      annualReturnRate: 0.06,
+      desiredAnnualIncomeCents: 4_000_000, // $40,000/yr
+      lifeExpectancy: 80,
+      model: 'deplete',
+    }
+
+    it('always reports saved-per-year = monthly × 12', () => {
+      const result = solveRetirementAccumulation(baseInput)
+      expect(result.savedPerYearCents).toBe(2_158_800) // $1,799 × 12 = $21,588
+    })
+
+    it('finds the earliest reachable retirement age (deplete) with consistent outputs', () => {
+      const result = solveRetirementAccumulation(baseInput)
+
+      expect(result.reachable).toBe(true)
+      expect(result.monthsToRetirement).not.toBeNull()
+      const months = result.monthsToRetirement as number
+      expect(Number.isInteger(months)).toBe(true)
+      expect(months).toBeGreaterThanOrEqual(0)
+
+      // Output invariants: age/years derive from the month count.
+      expect(result.yearsToRetirement).toBe(months / 12)
+      expect(result.earliestRetirementAge).toBe(35 + months / 12)
+
+      // The crossing holds at the reported month and fails one month earlier.
+      const projected = result.projectedNestEggCents as number
+      const required = result.requiredNestEggCents as number
+      expect(projected).toBeGreaterThanOrEqual(required)
+      if (months > 0) {
+        const prevAge = 35 + (months - 1) / 12
+        const prevProjected = projectAccumulatedNestEgg(5_954_100, 179_900, 0.06, months - 1)
+        const prevRequired = calculateRequiredNestEgg(4_000_000, 0.06, prevAge, 80, 'deplete')
+        expect(prevProjected).toBeLessThan(prevRequired)
+      }
+    })
+
+    it('is deterministic (same inputs → same result)', () => {
+      expect(solveRetirementAccumulation(baseInput)).toEqual(solveRetirementAccumulation(baseInput))
+    })
+
+    it('retires immediately when already fully funded (deplete)', () => {
+      const result = solveRetirementAccumulation({
+        ...baseInput,
+        currentSavedCents: 100_000_000, // $1,000,000 already saved
+        desiredAnnualIncomeCents: 1_200_000, // $12,000/yr × 45 yrs = $540,000 required at 35
+      })
+      expect(result.reachable).toBe(true)
+      expect(result.monthsToRetirement).toBe(0)
+      expect(result.earliestRetirementAge).toBe(35)
+    })
+
+    it('reports not-reachable when nothing is saved and income is required (deplete)', () => {
+      const result = solveRetirementAccumulation({
+        ...baseInput,
+        currentSavedCents: 0,
+        monthlySavingsCents: 0,
+        desiredAnnualIncomeCents: 4_000_000,
+      })
+      expect(result.reachable).toBe(false)
+      expect(result.monthsToRetirement).toBeNull()
+      expect(result.earliestRetirementAge).toBeNull()
+      expect(result.projectedNestEggCents).toBeNull()
+      expect(result.requiredNestEggCents).toBeNull()
+      expect(result.savedPerYearCents).toBe(0) // still populated
+    })
+
+    it('reports not-reachable when the perpetual target is never met before life expectancy', () => {
+      const result = solveRetirementAccumulation({
+        currentAge: 60,
+        currentSavedCents: 0,
+        monthlySavingsCents: 10_000, // $100/mo
+        annualReturnRate: 0.06,
+        desiredAnnualIncomeCents: 100_000_000, // $1,000,000/yr → required ≈ $16.7M
+        lifeExpectancy: 65,
+        model: 'perpetual',
+      })
+      expect(result.reachable).toBe(false)
+    })
+
+    it('perpetual with a zero/sub-precision return rate is not reachable (no throw)', () => {
+      const result = solveRetirementAccumulation({
+        ...baseInput,
+        annualReturnRate: 0,
+        model: 'perpetual',
+      })
+      expect(result.reachable).toBe(false)
+    })
+
+    it('is not reachable when current age is at or past life expectancy', () => {
+      expect(
+        solveRetirementAccumulation({ ...baseInput, currentAge: 80, lifeExpectancy: 80 }).reachable
+      ).toBe(false)
+      expect(
+        solveRetirementAccumulation({ ...baseInput, currentAge: 85, lifeExpectancy: 80 }).reachable
+      ).toBe(false)
+    })
+
+    it('always reports a finite saved-per-year, even on a not-reachable early return', () => {
+      // Regression: monthlySavings must be validated so NaN/Infinity cannot leak
+      // into savedPerYearCents via the pre-loop early returns.
+      const result = solveRetirementAccumulation({
+        ...baseInput,
+        currentAge: 80,
+        lifeExpectancy: 80,
+      })
+      expect(result.reachable).toBe(false)
+      expect(Number.isFinite(result.savedPerYearCents)).toBe(true)
+    })
+
+    it('throws on non-finite savings or a non-finite/negative rate (both models, no silent swallow)', () => {
+      expect(() =>
+        solveRetirementAccumulation({ ...baseInput, monthlySavingsCents: Number.NaN })
+      ).toThrow('finite')
+      expect(() =>
+        solveRetirementAccumulation({ ...baseInput, currentSavedCents: Number.NaN })
+      ).toThrow('finite')
+      expect(() =>
+        solveRetirementAccumulation({ ...baseInput, desiredAnnualIncomeCents: Number.NaN })
+      ).toThrow('finite')
+      expect(() =>
+        solveRetirementAccumulation({ ...baseInput, annualReturnRate: Number.NaN })
+      ).toThrow('non-negative finite')
+      expect(() => solveRetirementAccumulation({ ...baseInput, annualReturnRate: -0.01 })).toThrow(
+        'non-negative finite'
+      )
+      // The perpetual model must not silently swallow a NaN rate into not-reachable.
+      expect(() =>
+        solveRetirementAccumulation({
+          ...baseInput,
+          model: 'perpetual',
+          annualReturnRate: Number.NaN,
+        })
+      ).toThrow('non-negative finite')
+    })
+
+    it('terminates on a non-physical life expectancy without hanging (perpetual is age-independent)', () => {
+      // The perpetual required nest egg does not depend on life expectancy, so a
+      // huge value must yield the same reachable crossing — proving the horizon
+      // cap bounds the loop without changing realistic results.
+      const perpetualBase: RetirementAccumulationInput = { ...baseInput, model: 'perpetual' }
+      const normal = solveRetirementAccumulation(perpetualBase)
+      const huge = solveRetirementAccumulation({ ...perpetualBase, lifeExpectancy: 1_000_000 })
+
+      expect(normal.reachable).toBe(true)
+      expect(huge.reachable).toBe(true)
+      expect(huge.monthsToRetirement).toBe(normal.monthsToRetirement)
     })
   })
 })
