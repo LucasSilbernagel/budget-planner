@@ -20,6 +20,9 @@ export * from './finance/netIncome'
 // Savings capacity calculation
 export * from './finance/savingsCapacity'
 
+// Automatic leftover-allocation solver (Story 26.2)
+export * from './finance/savingsAllocation'
+
 // Retirement modeler
 export * from './finance/retirement'
 
