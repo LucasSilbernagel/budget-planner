@@ -15,6 +15,7 @@ import {
   getTypeDisplayProperties,
   isValidBalanceTracking,
   monthlyContributionCents,
+  remainingContributionRoom,
   resetBalanceTrackingTempId,
   sortByCreationDate,
   toClientBalanceTracking,
@@ -300,6 +301,81 @@ describe('monthlyContributionCents (Story 16-2)', () => {
     }
     expect(() => monthlyContributionCents(corrupt)).not.toThrow()
     expect(monthlyContributionCents(corrupt)).toBe(50000)
+  })
+})
+
+describe('remainingContributionRoom (Story 26-4)', () => {
+  // room = max(0, maxContributionLimit − currentBalance), in cents.
+  // No limit (null/undefined) ⇒ null (caller shows a placeholder, NOT "0").
+  it('returns limit minus current balance when under the limit', () => {
+    expect(
+      remainingContributionRoom({ maxContributionLimit: 500000, currentBalance: 100000 })
+    ).toBe(400000)
+  })
+
+  it('returns null when the limit is null (no limit set)', () => {
+    // Callers persist an unset limit as null (BalancePage submit coalesces to null).
+    const noLimit = { maxContributionLimit: null, currentBalance: 100000 } as unknown as Pick<
+      ClientBalanceTracking,
+      'maxContributionLimit' | 'currentBalance'
+    >
+    expect(remainingContributionRoom(noLimit)).toBeNull()
+  })
+
+  it('returns null when the limit is undefined (legacy row with the field absent)', () => {
+    // The persist migrate does not backfill maxContributionLimit, so a legacy row
+    // can reach core with the field absent (undefined). The `== null` guard covers it.
+    const legacy = { currentBalance: 100000 } as Pick<
+      ClientBalanceTracking,
+      'maxContributionLimit' | 'currentBalance'
+    >
+    expect(remainingContributionRoom(legacy)).toBeNull()
+  })
+
+  it('returns 0 (never negative) when the balance exceeds the limit', () => {
+    expect(
+      remainingContributionRoom({ maxContributionLimit: 100000, currentBalance: 150000 })
+    ).toBe(0)
+  })
+
+  it('returns 0 when the balance exactly meets the limit', () => {
+    expect(
+      remainingContributionRoom({ maxContributionLimit: 100000, currentBalance: 100000 })
+    ).toBe(0)
+  })
+
+  it('grows the room when the current balance is negative (debt-style row)', () => {
+    // Math.max is a no-op here: 100000 − (−50000) = 150000.
+    expect(
+      remainingContributionRoom({ maxContributionLimit: 100000, currentBalance: -50000 })
+    ).toBe(150000)
+  })
+
+  it('returns null for a corrupt non-number limit (tampered localStorage)', () => {
+    // localStorage is user-editable; a corrupt string must degrade to "no limit"
+    // (null → "—"), NOT slip through to Math.max(0, NaN) = NaN → a misleading "0.00".
+    const corrupt = {
+      maxContributionLimit: 'abc' as unknown as number,
+      currentBalance: 100000,
+    }
+    expect(remainingContributionRoom(corrupt)).toBeNull()
+  })
+
+  it('returns null for a NaN limit', () => {
+    expect(
+      remainingContributionRoom({ maxContributionLimit: Number.NaN, currentBalance: 100000 })
+    ).toBeNull()
+  })
+
+  it('coerces a non-finite currentBalance to 0 instead of returning NaN', () => {
+    // A valid limit with a corrupt balance still yields a finite room (the full
+    // limit), never NaN.
+    expect(
+      remainingContributionRoom({
+        maxContributionLimit: 100000,
+        currentBalance: Number.NaN,
+      })
+    ).toBe(100000)
   })
 })
 

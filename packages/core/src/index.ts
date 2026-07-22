@@ -53,3 +53,10 @@ export * from './analytics/service'
 // the web app's tsc) or a drift-prone local copy. A single NAMED type re-export —
 // NOT `export *` of the whole module — to avoid barrel name collisions.
 export type { AllocationMode } from './services/savingsGoals'
+
+// Story 26.4: the remaining-contribution-room derivation, re-exported for app
+// consumers (BalancePage) so they import from the resolvable root barrel rather
+// than the `services/balanceTracking` subpath (which does not resolve under the
+// web app's tsc). A single NAMED value re-export — NOT `export *` of the whole
+// module — to avoid barrel name collisions.
+export { remainingContributionRoom } from './services/balanceTracking'

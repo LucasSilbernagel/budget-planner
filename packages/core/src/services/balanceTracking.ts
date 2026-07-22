@@ -169,6 +169,39 @@ export function monthlyContributionCents(
 }
 
 /**
+ * Remaining contribution room for a balance-tracking account, in cents (Story 26-4).
+ *
+ * Returns `null` when no *usable* contribution limit is set — the caller shows a
+ * placeholder (e.g. "—"), NOT "0" (FR41: "Accounts with no limit show no room
+ * figure (not '0')"). "No usable limit" covers a persisted `null`, a legacy row
+ * where the field is absent (`undefined` — the type declares
+ * `maxContributionLimit?: number` and the persist migrate never backfills it),
+ * AND a corrupt non-number/non-finite value (localStorage is user-editable): a
+ * corrupt limit must degrade to "—", not slip through to `Math.max(0, NaN)` = NaN
+ * which the display formatter would coerce to a misleading "0.00". Mirrors the
+ * finite/type guard `monthlyContributionCents` applies at this same data boundary.
+ *
+ * Otherwise `max(0, maxContributionLimit − currentBalance)`, so an at-/over-limit
+ * account reads 0, never negative. A non-finite `currentBalance` (also possible
+ * from corrupt storage) is coerced to 0 so a valid limit still yields a finite
+ * room rather than NaN. Frequency-free — never touches the `normalizeToMonthly`
+ * throw path.
+ *
+ * @param entry - Object carrying the contribution limit and current balance (cents)
+ * @returns Remaining room in cents, or `null` when no usable limit is set
+ */
+export function remainingContributionRoom(
+  entry: Pick<ClientBalanceTracking, 'maxContributionLimit' | 'currentBalance'>
+): number | null {
+  const { maxContributionLimit, currentBalance } = entry
+  if (typeof maxContributionLimit !== 'number' || !Number.isFinite(maxContributionLimit)) {
+    return null
+  }
+  const balance = Number.isFinite(currentBalance) ? currentBalance : 0
+  return Math.max(0, maxContributionLimit - balance)
+}
+
+/**
  * Determine display type properties based on FinanceType
  *
  * @param type - Finance type ('investment' or 'debt')

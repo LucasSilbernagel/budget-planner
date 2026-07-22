@@ -1,3 +1,4 @@
+import { remainingContributionRoom } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -101,9 +102,11 @@ export function BalancePage() {
     if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
     }
-    // Max contribution limit is optional: empty is valid, only validate a
-    // provided value.
-    if (maxContributionLimit && maxContributionLimit.trim() !== '') {
+    // Max contribution limit is optional and investment-only: empty is valid,
+    // only validate a provided value on an investment (the field is hidden for
+    // debts — a debt has no contribution limit — so never block a debt submit on
+    // a stale value).
+    if (type === 'investment' && maxContributionLimit && maxContributionLimit.trim() !== '') {
       const parsed = parseFromInput(maxContributionLimit, locale)
       if (parsed < 0) {
         next.maxContributionLimit = 'Please enter a valid non-negative max contribution limit'
@@ -114,7 +117,7 @@ export function BalancePage() {
       next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
     }
     return next
-  }, [name, currentBalance, maxContributionLimit, monthlyContribution, locale])
+  }, [type, name, currentBalance, maxContributionLimit, monthlyContribution, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -217,8 +220,11 @@ export function BalancePage() {
         return
       }
 
+      // A contribution limit is an investment-only concept — a debt never carries
+      // one. Force null for debts so a new debt, an investment→debt switch, or
+      // saving a legacy debt that already had a limit all persist no limit.
       const maxLimitInCents =
-        maxContributionLimit && maxContributionLimit.trim() !== ''
+        type === 'investment' && maxContributionLimit && maxContributionLimit.trim() !== ''
           ? parseFromInput(maxContributionLimit, locale)
           : null
 
@@ -350,6 +356,9 @@ export function BalancePage() {
                         Max Contribution
                       </th>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
+                        Remaining Room
+                      </th>
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Contribution
                       </th>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
@@ -379,9 +388,27 @@ export function BalancePage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-muted text-sm">
-                              {entry.maxContributionLimit !== null
+                              {/* Contribution limit is investment-only (FR41);
+                                  debts show None, and a legacy null/undefined
+                                  limit also reads None (loose != null). */}
+                              {entry.type === 'investment' && entry.maxContributionLimit != null
                                 ? formatAmount(entry.maxContributionLimit)
                                 : 'None'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div
+                              className="text-muted text-sm"
+                              data-testid={`balance-remaining-room-${entry.id}`}
+                            >
+                              {/* Remaining contribution room is investment-only
+                                  (FR41) — debts show the em-dash placeholder. */}
+                              {entry.type === 'investment'
+                                ? (() => {
+                                    const room = remainingContributionRoom(entry)
+                                    return room === null ? '—' : formatAmount(room)
+                                  })()
+                                : '—'}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -550,54 +577,58 @@ export function BalancePage() {
               )}
             </div>
 
-            <div>
-              <label
-                htmlFor="maxContributionLimit"
-                className="block mb-1 font-medium text-label text-sm"
-              >
-                Max Contribution Limit (Optional)
-              </label>
-              <div className="relative shadow-sm rounded-md">
-                {mode === 'symbol' && (
-                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
-                  </div>
-                )}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  id="maxContributionLimit"
-                  value={maxContributionLimit}
-                  onChange={(e) => setMaxContributionLimit(e.target.value)}
-                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setMaxContributionLimit)}
-                  placeholder="0.00"
-                  className={`shadow-sm px-3 py-2 ${
-                    mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
-                    hasFieldError('maxContributionLimit')
-                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                      : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
-                  }`}
-                  aria-invalid={hasFieldError('maxContributionLimit')}
-                  aria-describedby={
-                    hasFieldError('maxContributionLimit')
-                      ? 'balance-max-contribution-error'
-                      : undefined
-                  }
-                  data-testid="balance-max-contribution-input"
-                />
-              </div>
-              {hasFieldError('maxContributionLimit') && (
-                <p
-                  id="balance-max-contribution-error"
-                  className="mt-1 text-sm text-red-600 dark:text-red-400"
-                  role="alert"
-                  data-testid="balance-max-contribution-error"
+            {/* A contribution limit applies only to investment/retirement
+                accounts — a debt has none (FR41), so hide the field for debts. */}
+            {type === 'investment' && (
+              <div>
+                <label
+                  htmlFor="maxContributionLimit"
+                  className="block mb-1 font-medium text-label text-sm"
                 >
-                  {getFieldError('maxContributionLimit')}
-                </p>
-              )}
-            </div>
+                  Max Contribution Limit (Optional)
+                </label>
+                <div className="relative shadow-sm rounded-md">
+                  {mode === 'symbol' && (
+                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                      <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    id="maxContributionLimit"
+                    value={maxContributionLimit}
+                    onChange={(e) => setMaxContributionLimit(e.target.value)}
+                    onBlur={(e) => reformatAmountOnBlur(e.target.value, setMaxContributionLimit)}
+                    placeholder="0.00"
+                    className={`shadow-sm px-3 py-2 ${
+                      mode === 'symbol' ? 'pl-7' : ''
+                    } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                      hasFieldError('maxContributionLimit')
+                        ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                        : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
+                    }`}
+                    aria-invalid={hasFieldError('maxContributionLimit')}
+                    aria-describedby={
+                      hasFieldError('maxContributionLimit')
+                        ? 'balance-max-contribution-error'
+                        : undefined
+                    }
+                    data-testid="balance-max-contribution-input"
+                  />
+                </div>
+                {hasFieldError('maxContributionLimit') && (
+                  <p
+                    id="balance-max-contribution-error"
+                    className="mt-1 text-sm text-red-600 dark:text-red-400"
+                    role="alert"
+                    data-testid="balance-max-contribution-error"
+                  >
+                    {getFieldError('maxContributionLimit')}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div>
               <label

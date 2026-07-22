@@ -218,3 +218,159 @@ describe('BalancePage inline validation', () => {
     })
   })
 })
+
+/**
+ * BalancePage "Remaining Room" column tests (Story 26.4, FR41).
+ *
+ * Each investment/balance account shows remaining contribution room =
+ * max(0, maxContributionLimit − currentBalance). An account with no limit shows
+ * a placeholder ("—"), NEVER "0"/"$0.00". The derivation lives in the pure core
+ * `remainingContributionRoom` (unit-tested separately); these tests prove the
+ * cell renders the right value per row.
+ */
+describe('BalancePage remaining contribution room column (Story 26.4)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('shows max(0, limit − balance) for an account with a limit, and "—" for one without', async () => {
+    // Under-limit account: room = 500000 − 100000 = 400000 cents ($4,000.00).
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment',
+      name: 'TFSA',
+      currentBalance: 100000,
+      maxContributionLimit: 500000,
+      monthlyContribution: 50000,
+      frequency: 'monthly',
+    })
+    // No-limit account: cell shows the placeholder, not a formatted zero.
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment',
+      name: 'Brokerage',
+      currentBalance: 200000,
+      maxContributionLimit: null,
+      monthlyContribution: 30000,
+      frequency: 'monthly',
+    })
+
+    const entries = useBalanceStore.getState().entries
+    const withLimit = entries.find((e) => e.name === 'TFSA')
+    const noLimit = entries.find((e) => e.name === 'Brokerage')
+    if (!withLimit || !noLimit) throw new Error('seed failed')
+
+    renderWithProviders(<BalancePage />)
+
+    // Under-limit row shows the formatted room (4,000.00 in the default
+    // currency-less mode), never negative/zero.
+    expect(await screen.findByTestId(`balance-remaining-room-${withLimit.id}`)).toHaveTextContent(
+      '4,000.00'
+    )
+    // No-limit row shows the placeholder, NOT a formatted zero.
+    const noLimitCell = screen.getByTestId(`balance-remaining-room-${noLimit.id}`)
+    expect(noLimitCell).toHaveTextContent('—')
+    expect(noLimitCell).not.toHaveTextContent('0')
+  })
+
+  it('shows a formatted 0 (never negative) when the balance meets or exceeds the limit', async () => {
+    // Over-limit: balance 150000 ≥ limit 100000 ⇒ room floors to 0 (distinct from "no limit").
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment',
+      name: 'Maxed RRSP',
+      currentBalance: 150000,
+      maxContributionLimit: 100000,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+
+    const entry = useBalanceStore.getState().entries[0]
+    if (!entry) throw new Error('seed failed')
+
+    renderWithProviders(<BalancePage />)
+
+    // room floors to 0 — a real formatted zero, distinct from the "—" no-limit case.
+    expect(await screen.findByTestId(`balance-remaining-room-${entry.id}`)).toHaveTextContent(
+      '0.00'
+    )
+  })
+
+  it('shows "—" remaining room AND "None" max contribution for a DEBT, even if a limit is set (FR41)', async () => {
+    // A contribution limit is an investment-only concept — a debt should never
+    // display remaining room, even a legacy debt that somehow carries a limit.
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'debt',
+      name: 'Legacy Card',
+      currentBalance: 300000,
+      maxContributionLimit: 1000000,
+      monthlyContribution: 20000,
+      frequency: 'monthly',
+    })
+
+    const entry = useBalanceStore.getState().entries[0]
+    if (!entry) throw new Error('seed failed')
+
+    const { container } = renderWithProviders(<BalancePage />)
+
+    // Remaining Room cell shows the placeholder, not max(0, 1000000 − 300000).
+    const roomCell = await screen.findByTestId(`balance-remaining-room-${entry.id}`)
+    expect(roomCell).toHaveTextContent('—')
+    expect(roomCell).not.toHaveTextContent('7,000')
+    // The pre-existing Max Contribution column also reads "None" for the debt
+    // (the stale limit is never surfaced), so the row is internally consistent.
+    expect(container).not.toHaveTextContent('10,000.00')
+  })
+})
+
+describe('BalancePage max-contribution-limit field is investment-only (Story 26.4)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('hides the Max Contribution Limit field for debts and shows it for investments', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    // Default type is investment → the limit field is present.
+    expect(within(dialog).getByTestId('balance-max-contribution-input')).toBeInTheDocument()
+
+    // Switch to debt → the field disappears (a debt has no contribution limit).
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+    expect(within(dialog).queryByTestId('balance-max-contribution-input')).not.toBeInTheDocument()
+
+    // Switch back to investment → the field returns.
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'investment')
+    expect(within(dialog).getByTestId('balance-max-contribution-input')).toBeInTheDocument()
+  })
+
+  it('clears any prior limit when an investment is switched to a debt on save', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    // Fill an investment with a limit, then switch the type to debt before saving.
+    await user.type(within(dialog).getByLabelText(/name/i), 'Reclassified')
+    await user.type(within(dialog).getByTestId('balance-current-balance-input'), '3000')
+    await user.type(within(dialog).getByTestId('balance-max-contribution-input'), '9999')
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '100')
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const entry = useBalanceStore.getState().entries[0]
+    if (!entry) throw new Error('save failed')
+    expect(entry.type).toBe('debt')
+    // The debt persists NO limit despite the value typed while it was an investment.
+    expect(entry.maxContributionLimit).toBeNull()
+  })
+})
