@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
+import { act, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { BalancePage } from '../BalancePage'
@@ -57,9 +57,11 @@ describe('BalancePage add balance entry button', () => {
     await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '250')
     await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
 
-    // Modal closes and the new entry is rendered in the list.
+    // Modal closes and the new entry is rendered. As an investment it now shows
+    // both in the "Investment Accounts" breakdown and in the entries table below
+    // (Story 26.5), so assert at least one occurrence rather than a single match.
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.getByText('My 401k')).toBeInTheDocument()
+    expect(screen.getAllByText('My 401k').length).toBeGreaterThan(0)
     expect(useBalanceStore.getState().entries).toHaveLength(1)
   })
 
@@ -372,5 +374,160 @@ describe('BalancePage max-contribution-limit field is investment-only (Story 26.
     expect(entry.type).toBe('debt')
     // The debt persists NO limit despite the value typed while it was an investment.
     expect(entry.maxContributionLimit).toBeNull()
+  })
+})
+
+/**
+ * BalancePage "Investment Accounts" breakdown tests (Story 26.5, FR-parity).
+ *
+ * A dedicated section groups the investment-type accounts (name + current
+ * balance + the Story 26.4 remaining room) with a combined total that REUSES
+ * `useTotalInvestmentBalance()` — the same selector behind the "Total
+ * Investments" stat card — so the two figures are provably equal (no
+ * double-counting, no divergence). Debts are excluded. Amounts render in the
+ * default currency-less mode ("50,000.00", not "$50,000.00").
+ */
+describe('BalancePage investment accounts breakdown (Story 26.5)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  // Seed two investments + one debt; return the seeded entries by name.
+  const seedMixed = () => {
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment',
+      name: 'Personal RRSP',
+      currentBalance: 5_000_000, // $50,000.00
+      maxContributionLimit: 8_000_000, // room = 3,000,000 → $30,000.00
+      monthlyContribution: 50_000,
+      frequency: 'monthly',
+    })
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment',
+      name: 'Personal TFSA',
+      currentBalance: 2_000_000, // $20,000.00
+      maxContributionLimit: null, // no limit → "—"
+      monthlyContribution: 30_000,
+      frequency: 'monthly',
+    })
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'debt',
+      name: 'Car Loan',
+      currentBalance: 1_500_000, // $15,000.00 — must NOT appear in the breakdown/total
+      maxContributionLimit: null,
+      monthlyContribution: 20_000,
+      frequency: 'monthly',
+    })
+    const entries = useBalanceStore.getState().entries
+    const rrsp = entries.find((e) => e.name === 'Personal RRSP')
+    const tfsa = entries.find((e) => e.name === 'Personal TFSA')
+    if (!rrsp || !tfsa) throw new Error('seed failed')
+    return { rrsp, tfsa }
+  }
+
+  it('lists investment accounts only, each with its balance and remaining room (AC-1)', async () => {
+    const { rrsp, tfsa } = seedMixed()
+    renderWithProviders(<BalancePage />)
+
+    const breakdown = within(await screen.findByTestId('investment-breakdown'))
+
+    // Both investments appear inside the breakdown; the debt does NOT.
+    expect(breakdown.getByText('Personal RRSP')).toBeInTheDocument()
+    expect(breakdown.getByText('Personal TFSA')).toBeInTheDocument()
+    expect(breakdown.queryByText('Car Loan')).not.toBeInTheDocument()
+
+    // Per-account balances.
+    expect(breakdown.getByTestId(`investment-breakdown-balance-${rrsp.id}`)).toHaveTextContent(
+      '50,000.00'
+    )
+    expect(breakdown.getByTestId(`investment-breakdown-balance-${tfsa.id}`)).toHaveTextContent(
+      '20,000.00'
+    )
+
+    // Per-account remaining room: RRSP = max(0, 8,000,000 − 5,000,000) = 3,000,000
+    // → 30,000.00; TFSA has no limit → the "—" placeholder (never a formatted 0).
+    expect(breakdown.getByTestId(`investment-breakdown-room-${rrsp.id}`)).toHaveTextContent(
+      '30,000.00'
+    )
+    const tfsaRoom = breakdown.getByTestId(`investment-breakdown-room-${tfsa.id}`)
+    expect(tfsaRoom).toHaveTextContent('—')
+    expect(tfsaRoom).not.toHaveTextContent('0')
+  })
+
+  it('shows a combined total that equals the Total Investments stat and excludes debts (AC-2, AC-3)', async () => {
+    const { rrsp, tfsa } = seedMixed()
+    renderWithProviders(<BalancePage />)
+
+    // Combined total = 50,000 + 20,000 = 70,000.00 (the $15,000 debt is excluded).
+    const total = await screen.findByTestId('investment-breakdown-total')
+    expect(total).toHaveTextContent('70,000.00')
+
+    // Reconciliation is the real invariant: the footer total must equal the SUM of
+    // the per-account balance cells actually rendered above it — not merely re-assert
+    // the same formatted string (which is a tautology since both render the same
+    // expression). Parse the currency-less amounts and compare the numbers.
+    const parseAmount = (el: HTMLElement | null): number =>
+      Number((el?.textContent ?? '').replace(/,/g, ''))
+    const rowsSum =
+      parseAmount(screen.getByTestId(`investment-breakdown-balance-${rrsp.id}`)) +
+      parseAmount(screen.getByTestId(`investment-breakdown-balance-${tfsa.id}`))
+    expect(parseAmount(total)).toBe(rowsSum)
+
+    // And it reconciles with the "Total Investments" stat card (same selector value).
+    expect(screen.getByTestId('stat-total-investments')).toHaveTextContent('70,000.00')
+
+    // The debt's balance is never folded into the investment total.
+    expect(total).not.toHaveTextContent('85,000.00')
+  })
+
+  it('updates the per-account rows and combined total live when an investment is added (AC-4)', async () => {
+    seedMixed()
+    renderWithProviders(<BalancePage />)
+
+    // Baseline total before the change.
+    expect(await screen.findByTestId('investment-breakdown-total')).toHaveTextContent('70,000.00')
+
+    // Add a third investment via the store (no reload / no re-render call).
+    act(() => {
+      useBalanceStore.getState().addBalanceEntry({
+        type: 'investment',
+        name: 'Work RRSP',
+        currentBalance: 1_000_000, // +$10,000.00
+        maxContributionLimit: null,
+        monthlyContribution: 40_000,
+        frequency: 'monthly',
+      })
+    })
+
+    // The new row appears and the combined total recomputes to 80,000.00.
+    const breakdown = within(await screen.findByTestId('investment-breakdown'))
+    expect(await breakdown.findByText('Work RRSP')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByTestId('investment-breakdown-total')).toHaveTextContent('80,000.00')
+    )
+  })
+
+  it('shows a calm placeholder and no total when there are no investment accounts (AC-5)', async () => {
+    // A debts-only book still has zero investment accounts.
+    act(() => {
+      useBalanceStore.getState().addBalanceEntry({
+        type: 'debt',
+        name: 'Only Debt',
+        currentBalance: 500_000,
+        maxContributionLimit: null,
+        monthlyContribution: 10_000,
+        frequency: 'monthly',
+      })
+    })
+    renderWithProviders(<BalancePage />)
+
+    const breakdown = within(await screen.findByTestId('investment-breakdown'))
+    expect(breakdown.getByText('No investment accounts yet')).toBeInTheDocument()
+    // No table + no combined-total row when the group is empty.
+    expect(breakdown.queryByTestId('investment-breakdown-total')).not.toBeInTheDocument()
   })
 })

@@ -51,6 +51,12 @@ export function BalancePage() {
   const totalInvestments = useTotalInvestments()
   const totalDebts = useTotalDebts()
   const netWorth = useNetWorth()
+  // Story 26.5: the investment-only slice for the "Investment Accounts" breakdown.
+  // Derived from the already-subscribed entries (no new store selector); the section
+  // re-renders on any store change, which is what makes its live update free. The
+  // combined total below reuses `totalInvestments` (= useTotalInvestmentBalance) so
+  // the breakdown total and the "Total Investments" stat card are the same number.
+  const investmentAccounts = balanceEntries.filter((entry) => entry.type === 'investment')
   const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry } = useBalanceStore()
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
@@ -298,7 +304,10 @@ export function BalancePage() {
             <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
               <div className="surface-inset p-4 rounded-lg">
                 <p className="text-muted text-sm">Total Investments</p>
-                <p className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl">
+                <p
+                  className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl"
+                  data-testid="stat-total-investments"
+                >
                   {formatAmount(totalInvestments)}
                 </p>
               </div>
@@ -321,6 +330,103 @@ export function BalancePage() {
                 </p>
               </div>
             </div>
+          </section>
+
+          {/* Investment Accounts breakdown (Story 26.5) — investment-type accounts
+              grouped with a combined total, the way the source spreadsheet lays out
+              RRSP / Work RRSP / TFSA. The combined total renders `totalInvestments`
+              (= useTotalInvestmentBalance) — the SAME selector behind the "Total
+              Investments" stat card above — so the two are provably equal (no
+              re-summing, no divergence). Investment-only, so no per-row type guard. */}
+          <section
+            className="surface shadow-md p-6 rounded-lg"
+            data-testid="investment-breakdown"
+            aria-labelledby="investment-breakdown-heading"
+          >
+            <h2
+              id="investment-breakdown-heading"
+              className="mb-6 font-semibold text-subheading text-xl"
+            >
+              Investment Accounts
+            </h2>
+
+            {investmentAccounts.length === 0 ? (
+              <div className="surface-inset p-8 rounded-lg text-center">
+                <p className="mb-4 text-muted">No investment accounts yet</p>
+                <p className="text-faint text-sm">
+                  Add an account with type Investment to see it grouped here
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
+                  <thead className="surface-inset">
+                    <tr>
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
+                        Account
+                      </th>
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
+                        Current Balance
+                      </th>
+                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
+                        Remaining Room
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
+                    {investmentAccounts.map((entry) => {
+                      // Every row here is an investment (pre-filtered), so no
+                      // `type === 'investment'` guard is needed — just the Story 26.4
+                      // three-state room contract: null → "—", else formatted.
+                      const room = remainingContributionRoom(entry)
+                      return (
+                        <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="font-medium text-heading text-sm">{entry.name}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div
+                              className="text-muted text-sm"
+                              data-testid={`investment-breakdown-balance-${entry.id}`}
+                            >
+                              {formatAmount(entry.currentBalance)}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div
+                              className="text-muted text-sm"
+                              data-testid={`investment-breakdown-room-${entry.id}`}
+                            >
+                              {room === null ? '—' : formatAmount(room)}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot className="surface-inset">
+                    <tr>
+                      <th
+                        scope="row"
+                        className="px-6 py-3 font-semibold text-heading text-sm text-left"
+                      >
+                        Combined Total
+                      </th>
+                      <td className="px-6 py-3 font-semibold text-heading text-sm whitespace-nowrap">
+                        <span data-testid="investment-breakdown-total">
+                          {formatAmount(totalInvestments)}
+                        </span>
+                      </td>
+                      {/* Empty filler cell keeps the footer row structurally 3-wide
+                          (matching the 3-column head). Left as a real (empty) data
+                          cell — inert to assistive tech — rather than aria-hidden,
+                          which would drop the column from the accessibility tree. */}
+                      <td className="px-6 py-3" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </section>
 
           {/* Balance Entries List */}
