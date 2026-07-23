@@ -26,13 +26,15 @@ export const Route = createFileRoute('/retirement')({
 function RetirementPage() {
   return (
     <ErrorBoundary>
-      <div className="min-h-screen surface-sunken py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <header className="mb-12">
+          <header className="mb-8 sm:mb-12">
             <div>
-              <h1 className="text-4xl font-bold text-heading mb-4">Retirement Planner</h1>
-              <p className="text-xl text-body">
+              <h1 className="text-2xl sm:text-4xl font-bold text-heading mb-3 sm:mb-4">
+                Retirement Planner
+              </h1>
+              <p className="text-base sm:text-xl text-body">
                 Work out when you can retire and how big your nest egg will be, then explore the
                 safe withdrawal rate and long-term growth of your savings.
               </p>
@@ -41,8 +43,10 @@ function RetirementPage() {
 
           {/* Accumulation Planner — the primary "when can I retire / how big is my
               nest egg" tool, driven by the retirement accumulation solver. */}
-          <section className="mb-12 surface rounded-2xl shadow-lg p-6 sm:p-8">
-            <h2 className="text-2xl font-semibold text-subheading mb-2">When Can You Retire?</h2>
+          <section className="mb-8 sm:mb-12 surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
+            <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-2">
+              When Can You Retire?
+            </h2>
             <p className="text-body mb-8">
               Enter your plan below to see your earliest retirement age and projected nest egg.
               Toggle between drawing your savings down to zero by your life expectancy and living
@@ -54,14 +58,16 @@ function RetirementPage() {
 
           {/* Supporting tools: the standalone Safe Withdrawal calculator and the
               long-term growth timeline. */}
-          <h2 className="text-2xl font-semibold text-heading mb-6">More Retirement Tools</h2>
+          <h2 className="text-xl sm:text-2xl font-semibold text-heading mb-6">
+            More Retirement Tools
+          </h2>
 
           {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
             {/* Left Column - Form */}
             <div className="lg:col-span-1">
-              <div className="surface rounded-2xl shadow-lg p-6 sm:p-8">
-                <h2 className="text-2xl font-semibold text-subheading mb-6">
+              <div className="surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
+                <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
                   Calculate Your Retirement Needs
                 </h2>
                 <p className="text-body mb-8">
@@ -106,8 +112,8 @@ function RetirementPage() {
 
             {/* Right Column - Timeline Chart */}
             <div className="lg:col-span-2">
-              <div className="surface rounded-2xl shadow-lg p-6 sm:p-8">
-                <h2 className="text-2xl font-semibold text-subheading mb-6">
+              <div className="surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
+                <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
                   Retirement Timeline Projection
                 </h2>
                 <p className="text-body mb-8">
@@ -139,8 +145,8 @@ function RetirementPage() {
           </div>
 
           {/* Additional Information */}
-          <div className="mt-12 surface rounded-2xl shadow-lg p-6 sm:p-8">
-            <h2 className="text-2xl font-semibold text-subheading mb-6">
+          <div className="mt-8 sm:mt-12 surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
+            <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
               Understanding Safe Withdrawal
             </h2>
             <div className="prose dark:prose-invert max-w-none text-body">

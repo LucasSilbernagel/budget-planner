@@ -626,7 +626,7 @@ function RetirementFormInner({
               id="incomeBasis"
               value={incomeBasis}
               onChange={handleIncomeBasisChange}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={isLoading}
             >
               <option value="monthly">Monthly</option>

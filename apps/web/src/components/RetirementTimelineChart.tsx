@@ -19,10 +19,53 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
+
+/**
+ * Recharts chrome that cannot be driven by CSS (numeric/enum props) and so must
+ * switch at the narrow-viewport breakpoint (story 24.1). On a phone we shrink the
+ * chart, narrow the Y-axis gutter and ticks, trim the margins, and drop the axis
+ * titles so the plot area stays usable down to 320px — mirroring the overview
+ * charts' `useIsNarrowViewport` treatment. Pure + exported so both branches are
+ * unit-tested directly (layout itself is not observable in jsdom).
+ */
+export interface RetirementChartChrome {
+  height: number
+  yAxisWidth: number
+  tickFontSize: number
+  marginLeft: number
+  marginRight: number
+  /** Whether to render the "Years from Now" / "Assets" axis titles. */
+  showAxisLabels: boolean
+}
+
+export function getRetirementChartChrome(isNarrow: boolean): RetirementChartChrome {
+  return isNarrow
+    ? {
+        height: 300,
+        yAxisWidth: 48,
+        tickFontSize: 10,
+        marginLeft: 4,
+        // Trimmed from the desktop 64, but kept wide enough to clear the
+        // "Retirement" reference-line label — which is centered on a far-right
+        // retirement year in the default scenario, so ~42px of it sits right of
+        // the line. A smaller margin clips the word at 320px (story 24.1 review).
+        marginRight: 44,
+        showAxisLabels: false,
+      }
+    : {
+        height: 400,
+        yAxisWidth: 72,
+        tickFontSize: 12,
+        marginLeft: 20,
+        marginRight: 64,
+        showAxisLabels: true,
+      }
+}
 
 /**
  * Props for RetirementTimelineChart component
@@ -141,6 +184,10 @@ function RetirementTimelineChartInner({
   const { mode, currency, locale } = useCurrencyPreferences()
   // Theme-aware Recharts chrome so axes/grid stay legible on the dark card.
   const chartColors = useChartColors()
+  // Drop desktop-only chart chrome below the `sm` breakpoint so the plot area
+  // stays usable at 320px (story 24.1).
+  const isNarrow = useIsNarrowViewport()
+  const chartChrome = getRetirementChartChrome(isNarrow)
 
   // Local state for user-configurable parameters
   // Note: returnRate is stored as percentage (0-100) for UI consistency
@@ -370,7 +417,7 @@ function RetirementTimelineChartInner({
               onChange={handlePrincipalChange}
               className={`w-full py-2 ${
                 mode === 'symbol' ? 'pl-7 pr-3' : 'px-3'
-              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]`}
               min="0"
               step="1000"
             />
@@ -394,7 +441,7 @@ function RetirementTimelineChartInner({
               onChange={handleContributionChange}
               className={`w-full py-2 ${
                 mode === 'symbol' ? 'pl-7 pr-3' : 'px-3'
-              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]`}
               min="0"
               step="1000"
             />
@@ -411,7 +458,7 @@ function RetirementTimelineChartInner({
               id="returnRate"
               value={returnRate}
               onChange={handleReturnRateChange}
-              className="w-full py-2 pl-3 pr-7 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full min-h-[44px] py-2 pl-3 pr-7 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               min="0"
               max="100"
               step="0.1"
@@ -431,7 +478,7 @@ function RetirementTimelineChartInner({
             id="years"
             value={years}
             onChange={handleYearsChange}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min="0"
             max="100"
           />
@@ -446,7 +493,7 @@ function RetirementTimelineChartInner({
             id="currentAge"
             value={currentAgeState}
             onChange={handleCurrentAgeChange}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min="18"
             max="120"
           />
@@ -461,7 +508,7 @@ function RetirementTimelineChartInner({
             id="retirementAge"
             value={retirementAgeState}
             onChange={handleRetirementAgeChange}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             min={currentAgeState + 1}
             max="120"
           />
@@ -471,7 +518,7 @@ function RetirementTimelineChartInner({
           <button
             type="button"
             onClick={resetToDefaults}
-            className="w-full py-2 px-3 border border-transparent rounded-md text-sm font-medium leading-6 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"
+            className="w-full min-h-[44px] py-2 px-3 border border-transparent rounded-md text-sm font-medium leading-6 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             Reset
           </button>
@@ -480,37 +527,54 @@ function RetirementTimelineChartInner({
 
       {/* Chart */}
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-        <ResponsiveContainer width="100%" height={400}>
+        <ResponsiveContainer width="100%" height={chartChrome.height}>
           {/* Extra right margin so the "Retirement" reference-line label, which
               sits at the far-right final year in the default scenario (retire at
-              the end of the projection), is not clipped by the container edge. */}
-          <LineChart data={chartData} margin={{ top: 20, right: 64, left: 20, bottom: 20 }}>
+              the end of the projection), is not clipped by the container edge.
+              Margins/labels are trimmed on narrow viewports (story 24.1). */}
+          <LineChart
+            data={chartData}
+            margin={{
+              top: 20,
+              right: chartChrome.marginRight,
+              left: chartChrome.marginLeft,
+              bottom: 20,
+            }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis
               dataKey="year"
-              label={{
-                value: 'Years from Now',
-                position: 'insideBottom',
-                offset: -5,
-                fill: chartColors.axis,
-              }}
-              tick={{ fontSize: 12, fill: chartColors.axis }}
+              label={
+                chartChrome.showAxisLabels
+                  ? {
+                      value: 'Years from Now',
+                      position: 'insideBottom',
+                      offset: -5,
+                      fill: chartColors.axis,
+                    }
+                  : undefined
+              }
+              tick={{ fontSize: chartChrome.tickFontSize, fill: chartColors.axis }}
               stroke={chartColors.axis}
             />
             <YAxis
               dataKey="endingBalance"
-              label={{
-                value: 'Assets',
-                angle: -90,
-                position: 'insideLeft',
-                offset: 10,
-                fill: chartColors.axis,
-              }}
+              label={
+                chartChrome.showAxisLabels
+                  ? {
+                      value: 'Assets',
+                      angle: -90,
+                      position: 'insideLeft',
+                      offset: 10,
+                      fill: chartColors.axis,
+                    }
+                  : undefined
+              }
               tickFormatter={(value) => formatCompactAxisTick(value, mode, currency)}
-              tick={{ fontSize: 12, fill: chartColors.axis }}
+              tick={{ fontSize: chartChrome.tickFontSize, fill: chartColors.axis }}
               stroke={chartColors.axis}
               domain={[0, 'auto']}
-              width={72}
+              width={chartChrome.yAxisWidth}
             />
             <Tooltip
               content={<CustomTooltip mode={mode} currency={currency} locale={locale} />}
@@ -528,7 +592,7 @@ function RetirementTimelineChartInner({
               dot={{ r: 4, fill: '#3B82F6' }}
               activeDot={{ r: 8, fill: '#1D4ED8' }}
             />
-            {/* Reference line at retirement year */}
+            {/* Reference line at retirement year. */}
             {retirementAgeState > currentAgeState && (
               <ReferenceLine
                 x={retirementAgeState - currentAgeState}

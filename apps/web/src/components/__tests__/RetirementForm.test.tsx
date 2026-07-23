@@ -207,3 +207,32 @@ describe('RetirementForm — prefilled desired-income default (UX review #6)', (
     expect(income).not.toHaveValue('500,000.00')
   })
 })
+
+/**
+ * Mobile-usability guardrails (story 24.1).
+ *
+ * The "Income period" <select> shipped with `focus:ring-blue-500` but no
+ * `focus:ring-2` alongside `focus:outline-none` — a ring colour with zero width,
+ * i.e. an invisible focus indicator (the Epic 15 WCAG lesson). This pins the fix
+ * (visible focus ring + a ≥44px tap target) so it can't silently regress.
+ */
+describe('RetirementForm — mobile a11y (story 24.1)', () => {
+  beforeEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+  })
+
+  afterEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+  })
+
+  it('the Income period select keeps a visible focus ring (focus:ring-2) and a ≥44px target', () => {
+    renderWithProviders(<RetirementForm preFillFromExistingData={false} />)
+
+    const basis = screen.getByLabelText('Income period') as HTMLSelectElement
+    // Class-token membership, not substring: focus:ring-2 must be present on its
+    // own (focus:ring-blue-500 alone = invisible focus).
+    expect(basis.classList.contains('focus:ring-2')).toBe(true)
+    expect(basis.classList.contains('focus:outline-none')).toBe(true)
+    expect(basis.classList.contains('min-h-[44px]')).toBe(true)
+  })
+})
