@@ -9,7 +9,7 @@
  */
 
 import { useActiveProfileId, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
-import { canonicalizeCurrency } from '@budget-planner/core'
+import { canonicalizeCurrency, currencyDisplayLabel } from '@budget-planner/core'
 import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 
@@ -18,17 +18,21 @@ import { Modal } from '../ui/Modal'
 // path (story 8-2), so they are dropped as redundant — a single USD entry stands
 // in for the whole cluster. SEK/NZD are kept: they format distinctly (kr / NZ$)
 // and are not part of the consolidated dollar cluster.
-const CURRENCY_OPTIONS = [
-  { value: 'NONE', label: 'No Currency' },
-  { value: 'USD', label: 'US Dollar ($)' },
-  { value: 'EUR', label: 'Euro (€)' },
-  { value: 'GBP', label: 'British Pound (£)' },
-  { value: 'JPY', label: 'Japanese Yen (¥)' },
-  { value: 'CHF', label: 'Swiss Franc (CHF)' },
-  { value: 'CNY', label: 'Chinese Yuan (¥)' },
-  { value: 'SEK', label: 'Swedish Krona (kr)' },
-  { value: 'NZD', label: 'New Zealand Dollar (NZ$)' },
-]
+//
+// Labels use the shared, nationality-neutral symbol-first `currencyDisplayLabel`
+// (story 14-1 / Epic 22) so this picker matches the Settings currency picker and
+// no national name ("US Dollar", "New Zealand Dollar") surfaces now that `$` is
+// the app default. Outputs: USD → "$", EUR → "€", GBP → "£", JPY → "¥ JPY",
+// CNY → "¥ CNY" (shared-glyph suffix), CHF → "CHF". SEK / NZD have no symbol in
+// core so they render as their bare ISO code ("SEK" / "NZD") — canonical and
+// leak-free (not a national-dollar label). 'NONE' keeps a semantic label: it is
+// the currency-less sentinel, not a symbol.
+const CURRENCY_OPTIONS = ['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CNY', 'SEK', 'NZD'].map(
+  (value) => ({
+    value,
+    label: value === 'NONE' ? 'No Currency' : currencyDisplayLabel(value),
+  })
+)
 
 interface CreateProfileDialogProps {
   onClose: () => void

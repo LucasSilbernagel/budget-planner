@@ -20,10 +20,14 @@ interface CurrencyState {
 }
 
 // Default values
-// Currency-less is the product default (FR9 / story 4-6 AC-1, project-context.md):
-// new users see raw numbers until they opt into explicit symbols via the toggle.
-const DEFAULT_MODE: CurrencyMode = 'none'
-const DEFAULT_CURRENCY: CurrencyCode = 'NONE'
+// New users default to explicit `$` (USD) symbols (FR38 / Epic 22), reversing the
+// earlier currency-less default (FR9 / story 4-6 AC-1). Existing users keep their
+// persisted preference — the `migrate` per-field coalesce below only falls back to
+// these defaults for a missing field, so an explicit stored `none`/`NONE` (or any
+// other saved choice) is preserved, never overwritten. `$` is nationality-neutral
+// in the UI (currencyDisplayLabel('USD') === '$'); billing/pricing display stays EUR.
+const DEFAULT_MODE: CurrencyMode = 'symbol'
+const DEFAULT_CURRENCY: CurrencyCode = 'USD'
 
 export const useCurrencyStore = create<CurrencyState>()(
   persist(

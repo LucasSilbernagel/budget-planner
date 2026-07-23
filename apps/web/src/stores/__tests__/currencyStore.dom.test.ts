@@ -26,9 +26,13 @@ describe('currencyStore (story 8-1)', () => {
     localStorage.clear()
   })
 
-  it('defaults to the currency-less product default', () => {
-    expect(useCurrencyStore.getState().mode).toBe('none')
-    expect(useCurrencyStore.getState().currency).toBe('NONE')
+  it('defaults new users to explicit USD symbols (story 22-1 / FR38)', () => {
+    // The real product default lives on the store's INITIAL state, independent of
+    // the suite's currency-less test baseline (the setup/local beforeEach setState).
+    // A brand-new user (no persisted blob) gets these values.
+    const initial = useCurrencyStore.getInitialState()
+    expect(initial.mode).toBe('symbol')
+    expect(initial.currency).toBe('USD')
   })
 
   describe('useFormattedAmount derives locale from currency (AC-1)', () => {
@@ -100,15 +104,38 @@ describe('currencyStore (story 8-1)', () => {
       expect(useCurrencyStore.getState().mode).toBe('symbol')
     })
 
-    it('falls back to defaults for a corrupt v0 blob missing mode/currency', async () => {
+    it('falls back to the new symbol/USD default for a corrupt v0 blob missing mode/currency (story 22-1)', async () => {
       // A partial/corrupt legacy blob must not shallow-merge undefined over the
-      // deterministic defaults (migrate coalesces per field).
+      // deterministic defaults (migrate coalesces per field). With FR38 the
+      // per-field fallback is now symbol/USD, not currency-less.
       seed({ locale: 'de-DE', localeUserSet: true }, 0)
 
       await expect(useCurrencyStore.persist.rehydrate()).resolves.not.toThrow()
 
+      expect(useCurrencyStore.getState().mode).toBe('symbol')
+      expect(useCurrencyStore.getState().currency).toBe('USD')
+    })
+
+    it('preserves an existing explicit currency-less choice (new default does NOT clobber it) (story 22-1 / AC-2)', async () => {
+      // The FR38 default flip must not overwrite a stored preference. A user who
+      // deliberately chose currency-less has { mode:'none', currency:'NONE' }
+      // persisted at the current version — it must rehydrate unchanged.
+      //
+      // Pre-set the live store to the CONTRASTING symbol/USD (the shipped default)
+      // so the assertion proves rehydrate actively restored the stored value,
+      // rather than passing because the pre-state already matched (the global
+      // test baseline is none/NONE).
+      useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+      seed({ mode: 'none', currency: 'NONE' }, 2)
+
+      await useCurrencyStore.persist.rehydrate()
+
       expect(useCurrencyStore.getState().mode).toBe('none')
       expect(useCurrencyStore.getState().currency).toBe('NONE')
+
+      // And their amounts still render as raw grouped numbers, not `$…`.
+      const { result } = renderHook(() => useFormattedAmount())
+      expect(result.current(100000)).toBe('1,000.00')
     })
 
     it('canonicalizes a persisted consolidated currency (v1 CAD → USD) (story 8-2 AC-3)', async () => {
