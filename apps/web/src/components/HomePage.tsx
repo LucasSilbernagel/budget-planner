@@ -19,7 +19,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -28,7 +27,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
-import { formatCompactAxisTick, niceAxisTicks } from '../lib/chart-axis'
+import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
@@ -109,8 +108,17 @@ export function HomePage() {
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
   const netWorth = totalInvestments - totalDebts
 
-  // Check if we have any data
-  const hasData = incomeSources.length > 0 || expenses.length > 0
+  // Check if we have any data worth showing the dashboard for. Includes balances
+  // (savings/investments/debts), not just income/expense flows (story UX-2): a
+  // user who tracks only balances should reach the "Balances" sub-chart of the
+  // Financial Category Summary rather than the onboarding screen. The two
+  // Income/Expense breakdown pies handle their own empty state (`emptyLabel`), so
+  // a flows-less user sees empty-pie placeholders + the balances chart.
+  const hasData =
+    incomeSources.length > 0 ||
+    expenses.length > 0 ||
+    savingsGoals.length > 0 ||
+    balanceEntries.length > 0
 
   // ============================================================================
   // Enhanced Visualization State (Story 3-3, simplified in 12-3)
@@ -240,13 +248,18 @@ export function HomePage() {
     [expenseData]
   )
 
-  // Financial Category Summary bars. Income and expenses follow the same
-  // overview duration selector as the cards above (story 12-2), so the whole
-  // dashboard speaks one period — the bars and their labels re-express at the
-  // chosen cadence (`incomeForDuration`/`expensesForDuration`) instead of being
-  // hard-coded to monthly while the cards read "per year". Savings, investments,
-  // and debts are point-in-time balances, so they carry no period suffix.
-  const netWorthBarData = [
+  // Financial Category Summary. Flows and balances are two different kinds of
+  // number — a per-period FLOW (Income/Expenses, re-expressed at the overview
+  // duration) vs a point-in-time BALANCE (Savings/Investments/Debts) — so
+  // plotting them on one shared value axis let a large annual flow (~$93.6k)
+  // crush the balance bars into an unreadable sliver (story UX-2). Split into two
+  // datasets, each rendered in its own sub-chart with its own axis so neither can
+  // dominate the other.
+  //
+  // Flows keep the story-12-2 duration alignment: same cadence as the cards, same
+  // `(per week/month/year)` suffix. The chart uses Recharts' vertical layout, so
+  // bars run horizontally and Expenses (negative) extends leftward of the 0 line.
+  const flowsBarData = [
     {
       category: `Income ${DURATION_LABEL[duration]}`,
       amount: incomeForDuration,
@@ -257,6 +270,11 @@ export function HomePage() {
       amount: -expensesForDuration,
       fill: EXPENSE_COLOR,
     },
+  ].filter((item) => item.amount !== 0)
+
+  // Balances are absolute, point-in-time amounts — no period suffix — with debts
+  // shown as a reduction (negative), consistent with the Net Worth definition.
+  const balancesBarData = [
     {
       category: 'Savings',
       amount: totalSavings,
@@ -274,14 +292,14 @@ export function HomePage() {
     },
   ].filter((item) => item.amount !== 0)
 
-  // Round, evenly-spaced axis ticks (cents), clamped to include a 0 baseline for
-  // the diverging bars. Replaces the old `dataMin-100 … dataMax+100` domain,
-  // whose exact data-derived endpoints rendered as arbitrary values like
-  // "-2,551.00 … 7,801.00".
-  const barTicks = niceAxisTicks(
-    Math.min(0, ...netWorthBarData.map((d) => d.amount)),
-    Math.max(0, ...netWorthBarData.map((d) => d.amount))
-  )
+  // Round, evenly-spaced axis ticks (cents) PER chart via the shared
+  // `barDomainTicks` helper (each domain clamped to include a 0 baseline for its
+  // diverging bars). Independent domains are the whole point — the flows axis
+  // scales to ~$90k while the balances axis scales to ~$5k, so a $5k savings
+  // balance is legible instead of a hair-line against a $90k income. The helper
+  // is unit-tested to prove the two domains come out independent.
+  const flowsBarTicks = barDomainTicks(flowsBarData.map((d) => d.amount))
+  const balancesBarTicks = barDomainTicks(balancesBarData.map((d) => d.amount))
 
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">
@@ -448,70 +466,55 @@ export function HomePage() {
                 </div>
               </section>
 
-              {/* Financial Category Summary bar chart. After the redundant
-                  "Asset & Liability Breakdown" pie was removed (story 12-4), this
+              {/* Financial Category Summary. After the redundant "Asset &
+                  Liability Breakdown" pie was removed (story 12-4), this section
                   is the sole carrier of the current Savings / Investments / Debts
-                  figures (alongside monthly Income / Expenses). */}
+                  figures (alongside Income / Expenses). Story UX-2 splits the old
+                  single bar chart into two sub-charts — per-period flows and
+                  point-in-time balances — each on its own axis so a large annual
+                  flow can no longer flatten the balance bars. The section heading
+                  stays the carrier the story-12-4 tests assert. */}
               <section className="surface rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-subheading mb-4">
                   Financial Category Summary
                 </h2>
-                {netWorthBarData.length > 0 ? (
-                  <div className="h-[350px]">
-                    <ErrorBoundary
-                      fallback={
-                        <div className="p-4 text-red-600 dark:text-red-400">
-                          Chart error occurred
-                        </div>
-                      }
-                    >
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={netWorthBarData} layout="vertical">
-                          {/* Recharts' default axis/grid/tooltip strokes are only
-                              legible on a light canvas; route them through the
-                              shared chartTheme so the surviving summary chart is
-                              readable on the dark `.surface` card too (story 11-2
-                              / 12-4 AC-2 dark-mode constraint). */}
-                          <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-                          {/* Round ticks (amounts are cents) with a compact,
-                              cents-dropping label — the full formatAmount value
-                              carries ".00" the narrow axis has no room for. */}
-                          <XAxis
-                            type="number"
-                            domain={[barTicks[0], barTicks[barTicks.length - 1]]}
-                            ticks={barTicks}
-                            tickFormatter={(value) =>
-                              formatCompactAxisTick(value / 100, mode, currency)
-                            }
-                            tick={{ fontSize: 12, fill: chartColors.axis }}
-                            stroke={chartColors.axis}
-                          />
-                          <YAxis
-                            dataKey="category"
-                            type="category"
-                            width={isNarrowViewport ? 76 : 132}
-                            tick={{ fontSize: isNarrowViewport ? 11 : 12, fill: chartColors.axis }}
-                            stroke={chartColors.axis}
-                          />
-                          <Tooltip
-                            formatter={(value: number, name: string) => [formatAmount(value), name]}
-                            contentStyle={{
-                              backgroundColor: chartColors.tooltipBg,
-                              border: `1px solid ${chartColors.tooltipBorder}`,
-                              color: chartColors.tooltipText,
-                            }}
-                            labelStyle={{ color: chartColors.tooltipText }}
-                            itemStyle={{ color: chartColors.tooltipText }}
-                          />
-                          <Legend wrapperStyle={{ color: chartColors.tooltipText }} />
-                          <Bar dataKey="amount" name="Amount">
-                            {netWorthBarData.map((entry) => (
-                              <Cell key={entry.category} fill={entry.fill} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ErrorBoundary>
+                {flowsBarData.length > 0 || balancesBarData.length > 0 ? (
+                  <div className="space-y-8">
+                    {/* Per-period flows (Income / Expenses). Only rendered when
+                        present so a balances-only dashboard shows no empty axis
+                        (AC-5). */}
+                    {flowsBarData.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-label mb-2">
+                          Income &amp; expenses {DURATION_LABEL[duration]}
+                        </h3>
+                        <CategoryBarChart
+                          data={flowsBarData}
+                          ticks={flowsBarTicks}
+                          isNarrow={isNarrowViewport}
+                          chartColors={chartColors}
+                          formatAmount={formatAmount}
+                          mode={mode}
+                          currency={currency}
+                        />
+                      </div>
+                    )}
+                    {/* Point-in-time balances (Savings / Investments / Debts).
+                        Hidden when the user tracks no balances yet (AC-5). */}
+                    {balancesBarData.length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-label mb-2">Balances</h3>
+                        <CategoryBarChart
+                          data={balancesBarData}
+                          ticks={balancesBarTicks}
+                          isNarrow={isNarrowViewport}
+                          chartColors={chartColors}
+                          formatAmount={formatAmount}
+                          mode={mode}
+                          currency={currency}
+                        />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="surface-inset rounded-lg p-8 text-center">
@@ -648,6 +651,87 @@ interface BreakdownPieProps {
   /** Narrow viewport: drop in-plot slice labels so they cannot overflow at 320px. */
   isNarrow: boolean
   formatAmount: (cents: number) => string
+}
+
+type CategoryBarDatum = { category: string; amount: number; fill: string }
+
+interface CategoryBarChartProps {
+  /** Bars to plot (amounts in cents), rendered in Recharts' vertical layout. */
+  data: CategoryBarDatum[]
+  /** Round tick values (cents) spanning this chart's OWN diverging domain. */
+  ticks: number[]
+  /** Narrow viewport: shrink the Y-axis label gutter and tick size for 320px. */
+  isNarrow: boolean
+  chartColors: ReturnType<typeof useChartColors>
+  formatAmount: (cents: number) => string
+  mode: ReturnType<typeof useCurrencyPreferences>['mode']
+  currency: ReturnType<typeof useCurrencyPreferences>['currency']
+}
+
+/**
+ * One vertical bar chart for a Financial Category Summary sub-section — flows OR
+ * balances (story UX-2). Each instance owns its axis domain (`ticks`) and its
+ * height (scaled to the bar count via `categoryChartHeight`) so the two
+ * sub-charts stay legible independently instead of sharing one axis a large
+ * annual flow can dominate. Axis/grid/tooltip strokes are routed through the
+ * shared chartTheme so the chart reads on the dark `.surface` card too (story
+ * 11-2 / 12-4 AC-2 dark-mode constraint).
+ */
+function CategoryBarChart({
+  data,
+  ticks,
+  isNarrow,
+  chartColors,
+  formatAmount,
+  mode,
+  currency,
+}: CategoryBarChartProps): React.ReactElement {
+  return (
+    <div style={{ height: categoryChartHeight(data.length) }}>
+      <ErrorBoundary
+        fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} layout="vertical">
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+            {/* Round ticks (amounts are cents) with a compact, cents-dropping
+                label — the full formatAmount value carries ".00" the narrow axis
+                has no room for. */}
+            <XAxis
+              type="number"
+              domain={[ticks[0], ticks[ticks.length - 1]]}
+              ticks={ticks}
+              tickFormatter={(value) => formatCompactAxisTick(value / 100, mode, currency)}
+              tick={{ fontSize: 12, fill: chartColors.axis }}
+              stroke={chartColors.axis}
+            />
+            <YAxis
+              dataKey="category"
+              type="category"
+              width={isNarrow ? 76 : 132}
+              tick={{ fontSize: isNarrow ? 11 : 12, fill: chartColors.axis }}
+              stroke={chartColors.axis}
+            />
+            <Tooltip
+              formatter={(value: number, name: string) => [formatAmount(value), name]}
+              contentStyle={{
+                backgroundColor: chartColors.tooltipBg,
+                border: `1px solid ${chartColors.tooltipBorder}`,
+                color: chartColors.tooltipText,
+              }}
+              labelStyle={{ color: chartColors.tooltipText }}
+              itemStyle={{ color: chartColors.tooltipText }}
+            />
+            <Bar dataKey="amount" name="Amount">
+              {data.map((entry) => (
+                <Cell key={entry.category} fill={entry.fill} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ErrorBoundary>
+    </div>
+  )
 }
 
 /**

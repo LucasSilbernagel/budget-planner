@@ -85,3 +85,32 @@ export function niceAxisTicks(min: number, max: number, targetCount = 5): number
   }
   return ticks
 }
+
+/**
+ * Round, 0-baselined tick values for a diverging category bar chart, given the
+ * bar `amounts` (same unit in as out — cents for the dashboard). Clamps the
+ * domain to include 0 so positive and negative bars share a baseline, then
+ * delegates to `niceAxisTicks`. Each chart computes its OWN domain from its OWN
+ * amounts (story UX-2: flows and balances must not share an axis), so this is a
+ * pure per-chart derivation — feeding it the flows amounts vs the balances
+ * amounts yields independent domains. An empty `amounts` array degenerates to
+ * `[0]` (via the `min === max` branch of `niceAxisTicks`); callers gate the
+ * chart on a non-empty dataset before rendering, so that only happens off-screen.
+ */
+export function barDomainTicks(amounts: number[]): number[] {
+  return niceAxisTicks(Math.min(0, ...amounts), Math.max(0, ...amounts))
+}
+
+/**
+ * Pixel height for a vertical category bar chart holding `barCount` bars, so bar
+ * thickness stays consistent whether a section has 1 bar or 3 (story UX-2 splits
+ * the Financial Category Summary into a flows chart and a balances chart with
+ * different bar counts). A fixed chrome allowance (value axis + padding) plus a
+ * per-bar slice, floored to at least one bar's worth so a lone bar is never a
+ * squashed sliver. Returns whole pixels for a `ResponsiveContainer` parent.
+ */
+export function categoryChartHeight(barCount: number): number {
+  const CHROME_PX = 72
+  const PER_BAR_PX = 64
+  return Math.max(barCount, 1) * PER_BAR_PX + CHROME_PX
+}

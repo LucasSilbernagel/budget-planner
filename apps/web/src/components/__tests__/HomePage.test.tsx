@@ -16,6 +16,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import {
+  useBalanceStore,
   useExpenseStore,
   useIncomeStore,
   useOverviewDurationStore,
@@ -202,9 +203,13 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
   })
 
   it('AC-2: empty-state onboarding section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
-    // The onboarding section only renders when there is no income/expense data.
+    // The onboarding section renders only when there is NO financial data at all —
+    // since the ux-2 review fix, `hasData` counts savings/balances too, so all
+    // four stores must be empty for this state.
     useIncomeStore.setState({ incomeSources: [] })
     useExpenseStore.setState({ expenses: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+    useBalanceStore.setState({ entries: [] })
     render(<HomePage />)
     const section = screen.getByText("Let's set up your budget").closest('section')
     expect(section).not.toBeNull()
@@ -707,5 +712,186 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
     expect(screen.getByRole('heading', { name: /expenses by category/i })).toBeInTheDocument()
     // The removed asset & liability pie stays gone.
     expect(screen.queryByRole('heading', { name: /asset & liability breakdown/i })).toBeNull()
+  })
+})
+
+/**
+ * Flows and balances split into two sub-charts (story UX-2).
+ *
+ * The "Financial Category Summary" used to plot per-period FLOWS (Income /
+ * Expenses) on the same value axis as point-in-time BALANCES (Savings /
+ * Investments / Debts). At the "Annually" cadence a ~$93.6k income bar dwarfed a
+ * ~$5k savings balance, crushing the balance bars to a sliver. UX-2 splits the
+ * section into two sub-charts — "Income & expenses" and "Balances" — each on its
+ * own axis, so neither can flatten the other.
+ *
+ * Assertions target the section + sub-headings (which render deterministically in
+ * jsdom), not the Recharts SVG (which needs real layout). The parent "Financial
+ * Category Summary" heading is preserved as the carrier the story-12-4 tests
+ * assert.
+ */
+describe('HomePage flows/balances split (story UX-2)', () => {
+  const TS = '2026-07-14T00:00:00.000Z'
+
+  function seedIncome(amountCents: number): void {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-1',
+          userId: 0,
+          name: 'Salary',
+          amount: amountCents,
+          frequency: 'monthly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+  }
+
+  function seedExpense(amountCents: number): void {
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-1',
+          userId: 0,
+          name: 'Rent',
+          amount: amountCents,
+          frequency: 'monthly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+  }
+
+  function seedSavings(balanceCents: number): void {
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 1,
+          name: 'Emergency Fund',
+          targetAmount: 1000000,
+          currentBalance: balanceCents,
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+  }
+
+  function seedBalances(): void {
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment',
+          name: '401k',
+          currentBalance: 800000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+        {
+          id: 'debt-1',
+          type: 'debt',
+          name: 'Car Loan',
+          currentBalance: 300000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+  }
+
+  function resetAll(): void {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+    useBalanceStore.setState({ entries: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  }
+
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    resetAll()
+  })
+
+  afterEach(resetAll)
+
+  it('AC-1: renders separate "Income & expenses" and "Balances" sub-charts when both exist', () => {
+    seedIncome(500000)
+    seedExpense(200000)
+    seedSavings(500000)
+    seedBalances()
+    render(<HomePage />)
+    // The parent section heading is preserved (story-12-4 carrier guarantee).
+    expect(screen.getByRole('heading', { name: /financial category summary/i })).toBeInTheDocument()
+    // Flows and balances now have their own distinctly-headed sub-charts.
+    expect(screen.getByRole('heading', { name: /^income & expenses/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^balances$/i })).toBeInTheDocument()
+    // Both sections have data, so the empty fallback must not appear.
+    expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
+  })
+
+  it('AC-2: the flows sub-heading carries the overview-duration suffix (not regressing #8)', () => {
+    seedIncome(500000)
+    seedExpense(200000)
+    render(<HomePage />)
+    // Default cadence (Annually) — the flows sub-heading reads "(per year)".
+    expect(
+      screen.getByRole('heading', { name: 'Income & expenses (per year)' })
+    ).toBeInTheDocument()
+
+    // Switching the ONE overview selector re-expresses the flows heading in
+    // lockstep with the cards above (story 12-2 alignment).
+    fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
+      target: { value: 'monthly' },
+    })
+    expect(
+      screen.getByRole('heading', { name: 'Income & expenses (per month)' })
+    ).toBeInTheDocument()
+    // The stale annual heading must be GONE (not merely joined by the monthly one)
+    // — guards against a duplicate-render regression.
+    expect(
+      screen.queryByRole('heading', { name: 'Income & expenses (per year)' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('AC-5: a genuinely balances-only user (no income/expense rows) still reaches the Balances sub-chart', () => {
+    // The real balances-only path — NO income or expense rows at all. This works
+    // only because `hasData` counts savings/balances too (the ux-2 review fix);
+    // before that, this user hit the "Let's set up your budget" onboarding and
+    // never saw their balances. No zero-amount-income trick.
+    seedSavings(250000)
+    render(<HomePage />)
+    // The onboarding screen must NOT show — the dashboard renders for this user.
+    expect(screen.queryByText(/let's set up your budget/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^balances$/i })).toBeInTheDocument()
+    // Flows are absent, so the flows sub-chart is hidden and no empty axis renders.
+    expect(screen.queryByRole('heading', { name: /^income & expenses/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
+  })
+
+  it('AC-5: with only flows (no balances), the balances sub-chart is hidden', () => {
+    seedIncome(500000)
+    seedExpense(200000)
+    render(<HomePage />)
+    expect(screen.getByRole('heading', { name: /^income & expenses/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^balances$/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
+  })
+
+  it('AC-5: with neither flows nor balances present, the section shows the empty hint', () => {
+    // Income row exists (hasData → the summary section renders) but its amount is
+    // zero and there are no balances, so both datasets are empty.
+    seedIncome(0)
+    render(<HomePage />)
+    expect(screen.getByText(/no financial data to display/i)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^income & expenses/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^balances$/i })).not.toBeInTheDocument()
   })
 })
