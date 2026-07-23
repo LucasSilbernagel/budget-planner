@@ -97,6 +97,20 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).toContain('Lunch Money')
   })
 
+  it('the FAQ describes Lunch Money accurately as a Canadian app, not implied-US (story 23-2)', () => {
+    // Story 23-2 (CONTENT-M): the spend-tracker entry recommended Lunch Money and then
+    // said "Non-US options exist too if data residency matters to you", which implies
+    // Lunch Money is US-based. It is a Canadian app. Pin the correction on two axes:
+    // the positive assertion ties the "Canadian" attribution to Lunch Money itself
+    // (not merely somewhere in the FAQ), and the negative removes the old framing.
+    // "Lunch Money, a Canadian app" hard-wraps across two physical lines, so the regex
+    // uses \s+ to span the line break. `not.toContain` is the load-bearing guard — it
+    // fails if the old US-implying sentence returns.
+    const faq = contentFor('faq')
+    expect(faq).toMatch(/Lunch Money,\s+a Canadian app/)
+    expect(faq).not.toContain('Non-US options exist too')
+  })
+
   it('the FAQ explains the monthly-basis conversion is an estimate using the ~4.33 factor (story 23-1)', () => {
     // Story 23-1 (investigation → keep monthly, clarify disclosure): the "why do my
     // totals differ" answer must state the ~4.33 weekly factor and that the monthly
