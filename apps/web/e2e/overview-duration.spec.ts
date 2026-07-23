@@ -22,8 +22,8 @@ import { expect, test } from '@playwright/test'
 const DURATION_SELECT = { role: 'combobox' as const, name: /show income and expenses per/i }
 
 // Seed one monthly income (cents) so figures render and re-express predictably.
-// Currency mode defaults to `none`, so amounts print as locale-grouped decimals
-// (story 14-2): 120000c monthly → 14,400.00 annually, 1,200.00 monthly.
+// New users default to `$` (USD) symbols (FR38 / Epic 22), so amounts print with
+// a leading `$`: 120000c monthly → $14,400.00 annually, $1,200.00 monthly.
 function seedMonthlyIncome() {
   const now = new Date().toISOString()
   localStorage.setItem(
@@ -65,12 +65,12 @@ test('overview defaults to Annually and re-expresses figures when the duration c
   const incomeValue = page
     .getByText(/^Total Income \(per (week|month|year)\)$/)
     .locator('xpath=following-sibling::p')
-  await expect(incomeValue).toHaveText('14,400.00')
+  await expect(incomeValue).toHaveText('$14,400.00')
 
   // Switch to Monthly — the single control drives both label and figure.
   await selector.selectOption('monthly')
   await expect(page.getByText('Total Income (per month)')).toBeVisible()
-  await expect(incomeValue).toHaveText('1,200.00')
+  await expect(incomeValue).toHaveText('$1,200.00')
 })
 
 test('the chosen duration persists across a full page reload', async ({ page }) => {
