@@ -1,15 +1,18 @@
 import { renderWithRouter, screen, within } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
-import { APP_VERSION } from '../../../utils/version'
 import { Footer } from '../Footer'
 
 /**
- * Footer component tests (story 4-8, AC-1; story 9-1, AC-1; story 7-3 toggle).
+ * Footer component tests (story 9-1, AC-1; story 5-13 compliance links; story
+ * 21-1 version-drop + active-page state).
  *
- * Covers: the footer renders as an accessible landmark, displays the
- * application version sourced from package.json, and exposes the global in-app
- * "Contact" link on every page (story 9-1, which replaced the old GitHub
- * feedback link). Rendered within a router since footer links resolve routes.
+ * Covers: the footer renders as an accessible landmark, exposes the global
+ * in-app "Contact"/"Documentation"/compliance links on every page, no longer
+ * shows the build version (story 21-1), marks the current footer page with
+ * `aria-current="page"` via TanStack Router active state, and keeps the copyright
+ * a visually distinct group. Rendered within a router since footer links resolve
+ * routes; the active-route assertions rely on `renderWithRouter`'s `path` seed
+ * (mirrors the GlobalNav suite).
  */
 describe('Footer', () => {
   it('renders a contentinfo landmark', async () => {
@@ -17,16 +20,18 @@ describe('Footer', () => {
     expect(await screen.findByRole('contentinfo')).toBeInTheDocument()
   })
 
-  it('displays the application version', async () => {
+  it('no longer displays the build version (story 21-1)', async () => {
     renderWithRouter(<Footer />)
-    expect(await screen.findByText(`v${APP_VERSION}`)).toBeInTheDocument()
+    // Wait for the async footer content, then assert no "v0.0.1"-style build
+    // version string is anywhere in the footer (story 21-1 dropped it).
+    const footer = await screen.findByRole('contentinfo')
+    expect(footer).not.toHaveTextContent(/\bv\d+\.\d+\.\d+/)
+    expect(screen.queryByLabelText(/version/i)).not.toBeInTheDocument()
   })
 
-  it('exposes the version to assistive tech with a label', async () => {
+  it('keeps the Budget Planner brand text', async () => {
     renderWithRouter(<Footer />)
-    expect(
-      await screen.findByLabelText(new RegExp(`version ${APP_VERSION.replace(/\./g, '\\.')}`, 'i'))
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/budget planner/i)).toBeInTheDocument()
   })
 
   it('renders the global in-app contact link (story 9-1)', async () => {
@@ -61,11 +66,51 @@ describe('Footer', () => {
     expect(link).toHaveAttribute('href', href)
   })
 
+  // Story 21-1 (UX-DR28): the current footer page is distinguished with
+  // `aria-current="page"` via TanStack Router active state (mirrors GlobalNav).
+  it('marks the current footer page with aria-current="page" (story 21-1)', async () => {
+    renderWithRouter(<Footer />, { path: '/pricing' })
+    const pricing = await screen.findByRole('link', { name: /^pricing$/i })
+    expect(pricing).toHaveAttribute('aria-current', 'page')
+    // A different footer link is not marked current.
+    expect(screen.getByRole('link', { name: /terms of service/i })).not.toHaveAttribute(
+      'aria-current'
+    )
+  })
+
+  it('marks the Documentation link current on /docs (story 21-1)', async () => {
+    renderWithRouter(<Footer />, { path: '/docs' })
+    const docs = await screen.findByRole('link', { name: /documentation/i })
+    expect(docs).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('does not mark Documentation current on a /docs sub-page (exact match, story 21-1)', async () => {
+    renderWithRouter(<Footer />, { path: '/docs/getting-started' })
+    // Contact resolving (always present) is the signal the router has settled.
+    await screen.findByRole('link', { name: /^contact$/i })
+    expect(screen.getByRole('link', { name: /documentation/i })).not.toHaveAttribute('aria-current')
+  })
+
   it('displays a copyright notice for the current year (story 6-9)', async () => {
     renderWithRouter(<Footer />)
     // Compute the year the same way the component does so this never goes stale.
     const year = new Date().getFullYear()
     expect(await screen.findByText(new RegExp(`Copyright ${year}`))).toBeInTheDocument()
+  })
+
+  // Story 21-1 (UX-DR27/UX-DR33): the copyright reads as a distinct group, with
+  // more separation than the uniform inter-group gap on both mobile (extra
+  // top margin in the stacked column) and desktop (extra left margin in the row).
+  it('separates the copyright group from the legal-link cluster (story 21-1)', async () => {
+    renderWithRouter(<Footer />)
+    const copyright = await screen.findByText(/Copyright \d{4}/)
+    // Class-token membership, not substring (18-1/18-3 lesson).
+    const tokens = copyright.className.split(/\s+/)
+    expect(tokens).toContain('mt-2')
+    expect(tokens).toContain('sm:ml-3')
+    // The mobile top margin is reset at >=640px so it doesn't nudge the
+    // copyright below its siblings' centre in the desktop `items-center` row.
+    expect(tokens).toContain('sm:mt-0')
   })
 
   it('links the author name to their website in a new tab (story 6-9)', async () => {

@@ -87,11 +87,6 @@ function LoginPage() {
             </a>
           </div>
         </div>
-
-        {/* Footer */}
-        <p className="mt-8 text-sm text-gray-500 text-center">
-          © {new Date().getFullYear()} Budget Planner. All rights reserved.
-        </p>
       </div>
     </div>
   )
