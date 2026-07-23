@@ -321,8 +321,14 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     const tooltip = await screen.findByRole('tooltip')
     expect(trigger).toHaveAttribute('aria-describedby')
     expect(tooltip).toHaveTextContent(
-      /convert weekly, monthly, and annual amounts to a common period so your totals are comparable/i
+      /convert weekly, biweekly, monthly, and annual amounts to a common monthly basis so your totals are comparable/i
     )
+    // Story 23-1: the tooltip must disclose the averaging (~4.33 weeks/month) that
+    // makes the totals estimates, consistent with the FAQ + features copy. The
+    // wording is duration-neutral ("these totals are estimates"), not "the monthly
+    // figure", because the card can display per-week/per-year via the duration selector.
+    expect(tooltip).toHaveTextContent(/about 4\.33 weeks a month/i)
+    expect(tooltip).toHaveTextContent(/these totals are estimates/i)
     expect(tooltip).toHaveTextContent(/entered total before conversion/i)
   })
 })

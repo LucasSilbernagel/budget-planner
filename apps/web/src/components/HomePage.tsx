@@ -330,7 +330,7 @@ export function HomePage() {
                   {totalNormalizedIncome !== totalIncomeRaw && (
                     <InfoTooltip
                       label="More information about the income figure"
-                      text={`We convert weekly, monthly, and annual amounts to a common period so your totals are comparable. Entered total before conversion: ${formatAmount(
+                      text={`We convert weekly, biweekly, monthly, and annual amounts to a common monthly basis so your totals are comparable — this uses an average of about 4.33 weeks a month, so these totals are estimates. Entered total before conversion: ${formatAmount(
                         totalIncomeRaw
                       )}.`}
                     />
@@ -346,7 +346,7 @@ export function HomePage() {
                   {totalNormalizedExpenses !== totalExpensesRaw && (
                     <InfoTooltip
                       label="More information about the expenses figure"
-                      text={`We convert weekly, monthly, and annual amounts to a common period so your totals are comparable. Entered total before conversion: ${formatAmount(
+                      text={`We convert weekly, biweekly, monthly, and annual amounts to a common monthly basis so your totals are comparable — this uses an average of about 4.33 weeks a month, so these totals are estimates. Entered total before conversion: ${formatAmount(
                         totalExpensesRaw
                       )}.`}
                     />

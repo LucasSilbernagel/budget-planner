@@ -97,6 +97,34 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).toContain('Lunch Money')
   })
 
+  it('the FAQ explains the monthly-basis conversion is an estimate using the ~4.33 factor (story 23-1)', () => {
+    // Story 23-1 (investigation → keep monthly, clarify disclosure): the "why do my
+    // totals differ" answer must state the ~4.33 weekly factor and that the monthly
+    // figure is an estimate, and it must NOT overclaim that the info button reveals a
+    // per-figure conversion breakdown (the tooltip shows the amount entered before
+    // conversion, not a factor-by-factor breakdown).
+    // NOTE: the pre-23-1 copy already contained "4.33" and "estimate", so those two
+    // substrings alone don't prove the new disclosure landed. Anchor the positive
+    // assertion to the distinguishing new phrasing so a partial revert breaks this.
+    const faq = contentFor('faq')
+    expect(faq).toContain('4.33')
+    expect(faq.toLowerCase()).toContain('average number of weeks in a month')
+    expect(faq.toLowerCase()).toContain('estimate rather than an exact calendar-month total')
+    expect(faq.toLowerCase()).not.toContain('how it was converted')
+  })
+
+  it('the Features page discloses the common monthly basis is an estimate/average (story 23-1)', () => {
+    // Story 23-1: the "common monthly basis" bullet must carry the same estimate/
+    // average nuance as the FAQ so the two explanation surfaces stay consistent.
+    // "common monthly basis" pre-dates 23-1, so anchor to the new 4.33/estimate
+    // nuance in the Free section to make this assertion load-bearing. (The bullet
+    // hard-wraps, so match the wrap-safe "4.33" token rather than a multi-word span.)
+    const free = featureSections().free
+    expect(free).toContain('common monthly basis')
+    expect(free).toContain('4.33')
+    expect(free).toContain('estimate')
+  })
+
   // The Features page splits into a Free section and a Premium section; the two
   // guards below assert *which* section a claim lives in, not just that a
   // substring appears somewhere on the page.

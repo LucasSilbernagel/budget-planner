@@ -35,11 +35,13 @@ EU database, in line with the [Privacy Policy](/privacy).
 ### Why do my totals differ from the raw amounts I entered?
 
 Budget Planner converts every amount to a common monthly basis before adding
-things together. For example, a weekly expense is multiplied by about 4.33 to
-estimate its monthly cost. This lets income and expenses with different
-frequencies be compared fairly. Totals are labelled *(per month)*, and you can
-reveal the original amount and how it was converted from the info button on
-each figure.
+things together. For example, a weekly expense is multiplied by about 4.33 (the
+average number of weeks in a month) to estimate its monthly cost, so the monthly
+figure is an estimate rather than an exact calendar-month total. This lets income
+and expenses with different frequencies be compared fairly. Totals are labelled
+with the period you choose — for example *(per month)* — and the info button on
+each figure shows the amount you entered before conversion. You can switch the
+overview between weekly, monthly, and annual totals with the duration selector.
 
 ### Can I switch between currencies or hide currency symbols?
 

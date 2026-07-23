@@ -11,7 +11,8 @@ no third-party trackers, for every visitor on both tiers.
 - **Income and expense tracking** with weekly, biweekly, monthly, and annual
   frequencies.
 - **A common monthly basis** — every value is converted to a per-month figure
-  so totals are always comparable.
+  so totals are comparable; the conversion uses an average of about 4.33 weeks a
+  month, so the monthly figure is an estimate.
 - **Savings goals** to track progress toward a target.
 - **Balance tracking** for investments and debts.
 - **Visual breakdowns** of income versus expenses and assets versus
