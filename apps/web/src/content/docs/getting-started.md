@@ -1,6 +1,6 @@
 ## Getting started
 
-Budget Planner helps you understand your finances by tracking income,
+SoluBudget helps you understand your finances by tracking income,
 expenses, savings, and investments — and projecting where you are headed.
 
 Everything on the **Free tier** runs entirely in your browser. Your data is
@@ -19,7 +19,7 @@ app immediately without creating an account.
 ### Add your expenses
 
 The **Expenses** page works the same way. Add each recurring expense with its
-amount and frequency. Budget Planner converts every entry to a common monthly
+amount and frequency. SoluBudget converts every entry to a common monthly
 basis before comparing them, so income and expenses with different frequencies
 line up correctly.
 

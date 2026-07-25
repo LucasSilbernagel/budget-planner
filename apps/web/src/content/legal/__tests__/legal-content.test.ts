@@ -52,6 +52,18 @@ describe('LEGAL_PAGES', () => {
       expect(page.content).not.toMatch(/\[(?:DATE|PRICE|CONFIRM)\b[^\]]*\]/)
     }
   })
+
+  it('refers to the product as "SoluBudget", never the old "Budget Planner" brand (story 27-3)', () => {
+    // The legal rebrand must be complete and stay complete: no legal body or its
+    // index metadata may reference the retired "Budget Planner" wordmark, while
+    // preserving the surrounding legal grammar (defined terms, parentheticals).
+    for (const page of LEGAL_PAGES) {
+      expect(page.content).not.toContain('Budget Planner')
+      expect(page.description).not.toContain('Budget Planner')
+    }
+    expect(getLegalPage('terms')?.content).toContain('SoluBudget')
+    expect(getLegalPage('terms')?.description).toContain('SoluBudget')
+  })
 })
 
 describe('getLegalPage', () => {

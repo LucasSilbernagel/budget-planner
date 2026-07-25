@@ -13,7 +13,7 @@ function DocsIndexPage() {
   return (
     <DocsLayout
       title="Documentation"
-      description="Guides and answers for getting the most out of Budget Planner."
+      description="Guides and answers for getting the most out of SoluBudget."
     >
       <DocsIndex />
     </DocsLayout>

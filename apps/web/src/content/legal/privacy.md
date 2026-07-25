@@ -2,7 +2,7 @@ _This page is informational and does not constitute legal advice._
 
 _Last updated: 3 July 2026_
 
-This Privacy Policy explains what data Budget Planner ("we", "the Service") handles and how.
+This Privacy Policy explains what data SoluBudget ("we", "the Service") handles and how.
 We have designed the Service to collect as little personal data as possible.
 
 ## Who is responsible for your data
@@ -12,9 +12,9 @@ You can reach the controller for any privacy request through the [contact form](
 
 ## Free tier: your data stays on your device
 
-If you use Budget Planner without an account, **all of your financial data is stored locally in your browser** (in its local storage).
+If you use SoluBudget without an account, **all of your financial data is stored locally in your browser** (in its local storage).
 It is never transmitted to us and we never have access to it.
-Clearing your browser data clears your Budget Planner data.
+Clearing your browser data clears your SoluBudget data.
 
 ## Premium tier: EU-hosted sync
 

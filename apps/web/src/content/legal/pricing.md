@@ -1,6 +1,6 @@
 ## Simple, transparent pricing
 
-Budget Planner has two tiers. Use the core planner for free, forever — no account
+SoluBudget has two tiers. Use the core planner for free, forever — no account
 required — or upgrade to Premium for multi-device sync, custom profiles, and
 advanced forecasting. The plans are compared above.
 

@@ -91,10 +91,23 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).not.toContain('export')
   })
 
-  it('the FAQ frames Budget Planner as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
+  it('the FAQ frames SoluBudget as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
     const faq = contentFor('faq')
     expect(faq.toLowerCase()).toContain('planning tool')
     expect(faq).toContain('Lunch Money')
+  })
+
+  it('refers to the product as "SoluBudget", never the old "Budget Planner" brand (story 27-3)', () => {
+    // The docs rebrand must be complete and stay complete: no doc body or its
+    // index metadata may reference the retired "Budget Planner" wordmark, and the
+    // page that names the product (Features) carries the new brand. "Lunch Money"
+    // (a third-party app) is unaffected — it does not contain the brand token.
+    for (const page of DOC_PAGES) {
+      expect(page.content).not.toContain('Budget Planner')
+      expect(page.description).not.toContain('Budget Planner')
+    }
+    expect(getDocPage('features')?.content).toContain('SoluBudget')
+    expect(getDocPage('features')?.description).toContain('SoluBudget')
   })
 
   it('the FAQ describes Lunch Money accurately as a Canadian app, not implied-US (story 23-2)', () => {

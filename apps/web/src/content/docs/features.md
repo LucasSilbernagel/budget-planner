@@ -1,9 +1,9 @@
 ## Features
 
-Budget Planner is split into a Free tier that runs entirely on your device and
+SoluBudget is split into a Free tier that runs entirely on your device and
 a Premium tier that adds multi-device syncing and a few extras.
 
-**No ads, no trackers — ever.** Budget Planner shows no advertising and embeds
+**No ads, no trackers — ever.** SoluBudget shows no advertising and embeds
 no third-party trackers, for every visitor on both tiers.
 
 ### Free tier
@@ -38,7 +38,7 @@ no third-party trackers, for every visitor on both tiers.
 
 ### Privacy and data location
 
-Budget Planner is built around data sovereignty. When you upgrade to Premium,
+SoluBudget is built around data sovereignty. When you upgrade to Premium,
 your synced data is stored on servers located in the European Union. There is
 no US data residency, which keeps your information outside the scope of the US
 CLOUD Act.
