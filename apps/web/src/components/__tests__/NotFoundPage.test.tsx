@@ -25,9 +25,9 @@ describe('NotFoundPage', () => {
     expect(screen.queryByRole('heading', { name: '404' })).not.toBeInTheDocument()
   })
 
-  it('shows the "Budget Planner" brand wordmark (AC-1)', async () => {
+  it('shows the "SoluBudget" brand wordmark (AC-1)', async () => {
     renderWithRouter(<NotFoundPage />)
-    expect(await screen.findByText('Budget Planner')).toBeInTheDocument()
+    expect(await screen.findByText('SoluBudget')).toBeInTheDocument()
   })
 
   it('offers an accessible recovery link to the home/dashboard (AC-3)', async () => {

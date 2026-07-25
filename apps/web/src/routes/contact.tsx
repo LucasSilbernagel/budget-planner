@@ -10,7 +10,7 @@ import { ContactForm } from '@/components/contact/contact-form'
 import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/contact')({
-  head: () => ({ meta: [{ title: 'Contact · Budget Planner' }] }),
+  head: () => ({ meta: [{ title: 'Contact · SoluBudget' }] }),
   component: ContactPage,
 })
 

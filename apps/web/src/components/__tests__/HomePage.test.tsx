@@ -160,7 +160,7 @@ describe('HomePage tagline (story 25-4)', () => {
     render(<HomePage />)
     expect(screen.getByText('The budget planner that never sees your money')).toBeInTheDocument()
     // The app name still appears as the header heading.
-    expect(screen.getByRole('heading', { name: 'Budget Planner', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'SoluBudget', level: 1 })).toBeInTheDocument()
   })
 })
 

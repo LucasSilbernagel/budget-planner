@@ -16,9 +16,9 @@
 
 /** @type {import('vite-plugin-pwa').ManifestOptions} */
 export const pwaManifest = {
-  name: 'Budget Planner',
-  short_name: 'Budget Planner',
-  description: 'Privacy-first budget & retirement planner.',
+  name: 'SoluBudget',
+  short_name: 'SoluBudget',
+  description: 'SoluBudget — privacy-first budget & retirement planner.',
   start_url: '/',
   scope: '/',
   display: 'standalone',

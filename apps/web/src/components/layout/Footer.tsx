@@ -75,7 +75,7 @@ export function Footer() {
           sm:gap-x-3 sm:gap-y-1` restores the single wrapping row. */}
       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
         {/* Brand text node (story 21-1 dropped the trailing build version). */}
-        <span>Budget Planner</span>
+        <span>SoluBudget</span>
         {/* Legal/nav links grouped as a comfortably-spaced cluster on the 320px
             stacked layout (story 18-2). `sm:contents` dissolves this wrapper at
             >=640px (display: contents) so the six links rejoin the outer wrapping

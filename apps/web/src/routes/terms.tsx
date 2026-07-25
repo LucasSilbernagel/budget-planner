@@ -9,7 +9,7 @@ import { TERMS_PAGE } from '../content/legal'
  * existing `/terms` link in `login.tsx`. Public + static: no auth, no DB.
  */
 export const Route = createFileRoute('/terms')({
-  head: () => ({ meta: [{ title: `${TERMS_PAGE.title} · Budget Planner` }] }),
+  head: () => ({ meta: [{ title: `${TERMS_PAGE.title} · SoluBudget` }] }),
   component: TermsPage,
 })
 

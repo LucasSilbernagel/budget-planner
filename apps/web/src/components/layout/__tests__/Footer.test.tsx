@@ -29,9 +29,9 @@ describe('Footer', () => {
     expect(screen.queryByLabelText(/version/i)).not.toBeInTheDocument()
   })
 
-  it('keeps the Budget Planner brand text', async () => {
+  it('keeps the SoluBudget brand text', async () => {
     renderWithRouter(<Footer />)
-    expect(await screen.findByText(/budget planner/i)).toBeInTheDocument()
+    expect(await screen.findByText(/solubudget/i)).toBeInTheDocument()
   })
 
   it('renders the global in-app contact link (story 9-1)', async () => {

@@ -9,7 +9,7 @@ import { PRIVACY_PAGE } from '../content/legal'
  * existing `/privacy` link in `login.tsx`. Public + static: no auth, no DB.
  */
 export const Route = createFileRoute('/privacy')({
-  head: () => ({ meta: [{ title: `${PRIVACY_PAGE.title} · Budget Planner` }] }),
+  head: () => ({ meta: [{ title: `${PRIVACY_PAGE.title} · SoluBudget` }] }),
   component: PrivacyPage,
 })
 

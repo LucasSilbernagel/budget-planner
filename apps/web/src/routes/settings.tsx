@@ -8,6 +8,6 @@ import { createFileRoute } from '@tanstack/react-router'
  * so this module exports only `Route` and stays code-splittable.
  */
 export const Route = createFileRoute('/settings')({
-  head: () => ({ meta: [{ title: 'Settings · Budget Planner' }] }),
+  head: () => ({ meta: [{ title: 'Settings · SoluBudget' }] }),
   component: SettingsPage,
 })

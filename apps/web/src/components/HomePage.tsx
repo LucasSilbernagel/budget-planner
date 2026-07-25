@@ -306,7 +306,7 @@ export function HomePage() {
       <div className="max-w-6xl mx-auto">
         <header className="mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-heading">Budget Planner</h1>
+            <h1 className="text-3xl font-bold text-heading">SoluBudget</h1>
             <p className="text-lg text-body mt-2">The budget planner that never sees your money</p>
             {/* Secondary subtitle (story 19-4, CONTENT-F): supports the tagline
                 above with the bird's-eye value proposition. Kept smaller than the

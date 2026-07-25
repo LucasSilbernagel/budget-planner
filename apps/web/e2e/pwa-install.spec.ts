@@ -17,7 +17,7 @@ declare global {
   }
 }
 
-const REGION = { name: /install budget planner/i }
+const REGION = { name: /install solubudget/i }
 
 /** Dispatch a fake `beforeinstallprompt` with spyable `prompt()` / `userChoice`. */
 async function fireInstallPrompt(page: Page, outcome: 'accepted' | 'dismissed' = 'accepted') {

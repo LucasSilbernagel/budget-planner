@@ -67,7 +67,7 @@ describe('InstallPrompt', () => {
     fireInstallEvent(event)
 
     expect(preventDefault).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('region', { name: /install budget planner/i })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /install solubudget/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument()
   })
 
