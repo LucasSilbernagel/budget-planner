@@ -5,7 +5,9 @@ expenses, savings, and investments — and projecting where you are headed.
 
 Everything on the **Free tier** runs entirely in your browser. Your data is
 stored locally on your device and never leaves it, so you can start using the
-app immediately without creating an account.
+app immediately without creating an account. It's intentional budgeting without
+the bank sync: you plan with the figures you enter, and the app never connects
+to your bank.
 
 ### Add your first income source
 

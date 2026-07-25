@@ -3,6 +3,12 @@
 SoluBudget is split into a Free tier that runs entirely on your device and
 a Premium tier that adds multi-device syncing and a few extras.
 
+SoluBudget is built for **intentional budgeting without the bank sync**: you
+plan with the numbers you enter yourself. The core planner needs no account,
+and the app never connects to your bank or any financial institution. If you
+choose to create an account for syncing, that data is hosted in the EU (see
+below).
+
 **No ads, no trackers — ever.** SoluBudget shows no advertising and embeds
 no third-party trackers, for every visitor on both tiers.
 

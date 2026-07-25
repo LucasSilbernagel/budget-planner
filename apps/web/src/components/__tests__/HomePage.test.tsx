@@ -225,6 +225,45 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
 })
 
 /**
+ * Privacy positioning strip (story 27-5, FR45).
+ *
+ * Beneath the 27-4 tagline the header carries a compact strip that states the
+ * three privacy pillars — usable with no account, an optional EU-hosted sync,
+ * and no bank connection — under the "intentional budgeting without the bank
+ * sync" framing. Every claim is true: the Free tier is client-only (no account,
+ * data stays in the browser), EU-hosting is scoped to the OPTIONAL Premium sync
+ * (so the copy never implies free-tier data touches a server), and there is no
+ * bank/transaction-import integration. Tier-independent, so a single free-user
+ * render suffices.
+ *
+ * The load-bearing assertion anchors on the distinguishing framing sentence:
+ * generic words like "account"/"bank"/"EU" appear elsewhere on the page and in
+ * the docs, so asserting them alone would pass by construction (batch-5/23
+ * lesson). This strip is ADDITIVE — it must not disturb the 27-4 tagline or the
+ * 19-4 mobile-padding coverage above.
+ */
+describe('HomePage privacy positioning (story 27-5)', () => {
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+  })
+
+  it('surfaces the "intentional budgeting without the bank sync" framing', () => {
+    render(<HomePage />)
+    expect(screen.getByText('Intentional budgeting without the bank sync.')).toBeInTheDocument()
+  })
+
+  it('states the three privacy pillars with EU-hosting scoped to the optional sync (no over-claiming)', () => {
+    render(<HomePage />)
+    // One line covering all three pillars; "Optional sync is EU-hosted" keeps the
+    // EU claim on the paid sync so free-tier (client-only) data is never implied
+    // to reach a server.
+    expect(
+      screen.getByText('No account needed · Optional sync is EU-hosted · No bank connection.')
+    ).toBeInTheDocument()
+  })
+})
+
+/**
  * Overview "Manage Your Finances" tiles removed on desktop (story 19-1, UX-DR26).
  *
  * The tile grid linked Income/Expenses/Savings/Balance/Projections — the exact

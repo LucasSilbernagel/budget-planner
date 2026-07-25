@@ -312,6 +312,21 @@ export function HomePage() {
                 wordmark. Supersedes the old "never sees your money" tagline and
                 the 19-4 "bird's-eye" secondary subtitle (both removed). */}
             <p className="text-lg text-body mt-2">The budget app that minds its own business.</p>
+            {/* Privacy positioning (story 27-5, FR45): the three privacy pillars +
+                the "intentional budgeting without the bank sync" framing, shown
+                compactly beneath the tagline. Every claim is true — the Free tier
+                is client-only (no account; data stays in the browser), the
+                OPTIONAL Premium sync is EU-hosted (DanubeData, Germany), and the
+                app has no bank/financial-institution integration. Styled with
+                theme-aware semantic tokens (surface-inset / text-body / text-muted)
+                so it stays legible in dark mode, and it wraps rather than
+                overflowing at 320px. */}
+            <div className="surface-inset mt-4 rounded-lg p-3 text-sm">
+              <p className="text-body">
+                No account needed · Optional sync is EU-hosted · No bank connection.
+              </p>
+              <p className="text-muted mt-1">Intentional budgeting without the bank sync.</p>
+            </div>
           </div>
         </header>
 

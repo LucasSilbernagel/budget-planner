@@ -204,6 +204,24 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(premium).not.toContain('side by side')
   })
 
+  it('the docs carry the "intentional budgeting without the bank sync" positioning framing (story 27-5, FR45)', () => {
+    // FR45 unifies the three privacy pillars (no account, optional EU-hosted sync,
+    // no bank connection) under this framing. It is woven into the positioning copy
+    // (Features, and Getting started). Markdown hard-wraps at ~76 columns, so match
+    // with \s+ to span a possible line break rather than a literal-space toContain
+    // (Epic-23 wrap lesson). Asserting the distinguishing framing phrase — not the
+    // generic pillar words that already appear across the docs — makes this guard
+    // load-bearing (batch-5/23 true-by-construction lesson).
+    const framing = /intentional budgeting\s+without the bank sync/i
+    expect(framing.test(contentFor('features'))).toBe(true)
+    // Getting started also carries the framing (AC-2 puts it in both docs). Its
+    // phrase hard-wraps between "without" and "the", so make EVERY interior space
+    // whitespace-tolerant rather than only the first (a single \s+ would miss the
+    // "without\nthe" break).
+    const framingWrapSafe = /intentional budgeting\s+without\s+the\s+bank\s+sync/i
+    expect(framingWrapSafe.test(contentFor('getting-started'))).toBe(true)
+  })
+
   it('every internal doc link targets a real app route', () => {
     // The routes referenced by the docs; each exists under apps/web/src/routes.
     const knownRoutes = new Set([
