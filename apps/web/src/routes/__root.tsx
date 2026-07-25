@@ -35,12 +35,14 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
-      { title: 'Budget Planner — the budget planner that never sees your money' },
-      // Privacy-first tagline (story 25-4, AC-2) for social/search previews.
+      { title: 'SoluBudget — the budget app that minds its own business' },
+      // Privacy-first tagline (story 27-4, FR44 — amends story 25-4) for
+      // social/search previews. Carries the SoluBudget brand + new tagline; this
+      // default title is inherited by every route without its own head().
       {
         name: 'description',
         content:
-          'The budget planner that never sees your money. Track income, expenses, savings, and long-term plans — the free tier runs entirely in your browser, so your financial data never leaves your device.',
+          'The budget app that minds its own business. Track income, expenses, savings, and long-term plans — the free tier runs entirely in your browser, so your financial data never leaves your device.',
       },
       // Drives the standalone titlebar color when installed as a PWA (story 7-1,
       // AC-2). Matches the manifest theme_color and the accent green.

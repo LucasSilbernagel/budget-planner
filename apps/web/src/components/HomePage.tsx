@@ -307,16 +307,11 @@ export function HomePage() {
         <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-heading">SoluBudget</h1>
-            <p className="text-lg text-body mt-2">The budget planner that never sees your money</p>
-            {/* Secondary subtitle (story 19-4, CONTENT-F): supports the tagline
-                above with the bird's-eye value proposition. Kept smaller than the
-                tagline (default text vs its text-lg) so the hierarchy reads
-                tagline → supporting line. Story 25-4 already claimed the primary
-                subtitle slot with the tagline, so this is ADDED beneath it, not a
-                replacement. */}
-            <p className="text-body mt-2">
-              Get a bird's-eye view of your income, expenses, savings, and more!
-            </p>
+            {/* Primary tagline (story 27-4, FR44 — amends story 25-4 / CONTENT-F):
+                the privacy-stance tagline is the single subtitle beneath the
+                wordmark. Supersedes the old "never sees your money" tagline and
+                the 19-4 "bird's-eye" secondary subtitle (both removed). */}
+            <p className="text-lg text-body mt-2">The budget app that minds its own business.</p>
           </div>
         </header>
 

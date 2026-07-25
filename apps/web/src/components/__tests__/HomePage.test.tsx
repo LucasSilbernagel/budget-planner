@@ -145,33 +145,38 @@ describe('HomePage premium discovery', () => {
 })
 
 /**
- * Privacy-first tagline (story 25-4, AC-1).
+ * Privacy-first tagline (story 27-4, FR44 — amends story 25-4 / CONTENT-F).
  *
- * The overview header leads with the tagline "The budget planner that never
- * sees your money" as the primary message beneath the app-name heading. This is
- * tier-independent, so a single free-user render is sufficient.
+ * The overview header leads with the tagline "The budget app that minds its own
+ * business." as the single subtitle beneath the app-name heading. This
+ * supersedes the old "The budget planner that never sees your money" tagline and
+ * the 19-4 "bird's-eye" secondary subtitle (both removed). Tier-independent, so a
+ * single free-user render is sufficient.
  */
-describe('HomePage tagline (story 25-4)', () => {
+describe('HomePage tagline (story 27-4)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
   })
 
-  it('AC-1: surfaces the privacy-first tagline while keeping the app name', () => {
+  it('surfaces the privacy-first tagline while keeping the app name', () => {
     render(<HomePage />)
-    expect(screen.getByText('The budget planner that never sees your money')).toBeInTheDocument()
+    expect(screen.getByText('The budget app that minds its own business.')).toBeInTheDocument()
     // The app name still appears as the header heading.
     expect(screen.getByRole('heading', { name: 'SoluBudget', level: 1 })).toBeInTheDocument()
+    // Guard: the superseded tagline must not return (batch-5 regression lesson).
+    expect(screen.queryByText('The budget planner that never sees your money')).toBeNull()
   })
 })
 
 /**
  * Overview subtitle + mobile section padding (story 19-4, CONTENT-F / UX-DR32).
  *
- * Story 25-4 already claimed the header subtitle slot with the tagline, so the
- * CONTENT-F "bird's-eye" line is ADDED as a SECONDARY subtitle beneath it (the
- * tagline is preserved, not replaced). Mobile padding on the empty-state
- * onboarding and Premium Features sections is tightened with responsive
- * utilities (p-4 sm:p-6 / p-6 sm:p-8) so the ≥640px desktop spacing is unchanged.
+ * Story 27-4 superseded the two-line header: the "bird's-eye" secondary subtitle
+ * that 19-4 added is REMOVED, leaving the single 27-4 tagline as the only
+ * subtitle. The mobile-padding coverage from 19-4 is independent of the header
+ * copy and remains in force — the empty-state onboarding and Premium Features
+ * sections stay tightened with responsive utilities (p-4 sm:p-6 / p-6 sm:p-8) so
+ * the ≥640px desktop spacing is unchanged.
  *
  * Padding is asserted by class-token membership (not substring regex) so a
  * Tailwind class like `sm:p-6` cannot be mistaken for `p-6` (project memory,
@@ -182,13 +187,13 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
   })
 
-  it("AC-1: adds the bird's-eye secondary subtitle while keeping the 25-4 tagline", () => {
+  it("no longer renders the bird's-eye secondary subtitle (removed by story 27-4)", () => {
     render(<HomePage />)
-    // Both lines coexist: the tagline (25-4) and the new supporting line (19-4).
-    expect(screen.getByText('The budget planner that never sees your money')).toBeInTheDocument()
+    // The 27-4 tagline is the single subtitle; the 19-4 supporting line is gone.
+    expect(screen.getByText('The budget app that minds its own business.')).toBeInTheDocument()
     expect(
-      screen.getByText("Get a bird's-eye view of your income, expenses, savings, and more!")
-    ).toBeInTheDocument()
+      screen.queryByText("Get a bird's-eye view of your income, expenses, savings, and more!")
+    ).toBeNull()
   })
 
   it('AC-2: Premium Features section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
