@@ -19,7 +19,7 @@ import { getEmailConfig } from '@budget-planner/config'
 /** Brevo transactional-email endpoint (EU). */
 const BREVO_SEND_URL = 'https://api.brevo.com/v3/smtp/email'
 
-const SUBJECT = 'Your Budget Planner sign-in link'
+const SUBJECT = 'Your SoluBudget sign-in link'
 
 /**
  * Build the plain-text and HTML bodies for the magic-link email.
@@ -29,7 +29,7 @@ const SUBJECT = 'Your Budget Planner sign-in link'
  */
 function buildEmailBody(link: string): { html: string; text: string } {
   const text = [
-    'Sign in to Budget Planner',
+    'Sign in to SoluBudget',
     '',
     'Click the link below to sign in. It can be used once and expires in 15 minutes:',
     link,
@@ -38,9 +38,9 @@ function buildEmailBody(link: string): { html: string; text: string } {
   ].join('\n')
 
   const html = [
-    '<p>Sign in to <strong>Budget Planner</strong></p>',
+    '<p>Sign in to <strong>SoluBudget</strong></p>',
     '<p>Click the button below to sign in. This link can be used once and expires in 15 minutes.</p>',
-    `<p><a href="${link}">Sign in to Budget Planner</a></p>`,
+    `<p><a href="${link}">Sign in to SoluBudget</a></p>`,
     `<p>If the button does not work, copy and paste this URL into your browser:<br>${link}</p>`,
     "<p>If you didn't request this, you can safely ignore this email.</p>",
   ].join('')

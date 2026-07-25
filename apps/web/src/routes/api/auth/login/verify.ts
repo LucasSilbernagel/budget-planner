@@ -93,7 +93,7 @@ function safeEqual(a: string, b: string): boolean {
 function htmlPage(title: string, inner: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(
     title
-  )}</title></head><body style="font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem;color:#111"><h1 style="font-size:1.5rem">Budget Planner</h1>${inner}</body></html>`
+  )}</title></head><body style="font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem;color:#111"><h1 style="font-size:1.5rem">SoluBudget</h1>${inner}</body></html>`
 }
 
 function confirmPage(token: string, email: string, csrf: string): string {

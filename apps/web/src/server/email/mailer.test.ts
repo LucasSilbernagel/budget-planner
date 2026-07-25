@@ -42,7 +42,7 @@ describe('sendMagicLinkEmail', () => {
     // Secret travels in the provider's header, not the URL or body.
     expect(headers.get('api-key')).toBe('test-email-api-key')
     expect(body.to).toEqual([{ email: 'user@example.com' }])
-    expect(body.sender).toEqual({ name: 'Budget Planner', email: 'no-reply@budgetplanner.test' })
+    expect(body.sender).toEqual({ name: 'SoluBudget', email: 'no-reply@budgetplanner.test' })
     // The actual link must be present so the user can complete login.
     expect(JSON.stringify(body)).toContain(link)
   })

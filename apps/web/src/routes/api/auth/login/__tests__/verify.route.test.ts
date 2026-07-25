@@ -96,6 +96,8 @@ describe('GET /api/auth/login/verify (read-only interstitial)', () => {
     expect(body).toContain('method="POST"')
     expect(body).toContain('name="token"')
     expect(body).toContain('name="csrf"')
+    // The shared page chrome carries the rebranded wordmark (Story 27-2).
+    expect(body).toContain('>SoluBudget</h1>')
 
     // Plants the double-submit CSRF cookie; mints NO session on the GET.
     const setCookie = res.headers.get('Set-Cookie') ?? ''

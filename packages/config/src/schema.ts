@@ -128,7 +128,7 @@ export interface EmailConfig {
 }
 
 /** Display name attached to outbound magic-link emails. */
-export const EMAIL_FROM_NAME = 'Budget Planner'
+export const EMAIL_FROM_NAME = 'SoluBudget'
 
 /**
  * Resolve the public site origin used to build absolute links in emails
