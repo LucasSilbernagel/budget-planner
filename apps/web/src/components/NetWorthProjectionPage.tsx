@@ -1,6 +1,6 @@
-import { calculateCompoundingProjection } from '@budget-planner/core'
+import { createNetWorthProjection } from '@budget-planner/core'
 import { currencySymbol } from '@budget-planner/core/format/currency'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -13,41 +13,22 @@ import {
 } from 'recharts'
 import { formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
-import { useBalanceEntries, useExpenses, useIncomeSources } from '../stores'
+import {
+  useBalanceEntries,
+  useExpenses,
+  useIncomeSources,
+  useTotalDebtBalance,
+  useTotalInvestmentBalance,
+} from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
-
-// Calculate initial net worth from current data
-function calculateInitialNetWorth(
-  _incomeSources: Array<{ amount: number; frequency: string }>,
-  _expenses: Array<{ amount: number; frequency: string }>,
-  balanceEntries: Array<{ type: string; currentBalance: number }>
-): number {
-  // For simplicity, we'll use the current balances from balance tracking
-  // In a full implementation, this would include all assets and liabilities
-  const totalInvestments = balanceEntries
-    .filter((entry) => entry.type === 'investment')
-    .reduce((sum, entry) => sum + entry.currentBalance, 0)
-
-  const totalDebts = balanceEntries
-    .filter((entry) => entry.type === 'debt')
-    .reduce((sum, entry) => sum + entry.currentBalance, 0)
-
-  return totalInvestments - totalDebts
-}
-
-/**
- * The core compounding model rejects a rate below 0.1% (MIN_ANNUAL_RETURN_RATE
- * = 0.001 decimal). Keep this as the canonical decimal floor so the render guard
- * and the displayed hint stay in sync with the calculation.
- */
-const MIN_RATE_DECIMAL = 0.001
 
 /**
  * Parse a raw return-rate input string into a clean percentage number: clamped to
  * [0, 100] and quantized to at most 2 decimal places. This removes floating-point
  * display noise (e.g. `7.199999999999999` → `7.2`) and keeps the value in range.
- * An empty or non-numeric entry becomes 0, which the page then treats as an
- * "enter a rate" state rather than feeding 0 to the (throwing) core calculation.
+ * An empty or non-numeric entry becomes 0, which is a perfectly valid projection —
+ * assets simply do not grow. The window stays [0, 100] even though the model accepts
+ * down to -100%; negative returns are not something this page offers.
  */
 function quantizeRatePercent(raw: string): number {
   const parsed = Number.parseFloat(raw)
@@ -59,23 +40,22 @@ function quantizeRatePercent(raw: string): number {
 }
 
 /**
- * The compounding model rejects a projection longer than MAX_PROJECTION_YEARS (100)
- * with a throw, and this calc runs unconditionally on every render. A `type="number"`
- * field still accepts a *typed* value beyond its `max` attribute, so clamp the parsed
- * years to the field's own stated window [1, 50] — comfortably below the core's throw
- * threshold — before it can reach the calculation.
+ * The projection model throws for a horizon of 0 or one beyond 50 years, and this calc
+ * runs unconditionally on every render. A `type="number"` field still accepts a *typed*
+ * value beyond its `max` attribute, so clamp the parsed years to the field's own stated
+ * window [1, 50] — which is exactly the model's own limit — before it can reach the
+ * calculation.
  */
 function clampYears(raw: string): number {
   return Math.min(50, Math.max(1, Number.parseInt(raw, 10) || 1))
 }
 
 /**
- * Additional contribution is entered in whole currency units; the page multiplies it
- * by 100 (cents) before feeding the core calc, which throws on a non-finite value and
- * again if the per-year balance exceeds the safe-integer limit. A `type="number"` field
- * accepts exponent text (e.g. `1e999` → Infinity), so reject non-finite input (→ 0) and
- * cap over-large finite input well under MAX_SAFE_INTEGER/100 so neither the `* 100` nor
- * the compounding loop can overflow the core's guard.
+ * Additional contribution is entered in whole currency units; the page multiplies it by
+ * 100 (cents) before feeding the projection. A `type="number"` field accepts exponent
+ * text (e.g. `1e999` → Infinity), so reject non-finite input (→ 0) and cap over-large
+ * finite input well under MAX_SAFE_INTEGER/100 so the `* 100` cannot overflow. Values
+ * that still grow out of range once compounded are caught by `ProjectionState` below.
  */
 const MAX_CONTRIBUTION = 1_000_000_000 // 1e9 units — sane upper bound, cap * 100 stays a safe integer
 function sanitizeContribution(raw: string): number {
@@ -86,10 +66,38 @@ function sanitizeContribution(raw: string): number {
   return Math.min(MAX_CONTRIBUTION, Math.max(0, parsed))
 }
 
+/** A year-boundary point of the projection, in cents. */
+interface YearlyNetWorth {
+  year: number
+  netWorthCents: number
+}
+
+/**
+ * The projection either produces a series we can display honestly, or it does not — and
+ * the two ways it can fail need different words. Figures that outgrow exact
+ * representation are the user's own (very large) numbers and are theirs to reduce;
+ * figures that were never valid cents arrive from a corrupt store or sync payload and no
+ * amount of reducing will help.
+ *
+ * Both get an explicit state rather than a falsy render gate: every gate being falsy
+ * renders a silent blank void, and rendering the numbers anyway would show
+ * precision-corrupted money, which is worse than saying nothing (NFR3).
+ */
+type ProjectionState =
+  | { kind: 'ok'; yearly: YearlyNetWorth[] }
+  | { kind: 'too-large' }
+  | { kind: 'invalid-data' }
+
 export function NetWorthProjectionPage() {
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
   const balanceEntries = useBalanceEntries()
+  // Assets and liabilities are read as two independent totals — never pre-netted.
+  // The whole point of this page's model is that the return rate applies to assets
+  // alone while debts stand still, so the signed net must never become an input.
+  // These are the same store selectors BalancePage uses for its own totals.
+  const totalInvestments = useTotalInvestmentBalance()
+  const totalDebts = useTotalDebtBalance()
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -99,8 +107,8 @@ export function NetWorthProjectionPage() {
   // Theme-aware Recharts chrome so the chart stays legible on the dark card.
   const chartColors = useChartColors()
 
-  // Calculate initial net worth
-  const initialNetWorth = calculateInitialNetWorth(incomeSources, expenses, balanceEntries)
+  // Today's net worth, for display only — it is never fed back into the projection.
+  const initialNetWorth = totalInvestments - totalDebts
 
   // Calculate monthly net income (gross income - expenses) for projection
   // For simplicity, we'll use the raw amounts without frequency normalization
@@ -121,26 +129,74 @@ export function NetWorthProjectionPage() {
   // true rate, never a display-rounded value (NFR3).
   const annualReturnRate = returnRatePercent / 100
 
-  // The core compounding model throws for a rate <= 0 or below 0.1%. Guard the call
-  // (which runs unconditionally on every render) so an empty/zero field shows a hint
-  // instead of crashing. Comparing the same decimal against MIN_RATE_DECIMAL keeps
-  // this guard exactly in step with the core validation.
-  const isRateValid = annualReturnRate >= MIN_RATE_DECIMAL
+  // Assets and liabilities are modelled separately: the return compounds on assets
+  // only, liabilities are carried flat, and the contributions land on the asset side.
+  // Feeding the signed net as a single principal is exactly the bug this replaces —
+  // it multiplied a debt-dominated (negative) balance by (1 + rate) every year, so a
+  // mortgage grew geometrically out of thin air.
+  //
+  // The balance totals are clamped at 0 because the core model rejects negative assets
+  // or liabilities outright. The entry form already enforces non-negative balances, but
+  // `validateBalanceTracking` does not, so synced/imported data can still carry one.
+  const projectionState = useMemo<ProjectionState>(() => {
+    const result = createNetWorthProjection({
+      currentAssetsCents: Math.max(0, totalInvestments),
+      currentLiabilitiesCents: Math.max(0, totalDebts),
+      // The model takes a monthly figure; the page's inflow is annual (net income plus
+      // the contribution field, which is entered in whole currency units).
+      monthlyNetIncomeCents: Math.round((annualNetIncome + additionalContribution * 100) / 12),
+      assetReturnRate: annualReturnRate,
+      incomeGrowthRate: 0, // the page models no income growth
+      timeHorizon: 'custom',
+      customYears: years,
+    })
 
-  // Calculate projection only when the rate is in the model's valid range.
-  const projection = isRateValid
-    ? calculateCompoundingProjection({
-        principal: initialNetWorth,
-        annualContribution: annualNetIncome + additionalContribution * 100, // Convert dollars to cents
-        annualReturnRate,
-        years,
-      })
-    : []
+    // The model returns one point per month; the chart and the summary below are both
+    // built around whole years, so take the year boundaries. This runs from year 0
+    // (today) through year N.
+    const yearBoundaries = result.timeline.filter((point) => point.month % 12 === 0)
+
+    // Check the assets line too, not just the net figure. Assets and liabilities can both
+    // be out of safe range while their difference lands back inside it, and a net worth
+    // computed from two corrupted operands is corrupt however tidy it looks.
+    const figures = yearBoundaries.flatMap((point) => [point.netWorthCents, point.assetsCents])
+
+    // Anything that was never a whole number of cents did not come from this app's own
+    // write path — `validateBalanceTracking` enforces integers, but the sync applier
+    // writes straight to the store without it. Telling that user their figures are "too
+    // large" would send them off reducing balances that are not the problem.
+    if (!figures.every((value) => Number.isInteger(value))) {
+      return { kind: 'invalid-data' }
+    }
+
+    // Balances and income are summed from stores with no combined cap, so a large enough
+    // starting position compounds past the safe-integer range — at which point every
+    // figure downstream is quietly wrong.
+    if (!figures.every((value) => Number.isSafeInteger(value))) {
+      return { kind: 'too-large' }
+    }
+
+    const yearly = yearBoundaries.map((point) => ({
+      year: point.month / 12,
+      netWorthCents: point.netWorthCents,
+    }))
+
+    return { kind: 'ok', yearly }
+  }, [
+    totalInvestments,
+    totalDebts,
+    annualNetIncome,
+    additionalContribution,
+    annualReturnRate,
+    years,
+  ])
+
+  const projection = projectionState.kind === 'ok' ? projectionState.yearly : []
 
   // Prepare data for chart
   const chartData = projection.map((item) => ({
     year: item.year,
-    netWorth: item.endingBalance / 100, // Convert cents to dollars for chart
+    netWorth: item.netWorthCents / 100, // Convert cents to dollars for chart
   }))
 
   // Check if we have sufficient data
@@ -192,7 +248,7 @@ export function NetWorthProjectionPage() {
                   onChange={(e) => setYears(clampYears(e.target.value))}
                   min="1"
                   max="50"
-                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
                 />
               </div>
 
@@ -205,10 +261,10 @@ export function NetWorthProjectionPage() {
                   id="returnRate"
                   value={returnRatePercent}
                   onChange={(e) => setReturnRatePercent(quantizeRatePercent(e.target.value))}
-                  min="0.1"
+                  min="0"
                   max="100"
                   step="0.01"
-                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
                 />
               </div>
 
@@ -227,7 +283,7 @@ export function NetWorthProjectionPage() {
                   onChange={(e) => setAdditionalContribution(sanitizeContribution(e.target.value))}
                   min="0"
                   step="100"
-                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
                 />
               </div>
             </div>
@@ -244,13 +300,21 @@ export function NetWorthProjectionPage() {
                   Add income sources, expenses, or balance entries to see your financial projection
                 </p>
               </div>
-            ) : !isRateValid ? (
+            ) : projectionState.kind === 'too-large' ? (
               <div className="surface-inset p-8 rounded-lg text-center">
-                <p className="mb-4 text-muted">
-                  Enter an annual return rate of at least 0.1% to see your projection
-                </p>
+                <p className="mb-4 text-muted">These figures are too large to project</p>
                 <p className="text-faint text-sm">
-                  The return rate must be at least 0.1% for the compound projection to calculate.
+                  Your balances or income exceed the range this projection can calculate accurately.
+                  Reduce them, or shorten the projection period, to see your financial future.
+                </p>
+              </div>
+            ) : projectionState.kind === 'invalid-data' ? (
+              <div className="surface-inset p-8 rounded-lg text-center">
+                <p className="mb-4 text-muted">Some of your figures could not be read</p>
+                <p className="text-faint text-sm">
+                  One or more of your balances, income sources, or expenses is not a valid amount,
+                  so this projection cannot be calculated. Check your entries for anything that
+                  looks wrong.
                 </p>
               </div>
             ) : (
@@ -316,7 +380,7 @@ export function NetWorthProjectionPage() {
           </section>
 
           {/* Projection Summary */}
-          {hasData && chartData.length > 0 && (
+          {hasData && projectionState.kind === 'ok' && chartData.length > 0 && (
             <section className="surface shadow-md p-6 rounded-lg">
               <h2 className="mb-4 font-semibold text-subheading text-xl">Projection Summary</h2>
               <div className="gap-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
@@ -331,7 +395,7 @@ export function NetWorthProjectionPage() {
                     <div key={item.year} className="surface-inset p-4 rounded-lg">
                       <p className="text-muted text-sm">Year {item.year}</p>
                       <p className="font-bold text-purple-600 dark:text-purple-400 text-lg">
-                        {formatAmount(item.endingBalance)}
+                        {formatAmount(item.netWorthCents)}
                       </p>
                     </div>
                   ))}
@@ -345,10 +409,11 @@ export function NetWorthProjectionPage() {
               How It Works
             </h3>
             <p className="text-blue-700 dark:text-blue-300 text-sm">
-              This projection uses compound interest calculations based on your current net worth,
-              annual net income, and the return rate you specify. The formula accounts for both
-              capital appreciation and regular contributions to give you a realistic view of your
-              financial future.
+              Your investments grow at the return rate you specify, and your annual net income and
+              any additional contributions are added to them along the way. Debts are held at their
+              current balance rather than growing with the return rate, so a mortgage or loan does
+              not compound against you — your projected net worth is simply your growing investments
+              minus what you still owe.
             </p>
           </section>
         </main>

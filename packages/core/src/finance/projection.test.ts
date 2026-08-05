@@ -347,6 +347,167 @@ describe('Edge Cases', () => {
 })
 
 // ============================================================================
+// Assets/Liabilities Separation (FR47, story 28-2)
+// ============================================================================
+
+/**
+ * NetWorthProjectionPage used to pre-net its inputs — it fed `assets - liabilities` as a
+ * single principal into a compounder that multiplied the whole balance by (1 + rate)
+ * every year. For a debt-dominated user that compounded the DEBT, so a mortgage grew
+ * geometrically out of thin air. These tests pin the property that makes that impossible:
+ * the return rate reaches assets only, and liabilities never move.
+ */
+describe('Assets/Liabilities Separation (FR47)', () => {
+  // $1,000 of assets against a $300,000 mortgage — net worth starts at -$299,000.
+  const DEBT_DOMINATED: NetWorthProjectionInput = {
+    currentAssetsCents: toCents(1000),
+    currentLiabilitiesCents: toCents(300000),
+    monthlyNetIncomeCents: toCents(0),
+    assetReturnRate: 0.07,
+    incomeGrowthRate: 0,
+    timeHorizon: 'custom',
+    customYears: 10,
+  }
+
+  it('does not diverge exponentially when liabilities exceed assets (FR47)', () => {
+    const result = createNetWorthProjection(DEBT_DOMINATED)
+
+    expect(result.summary.startingNetWorthCents).toBe(toCents(-299000))
+
+    // The trajectory improves: assets compound while the debt stands still.
+    expect(result.summary.endingNetWorthCents).toBeGreaterThan(result.summary.startingNetWorthCents)
+
+    // THE load-bearing anti-divergence assertion. With assets non-negative and
+    // liabilities flat, net worth can never fall below the liability alone — whereas the
+    // old single-principal model produced -299,000 x 1.07^10 = -$588,178, inventing $289k
+    // of debt. Any return to geometric behaviour breaks this bound immediately.
+    // (Deliberately the only bound here: a looser -$350k check would be strictly implied
+    // by this one and could never fail on its own.)
+    expect(result.summary.endingNetWorthCents).toBeGreaterThan(toCents(-300000))
+  })
+
+  it('compounds the assets alone, at the full return rate (FR47)', () => {
+    const result = createNetWorthProjection(DEBT_DOMINATED)
+
+    // $1,000 at 7% for 10 years = $1,967.15, unaffected by the $300k of debt sitting
+    // beside it. Ranged rather than exact: the model rounds to whole cents monthly.
+    const finalAssets = result.timeline[120]?.assetsCents ?? Number.NaN
+    expect(finalAssets).toBeGreaterThan(196_600)
+    expect(finalAssets).toBeLessThan(196_800)
+  })
+
+  it('holds liabilities flat at every point in the timeline (FR47)', () => {
+    const result = createNetWorthProjection(DEBT_DOMINATED)
+
+    expect(result.timeline).toHaveLength(121) // months 0..120 inclusive
+    for (const point of result.timeline) {
+      expect(point.liabilitiesCents).toBe(toCents(300000))
+    }
+  })
+
+  it('projects a debts-only position as a flat line at the liability (FR47)', () => {
+    const result = createNetWorthProjection({
+      ...DEBT_DOMINATED,
+      currentAssetsCents: toCents(0),
+    })
+
+    // Nothing to compound and nothing to contribute: -$300,000 for the whole horizon.
+    for (const point of result.timeline) {
+      expect(point.netWorthCents).toBe(toCents(-300000))
+    }
+  })
+
+  it('projects an assets-only position identically to the same assets carrying debt (FR47)', () => {
+    const assetsOnly = createNetWorthProjection({
+      ...DEBT_DOMINATED,
+      currentLiabilitiesCents: toCents(0),
+    })
+    const withDebt = createNetWorthProjection(DEBT_DOMINATED)
+
+    // The debt is a constant offset — it must not touch the asset path at all.
+    expect(assetsOnly.timeline[120]?.assetsCents).toBe(withDebt.timeline[120]?.assetsCents)
+    expect(assetsOnly.summary.endingNetWorthCents).toBe(
+      withDebt.summary.endingNetWorthCents + toCents(300000)
+    )
+  })
+
+  it('applies contributions to assets in a net-negative position (FR47)', () => {
+    const withContributions = createNetWorthProjection({
+      ...DEBT_DOMINATED,
+      monthlyNetIncomeCents: toCents(500),
+    })
+    const withoutContributions = createNetWorthProjection(DEBT_DOMINATED)
+
+    // $500/mo for 10 years is $60,000 of principal, plus the return it earns on the way.
+    const difference =
+      withContributions.summary.endingNetWorthCents -
+      withoutContributions.summary.endingNetWorthCents
+    expect(difference).toBeGreaterThan(toCents(60000))
+    expect(difference).toBeLessThan(toCents(90000))
+  })
+
+  /**
+   * A spending deficit (expenses > income) drains assets past zero. A negative asset
+   * balance is an accumulated shortfall, NOT an investment — applying the return rate to
+   * it makes the shortfall compound geometrically, which is the same defect FR47 removes
+   * from the net-worth line, just relocated to the asset line. Caught in code review of
+   * story 28-2: $50k assets / $200k debt / -$500 a month at 7% over 30 years reached
+   * -$204,114 of assets where linear accumulation gives -$130,000.
+   */
+  const SPENDING_DEFICIT: NetWorthProjectionInput = {
+    currentAssetsCents: toCents(50000),
+    currentLiabilitiesCents: toCents(200000),
+    monthlyNetIncomeCents: toCents(-500),
+    assetReturnRate: 0.07,
+    incomeGrowthRate: 0,
+    timeHorizon: 'custom',
+    customYears: 30,
+  }
+
+  it('does not compound a negative asset balance (FR47, review finding)', () => {
+    const result = createNetWorthProjection(SPENDING_DEFICIT)
+
+    // Once assets are underwater, the only thing that may move them is the monthly
+    // shortfall itself — never a percentage of the negative balance.
+    let checkedMonths = 0
+    for (let month = 1; month < result.timeline.length; month++) {
+      const previous = result.timeline[month - 1]?.assetsCents ?? Number.NaN
+      const current = result.timeline[month]?.assetsCents ?? Number.NaN
+      if (previous < 0) {
+        expect(current - previous).toBe(toCents(-500))
+        checkedMonths++
+      }
+    }
+
+    // Guard against a vacuous pass: the scenario must actually reach the negative region.
+    expect(checkedMonths).toBeGreaterThan(50)
+  })
+
+  it('keeps a spending deficit linear rather than geometric (FR47, review finding)', () => {
+    const result = createNetWorthProjection(SPENDING_DEFICIT)
+    const finalAssets = result.timeline[360]?.assetsCents ?? Number.NaN
+
+    // Assets can never fall below "every month's shortfall, and nothing else":
+    // 360 months x -$500 against $50,000 of starting assets.
+    expect(finalAssets).toBeGreaterThanOrEqual(toCents(50000) + 360 * toCents(-500))
+
+    // The pre-fix compounding behaviour produced -$204,114 — well outside that floor.
+    expect(finalAssets).toBeGreaterThan(toCents(-150000))
+  })
+
+  it('projects a zero return rate as flat assets plus contributions (FR47)', () => {
+    const result = createNetWorthProjection({
+      ...DEBT_DOMINATED,
+      assetReturnRate: 0,
+      monthlyNetIncomeCents: toCents(100),
+    })
+
+    // No growth: exactly the starting assets plus 120 months of $100.
+    expect(result.timeline[120]?.assetsCents).toBe(toCents(1000) + 120 * toCents(100))
+  })
+})
+
+// ============================================================================
 // Years to Target Tests
 // ============================================================================
 

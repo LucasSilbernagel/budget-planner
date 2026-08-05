@@ -65,18 +65,36 @@ describe('NetWorthProjectionPage annual return rate input', () => {
     expect(input.value).toBe('100')
   })
 
-  it('does not crash and shows a hint when the rate is cleared or zero (AC-4)', () => {
-    seedInvestment(1_000_000) // ensure hasData === true so the projection path is exercised
+  it('projects a flat series when the rate is cleared or zero, without crashing (AC-4, story 28-2)', () => {
+    // Pre-28.2 a 0% rate was blocked behind an "enter at least 0.1%" hint, because the
+    // old compounding model threw below that floor. `createNetWorthProjection` accepts
+    // 0%, which is a meaningful scenario — assets simply do not grow — so the projection
+    // must render instead of an empty state.
+    seedInvestment(1_000_000) // $10,000, and ensures hasData === true
     renderWithProviders(<NetWorthProjectionPage />)
     const input = screen.getByLabelText(/annual return rate/i) as HTMLInputElement
 
-    // Clearing the field must not throw (the core calc rejects a rate <= 0).
+    // Clearing the field must not throw.
     fireEvent.change(input, { target: { value: '' } })
 
     expect(input.value).toBe('0')
-    expect(screen.getByText(/enter an annual return rate of at least 0\.1%/i)).toBeInTheDocument()
-    // With no valid rate there is no projection to summarize.
-    expect(screen.queryByText('Projection Summary')).not.toBeInTheDocument()
+    expect(screen.queryByText(/enter an annual return rate of at least/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Projection Summary')).toBeInTheDocument()
+
+    // No growth and no income in this store, so every year holds the $10,000 principal.
+    const summary = screen.getByText('Projection Summary').closest('section') as HTMLElement
+    const valueEls = within(summary).getAllByText((content, el) => {
+      return el?.tagName === 'P' && /^-?[\d,]+(?:\.\d+)?$/.test(content.trim())
+    })
+    expect(valueEls).toHaveLength(3)
+    for (const el of valueEls) {
+      expect(Number.parseFloat((el.textContent ?? '').replace(/,/g, ''))).toBe(10_000)
+    }
+  })
+
+  it('gives the rate input a min of 0 now that a zero rate is projectable (AC-5, story 28-2)', () => {
+    renderWithProviders(<NetWorthProjectionPage />)
+    expect(screen.getByLabelText(/annual return rate/i)).toHaveAttribute('min', '0')
   })
 
   it('projects using the decimal rate, not the raw percent (AC-3, NFR3)', () => {
@@ -173,16 +191,17 @@ describe('NetWorthProjectionPage input hardening (story bug-1)', () => {
     expect(screen.getByText('Projection Summary')).toBeInTheDocument()
   })
 
-  it('contains a residual core throw (overflowing derived principal) in the ErrorBoundary fallback, not a white-screen (AC-3)', () => {
-    // The *derived* initialNetWorth (summed from stored balances) is a vector this
+  it('reports an overflowing derived principal as "too large", not a white-screen (AC-3, retargeted by story 28-2)', () => {
+    // The *derived* starting assets (summed from stored balances) are a vector this
     // story does not sanitize at the input. A single balance is capped by store
-    // validation at MAX_SAFE_INTEGER/100 (~9e13 cents), but many valid entries sum
-    // past the core calc's per-year Number.isSafeInteger guard (~8.4e15 principal) and
-    // it throws. The route-level ErrorBoundary (mirroring /retirement) must contain
-    // that throw so the user sees the themed fallback, not a blank/white screen.
+    // validation at MAX_SAFE_INTEGER/100 (~9e13 cents), but many valid entries sum past
+    // the safe-integer range once compounded. The old compounding model threw here and
+    // the route ErrorBoundary caught it; `createNetWorthProjection` has no overflow
+    // guard, so the page now detects the condition and says so explicitly. The
+    // ErrorBoundary wrapper stays in this test to prove nothing throws past it.
     const NEAR_MAX_CENTS = 90_000_000_000_000 // 9e13, within the store's safe-integer bound
     for (let i = 0; i < 100; i++) {
-      seedInvestment(NEAR_MAX_CENTS) // sum ≈ 9e15 → overflows the projection at year 1
+      seedInvestment(NEAR_MAX_CENTS) // sum ≈ 9e15 → leaves safe-integer range once compounded
     }
     renderWithProviders(
       <ErrorBoundary>
@@ -190,19 +209,19 @@ describe('NetWorthProjectionPage input hardening (story bug-1)', () => {
       </ErrorBoundary>
     )
 
-    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument()
+    expect(screen.getByText(/too large to project/i)).toBeInTheDocument()
+    expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+    // Precision-corrupted figures must not be rendered alongside the warning.
+    expect(screen.queryByText('Projection Summary')).not.toBeInTheDocument()
   })
 
-  it('contains a residual core throw from an overflowing income-derived contribution in the ErrorBoundary fallback (AC-3, review follow-up)', () => {
-    // `annualContribution = annualNetIncome + additionalContribution * 100`, and
-    // annualNetIncome is summed from the income/expense stores — which, unlike balances,
-    // have NO magnitude cap, so a single absurd income can overflow the core calc. This
-    // story does not sanitize that derived value at the source; the route-level
-    // ErrorBoundary is its containment. Pin that so a future boundary refactor can't
-    // silently reintroduce a white screen for the (more easily reached) income vector.
+  it('reports an overflowing income-derived contribution as "too large" (AC-3, retargeted by story 28-2)', () => {
+    // Income/expense stores, unlike balances, have NO magnitude cap, so a single absurd
+    // income overflows on its own. Kept separate from the balance vector above: this one
+    // is the more easily reached of the two.
     useIncomeStore.getState().addIncomeSource({
       name: 'Windfall',
-      amount: 1e18, // cents; annualNetIncome ≈ 1.2e19 → overflows the projection at year 1
+      amount: 1e18, // cents; the derived monthly inflow alone exceeds safe-integer range
       frequency: 'monthly',
     })
     renderWithProviders(
@@ -211,6 +230,143 @@ describe('NetWorthProjectionPage input hardening (story bug-1)', () => {
       </ErrorBoundary>
     )
 
-    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument()
+    expect(screen.getByText(/too large to project/i)).toBeInTheDocument()
+    expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Projection Summary')).not.toBeInTheDocument()
+  })
+
+  it('distinguishes an unreadable figure from an over-large one (AC-6, review finding)', () => {
+    // `validateBalanceTracking` rejects non-integer cents, but the sync applier writes
+    // straight to the store without it (`lib/sync/applyServerChanges.ts`), so a corrupt
+    // row can reach this page. Reproduce that write path exactly.
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: '00000000-0000-4000-8000-000000000000',
+          type: 'investment',
+          name: 'Corrupt row',
+          currentBalance: 10_050.5, // half a cent — never valid
+          maxContributionLimit: null,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          timeline: [],
+        },
+      ],
+    } as unknown as Parameters<typeof useBalanceStore.setState>[0])
+
+    renderWithProviders(
+      <ErrorBoundary>
+        <NetWorthProjectionPage />
+      </ErrorBoundary>
+    )
+
+    // $100.50 is not "too large" — telling this user to reduce their balances would send
+    // them chasing a problem that does not exist.
+    expect(screen.getByText(/could not be read/i)).toBeInTheDocument()
+    expect(screen.queryByText(/too large to project/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Projection Summary')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * NetWorthProjectionPage assets/liabilities separation (story 28-2, FR47).
+ *
+ * The page fed the *signed net* (`totalInvestments - totalDebts`) as a single principal
+ * into a compounder that multiplies the whole balance by `(1 + returnRate)` each year.
+ * For a debt-dominated user that multiplied the DEBT: a -$299,000 net worth "grew" to
+ * -$588,178 over 10 years at 7%, inventing $289k of debt out of nothing. The page is now
+ * routed through the core `createNetWorthProjection` model, which compounds assets only
+ * and carries liabilities flat.
+ */
+describe('NetWorthProjectionPage assets/liabilities separation (story 28-2)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  function seedEntry(type: 'investment' | 'debt', currentBalance: number) {
+    useBalanceStore.getState().addBalanceEntry({
+      type,
+      name: type === 'debt' ? 'Mortgage' : 'Brokerage',
+      currentBalance,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+  }
+
+  /** Read the three Projection Summary figures as plain numbers (allowing a leading `-`). */
+  function summaryValues(): number[] {
+    const summary = screen.getByText('Projection Summary').closest('section') as HTMLElement
+    const valueEls = within(summary).getAllByText((content, el) => {
+      return el?.tagName === 'P' && /^-?[\d,]+(?:\.\d+)?$/.test(content.trim())
+    })
+    return valueEls.map((el) => Number.parseFloat((el.textContent ?? '').replace(/,/g, '')))
+  }
+
+  it('does not drive a debt-dominated net worth exponentially more negative (AC-1)', () => {
+    seedEntry('investment', 100_000) // $1,000 of assets
+    seedEntry('debt', 30_000_000) // $300,000 mortgage — net worth starts at -$299,000
+
+    renderWithProviders(<NetWorthProjectionPage />)
+
+    const values = summaryValues()
+    // Guard against a vacuous pass: Math.min([]) is Infinity and would satisfy everything.
+    expect(values).toHaveLength(3)
+
+    const worst = Math.min(...values)
+    // THE load-bearing bound. This store has no income or expenses, so assets only grow;
+    // with liabilities flat, net worth cannot fall below -$300,000 (the liability alone).
+    // The old single-principal model compounded the signed net to -$588,178, so any
+    // return to geometric behaviour breaks this immediately. (Note the "assets only grow"
+    // premise holds *because* this suite seeds no expenses — a spending deficit legitimately
+    // draws assets down, and is covered in the core suite's SPENDING_DEFICIT tests.)
+    expect(worst).toBeGreaterThanOrEqual(-300_000)
+    // And the trajectory must IMPROVE — assets compound while the debt stands still.
+    expect(values.at(-1) as number).toBeGreaterThan(values[0] as number)
+  })
+
+  it('keeps a debts-only projection flat at the liability (AC-1)', () => {
+    seedEntry('debt', 30_000_000) // no assets at all
+
+    renderWithProviders(<NetWorthProjectionPage />)
+
+    const values = summaryValues()
+    expect(values).toHaveLength(3)
+    // Nothing to compound and nothing to contribute: -$300,000 every single year.
+    for (const value of values) {
+      expect(value).toBe(-300_000)
+    }
+  })
+})
+
+/**
+ * NetWorthProjectionPage focus-ring a11y (story 28-2, AC-7).
+ *
+ * All three inputs carried `focus:outline-none` plus a ring COLOUR but no ring WIDTH, so
+ * they had no visible focus indicator at all — the 4th recurrence of this defect after
+ * Epics 15/24 and story 28.1. Kept in its own suite: it is unrelated to the projection
+ * model, and filing it under the assets/liabilities tests would invite deletion alongside
+ * them and misattribute its failures.
+ */
+describe('NetWorthProjectionPage focus rings (story 28-2)', () => {
+  it('gives all three projection inputs a visible focus ring (AC-7)', () => {
+    renderWithProviders(<NetWorthProjectionPage />)
+
+    // Assert token membership, not substring: `focus:ring-purple-500` contains the
+    // substring "focus:ring-" and would satisfy a naive `toContain` check.
+    for (const label of [/projection period/i, /annual return rate/i, /additional annual/i]) {
+      const tokens = (screen.getByLabelText(label).className ?? '').split(/\s+/)
+      expect(tokens).toContain('focus:ring-2')
+      expect(tokens).toContain('focus:ring-purple-500')
+    }
   })
 })

@@ -199,9 +199,15 @@ function calculateCompoundGrowth(presentValue: number, rate: number, periods: nu
  * - Asset return rate (compounded monthly)
  *
  * The calculation for each month:
- * - Assets grow by the monthly return rate
+ * - Assets grow by the monthly return rate, but only while the balance is positive
  * - New net income is added (growing at incomeGrowthRate)
  * - The new net income itself earns returns in subsequent months
+ *
+ * A sustained spending deficit (negative monthly net income) can drain assets past zero.
+ * The resulting negative balance is an accumulated shortfall, not an investment, so it
+ * does not earn the return rate — it accumulates linearly. Compounding it would make the
+ * shortfall grow geometrically, which is the same defect FR47 removes from the net-worth
+ * line, relocated to the asset line.
  *
  * @param input - Projection input parameters
  * @returns Complete projection result with timeline and summary
@@ -234,10 +240,14 @@ export function createNetWorthProjection(input: NetWorthProjectionInput): NetWor
 
     // For months > 0, apply compounding to assets
     if (month > 0) {
-      // Assets grow by the monthly rate
-      currentAssetsCents = Math.round(
-        calculateCompoundGrowth(currentAssetsCents, monthlyAssetRate, 1)
-      )
+      // Assets grow by the monthly rate — but only a positive balance earns a return.
+      // A negative balance here is an accumulated shortfall from spending more than is
+      // earned; charging it the return rate would compound the shortfall geometrically.
+      if (currentAssetsCents > 0) {
+        currentAssetsCents = Math.round(
+          calculateCompoundGrowth(currentAssetsCents, monthlyAssetRate, 1)
+        )
+      }
 
       // Add new net income for this month
       currentAssetsCents += currentMonthlyNetIncomeCents
