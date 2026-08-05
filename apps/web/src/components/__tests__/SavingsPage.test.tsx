@@ -1,4 +1,12 @@
-import { act, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useExpenseStore } from '../../stores/expenseStore'
@@ -419,5 +427,100 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     const manual = screen.getByTestId('savings-allocation-manual-1')
     expect(manual).toHaveTextContent(/0\.00/)
     expect(manual).not.toHaveTextContent(/-/)
+  })
+})
+
+/**
+ * Money-input sanitization (story 28-1, FR46).
+ *
+ * All three money fields on this page route through the shared core
+ * `sanitizeMoneyInput` helper; these prove the wiring (AC-3).
+ */
+describe('SavingsPage money inputs reject non-numeric characters', () => {
+  beforeEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('strips garbage from the target amount but keeps the grouped number', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const targetInput = screen.getByTestId('savings-target-amount-input')
+    fireEvent.change(targetInput, { target: { value: 'about $5,000.00 total' } })
+
+    expect(targetInput).toHaveValue('5,000.00')
+  })
+
+  it('never lets a typed letter into the current balance field', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const balanceInput = screen.getByTestId('savings-current-balance-input')
+    await user.type(balanceInput, '9abc9')
+
+    expect(balanceInput).toHaveValue('99')
+  })
+
+  it('leaves the goal name field free to accept letters', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const nameInput = screen.getByTestId('savings-name-input')
+    await user.type(nameInput, 'Emergency Fund')
+
+    expect(nameInput).toHaveValue('Emergency Fund')
+  })
+})
+
+/**
+ * Visible focus indicator (story 28-1, AC-7).
+ *
+ * `focus:outline-none` with a ring COLOUR but no `focus:ring-2` WIDTH paints
+ * nothing — keyboard users get no focus indicator. Third recurrence of this
+ * defect class (Epics 15 and 24), so all four of this page's affected controls
+ * carry a structural guard, asserted by class-TOKEN membership (a substring check
+ * for "focus:ring-2" also matches "focus:ring-2xl").
+ */
+describe('SavingsPage form controls have a visible focus ring', () => {
+  beforeEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('every control that kills the native outline restores a 2px ring', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    // The allocation amount field only renders in manual mode (story 26.1).
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+
+    const controls = [
+      screen.getByTestId('savings-name-input'),
+      screen.getByTestId('savings-target-amount-input'),
+      screen.getByTestId('savings-current-balance-input'),
+      screen.getByTestId('savings-monthly-allocation-input'),
+    ]
+
+    let checked = 0
+    for (const control of controls) {
+      const tokens = control.className.split(/\s+/)
+      expect(tokens, `${control.id} no longer kills the native outline`).toContain(
+        'focus:outline-none'
+      )
+      expect(tokens, `${control.id} has no visible focus ring`).toContain('focus:ring-2')
+      checked++
+    }
+    expect(checked).toBe(controls.length)
   })
 })

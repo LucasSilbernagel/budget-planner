@@ -296,6 +296,115 @@ export function parseFromInput(value: string, locale?: string): number {
 export const parseCurrencyToCents = parseFromInput
 
 /**
+ * Strips characters a money field can never legally contain, as the user types (FR46).
+ *
+ * The write-side companion to {@link parseFromInput} (the reader) and
+ * {@link formatForInputDisplay} (the blur echo). It lives beside them so "what the
+ * input allows" cannot drift from "what the parser accepts": it resolves the
+ * locale's group/decimal separators with the same `Intl.NumberFormat.formatToParts`
+ * probe and `try/catch` fallthrough `parseFromInput` uses, then keeps only what
+ * that locale's number grammar can contain.
+ *
+ * ## It must never change a value's MAGNITUDE
+ *
+ * This is a pure character-class filter, deliberately free of any numeric
+ * semantics. It removes characters that can only ever be noise (letters, symbols,
+ * punctuation) and touches nothing else — it never de-duplicates, re-orders or
+ * "repairs" a value's numeric structure.
+ *
+ * That restraint is load-bearing. Anything ambiguous or malformed is passed
+ * through to {@link parseFromInput}, which returns `0` for it, which the callers'
+ * `<= 0` validators then block. "Tidying" such a value instead turns a *rejection*
+ * into a plausible, saveable, wrong number — silently. Three real examples, all
+ * of which this function used to produce (story 28-1 code review):
+ * - dropping a duplicate decimal separator turned a fumbled `.` at the start of
+ *   `1,000.00` into `.1,00000` → **$0.10**;
+ * - stripping a `.` in en-ZA (where it is neither separator, but where the parser
+ *   still honours it) turned `1234.56` into **R123 456,00 — a 100x error**;
+ * - stripping the `e` from a pasted `1.2E+09` turned a value the validator used to
+ *   block into a saved **$1.20**.
+ *
+ * Kept: digits; the resolved group separator (any number of them — whatever the
+ * locale's character is, including de-CH `'` and en-ZA U+00A0); the resolved
+ * decimal separator (however many — see above); `.` in every locale, because
+ * `parseFromInput`'s `[^\d.-]` strip always honours it, so removing it here would
+ * silently rescale the value; a leading `-` (negatives are legal for debts).
+ * Stripped: everything else — letters, currency symbols, punctuation, and any
+ * whitespace that is not itself the locale's group separator.
+ *
+ * In-progress typing is never rewritten: `''`, `'-'`, `'1.'` and `'1,'` come back
+ * unchanged so the next keystroke can complete them. The function only ever
+ * *removes* characters, so the returned string is always equal to or shorter than
+ * its input.
+ *
+ * Idempotent — `sanitizeMoneyInput(sanitizeMoneyInput(x)) === sanitizeMoneyInput(x)`
+ * — which matters because the blur re-formatters echo `formatForInputDisplay`
+ * output back into the same field.
+ *
+ * One deliberate divergence from {@link parseFromInput}: scientific notation. The
+ * parser rejects `1e10` outright, but AC-1 forbids leaving a letter in the field,
+ * so the whole exponent tail is dropped (`1.2E+09` → `1.2`) rather than just the
+ * `e` (which would have spliced the exponent digits into the mantissa). Note this
+ * only fires when the exponent arrives whole — i.e. on a paste, the case that
+ * matters, since that is how a spreadsheet value reaches the field. Typed one
+ * character at a time the exponent never forms as a unit, so `e` and `+` are simply
+ * rejected as noise while the user watches; the result still equals what parses.
+ *
+ * @param value - Raw string straight from the input's change event.
+ * @param locale - Optional BCP-47 locale whose grouping/decimal separators the
+ *   input uses. Omit for en-US-style input (backward compatible).
+ * @returns The value with all illegal characters removed.
+ */
+export function sanitizeMoneyInput(value: string, locale?: string): string {
+  if (!value) return value
+
+  // Resolve the separators BEFORE building the allow-set. Hard-coding '.' or ','
+  // (or "strip all whitespace") would reject legal input for de-DE, de-CH and
+  // en-ZA users, whose group separators are '.', '\'' and U+00A0 respectively.
+  let groupSep = ','
+  let decimalSep = '.'
+  if (locale) {
+    try {
+      const parts = new Intl.NumberFormat(locale).formatToParts(11111.1)
+      groupSep = parts.find((p) => p.type === 'group')?.value ?? groupSep
+      decimalSep = parts.find((p) => p.type === 'decimal')?.value ?? decimalSep
+    } catch {
+      // Invalid/exotic locale: fall through with the en-US assumptions above.
+    }
+  }
+
+  // Drop a scientific-notation exponent whole, rather than letting the loop below
+  // strip only the 'e' and splice the exponent digits into the mantissa ("1.2E+09"
+  // -> "1.209" -> $1.20). The parser rejects the notation outright; AC-1 forbids
+  // leaving the letter in the field, so truncating at the exponent is the closest
+  // we can get to "what you see is what will be parsed".
+  const exponent = value.search(/[eE][+-]?\d/)
+  const trimmed = exponent === -1 ? value : value.slice(0, exponent)
+
+  let sanitized = ''
+  for (const char of trimmed) {
+    if (char >= '0' && char <= '9') {
+      sanitized += char
+    } else if (char === decimalSep || char === groupSep) {
+      // Kept verbatim, however many there are and wherever they sit. De-duplicating
+      // or re-ordering them would change the value's magnitude; a malformed number
+      // is parseFromInput's business to reject, not this function's to repair.
+      sanitized += char
+    } else if (char === '.') {
+      // Not a separator in this locale (e.g. en-ZA), but parseFromInput's `[^\d.-]`
+      // strip honours it as the decimal point regardless. Removing it here would
+      // silently multiply the value by 100.
+      sanitized += char
+    } else if (char === '-' && sanitized === '') {
+      // Sign is legal only in leading position; an interior '-' is noise.
+      sanitized += char
+    }
+  }
+
+  return sanitized
+}
+
+/**
  * Validates if a currency code is supported
  *
  * @param currencyCode - Currency code to validate

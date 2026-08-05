@@ -1,4 +1,12 @@
-import { act, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { BalancePage } from '../BalancePage'
@@ -529,5 +537,97 @@ describe('BalancePage investment accounts breakdown (Story 26.5)', () => {
     expect(breakdown.getByText('No investment accounts yet')).toBeInTheDocument()
     // No table + no combined-total row when the group is empty.
     expect(breakdown.queryByTestId('investment-breakdown-total')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Money-input sanitization (story 28-1, FR46).
+ *
+ * All three money fields on this page route through the shared core
+ * `sanitizeMoneyInput` helper; these prove the wiring (AC-3). Note the negative
+ * sign is deliberately NOT stripped — see the '-5' validation test above, which
+ * still relies on a typed minus reaching the submit validator.
+ */
+describe('BalancePage money inputs reject non-numeric characters', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('strips garbage from the current balance but keeps the grouped number', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Balance Entry' }))
+    const balanceInput = screen.getByTestId('balance-current-balance-input')
+    fireEvent.change(balanceInput, { target: { value: 'roughly $3,000.00 USD' } })
+
+    expect(balanceInput).toHaveValue('3,000.00')
+  })
+
+  it('never lets a typed letter into the current balance field', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Balance Entry' }))
+    const balanceInput = screen.getByTestId('balance-current-balance-input')
+    await user.type(balanceInput, '15abc00')
+
+    expect(balanceInput).toHaveValue('1500')
+  })
+
+  it('still accepts a leading minus so the non-negative validator stays reachable', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Balance Entry' }))
+    const balanceInput = screen.getByTestId('balance-current-balance-input')
+    await user.type(balanceInput, '-5')
+
+    expect(balanceInput).toHaveValue('-5')
+  })
+})
+
+/**
+ * Visible focus indicator (story 28-1, AC-7).
+ *
+ * See the SavingsPage sibling suite. This page has the most affected controls
+ * (5), including the two contribution fields that no e2e path focuses.
+ */
+describe('BalancePage form controls have a visible focus ring', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('every control that kills the native outline restores a 2px ring', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Balance Entry' }))
+
+    const controls = [
+      screen.getByTestId('balance-name-input'),
+      screen.getByTestId('balance-current-balance-input'),
+      screen.getByTestId('balance-max-contribution-input'),
+      screen.getByTestId('balance-monthly-contribution-input'),
+    ]
+
+    let checked = 0
+    for (const control of controls) {
+      const tokens = control.className.split(/\s+/)
+      expect(tokens, `${control.id} no longer kills the native outline`).toContain(
+        'focus:outline-none'
+      )
+      expect(tokens, `${control.id} has no visible focus ring`).toContain('focus:ring-2')
+      checked++
+    }
+    expect(checked).toBe(controls.length)
   })
 })

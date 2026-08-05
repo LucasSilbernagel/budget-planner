@@ -5,6 +5,7 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import {
   useExpenses,
   useIncomeSources,
@@ -64,9 +65,11 @@ export function SavingsPage() {
   // with the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // Re-echo an amount field in grouped, locale-aware form on blur. Leave an empty
-  // field empty, and do NOT clobber non-numeric garbage to "0.00" (a value with no
-  // digit is left as typed so the typo stays visible for inline validation).
+  // Re-echo an amount field in grouped, locale-aware form on blur. Both guard arms
+  // are load-bearing and must stay: the empty arm keeps "not filled in" from
+  // becoming "entered zero", and the no-digit arm keeps the digit-free partials
+  // sanitizeMoneyInput deliberately allows through (story 28-1) VISIBLE — without
+  // it a half-typed "-" would silently become "0.00" under the user's cursor.
   const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
     if (value.trim() === '' || !/\d/.test(value)) return
     setter(formatForInputDisplay(parseFromInput(value, locale), locale))
@@ -508,7 +511,7 @@ export function SavingsPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Emergency Fund, Vacation, New Car"
-                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                     : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
@@ -560,12 +563,12 @@ export function SavingsPage() {
                     inputMode="decimal"
                     id="targetAmount"
                     value={targetAmount}
-                    onChange={(e) => setTargetAmount(e.target.value)}
+                    onChange={(e) => setTargetAmount(sanitizeMoneyChange(e.target, locale))}
                     onBlur={(e) => reformatAmountOnBlur(e.target.value, setTargetAmount)}
                     placeholder="0.00"
                     className={`w-full px-3 py-2 ${
                       mode === 'symbol' ? 'pl-7' : ''
-                    } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                    } border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                       hasFieldError('targetAmount')
                         ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                         : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
@@ -606,12 +609,12 @@ export function SavingsPage() {
                   inputMode="decimal"
                   id="currentBalance"
                   value={currentBalance}
-                  onChange={(e) => setCurrentBalance(e.target.value)}
+                  onChange={(e) => setCurrentBalance(sanitizeMoneyChange(e.target, locale))}
                   onBlur={(e) => reformatAmountOnBlur(e.target.value, setCurrentBalance)}
                   placeholder="0.00"
                   className={`w-full px-3 py-2 ${
                     mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  } border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('currentBalance')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
@@ -676,12 +679,12 @@ export function SavingsPage() {
                     inputMode="decimal"
                     id="monthlyAllocation"
                     value={monthlyAllocation}
-                    onChange={(e) => setMonthlyAllocation(e.target.value)}
+                    onChange={(e) => setMonthlyAllocation(sanitizeMoneyChange(e.target, locale))}
                     onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyAllocation)}
                     placeholder="0.00"
                     className={`w-full px-3 py-2 ${
                       mode === 'symbol' ? 'pl-7' : ''
-                    } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                    } border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                       hasFieldError('monthlyAllocation')
                         ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                         : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'

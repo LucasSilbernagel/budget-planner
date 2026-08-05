@@ -5,6 +5,7 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
@@ -28,9 +29,11 @@ export function IncomePage() {
   // grouping uses the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // Re-echo an amount field in grouped, locale-aware form on blur. Leave an empty
-  // field empty, and do NOT clobber non-numeric garbage to "0.00" (a value with no
-  // digit is left as typed so the typo stays visible for inline validation).
+  // Re-echo an amount field in grouped, locale-aware form on blur. Both guard arms
+  // are load-bearing and must stay: the empty arm keeps "not filled in" from
+  // becoming "entered zero", and the no-digit arm keeps the digit-free partials
+  // sanitizeMoneyInput deliberately allows through (story 28-1) VISIBLE — without
+  // it a half-typed "-" would silently become "0.00" under the user's cursor.
   const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
     if (value.trim() === '' || !/\d/.test(value)) return
     setter(formatForInputDisplay(parseFromInput(value, locale), locale))
@@ -112,7 +115,11 @@ export function IncomePage() {
   }) => {
     setEditingId(source.id)
     setName(source.name)
-    setAmount((source.amount / 100).toString())
+    // Seed the field the same way the blur re-echo does, so an edit opens on a
+    // grouped, locale-aware value the locale-aware parser reads back identically.
+    // A bare `.toString()` emits ungrouped en-US-shaped text (and can produce
+    // scientific notation or long float tails) that a comma-decimal locale misreads.
+    setAmount(formatForInputDisplay(source.amount, locale))
     setFrequency(source.frequency)
     clearErrors()
     setIsModalOpen(true)
@@ -321,7 +328,7 @@ export function IncomePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Salary, Freelance, Investment"
-                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                     : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
@@ -358,12 +365,12 @@ export function IncomePage() {
                   inputMode="decimal"
                   id="amount"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => setAmount(sanitizeMoneyChange(e.target, locale))}
                   onBlur={(e) => reformatAmountOnBlur(e.target.value, setAmount)}
                   placeholder="0.00"
                   className={`w-full px-3 py-2 ${
                     mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md shadow-sm focus:outline-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  } border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('amount')
                       ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
@@ -394,7 +401,7 @@ export function IncomePage() {
                 id="frequency"
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as Frequency)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               >
                 {FREQUENCY_OPTIONS.map((option) => (

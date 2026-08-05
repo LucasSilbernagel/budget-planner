@@ -7,6 +7,7 @@ import {
 } from '@budget-planner/core/format/currency'
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useFinancialCalculations } from '../hooks/useFinancialCalculations'
+import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useBalanceStore } from '../stores/balanceStore'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { useIncomeStore } from '../stores/incomeStore'
@@ -543,17 +544,26 @@ function RetirementFormInner({
     [calculate]
   )
 
-  // Calculate on input change (auto-calculate)
-  const handleMonthlyIncomeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setMonthlyIncomeInput(e.target.value)
-  }, [])
+  // Calculate on input change (auto-calculate). Noise characters are rejected
+  // before they reach state (FR46). Note this does NOT mean every value here is
+  // parseable: partials like "-", "." and "," are deliberately preserved, and a
+  // malformed number is left intact for the parser to reject rather than silently
+  // repaired — hence the strict validation in `calculate` still does real work.
+  const handleMonthlyIncomeChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setMonthlyIncomeInput(sanitizeMoneyChange(e.target, locale))
+    },
+    [locale]
+  )
 
   // On blur, re-echo the income in grouped, locale-aware form and run the
-  // calculation. Leave an empty field empty and don't clobber non-numeric garbage
-  // to "0.00" (no digit → left as typed) so the typo stays visible; this also keeps
-  // the echoed field consistent with what `calculate`'s stricter parser will reject.
-  // The reformat uses the non-throwing core parser so it can never throw inside the
-  // state updater. For any digit-bearing value both parsers agree on the cents.
+  // calculation. Both guard arms are load-bearing and must stay: the empty arm
+  // keeps "not filled in" from becoming "entered zero", and the no-digit arm keeps
+  // the digit-free partials sanitizeMoneyInput deliberately allows through (story
+  // 28-1) VISIBLE — without it a half-typed "-" would become "0.00". This also
+  // keeps the echoed field consistent with what `calculate`'s stricter parser will
+  // reject. The reformat uses the non-throwing core parser so it can never throw
+  // inside the state updater. For any digit-bearing value both parsers agree.
   const handleMonthlyIncomeBlur = useCallback(() => {
     setMonthlyIncomeInput((prev) =>
       prev.trim() === '' || !/\d/.test(prev)

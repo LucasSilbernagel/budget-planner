@@ -6,6 +6,7 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import {
   useBalanceEntries,
   useBalanceStore,
@@ -66,9 +67,11 @@ export function BalancePage() {
   // with the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // Re-echo an amount field in grouped, locale-aware form on blur. Leave an empty
-  // field empty, and do NOT clobber non-numeric garbage to "0.00" (a value with no
-  // digit is left as typed so the typo stays visible for inline validation).
+  // Re-echo an amount field in grouped, locale-aware form on blur. Both guard arms
+  // are load-bearing and must stay: the empty arm keeps "not filled in" from
+  // becoming "entered zero", and the no-digit arm keeps the digit-free partials
+  // sanitizeMoneyInput deliberately allows through (story 28-1) VISIBLE — without
+  // it a half-typed "-" would silently become "0.00" under the user's cursor.
   const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
     if (value.trim() === '' || !/\d/.test(value)) return
     setter(formatForInputDisplay(parseFromInput(value, locale), locale))
@@ -595,7 +598,7 @@ export function BalancePage() {
                 id="type"
                 value={type}
                 onChange={(e) => setType(e.target.value as FinanceType)}
-                className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-purple-500 w-full"
+                className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
                 required
               >
                 {TYPE_OPTIONS.map((option) => (
@@ -616,7 +619,7 @@ export function BalancePage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., 401k, Student Loan, Credit Card"
-                className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                     : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
@@ -653,12 +656,12 @@ export function BalancePage() {
                   inputMode="decimal"
                   id="currentBalance"
                   value={currentBalance}
-                  onChange={(e) => setCurrentBalance(e.target.value)}
+                  onChange={(e) => setCurrentBalance(sanitizeMoneyChange(e.target, locale))}
                   onBlur={(e) => reformatAmountOnBlur(e.target.value, setCurrentBalance)}
                   placeholder="0.00"
                   className={`shadow-sm px-3 py-2 ${
                     mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  } border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('currentBalance')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
@@ -704,12 +707,12 @@ export function BalancePage() {
                     inputMode="decimal"
                     id="maxContributionLimit"
                     value={maxContributionLimit}
-                    onChange={(e) => setMaxContributionLimit(e.target.value)}
+                    onChange={(e) => setMaxContributionLimit(sanitizeMoneyChange(e.target, locale))}
                     onBlur={(e) => reformatAmountOnBlur(e.target.value, setMaxContributionLimit)}
                     placeholder="0.00"
                     className={`shadow-sm px-3 py-2 ${
                       mode === 'symbol' ? 'pl-7' : ''
-                    } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                    } border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                       hasFieldError('maxContributionLimit')
                         ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                         : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
@@ -754,12 +757,12 @@ export function BalancePage() {
                   inputMode="decimal"
                   id="monthlyContribution"
                   value={monthlyContribution}
-                  onChange={(e) => setMonthlyContribution(e.target.value)}
+                  onChange={(e) => setMonthlyContribution(sanitizeMoneyChange(e.target, locale))}
                   onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyContribution)}
                   placeholder="0.00"
                   className={`shadow-sm px-3 py-2 ${
                     mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md focus:outline-none w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                  } border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                     hasFieldError('monthlyContribution')
                       ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                       : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'

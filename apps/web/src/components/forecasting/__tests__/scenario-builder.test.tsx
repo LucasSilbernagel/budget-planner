@@ -161,3 +161,56 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
   })
 })
+
+/**
+ * Money-input sanitization (story 28-1, AC-6).
+ *
+ * `InputField` is shared by seven fields here, only two of which hold money, so
+ * the filter is an opt-in `sanitize` prop passed from those two call sites — not
+ * something inferred from `inputMode`/`type` inside the component.
+ */
+describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1)', () => {
+  it('strips letters and symbols from Current Savings', () => {
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    const savingsInput = screen.getByDisplayValue('5000.00')
+    fireEvent.change(savingsInput, { target: { value: '$7,500abc' } })
+
+    expect(savingsInput).toHaveValue('7,500')
+  })
+
+  it('strips letters and symbols from Current Investments', () => {
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    const investmentsInput = screen.getByDisplayValue('10000.00')
+    fireEvent.change(investmentsInput, { target: { value: 'about 25000 usd' } })
+
+    expect(investmentsInput).toHaveValue('25000')
+  })
+
+  it('persists the sanitized value, so display and stored cents agree', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    render(<ScenarioBuilder onSave={onSave} />)
+
+    fireEvent.change(screen.getByDisplayValue('5000.00'), { target: { value: '12,345.67abc' } })
+    const saveButton = await screen.findByRole(
+      'button',
+      { name: /save forecast/i },
+      { timeout: 2000 }
+    )
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    expect(onSave.mock.calls[0][0].inputs.savings).toBe(1234567)
+  })
+
+  it('leaves the non-money Scenario Name field accepting letters', () => {
+    // The guard against sanitizing inside InputField unconditionally.
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    const nameInput = screen.getByPlaceholderText('My Financial Forecast')
+    fireEvent.change(nameInput, { target: { value: 'Early Retirement Plan' } })
+
+    expect(nameInput).toHaveValue('Early Retirement Plan')
+  })
+})

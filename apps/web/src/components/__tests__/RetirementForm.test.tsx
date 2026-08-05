@@ -132,17 +132,34 @@ describe('RetirementForm — annual/monthly income basis (story 15.2)', () => {
     expect(screen.queryByText('Required Retirement Assets')).not.toBeInTheDocument()
   })
 
-  it('non-numeric input errors (monthly mode) with no result (AC-4)', async () => {
+  it('rejects non-numeric input on entry, so no result can be produced (AC-4, story 28-1)', async () => {
+    // Retargeted for on-input sanitization: the letters are now rejected before
+    // they reach state, so the assertion is the rejection itself. (The downstream
+    // inline error still fires — from the resulting empty field — and is kept as a
+    // secondary check so the "no result" guarantee stays covered either way.)
     const user = userEvent.setup()
     renderWithProviders(<RetirementForm preFillFromExistingData={false} />)
 
-    await user.type(screen.getByLabelText('Desired retirement income'), 'abc')
+    const incomeInput = screen.getByLabelText('Desired retirement income')
+    await user.type(incomeInput, 'abc')
+    expect(incomeInput).toHaveValue('')
+
     await user.click(screen.getByRole('button', { name: 'Calculate Required Assets' }))
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
     expect(screen.queryByText('Required Retirement Assets')).not.toBeInTheDocument()
+  })
+
+  it('keeps digits typed around rejected letters (story 28-1)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementForm preFillFromExistingData={false} />)
+
+    const incomeInput = screen.getByLabelText('Desired retirement income')
+    await user.type(incomeInput, '12abc34')
+
+    expect(incomeInput).toHaveValue('1234')
   })
 
   it('negative input errors (annual mode) with no result (AC-4)', async () => {

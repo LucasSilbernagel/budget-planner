@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
+import { fireEvent, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../stores/currencyStore'
 import { useIncomeStore } from '../../stores/incomeStore'
@@ -195,7 +195,11 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
     await waitFor(() => expect(amountInput).toHaveValue('1,234,567.89'))
   })
 
-  it('does not clobber non-numeric input to "0.00" on blur (review patch)', async () => {
+  it('never lets letters into the field, and blur leaves it empty rather than "0.00" (story 28-1)', async () => {
+    // Retargeted from the original review patch: the letters used to survive
+    // on-blur as visible garbage; on-input sanitization now stops them reaching
+    // state at all. The load-bearing half of that patch's intent — blur must NOT
+    // rewrite the field to a validating "0.00" — is what is pinned here.
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
@@ -203,9 +207,114 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
     const dialog = screen.getByRole('dialog')
     const amountInput = within(dialog).getByTestId('income-amount-input')
     await user.type(amountInput, 'abc')
+
+    expect(amountInput).toHaveValue('')
+
+    await user.tab()
+    await waitFor(() => expect(amountInput).toHaveValue(''))
+    expect(amountInput).not.toHaveValue('0.00')
+  })
+
+  it('keeps a lone "-" on blur instead of zeroing it (the no-digit guard arm)', async () => {
+    // The sanitizer deliberately preserves digit-free partials so a negative can
+    // be typed one character at a time. That makes the `!/\d/` arm of the blur
+    // guard genuinely reachable: without it, "-" would parse to 0 and echo back
+    // as "0.00", turning an unfinished entry into a valid-looking zero.
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+    await user.type(amountInput, '-')
     await user.tab()
 
-    // The typo is left visible for inline validation, not silently rewritten.
-    await waitFor(() => expect(amountInput).toHaveValue('abc'))
+    await waitFor(() => expect(amountInput).toHaveValue('-'))
+  })
+
+  it('strips pasted garbage down to the numeric part in one change event (AC-5)', async () => {
+    // A paste arrives as a single change event carrying the whole string — the
+    // reason the filter lives in onChange rather than a keystroke handler.
+    renderWithProviders(<IncomePage />)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+    fireEvent.change(amountInput, { target: { value: 'USD 1,234.56 per month' } })
+
+    expect(amountInput).toHaveValue('1,234.56')
+  })
+
+  it('prefills the edit modal with a grouped, locale-aware amount (story 28-1)', async () => {
+    const user = userEvent.setup()
+    useIncomeStore.setState({ incomeSources: [] })
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Salary', amount: 123456789, frequency: 'monthly' })
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = screen.getByRole('dialog')
+
+    // Not "1234567.89" — the prefill goes through the same formatter as the blur
+    // echo, so re-saving without editing cannot shift the stored cents.
+    expect(within(dialog).getByTestId('income-amount-input')).toHaveValue('1,234,567.89')
+  })
+})
+
+/**
+ * Visible focus indicator (story 28-1, AC-7).
+ *
+ * `focus:outline-none` removes the browser's native focus ring, so a
+ * `focus:ring-<color>` without `focus:ring-2` sets a ring colour of zero width —
+ * keyboard users get no visible focus indicator at all. Third recurrence of this
+ * defect class (Epics 15 and 24), hence a structural guard rather than a manual
+ * check only.
+ *
+ * Asserted by class-TOKEN membership, not substring: a substring check for
+ * "focus:ring-2" also matches tokens like "focus:ring-2xl" and would pass on a
+ * class list that has no 2px ring at all.
+ */
+describe('IncomePage form controls have a visible focus ring', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  it('every control that kills the native outline restores a 2px ring', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+
+    const controls = [
+      within(dialog).getByTestId('income-name-input'),
+      within(dialog).getByTestId('income-amount-input'),
+      within(dialog).getByLabelText('Frequency *'),
+    ]
+
+    // Count the controls actually asserted on: a bare `if (tokens.includes(...))`
+    // guard silently asserts NOTHING the day `focus:outline-none` moves or the
+    // class string is reshaped, which is exactly how this defect class recurs.
+    let checked = 0
+    for (const control of controls) {
+      const tokens = control.className.split(/\s+/)
+      expect(tokens, `${control.id} no longer kills the native outline`).toContain(
+        'focus:outline-none'
+      )
+      expect(tokens, `${control.id} has no visible focus ring`).toContain('focus:ring-2')
+      // And the ring must carry a real COLOUR — `focus:ring-offset-*` / `-inset`
+      // satisfy a naive "starts with focus:ring-" check while painting nothing.
+      expect(
+        tokens.some((t) => /^focus:ring-(?!offset-|inset$)[a-z]+-\d+$/.test(t)),
+        `${control.id} has a ring width but no ring colour`
+      ).toBe(true)
+      checked++
+    }
+    expect(checked).toBe(controls.length)
   })
 })

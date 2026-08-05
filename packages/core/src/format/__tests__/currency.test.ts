@@ -24,7 +24,20 @@ import {
   getSupportedCurrencies,
   isCurrencySupported,
   parseFromInput,
+  sanitizeMoneyInput,
 } from '../currency.js'
+
+/**
+ * The only four group/decimal separator shapes reachable from the supported
+ * currency set (see currency-locale.ts). Testing these beats testing four
+ * arbitrary locales — every supported currency lands in one of them.
+ */
+const SEPARATOR_SHAPES = [
+  { shape: 'A (group "," decimal ".")', locale: 'en-US', decimalSep: '.' },
+  { shape: 'B (group "." decimal ",")', locale: 'de-DE', decimalSep: ',' },
+  { shape: 'C (group "\'" decimal ".")', locale: 'de-CH', decimalSep: '.' },
+  { shape: 'D (group U+00A0 decimal ",")', locale: 'en-ZA', decimalSep: ',' },
+] as const
 
 describe('Currency Formatting', () => {
   describe('DEFAULT_CURRENCY_OPTIONS (AC-1: currency-less default)', () => {
@@ -509,6 +522,265 @@ describe('Currency Formatting', () => {
         expect(collided, `${code} renders "${output}" identically to ${collided}`).toBeUndefined()
         seen.set(output, code)
       }
+    })
+  })
+
+  describe('sanitizeMoneyInput (story 28-1, FR46: on-input character filtering)', () => {
+    describe('rejects characters a money field can never contain (AC-1)', () => {
+      it('strips letters entirely', () => {
+        expect(sanitizeMoneyInput('abc')).toBe('')
+        expect(sanitizeMoneyInput('12abc34')).toBe('1234')
+      })
+
+      it('strips currency symbols and punctuation', () => {
+        expect(sanitizeMoneyInput('$50')).toBe('50')
+        expect(sanitizeMoneyInput('50%')).toBe('50')
+        expect(sanitizeMoneyInput('€1,234.56')).toBe('1,234.56')
+        expect(sanitizeMoneyInput('1;2/3')).toBe('123')
+      })
+
+      it('strips whitespace that is not the locale group separator', () => {
+        expect(sanitizeMoneyInput('1 000')).toBe('1000')
+        expect(sanitizeMoneyInput('1\t000', 'en-US')).toBe('1000')
+        // de-DE's group separator is '.', so a plain space is still noise there.
+        expect(sanitizeMoneyInput('1 000', 'de-DE')).toBe('1000')
+      })
+
+      it('never returns a string longer than its input (caret-stability guarantee)', () => {
+        for (const raw of ['abc', '1,234.56', '$-1.2.3', '1 234,56', "1'2'3", '1e10']) {
+          for (const { locale } of SEPARATOR_SHAPES) {
+            expect(sanitizeMoneyInput(raw, locale).length).toBeLessThanOrEqual(raw.length)
+          }
+        }
+      })
+    })
+
+    describe('keeps legal locale-formatted amounts intact (AC-2)', () => {
+      it('leaves each separator shape unchanged', () => {
+        expect(sanitizeMoneyInput('1,234.56', 'en-US')).toBe('1,234.56')
+        expect(sanitizeMoneyInput('1.234,56', 'de-DE')).toBe('1.234,56')
+        expect(sanitizeMoneyInput("1'234.56", 'de-CH')).toBe("1'234.56")
+        expect(sanitizeMoneyInput('1 234,56', 'en-ZA')).toBe('1 234,56')
+      })
+
+      it('preserves the Indian grouping pattern', () => {
+        expect(sanitizeMoneyInput('1,23,456.78', 'en-IN')).toBe('1,23,456.78')
+      })
+
+      it('defaults to en-US assumptions when no locale is supplied', () => {
+        expect(sanitizeMoneyInput('1,234.56')).toBe('1,234.56')
+      })
+
+      it('falls back to en-US assumptions on an exotic/invalid locale', () => {
+        // Mirrors parseFromInput's try/catch fallthrough — a bad locale must never throw.
+        expect(sanitizeMoneyInput('1,234.56', 'not-a-locale!!')).toBe('1,234.56')
+      })
+    })
+
+    describe("never alters a value's magnitude (code-review regressions)", () => {
+      // Each case below is a real silent-corruption path the first implementation
+      // shipped. The rule that kills all three: this function removes noise
+      // characters and NOTHING else — malformed structure is parseFromInput's to
+      // reject (it returns 0, which the callers' `<= 0` validators block).
+
+      it('keeps every separator, so a stray leading decimal cannot rescale the value', () => {
+        // Field holds "1,000.00", caret at 0, user fumbles a '.'. De-duplicating
+        // to the FIRST separator produced ".1,00000" -> 10 cents: $1,000 -> $0.10.
+        expect(sanitizeMoneyInput('.1,000.00', 'en-US')).toBe('.1,000.00')
+        expect(parseFromInput(sanitizeMoneyInput('.1,000.00', 'en-US'), 'en-US')).toBe(0)
+        expect(sanitizeMoneyInput(',1.234,56', 'de-DE')).toBe(',1.234,56')
+      })
+
+      it('keeps a "." even where it is neither separator (en-ZA 100x regression)', () => {
+        // en-ZA groups with U+00A0 and decimalises with ',', so '.' is neither —
+        // but parseFromInput's `[^\d.-]` strip still reads it as the decimal point.
+        // Stripping it turned R1 234,56 into R123 456,00.
+        expect(sanitizeMoneyInput('1234.56', 'en-ZA')).toBe('1234.56')
+        expect(parseFromInput(sanitizeMoneyInput('1234.56', 'en-ZA'), 'en-ZA')).toBe(123456)
+        expect(parseFromInput(sanitizeMoneyInput('0.99', 'en-ZA'), 'en-ZA')).toBe(99)
+      })
+
+      it('leaves a multi-separator value for the parser to reject, not to repair', () => {
+        // Previously '1.2.3' -> '1.23' -> 123 cents, i.e. a value the parser had
+        // rejected became saveable. It must stay rejected (0 → validators block).
+        expect(sanitizeMoneyInput('1.2.3', 'en-US')).toBe('1.2.3')
+        expect(parseFromInput(sanitizeMoneyInput('1.2.3', 'en-US'), 'en-US')).toBe(0)
+        expect(parseFromInput(sanitizeMoneyInput('1.234.56', 'en-US'), 'en-US')).toBe(0)
+      })
+
+      it('leaves repeated GROUP separators alone (de-DE "." is not a decimal point)', () => {
+        // In dot-group locales these are three group separators and DO parse.
+        expect(sanitizeMoneyInput('1.2.3', 'de-DE')).toBe('1.2.3')
+        expect(parseFromInput(sanitizeMoneyInput('1.2.3', 'de-DE'), 'de-DE')).toBe(12300)
+        expect(sanitizeMoneyInput('1,2,3', 'en-US')).toBe('1,2,3')
+      })
+
+      it('drops a scientific-notation exponent whole, never splicing its digits', () => {
+        // "1.2E+09" -> "1.209" -> $1.20 was a value the validator used to block.
+        expect(sanitizeMoneyInput('1.2E+09', 'en-US')).toBe('1.2')
+        expect(sanitizeMoneyInput('2.5e6', 'en-US')).toBe('2.5')
+        expect(sanitizeMoneyInput('1e10', 'en-US')).toBe('1')
+        // What the field shows is exactly what the parser reads.
+        expect(parseFromInput(sanitizeMoneyInput('1.2E+09', 'en-US'), 'en-US')).toBe(120)
+      })
+
+      it('round-trips every parseable value through sanitize unchanged, all 12 locales', () => {
+        // The blanket magnitude guarantee: for anything parseFromInput accepts,
+        // sanitizing must not move the cents. Covers the full supported-currency
+        // locale set, not just the four separator shapes.
+        const LOCALES = [
+          'en-US',
+          'de-DE',
+          'en-GB',
+          'ja-JP',
+          'en-CA',
+          'en-AU',
+          'de-CH',
+          'zh-CN',
+          'en-IN',
+          'pt-BR',
+          'en-ZA',
+          'es-MX',
+        ]
+        for (const locale of LOCALES) {
+          for (const cents of [0, 1, 99, 100, 123456, 123456789, -1, -123456]) {
+            const shown = formatForInputDisplay(cents, locale)
+            expect(sanitizeMoneyInput(shown, locale), `${cents} in ${locale}`).toBe(shown)
+            expect(parseFromInput(sanitizeMoneyInput(shown, locale), locale)).toBe(
+              parseFromInput(shown, locale)
+            )
+          }
+        }
+      })
+    })
+
+    describe('negative sign (AC-1: sign characters are legal)', () => {
+      it('keeps a leading minus — negatives are valid for debts', () => {
+        expect(sanitizeMoneyInput('-100')).toBe('-100')
+        expect(sanitizeMoneyInput('-1,234.56', 'en-US')).toBe('-1,234.56')
+      })
+
+      it('strips an interior minus', () => {
+        expect(sanitizeMoneyInput('1-00')).toBe('100')
+        expect(sanitizeMoneyInput('100-')).toBe('100')
+      })
+
+      it('keeps the minus when only stripped characters precede it', () => {
+        expect(sanitizeMoneyInput('$-100')).toBe('-100')
+      })
+    })
+
+    describe('preserves in-progress typing (never rewrites a partial value)', () => {
+      it.each([
+        ['empty', ''],
+        ['lone minus', '-'],
+        ['trailing decimal separator', '1.'],
+        ['trailing group separator', '1,'],
+        ['leading decimal separator', '.'],
+      ])('returns %s unchanged', (_label, raw) => {
+        expect(sanitizeMoneyInput(raw, 'en-US')).toBe(raw)
+      })
+    })
+
+    describe('idempotence (required — blur output re-enters the field)', () => {
+      const CASES = [
+        '',
+        '-',
+        '.',
+        '1.',
+        '1,',
+        'abc',
+        '12abc34',
+        '$50',
+        '1.2.3',
+        '1,2,3',
+        '-1,234.56',
+        "1'234.56",
+        '1 234,56',
+        '1e10',
+        '1 000',
+        '.1,000.00',
+        '1.234.56',
+        '1.2E+09',
+      ]
+
+      for (const { shape, locale } of SEPARATOR_SHAPES) {
+        it(`is idempotent across the whole table in shape ${shape}`, () => {
+          for (const raw of CASES) {
+            const once = sanitizeMoneyInput(raw, locale)
+            expect(sanitizeMoneyInput(once, locale), `input "${raw}"`).toBe(once)
+          }
+        })
+      }
+    })
+
+    describe('blur-echo tolerance (the field must survive its own re-format)', () => {
+      for (const { shape, locale } of SEPARATOR_SHAPES) {
+        it(`leaves formatForInputDisplay output untouched in shape ${shape}`, () => {
+          // Derive the expected string by CALLING formatForInputDisplay rather than
+          // hard-coding a literal: de-CH's apostrophe is ICU-version-dependent, so a
+          // literal would break on a Node/ICU bump rather than on a real regression.
+          for (const cents of [0, 100, 123456, 123456789, -123456]) {
+            const echoed = formatForInputDisplay(cents, locale)
+            expect(sanitizeMoneyInput(echoed, locale), `${cents} in ${locale}`).toBe(echoed)
+          }
+        })
+      }
+    })
+
+    describe('round-trip with parseFromInput (the AC-2 guarantee)', () => {
+      for (const { shape, locale, decimalSep } of SEPARATOR_SHAPES) {
+        it(`sanitizing never changes the parsed value in shape ${shape}`, () => {
+          // Scoped to inputs parseFromInput accepts, expressed in each shape's OWN
+          // separators; the documented divergences are pinned separately below.
+          const accepted = [
+            '0',
+            '100',
+            '-100',
+            `${decimalSep}50`,
+            `1${decimalSep}`,
+            formatForInputDisplay(123456, locale),
+            formatForInputDisplay(-98765, locale),
+            formatForInputDisplay(123456789, locale),
+          ]
+          for (const raw of accepted) {
+            expect(
+              parseFromInput(sanitizeMoneyInput(raw, locale), locale),
+              `input "${raw}" in ${locale}`
+            ).toBe(parseFromInput(raw, locale))
+          }
+        })
+      }
+
+      it('strips garbage down to the digits parseFromInput would have kept anyway', () => {
+        expect(parseFromInput(sanitizeMoneyInput('12abc34', 'en-US'), 'en-US')).toBe(
+          parseFromInput('12abc34', 'en-US')
+        )
+      })
+    })
+
+    describe('deliberate divergences from parseFromInput (decisions, not accidents)', () => {
+      it('truncates at a scientific-notation exponent (the one divergence)', () => {
+        // parseFromInput rejects "1e10" outright (returns 0). AC-1 forbids leaving
+        // the letter in the field, so the exponent tail goes whole — never just the
+        // 'e', which would splice the exponent digits into the mantissa.
+        expect(parseFromInput('1e10')).toBe(0)
+        expect(sanitizeMoneyInput('1e10')).toBe('1')
+        expect(parseFromInput(sanitizeMoneyInput('1e10'))).toBe(100)
+      })
+
+      it('passes a bare "e" through the ordinary letter strip', () => {
+        // Only a real exponent (digit-bearing) truncates; a stray letter is noise.
+        expect(sanitizeMoneyInput('1e')).toBe('1')
+        expect(sanitizeMoneyInput('12e34x')).toBe('12')
+      })
+    })
+
+    describe('paste handling (AC-5 — a paste arrives as one change event)', () => {
+      it('cleans a whole pasted string in a single call', () => {
+        expect(sanitizeMoneyInput('USD 1,234.56 per month', 'en-US')).toBe('1,234.56')
+        expect(sanitizeMoneyInput('total: abc', 'en-US')).toBe('')
+      })
     })
   })
 })

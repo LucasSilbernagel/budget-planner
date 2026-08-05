@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, userEvent, within } from '@/test/utils'
+import { act, fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
@@ -182,5 +182,118 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByLabelText('Current Amount Saved')).toHaveValue('5,000.00')
+  })
+})
+
+/**
+ * Money-input sanitization (story 28-1, FR46).
+ *
+ * All three money fields here share a single `currencyField` render helper, so
+ * one onChange covers them; these prove the wiring reaches each field (AC-3) and
+ * that the non-money numeric fields beside them were not swept up.
+ */
+describe('RetirementAccumulationPlanner money inputs reject non-numeric characters', () => {
+  beforeEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it.each([['Current Amount Saved'], ['Monthly Savings'], ['Desired Annual Retirement Income']])(
+    'strips garbage pasted into "%s"',
+    (label) => {
+      renderWithProviders(<RetirementAccumulationPlanner />)
+
+      const input = screen.getByLabelText(label)
+      fireEvent.change(input, { target: { value: 'approx $2,500.00 each' } })
+
+      expect(input).toHaveValue('2,500.00')
+    }
+  )
+
+  it('never lets a typed letter into a money field', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    const input = screen.getByLabelText('Monthly Savings')
+    await user.clear(input)
+    await user.type(input, '15abc00')
+
+    expect(input).toHaveValue('1500')
+  })
+
+  it('keeps focus in the field while typing (the render-helper guarantee)', async () => {
+    // `currencyField` must stay a called render helper, never a `<Component/>`
+    // defined in the render body — that would remount the input on every
+    // keystroke and drop focus (the story 26.7 regression).
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    const input = screen.getByLabelText('Current Amount Saved')
+    await user.clear(input)
+    await user.type(input, '12345')
+
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('12345')
+  })
+})
+
+/**
+ * Locale switch mid-edit (story 28-1).
+ *
+ * The derived prefill rewrites the money field with the new locale's separators
+ * whenever the currency changes. The sanitizer must accept whatever that effect
+ * writes — otherwise the first keystroke after a currency switch would start
+ * eating the field's own separators.
+ */
+describe('RetirementAccumulationPlanner survives a currency switch mid-edit', () => {
+  beforeEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  afterEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('re-seeds with the new separators and keeps typing working afterwards', async () => {
+    const user = userEvent.setup()
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment',
+          name: 'Brokerage',
+          currentBalance: 123456789,
+          maxContributionLimit: null,
+          monthlyContribution: 0,
+          contributionFrequency: 'monthly',
+        },
+      ],
+    })
+
+    const { rerender } = renderWithProviders(<RetirementAccumulationPlanner />)
+    const input = screen.getByLabelText('Current Amount Saved')
+    // en-US (currency-less) grouping.
+    expect(input).toHaveValue('1,234,567.89')
+
+    // Switch to EUR, whose locale is de-DE: group '.', decimal ','.
+    act(() => {
+      useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
+    })
+    rerender(<RetirementAccumulationPlanner />)
+
+    const switched = screen.getByLabelText('Current Amount Saved')
+    expect(switched).toHaveValue('1.234.567,89')
+
+    // The next keystroke must append, not mangle the de-DE separators the effect
+    // just wrote — this is the blur-echo/idempotence guarantee reaching the UI.
+    await user.type(switched, '1')
+    expect(switched).toHaveValue('1.234.567,891')
   })
 })

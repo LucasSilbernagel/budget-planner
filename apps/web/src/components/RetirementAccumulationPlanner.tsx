@@ -10,6 +10,7 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import React, { useEffect, useMemo, useState } from 'react'
+import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useTotalInvestmentBalance } from '../stores/balanceStore'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -237,8 +238,12 @@ function RetirementAccumulationPlannerInner() {
   }, [prefillCurrentSaved])
 
   // Re-echo a currency field in grouped, locale-aware form on blur. Uses the
-  // non-throwing core parser so it can never throw inside the state updater; a
-  // typo with no digits is left as typed so it stays visible.
+  // non-throwing core parser so it can never throw inside the state updater. Both
+  // guard arms are load-bearing and must stay: the empty arm keeps "not filled in"
+  // from becoming "entered zero" (which would defeat the `anyMoneyEmpty`
+  // incomplete-state below), and the no-digit arm keeps the digit-free partials
+  // sanitizeMoneyInput deliberately allows through (story 28-1) VISIBLE — without
+  // it a half-typed "-" would silently become "0.00".
   const reEcho = (setter: React.Dispatch<React.SetStateAction<string>>) => () => {
     setter((prev) =>
       prev.trim() === '' || !/\d/.test(prev)
@@ -351,7 +356,7 @@ function RetirementAccumulationPlannerInner() {
           id={id}
           name={id}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(sanitizeMoneyChange(e.target, locale))}
           onBlur={reEcho(onChange)}
           inputMode="decimal"
           placeholder="0.00"

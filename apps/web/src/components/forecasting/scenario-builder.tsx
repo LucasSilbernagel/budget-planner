@@ -15,9 +15,11 @@ import {
   calculateFinancialForecast,
   currencySymbol,
   parseFromInput,
+  sanitizeMoneyInput,
 } from '@budget-planner/core'
 import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { sanitizeWithCaret } from '../../lib/sanitized-input'
 import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
 
@@ -647,6 +649,7 @@ export function ScenarioBuilder({
             inputMode="decimal"
             formatValue={formatCurrency}
             parseValue={(v) => parseFromInput(v, locale)}
+            sanitize={(v) => sanitizeMoneyInput(v, locale)}
           />
 
           {/* Current Investments */}
@@ -658,6 +661,7 @@ export function ScenarioBuilder({
             inputMode="decimal"
             formatValue={formatCurrency}
             parseValue={(v) => parseFromInput(v, locale)}
+            sanitize={(v) => sanitizeMoneyInput(v, locale)}
           />
         </div>
       </section>
@@ -816,6 +820,14 @@ interface InputFieldProps {
   inputMode?: 'decimal' | 'numeric'
   formatValue?: (value: string | number) => string
   parseValue?: (value: string) => string | number
+  /**
+   * Optional on-input character filter (story 28-1, FR46).
+   *
+   * Opt-in per call site rather than inferred from `inputMode`/`type`, because
+   * this component is shared by money and non-money fields alike — a scenario
+   * name must keep accepting letters. Only the two money fields pass it.
+   */
+  sanitize?: (raw: string) => string
 }
 
 function InputField({
@@ -830,13 +842,23 @@ function InputField({
   inputMode,
   formatValue,
   parseValue,
+  sanitize,
 }: InputFieldProps): React.ReactElement {
-  const [internalValue, setInternalValue] = useState<string>(
-    formatValue ? formatValue(value) : String(value)
-  )
+  const [internalValue, setInternalValue] = useState<string>(() => {
+    // `formatValue` here is the symbol-bearing display formatter, so a money field
+    // would otherwise mount holding "$5,000.00" and lose the symbol the instant the
+    // user types. Seed through the same filter the field enforces, so what mounts
+    // is already a legal value for it.
+    const seeded = formatValue ? formatValue(value) : String(value)
+    return sanitize ? sanitize(seeded) : seeded
+  })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
+    // Filter first, so the displayed value and the value lifted to the parent are
+    // derived from the same string. There is no blur re-formatter on this surface,
+    // which makes onChange the only filter point. `sanitizeWithCaret` also keeps
+    // the cursor in place when a character is rejected mid-string.
+    const rawValue = sanitize ? sanitizeWithCaret(e.target, sanitize) : e.target.value
     setInternalValue(rawValue)
 
     if (parseValue) {
