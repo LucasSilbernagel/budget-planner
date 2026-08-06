@@ -1,7 +1,16 @@
+// Imported from the barrel rather than the `finance` subpath: the subpath is
+// unresolvable to `tsc` (no `exports` map; Vite/Vitest resolve it via alias), and
+// every such import adds a TS2307 to the type-check baseline. The barrel
+// re-exports `./finance/netIncome`, so this costs nothing. (Same reasoning as
+// `lib/sanitized-input.ts`; the pre-existing subpath imports below are left as
+// they were rather than churned.)
+import { calculateNetIncomeResult } from '@budget-planner/core'
 import {
+  type IncomeBasis,
   type RetirementAccumulationResult,
   type RetirementModel,
   solveRetirementAccumulation,
+  toMonthlyIncomeCents,
 } from '@budget-planner/core/finance/retirement'
 import {
   currencySymbol,
@@ -9,150 +18,28 @@ import {
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { parseAge, parseCurrencyToCents, parsePercentageToDecimal } from '../lib/retirement-parsers'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useTotalInvestmentBalance } from '../stores/balanceStore'
 import { useCurrencyPreferences } from '../stores/currencyStore'
+import { useExpenses } from '../stores/expenseStore'
+import { useIncomeSources } from '../stores/incomeStore'
 import { ErrorBoundary } from './ErrorBoundary'
+import RetirementTimelineChart from './RetirementTimelineChart'
 
 /**
- * Parse a currency string to integer cents (strict).
- *
- * Mirrors RetirementForm.parseCurrencyToCents so the two retirement surfaces
- * parse money identically: locale-canonicalizes grouping/decimal separators,
- * then rejects negative, multi-decimal, scientific-notation, non-numeric, or
- * overflowing values. An empty string parses to 0 (the caller decides whether an
- * empty field means "not provided yet").
- *
- * @throws Error on malformed input.
+ * Share of current income used to seed a desired-retirement-income default.
+ * A starting point the user is expected to edit, not a recommendation.
  */
-function parseCurrencyToCents(value: string, locale?: string): number {
-  if (value == null) {
-    throw new Error('Invalid currency: value cannot be null or undefined')
-  }
-
-  if (value.trim() === '') {
-    return 0
-  }
-
-  let trimmed = value.trim()
-
-  // Canonicalize locale grouping/decimal to en-US form BEFORE stripping so a
-  // grouped/comma-decimal input (e.g. de-DE "1.234,56") parses to the right cents
-  // instead of being corrupted by the '.'-as-decimal assumption below.
-  if (locale) {
-    try {
-      const parts = new Intl.NumberFormat(locale).formatToParts(11111.1)
-      const groupSep = parts.find((p) => p.type === 'group')?.value
-      const decimalSep = parts.find((p) => p.type === 'decimal')?.value
-      if (groupSep) trimmed = trimmed.split(groupSep).join('')
-      if (decimalSep && decimalSep !== '.') trimmed = trimmed.split(decimalSep).join('.')
-    } catch {
-      // Invalid/exotic locale: fall through with the raw value (en-US assumptions).
-    }
-  }
-
-  if (trimmed.startsWith('-')) {
-    throw new Error('Currency amount cannot be negative')
-  }
-
-  const cleaned = trimmed.replace(/[^\d.]/g, '')
-
-  if ((cleaned.match(/\./g) || []).length > 1) {
-    throw new Error('Invalid currency: multiple decimal points not allowed')
-  }
-
-  if (cleaned.includes('e') || cleaned.includes('E')) {
-    throw new Error('Invalid currency: scientific notation not allowed')
-  }
-
-  if (!/^\d+(\.\d+)?$/.test(cleaned)) {
-    throw new Error('Invalid currency: contains non-numeric characters')
-  }
-
-  const amount = parseFloat(cleaned)
-
-  if (Number.isNaN(amount) || !Number.isFinite(amount)) {
-    throw new Error('Invalid currency: must be a valid finite number')
-  }
-
-  const cents = Math.round(amount * 100)
-
-  if (!Number.isSafeInteger(cents)) {
-    throw new Error('Invalid currency: value exceeds safe integer limit')
-  }
-
-  return cents
-}
+const DEFAULT_INCOME_REPLACEMENT_RATE = 0.5
 
 /**
- * Parse a percentage string to a decimal (strict). "6" / "6%" / "6.5" → 0.06 /
- * 0.065. Empty string → 0. Mirrors RetirementForm.parsePercentageToDecimal.
- *
- * @throws Error on malformed or negative input.
+ * Longest horizon the growth chart will draw, mirroring core's own
+ * `MAX_PROJECTION_YEARS` (which is module-private). A life expectancy far beyond
+ * a human span must not turn into a thousand-point series.
  */
-function parsePercentageToDecimal(value: string): number {
-  if (value == null) {
-    throw new Error('Invalid percentage: value cannot be null or undefined')
-  }
-
-  if (value.trim() === '') {
-    return 0
-  }
-
-  const trimmed = value.trim()
-
-  if ((trimmed.match(/\./g) || []).length > 1) {
-    throw new Error('Invalid percentage: multiple decimal points not allowed')
-  }
-
-  if (trimmed.startsWith('-')) {
-    throw new Error('Percentage cannot be negative')
-  }
-
-  if (trimmed.includes('e') || trimmed.includes('E')) {
-    throw new Error('Invalid percentage: scientific notation not allowed')
-  }
-
-  const cleaned = trimmed.replace(/%/g, '').trim()
-
-  if (!/^\d+(\.\d+)?$/.test(cleaned)) {
-    throw new Error('Invalid percentage: contains non-numeric characters')
-  }
-
-  const num = parseFloat(cleaned)
-
-  if (Number.isNaN(num) || !Number.isFinite(num)) {
-    throw new Error('Invalid percentage: must be a valid finite number')
-  }
-
-  return num / 100
-}
-
-/**
- * Parse a whole-number age (years). Empty string → null ("not provided").
- *
- * @throws Error on non-numeric, negative, or non-integer input.
- */
-function parseAge(value: string): number | null {
-  if (value == null || value.trim() === '') {
-    return null
-  }
-
-  const trimmed = value.trim()
-
-  if (!/^\d+$/.test(trimmed)) {
-    throw new Error('Age must be a whole number')
-  }
-
-  const num = parseInt(trimmed, 10)
-
-  if (!Number.isFinite(num)) {
-    throw new Error('Age must be a finite number')
-  }
-
-  return num
-}
+const MAX_PROJECTION_YEARS = 100
 
 /** The parsed, ready-to-solve input set, or a reason it is not solvable yet. */
 type ParsedInputs =
@@ -170,7 +57,7 @@ type SolveState =
       result: RetirementAccumulationResult
       input: Parameters<typeof solveRetirementAccumulation>[0]
     }
-  | { status: 'failed' }
+  | { status: 'failed'; detail: string | null }
   | null
 
 /** Copy describing each model, shown next to the toggle and the results. */
@@ -188,14 +75,140 @@ const MODEL_COPY: Record<RetirementModel, { label: string; explanation: string }
 }
 
 /**
+ * Plain-language versions of the core calculation errors that can surface here.
+ *
+ * Carried forward from the retired `RetirementForm.sanitizeDisplayError` — this
+ * is user-visible copy, so the merge re-homes it rather than dropping it. The six
+ * original keys are all retained; three MORE were added in review, because the
+ * throws this planner can actually produce were not among the original six:
+ *
+ * - `Required nest egg exceeds safe integer limit.` (`retirement.ts:539`) is the
+ *   **deplete**-model overflow — the exact fat-finger case §7 documents and the
+ *   test suite exercises with a 10-digit life expectancy. It was unmapped, so the
+ *   detail line never rendered for the one case it was added to explain.
+ * - `Projection overflow: nest egg exceeds safe integer limit…` (`retirement.ts:474`)
+ *   comes from `projectAccumulatedNestEgg` inside the solver's search.
+ * - The perpetual model reaches `Calculation overflow: Required assets…` via
+ *   `calculateRequiredAssets`, so the same mistake now reads the same in both
+ *   models rather than being explained in one and misdirected in the other.
+ */
+const SOLVER_ERROR_COPY: Record<string, string> = {
+  'Annual return rate must be positive (greater than 0)':
+    'Please enter a valid return rate (must be greater than 0%)',
+  'Annual return rate must be positive (greater than 0). Safe Withdrawal Model requires positive return rate.':
+    'Please enter a valid return rate (must be greater than 0%)',
+  'Annual return rate must be at least 0.1% to avoid precision issues in calculations.':
+    'Return rate must be at least 0.1% to ensure accurate calculations',
+  'Calculation overflow: Required assets exceeds safe integer limit. Try a smaller income or higher return rate.':
+    'The calculated amount is too large. Please try smaller values.',
+  'Calculation overflow: Required assets exceeds safe integer limit.':
+    'The calculated amount is too large. Please try smaller values.',
+  'Calculation overflow: Withdrawal amount exceeds safe integer limit.':
+    'The calculated amount is too large. Please try smaller values.',
+  'Number of years must not exceed 100 to prevent performance issues and calculation overflow.':
+    'Please enter a projection period of 100 years or less',
+  'Required nest egg exceeds safe integer limit.':
+    'The retirement income you entered is too large to plan for. Please try a smaller amount.',
+  'Projection overflow: nest egg exceeds safe integer limit. Try smaller values or fewer months.':
+    'Your savings grow beyond what can be calculated. Please try smaller amounts.',
+}
+
+/**
+ * Maps a thrown core error to friendly copy, or `null` when it has no specific
+ * translation (the caller already shows a general message, so an unmapped error
+ * must not add noise).
+ */
+function describeSolverError(error: unknown): string | null {
+  return error instanceof Error ? SOLVER_ERROR_COPY[error.message] ?? null : null
+}
+
+/**
+ * Re-expresses an entered desired-income amount as ANNUAL cents — the unit the
+ * accumulation solver takes.
+ *
+ * The exact inverse of core's `toMonthlyIncomeCents`, which only converts the
+ * other way (annual → monthly, for the monthly-only Safe Withdrawal Model). The
+ * round-trip is lossless for a monthly entry, since `× 12` then `round(÷ 12)`
+ * returns the original cents.
+ *
+ * Re-checks the safe-integer bound after multiplying: `parseCurrencyToCents`
+ * guards the ENTERED figure, but `× 12` happens after that guard, so a monthly
+ * entry just inside the limit could otherwise hand the solver a value outside it
+ * — breaking this component's stated "strictly parsed and guarded before the
+ * solver is ever called" contract. Throwing here routes it to the same
+ * invalid-input state as any other malformed entry.
+ *
+ * @throws Error if the converted annual amount exceeds the safe-integer range.
+ */
+function toAnnualIncomeCents(amountCents: number, basis: IncomeBasis): number {
+  if (basis === 'annual') {
+    return amountCents
+  }
+
+  const annualCents = amountCents * 12
+
+  if (!Number.isSafeInteger(annualCents)) {
+    throw new Error('Invalid currency: value exceeds safe integer limit')
+  }
+
+  return annualCents
+}
+
+/**
+ * How many years of accumulation the growth chart should draw.
+ *
+ * ⚠️ **Stops at retirement when retirement is reachable.** The story mandated a
+ * horizon of `lifeExpectancy − currentAge`, and that is still the fallback — but
+ * taken literally it made the chart keep contributing, and never withdrawing, for
+ * every year past the retirement age the same page had just computed. Under the
+ * `deplete` model that is a flat contradiction: the plan says the nest egg is
+ * drawn to ZERO by life expectancy, while the curve showed it peaking there, with
+ * a headline figure an order of magnitude larger than the plan's own. Two big
+ * money numbers from one input set meaning opposite things is precisely what this
+ * story exists to remove, so the curve now ends where the accumulation does.
+ *
+ * Life expectancy remains the horizon when retirement is NOT reachable — there is
+ * no retirement age to stop at, and the full window is the useful thing to show.
+ *
+ * Floored at 1 year so an immediately-reachable plan still renders a curve rather
+ * than collapsing to the empty state, and capped at `MAX_PROJECTION_YEARS`.
+ */
+function chartHorizonYears(
+  input: Parameters<typeof solveRetirementAccumulation>[0],
+  result: RetirementAccumulationResult
+): number {
+  const yearsToRetirement =
+    result.reachable && result.earliestRetirementAge !== null
+      ? Math.ceil(result.earliestRetirementAge - input.currentAge)
+      : null
+
+  const horizon =
+    yearsToRetirement === null
+      ? Math.max(0, input.lifeExpectancy - input.currentAge)
+      : Math.max(1, yearsToRetirement)
+
+  return Math.min(MAX_PROJECTION_YEARS, horizon)
+}
+
+/**
  * RetirementAccumulationPlanner
  *
- * Unified retirement accumulation planner (Story 26.7 / FR42). Collects the
- * user's plan (age, current savings, monthly savings, return, desired annual
- * income, life expectancy), runs the shipped core solver
- * `solveRetirementAccumulation`, and shows the spreadsheet's output set — with a
- * toggle between the deplete-to-life-expectancy and perpetual safe-withdrawal
- * target models. Free-tier: all math runs client-side in core.
+ * The whole `/retirement` planner: one shared input set, one solve, one set of
+ * outputs, and the growth chart that visualises them (stories 26.7 / 29.1).
+ *
+ * ## What 29.1 consolidated
+ *
+ * The page used to be three tools that each collected their own copy of the same
+ * facts — expected annual return was asked for THREE times, current savings and
+ * current age twice each — and then disagreed with one another, which the page
+ * copy excused with two "these inputs are independent" warnings. Each shared
+ * input is now collected exactly once here and drives every output:
+ *
+ * - the required nest egg (the perpetual model IS the Safe Withdrawal Model —
+ *   `desiredAnnualIncome / rate` is the same figure the standalone SWM form used
+ *   to compute separately, story 26-7:125), and
+ * - the timeline chart, which now samples the solver's own monthly-compounded
+ *   accumulation function rather than an annually-compounded one.
  *
  * The solver throws on non-finite/negative inputs, so inputs are strictly parsed
  * and guarded before it is ever called; a `reachable: false` result (no feasible
@@ -205,29 +218,73 @@ const MODEL_COPY: Record<RetirementModel, { label: string; explanation: string }
 function RetirementAccumulationPlannerInner() {
   const { mode, currency, locale } = useCurrencyPreferences()
   const totalInvestmentCents = useTotalInvestmentBalance()
+  const incomeSources = useIncomeSources()
+  const expenses = useExpenses()
 
   // Pre-fill current-saved from the shared `useTotalInvestmentBalance` selector
   // (the same figure that drives the 26.5 "Total Investments" card — one source
   // of truth). That selector sums raw `currentBalance` without clamping, so for a
   // mixed portfolio this seeds the NET investment balance (and a non-positive net
-  // seeds an empty, editable field). This differs from RetirementForm, which uses
-  // its own locally-clamped reduce; the field is editable either way.
+  // seeds an empty, editable field).
+  //
+  // ⚠️ Story 29.2 replaces this field with a derived, non-editable display. When
+  // it does, this memo, the `useState` seed and the re-seed effect below are
+  // deleted OUTRIGHT — they are deliberately kept adjacent and free of other
+  // responsibilities so that removal is clean.
   const prefillCurrentSaved = useMemo(
     () => (totalInvestmentCents > 0 ? formatForInputDisplay(totalInvestmentCents, locale) : ''),
     [totalInvestmentCents, locale]
   )
 
+  // Pre-fill a desired-income target: a share of current income, as an ANNUAL
+  // figure (the field's canonical basis).
+  //
+  // Sourced from the frequency-NORMALIZED gross income, not the raw cents sum the
+  // retired form used. That sum counted a weekly $500 as $500/month, so seeding
+  // from it would propagate a known distortion into everyone's default.
+  //
+  // Held as ANNUAL CENTS, deliberately not as a display string: the string form
+  // depends on the selected basis, and baking the basis in here would make the
+  // re-seed effect below fire on every basis switch — rewriting a number the user
+  // typed. Conversion happens at the moment of seeding instead.
+  //
+  // Wrapped because this is the only core call on the render path that is not
+  // already inside a try/catch: `calculateNetIncomeResult` throws on a
+  // non-finite amount or an unrecognised frequency, and a corrupt persisted
+  // income/expense row would take the entire planner to the ErrorBoundary. Every
+  // other seed path here degrades to "no prefill"; this one now matches.
+  const prefillDesiredIncomeCents = useMemo<number | null>(() => {
+    try {
+      const { grossIncome } = calculateNetIncomeResult(
+        incomeSources.map((s) => ({ amount: s.amount, frequency: s.frequency })),
+        expenses.map((e) => ({ amount: e.amount, frequency: e.frequency }))
+      )
+      if (grossIncome <= 0) {
+        return null
+      }
+      return Math.round(grossIncome * 12 * DEFAULT_INCOME_REPLACEMENT_RATE)
+    } catch {
+      return null
+    }
+  }, [incomeSources, expenses])
+
   const [currentAgeInput, setCurrentAgeInput] = useState<string>('')
+  const [lifeExpectancyInput, setLifeExpectancyInput] = useState<string>('')
   const [currentSavedInput, setCurrentSavedInput] = useState<string>(prefillCurrentSaved)
   const [monthlySavingsInput, setMonthlySavingsInput] = useState<string>('')
+  const [desiredIncomeInput, setDesiredIncomeInput] = useState<string>(() =>
+    // Initial basis is 'annual', so the annual figure seeds directly.
+    prefillDesiredIncomeCents === null
+      ? ''
+      : formatForInputDisplay(prefillDesiredIncomeCents, locale)
+  )
+  const [incomeBasis, setIncomeBasis] = useState<IncomeBasis>('annual')
   const [annualReturnInput, setAnnualReturnInput] = useState<string>('6.0')
-  const [desiredAnnualIncomeInput, setDesiredAnnualIncomeInput] = useState<string>('')
-  const [lifeExpectancyInput, setLifeExpectancyInput] = useState<string>('')
   const [model, setModel] = useState<RetirementModel>('deplete')
 
-  // Re-seed current-saved when the investment total changes (mirrors
-  // RetirementForm's prefill effect). Only overwrites with a non-empty prefill so
-  // it never blanks a value the user is editing before any accounts exist.
+  // Re-seed current-saved when the investment total changes. Only overwrites with
+  // a non-empty prefill so it never blanks a value the user is editing before any
+  // accounts exist. (Deleted wholesale by story 29.2 — see the memo above.)
   useEffect(() => {
     if (prefillCurrentSaved !== '') {
       // Functional-equality bailout: on mount `useState` already seeded this
@@ -236,6 +293,36 @@ function RetirementAccumulationPlannerInner() {
       setCurrentSavedInput((prev) => (prev === prefillCurrentSaved ? prev : prefillCurrentSaved))
     }
   }, [prefillCurrentSaved])
+
+  // Same shape for the desired-income seed, with one extra hazard.
+  //
+  // ⚠️ The seed is an ANNUAL figure, but the field is read under whichever basis
+  // the user has selected. Writing the annual number into a field the user has
+  // switched to Monthly means the solver reads it as 12× the intended income —
+  // a silent, unflagged overstatement of the required nest egg. So the value is
+  // converted to the CURRENT basis as it is written.
+  //
+  // The basis is read through a ref rather than a dependency on purpose: it must
+  // influence the value written, but must NOT re-trigger the effect, because
+  // switching monthly/annual has to leave a typed number exactly as entered and
+  // change only its meaning.
+  const incomeBasisRef = useRef(incomeBasis)
+  incomeBasisRef.current = incomeBasis
+
+  // NOTE: `incomeBasis` is intentionally absent from the dependency list — it is
+  // read through the ref above. Adding it would rewrite a user-typed value on
+  // every basis switch, exactly the behaviour this field must not have.
+  useEffect(() => {
+    if (prefillDesiredIncomeCents === null) {
+      return
+    }
+    const seededCents =
+      incomeBasisRef.current === 'annual'
+        ? prefillDesiredIncomeCents
+        : Math.round(prefillDesiredIncomeCents / 12)
+    const next = formatForInputDisplay(seededCents, locale)
+    setDesiredIncomeInput((prev) => (prev === next ? prev : next))
+  }, [prefillDesiredIncomeCents, locale])
 
   // Re-echo a currency field in grouped, locale-aware form on blur. Uses the
   // non-throwing core parser so it can never throw inside the state updater. Both
@@ -262,7 +349,7 @@ function RetirementAccumulationPlannerInner() {
       const anyMoneyEmpty =
         currentSavedInput.trim() === '' ||
         monthlySavingsInput.trim() === '' ||
-        desiredAnnualIncomeInput.trim() === ''
+        desiredIncomeInput.trim() === ''
       const anyRateEmpty = annualReturnInput.trim() === ''
 
       if (currentAge === null || lifeExpectancy === null || anyMoneyEmpty || anyRateEmpty) {
@@ -276,7 +363,10 @@ function RetirementAccumulationPlannerInner() {
           currentSavedCents: parseCurrencyToCents(currentSavedInput, locale),
           monthlySavingsCents: parseCurrencyToCents(monthlySavingsInput, locale),
           annualReturnRate: parsePercentageToDecimal(annualReturnInput),
-          desiredAnnualIncomeCents: parseCurrencyToCents(desiredAnnualIncomeInput, locale),
+          desiredAnnualIncomeCents: toAnnualIncomeCents(
+            parseCurrencyToCents(desiredIncomeInput, locale),
+            incomeBasis
+          ),
           lifeExpectancy,
           model,
         },
@@ -286,11 +376,12 @@ function RetirementAccumulationPlannerInner() {
     }
   }, [
     currentAgeInput,
+    lifeExpectancyInput,
     currentSavedInput,
     monthlySavingsInput,
+    desiredIncomeInput,
+    incomeBasis,
     annualReturnInput,
-    desiredAnnualIncomeInput,
-    lifeExpectancyInput,
     model,
     locale,
   ])
@@ -313,33 +404,45 @@ function RetirementAccumulationPlannerInner() {
         result: solveRetirementAccumulation(parsed.input),
         input: parsed.input,
       }
-    } catch {
-      return { status: 'failed' }
+    } catch (e) {
+      return { status: 'failed', detail: describeSolverError(e) }
     }
   }, [parsed])
 
   const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
 
+  // One focus + tap-target convention for every control on the page (the chart's
+  // old controls used `focus:outline-none focus:ring-2`, the planner's used
+  // `focus:ring-2` alone, and only the chart's met the 44px target).
+  const controlChrome =
+    'min-h-[44px] border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors'
+
   const inputClass = (withSymbol: boolean) =>
-    `w-full py-3 ${
-      mode === 'symbol' && withSymbol ? 'pl-10 pr-4' : 'px-4'
-    } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`
+    `w-full py-3 ${mode === 'symbol' && withSymbol ? 'pl-10 pr-4' : 'px-4'} ${controlChrome}`
 
   // A currency text input with the shared symbol-prefix + grouped-echo behavior.
-  // A plain render helper (called, not mounted as a `<Component/>`) so the inputs
-  // keep a stable identity across renders and never lose focus mid-typing.
+  // ⚠️ A plain render helper (CALLED, not mounted as a `<Component/>`) so the
+  // inputs keep a stable identity across renders and never lose focus mid-typing.
+  // Defining this as a component in the render body remounts the input on every
+  // keystroke — the story 26.7 regression, pinned by a focus-retention test.
+  //
+  // Money fields stay `type="text" inputMode="decimal"`: `setSelectionRange`
+  // throws on `type="number"`, which would silently disable the caret correction
+  // in `sanitizeMoneyChange` and make the grouped blur echo unassignable.
   const currencyField = ({
     id,
     label,
     help,
     value,
     onChange,
+    children,
   }: {
     id: string
     label: string
     help: string
     value: string
     onChange: React.Dispatch<React.SetStateAction<string>>
+    children?: React.ReactNode
   }) => (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-label mb-2">
@@ -362,15 +465,22 @@ function RetirementAccumulationPlannerInner() {
           placeholder="0.00"
           className={inputClass(true)}
           aria-label={label}
+          aria-required="true"
         />
       </div>
+      {/* Help sits directly under its own input, BEFORE any adjunct control:
+          it carries the unit, and pushing it below the income-period selector
+          made it read as that select's help instead of this field's. */}
       <p className="text-sm text-muted mt-1">{help}</p>
+      {children}
     </div>
   )
 
   return (
     <div className="space-y-8">
-      {/* Inputs */}
+      {/* ── The single shared input set ──────────────────────────────────────
+          Every figure the planner, the required-nest-egg calculation and the
+          growth chart need, collected exactly once. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div>
           <label htmlFor="currentAge" className="block text-sm font-medium text-label mb-2">
@@ -388,6 +498,7 @@ function RetirementAccumulationPlannerInner() {
             placeholder="35"
             className={inputClass(false)}
             aria-label="Current Age"
+            aria-required="true"
           />
           <p className="text-sm text-muted mt-1">Your age today, in years</p>
         </div>
@@ -408,6 +519,7 @@ function RetirementAccumulationPlannerInner() {
             placeholder="90"
             className={inputClass(false)}
             aria-label="Life Expectancy"
+            aria-required="true"
           />
           <p className="text-sm text-muted mt-1">The age you plan through</p>
         </div>
@@ -429,11 +541,27 @@ function RetirementAccumulationPlannerInner() {
         })}
 
         {currencyField({
-          id: 'desiredAnnualIncome',
-          label: 'Desired Annual Retirement Income',
-          help: 'The yearly income you want in retirement',
-          value: desiredAnnualIncomeInput,
-          onChange: setDesiredAnnualIncomeInput,
+          id: 'desiredIncome',
+          label: 'Desired Retirement Income',
+          help: `The ${incomeBasis} income you want in retirement`,
+          value: desiredIncomeInput,
+          onChange: setDesiredIncomeInput,
+          children: (
+            <div className="mt-2">
+              <label htmlFor="incomeBasis" className="block text-sm font-medium text-label mb-1">
+                Income period
+              </label>
+              <select
+                id="incomeBasis"
+                value={incomeBasis}
+                onChange={(e) => setIncomeBasis(e.target.value as IncomeBasis)}
+                className={`w-full px-3 py-2 ${controlChrome}`}
+              >
+                <option value="annual">Annual</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          ),
         })}
 
         <div>
@@ -453,12 +581,15 @@ function RetirementAccumulationPlannerInner() {
               placeholder="6.0"
               className={`${inputClass(false)} pr-10`}
               aria-label="Expected Annual Return"
+              aria-required="true"
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
               %
             </span>
           </div>
-          <p className="text-sm text-muted mt-1">Expected yearly return on investments</p>
+          <p className="text-sm text-muted mt-1">
+            Expected yearly return on investments — used for every figure on this page
+          </p>
         </div>
       </div>
 
@@ -474,7 +605,7 @@ function RetirementAccumulationPlannerInner() {
           ).map(([key, copy]) => (
             <label
               key={key}
-              className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+              className={`flex gap-3 p-3 min-h-[44px] rounded-lg border cursor-pointer transition-colors ${
                 model === key
                   ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40'
                   : 'border-gray-300 dark:border-gray-600'
@@ -486,7 +617,7 @@ function RetirementAccumulationPlannerInner() {
                 value={key}
                 checked={model === key}
                 onChange={() => setModel(key)}
-                className="mt-1 focus:ring-2 focus:ring-blue-500"
+                className="mt-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <span>
                 <span className="block font-medium text-subheading">{copy.label}</span>
@@ -497,7 +628,10 @@ function RetirementAccumulationPlannerInner() {
         </div>
       </fieldset>
 
-      {/* Results */}
+      {/* ── Results ─────────────────────────────────────────────────────────
+          Four mutually exclusive states. Gates key on `status === 'solved'`,
+          never on truthiness of the solve state: when every gate went falsy at
+          once the page rendered a silent blank void (story 26.7 review). */}
       {!parsed.ok && (
         <div className="p-4 surface-inset rounded-lg text-body" role="status">
           {parsed.reason === 'invalid'
@@ -512,8 +646,11 @@ function RetirementAccumulationPlannerInner() {
           className="p-4 surface-inset rounded-lg text-body"
           role="status"
         >
-          Those numbers are too large to compute. Please check your inputs — a value like age or
-          life expectancy looks out of range.
+          <p>
+            Those numbers are too large to compute. Please check your inputs — a value like age or
+            life expectancy looks out of range.
+          </p>
+          {solved.detail && <p className="text-sm mt-2">{solved.detail}</p>}
         </div>
       )}
 
@@ -551,10 +688,37 @@ function RetirementAccumulationPlannerInner() {
               label="Required nest egg"
               value={formatAmount(solved.result.requiredNestEggCents ?? 0)}
             />
+            {/* Restored in review: the retired form's "Gap to Goal" was the one
+                output in its progress panel with no equivalent here — the outputs
+                gave a required and a projected figure but never the distance
+                between what you have TODAY and what you need. Measured against
+                current savings, not the projected nest egg: on this branch the
+                projection has by definition already met the target, so
+                required − projected would always read zero and tell nobody
+                anything. The form's own gap used today's assets too. */}
+            <OutputRow
+              label="Still to accumulate"
+              value={
+                (solved.result.requiredNestEggCents ?? 0) - solved.input.currentSavedCents <= 0
+                  ? 'Already covered'
+                  : formatAmount(
+                      (solved.result.requiredNestEggCents ?? 0) - solved.input.currentSavedCents
+                    )
+              }
+            />
           </dl>
-          <p className="text-sm text-green-700 dark:text-green-300 mt-4">
-            {MODEL_COPY[model]?.explanation}
-          </p>
+          {model === 'perpetual' && (
+            // The perpetual required nest egg IS the Safe Withdrawal Model's
+            // "required retirement assets" — one figure, stated once. The page
+            // used to compute it a second time in a standalone form beside this.
+            // The formula itself is NOT repeated here: it is stated once on the
+            // page, in the explanation card below.
+            <p className="text-xs text-green-600 dark:text-green-400 mt-4">
+              Required nest egg uses the Safe Withdrawal Model — enough to withdraw{' '}
+              {formatAmount(toMonthlyIncomeCents(solved.input.desiredAnnualIncomeCents, 'annual'))}{' '}
+              a month without touching the principal.
+            </p>
+          )}
         </div>
       )}
 
@@ -598,6 +762,41 @@ function RetirementAccumulationPlannerInner() {
           )}
         </div>
       )}
+
+      {/* ── Growth over time ────────────────────────────────────────────────
+          The same inputs, the same monthly-compounded math, drawn out year by
+          year. No second input set, no second return rate. */}
+      <div>
+        <h3 className="text-lg font-semibold text-subheading mb-4">
+          Your Savings Until Retirement
+        </h3>
+        {solved?.status === 'solved' && parsed.ok ? (
+          <RetirementTimelineChart
+            currentSavedCents={parsed.input.currentSavedCents}
+            monthlySavingsCents={parsed.input.monthlySavingsCents}
+            annualReturnRate={parsed.input.annualReturnRate}
+            currentAge={parsed.input.currentAge}
+            yearsToProject={chartHorizonYears(parsed.input, solved.result)}
+            earliestRetirementAge={
+              solved.result.reachable ? solved.result.earliestRetirementAge : null
+            }
+          />
+        ) : (
+          // Three distinct states, not two. Folding `failed` in with "not filled
+          // in yet" put "Fill in the details above" directly beneath a panel
+          // saying the numbers were too large to compute — two contradictory
+          // instructions on one screen.
+          <div className="p-8 text-center text-muted surface-inset rounded-lg">
+            <p>
+              {solved?.status === 'failed'
+                ? 'No projection — the numbers above are out of range.'
+                : parsed.ok === false && parsed.reason === 'invalid'
+                  ? 'No projection — one of the values above is not a valid number.'
+                  : 'Fill in the details above to see how your savings grow.'}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

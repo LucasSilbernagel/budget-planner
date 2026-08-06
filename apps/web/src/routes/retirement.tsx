@@ -2,8 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import React from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import RetirementAccumulationPlanner from '../components/RetirementAccumulationPlanner'
-import RetirementForm from '../components/RetirementForm'
-import RetirementTimelineChart from '../components/RetirementTimelineChart'
 
 export const Route = createFileRoute('/retirement')({
   component: RetirementPage,
@@ -15,13 +13,12 @@ export const Route = createFileRoute('/retirement')({
  * Main page for retirement planning calculations.
  * Uses TanStack Start file-based routing (route: /retirement)
  *
- * Features:
- * - Retirement form for calculating required assets
- * - Age timeline visualization for retirement projections
- * - Clear explanations of the Safe Withdrawal Model
- *
- * AC Coverage: AC-1, AC-2 (via RetirementForm)
- * AC Coverage: AC-3 (via RetirementTimelineChart)
+ * Story 29.1 consolidated this page from three tools into one. It previously
+ * mounted an accumulation planner, a standalone Safe-Withdrawal form and a
+ * timeline chart side by side — each collecting its own copy of the same figures
+ * and producing its own answer, with two paragraphs of copy explaining that the
+ * numbers were "independent of" one another. There is now a single planner that
+ * collects each detail once, plus the explanations that survived de-duplication.
  */
 function RetirementPage() {
   return (
@@ -35,138 +32,84 @@ function RetirementPage() {
                 Retirement Planner
               </h1>
               <p className="text-base sm:text-xl text-body">
-                Work out when you can retire and how big your nest egg will be, then explore the
-                safe withdrawal rate and long-term growth of your savings.
+                Enter your plan once to see when you can retire, how big your nest egg needs to be,
+                and how your savings grow along the way.
               </p>
             </div>
           </header>
 
-          {/* Accumulation Planner — the primary "when can I retire / how big is my
-              nest egg" tool, driven by the retirement accumulation solver. */}
+          {/* The planner: one shared input set driving the outlook, the required
+              nest egg and the growth chart. */}
           <section className="mb-8 sm:mb-12 surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
             <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-2">
               When Can You Retire?
             </h2>
             <p className="text-body mb-8">
-              Enter your plan below to see your earliest retirement age and projected nest egg.
-              Toggle between drawing your savings down to zero by your life expectancy and living
-              off returns forever.
+              Choose whether you want to draw your savings down to zero by your life expectancy or
+              live off the returns forever — the target nest egg changes, your inputs don&rsquo;t.
             </p>
 
             <RetirementAccumulationPlanner />
           </section>
 
-          {/* Supporting tools: the standalone Safe Withdrawal calculator and the
-              long-term growth timeline. */}
-          <h2 className="text-xl sm:text-2xl font-semibold text-heading mb-6">
-            More Retirement Tools
-          </h2>
-
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-            {/* Left Column - Form */}
-            <div className="lg:col-span-1">
-              <div className="surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
-                <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
-                  Calculate Your Retirement Needs
-                </h2>
-                <p className="text-body mb-8">
-                  Enter your desired retirement income (monthly or annual) and expected return rate
-                  to calculate the required future value of your assets using the Safe Withdrawal
-                  Model. This is a standalone calculation; its return rate is separate from the one
-                  in the Retirement Timeline Projection.
-                </p>
-
-                <RetirementForm />
-
-                {/* Explanation */}
-                <div className="mt-8 p-4 surface-inset rounded-lg">
-                  <h3 className="font-semibold text-subheading mb-2">How It Works</h3>
-                  <p className="text-sm text-body">
-                    The <strong>Safe Withdrawal Model</strong> calculates the required assets using
-                    the formula:
-                  </p>
-                  <p className="text-sm text-body mt-2">
-                    <code className="bg-gray-200 dark:bg-gray-700 dark:text-gray-100 px-2 py-1 rounded">
-                      FV = Ir × (12 / r)
-                    </code>
-                  </p>
-                  <ul className="text-sm text-body mt-2 space-y-1">
-                    <li>
-                      <strong>FV</strong> = Future Value (required retirement assets)
-                    </li>
-                    <li>
-                      <strong>Ir</strong> = Desired monthly retirement income
-                    </li>
-                    <li>
-                      <strong>r</strong> = Annual return rate (as decimal)
-                    </li>
-                  </ul>
-                  <p className="text-xs text-muted mt-2">
-                    This ensures you can withdraw your desired income without depleting your
-                    principal.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column - Timeline Chart */}
-            <div className="lg:col-span-2">
-              <div className="surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
-                <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
-                  Retirement Timeline Projection
-                </h2>
-                <p className="text-body mb-8">
-                  Visualize how your assets will grow over time and when you can safely retire.
-                  Adjust the inputs to see how different scenarios affect your retirement timeline.
-                  These inputs, including this return rate, are independent of the Retirement Needs
-                  calculator.
-                </p>
-
-                <RetirementTimelineChart />
-
-                <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
-                  <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">
-                    About the Projection
-                  </h3>
-                  <p className="text-sm text-blue-600 dark:text-blue-300">
-                    This timeline shows compounding growth of your investments over time. The
-                    projection assumes:
-                  </p>
-                  <ul className="text-sm text-blue-600 dark:text-blue-300 mt-2 space-y-1">
-                    <li>Consistent annual return rate</li>
-                    <li>Monthly compounding of returns</li>
-                    <li>No additional contributions (unless specified)</li>
-                    <li>No withdrawals until retirement</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Information */}
-          <div className="mt-8 sm:mt-12 surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
+          {/* Supporting explanation — one copy of each, after the merge. */}
+          <div className="surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
             <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
-              Understanding Safe Withdrawal
+              Understanding Your Retirement Numbers
             </h2>
-            <div className="prose dark:prose-invert max-w-none text-body">
-              <p>
-                The Safe Withdrawal Model is based on the principle that if you withdraw only the
-                investment earnings (interest/dividends/capital gains) and never touch the
-                principal, your money will theoretically last forever.
+
+            <div className="p-4 surface-inset rounded-lg">
+              <h3 className="font-semibold text-subheading mb-2">
+                How the Safe Withdrawal Model works
+              </h3>
+              <p className="text-sm text-body">
+                The <strong>Safe Withdrawal Model</strong> — the perpetual target above — sizes your
+                nest egg so you can live on the returns alone:
               </p>
-              <p className="mt-4">
-                For example, if you have $1,000,000 invested and expect a 6% annual return, you can
-                safely withdraw $60,000 per year ($5,000 per month) without ever reducing your
-                principal. The formula rearranges this to tell you how much principal you need for
-                your desired withdrawal amount.
+              <p className="text-sm text-body mt-2">
+                <code className="inline-block break-words bg-gray-200 dark:bg-gray-700 dark:text-gray-100 px-2 py-1 rounded">
+                  FV = Ir × (12 / r)
+                </code>
               </p>
-              <p className="mt-4">
-                <strong>Note:</strong> This is a simplified model and doesn't account for inflation,
-                taxes, market volatility, or changes in spending needs. For comprehensive retirement
-                planning, consult with a financial advisor.
+              <ul className="text-sm text-body mt-2 space-y-1">
+                <li>
+                  <strong>FV</strong> = Future Value (required retirement assets)
+                </li>
+                <li>
+                  <strong>Ir</strong> = Desired monthly retirement income
+                </li>
+                <li>
+                  <strong>r</strong> = Annual return rate (as decimal)
+                </li>
+              </ul>
+              <p className="text-xs text-muted mt-2">
+                Withdraw only what your investments earn and the principal is never touched, so it
+                theoretically lasts forever.
               </p>
             </div>
+
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">
+                About the Projection
+              </h3>
+              <p className="text-sm text-blue-600 dark:text-blue-300">
+                The growth chart compounds your savings monthly — the same math behind your earliest
+                retirement age, so the two can never disagree. It runs from today up to the year you
+                can retire, and assumes:
+              </p>
+              <ul className="text-sm text-blue-600 dark:text-blue-300 mt-2 space-y-1">
+                <li>Consistent annual return rate</li>
+                <li>Monthly compounding of returns</li>
+                <li>Your monthly savings continue unchanged until retirement</li>
+                <li>No withdrawals along the way</li>
+              </ul>
+            </div>
+
+            <p className="text-sm text-body mt-6">
+              <strong>Note:</strong> This is a simplified model and doesn&rsquo;t account for
+              inflation, taxes, market volatility, or changes in spending needs. For comprehensive
+              retirement planning, consult with a financial advisor.
+            </p>
           </div>
         </div>
       </div>

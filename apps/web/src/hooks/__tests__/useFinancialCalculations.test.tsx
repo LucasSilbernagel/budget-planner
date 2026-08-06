@@ -5,8 +5,13 @@
  * field must be `monthlyIncome` (core's RetirementInput) consistently across the
  * form → hook → client → server chain. A mismatch (`desiredMonthlyIncome`)
  * previously made the server reject every real paid-tier retirement call while
- * the mocked unit/route tests stayed green. These tests exercise the hook the way
- * RetirementForm actually calls it, so a future field drift fails CI.
+ * the mocked unit/route tests stayed green. These tests exercise the hook across
+ * the free and paid paths directly, so a future field drift fails CI.
+ *
+ * Note: since story 29.1 the retirement page computes live in the browser and no
+ * longer calls this hook (RetirementForm, its only caller, was folded into the
+ * consolidated planner). The hook and its `/api/calculations/retirement` route
+ * still ship, and this contract guard is what keeps them honest.
  */
 
 import { act, renderHook } from '@testing-library/react'

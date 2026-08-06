@@ -1,14 +1,10 @@
-import {
-  type YearlyProjection,
-  calculateCompoundingProjection,
-} from '@budget-planner/core/finance/retirement'
+import { projectAccumulatedNestEgg } from '@budget-planner/core/finance/retirement'
 import {
   type CurrencyCode,
   type CurrencyMode,
-  currencySymbol,
   formatCurrency,
 } from '@budget-planner/core/format/currency'
-import React, { useState, useMemo, useCallback } from 'react'
+import { useMemo } from 'react'
 import {
   CartesianGrid,
   Line,
@@ -68,34 +64,90 @@ export function getRetirementChartChrome(isNarrow: boolean): RetirementChartChro
 }
 
 /**
- * Props for RetirementTimelineChart component
+ * Where to draw the "Retirement" reference line, as a years-from-now offset, or
+ * `null` for no marker at all.
+ *
+ * Pure + exported for the same reason as `getRetirementChartChrome`: Recharts
+ * renders no SVG children under jsdom's zero-size `ResponsiveContainer`, so a
+ * DOM-based assertion cannot tell "no marker" apart from "no chart" — it passes
+ * vacuously in both directions. Testing the decision directly is the only honest
+ * coverage.
+ *
+ * Rounded to a whole year because the X axis is categorical (one point per
+ * projected year); the solver returns month precision, which has no category to
+ * sit on. `0` is a legitimate answer — a plan that is already met retires today,
+ * and that is exactly when the user most wants the marker. An earlier `>= 1`
+ * floor hid it for every solve under six months.
  */
-export interface RetirementTimelineChartProps {
-  initialPrincipal?: number
-  annualContribution?: number
-  annualReturnRate?: number
-  yearsToProject?: number
-  retirementAge?: number
-  currentAge?: number
+export function getRetirementMarkerOffset(
+  earliestRetirementAge: number | null,
+  currentAge: number,
+  horizonYears: number
+): number | null {
+  if (earliestRetirementAge === null) {
+    return null
+  }
+
+  const offset = Math.round(earliestRetirementAge - currentAge)
+
+  return offset >= 0 && offset <= horizonYears ? offset : null
 }
 
 /**
- * Format currency for chart display with abbreviations
- * Uses core formatCurrency with abbreviate option for large values
+ * Props for RetirementTimelineChart.
  *
- * @param value - Amount in cents
- * @param mode - Currency display mode
- * @param currency - Currency code (e.g., 'USD', 'EUR')
- * @param locale - BCP-47 locale for Intl.NumberFormat grouping/decimals
- * @returns Formatted currency string with abbreviations for large values
+ * ⚠️ Every value is REQUIRED and comes from the consolidated planner's single
+ * shared input set (story 29.1). This component owns no inputs and keeps no
+ * parameter state of its own — that is the whole point of the consolidation.
+ * Before 29.1 it collected its own current-savings / contribution / return-rate /
+ * age, defaulted them (principal `100000`!), and drew a curve that disagreed with
+ * the planner's solver for the same user.
+ */
+export interface RetirementTimelineChartProps {
+  /** Current amount saved at year 0, in integer cents. */
+  currentSavedCents: number
+  /** Monthly contribution, in integer cents. */
+  monthlySavingsCents: number
+  /** Annual return as a decimal (0.06 = 6%). */
+  annualReturnRate: number
+  /** The user's age today, in whole years. */
+  currentAge: number
+  /** Horizon in whole years, derived from life expectancy − current age. */
+  yearsToProject: number
+  /**
+   * The solver's earliest reachable retirement age, used for the reference-line
+   * marker. `null` when retirement is not reachable — no marker is drawn, so the
+   * chart can never claim a retirement the planner says is impossible.
+   */
+  earliestRetirementAge: number | null
+}
+
+/** One sampled year of the accumulation curve. All money in integer CENTS. */
+interface RetirementChartPoint {
+  year: number
+  age: number
+  startingBalance: number
+  annualContribution: number
+  endingBalance: number
+  retirementYear: boolean
+}
+
+/**
+ * Format a CENTS amount for chart display, abbreviating large values.
+ *
+ * ⚠️ Takes cents, like every other `formatCurrency` caller in the app. Before
+ * 29.1 this component kept `chartData` in dollars and handed those dollars
+ * straight to this function from the tooltip — rendering every hovered balance
+ * 100× too small — while the summary line remembered to multiply back up. Keeping
+ * the whole series in cents removes the class of bug rather than the instance.
  */
 function formatChartCurrency(
-  value: number,
+  cents: number,
   mode: CurrencyMode,
   currency: CurrencyCode,
   locale: string
 ): string {
-  return formatCurrency(value, { mode, currency, locale, abbreviate: true })
+  return formatCurrency(cents, { mode, currency, locale, abbreviate: true })
 }
 
 /**
@@ -121,7 +173,7 @@ function CustomTooltip({
     return null
   }
 
-  const data = firstEntry.payload as YearlyProjection & { retirementYear?: boolean }
+  const data = firstEntry.payload as RetirementChartPoint
 
   // Guard: check that required properties exist
   if (
@@ -161,25 +213,23 @@ function CustomTooltip({
 /**
  * RetirementTimelineChart component
  *
- * Visualizes compounding growth over time for retirement planning.
+ * Visualizes the accumulation curve behind the planner's numbers: the same
+ * monthly-compounded projection the solver itself walks, sampled once per year.
  *
- * Features:
- * - Interactive line chart with Recharts
- * - Configurable parameters: principal, contribution, return rate, years
- * - Age-based timeline mapping
- * - Tooltips with detailed information
- * - Responsive design
- * - Accessible chart elements
- *
- * AC Coverage: AC-3 (Age timeline mapping with compounding projections)
+ * ⚠️ It samples `projectAccumulatedNestEgg` — the solver's own accumulation
+ * function — and deliberately NOT `calculateCompoundingProjection`, which
+ * compounds ANNUALLY over whole years (story 26.6 keeps the two distinct on
+ * purpose). Driving the chart with the annual function while the planner solves
+ * monthly would print two different nest eggs from one input set, which is
+ * exactly the contradiction story 29.1 exists to remove.
  */
 function RetirementTimelineChartInner({
-  initialPrincipal = 100000,
-  annualContribution = 0,
-  annualReturnRate = 0.06,
-  yearsToProject = 30,
-  retirementAge = 65,
-  currentAge = 35,
+  currentSavedCents,
+  monthlySavingsCents,
+  annualReturnRate,
+  currentAge,
+  yearsToProject,
+  earliestRetirementAge,
 }: RetirementTimelineChartProps) {
   const { mode, currency, locale } = useCurrencyPreferences()
   // Theme-aware Recharts chrome so axes/grid stay legible on the dark card.
@@ -189,342 +239,97 @@ function RetirementTimelineChartInner({
   const isNarrow = useIsNarrowViewport()
   const chartChrome = getRetirementChartChrome(isNarrow)
 
-  // Local state for user-configurable parameters
-  // Note: returnRate is stored as percentage (0-100) for UI consistency
-  // annualReturnRate prop is in decimal (0-1), so convert to percentage
-  const [principal, setPrincipal] = useState<number>(initialPrincipal)
-  const [contribution, setContribution] = useState<number>(annualContribution)
-  const [returnRate, setReturnRate] = useState<number>(annualReturnRate * 100)
-  const [years, setYears] = useState<number>(yearsToProject)
-  const [currentAgeState, setCurrentAge] = useState<number>(currentAge)
-  const [retirementAgeState, setRetirementAge] = useState<number>(retirementAge)
+  // Build the curve. Returns a discriminated result rather than calling
+  // `setProjectionError` from inside the memo — the previous version did exactly
+  // that, a render-phase setState that would break under a Suspense/provider
+  // boundary. A failure here is a projection overflow, not a crash.
+  const projection = useMemo<
+    { ok: true; points: RetirementChartPoint[] } | { ok: false; message: string }
+  >(() => {
+    if (yearsToProject <= 0) {
+      return { ok: true, points: [] }
+    }
 
-  // Calculate projections
-  const [projectionError, setProjectionError] = useState<string | null>(null)
-
-  const projections = useMemo(() => {
     try {
-      // Validate inputs before calculation
-      if (returnRate <= 0) {
-        throw new Error('Return rate must be greater than 0')
+      const annualContribution = Math.max(0, monthlySavingsCents) * 12
+      const points: RetirementChartPoint[] = []
+
+      // Starts at year 0 — today's balance, the one number on this curve the user
+      // actually knows to be true. Without it the series opened at age+1 while the
+      // summary said "starting with X at age N", and an immediately-reachable
+      // retirement (offset 0) had no category for its marker to sit on.
+      for (let year = 0; year <= yearsToProject; year++) {
+        const age = currentAge + year
+        points.push({
+          year,
+          age,
+          startingBalance: projectAccumulatedNestEgg(
+            currentSavedCents,
+            monthlySavingsCents,
+            annualReturnRate,
+            Math.max(0, year - 1) * 12
+          ),
+          // Nothing has been contributed yet at year 0.
+          annualContribution: year === 0 ? 0 : annualContribution,
+          endingBalance: projectAccumulatedNestEgg(
+            currentSavedCents,
+            monthlySavingsCents,
+            annualReturnRate,
+            year * 12
+          ),
+          retirementYear:
+            earliestRetirementAge !== null && Math.round(earliestRetirementAge) === age,
+        })
       }
 
-      if (years < 0) {
-        throw new Error('Number of years must be non-negative')
-      }
-
-      // Handle edge case: if years is 0, return empty array (consistent with core)
-      if (years === 0) {
-        return []
-      }
-
-      // Ensure non-negative values for financial calculations
-      const safePrincipal = Math.max(principal, 0)
-      const safeContribution = Math.max(contribution, 0)
-      const safeReturnRate = returnRate
-
-      const result = calculateCompoundingProjection({
-        principal: safePrincipal * 100, // Convert to cents
-        annualContribution: safeContribution * 100,
-        annualReturnRate: safeReturnRate / 100, // Convert percentage to decimal
-        years,
-      })
-
-      setProjectionError(null)
-      return result
+      return { ok: true, points }
     } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : 'Failed to calculate projection'
-      setProjectionError(errorMessage)
-      console.error('Projection calculation error:', e)
-      return []
-    }
-  }, [principal, contribution, returnRate, years])
-
-  // Add age information to projections
-  const chartData = useMemo(() => {
-    const retirementYear = retirementAgeState
-
-    return projections.map((projection, index) => ({
-      ...projection,
-      year: projection.year,
-      // Convert cents back to dollars for display
-      startingBalance: projection.startingBalance / 100,
-      endingBalance: projection.endingBalance / 100,
-      annualContribution: projection.annualContribution / 100,
-      age: currentAgeState + index,
-      retirementYear: currentAgeState + index === retirementYear,
-    }))
-  }, [projections, currentAgeState, retirementAgeState])
-
-  // Handle parameter changes
-  const handlePrincipalChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
-
-    // Reject scientific notation
-    if (rawValue.includes('e') || rawValue.includes('E')) {
-      return
-    }
-
-    const value = parseFloat(rawValue)
-
-    // Validate finite number
-    if (!Number.isFinite(value)) {
-      return
-    }
-
-    setPrincipal(value)
-  }, [])
-
-  const handleContributionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
-
-    // Reject scientific notation
-    if (rawValue.includes('e') || rawValue.includes('E')) {
-      return
-    }
-
-    const value = parseFloat(rawValue)
-
-    // Validate finite number
-    if (!Number.isFinite(value)) {
-      return
-    }
-
-    setContribution(value)
-  }, [])
-
-  const handleReturnRateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
-
-    // Reject scientific notation
-    if (rawValue.includes('e') || rawValue.includes('E')) {
-      return
-    }
-
-    const value = parseFloat(rawValue)
-
-    // Validate finite number
-    if (!Number.isFinite(value)) {
-      return
-    }
-
-    // Cap at 100% and ensure non-negative
-    setReturnRate(Math.min(Math.max(value, 0), 100))
-  }, [])
-
-  const handleYearsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
-
-    // Reject scientific notation
-    if (rawValue.includes('e') || rawValue.includes('E')) {
-      return
-    }
-
-    const value = parseInt(rawValue, 10)
-
-    // Validate finite number
-    if (!Number.isFinite(value)) {
-      return
-    }
-
-    setYears(value)
-  }, [])
-
-  const handleCurrentAgeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value
-
-    // Reject scientific notation
-    if (rawValue.includes('e') || rawValue.includes('E')) {
-      return
-    }
-
-    const value = parseInt(rawValue, 10)
-
-    // Validate finite number
-    if (!Number.isFinite(value)) {
-      return
-    }
-
-    // Enforce minimum age of 18 and maximum of 120
-    setCurrentAge(Math.min(Math.max(value, 18), 120))
-  }, [])
-
-  const handleRetirementAgeChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const rawValue = e.target.value
-
-      // Reject scientific notation
-      if (rawValue.includes('e') || rawValue.includes('E')) {
-        return
+      return {
+        ok: false,
+        message:
+          e instanceof Error
+            ? 'These numbers grow too large to chart. Try a smaller amount or a shorter horizon.'
+            : 'Failed to calculate projection',
       }
-
-      const value = parseInt(rawValue, 10)
-
-      // Validate finite number
-      if (!Number.isFinite(value)) {
-        return
-      }
-
-      // Enforce minimum of currentAge + 1 and maximum of 120
-      setRetirementAge(Math.min(Math.max(value, currentAgeState + 1), 120))
-    },
-    [currentAgeState]
-  )
-
-  // Reset to defaults
-  const resetToDefaults = useCallback(() => {
-    setPrincipal(initialPrincipal)
-    setContribution(annualContribution)
-    setReturnRate(annualReturnRate * 100)
-    setYears(yearsToProject)
-    setCurrentAge(currentAge)
-    setRetirementAge(retirementAge)
+    }
   }, [
-    initialPrincipal,
-    annualContribution,
+    currentSavedCents,
+    monthlySavingsCents,
     annualReturnRate,
-    yearsToProject,
     currentAge,
-    retirementAge,
+    yearsToProject,
+    earliestRetirementAge,
   ])
 
-  if (chartData.length === 0) {
+  // ⚠️ This component renders NO inputs, so an empty/failed projection can only
+  // ever replace the chart itself. Before 29.1 the six parameter inputs and the
+  // Reset button lived BELOW an identical early return, so typing `0` into Years
+  // or Return Rate made every control vanish with no way back short of a reload.
+  if (!projection.ok || projection.points.length === 0) {
     return (
-      <div className="p-8 text-center text-muted">
-        <p>{projectionError || 'No data to display. Please adjust the parameters.'}</p>
+      <div className="p-8 text-center text-muted" data-testid="retirement-chart-empty">
+        <p>
+          {projection.ok
+            ? 'No projection to display yet — check your age and life expectancy.'
+            : projection.message}
+        </p>
       </div>
     )
   }
 
+  const chartData = projection.points
+  const finalPoint = chartData[chartData.length - 1]
+  // Years-from-now position of the retirement marker. Rounded to a whole year
+  // because the X axis is categorical (one point per projected year); the solver
+  // returns month precision, which has no category to sit on.
+  const retirementYearOffset = getRetirementMarkerOffset(
+    earliestRetirementAge,
+    currentAge,
+    finalPoint?.year ?? 0
+  )
+
   return (
     <div className="space-y-6">
-      {/* Controls */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 surface-inset rounded-lg">
-        <div>
-          <label htmlFor="principal" className="block text-sm font-medium text-label mb-1">
-            Current Savings
-          </label>
-          <div className="relative rounded-md shadow-sm">
-            {mode === 'symbol' && (
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">
-                {currencySymbol(currency)}
-              </span>
-            )}
-            <input
-              type="number"
-              id="principal"
-              value={principal}
-              onChange={handlePrincipalChange}
-              className={`w-full py-2 ${
-                mode === 'symbol' ? 'pl-7 pr-3' : 'px-3'
-              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]`}
-              min="0"
-              step="1000"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="contribution" className="block text-sm font-medium text-label mb-1">
-            Annual Contribution
-          </label>
-          <div className="relative rounded-md shadow-sm">
-            {mode === 'symbol' && (
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm">
-                {currencySymbol(currency)}
-              </span>
-            )}
-            <input
-              type="number"
-              id="contribution"
-              value={contribution}
-              onChange={handleContributionChange}
-              className={`w-full py-2 ${
-                mode === 'symbol' ? 'pl-7 pr-3' : 'px-3'
-              } border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]`}
-              min="0"
-              step="1000"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="returnRate" className="block text-sm font-medium text-label mb-1">
-            Return Rate
-          </label>
-          <div className="relative rounded-md shadow-sm">
-            <input
-              type="number"
-              id="returnRate"
-              value={returnRate}
-              onChange={handleReturnRateChange}
-              className="w-full min-h-[44px] py-2 pl-3 pr-7 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              min="0"
-              max="100"
-              step="0.1"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted text-sm">
-              %
-            </span>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="years" className="block text-sm font-medium text-label mb-1">
-            Years
-          </label>
-          <input
-            type="number"
-            id="years"
-            value={years}
-            onChange={handleYearsChange}
-            className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            min="0"
-            max="100"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="currentAge" className="block text-sm font-medium text-label mb-1">
-            Current Age
-          </label>
-          <input
-            type="number"
-            id="currentAge"
-            value={currentAgeState}
-            onChange={handleCurrentAgeChange}
-            className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            min="18"
-            max="120"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="retirementAge" className="block text-sm font-medium text-label mb-1">
-            Retirement Age
-          </label>
-          <input
-            type="number"
-            id="retirementAge"
-            value={retirementAgeState}
-            onChange={handleRetirementAgeChange}
-            className="w-full min-h-[44px] px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            min={currentAgeState + 1}
-            max="120"
-          />
-        </div>
-
-        <div className="flex items-end">
-          <button
-            type="button"
-            onClick={resetToDefaults}
-            className="w-full min-h-[44px] py-2 px-3 border border-transparent rounded-md text-sm font-medium leading-6 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
       {/* Chart */}
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
         <ResponsiveContainer width="100%" height={chartChrome.height}>
@@ -570,19 +375,15 @@ function RetirementTimelineChartInner({
                     }
                   : undefined
               }
-              tickFormatter={(value) => formatCompactAxisTick(value, mode, currency)}
+              // `formatCompactAxisTick` takes whole currency UNITS, so a
+              // cents-space series divides at the boundary (per its contract).
+              tickFormatter={(value) => formatCompactAxisTick(value / 100, mode, currency)}
               tick={{ fontSize: chartChrome.tickFontSize, fill: chartColors.axis }}
               stroke={chartColors.axis}
               domain={[0, 'auto']}
               width={chartChrome.yAxisWidth}
             />
-            <Tooltip
-              content={<CustomTooltip mode={mode} currency={currency} locale={locale} />}
-              formatter={(value: number) => [
-                formatChartCurrency(value, mode, currency, locale),
-                'Assets',
-              ]}
-            />
+            <Tooltip content={<CustomTooltip mode={mode} currency={currency} locale={locale} />} />
             <Line
               type="monotone"
               dataKey="endingBalance"
@@ -592,10 +393,11 @@ function RetirementTimelineChartInner({
               dot={{ r: 4, fill: '#3B82F6' }}
               activeDot={{ r: 8, fill: '#1D4ED8' }}
             />
-            {/* Reference line at retirement year. */}
-            {retirementAgeState > currentAgeState && (
+            {/* Reference line at the solver's earliest reachable retirement —
+                never at a separately-entered age the solver disagrees with. */}
+            {retirementYearOffset !== null && (
               <ReferenceLine
-                x={retirementAgeState - currentAgeState}
+                x={retirementYearOffset}
                 stroke="#10B981"
                 strokeDasharray="5 5"
                 label={{ value: 'Retirement', position: 'top', fill: '#10B981' }}
@@ -609,19 +411,24 @@ function RetirementTimelineChartInner({
       <div className="p-4 surface-inset rounded-lg">
         <p className="text-sm text-body">
           <strong>Projection Summary:</strong> Starting with{' '}
-          {formatChartCurrency(principal * 100, mode, currency, locale)} at age {currentAgeState},
-          with a {returnRate}% annual return and{' '}
-          {formatChartCurrency(contribution * 100, mode, currency, locale)} annual contributions,
-          your assets could grow to{' '}
+          {formatChartCurrency(Math.max(0, currentSavedCents), mode, currency, locale)} at age{' '}
+          {currentAge}, with a {(annualReturnRate * 100).toFixed(1)}% annual return and{' '}
+          {formatChartCurrency(Math.max(0, monthlySavingsCents) * 12, mode, currency, locale)} saved
+          each year, your assets reach{' '}
           <strong>
-            {formatChartCurrency(
-              chartData[chartData.length - 1]?.endingBalance * 100,
-              mode,
-              currency,
-              locale
-            )}
+            {formatChartCurrency(finalPoint?.endingBalance ?? 0, mode, currency, locale)}
           </strong>{' '}
-          in {years} years at age {currentAgeState + years}.
+          in {finalPoint?.year ?? 0} {finalPoint?.year === 1 ? 'year' : 'years'}, at age{' '}
+          {finalPoint?.age ?? currentAge}
+          {/* Only claim the end of the curve IS retirement when it actually is.
+              An already-met plan retires at offset 0 while the curve is floored
+              at one year so it has something to draw, so the last point sits a
+              year PAST retirement — saying "when you can retire" there would
+              contradict the earliest-retirement-age output by a year. */}
+          {retirementYearOffset !== null && retirementYearOffset === finalPoint?.year
+            ? ' — when you can retire'
+            : ''}
+          .
         </p>
       </div>
     </div>
