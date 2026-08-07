@@ -19,6 +19,10 @@ export const Route = createFileRoute('/retirement')({
  * and producing its own answer, with two paragraphs of copy explaining that the
  * numbers were "independent of" one another. There is now a single planner that
  * collects each detail once, plus the explanations that survived de-duplication.
+ *
+ * Story 29.2 then stopped asking for two of those details altogether: current
+ * amount saved and monthly savings are derived from the user's own accounts and
+ * budget, leaving four editable fields.
  */
 function RetirementPage() {
   return (
@@ -32,8 +36,9 @@ function RetirementPage() {
                 Retirement Planner
               </h1>
               <p className="text-base sm:text-xl text-body">
-                Enter your plan once to see when you can retire, how big your nest egg needs to be,
-                and how your savings grow along the way.
+                Your savings figures come from what you have already entered elsewhere. Add a few
+                details about your plan to see when you can retire, how big your nest egg needs to
+                be, and how your savings grow along the way.
               </p>
             </div>
           </header>

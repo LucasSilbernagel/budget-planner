@@ -21,7 +21,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { parseAge, parseCurrencyToCents, parsePercentageToDecimal } from '../lib/retirement-parsers'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
-import { useTotalInvestmentBalance } from '../stores/balanceStore'
+import { useBalanceEntries, useTotalInvestmentBalance } from '../stores/balanceStore'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { useExpenses } from '../stores/expenseStore'
 import { useIncomeSources } from '../stores/incomeStore'
@@ -45,6 +45,34 @@ const MAX_PROJECTION_YEARS = 100
 type ParsedInputs =
   | { ok: true; input: Parameters<typeof solveRetirementAccumulation>[0] }
   | { ok: false; reason: 'incomplete' | 'invalid' }
+
+/**
+ * A figure the planner DERIVES rather than collects (story 29.2, FR48/FR49).
+ *
+ * `cents` is always the floored, ready-to-use value — the display and the solver
+ * read the same number, never two. The state exists because the user can no
+ * longer correct these fields, so the three "nothing useful here" cases must read
+ * differently: telling someone whose portfolio nets below zero that they have
+ * "no investment accounts" is simply false, and telling someone whose stored data
+ * is corrupt that their expenses exceed their income is worse — it is advice that
+ * cannot help.
+ */
+type DerivedFigure = {
+  state: 'ok' | 'empty' | 'nonPositive' | 'unreadable'
+  /** The floored, ready-to-use value. Always a safe integer, never negative. */
+  cents: number
+  /**
+   * True ONLY when the source was genuinely below zero and was clamped up.
+   *
+   * ⚠️ Deliberately separate from `state`. An exactly-zero source is also
+   * `nonPositive`, but nothing was floored, so telling that user "your real
+   * position is worse than these numbers suggest" would be a plain lie. Keying
+   * the results caveat off the state name made exactly that mistake.
+   */
+  flooredFromNegative: boolean
+  /** The explanatory line shown under the figure, or `null` when it needs none. */
+  note: string | null
+}
 
 /**
  * Outcome of attempting the solve. `null` = not attempted (inputs incomplete or
@@ -111,6 +139,19 @@ const SOLVER_ERROR_COPY: Record<string, string> = {
     'The retirement income you entered is too large to plan for. Please try a smaller amount.',
   'Projection overflow: nest egg exceeds safe integer limit. Try smaller values or fewer months.':
     'Your savings grow beyond what can be calculated. Please try smaller amounts.',
+  // The derived figures now guard non-finite values before the solver sees
+  // them, but these were previously unmapped, so a corrupt stored balance
+  // surfaced as the generic "age or life expectancy looks out of range" —
+  // pointing the user at a field that was not the problem, and since 29.2 is
+  // not even editable. Kept as defence in depth.
+  'Current saved amount must be a finite number':
+    'We could not read your saved amount. Please check your investment accounts on the Balance page.',
+  'Monthly savings must be a finite number':
+    'We could not read your monthly savings. Please check your income and expenses.',
+  'Current age must be a finite number': 'Please enter a valid current age.',
+  'Life expectancy must be a finite number': 'Please enter a valid life expectancy.',
+  'Desired annual income must be a finite number':
+    'Please enter a valid desired retirement income.',
 }
 
 /**
@@ -193,8 +234,21 @@ function chartHorizonYears(
 /**
  * RetirementAccumulationPlanner
  *
- * The whole `/retirement` planner: one shared input set, one solve, one set of
- * outputs, and the growth chart that visualises them (stories 26.7 / 29.1).
+ * The whole `/retirement` planner: two derived figures, one shared input set, one
+ * solve, one set of outputs, and the growth chart that visualises them
+ * (stories 26.7 / 29.1 / 29.2).
+ *
+ * ## What 29.2 derived
+ *
+ * "Current amount saved" and "monthly savings" are no longer asked for — the app
+ * already holds both, so it computes them instead: the investment-accounts total
+ * and frequency-normalized net monthly income. Four editable fields remain.
+ *
+ * Because the user can no longer correct either figure, two things follow that
+ * would otherwise be optional. Both are floored at zero AT THE BINDING BOUNDARY,
+ * so the number on screen is the number the solver and the chart receive; and a
+ * figure that floored from a NEGATIVE source says so, rather than passing itself
+ * off as a neutral zero.
  *
  * ## What 29.1 consolidated
  *
@@ -218,23 +272,160 @@ function chartHorizonYears(
 function RetirementAccumulationPlannerInner() {
   const { mode, currency, locale } = useCurrencyPreferences()
   const totalInvestmentCents = useTotalInvestmentBalance()
+  const balanceEntries = useBalanceEntries()
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
 
-  // Pre-fill current-saved from the shared `useTotalInvestmentBalance` selector
-  // (the same figure that drives the 26.5 "Total Investments" card — one source
-  // of truth). That selector sums raw `currentBalance` without clamping, so for a
-  // mixed portfolio this seeds the NET investment balance (and a non-positive net
-  // seeds an empty, editable field).
+  // ── The two derived figures (story 29.2, FR48 + FR49) ──────────────────────
   //
-  // ⚠️ Story 29.2 replaces this field with a derived, non-editable display. When
-  // it does, this memo, the `useState` seed and the re-seed effect below are
-  // deleted OUTRIGHT — they are deliberately kept adjacent and free of other
-  // responsibilities so that removal is clean.
-  const prefillCurrentSaved = useMemo(
-    () => (totalInvestmentCents > 0 ? formatForInputDisplay(totalInvestmentCents, locale) : ''),
-    [totalInvestmentCents, locale]
-  )
+  // These replace what used to be two editable money inputs. Both are floored at
+  // zero HERE, at the binding boundary, and only the floored value travels on to
+  // the solver and the chart.
+  //
+  // ⚠️ Flooring here rather than downstream is about keeping the DISPLAY honest.
+  // Core is already defended — `solveRetirementAccumulation` clamps
+  // `savedPerYearCents` (`retirement.ts:636`) and `projectAccumulatedNestEgg`
+  // clamps BOTH of its own inputs on arrival (`:449-450`), which are the only two
+  // consumers — so an unclamped negative could never have eroded the projection.
+  // (The epic's clamp note generalised from 28.2's real erosion bug in
+  // `createNetWorthProjection`, a different function.) What flooring prevents is
+  // the card reading "−$2,000.00" beside solver figures computed from zero: one
+  // input, two contradictory numbers, and no field left for the user to correct.
+
+  // Value comes from the shared selector (the same figure as the 26.5 "Total
+  // Investments" card — one source of truth); the entry list is read only to tell
+  // "no accounts yet" apart from "accounts that add up to nothing".
+  const derivedCurrentSaved = useMemo<DerivedFigure>(() => {
+    if (!balanceEntries.some((entry) => entry.type === 'investment')) {
+      return {
+        state: 'empty',
+        cents: 0,
+        flooredFromNegative: false,
+        note: 'Add investment accounts on the Balance page to include them here.',
+      }
+    }
+    // ⚠️ The sync applier writes pulled rows straight into the store without
+    // `validateBalanceTracking` (`lib/sync/applyServerChanges.ts:93-94`), so this
+    // total can be NaN, Infinity or fractional. Left unguarded, `formatCurrency`
+    // renders NaN as a confident "0.00" while the solver throws — and a fractional
+    // cent shows one number and solves another. `NetWorthProjectionPage` already
+    // refuses the identical data; this page now does too rather than guessing.
+    if (!Number.isSafeInteger(totalInvestmentCents)) {
+      return {
+        state: 'unreadable',
+        cents: 0,
+        flooredFromNegative: false,
+        note: "We couldn't read your investment account balances.",
+      }
+    }
+    if (totalInvestmentCents < 0) {
+      return {
+        state: 'nonPositive',
+        cents: 0,
+        flooredFromNegative: true,
+        note: 'Your investment accounts currently net below zero, so this plan assumes nothing saved yet.',
+      }
+    }
+    if (totalInvestmentCents === 0) {
+      // Accounts exist but hold nothing. Not floored, so no "worse than shown"
+      // caveat — but it still must not read like the empty state.
+      return {
+        state: 'nonPositive',
+        cents: 0,
+        flooredFromNegative: false,
+        note: 'Your investment accounts currently hold nothing.',
+      }
+    }
+    return { state: 'ok', cents: totalInvestmentCents, flooredFromNegative: false, note: null }
+  }, [balanceEntries, totalInvestmentCents])
+
+  // Frequency-NORMALIZED net monthly income. ⚠️ Deliberately not the
+  // `NetWorthProjectionPage` derivation, which is explicitly un-normalized and
+  // would count a weekly $500 as $500/month — a wrong figure in a field the user
+  // can no longer correct.
+  const derivedMonthlySavings = useMemo<DerivedFigure>(() => {
+    // Typed off the store rows so this needs no `Frequency` import — the core
+    // barrel cannot export that name unambiguously anyway.
+    const toItems = (rows: typeof incomeSources | typeof expenses) =>
+      rows.map((row) => ({ amount: row.amount, frequency: row.frequency }))
+
+    // Emptiness is judged per list: a user part-way through onboarding who has
+    // entered expenses but no income is missing data, not overspending, and must
+    // not be told their expenses exceed their income.
+    if (incomeSources.length === 0) {
+      return {
+        state: 'empty',
+        cents: 0,
+        flooredFromNegative: false,
+        note:
+          expenses.length === 0
+            ? 'Add income and expenses to calculate this.'
+            : 'Add your income to calculate this.',
+      }
+    }
+
+    let netIncome: number
+    try {
+      netIncome = calculateNetIncomeResult(toItems(incomeSources), toItems(expenses)).netIncome
+    } catch {
+      // Core's `validateFrequency`/`validateAmount` throw on a corrupt persisted
+      // row. Unguarded, that takes the whole planner to the ErrorBoundary — the
+      // same path that already white-screens the dashboard. Re-run each list on
+      // its own to name the one actually at fault, so the user is sent to the
+      // right page instead of always being told it was their income.
+      let culprit = 'income'
+      try {
+        calculateNetIncomeResult(toItems(incomeSources), [])
+        culprit = 'expense'
+      } catch {
+        culprit = 'income'
+      }
+      return {
+        state: 'unreadable',
+        cents: 0,
+        flooredFromNegative: false,
+        note: `We couldn't read your ${culprit} data.`,
+      }
+    }
+
+    if (!Number.isSafeInteger(netIncome)) {
+      return {
+        state: 'unreadable',
+        cents: 0,
+        flooredFromNegative: false,
+        note: "We couldn't read your income and expense data.",
+      }
+    }
+    if (netIncome < 0) {
+      return {
+        state: 'nonPositive',
+        cents: 0,
+        flooredFromNegative: true,
+        note: 'Your expenses currently exceed your income, so this plan assumes no monthly savings.',
+      }
+    }
+    if (netIncome === 0) {
+      return {
+        state: 'nonPositive',
+        cents: 0,
+        flooredFromNegative: false,
+        note: 'Your income and expenses balance exactly, so this plan assumes no monthly savings.',
+      }
+    }
+    return { state: 'ok', cents: netIncome, flooredFromNegative: false, note: null }
+  }, [incomeSources, expenses])
+
+  // AC-4: a figure floored from a NEGATIVE source, or one we could not read at
+  // all, must never be presented as a neutral zero — the results carry the caveat
+  // alongside the numbers it qualifies. An exactly-zero source is excluded: it is
+  // honestly zero and nothing was reduced.
+  const flooredFromNegative =
+    derivedCurrentSaved.flooredFromNegative || derivedMonthlySavings.flooredFromNegative
+  const derivedUnreadable =
+    derivedCurrentSaved.state === 'unreadable' || derivedMonthlySavings.state === 'unreadable'
+  // Genuinely no source data at all — distinct from "sources exist but total zero".
+  const noSourceData =
+    derivedCurrentSaved.state === 'empty' && derivedMonthlySavings.state === 'empty'
 
   // Pre-fill a desired-income target: a share of current income, as an ANNUAL
   // figure (the field's canonical basis).
@@ -270,8 +461,6 @@ function RetirementAccumulationPlannerInner() {
 
   const [currentAgeInput, setCurrentAgeInput] = useState<string>('')
   const [lifeExpectancyInput, setLifeExpectancyInput] = useState<string>('')
-  const [currentSavedInput, setCurrentSavedInput] = useState<string>(prefillCurrentSaved)
-  const [monthlySavingsInput, setMonthlySavingsInput] = useState<string>('')
   const [desiredIncomeInput, setDesiredIncomeInput] = useState<string>(() =>
     // Initial basis is 'annual', so the annual figure seeds directly.
     prefillDesiredIncomeCents === null
@@ -282,19 +471,8 @@ function RetirementAccumulationPlannerInner() {
   const [annualReturnInput, setAnnualReturnInput] = useState<string>('6.0')
   const [model, setModel] = useState<RetirementModel>('deplete')
 
-  // Re-seed current-saved when the investment total changes. Only overwrites with
-  // a non-empty prefill so it never blanks a value the user is editing before any
-  // accounts exist. (Deleted wholesale by story 29.2 — see the memo above.)
-  useEffect(() => {
-    if (prefillCurrentSaved !== '') {
-      // Functional-equality bailout: on mount `useState` already seeded this
-      // value, so returning `prev` unchanged avoids a redundant re-render (and
-      // the act() churn it causes in tests) — it only updates on a real change.
-      setCurrentSavedInput((prev) => (prev === prefillCurrentSaved ? prev : prefillCurrentSaved))
-    }
-  }, [prefillCurrentSaved])
-
-  // Same shape for the desired-income seed, with one extra hazard.
+  // The desired-income seed, which unlike the two derived figures above is still
+  // a real editable field — with one extra hazard.
   //
   // ⚠️ The seed is an ANNUAL figure, but the field is read under whichever basis
   // the user has selected. Writing the annual number into a field the user has
@@ -346,10 +524,9 @@ function RetirementAccumulationPlannerInner() {
     try {
       const currentAge = parseAge(currentAgeInput)
       const lifeExpectancy = parseAge(lifeExpectancyInput)
-      const anyMoneyEmpty =
-        currentSavedInput.trim() === '' ||
-        monthlySavingsInput.trim() === '' ||
-        desiredIncomeInput.trim() === ''
+      // Only desired income is still a money INPUT — the other two figures are
+      // derived and always present, so they can never be "not filled in".
+      const anyMoneyEmpty = desiredIncomeInput.trim() === ''
       const anyRateEmpty = annualReturnInput.trim() === ''
 
       if (currentAge === null || lifeExpectancy === null || anyMoneyEmpty || anyRateEmpty) {
@@ -360,8 +537,10 @@ function RetirementAccumulationPlannerInner() {
         ok: true,
         input: {
           currentAge,
-          currentSavedCents: parseCurrencyToCents(currentSavedInput, locale),
-          monthlySavingsCents: parseCurrencyToCents(monthlySavingsInput, locale),
+          // Already floored at the binding boundary above — the solver and the
+          // chart receive exactly what the display shows.
+          currentSavedCents: derivedCurrentSaved.cents,
+          monthlySavingsCents: derivedMonthlySavings.cents,
           annualReturnRate: parsePercentageToDecimal(annualReturnInput),
           desiredAnnualIncomeCents: toAnnualIncomeCents(
             parseCurrencyToCents(desiredIncomeInput, locale),
@@ -377,8 +556,8 @@ function RetirementAccumulationPlannerInner() {
   }, [
     currentAgeInput,
     lifeExpectancyInput,
-    currentSavedInput,
-    monthlySavingsInput,
+    derivedCurrentSaved.cents,
+    derivedMonthlySavings.cents,
     desiredIncomeInput,
     incomeBasis,
     annualReturnInput,
@@ -422,11 +601,13 @@ function RetirementAccumulationPlannerInner() {
 
   // A currency text input with the shared symbol-prefix + grouped-echo behavior.
   // ⚠️ A plain render helper (CALLED, not mounted as a `<Component/>`) so the
-  // inputs keep a stable identity across renders and never lose focus mid-typing.
+  // input keeps a stable identity across renders and never loses focus mid-typing.
   // Defining this as a component in the render body remounts the input on every
   // keystroke — the story 26.7 regression, pinned by a focus-retention test.
+  // Since 29.2 it serves a single field (desired retirement income), which makes
+  // inlining it tempting — don't: inlining is exactly what reintroduces the bug.
   //
-  // Money fields stay `type="text" inputMode="decimal"`: `setSelectionRange`
+  // The money field stays `type="text" inputMode="decimal"`: `setSelectionRange`
   // throws on `type="number"`, which would silently disable the caret correction
   // in `sanitizeMoneyChange` and make the grouped blur echo unassignable.
   const currencyField = ({
@@ -476,8 +657,94 @@ function RetirementAccumulationPlannerInner() {
     </div>
   )
 
+  // A derived, non-editable money figure (story 29.2). A called render helper for
+  // the same reason `currencyField` is one — nothing is defined as a component in
+  // a render body here.
+  //
+  // Rendered as a stat card rather than a read-only input: this repo has no
+  // read-only-input convention at all, and its established shape for a figure the
+  // app computed for you is the label/value card (`NetWorthProjectionPage`'s
+  // "Current Net Worth" block, `BalancePage`'s "Total Investments"). A greyed-out
+  // box that still looks like a text field invites people to click and type into
+  // something that can never accept input.
+  const derivedField = ({
+    id,
+    label,
+    caption,
+    figure,
+  }: {
+    id: string
+    label: string
+    caption: string
+    figure: DerivedFigure
+  }) => (
+    <div className="surface-inset p-4 rounded-lg" data-testid={id}>
+      <dt className="text-sm text-muted">{label}</dt>
+      {/* These values change on their own when the Balance/Income/Expenses stores
+          update, with no action from the user — announce it rather than mutating
+          silently under a screen reader. */}
+      <dd className="mt-1" aria-live="polite">
+        <span className="block text-2xl font-bold text-subheading">
+          {formatAmount(figure.cents)}
+        </span>
+        {/* The provenance caption shows ONLY for a real figure. In every other
+            state the displayed 0.00 does not come from the named source — it is a
+            placeholder — so "From your investment accounts" would be a false
+            claim. The note below names the source itself in those cases, so
+            nothing is lost. */}
+        {figure.state === 'ok' && <span className="block text-xs text-muted mt-1">{caption}</span>}
+        {figure.note !== null && (
+          <span className="block text-xs text-muted mt-1">{figure.note}</span>
+        )}
+      </dd>
+    </div>
+  )
+
+  // The AC-4 caveat, rendered inside whichever results branch is showing so it
+  // travels with the numbers it qualifies rather than sitting far above them.
+  //
+  // Covers BOTH a floored-from-negative figure and an unreadable one. An
+  // unreadable source is not "honestly zero" — it is unknown, and the solver was
+  // handed a fabricated zero for it, so a confident outlook built on that must
+  // say so.
+  const resultsCaveat = (toneClass: string) => {
+    if (!flooredFromNegative && !derivedUnreadable) {
+      return null
+    }
+    return (
+      <p data-testid="derived-floor-disclosure" className={`text-xs mt-4 ${toneClass}`}>
+        {derivedUnreadable
+          ? 'Some of your saved data could not be read, so this projection assumes zero for it — treat these figures as incomplete.'
+          : 'A figure above came out below zero, so this projection treats it as zero — your real position is worse than these numbers suggest.'}
+      </p>
+    )
+  }
+
   return (
     <div className="space-y-8">
+      {/* ── Derived figures (story 29.2) ─────────────────────────────────────
+          Two values the app already holds, shown rather than asked for. They sit
+          above the input set because they are context for the plan, not part of
+          filling it in. */}
+      <div>
+        <h3 className="text-lg font-semibold text-subheading mb-4">Your Savings Position</h3>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {derivedField({
+            id: 'derived-current-saved',
+            label: 'Current Amount Saved',
+            caption: 'From your investment accounts',
+            figure: derivedCurrentSaved,
+          })}
+
+          {derivedField({
+            id: 'derived-monthly-savings',
+            label: 'Monthly Savings',
+            caption: 'Your income minus your expenses',
+            figure: derivedMonthlySavings,
+          })}
+        </dl>
+      </div>
+
       {/* ── The single shared input set ──────────────────────────────────────
           Every figure the planner, the required-nest-egg calculation and the
           growth chart need, collected exactly once. */}
@@ -523,22 +790,6 @@ function RetirementAccumulationPlannerInner() {
           />
           <p className="text-sm text-muted mt-1">The age you plan through</p>
         </div>
-
-        {currencyField({
-          id: 'currentSaved',
-          label: 'Current Amount Saved',
-          help: 'Pre-filled from your investment accounts — edit if needed',
-          value: currentSavedInput,
-          onChange: setCurrentSavedInput,
-        })}
-
-        {currencyField({
-          id: 'monthlySavings',
-          label: 'Monthly Savings',
-          help: 'How much you add to savings each month',
-          value: monthlySavingsInput,
-          onChange: setMonthlySavingsInput,
-        })}
 
         {currencyField({
           id: 'desiredIncome',
@@ -636,7 +887,7 @@ function RetirementAccumulationPlannerInner() {
         <div className="p-4 surface-inset rounded-lg text-body" role="status">
           {parsed.reason === 'invalid'
             ? 'Please check your inputs — one of the values is not a valid number.'
-            : 'Enter all six details above to see your retirement outlook.'}
+            : 'Enter all four details above to see your retirement outlook.'}
         </div>
       )}
 
@@ -651,6 +902,7 @@ function RetirementAccumulationPlannerInner() {
             life expectancy looks out of range.
           </p>
           {solved.detail && <p className="text-sm mt-2">{solved.detail}</p>}
+          {resultsCaveat('text-body')}
         </div>
       )}
 
@@ -719,6 +971,7 @@ function RetirementAccumulationPlannerInner() {
               a month without touching the principal.
             </p>
           )}
+          {resultsCaveat('text-green-700 dark:text-green-300')}
         </div>
       )}
 
@@ -741,6 +994,23 @@ function RetirementAccumulationPlannerInner() {
                 <strong>{formatAmount(solved.result.savedPerYearCents)}</strong> per year.
               </p>
             </>
+          ) : noSourceData ? (
+            // Nothing to grow. Before 29.2 these users sat in the calm "fill in
+            // the details" state, because the two now-derived fields were empty
+            // and held the incomplete gate shut. The gate no longer waits on
+            // them, so this case now reaches the solver — and the generic levers
+            // below would tell a brand-new user their retirement is unreachable
+            // and to "save more each month" on a page with no savings control.
+            <>
+              <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
+                We don&rsquo;t have your savings data yet
+              </h3>
+              <p className="text-sm">
+                This plan has nothing to grow yet. Add your investment accounts on the Balance page,
+                and your income and expenses on the Income and Expenses pages — both figures above
+                fill in automatically, and your outlook appears here.
+              </p>
+            </>
           ) : (
             <>
               <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
@@ -752,14 +1022,18 @@ function RetirementAccumulationPlannerInner() {
                 <strong>{formatAmount(solved.result.savedPerYearCents)}</strong> per year — try one
                 of these levers:
               </p>
+              {/* ⚠️ The first two levers name OTHER pages on purpose: since 29.2
+                  the savings figures are derived, so there is no "save more"
+                  control on this screen to act on. */}
               <ul className="list-disc pl-5 mt-3 text-sm space-y-1">
-                <li>Save more each month</li>
+                <li>Raise your income or cut expenses on the Income and Expenses pages</li>
                 <li>Retire on a lower annual income</li>
                 <li>Assume a higher annual return</li>
                 <li>Extend your life-expectancy horizon</li>
               </ul>
             </>
           )}
+          {resultsCaveat('text-amber-800 dark:text-amber-300')}
         </div>
       )}
 
@@ -770,7 +1044,7 @@ function RetirementAccumulationPlannerInner() {
         <h3 className="text-lg font-semibold text-subheading mb-4">
           Your Savings Until Retirement
         </h3>
-        {solved?.status === 'solved' && parsed.ok ? (
+        {solved?.status === 'solved' && parsed.ok && !noSourceData ? (
           <RetirementTimelineChart
             currentSavedCents={parsed.input.currentSavedCents}
             monthlySavingsCents={parsed.input.monthlySavingsCents}
@@ -792,7 +1066,12 @@ function RetirementAccumulationPlannerInner() {
                 ? 'No projection — the numbers above are out of range.'
                 : parsed.ok === false && parsed.reason === 'invalid'
                   ? 'No projection — one of the values above is not a valid number.'
-                  : 'Fill in the details above to see how your savings grow.'}
+                  : noSourceData
+                    ? // Without a balance or a budget the curve is a flat line at
+                      // zero, and the summary beneath it would confidently report
+                      // reaching 0.00 decades from now. Say nothing rather than that.
+                      'No projection yet — add your accounts, income and expenses to see how your savings grow.'
+                    : 'Fill in the details above to see how your savings grow.'}
             </p>
           </div>
         )}
