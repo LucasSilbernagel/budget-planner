@@ -25,9 +25,11 @@ describe('NotFoundPage', () => {
     expect(screen.queryByRole('heading', { name: '404' })).not.toBeInTheDocument()
   })
 
-  it('shows the "SoluBudget" brand wordmark (AC-1)', async () => {
+  it('shows the "Longhand Budget" brand wordmark (AC-1)', async () => {
     renderWithRouter(<NotFoundPage />)
-    expect(await screen.findByText('SoluBudget')).toBeInTheDocument()
+    expect(await screen.findByText('Longhand Budget')).toBeInTheDocument()
+    // Guard: the retired SoluBudget wordmark must not return (story brand-1).
+    expect(screen.queryByText(/solubudget/i)).toBeNull()
   })
 
   it('offers an accessible recovery link to the home/dashboard (AC-3)', async () => {

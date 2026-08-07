@@ -29,9 +29,13 @@ describe('Footer', () => {
     expect(screen.queryByLabelText(/version/i)).not.toBeInTheDocument()
   })
 
-  it('keeps the SoluBudget brand text', async () => {
+  it('keeps the Longhand Budget brand text', async () => {
     renderWithRouter(<Footer />)
-    expect(await screen.findByText(/solubudget/i)).toBeInTheDocument()
+    // Exact text, not /longhand/i — the footer wordmark is the formal form
+    // "Longhand Budget" (brand-1 AC-1: the footer sits in the legal cluster).
+    expect(await screen.findByText('Longhand Budget')).toBeInTheDocument()
+    // Guard: the retired SoluBudget wordmark must not return (story brand-1).
+    expect(screen.queryByText(/solubudget/i)).toBeNull()
   })
 
   it('renders the global in-app contact link (story 9-1)', async () => {

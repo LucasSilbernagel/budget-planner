@@ -162,7 +162,9 @@ describe('HomePage tagline (story 27-4)', () => {
     render(<HomePage />)
     expect(screen.getByText('The budget app that minds its own business.')).toBeInTheDocument()
     // The app name still appears as the header heading.
-    expect(screen.getByRole('heading', { name: 'SoluBudget', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Longhand Budget', level: 1 })).toBeInTheDocument()
+    // Guard: the retired SoluBudget wordmark must not return (story brand-1).
+    expect(screen.queryByText(/solubudget/i)).toBeNull()
     // Guard: the superseded tagline must not return (batch-5 regression lesson).
     expect(screen.queryByText('The budget planner that never sees your money')).toBeNull()
   })
@@ -247,9 +249,39 @@ describe('HomePage privacy positioning (story 27-5)', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
   })
 
-  it('surfaces the "intentional budgeting without the bank sync" framing', () => {
+  it('surfaces the "without bank sync or AI integrations" framing (FR45 as amended by brand-1)', () => {
     render(<HomePage />)
-    expect(screen.getByText('Intentional budgeting without the bank sync.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Intentional budgeting without bank sync or AI integrations.')
+    ).toBeInTheDocument()
+    // Guard: the pre-amendment wording must not return. Note it is NOT a prefix
+    // of the new copy ("the bank sync" vs "bank sync"), so this genuinely bites.
+    expect(screen.queryByText('Intentional budgeting without the bank sync.')).toBeNull()
+  })
+
+  /**
+   * brand-1 AC-6: the no-AI claim lands on the FRAMING line only.
+   *
+   * The positioning block holds two lines; stating "no AI" on both would repeat
+   * the claim inside a two-line block. This pins the split so a later edit
+   * cannot quietly duplicate it onto the three-pillar line.
+   */
+  it('states the no-AI claim once, on the framing line and not the pillars line', () => {
+    render(<HomePage />)
+    const pillars = screen.getByText(
+      /No account needed · Optional sync is EU-hosted · No bank connection\./
+    )
+    expect(pillars).toBeInTheDocument()
+
+    // Scoped to the two lines directly, not a whole-page count (code review): a
+    // page-wide `queryAllByText(/\bAI\b/)` length of 1 would STILL read as 1 if
+    // the claim were MOVED onto the pillars line, so it never pinned the split
+    // its name promises. `artificial intelligence` is included because that is
+    // the phrasing a copy edit would most plausibly introduce, and `\bAI\b`
+    // alone is blind to it.
+    const framing = screen.getByText('Intentional budgeting without bank sync or AI integrations.')
+    expect(framing).toHaveTextContent(/\bAI\b/)
+    expect(pillars).not.toHaveTextContent(/\bAI\b|artificial intelligence/i)
   })
 
   it('states the three privacy pillars with EU-hosting scoped to the optional sync (no over-claiming)', () => {

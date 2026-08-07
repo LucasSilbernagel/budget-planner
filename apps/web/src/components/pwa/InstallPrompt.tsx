@@ -84,7 +84,7 @@ function rememberDismissal(): void {
 
 /**
  * Unobtrusive, dismissible affordance telling installable-browser users they can
- * install SoluBudget (story 17-1, FR29). Builds on the manifest + service
+ * install Longhand (story 17-1, FR29). Builds on the manifest + service
  * worker from story 7-1 — this adds only the affordance.
  *
  * Client-only and SSR-safe (mirrors {@link import('./RegisterSW').RegisterSW}):
@@ -181,12 +181,16 @@ export function InstallPrompt() {
       // reserve and the nav's own inset (a bare 64px `bottom-16` overlapped the bar).
       // If `NAV_ITEMS` count changes the nav's row count, revisit this together with
       // those (same coupling `GlobalNav.tsx` documents). `sm:` is a top bar → `sm:bottom-4`.
-      aria-label="Install SoluBudget"
+      // Short form "Longhand", not "Longhand Budget" (story brand-1, AC-1):
+      // this prompt is about the app icon, and the icon's label is the PWA
+      // `short_name` — which is "Longhand". The two must agree or the user is
+      // told to install one name and gets another on their home screen.
+      aria-label="Install Longhand"
       className="fixed bottom-[calc(6rem_+_env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">Install SoluBudget</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">Install Longhand</p>
           <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
             Add it to your device for quick, app-like access — it works offline too.
           </p>

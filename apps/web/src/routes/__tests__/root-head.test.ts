@@ -71,4 +71,17 @@ describe('__root head() tagline metadata (story 27-4)', () => {
     expect(description?.content?.toLowerCase()).toContain(TAGLINE)
     expect(description?.content?.toLowerCase()).not.toContain(OLD_TAGLINE)
   })
+
+  /**
+   * Brand pin (story brand-1, AC-1/AC-2). The naming architecture specifies the
+   * meta title verbatim as "Longhand Budget — <tagline>", i.e. the FORMAL form,
+   * not the short "Longhand". Before brand-1 the title had a tagline guard but
+   * no brand guard at all, so a rename could silently half-land here.
+   */
+  it('the document title carries the formal "Longhand Budget" brand, not the retired one', () => {
+    const meta = headMeta()
+    const titleEntry = meta.find((m) => 'title' in m) as { title?: string } | undefined
+    expect(titleEntry?.title).toContain('Longhand Budget')
+    expect(titleEntry?.title).not.toContain('SoluBudget')
+  })
 })

@@ -53,16 +53,37 @@ describe('LEGAL_PAGES', () => {
     }
   })
 
-  it('refers to the product as "SoluBudget", never the old "Budget Planner" brand (story 27-3)', () => {
+  it('refers to the product as "Longhand Budget", never the retired brands (stories 27-3, brand-1)', () => {
     // The legal rebrand must be complete and stay complete: no legal body or its
-    // index metadata may reference the retired "Budget Planner" wordmark, while
+    // index metadata may reference a retired wordmark as the CURRENT name, while
     // preserving the surrounding legal grammar (defined terms, parentheticals).
     for (const page of LEGAL_PAGES) {
       expect(page.content).not.toContain('Budget Planner')
       expect(page.description).not.toContain('Budget Planner')
+      // brand-1: no legal page description may still carry the retired brand.
+      expect(page.description).not.toContain('SoluBudget')
     }
-    expect(getLegalPage('terms')?.content).toContain('SoluBudget')
-    expect(getLegalPage('terms')?.description).toContain('SoluBudget')
+    expect(getLegalPage('terms')?.content).toContain('Longhand Budget')
+    expect(getLegalPage('terms')?.description).toContain('Longhand Budget')
+  })
+
+  /**
+   * brand-1 AC-5 — every legal page carries a visible last-updated date.
+   *
+   * AC-5 originally also required a "formerly named SoluBudget" note in each
+   * document, on the rationale that "existing customers can reconcile the
+   * change". That rationale was void: the app has never been deployed (the
+   * launch-gate stories 4-16 / 5-3 / 5-6 are all still ready-for-dev), so there
+   * are no existing customers and SoluBudget was never a public brand. Those
+   * notes were dropped at code review — they would have published a former name
+   * to an audience that never saw it, and they were the ONLY reason AC-2 could
+   * not be satisfied literally. AC-2 now holds with no exception, enforced
+   * repo-wide by `src/__tests__/retired-brand.test.ts`.
+   */
+  it('every legal page carries a visible last-updated date (AC-5)', () => {
+    for (const page of LEGAL_PAGES) {
+      expect(page.content).toMatch(/_Last updated: \d{1,2} \w+ \d{4}_/)
+    }
   })
 })
 

@@ -1,6 +1,8 @@
 ## Simple, transparent pricing
 
-SoluBudget has two tiers. Use the core planner for free, forever — no account
+_Last updated: 7 August 2026_
+
+Longhand Budget has two tiers. Use the core planner for free, forever — no account
 required — or upgrade to Premium for multi-device sync, custom profiles, and
 advanced forecasting. The plans are compared above.
 

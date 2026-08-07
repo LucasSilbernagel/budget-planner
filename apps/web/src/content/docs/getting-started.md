@@ -1,13 +1,13 @@
 ## Getting started
 
-SoluBudget helps you understand your finances by tracking income,
+Longhand Budget helps you understand your finances by tracking income,
 expenses, savings, and investments — and projecting where you are headed.
 
 Everything on the **Free tier** runs entirely in your browser. Your data is
 stored locally on your device and never leaves it, so you can start using the
 app immediately without creating an account. It's intentional budgeting without
-the bank sync: you plan with the figures you enter, and the app never connects
-to your bank.
+bank sync or AI integrations: you plan with the figures you enter, and the app
+never connects to your bank.
 
 ### Add your first income source
 
@@ -21,7 +21,7 @@ to your bank.
 ### Add your expenses
 
 The **Expenses** page works the same way. Add each recurring expense with its
-amount and frequency. SoluBudget converts every entry to a common monthly
+amount and frequency. Longhand converts every entry to a common monthly
 basis before comparing them, so income and expenses with different frequencies
 line up correctly.
 

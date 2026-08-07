@@ -10,7 +10,7 @@ import { Link } from '@tanstack/react-router'
  * component therefore renders only the page's own content and must NOT re-mount
  * the footer or a second document shell.
  *
- * Branding matches the app's per-page idiom: the "SoluBudget" wordmark plus
+ * Branding matches the app's per-page idiom: the "Longhand Budget" wordmark plus
  * the `bg-gray-50` / `p-4 sm:p-8` / `max-w-6xl` shell used by every page header
  * (e.g. `HomePage`). There is no shared layout component to import, so the
  * idiom is reproduced here rather than abstracted.
@@ -36,10 +36,10 @@ export function NotFoundPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
       <div className="mx-auto max-w-6xl">
         <header className="mb-8">
-          {/* Brand wordmark — mirrors every page header's <h1>SoluBudget</h1>
+          {/* Brand wordmark — mirrors every page header's <h1>Longhand Budget</h1>
               styling, but stays a non-heading node so the page keeps a single
               <h1> ("Page not found"). */}
-          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">SoluBudget</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">Longhand Budget</p>
         </header>
 
         <main className="flex flex-col items-center py-16 text-center sm:py-24">

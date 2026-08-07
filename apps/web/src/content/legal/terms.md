@@ -1,15 +1,15 @@
 _This page is informational and does not constitute legal advice._
 
-_Last updated: 3 July 2026_
+_Last updated: 7 August 2026_
 
-These Terms of Service ("Terms") govern your use of SoluBudget (the "Service").
+These Terms of Service ("Terms") govern your use of Longhand Budget (the "Service").
 The Service is operated by **Lucas Silbernagel**, an individual based in Toronto, Ontario, Canada ("we", "us").
 By using the Service you agree to these Terms.
 If you do not agree, please do not use the Service.
 
 ## 1. The Service
 
-SoluBudget is a personal-finance planning tool.
+Longhand Budget is a personal-finance planning tool.
 It provides budgeting, calculation, and forecasting features.
 The Service is offered in a free tier and a paid "Premium" tier as described on our [Pricing page](/pricing).
 
@@ -33,7 +33,7 @@ We may suspend or terminate access that violates these Terms.
 
 ## 5. Not financial advice
 
-SoluBudget is an informational tool only.
+Longhand Budget is an informational tool only.
 The figures, projections, and forecasts it produces are estimates based on the inputs and assumptions you provide, and **do not constitute financial, investment, tax, or legal advice**.
 You should consult a qualified professional before making financial decisions.
 

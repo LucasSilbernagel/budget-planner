@@ -35,10 +35,13 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
-      { title: 'SoluBudget — the budget app that minds its own business' },
+      { title: 'Longhand Budget — the budget app that minds its own business' },
       // Privacy-first tagline (story 27-4, FR44 — amends story 25-4) for
-      // social/search previews. Carries the SoluBudget brand + new tagline; this
-      // default title is inherited by every route without its own head().
+      // social/search previews. The TITLE above carries the Longhand Budget
+      // brand (story brand-1); the description below deliberately carries only
+      // the tagline and no brand token, which is why the brand pin in
+      // root-head.test.ts asserts against the title alone. This default title is
+      // inherited by every route without its own head().
       {
         name: 'description',
         content:

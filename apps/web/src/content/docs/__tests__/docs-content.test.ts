@@ -91,23 +91,48 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).not.toContain('export')
   })
 
-  it('the FAQ frames SoluBudget as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
+  it('the FAQ frames Longhand as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
     const faq = contentFor('faq')
     expect(faq.toLowerCase()).toContain('planning tool')
     expect(faq).toContain('Lunch Money')
   })
 
-  it('refers to the product as "SoluBudget", never the old "Budget Planner" brand (story 27-3)', () => {
+  it('refers to the product as "Longhand", never the retired brands (stories 27-3, brand-1)', () => {
     // The docs rebrand must be complete and stay complete: no doc body or its
-    // index metadata may reference the retired "Budget Planner" wordmark, and the
-    // page that names the product (Features) carries the new brand. "Lunch Money"
-    // (a third-party app) is unaffected — it does not contain the brand token.
+    // index metadata may reference a retired wordmark, and the page that names
+    // the product (Features) carries the new brand. "Lunch Money" (a third-party
+    // app) is unaffected — it does not contain the brand token.
+    //
+    // Unlike the legal set, docs carry NO historical rename note, so here the
+    // retired brand must be gone outright — no sanctioned exception.
     for (const page of DOC_PAGES) {
       expect(page.content).not.toContain('Budget Planner')
       expect(page.description).not.toContain('Budget Planner')
+      expect(page.content).not.toContain('SoluBudget')
+      expect(page.description).not.toContain('SoluBudget')
     }
-    expect(getDocPage('features')?.content).toContain('SoluBudget')
-    expect(getDocPage('features')?.description).toContain('SoluBudget')
+    // Assert the FORMAL form explicitly. `toContain('Longhand')` would be
+    // strictly weaker than the `toContain('SoluBudget')` it replaced, because
+    // the short form is a strict PREFIX of the formal one — so it could not
+    // distinguish the two at exactly the moment brand-1 introduced a form
+    // distinction. Features opens on the formal form (first mention) and uses
+    // the short form thereafter, so both are pinned deliberately.
+    expect(getDocPage('features')?.content).toContain('Longhand Budget is split into')
+    expect(getDocPage('features')?.content).toMatch(/\bLonghand is built for\b/)
+    expect(getDocPage('features')?.description).toContain('Longhand')
+  })
+
+  it('the Features page pledges no AI, scoped to what was actually verified (brand-1 AC-6)', () => {
+    // The verification behind this claim is "no AI/LLM dependency in any package
+    // manifest and no AI/LLM reference in source". That supports "no AI
+    // features"; it does NOT support the broader "no machine-learning features"
+    // the copy briefly carried, which was dropped at code review. Pin both the
+    // pledge and the absence of the over-broad wording, so the claim cannot
+    // silently widen again or rot if an inference feature ever ships.
+    const features = contentFor('features')
+    expect(features).toContain('No ads, no trackers, no AI — ever.')
+    expect(features).toMatch(/no AI features/)
+    expect(features).not.toMatch(/machine[- ]learning/i)
   })
 
   it('the FAQ describes Lunch Money accurately as a Canadian app, not implied-US (story 23-2)', () => {
@@ -204,7 +229,7 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(premium).not.toContain('side by side')
   })
 
-  it('the docs carry the "intentional budgeting without the bank sync" positioning framing (story 27-5, FR45)', () => {
+  it('the docs carry the "without bank sync or AI integrations" framing (FR45 as amended by brand-1)', () => {
     // FR45 unifies the three privacy pillars (no account, optional EU-hosted sync,
     // no bank connection) under this framing. It is woven into the positioning copy
     // (Features, and Getting started). Markdown hard-wraps at ~76 columns, so match
@@ -212,14 +237,20 @@ describe('documentation content accuracy (story 10-4)', () => {
     // (Epic-23 wrap lesson). Asserting the distinguishing framing phrase — not the
     // generic pillar words that already appear across the docs — makes this guard
     // load-bearing (batch-5/23 true-by-construction lesson).
-    const framing = /intentional budgeting\s+without the bank sync/i
+    //
+    // brand-1 amends FR45: the framing now also carries the no-AI stance, and
+    // drops "the" before "bank sync". Every interior space is \s+ so a hard-wrap
+    // anywhere in the phrase cannot produce a false failure.
+    const framing = /intentional\s+budgeting\s+without\s+bank\s+sync\s+or\s+AI\s+integrations/i
     expect(framing.test(contentFor('features'))).toBe(true)
-    // Getting started also carries the framing (AC-2 puts it in both docs). Its
-    // phrase hard-wraps between "without" and "the", so make EVERY interior space
-    // whitespace-tolerant rather than only the first (a single \s+ would miss the
-    // "without\nthe" break).
-    const framingWrapSafe = /intentional budgeting\s+without\s+the\s+bank\s+sync/i
-    expect(framingWrapSafe.test(contentFor('getting-started'))).toBe(true)
+    // Getting started carries the framing too — a THIRD site the brand-1 story
+    // itself did not list (it named only HomePage and features.md). Left stale it
+    // would have shipped two different versions of the same positioning line.
+    expect(framing.test(contentFor('getting-started'))).toBe(true)
+    // The pre-amendment wording must be gone from both.
+    const oldFraming = /without\s+the\s+bank\s+sync/i
+    expect(oldFraming.test(contentFor('features'))).toBe(false)
+    expect(oldFraming.test(contentFor('getting-started'))).toBe(false)
   })
 
   it('every internal doc link targets a real app route', () => {

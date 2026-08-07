@@ -128,7 +128,7 @@ export interface EmailConfig {
 }
 
 /** Display name attached to outbound magic-link emails. */
-export const EMAIL_FROM_NAME = 'SoluBudget'
+export const EMAIL_FROM_NAME = 'Longhand Budget'
 
 /**
  * Resolve the public site origin used to build absolute links in emails
@@ -298,7 +298,7 @@ export const APP_METADATA = {
   GITHUB_REPO: 'lucassilbernagel/budget-planner',
   GITHUB_ISSUES_URL: 'https://github.com/lucassilbernagel/budget-planner/issues',
   // Application name
-  NAME: 'Budget Planner',
+  NAME: 'Longhand Budget',
   // Application description
-  DESCRIPTION: 'Personal finance tracking application',
+  DESCRIPTION: 'Privacy-first budget & retirement planner',
 } as const

@@ -306,18 +306,23 @@ export function HomePage() {
       <div className="max-w-6xl mx-auto">
         <header className="mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-heading">SoluBudget</h1>
+            <h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
             {/* Primary tagline (story 27-4, FR44 — amends story 25-4 / CONTENT-F):
                 the privacy-stance tagline is the single subtitle beneath the
                 wordmark. Supersedes the old "never sees your money" tagline and
                 the 19-4 "bird's-eye" secondary subtitle (both removed). */}
             <p className="text-lg text-body mt-2">The budget app that minds its own business.</p>
-            {/* Privacy positioning (story 27-5, FR45): the three privacy pillars +
-                the "intentional budgeting without the bank sync" framing, shown
-                compactly beneath the tagline. Every claim is true — the Free tier
-                is client-only (no account; data stays in the browser), the
-                OPTIONAL Premium sync is EU-hosted (DanubeData, Germany), and the
-                app has no bank/financial-institution integration. Styled with
+            {/* Privacy positioning (story 27-5, FR45 as amended by brand-1): the
+                three privacy pillars + the "intentional budgeting without bank
+                sync or AI integrations" framing, shown compactly beneath the
+                tagline. Every claim is true — the Free tier is client-only (no
+                account; data stays in the browser), the OPTIONAL Premium sync is
+                EU-hosted (DanubeData, Germany), the app has no bank/financial-
+                institution integration, and there is no AI/LLM dependency in any
+                package manifest or source tree (re-verified at brand-1 merge).
+                The no-AI claim lives on the FRAMING line only, never on the
+                pillars line — stating it twice inside this two-line block reads
+                as padding (brand-1 AC-6, pinned in HomePage.test.tsx). Styled with
                 theme-aware semantic tokens (surface-inset / text-body / text-muted)
                 so it stays legible in dark mode, and it wraps rather than
                 overflowing at 320px. */}
@@ -325,7 +330,9 @@ export function HomePage() {
               <p className="text-body">
                 No account needed · Optional sync is EU-hosted · No bank connection.
               </p>
-              <p className="text-muted mt-1">Intentional budgeting without the bank sync.</p>
+              <p className="text-muted mt-1">
+                Intentional budgeting without bank sync or AI integrations.
+              </p>
             </div>
           </div>
         </header>

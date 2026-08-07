@@ -10,7 +10,7 @@ import { PRICING_PAGE } from '../content/legal'
  * authoritative billing/legal prose it shows still comes from `PRICING_PAGE`.
  */
 export const Route = createFileRoute('/pricing')({
-  head: () => ({ meta: [{ title: `${PRICING_PAGE.title} · SoluBudget` }] }),
+  head: () => ({ meta: [{ title: `${PRICING_PAGE.title} · Longhand Budget` }] }),
   component: PricingPage,
 })
 

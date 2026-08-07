@@ -74,8 +74,11 @@ export function Footer() {
           comfortable vertical rhythm. At >=640px `sm:flex-row sm:flex-wrap
           sm:gap-x-3 sm:gap-y-1` restores the single wrapping row. */}
       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
-        {/* Brand text node (story 21-1 dropped the trailing build version). */}
-        <span>SoluBudget</span>
+        {/* Brand text node (story 21-1 dropped the trailing build version).
+            Formal form "Longhand Budget" rather than the short "Longhand"
+            (story brand-1, AC-1): this node sits in the footer's legal cluster
+            beside the copyright and the six legal links. */}
+        <span>Longhand Budget</span>
         {/* Legal/nav links grouped as a comfortably-spaced cluster on the 320px
             stacked layout (story 18-2). `sm:contents` dissolves this wrapper at
             >=640px (display: contents) so the six links rejoin the outer wrapping

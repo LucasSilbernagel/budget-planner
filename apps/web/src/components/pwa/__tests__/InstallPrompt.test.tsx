@@ -11,6 +11,8 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// @ts-expect-error — pwa.config.mjs is plain ESM at the app root with no types.
+import { pwaManifest } from '../../../../pwa.config.mjs'
 import { InstallPrompt } from '../InstallPrompt'
 
 const DISMISSAL_STORAGE_KEY = 'bp-pwa-install-dismissed'
@@ -67,8 +69,26 @@ describe('InstallPrompt', () => {
     fireInstallEvent(event)
 
     expect(preventDefault).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('region', { name: /install solubudget/i })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /install longhand/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument()
+  })
+
+  /**
+   * Cross-surface coupling (story brand-1, AC-1/AC-3).
+   *
+   * `short_name` is what the OS prints under the home-screen icon. This prompt
+   * tells the user what they are about to install, so the two must name the same
+   * thing — otherwise the user is told to install one product and receives
+   * another. Derived from the manifest rather than hardcoded, so changing
+   * `short_name` alone fails here instead of silently diverging.
+   */
+  it('names the app exactly as the PWA manifest short_name does (brand-1)', () => {
+    render(<InstallPrompt />)
+    fireInstallEvent(createInstallEvent().event)
+
+    const { short_name: shortName } = pwaManifest as { short_name: string }
+    expect(screen.getByRole('region', { name: `Install ${shortName}` })).toBeInTheDocument()
+    expect(screen.getByText(`Install ${shortName}`)).toBeInTheDocument()
   })
 
   it('does not show when the app is already running standalone', () => {

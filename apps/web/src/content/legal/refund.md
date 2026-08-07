@@ -1,6 +1,6 @@
 _This page is informational and does not constitute legal advice, and is read together with Paddle's buyer terms._
 
-_Last updated: 3 July 2026_
+_Last updated: 7 August 2026_
 
 ## Cancelling your subscription
 

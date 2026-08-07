@@ -184,4 +184,57 @@ test.describe('no horizontal overflow at 320px', () => {
     await expect(page.getByRole('combobox', { name: /currency/i })).toBeVisible()
     await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/settings (symbol mode)')
   })
+
+  /**
+   * brand-1 AC-6 — the positioning framing line WRAPS rather than overflowing.
+   *
+   * The FR45 amendment grew this line from 43 to 56 characters, the largest
+   * single copy growth in the rename. AC-6 requires proof "with a test, not by
+   * eye", and it cannot be a jsdom test: jsdom computes no layout, so every
+   * width there is 0 and a wrap assertion passes VACUOUSLY (the 29.1 lesson —
+   * a guard that cannot fail is not a guard). Only a real browser can measure it.
+   *
+   * Two assertions, because they fail for different reasons:
+   *   - no overflow  → the line does not push the page wider than the viewport
+   *   - >1 line box  → it actually wrapped, rather than being clipped or
+   *                    truncated into looking fine
+   */
+  test('the positioning framing line wraps, not overflows, at 320px (brand-1 AC-6)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+    const response = await page.goto('/')
+    expect(response?.ok(), 'expected / to load').toBeTruthy()
+    await page.waitForLoadState('networkidle')
+
+    const framing = page.getByText('Intentional budgeting without bank sync or AI integrations.')
+    await expect(framing).toBeVisible()
+
+    // Line boxes are counted with a Range over the TEXT, not el.getClientRects():
+    // on a block-level <p> the latter always returns exactly one rect (the border
+    // box), so it can never detect wrapping. This is a real trap — the first
+    // version of this test used it and reported "1 line box" for copy that does
+    // in fact wrap. A Range returns one rect per rendered line.
+    const box = await framing.evaluate((el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      return {
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        lineBoxes: range.getClientRects().length,
+      }
+    })
+
+    expect(
+      box.scrollWidth,
+      `framing line overflows: scrollWidth ${box.scrollWidth} > clientWidth ${box.clientWidth}`
+    ).toBeLessThanOrEqual(box.clientWidth)
+    expect(
+      box.lineBoxes,
+      `framing line did not wrap at 320px (rendered on ${box.lineBoxes} line box)`
+    ).toBeGreaterThan(1)
+
+    // And the block as a whole still does not widen the page.
+    await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/ (positioning block)')
+  })
 })

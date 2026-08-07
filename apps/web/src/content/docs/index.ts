@@ -36,7 +36,7 @@ export const DOC_PAGES: readonly DocPage[] = [
   {
     slug: 'features',
     title: 'Features',
-    description: 'Everything SoluBudget can do, free and premium.',
+    description: 'Everything Longhand can do, free and premium.',
     content: features,
   },
   {

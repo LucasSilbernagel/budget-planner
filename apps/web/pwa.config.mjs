@@ -16,9 +16,13 @@
 
 /** @type {import('vite-plugin-pwa').ManifestOptions} */
 export const pwaManifest = {
-  name: 'SoluBudget',
-  short_name: 'SoluBudget',
-  description: 'SoluBudget — privacy-first budget & retirement planner.',
+  // Formal brand for `name` (the install dialog / store-style listing), short
+  // form for `short_name` (the label the OS prints under the home-screen icon).
+  // `short_name` is coupled to InstallPrompt's "Install <short_name>" copy —
+  // see the cross-surface pin in InstallPrompt.test.tsx (story brand-1, AC-3).
+  name: 'Longhand Budget',
+  short_name: 'Longhand',
+  description: 'Longhand Budget — privacy-first budget & retirement planner.',
   start_url: '/',
   scope: '/',
   display: 'standalone',

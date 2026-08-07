@@ -42,9 +42,25 @@ describe('sendMagicLinkEmail', () => {
     // Secret travels in the provider's header, not the URL or body.
     expect(headers.get('api-key')).toBe('test-email-api-key')
     expect(body.to).toEqual([{ email: 'user@example.com' }])
-    expect(body.sender).toEqual({ name: 'SoluBudget', email: 'no-reply@budgetplanner.test' })
+    expect(body.sender).toEqual({ name: 'Longhand Budget', email: 'no-reply@budgetplanner.test' })
     // The actual link must be present so the user can complete login.
     expect(JSON.stringify(body)).toContain(link)
+
+    // brand-1 AC-4: a recipient mid-cutover must not be shown a name they do
+    // not recognise, so the FORMAL "Longhand Budget" has to appear in the
+    // subject and on first mention in both bodies. Before brand-1 only the
+    // sender name was pinned, so the subject and bodies could have drifted or
+    // half-renamed with the suite still green.
+    expect(body.subject).toContain('Longhand Budget')
+    expect(body.htmlContent).toContain('<strong>Longhand Budget</strong>')
+    expect(body.textContent).toMatch(/^Sign in to Longhand Budget/)
+    // The CTA anchor specifically (code review): for many recipients the button
+    // is the ONLY string they read, so it must carry the formal form and match
+    // the subject line. Previously unpinned, which is how it drifted to the
+    // short form unnoticed. Asserts the anchor text, not just "somewhere".
+    expect(body.htmlContent).toMatch(/<a href="[^"]+">Sign in to Longhand Budget<\/a>/)
+    // The retired brand must not survive anywhere in the payload.
+    expect(JSON.stringify(body)).not.toContain('SoluBudget')
   })
 
   it('throws when the provider returns a non-2xx response (no silent failure)', async () => {

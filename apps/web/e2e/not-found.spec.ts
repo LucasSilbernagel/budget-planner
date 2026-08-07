@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
  * Not-found (404) page E2E (Story 6.4 / UX-DR12).
  *
  * Proves that an unmatched URL renders the branded, recoverable 404 — the app's
- * shell (SoluBudget wordmark + global Footer) rather than an unstyled
+ * shell (Longhand Budget wordmark + global Footer) rather than an unstyled
  * default (AC-1) — and that the "Go home" link navigates back to the dashboard
  * (AC-3). The 404 markup is server-rendered, so these assertions hold before
  * hydration; the "Go home" click needs hydration, so it is retried via `toPass`.
@@ -27,7 +27,7 @@ test.describe('Not-found page (story 6-4)', () => {
     // other chrome ever contains "404").
     await expect(page.getByText('404', { exact: true })).toBeVisible()
     // Shared branding (AC-1): the app wordmark is present…
-    await expect(page.getByText('SoluBudget').first()).toBeVisible()
+    await expect(page.getByText('Longhand Budget').first()).toBeVisible()
     // …and the global footer still wraps the page (proves it renders inside the
     // root layout, not a bare fallback).
     await expect(page.getByRole('contentinfo')).toBeVisible()

@@ -9,7 +9,7 @@ import { REFUND_PAGE } from '../content/legal'
  * auth, no premium gate, no DB.
  */
 export const Route = createFileRoute('/refund')({
-  head: () => ({ meta: [{ title: `${REFUND_PAGE.title} · SoluBudget` }] }),
+  head: () => ({ meta: [{ title: `${REFUND_PAGE.title} · Longhand Budget` }] }),
   component: RefundPage,
 })
 

@@ -1,16 +1,17 @@
 ## Features
 
-SoluBudget is split into a Free tier that runs entirely on your device and
-a Premium tier that adds multi-device syncing and a few extras.
+Longhand Budget is split into a Free tier that runs entirely on your
+device and a Premium tier that adds multi-device syncing and a few extras.
 
-SoluBudget is built for **intentional budgeting without the bank sync**: you
-plan with the numbers you enter yourself. The core planner needs no account,
-and the app never connects to your bank or any financial institution. If you
-choose to create an account for syncing, that data is hosted in the EU (see
-below).
+Longhand is built for **intentional budgeting without bank sync or AI
+integrations**: you plan with the numbers you enter yourself. The core planner
+needs no account, and the app never connects to your bank or any financial
+institution. If you choose to create an account for syncing, that data is
+hosted in the EU (see below).
 
-**No ads, no trackers — ever.** SoluBudget shows no advertising and embeds
-no third-party trackers, for every visitor on both tiers.
+**No ads, no trackers, no AI — ever.** Longhand shows no advertising, embeds
+no third-party trackers, and has no AI features: nothing you enter is sent to a
+model, because there is no model. This holds for every visitor on both tiers.
 
 ### Free tier
 
@@ -44,7 +45,7 @@ no third-party trackers, for every visitor on both tiers.
 
 ### Privacy and data location
 
-SoluBudget is built around data sovereignty. When you upgrade to Premium,
+Longhand is built around data sovereignty. When you upgrade to Premium,
 your synced data is stored on servers located in the European Union. There is
 no US data residency, which keeps your information outside the scope of the US
 CLOUD Act.

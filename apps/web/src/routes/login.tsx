@@ -42,7 +42,7 @@ function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo / Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">SoluBudget</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Longhand Budget</h1>
           <p className="text-gray-600 mt-2">Track your finances with privacy and control</p>
         </div>
 
@@ -76,8 +76,8 @@ function LoginPage() {
           <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <h3 className="font-medium text-gray-900 mb-1">No account needed</h3>
             <p className="text-sm text-gray-600">
-              You can also use SoluBudget without an account. Your data will be stored locally on
-              this device only.
+              You can also use Longhand without an account. Your data will be stored locally on this
+              device only.
             </p>
             <a
               href="/"

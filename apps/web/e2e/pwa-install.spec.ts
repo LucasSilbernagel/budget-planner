@@ -17,7 +17,10 @@ declare global {
   }
 }
 
-const REGION = { name: /install solubudget/i }
+// Exact, not /install longhand/i: the short form is a strict PREFIX of the
+// formal one, so a substring regex passes against "Install Longhand Budget"
+// — i.e. against the very short_name drift this pin exists to catch.
+const REGION = { name: 'Install Longhand', exact: true }
 
 /** Dispatch a fake `beforeinstallprompt` with spyable `prompt()` / `userChoice`. */
 async function fireInstallPrompt(page: Page, outcome: 'accepted' | 'dismissed' = 'accepted') {

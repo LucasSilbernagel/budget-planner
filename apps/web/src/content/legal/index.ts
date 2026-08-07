@@ -43,7 +43,7 @@ export const PRICING_PAGE: LegalPage = {
 export const TERMS_PAGE: LegalPage = {
   slug: 'terms',
   title: 'Terms of Service',
-  description: 'The terms that govern your use of SoluBudget.',
+  description: 'The terms that govern your use of Longhand Budget.',
   content: terms,
 }
 
