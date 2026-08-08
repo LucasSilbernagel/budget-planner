@@ -128,6 +128,110 @@ describe('HomePage premium discovery', () => {
     expect(screen.getAllByText('Premium')).toHaveLength(2)
   })
 
+  it('30-1: all three premium benefit boxes share one chassis (AC-1/AC-3)', () => {
+    // FR51: the section must read as ONE set. Every benefit box — the listed sync
+    // benefit and the two gated tiles — carries an identical base class string.
+    // Asserted by class-TOKEN membership (never substring), so `sm:p-6` can never
+    // be mistaken for `p-6` (batch-4 lesson, mirrored from the 19-4 test below).
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    render(<HomePage />)
+
+    const sync = screen.getByTestId('premium-benefit-sync')
+    // Two locked tiles render for a free user, so getBy* would throw here.
+    const tiles = screen.getAllByTestId('premium-gate-locked')
+    expect(tiles).toHaveLength(2)
+
+    const CHASSIS = [
+      'flex',
+      'w-full',
+      'items-center',
+      'justify-between',
+      'gap-3',
+      'rounded-md',
+      'border',
+      'border-default',
+      'px-4',
+      'py-3',
+    ]
+
+    for (const box of [sync, ...tiles]) {
+      const tokens = box.className.split(/\s+/)
+      for (const token of CHASSIS) {
+        expect(tokens, `${box.dataset.testid ?? 'tile'} is missing "${token}"`).toContain(token)
+      }
+      // AC-3: no hand-rolled colour + dark: pair survives on any box. Compared
+      // as EXACT tokens — `t.includes('blue-50')` would also match the legitimate
+      // `focus-visible:ring-blue-500`, which is the very substring trap this
+      // file's other class assertions exist to avoid.
+      expect(tokens.filter((t) => t.startsWith('dark:'))).toEqual([])
+      const RETIRED = ['bg-blue-50', 'border-blue-200', 'hover:bg-blue-100']
+      expect(tokens.filter((t) => RETIRED.includes(t))).toEqual([])
+    }
+
+    // AC-4: only the two route-backed tiles carry the interactive extras.
+    for (const tile of tiles) {
+      const tokens = tile.className.split(/\s+/)
+      expect(tokens).toContain('surface-interactive')
+      expect(tokens).toContain('focus-visible:ring-2')
+      expect(tokens).toContain('focus-visible:ring-blue-500')
+      // Both directions of the collision rule. Asserting only the sync side
+      // leaves the likelier mistake — editing PREMIUM_BOX_INTERACTIVE — green.
+      expect(tokens).not.toContain('surface-inset')
+    }
+    const syncTokens = sync.className.split(/\s+/)
+    expect(syncTokens).toContain('surface-inset')
+    // Never both background tokens on one element — they collide by source order.
+    expect(syncTokens).not.toContain('surface-interactive')
+    expect(syncTokens).not.toContain('transition-colors')
+  })
+
+  it('30-1: the unlocked (paid) tiles carry the chassis and the accent (AC-1/AC-4)', () => {
+    // The paid path renders a different element (`<a>`, not the gate's button),
+    // so nothing in the free-tier test above touches it. Without this, dropping
+    // PREMIUM_BOX_INTERACTIVE or `text-accent` from both links leaves the whole
+    // suite green — verified by mutation during review.
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<HomePage />)
+
+    const links = [
+      screen.getByRole('link', { name: /advanced forecasting/i }),
+      screen.getByRole('link', { name: /custom profiles/i }),
+    ]
+
+    for (const link of links) {
+      const tokens = link.className.split(/\s+/)
+      for (const token of ['flex', 'w-full', 'rounded-md', 'border', 'border-default', 'px-4']) {
+        expect(tokens).toContain(token)
+      }
+      expect(tokens).toContain('surface-interactive')
+      expect(tokens).toContain('focus-visible:ring-blue-500')
+      expect(tokens.filter((t) => t.startsWith('dark:'))).toEqual([])
+
+      // "Open →" is the paid tier's clickability signal — it must stay accented.
+      const open = within(link).getByText('Open →')
+      expect(open.className.split(/\s+/)).toContain('text-accent')
+    }
+  })
+
+  it('30-1: locked tiles carry a persistent chevron; the sync benefit does not (AC-4)', () => {
+    // Hover does not exist on touch and the locked state has no "Open →", so
+    // the chevron is the only cue a free visitor on a phone gets that these two
+    // boxes do something and the sync box does not.
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    render(<HomePage />)
+
+    const tiles = screen.getAllByTestId('premium-gate-locked')
+    expect(tiles).toHaveLength(2)
+    for (const tile of tiles) {
+      const chevron = within(tile).getByText('›')
+      expect(chevron.className.split(/\s+/)).toContain('text-accent')
+      // Decorative: the button already announces "<feature> — premium, locked".
+      expect(chevron).toHaveAttribute('aria-hidden', 'true')
+    }
+
+    expect(within(screen.getByTestId('premium-benefit-sync')).queryByText('›')).toBeNull()
+  })
+
   it('20-2: explains Custom Profiles with a concrete example (CONTENT-H)', () => {
     // The Custom Profiles subtitle (shared by locked + unlocked states) must name
     // a concrete use case so a user grasps what a profile is for, kept consistent

@@ -78,6 +78,36 @@
   .border-default {
     @apply border-gray-200 dark:border-gray-700;
   }
+
+  /* --- Interactive surface + accent (story 30-1, FR51) ---
+     Declared AFTER `.surface-inset` deliberately. Both set `background-color`
+     and both live in @layer components, where Tailwind does NOT sort by
+     specificity — the winner is whichever is declared later in THIS file, not
+     whichever appears later in a className. Never put both on one element.
+
+     The hover is baked in rather than written as `hover:surface-inset` at the
+     call site: that variant compiles cleanly but resolves to the SAME values
+     `.surface-inset` already sets, so it is a silent no-op that still passes
+     lint, type-check and class-token assertions.
+
+     The hover step is deliberately a full shade (50→200, not 50→100): the
+     review measured the one-shade version at ~1.05:1 light and ~1.03:1 dark,
+     a 4/255 nudge that is imperceptible in practice. Since the blue fill is
+     gone, hover is the primary "this is clickable" signal on pointer devices,
+     so it has to be visible. */
+  .surface-interactive {
+    @apply bg-gray-50 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-600/60;
+  }
+
+  /* Accent for interactive text and affordance glyphs (the "Open →" link and
+     the locked tiles' chevron). Load-bearing, not decorative: hover does not
+     exist on touch and the locked state has no "Open →", so without a
+     persistent accented cue a free visitor on a phone cannot tell the two
+     tappable tiles from the listed sync benefit. blue-300 on dark per the
+     palette rule above — never a 500-weight on a dark card. */
+  .text-accent {
+    @apply text-blue-700 dark:text-blue-300;
+  }
 }
 
 /* Custom utility styles */

@@ -591,57 +591,65 @@ export function HomePage() {
           <section className="surface rounded-lg shadow-md p-4 sm:p-6">
             <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
 
-            {/* Multi-device sync — an account-wide Premium benefit, NOT an
-                openable page: there is no /sync route, so it is LISTED as static
-                copy rather than wrapped in a PremiumFeatureGate like the two
-                route-backed features below. No lock badge, link, or "Open →" —
-                it must not imply a page to open (story 20-2, CONTENT-G). The
-                neutral surface-inset treatment (no blue tile, no hover) reads as
-                a stated benefit, visually distinct from the clickable feature
-                tiles. Placed first so the section leads with the full canonical
-                benefit set; the two gated tiles keep their existing render order
-                (Advanced Forecasting then Custom Profiles) below it, and `mb-3`
-                spaces sync from them without touching their classes. */}
-            <div className="mb-3 flex w-full items-center gap-3 rounded-md border border-default surface-inset px-4 py-3">
-              <MultiDeviceSyncLabel />
+            {/* One chassis, three benefits (story 30-1, FR51). Every box below
+                shares PREMIUM_BOX_BASE so the section reads as a single set;
+                only the two route-backed tiles add the interactive extras.
+
+                Multi-device sync is still an account-wide benefit and NOT an
+                openable page — there is no /sync route — so it stays LISTED as
+                static copy: never wrapped in a PremiumFeatureGate, never given a
+                lock badge, link, or "Open →" (story 20-2, CONTENT-G, still
+                binding). 30-1 changes only how it is PAINTED, not what it is.
+                It leads the section so the canonical benefit set reads first.
+
+                Each gate gets its own wrapper <div> inside the space-y-3 stack:
+                in the locked state PremiumFeatureGate returns a fragment of the
+                <button> PLUS a <PremiumPrompt asDialog>, and Modal renders in
+                normal flow (no portal), so an unwrapped overlay would become a
+                spaced sibling and pick up a 12px margin — leaving an undimmed
+                strip across the top of the open dialog. */}
+            <div className="space-y-3">
+              <div
+                className={`${PREMIUM_BOX_BASE} surface-inset`}
+                data-testid="premium-benefit-sync"
+              >
+                <MultiDeviceSyncLabel />
+              </div>
+
+              <div>
+                <PremiumFeatureGate
+                  featureName="Advanced Forecasting"
+                  className={PREMIUM_BOX_INTERACTIVE}
+                  locked={<LockedTileContent label={<PremiumFeatureLabel />} />}
+                >
+                  <a href="/forecasting" className={PREMIUM_BOX_INTERACTIVE}>
+                    <PremiumFeatureLabel />
+                    <span className="text-sm font-medium text-accent whitespace-nowrap">
+                      Open →
+                    </span>
+                  </a>
+                </PremiumFeatureGate>
+              </div>
+
+              {/* Custom Profiles — surfaced-but-locked next to Advanced Forecasting
+                  (story 13-3, AC-1/AC-4). Resolves the /profiles nav-orphan;
+                  enforcement stays server-side (the profile server functions' tier
+                  guard) + the /profiles route gate. */}
+              <div>
+                <PremiumFeatureGate
+                  featureName="Custom Profiles"
+                  className={PREMIUM_BOX_INTERACTIVE}
+                  locked={<LockedTileContent label={<CustomProfilesFeatureLabel />} />}
+                >
+                  <a href="/profiles" className={PREMIUM_BOX_INTERACTIVE}>
+                    <CustomProfilesFeatureLabel />
+                    <span className="text-sm font-medium text-accent whitespace-nowrap">
+                      Open →
+                    </span>
+                  </a>
+                </PremiumFeatureGate>
+              </div>
             </div>
-
-            <PremiumFeatureGate
-              featureName="Advanced Forecasting"
-              className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
-              locked={<PremiumFeatureLabel />}
-            >
-              <a
-                href="/forecasting"
-                className="flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
-              >
-                <PremiumFeatureLabel />
-                <span className="text-sm font-medium text-blue-700 dark:text-blue-300 whitespace-nowrap">
-                  Open →
-                </span>
-              </a>
-            </PremiumFeatureGate>
-
-            {/* Custom Profiles — surfaced-but-locked next to Advanced Forecasting
-                (story 13-3, AC-1/AC-4), consistent with how the other Premium
-                feature is presented. Resolves the /profiles nav-orphan; enforcement
-                stays server-side (the profile server functions' tier guard) + the
-                /profiles route gate. */}
-            <PremiumFeatureGate
-              featureName="Custom Profiles"
-              className="mt-3 flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
-              locked={<CustomProfilesFeatureLabel />}
-            >
-              <a
-                href="/profiles"
-                className="mt-3 flex w-full items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:hover:bg-blue-900/40"
-              >
-                <CustomProfilesFeatureLabel />
-                <span className="text-sm font-medium text-blue-700 dark:text-blue-300 whitespace-nowrap">
-                  Open →
-                </span>
-              </a>
-            </PremiumFeatureGate>
           </section>
         </main>
 
@@ -975,6 +983,68 @@ function InfoIcon({ className }: { className: string }): React.ReactElement {
 }
 
 /**
+ * The one box chassis every Premium benefit shares (story 30-1, FR51).
+ *
+ * Colour-free on purpose: exactly ONE background token is added on top of it —
+ * `surface-inset` at the sync call site, and `surface-interactive` baked into
+ * {@link PREMIUM_BOX_INTERACTIVE} for the two route-backed tiles. Both tokens
+ * set `background-color` and both live in @layer components, where the winner
+ * is decided by declaration order in global.css rather than by className order,
+ * so putting both on one element would be a silent, hard-to-debug bug.
+ *
+ * `justify-between` lives here rather than in the interactive variant: the sync
+ * box has a single child, so it is a visual no-op there, and keeping it shared
+ * means all three boxes carry a genuinely identical base string.
+ */
+const PREMIUM_BOX_BASE =
+  'flex w-full items-center justify-between gap-3 rounded-md border border-default px-4 py-3'
+
+/**
+ * The chassis plus the affordances that mark a box as openable (story 30-1).
+ * Applied to BOTH the gate's `className` (which styles the locked <button> and
+ * the loading skeleton) and the unlocked <a> — that duplication is the gate's
+ * contract, not an oversight: `PremiumFeatureGate` renders bare `{children}`
+ * when unlocked and emits no classes of its own.
+ *
+ * `focus-visible:ring-2` (not `focus:ring-2`) matches this page's own convention
+ * for links and buttons, so a mouse click on a large tile does not light a ring.
+ * The `forced-colors:` outline is not redundant with it: Tailwind implements
+ * `ring-*` as a `box-shadow`, which Windows High Contrast discards entirely —
+ * without the outline these two tiles, the only interactive elements in the
+ * section, would have no visible focus indicator at all (WCAG 2.4.7).
+ */
+const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2`
+
+/**
+ * Locked-tile body: the feature label plus a persistent chevron (story 30-1).
+ *
+ * The chevron is the touch affordance. Once 30-1 removed the blue fill, hover
+ * became the only thing separating a tappable tile from the listed sync
+ * benefit — and hover does not exist on touch, while the locked state has no
+ * "Open →". Without this a free visitor on a phone sees three identical boxes,
+ * two of which do something. The lock badge does not fill that role: sync is a
+ * premium benefit too, so a lock reads as "premium", not "tap me".
+ *
+ * Layout: `PremiumFeatureGate` renders `{locked}` and then its own
+ * `<PremiumLockBadge />`, so the chevron uses `order-last` to sit AFTER the
+ * badge, and the label takes `mr-auto` to absorb the free space so the badge
+ * and chevron stay packed together on the right.
+ *
+ * `aria-hidden` because the gate's `<button>` already carries an accessible
+ * name ("<feature> — premium, locked"); the glyph would only add noise.
+ */
+function LockedTileContent({ label }: { label: React.ReactNode }): React.ReactElement {
+  return (
+    <>
+      <span className="mr-auto">{label}</span>
+      <span aria-hidden="true" className="order-last pl-2 text-lg leading-none text-accent">
+        ›
+      </span>
+    </>
+  )
+}
+
+/**
  * Shared label for the Advanced Forecasting premium entry, rendered identically
  * in both the unlocked (link) and locked (gate button) states so the two look
  * the same apart from the lock badge the gate adds.
@@ -997,6 +1067,11 @@ function PremiumFeatureLabel(): React.ReactElement {
  * wrapped in a PremiumFeatureGate and never given a link or lock badge. Copy is
  * kept consistent with the Features/Pricing "securely stored and synced" wording
  * and claims nothing sync does not do.
+ *
+ * Since story 30-1 (FR51) its box shares PREMIUM_BOX_BASE with the two gated
+ * tiles, so the section reads as one set. That is a purely visual change: the
+ * 20-2 rule above is unchanged, and the difference that carries meaning is now
+ * the affordance (hover + "Open →" on the openable tiles only), not the colour.
  */
 function MultiDeviceSyncLabel(): React.ReactElement {
   return (

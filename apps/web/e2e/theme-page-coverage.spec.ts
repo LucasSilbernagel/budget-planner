@@ -21,6 +21,11 @@ const CANVAS_DARK = 'rgb(17, 24, 39)' // gray-900 — .surface-sunken page canva
 const CARD_DARK = 'rgb(31, 41, 55)' // gray-800 — .surface card
 
 const PAGES = [
+  // Bonus coverage only (story 30-1): this sweep asserts `.surface-sunken` and
+  // `.surface`, which on `/` are the page shell and a section wrapper — NOT the
+  // premium boxes 30-1 restyled. The box-scoped proof lives in
+  // `premium-locked.spec.ts`; do not treat a green run here as covering them.
+  '/',
   '/income',
   '/expenses',
   '/savings',
