@@ -23,7 +23,7 @@ import { PremiumPrompt } from './premium-prompt'
 const CANONICAL_BENEFITS = [
   'Multi-Device Data Sync',
   'Custom User Profiles',
-  'Advanced Forecasting & Scenario Modeling',
+  'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
 ]
 
 describe('PremiumPrompt benefit list (story 20-3)', () => {

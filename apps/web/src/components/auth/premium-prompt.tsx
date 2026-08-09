@@ -45,14 +45,19 @@ export interface PremiumPromptProps {
 // The canonical Premium benefit set — exactly these three, matched across every
 // surface that advertises Premium (HomePage, Features, Pricing) per Epic 20 /
 // Story 25.3. Keep to benefits the app actually delivers (Story 13.1); no
-// overpromises and no "coming soon" padding. Scenario modeling and saved
-// forecasts are folded into "Advanced Forecasting". Dark mode is NOT here — it
-// is a free feature for all users (Story 25.3); ad-freeness is universal, not a
-// perk (Story 25.1).
+// overpromises and no "coming soon" padding. Dark mode is NOT here — it is a
+// free feature for all users (Story 25.3); ad-freeness is universal, not a perk
+// (Story 25.1).
+//
+// Story 30.2 named the forecasting capability explicitly rather than leaving it
+// at "Scenario Modeling": reload shipped in story bug-3, so saved forecasts can
+// now be reopened in the builder. Keep this item terse — it sits beside two
+// ~20-character siblings in a scannable list — and never claim a side-by-side
+// comparison of two saved forecasts, which does not exist.
 const PREMIUM_FEATURES = [
   'Multi-Device Data Sync',
   'Custom User Profiles',
-  'Advanced Forecasting & Scenario Modeling',
+  'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
 ]
 
 const DEFAULT_MESSAGE =

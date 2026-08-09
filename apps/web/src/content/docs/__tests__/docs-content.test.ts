@@ -215,18 +215,96 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(premium).not.toContain('retirement modeling')
   })
 
-  it('the Features page describes Advanced forecasting honestly (story 20-1)', () => {
-    // Story 20-1: the forecasting copy must describe only what ships. Saved
-    // forecasts are a searchable list — they are NOT reloadable back into the
-    // builder, and the Projections chart does not reflect the user's own
-    // scenario — so the copy must not promise "reloadable" forecasts or a
-    // "side by side" comparison view. Pin both the honest phrasing and the
-    // absence of the overpromising terms so future drift breaks a test.
+  it('the Features page describes Advanced forecasting honestly (stories 20-1, 30-2)', () => {
+    // The forecasting copy must describe only what ships. Story 20-1 wrote this
+    // guard when saved forecasts could NOT be reopened and the Projections chart
+    // showed canned sample data, so it forbade "reloadable" outright. Story bug-3
+    // shipped both, which left this negative enforcing a dead premise — it was
+    // forbidding accurate copy. Story 30-2 inverts it: the reload claim is now
+    // PINNED rather than banned, so coverage moves instead of dropping.
+    //
+    // NOTE both slices are lowercased by featureSections(), so every literal
+    // here must be lowercase. The reload pin deliberately anchors on the clause
+    // ALONE, not on the whole bullet: it must be able to fail when only the
+    // reload words are removed, otherwise it merely re-proves the two pins above.
     const { premium } = featureSections()
     expect(premium).toContain('what-if scenarios')
     expect(premium).toContain('searchable list')
-    expect(premium).not.toContain('reloadable')
-    expect(premium).not.toContain('side by side')
+    // Interior spaces are \s+: this clause ends at column 77 of a hard-wrapped
+    // paragraph, so a literal-space toContain would go red on a pure reflow
+    // (30-2 review; matches the \s+ convention the two guards below use).
+    expect(premium).toMatch(/reload\s+any\s+of\s+them\s+back\s+into\s+the\s+builder/)
+
+    // Side-by-side is still a REAL overpromise and this negative stays: nothing
+    // plots two SAVED forecasts together. bug-3 wired reload and the chart, but
+    // built no comparison view, so retiring this alongside the reload negative
+    // would silently reopen the overpromise story 20-1 removed.
+    //
+    // Matches BOTH spellings. The spaced-only literal this replaces was blind to
+    // "side-by-side" — which is the form this repo's own comments use in all
+    // four places they mention it, so the hyphen was the likelier drift (30-2
+    // review). Widening a negative can only ever catch more; story 30-2 AC-5
+    // froze this assertion's INTENT, and this preserves it.
+    expect(premium).not.toMatch(/side[\s-]by[\s-]side/)
+  })
+
+  it('scopes the EU-storage claim to SAVED forecasts, and states it once (story 30-2)', () => {
+    // FR52 wants Advanced forecasting understood as EU-stored. The claim is true
+    // only of SAVED forecasts: the forecast math runs in the browser, so copy
+    // implying the calculation happens on an EU server would be false. Anchor on
+    // the scoping words ("saved forecasts are stored"), not on "european union"
+    // alone — the latter already appears in the sync bullet and would be
+    // true-by-construction here. Interior spaces are \s+ so a re-wrap of the
+    // bullet cannot produce a false failure (Epic-23 lesson).
+    const { premium } = featureSections()
+    expect(premium).toMatch(
+      /saved\s+forecasts\s+are\s+stored\s+on\s+servers\s+in\s+the\s+european\s+union/
+    )
+
+    // Within the Premium BENEFIT BULLETS the EU claim may appear exactly twice —
+    // once for sync, once for saved forecasts — and nowhere else. Scope the count
+    // to the bullets: the `premium` slice runs to end-of-file and so also carries
+    // the "Privacy and data location" section, whose own EU sentence is not a
+    // benefit claim and must not be counted. A third hit inside the bullets means
+    // the claim was pasted onto custom profiles too, which it is not true of.
+    //
+    // ⚠️ Assert the heading EXISTS before slicing on it. When `indexOf` returns
+    // -1, `slice(0, -1)` yields almost the WHOLE section rather than an empty
+    // string, so the `not.toHaveLength(0)` sentinel this replaces could never
+    // fire (30-2 review). Today a renamed heading still fails downstream, but
+    // only because the Privacy prose happens to repeat "European Union" —
+    // reword that one sentence to "the EU" and the guard would silently widen
+    // to the whole document while staying green.
+    const privacyIndex = premium.indexOf('### privacy')
+    expect(privacyIndex).toBeGreaterThan(0)
+    const premiumBullets = premium.slice(0, privacyIndex)
+    expect(premiumBullets.match(/european union/g) ?? []).toHaveLength(2)
+  })
+
+  it('contrasts the free projection charts with Premium forecasting (story 30-2, AC-3)', () => {
+    // FR52 requires Advanced forecasting to read as distinct from the FREE
+    // net-worth and retirement projections. The contrast is written into the
+    // intro prose rather than the Premium bullet on purpose: the Premium section
+    // is guarded against containing "retirement modeling" (story 13-1 AC-4,
+    // above), so naming the free charts inside it would fail that guard.
+    //
+    // Anchor on the distinguishing contrast clause. The generic words
+    // ("forecasting", "projections") appear throughout the page and would be
+    // true-by-construction. Every interior space is \s+ because this paragraph
+    // hard-wraps and a reflow must not read as a copy regression.
+    //
+    // ⚠️ The second pin deliberately anchors on "a separate what-if workspace".
+    // An earlier 30-2 draft read "lets you model alternatives to THOSE NUMBERS",
+    // which implied the builder carries your budget figures over from the free
+    // projections. It does not: scenario-builder.tsx imports only currencyStore
+    // and seeds hardcoded defaults (Salary $5,000/mo, savings $5,000), so the
+    // user retypes everything. "Separate workspace" is the honest framing — do
+    // not reintroduce a continuity claim here (30-2 review).
+    const { free } = featureSections()
+    expect(free).toMatch(
+      /free\s+net-worth\s+and\s+retirement\s+projections\s+chart\s+where\s+your\s+current\s+numbers\s+lead/
+    )
+    expect(free).toMatch(/premium\s+forecasting\s+is\s+a\s+separate\s+what-if\s+workspace/)
   })
 
   it('the docs carry the "without bank sync or AI integrations" framing (FR45 as amended by brand-1)', () => {

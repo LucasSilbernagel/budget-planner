@@ -1048,13 +1048,32 @@ function LockedTileContent({ label }: { label: React.ReactNode }): React.ReactEl
  * Shared label for the Advanced Forecasting premium entry, rendered identically
  * in both the unlocked (link) and locked (gate button) states so the two look
  * the same apart from the lock badge the gate adds.
+ *
+ * The subtitle states only what ships (story 30-2): a what-if scenario you build
+ * yourself, saved to a searchable list, and reloadable back into the builder.
+ * It must not claim a side-by-side comparison of two saved forecasts — no such
+ * view exists.
+ *
+ * ⚠️ The two states derive their accessible name by DIFFERENT routes, and
+ * neither is a backstop for the other:
+ *   - LOCKED: `PremiumFeatureGate` puts `aria-label={`${featureName} — premium,
+ *     locked`}` on the button (`PremiumFeatureGate.tsx:104`). Per accname an
+ *     `aria-label` REPLACES the content, so this subtree contributes nothing.
+ *     `HomePage.test.tsx:59`, `PremiumFeatureGate.test.tsx:94` and
+ *     `e2e/premium-locked.spec.ts:23` ride on the `featureName` prop alone.
+ *   - UNLOCKED: the `<a>` carries no `aria-label`, so its name comes from its
+ *     contents and `featureName` is not involved at all. `HomePage.test.tsx:63`,
+ *     `:70` and `:197` match "Advanced Forecasting" from the title span below.
+ * So: renaming the title breaks the unlocked queries; changing `featureName`
+ * breaks the locked ones. (Story 30-2 §6 described the name as a concatenation
+ * of the two — it is neither state's actual mechanism. Corrected in 30-2 review.)
  */
 function PremiumFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
       <span className="font-medium text-subheading">Advanced Forecasting</span>
       <span className="text-sm text-muted">
-        What-if scenario modeling with saved, searchable forecasts
+        What-if scenario modeling with saved, searchable, reloadable forecasts
       </span>
     </span>
   )

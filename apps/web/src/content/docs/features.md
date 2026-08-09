@@ -1,7 +1,11 @@
 ## Features
 
-Longhand Budget is split into a Free tier that runs entirely on your
-device and a Premium tier that adds multi-device syncing and a few extras.
+Longhand Budget is split into a Free tier that runs entirely on your device
+and a Premium tier that adds multi-device syncing, custom profiles, and
+forecasting. The free net-worth and retirement projections chart where your
+current numbers lead. Premium forecasting is a separate what-if workspace:
+build a scenario from your own figures, save it to a searchable list, and
+reload any of them later.
 
 Longhand is built for **intentional budgeting without bank sync or AI
 integrations**: you plan with the numbers you enter yourself. The core planner
@@ -41,7 +45,8 @@ model, because there is no model. This holds for every visitor on both tiers.
   household, and switch between them without mixing the numbers.
 - **Advanced forecasting** — build detailed what-if scenarios from your income
   and expense growth, one-time events, and current savings, then save each
-  forecast to a searchable list you can review and compare.
+  forecast to a searchable list and reload any of them back into the builder.
+  Saved forecasts are stored on servers in the European Union.
 
 ### Privacy and data location
 

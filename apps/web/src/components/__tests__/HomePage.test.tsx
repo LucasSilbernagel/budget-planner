@@ -73,17 +73,20 @@ describe('HomePage premium discovery', () => {
     expect(screen.queryByRole('button', { name: /premium, locked/i })).not.toBeInTheDocument()
   })
 
-  it('20-1: pins the Advanced Forecasting subtitle to the honest capability copy', () => {
-    // Story 20-1: the tile subtitle (shared by locked + unlocked states) must
-    // describe only what ships — what-if scenario modeling plus saved,
-    // searchable forecasts — with no claim that projections reflect the user's
-    // scenario or that saved forecasts reload into the builder. Pin the exact
-    // string so future overpromising drift breaks this test.
+  it('30-2: pins the Advanced Forecasting subtitle to the honest capability copy', () => {
+    // The tile subtitle (shared by locked + unlocked states) must describe only
+    // what ships. Story 20-1 wrote this pin when saved forecasts could NOT be
+    // reloaded and the Projections chart showed canned sample data, so it
+    // deliberately withheld the reload claim. Story bug-3 shipped both — reload
+    // is wired end-to-end (`routes/forecasting.tsx:381,395`) and the chart takes
+    // the user's own result (`:387`) — so story 30-2 adds "reloadable", which the
+    // in-app copy at `routes/forecasting.tsx:5,:351` had already been stating.
+    // Pin the exact string so future overpromising drift breaks this test.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
     expect(
-      screen.getByText('What-if scenario modeling with saved, searchable forecasts')
+      screen.getByText('What-if scenario modeling with saved, searchable, reloadable forecasts')
     ).toBeInTheDocument()
   })
 

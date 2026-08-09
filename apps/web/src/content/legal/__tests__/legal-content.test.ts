@@ -125,14 +125,27 @@ describe('pricing page content (AC-4)', () => {
     expect(PRICING_PAGE.content).not.toMatch(/Track income, expenses/i)
   })
 
-  it('never overpromises forecasting in the prose — no reloadable/side-by-side claim (story 20-1)', () => {
-    // Story 20-1's forecasting-honesty guarantee: saved forecasts are a
-    // searchable list, not reloadable into the builder, and the Projections tab
-    // does not reflect the user's scenario. The positive phrasing that used to be
-    // pinned here lived in the now-removed Premium bullet (de-duped in 20-4); the
-    // page-wide positive/negative guard is re-homed to pricing-page.test.tsx. This
-    // keeps the negative guarantee on the raw prose too.
+  it('keeps forecasting benefit detail out of the prose (stories 20-1, 20-4, 30-2)', () => {
+    // Both negatives stay, but the reason has changed and is worth stating.
+    // Story 20-1 banned "reloadable" because saved forecasts genuinely could not
+    // be reopened; story bug-3 then shipped reload, so that premise is dead and
+    // the sibling guards in docs-content/pricing-page were inverted to pin the
+    // claim instead (story 30-2). Here the negatives survive on DIFFERENT
+    // grounds: story 20-4 de-duplicated the tier feature lists out of pricing.md
+    // so the prose carries billing and legal matter only. Benefit detail — the
+    // reload claim included — belongs on the Premium card and in features.md,
+    // not here.
+    //
+    // ⚠️ Scope note (30-2 review): this assertion bans only the ADJECTIVE. Since
+    // `reload` ⊂ `reloadable`, prose saying "reload your saved forecasts" passes
+    // here. That broader de-dup rule is enforced elsewhere, by the page-wide
+    // getAllByText(/reload/i) count in pricing-page.test.tsx, which renders this
+    // prose. Story 30-2 AC-5 froze THIS assertion byte-identical, so the comment
+    // is narrowed to what it truly guarantees rather than the assertion widened.
     expect(PRICING_PAGE.content).not.toMatch(/reloadable/i)
-    expect(PRICING_PAGE.content).not.toMatch(/side by side/i)
+
+    // "side by side" is additionally still a real overpromise: no view plots two
+    // saved forecasts together. Hyphenated form included (30-2 review).
+    expect(PRICING_PAGE.content).not.toMatch(/side[\s-]by[\s-]side/i)
   })
 })

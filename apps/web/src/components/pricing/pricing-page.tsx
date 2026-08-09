@@ -18,8 +18,13 @@ import { MarkdownRenderer } from '../docs/markdown-renderer'
  * so this page is the funnel's conversion surface.
  *
  * Styled light, consistent with its sibling commercial/legal pages (Terms,
- * Privacy, Refund) which share the light `LegalPageLayout`; dark mode is a
- * Premium in-app toggle that this page's free-tier audience does not have.
+ * Privacy, Refund) which share the light `LegalPageLayout`. That consistency is
+ * the whole reason — this page has no `dark:` variants yet, which UX-DR35 (epic
+ * 31, story 31.1) tracks as a gap to close across the commercial/legal set
+ * together. An earlier version of this note claimed the page was light because
+ * "dark mode is a Premium in-app toggle that this page's free-tier audience does
+ * not have"; that was false — story 25-3 made dark mode FREE, and this file's own
+ * `FREE_FEATURES` lists it. Do not act on the retired rationale.
  */
 export function PricingPageView(): React.ReactElement {
   return (
@@ -93,10 +98,17 @@ const FREE_FEATURES: readonly string[] = [
   'Private local storage — your data never leaves your device',
 ]
 
+// The canonical Premium benefit set — exactly these three (SCP 2026-07-18).
+// The forecasting line states only what ships (story 30-2): you build a what-if
+// scenario, save it to a searchable list, and reload it back into the builder.
+// It must NOT claim a side-by-side comparison of two saved forecasts — no such
+// view exists. EU storage is deliberately stated on the sync line only and, for
+// saved forecasts, in `features.md`; repeating it on a third bullet here reads
+// as padding (brand-1 review finding).
 const PREMIUM_FEATURES: readonly string[] = [
   'Multi-device sync, securely stored in the EU',
   'Custom profiles (e.g. personal vs. household)',
-  'Advanced forecasting and saved scenarios',
+  'Advanced forecasting — save, search, and reload what-if scenarios',
 ]
 
 interface PlanCardProps {

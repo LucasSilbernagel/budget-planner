@@ -29,7 +29,9 @@ describe('PricingPageView benefit lists', () => {
 
     expect(premium.getByText('Multi-device sync, securely stored in the EU')).toBeInTheDocument()
     expect(premium.getByText('Custom profiles (e.g. personal vs. household)')).toBeInTheDocument()
-    expect(premium.getByText('Advanced forecasting and saved scenarios')).toBeInTheDocument()
+    expect(
+      premium.getByText('Advanced forecasting — save, search, and reload what-if scenarios')
+    ).toBeInTheDocument()
 
     // The ungated (25-3) / removed-ads (25-1) benefits must NOT be Premium perks.
     expect(premium.queryByText(/dark mode/i)).not.toBeInTheDocument()
@@ -58,23 +60,39 @@ describe('PricingPageView pricing (story 25-2)', () => {
   })
 })
 
-describe('PricingPageView forecasting honesty (story 20-1, re-homed in 20-4)', () => {
-  it('never overpromises forecasting anywhere on the page — no reloadable / side-by-side', () => {
+describe('PricingPageView forecasting honesty (story 20-1, re-homed in 20-4, updated in 30-2)', () => {
+  it('states the reload claim exactly once and never overpromises side-by-side', () => {
     render(<PricingPageView />)
 
     // The Premium card states the honest, shipped benefit…
     expect(
-      within(card('Premium')).getByText('Advanced forecasting and saved scenarios')
+      within(card('Premium')).getByText(
+        'Advanced forecasting — save, search, and reload what-if scenarios'
+      )
     ).toBeInTheDocument()
 
-    // …and nothing on the page — the cards OR the pricing.md prose the page also
-    // renders — overpromises the feature. Story 20-4 de-duped the prose: the
-    // positive honest description that legal-content.test.ts used to pin against
-    // the (now-removed) Premium bullet is re-homed to the card assertion above,
-    // and this page-wide negative check covers cards + prose together. (The raw
-    // prose still keeps its own negatives in legal-content.test.ts.)
-    expect(screen.queryByText(/reloadable/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/side by side/i)).not.toBeInTheDocument()
+    // Story 20-1 also asserted the page never says "reloadable", because at the
+    // time saved forecasts genuinely could NOT be reloaded. Story bug-3 shipped
+    // reload, so that negative outlived its premise — it was silently forbidding
+    // accurate copy. It is inverted here rather than deleted (coverage moves, it
+    // does not drop).
+    //
+    // What this count actually buys, stated precisely: it catches the 2 case —
+    // pricing.md re-acquiring the benefit detail story 20-4 de-duped out of it —
+    // page-wide, spanning the cards AND the rendered prose, which is the scope
+    // the retired negative used to provide. It does NOT independently catch the
+    // 0 case: if the card drops "reload", the exact-string getByText above
+    // throws first and this line never executes. (An earlier comment claimed it
+    // was load-bearing "in BOTH directions" — corrected in the 30-2 review.)
+    expect(screen.getAllByText(/reload/i)).toHaveLength(1)
+
+    // Side-by-side remains a REAL overpromise and this negative stays: nothing
+    // plots two SAVED forecasts together. The only comparison that ships is
+    // baseline-vs-scenario within a single forecast (projection-chart.tsx).
+    // Matches the hyphenated spelling too — the spaced-only form this replaces
+    // missed "side-by-side", the spelling used everywhere in this repo's own
+    // comments (30-2 review).
+    expect(screen.queryByText(/side[\s-]by[\s-]side/i)).not.toBeInTheDocument()
   })
 })
 
