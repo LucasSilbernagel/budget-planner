@@ -116,3 +116,68 @@
     text-wrap: balance;
   }
 }
+
+/* --- Print stylesheet (story 30-3, FR53) ---
+   Backs the Premium financial summary report, which is produced entirely by the
+   browser's own print dialog (`window.print()`) — no PDF library, no server, no
+   asset request, so no financial figure leaves the device to produce it.
+
+   These rules are GLOBAL by nature: `@media print` applies on every route. That
+   is deliberate for the chrome rules (app navigation should never reach paper
+   from any page) and deliberately scoped for the rest — the colour overrides
+   below name `#financial-summary-report` so printing any other page behaves
+   exactly as it did before this story. */
+@media print {
+  /* App chrome never reaches paper. `[data-print-hide]` marks the root header
+     wrapper (covering GlobalNav's desktop bar AND its fixed mobile tab bar, plus
+     AuthIndicator), the global Footer, and the report's own Print button, which
+     must not appear in its own output.
+
+     ⚠️ Deliberately an ATTRIBUTE, never the bare `footer` element selector.
+     `<footer>` is not unique to the app chrome — `routes/forecasting.tsx:524`
+     renders its own in-page footer carrying that page's EU data-location
+     disclosure, and a bare selector silently suppressed it whenever that page was
+     printed. Opting elements in is the only way this stays scoped to chrome as
+     the app grows. (Code review 2026-08-09.) */
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* ⚠️ Dark mode must never reach paper. Browsers omit background colours when
+     printing by default but KEEP text colour, so a `.dark` document would print
+     near-white text onto white paper — a page that looks blank. Forcing black on
+     white here is what makes the report legible when printed from either theme;
+     it is not cosmetic, and it is load-bearing in BOTH themes (light `.text-muted`
+     is `gray-500`, far too pale for paper — a review mutation proved the light
+     case fails without this too).
+
+     Scoped to the report's subtree, and NOT applied to `html`/`body`. An earlier
+     revision forced black-on-white document-wide, which silently changed how every
+     other page printed while the comment above claimed the opposite — the rule and
+     its own description disagreed. Applied to the whole subtree because the
+     semantic text tokens (`.text-heading`, `.text-body`, `.text-muted`, …) each set
+     their own dark colour on descendants, which an ancestor rule cannot override. */
+  #financial-summary-report,
+  #financial-summary-report * {
+    background-color: transparent !important;
+    color: #000 !important;
+    border-color: #9ca3af !important;
+  }
+
+  /* Keep related content together across page breaks. A section taller than a
+     page still breaks — browsers degrade gracefully — but a single table ROW is
+     never split, and a heading never sits alone at the foot of a page. */
+  #financial-summary-report section {
+    break-inside: avoid;
+  }
+
+  #financial-summary-report tr {
+    break-inside: avoid;
+  }
+
+  #financial-summary-report h1,
+  #financial-summary-report h2,
+  #financial-summary-report caption {
+    break-after: avoid;
+  }
+}

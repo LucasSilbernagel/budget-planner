@@ -1,6 +1,7 @@
 import { AccountSection } from './account-section'
 import { CurrencyToggle } from './currency-toggle'
 import { LocalDataSection } from './local-data-section'
+import { ReportSection } from './report-section'
 import { ThemeToggle } from './theme-toggle'
 
 /**
@@ -64,6 +65,11 @@ export function SettingsPage() {
           outside the auth-gated AccountSection below), distinct from the
           Premium "Delete account" control: this wipes only this device. */}
       <LocalDataSection />
+
+      {/* Premium financial summary report — story 30-3. Surfaced-but-locked for
+          free visitors (the /report route gates independently), and placed after
+          Local data so the two data-facing controls sit together. */}
+      <ReportSection />
 
       {/* Account controls (sign-out + self-serve deletion) — story 10-5.
           Renders only for authenticated users; free/unauthenticated visitors

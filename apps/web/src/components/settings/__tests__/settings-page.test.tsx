@@ -102,4 +102,29 @@ describe('SettingsPage', () => {
     render(<SettingsPage />)
     expect(screen.getByRole('button', { name: /clear local data/i })).toBeInTheDocument()
   })
+
+  // Story 30-3: the financial summary report is reached from here. Unlike
+  // "Clear local data" it is Premium, so it is surfaced-but-locked for a free
+  // visitor rather than hidden — the gate's own suite covers every tier state;
+  // these two assert only that the section is composed into this page.
+  it('hosts the Premium financial summary section, locked for a free user (30-3)', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
+    render(<SettingsPage />)
+
+    expect(
+      screen.getByRole('heading', { level: 2, name: /^financial summary$/i })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Financial Summary Report — premium, locked' })
+    ).toBeInTheDocument()
+  })
+
+  it('links an active Premium user from Settings to the report (30-3)', () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<SettingsPage />)
+    expect(screen.getByRole('link', { name: /financial summary report/i })).toHaveAttribute(
+      'href',
+      '/report'
+    )
+  })
 })

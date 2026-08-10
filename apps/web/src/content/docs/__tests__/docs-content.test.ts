@@ -80,15 +80,50 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(faq).toContain('/privacy')
   })
 
-  it('the FAQ no longer advertises the phantom import/export feature (story 17-3, AC-1)', () => {
-    // The app has no import/export feature, so the "planned for a future release"
-    // entry was misleading and was removed. Guard both the old phrasing and the
-    // word "export" (which the app never supports) so a reworded reintroduction
-    // ("export your data", "CSV export") still trips this. "import" is NOT guarded
-    // because the copy legitimately says the app does not *import* transactions.
+  it('the FAQ no longer advertises the phantom data import/export feature (story 17-3, AC-1)', () => {
+    // Story 17-3 removed a "planned for a future release" entry promising data
+    // import/export, which did not exist. Its review then added a blanket
+    // `not.toContain('export')` on the rationale that "the app never supports
+    // export".
+    //
+    // ⚠️ That rationale DIED in story 30-3, which ships a Premium print/PDF
+    // financial SUMMARY REPORT. The phantom 17-3 killed is still absent and
+    // still guarded below; what changed is that the bare word "export" is no
+    // longer evidence of it. Note the blanket guard would NOT have caught this
+    // drift on its own: it reads the FAQ only, and 30-3 documents the report in
+    // features.md, so it would have stayed green while its stated reason became
+    // false.
+    //
+    // What remains genuinely false, and is guarded: raw data export, a backup
+    // or downloadable copy of your entries, a machine-readable file, and
+    // transaction import. The summary report is none of those — it cannot be
+    // read back in, and there is deliberately no importer.
+    // ⚠️ These guard the CLAIM, not one phrasing of it. A first attempt keyed on
+    // literal phrases ("export your data", "data export") and a review proved it
+    // porous: "exporting your data", "export to spreadsheet", "download your
+    // entries as a file" and "save a copy of your data" all sailed through — and
+    // so did "download your data", which this story's own notes list as a claim
+    // that would be FALSE. A negative keyed on one spelling is not a guard on the
+    // claim; match the VERB STEM against the OBJECT instead.
     const faq = contentFor('faq').toLowerCase()
     expect(faq).not.toContain('import or export')
-    expect(faq).not.toContain('export')
+
+    const OBJECT = '(?:data|entries|budget|figures|records|copy|file|spreadsheet|csv|json)'
+    const VERB = '(?:export|download|back ?up|backup)'
+    // Verb before object — "export your data", "downloading your entries".
+    expect(faq).not.toMatch(new RegExp(`\\b${VERB}\\w*\\b[^.!?\\n]{0,40}?\\b${OBJECT}\\b`))
+    // Object before verb — "a full data export", "an entries backup". Both
+    // orders are needed: the first pattern alone missed "a full data export".
+    expect(faq).not.toMatch(new RegExp(`\\b${OBJECT}\\b[^.!?\\n]{0,20}?\\b${VERB}\\w*\\b`))
+    expect(faq).not.toMatch(/\bsave a copy of\b/)
+    expect(faq).not.toMatch(/\b(?:csv|spreadsheet|json)\b/)
+
+    // ⚠️ "import" is deliberately NOT guarded, and must stay that way. The FAQ
+    // legitimately states the app "does not import transactions" (`faq.md:55`) —
+    // a TRUE negative claim. An import guard added during this review blocked
+    // that correct sentence, and survived only because the phrase happens to wrap
+    // across a newline; a re-wrap would have turned it red against good copy.
+    // `not.toContain('import or export')` above covers the phantom phrasing.
   })
 
   it('the FAQ frames Longhand as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {

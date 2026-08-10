@@ -47,6 +47,12 @@ model, because there is no model. This holds for every visitor on both tiers.
   and expense growth, one-time events, and current savings, then save each
   forecast to a searchable list and reload any of them back into the builder.
   Saved forecasts are stored on servers in the European Union.
+- **Printable summary report** — produce a clean summary of your budget, your
+  current net worth, and your savings goals, then save it as a PDF or print it
+  through your browser's own print dialog. The summary is assembled in your
+  browser from the figures on your device, so nothing is sent anywhere to
+  produce it. It is a document to read or keep, not a backup: it cannot be
+  loaded back into the app.
 
 ### Privacy and data location
 

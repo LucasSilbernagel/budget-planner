@@ -65,7 +65,15 @@ const ACTIVE_LINK_CLASS =
 
 export function Footer() {
   return (
-    <footer className="mt-auto border-t border-gray-200 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+    // `data-print-hide` (story 30-3): app chrome must not reach paper. Marked on
+    // THIS element rather than matching the bare `footer` tag in the print
+    // stylesheet, because `<footer>` is also used for in-page content elsewhere
+    // (e.g. the forecasting page's data-location disclosure), which a tag
+    // selector would suppress too.
+    <footer
+      data-print-hide
+      className="mt-auto border-t border-gray-200 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400"
+    >
       {/* The dark-mode toggle moved to the consolidated /settings surface
           (story 11-6). It remains a single global instance there, per story 7-3
           DECISION 2. */}

@@ -147,7 +147,17 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
                 tab bar (out of flow) and AuthIndicator renders as a full-width top
                 strip, each carrying its own chrome via `max-sm:`, so the indicator
                 is never crowded into the 320px bottom bar (story 13-2 rationale). */}
-              <div className="sm:border-b sm:border-gray-200 sm:bg-white dark:sm:border-gray-700 dark:sm:bg-gray-800">
+              {/* `data-print-hide` (story 30-3): app chrome must not reach paper
+                  when a page is printed. Marking this one wrapper covers the
+                  whole header row — GlobalNav (desktop top bar AND the fixed
+                  mobile tab bar, which is a DOM descendant even though it is out
+                  of flow) plus AuthIndicator — so the print stylesheet needs a
+                  single inert hook rather than a list of chrome selectors. Inert
+                  outside `@media print`; see `styles/global.css`. */}
+              <div
+                data-print-hide
+                className="sm:border-b sm:border-gray-200 sm:bg-white dark:sm:border-gray-700 dark:sm:bg-gray-800"
+              >
                 <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
                   {/* Persistent primary navigation (story 11-1): rendered once here
                     so every route shares it. Leading (left) on the desktop row; a
