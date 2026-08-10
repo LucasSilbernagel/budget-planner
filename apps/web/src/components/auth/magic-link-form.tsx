@@ -9,6 +9,13 @@
  *
  * Accessibility: a single labeled email input, an aria-busy submit button, a
  * polite live region for the confirmation, and a role="alert" for errors.
+ *
+ * Theming (story 31-1): the `dark:` variants mirror `contact/contact-form.tsx`,
+ * whose docblock says it mirrors THIS form — keeping the two on one idiom rather
+ * than inventing a third. The one deliberate addition is
+ * `dark:placeholder-gray-400` on the email field: this input has a placeholder
+ * and contact-form's mirrored field does not, and it is the app-wide convention
+ * for placeholder-bearing inputs (IncomePage, ExpensesPage, BalancePage, …).
  */
 
 import { useState } from 'react'
@@ -58,7 +65,7 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
       <div
         role="status"
         aria-live="polite"
-        className={`rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 ${className}`}
+        className={`rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300 ${className}`}
       >
         <p>
           Check your email — if an account exists for <strong>{email}</strong>, we&apos;ve sent a
@@ -71,7 +78,10 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
   return (
     <form onSubmit={handleSubmit} className={`space-y-4 ${className}`} noValidate>
       <div className="text-left">
-        <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor="login-email"
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+        >
           Email address
         </label>
         <input
@@ -82,13 +92,13 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
           autoComplete="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
           placeholder="you@example.com"
         />
       </div>
 
       {message && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {message}
         </p>
       )}
@@ -97,7 +107,18 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
         type="submit"
         disabled={status === 'submitting'}
         aria-busy={status === 'submitting'}
-        className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        // The blue-600 fill is deliberately kept in BOTH themes — see the note on
+        // `pricing-page.tsx`'s primary CTA. contact-form's button drops to
+        // blue-500 on dark, which measures 3.68:1 against white (AA needs 4.5:1).
+        //
+        // `dark:focus:ring-offset-gray-800` is load-bearing, not decoration:
+        // Tailwind's `--tw-ring-offset-color` defaults to WHITE and nothing
+        // overrides it globally, so once this button moved onto a `.surface`
+        // (gray-800) card it would otherwise paint a white band between the
+        // button and its blue focus ring. gray-800 matches the CARD this sits on
+        // — `NotFoundPage.tsx:55` and `routes/profiles.tsx:85` use gray-900
+        // because those buttons sit on the page canvas instead.
+        className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {status === 'submitting' ? 'Sending…' : 'Email me a sign-in link'}
       </button>

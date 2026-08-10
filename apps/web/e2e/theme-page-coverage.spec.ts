@@ -32,6 +32,30 @@ const PAGES = [
   '/balance',
   '/net-worth-projection',
   '/retirement',
+
+  // Story 31-1 (UX-DR35): the commercial/legal/docs/sign-in set, which had
+  // drifted light-only. They are coverable here because they were converted to
+  // the `.surface`/`.surface-sunken` tokens the selectors below name literally.
+  //
+  // ⚠️ Be precise about what that buys, because an earlier version of this
+  // comment had it backwards. A fully hand-rolled page added here does NOT pass
+  // silently — `expect(locator.first()).toBeVisible()` on a locator matching
+  // zero elements FAILS after timeout, and a page with a tokenised canvas but
+  // hand-rolled cards fails on the `.surface` assertion. The real blind spot is
+  // per-ELEMENT: only the FIRST match of each selector is asserted, so any
+  // additional hand-rolled panel on an otherwise-covered page is untested here.
+  // In this story that means the sidebar active pill, the plan-card ring and
+  // CTAs, and `/login`'s `.surface-inset` notice — whose dark value is
+  // translucent (`gray-700/40`) and so could never match an exact-rgb equality
+  // anyway. Those need the unit class-token sweeps; this file is necessary but
+  // not sufficient. (Code review 2026-08-10.)
+  '/docs',
+  '/docs/getting-started',
+  '/login',
+  '/pricing',
+  '/terms',
+  '/privacy',
+  '/refund',
 ]
 
 for (const path of PAGES) {

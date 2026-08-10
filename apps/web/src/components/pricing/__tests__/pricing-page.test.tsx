@@ -122,3 +122,202 @@ describe('PricingPageView de-duplication + billing disclaimer (story 20-4)', () 
     expect(screen.getByText(/Prices shown in EUR/i)).toBeInTheDocument()
   })
 })
+
+/**
+ * Theming guards (story 31-1, AC-6/AC-7/AC-8).
+ *
+ * Class-TOKEN membership, never substring. These assert classes only and add no
+ * visible text, because this file's `getAllByText(...)` COUNT assertions above
+ * are brittle by design and a duplicate label would break them.
+ *
+ * The page-wide leak sweep is property-paired rather than a flat blocklist:
+ * `bg-white` is legitimate on the outlined CTA, which has no semantic token
+ * (none exists for buttons) and carries its own `dark:bg-gray-700`. What is a
+ * defect is a light-only value with no dark counterpart for the SAME property,
+ * so that is what is asserted.
+ */
+/**
+ * Retired light-only values, grouped by the CSS property they set. Kept in step
+ * with the flat `RETIRED_LIGHT_ONLY_TOKENS` list the other three subtree sweeps
+ * use — the grouping exists only so the pairing check below knows which `dark:`
+ * variant would actually counter a given token.
+ */
+const RETIRED_BY_PROPERTY = {
+  bg: ['bg-white', 'bg-gray-50', 'bg-gray-100'],
+  text: [
+    'text-gray-900',
+    'text-gray-800',
+    'text-gray-700',
+    'text-gray-600',
+    'text-gray-500',
+    'text-gray-400',
+  ],
+  border: ['border-gray-200', 'border-gray-300'],
+} as const
+
+/**
+ * Variant prefixes that still paint a light value. A code review found the first
+ * version checked only bare tokens, so a light-only `hover:bg-gray-50` with no
+ * `dark:hover:` counterpart passed silently.
+ */
+const VARIANT_PREFIXES = ['', 'hover:', 'focus:', 'active:'] as const
+
+/**
+ * Every light-only value on the subtree that has no `dark:` counterpart for the
+ * SAME property and the SAME variant.
+ *
+ * Property-paired rather than a flat blocklist because `bg-white` is legitimate
+ * on the outlined CTA — no semantic token exists for buttons — and it carries
+ * its own `dark:bg-gray-700`. Variant-paired because a code review found that
+ * matching `dark:bg-` against a `hover:bg-gray-50` leak was both a false negative
+ * (no bare token to match) and, in the reverse direction, a false PASS: any
+ * `dark:bg-*` anywhere on the element used to excuse any retired bg on it.
+ */
+function lightOnlyLeaks(root: HTMLElement): string[] {
+  const leaks: string[] = []
+  for (const element of [root, ...root.querySelectorAll('*')]) {
+    const tokens = [...element.classList]
+    for (const [property, retired] of Object.entries(RETIRED_BY_PROPERTY)) {
+      for (const variant of VARIANT_PREFIXES) {
+        const hit = retired.find((token) => tokens.includes(`${variant}${token}`))
+        if (!hit) continue
+        const counter = `dark:${variant}${property}-`
+        if (!tokens.some((token) => token.startsWith(counter))) {
+          leaks.push(`${variant}${hit} on <${element.tagName.toLowerCase()}> (want ${counter}*)`)
+        }
+      }
+    }
+  }
+  return leaks
+}
+
+describe('PricingPageView theming', () => {
+  it('uses the semantic tokens for the page shell, disclaimer and prose card', () => {
+    const { container } = render(<PricingPageView />)
+    const root = container.firstElementChild
+    if (!(root instanceof HTMLElement)) throw new Error('missing page root')
+
+    expect([...root.classList]).toContain('surface-sunken')
+
+    const backLink = root.querySelector('a[href="/"]')
+    if (!(backLink instanceof HTMLElement)) throw new Error('missing back link')
+    expect([...backLink.classList]).toContain('text-accent')
+
+    const heading = root.querySelector('h1')
+    if (!heading) throw new Error('missing h1')
+    expect([...heading.classList]).toContain('text-heading')
+
+    const disclaimer = screen.getByText(/Prices shown in EUR/i)
+    expect([...disclaimer.classList]).toContain('text-muted')
+    // The balanced-wrap utility (UX-DR29) composes with the colour token.
+    expect([...disclaimer.classList]).toContain('text-balance')
+
+    // Anchored structurally, not by text: "Merchant of Record" appears in BOTH
+    // the disclaimer <p> and the rendered prose, so a text query is ambiguous.
+    const proseCard = container.querySelector('article.prose')?.closest('section')
+    if (!proseCard) throw new Error('missing prose card')
+    expect([...proseCard.classList]).toContain('surface')
+    expect([...proseCard.classList]).not.toContain('bg-white')
+  })
+
+  it('keeps the recommended plan visually ranked in BOTH themes', () => {
+    render(<PricingPageView />)
+
+    const premium = [...card('Premium').classList]
+    expect(premium).toContain('surface')
+    expect(premium).not.toContain('bg-white')
+    // Light ranking is unchanged; dark drops to the 400 weight because a
+    // 500-weight accent on a gray-800 card reads hot (`global.css:102-110`).
+    expect(premium).toContain('border-blue-500')
+    expect(premium).toContain('ring-1')
+    expect(premium).toContain('ring-blue-500')
+    expect(premium).toContain('dark:border-blue-400')
+    expect(premium).toContain('dark:ring-blue-400')
+
+    const free = [...card('Free').classList]
+    expect(free).toContain('surface')
+    expect(free).toContain('border-default')
+    expect(free).not.toContain('border-gray-200')
+    // Ring-only differentiation (D4): the Free card must NOT acquire one.
+    expect(free).not.toContain('ring-1')
+
+    // D5: the badge straddles the card edge at -top-3, so a solid blue-600 pill
+    // with white text is deliberate — it reads against the card AND the canvas
+    // in both themes. Pinned so a future change is a decision, not a drift.
+    const badge = screen.getByText('Recommended')
+    expect([...badge.classList]).toContain('bg-blue-600')
+    expect([...badge.classList]).toContain('text-white')
+  })
+
+  it('themes the plan card body text and the positive check glyph', () => {
+    render(<PricingPageView />)
+    const premium = card('Premium')
+    // Scoped to the card: the €99 lifetime line also appears in the prose below,
+    // so a page-level text query is ambiguous.
+    const inCard = within(premium)
+
+    const name = premium.querySelector('h2')
+    if (!name) throw new Error('missing plan name')
+    expect([...name.classList]).toContain('text-heading')
+
+    expect([...inCard.getByText('€39').classList]).toContain('text-heading')
+    expect([...inCard.getByText('/ year').classList]).toContain('text-muted')
+    expect([...inCard.getByText(/€99 once/).classList]).toContain('text-muted')
+    expect([...inCard.getByText('Everything in Free, plus:').classList]).toContain('text-label')
+
+    const feature = inCard.getByText('Custom profiles (e.g. personal vs. household)').closest('li')
+    if (!feature) throw new Error('missing feature row')
+    expect([...feature.classList]).toContain('text-body')
+
+    const glyph = feature.querySelector('svg')
+    if (!glyph) throw new Error('missing check glyph')
+    expect([...glyph.classList]).toContain('text-green-600')
+    expect([...glyph.classList]).toContain('dark:text-green-400')
+  })
+
+  it('gives the solid CTA a fixed blue-600 fill and the outlined CTA a gray-700 dark fill', () => {
+    render(<PricingPageView />)
+
+    const primary = [...screen.getByRole('link', { name: 'Get Premium' }).classList]
+    // The blue-600 fill is held in BOTH themes on purpose. The shipped
+    // convention (`contact-form.tsx:309`) drops to blue-500 on dark, but white
+    // on blue-500 measures 3.68:1 — below AA's 4.5:1 for normal text — against
+    // 5.17:1 for blue-600. Measured in a real browser during story 31-1 (AC-7).
+    expect(primary).toContain('bg-blue-600')
+    expect(primary).toContain('hover:bg-blue-700')
+    expect(primary).toContain('text-white')
+    // The INVARIANT, not one token: any dark background override reintroduces
+    // the AA failure this fix closed. A code review found `not.toContain(
+    // 'dark:bg-blue-500')` still permitted `dark:bg-blue-400`, `dark:bg-sky-500`
+    // and friends — it guarded one past draft, not the stated rule.
+    expect(primary.filter((token) => token.startsWith('dark:bg-'))).toEqual([])
+    expect(primary.filter((token) => token.startsWith('dark:hover:bg-'))).toEqual([])
+
+    const outlined = [...screen.getByRole('link', { name: 'Start for free' }).classList]
+    expect(outlined).toContain('dark:border-gray-600')
+    expect(outlined).toContain('dark:text-gray-200')
+    expect(outlined).toContain('dark:hover:bg-gray-600')
+    // gray-700, NOT the gray-800 that `FinancialSummaryReport.tsx:230` uses —
+    // that button sits on the page canvas, this one sits ON a `.surface`
+    // (gray-800) card, where gray-800 would make it vanish. Asserted as an exact
+    // single value so any other dark fill fails, not just gray-800.
+    expect(outlined.filter((token) => token.startsWith('dark:bg-'))).toEqual(['dark:bg-gray-700'])
+
+    // AC-7: the focus affordance survives on both CTAs, and its ring-offset is
+    // dark-aware — Tailwind's offset defaults to WHITE, which would paint a band
+    // between button and ring on the gray-800 card these sit on.
+    for (const tokens of [primary, outlined]) {
+      expect(tokens).toContain('focus-visible:ring-2')
+      expect(tokens).toContain('focus-visible:ring-blue-500')
+      expect(tokens).toContain('focus-visible:ring-offset-2')
+      expect(tokens).toContain('dark:focus-visible:ring-offset-gray-800')
+    }
+  })
+
+  it('leaves no light-only colour value without a dark counterpart', () => {
+    const { container } = render(<PricingPageView />)
+    const root = container.firstElementChild
+    if (!(root instanceof HTMLElement)) throw new Error('missing page root')
+    expect(lightOnlyLeaks(root)).toEqual([])
+  })
+})

@@ -17,7 +17,7 @@ export interface DocsSidebarProps {
 export function DocsSidebar({ activeSlug }: DocsSidebarProps) {
   return (
     <nav aria-label="Documentation" className="sm:sticky sm:top-8">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
         Documentation
       </h2>
       <ul className="space-y-1">
@@ -28,10 +28,14 @@ export function DocsSidebar({ activeSlug }: DocsSidebarProps) {
               <a
                 href={`/docs/${page.slug}`}
                 aria-current={isActive ? 'page' : undefined}
+                // No semantic token exists for the blue-50 active pill or the
+                // inactive hover, so those two keep hand-rolled `dark:` variants
+                // following the shipped info-panel convention
+                // (`routes/profiles.tsx:101`). The text colours use the tokens.
                 className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                   isActive
-                    ? 'bg-blue-50 font-medium text-blue-700'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'bg-blue-50 dark:bg-blue-950/40 font-medium text-accent'
+                    : 'text-label hover:bg-gray-100 dark:hover:bg-gray-700/40'
                 }`}
               >
                 {page.title}

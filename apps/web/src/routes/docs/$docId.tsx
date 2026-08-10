@@ -27,20 +27,27 @@ function DocPage() {
 
   return (
     <DocsLayout title={doc.title} description={doc.description} activeSlug={doc.slug}>
-      <section className="rounded-lg bg-white p-6 shadow-md">
+      <section className="rounded-lg surface p-6 shadow-md">
         <MarkdownRenderer content={doc.content} />
       </section>
     </DocsLayout>
   )
 }
 
-function DocNotFound() {
+/**
+ * Exported for testing only (story 31-1 review). The route wires this up via
+ * `notFoundComponent`, so nothing else should import it — but without the export
+ * its theming is unreachable from jsdom, and a code review found all three of
+ * its colour classes were changed with zero guards at any layer (no unit test
+ * renders it, and no e2e visits an invalid slug).
+ */
+export function DocNotFound() {
   return (
     <DocsLayout title="Page not found">
-      <section className="rounded-lg bg-white p-6 shadow-md">
-        <p className="text-gray-600">
+      <section className="rounded-lg surface p-6 shadow-md">
+        <p className="text-body">
           We couldn't find that documentation page.{' '}
-          <a href="/docs" className="text-blue-600 hover:underline">
+          <a href="/docs" className="text-accent hover:underline">
             Return to the documentation index
           </a>
           .

@@ -47,4 +47,25 @@ describe('MarkdownRenderer', () => {
     render(<MarkdownRenderer content={'```\npnpm install\n```'} />)
     expect(screen.getByText('pnpm install')).toBeInTheDocument()
   })
+
+  /**
+   * Theming guard (story 31-1, AC-2).
+   *
+   * `prose` appears in exactly one place in the codebase — this component — and
+   * it governs every heading, paragraph, link, inline `code`, fenced `pre`,
+   * blockquote, `hr` and table border across `/docs/*`, `/terms`, `/privacy`,
+   * `/refund` and `/pricing`. All three importers are in this story's scope, so
+   * `dark:prose-invert` is unconditional rather than an opt-in prop.
+   */
+  it('inverts the typography plugin in dark mode without dropping the light theme', () => {
+    const { container } = render(<MarkdownRenderer content={'# Title'} />)
+    const article = container.querySelector('article')
+    if (!article) throw new Error('missing article')
+    const tokens = [...article.classList]
+
+    expect(tokens).toContain('prose')
+    expect(tokens).toContain('prose-slate')
+    expect(tokens).toContain('dark:prose-invert')
+    expect(tokens).toContain('max-w-none')
+  })
 })

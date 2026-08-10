@@ -9,6 +9,14 @@ import type { AnchorHTMLAttributes } from 'react'
  * headings, lists, tables, blockquotes, and code blocks get readable defaults
  * without per-element overrides. Links are the one exception: external links
  * are opened safely in a new tab while internal links navigate in place.
+ *
+ * `dark:prose-invert` (story 31-1) is unconditional rather than an opt-in prop:
+ * this component has exactly three importers — `routes/docs/$docId.tsx`,
+ * `legal/legal-page-view.tsx` and `pricing/pricing-page.tsx` — and all three are
+ * dark-aware, so a prop would be unearned plumbing. It is also the only place
+ * `prose` appears in the codebase, which makes this one line what themes every
+ * heading, paragraph, link, inline `code`, fenced `pre`, blockquote, `hr` and
+ * table border across `/docs/*`, `/terms`, `/privacy`, `/refund` and `/pricing`.
  */
 
 function isExternalHref(href: string): boolean {
@@ -42,7 +50,7 @@ export interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   return (
-    <article className="prose prose-slate max-w-none">
+    <article className="prose prose-slate dark:prose-invert max-w-none">
       <Markdown options={{ overrides: { a: { component: DocLink } } }}>{content}</Markdown>
     </article>
   )
