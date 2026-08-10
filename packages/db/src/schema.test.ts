@@ -1,11 +1,16 @@
+import { getTableName } from 'drizzle-orm'
+import { getTableConfig } from 'drizzle-orm/pg-core'
 import { describe, expect, it } from 'vitest'
 import {
+  type CategoryKind,
   type Currency,
   type NewUser,
   type SubscriptionStatus,
   type User,
   allTables,
   balanceTracking,
+  categories,
+  categoryKindEnum,
   currencyEnum,
   expenses,
   financeTypeEnum,
@@ -266,5 +271,141 @@ describe('Entity primary keys are client-generatable uuids', () => {
     expect(expenses.id.hasDefault).toBe(true)
     expect(savingsGoals.id.hasDefault).toBe(true)
     expect(balanceTracking.id.hasDefault).toBe(true)
+  })
+})
+
+// Test 8: User-defined categories (Story 30.4a, FR54)
+// A first-class entity rather than a denormalized string, because the feature
+// requires rename and delete: renaming must update every referencing row with no
+// per-row edit, which a copied string cannot do.
+describe('Categories table (Story 30.4a)', () => {
+  it('is exported and registered in allTables', () => {
+    expect(categories).toBeDefined()
+    expect(categoryKindEnum).toBeDefined()
+    expect(allTables.categories).toBe(categories)
+  })
+
+  it('follows the syncable-entity conventions: uuid PK with a default, and a tombstone', () => {
+    expect(categories.id.getSQLType()).toBe('uuid')
+    expect(categories.id.dataType).toBe('string')
+    expect(categories.id.hasDefault).toBe(true)
+    expect(categories.isDeleted.notNull).toBe(true)
+    expect(categories.isDeleted.default).toBe(false)
+  })
+
+  it('is scoped to a user AND a profile, both required', () => {
+    expect(categories.userId.getSQLType()).toBe('uuid')
+    expect(categories.userId.notNull).toBe(true)
+    expect(categories.profileId.getSQLType()).toBe('uuid')
+    expect(categories.profileId.notNull).toBe(true)
+  })
+
+  it('carries a required kind separating the income and expense namespaces', () => {
+    expect(categories.kind.notNull).toBe(true)
+    expect(categoryKindEnum.enumValues).toEqual(['income', 'expense'])
+    // The exported union must track the enum, so a widened enum cannot silently
+    // leave the TypeScript type behind.
+    const incomeKind: CategoryKind = 'income'
+    const expenseKind: CategoryKind = 'expense'
+    expect([incomeKind, expenseKind]).toEqual(categoryKindEnum.enumValues)
+  })
+
+  it('categoryId is NULLABLE on both cashflow tables so uncategorized stays valid', () => {
+    // This is the whole reason every pre-existing row survives the migration and
+    // no form gains a required field. If either of these ever becomes notNull,
+    // the free-tier CRUD contract breaks.
+    expect(incomeSources.categoryId.getSQLType()).toBe('uuid')
+    expect(incomeSources.categoryId.notNull).toBe(false)
+    expect(expenses.categoryId.getSQLType()).toBe('uuid')
+    expect(expenses.categoryId.notNull).toBe(false)
+  })
+
+  /**
+   * ⚠️ CODE REVIEW 30.4a — the assertions above check SHAPES, not RELATIONSHIPS.
+   * Deleting `.references(() => categories.id)` from both columns left the whole
+   * db suite green: the type is still `uuid` and still nullable, so nothing
+   * noticed that `categoryId` had silently degraded to an unenforced loose
+   * reference. Every downstream rationale in this story — the seed ordering, the
+   * account-deletion order, the "real foreign key" comments — rests on these FKs
+   * actually existing, so they are asserted here directly.
+   */
+  it('categoryId is a REAL foreign key to categories on both cashflow tables', () => {
+    const incomeFks = getTableConfig(incomeSources).foreignKeys.map((fk) => fk.reference())
+    const expenseFks = getTableConfig(expenses).foreignKeys.map((fk) => fk.reference())
+
+    const referencesCategories = (
+      refs: ReturnType<ReturnType<typeof getTableConfig>['foreignKeys'][number]['reference']>[]
+    ) =>
+      refs.some(
+        (ref) =>
+          ref.columns.some((column) => column.name === 'categoryId') &&
+          ref.foreignColumns.some((column) => getTableName(column.table) === 'categories')
+      )
+
+    // MUTATION KILLED: drop `.references(() => categories.id)` from either column.
+    expect(referencesCategories(incomeFks), 'incomeSources.categoryId has no FK').toBe(true)
+    expect(referencesCategories(expenseFks), 'expenses.categoryId has no FK').toBe(true)
+  })
+
+  it('categories itself references users and userProfiles', () => {
+    const refs = getTableConfig(categories).foreignKeys.map((fk) => fk.reference())
+    const targets = refs.map((ref) => getTableName(ref.foreignColumns[0].table)).sort()
+
+    // Both parents must be enforced: an orphaned category is unreachable data
+    // that account deletion and profile deletion would both miss.
+    expect(targets).toEqual(['userProfiles', 'users'])
+  })
+
+  it('the live-name unique index is PARTIAL and case-insensitive', () => {
+    const { indexes } = getTableConfig(categories)
+    const liveNameIndex = indexes.find(
+      (index) => index.config.name === 'categories_userId_profileId_kind_name_live_unique'
+    )
+
+    expect(liveNameIndex, 'the live-name unique index is missing').toBeDefined()
+    expect(liveNameIndex?.config.unique).toBe(true)
+
+    // MUTATION KILLED: drop the `.where(isDeleted = false)` predicate. Without it
+    // the index becomes a plain unique constraint, and re-creating a category the
+    // user previously deleted collides with its own tombstone — a 23505 the
+    // client never sees, which is exactly the silent divergence the schema
+    // comment claims this predicate prevents.
+    expect(liveNameIndex?.config.where).toBeDefined()
+
+    // MUTATION KILLED: revert `lower(name)` to a bare `table.name` column
+    // (migration 0012). A case-SENSITIVE index disagrees with the client's
+    // `normalizeName`, which compares `trim().toLocaleLowerCase()`.
+    //
+    // The indexed "columns" are a mix of Column objects and SQL expressions;
+    // the lower() one is an SQL node whose chunks carry the literal text. The
+    // drizzle objects are circular, so collect the string chunks by walking
+    // rather than serializing.
+    const stringChunks = (node: unknown, out: string[] = []): string[] => {
+      if (typeof node === 'string') {
+        out.push(node)
+        return out
+      }
+      if (!node || typeof node !== 'object') {
+        return out
+      }
+      // A `StringChunk` holds its literal text in a `value` string array —
+      // that is where `lower(` and `)` actually live.
+      const value = (node as { value?: unknown }).value
+      if (Array.isArray(value)) {
+        out.push(...value.filter((entry): entry is string => typeof entry === 'string'))
+      }
+      const chunks = (node as { queryChunks?: unknown[] }).queryChunks
+      if (Array.isArray(chunks)) {
+        for (const chunk of chunks) {
+          stringChunks(chunk, out)
+        }
+      }
+      return out
+    }
+
+    const indexedExpressions = (liveNameIndex?.config.columns ?? []).flatMap((column) =>
+      stringChunks(column)
+    )
+    expect(indexedExpressions.join(' ')).toContain('lower')
   })
 })

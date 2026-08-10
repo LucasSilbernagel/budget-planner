@@ -891,7 +891,10 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
     ).toBeInTheDocument()
     // ...but income and expenses are now split into two sub-pies, each with its
     // own correct 100% denominator and a distinct sub-heading (UX review #4).
-    expect(screen.getByRole('heading', { name: /income by source/i })).toBeInTheDocument()
+    // Retitled by story 30.4b: the pie groups by the user's own category now,
+    // not per income source, so "by source" had become a lie.
+    expect(screen.getByRole('heading', { name: /income by category/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /income by source/i })).toBeNull()
     expect(screen.getByRole('heading', { name: /expenses by category/i })).toBeInTheDocument()
     // The removed asset & liability pie stays gone.
     expect(screen.queryByRole('heading', { name: /asset & liability breakdown/i })).toBeNull()

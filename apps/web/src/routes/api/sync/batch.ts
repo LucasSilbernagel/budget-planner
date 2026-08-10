@@ -18,7 +18,9 @@
  *   DB-authoritative session cookie (Story 5-7). 401 = no session,
  *   403 = authenticated but not a paid sync tier.
  * - The premium gate uses the SAME statuses as pull (`PAID_SYNC_STATUSES` =
- *   active|past_due), NOT the calculations gate (active-only).
+ *   active|past_due|lifetime), NOT the calculations gate (active-only).
+ *   ⚠️ `lifetime` added by Story 30.4a AC-8; comment corrected by its code
+ *   review, which found this and changes.ts still naming the old two-value set.
  * - The authoritative user id comes from the SESSION, and `processBatchSync`
  *   additionally rejects any operation whose `userId` does not match it. A
  *   client-supplied userId is never trusted.
@@ -43,7 +45,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     return json({ success: false, error: 'No user session' }, { status: 401 })
   }
 
-  // 2) Premium gate — match the PULL path (active|past_due), not calculations.
+  // 2) Premium gate — match the PULL path (active|past_due|lifetime), not calculations.
   if (!PAID_SYNC_STATUSES.includes(session.data.subscriptionStatus)) {
     return json(
       {

@@ -78,6 +78,10 @@ describe('syncBridge — paid tier (handle registered)', () => {
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
+      // Story 30.4a: forwarded ALWAYS, including null — updateEntity does a
+      // partial .set(), so omitting the key would leave a stale server-side
+      // category and un-categorizing would never propagate.
+      categoryId: null,
       userId: SESSION_USER_ID,
     })
   })
@@ -136,6 +140,18 @@ describe('syncBridge — paid tier (handle registered)', () => {
         type: 'userProfile',
         entity: { id: 'p1', name: 'Main', isDefault: true, currency: 'EUR' },
         expected: { name: 'Main', isDefault: true, currency: 'EUR', userId: SESSION_USER_ID },
+      },
+      {
+        // Story 30.4a. `kind` separates the income and expense namespaces —
+        // without it a synced category is unplaceable server-side. Note this
+        // case ALSO guards the switch shape: `userProfile` used to be the bare
+        // `default:` arm, so a new entity type silently inherited its payload
+        // (shipping `isDefault`/`currency`, both of which survive the strip
+        // gate). If this expectation ever starts matching userProfile's shape,
+        // the named case has been lost.
+        type: 'category',
+        entity: { id: 'cat-1', name: 'Groceries', kind: 'expense', isDeleted: false },
+        expected: { name: 'Groceries', kind: 'expense', userId: SESSION_USER_ID },
       },
     ]
 

@@ -5,9 +5,12 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { CategoryBadge } from './categories/CategoryBadge'
+import { CategoryPicker } from './categories/CategoryPicker'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
@@ -24,6 +27,9 @@ export function IncomePage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Rows store a category uuid, never a name (story 30.4b). Resolving here
+  // means a rename is reflected in this table with no per-row edit.
+  const categoryNames = useCategoryNameMap()
   // Currency preferences drive the input's symbol affordance and locale-aware
   // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
   // grouping uses the neutral en-US locale (per the store).
@@ -47,6 +53,9 @@ export function IncomePage() {
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
+  // `null` is a first-class, always-valid value here (AC-1): leaving a row
+  // uncategorized must stay possible, so this field is never `required`.
+  const [categoryId, setCategoryId] = useState<string | null>(null)
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -86,6 +95,7 @@ export function IncomePage() {
         setName('')
         setAmount('')
         setFrequency('monthly')
+        setCategoryId(null)
       }
       // Editing: fields are set by openEditModal
     }
@@ -112,6 +122,8 @@ export function IncomePage() {
     name: string
     amount: number
     frequency: Frequency
+    // Widened for the new field only — `id` is deliberately untouched (AC-10).
+    categoryId?: string | null
   }) => {
     setEditingId(source.id)
     setName(source.name)
@@ -121,6 +133,7 @@ export function IncomePage() {
     // scientific notation or long float tails) that a comma-decimal locale misreads.
     setAmount(formatForInputDisplay(source.amount, locale))
     setFrequency(source.frequency)
+    setCategoryId(source.categoryId ?? null)
     clearErrors()
     setIsModalOpen(true)
   }
@@ -132,6 +145,7 @@ export function IncomePage() {
     setName('')
     setAmount('')
     setFrequency('monthly')
+    setCategoryId(null)
     clearErrors()
   }
 
@@ -163,6 +177,7 @@ export function IncomePage() {
         name: name.trim(),
         amount: parseFromInput(amount, locale),
         frequency,
+        categoryId,
       }
 
       if (editingId !== null) {
@@ -244,6 +259,9 @@ export function IncomePage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Frequency
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                        Category
+                      </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                         Actions
                       </th>
@@ -262,6 +280,13 @@ export function IncomePage() {
                           <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
                             {source.frequency}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <CategoryBadge
+                            categoryId={source.categoryId}
+                            names={categoryNames}
+                            idPrefix="income"
+                          />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                           <button
@@ -411,6 +436,13 @@ export function IncomePage() {
                 ))}
               </select>
             </div>
+
+            <CategoryPicker
+              kind="income"
+              value={categoryId}
+              onChange={setCategoryId}
+              idPrefix="income"
+            />
 
             <div className="flex justify-end gap-3 pt-4">
               <button

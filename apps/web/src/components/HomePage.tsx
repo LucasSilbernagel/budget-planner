@@ -26,6 +26,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
@@ -58,6 +59,11 @@ const DEBT_COLOR = '#DC2626'
 export function HomePage() {
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
+  // Rows carry a category uuid, never a name (story 30.4b). Both pies group by
+  // the RESOLVED name, so a raw `categoryId` must never reach a data point —
+  // it would surface as a truncated uuid in the slice label, the legend and
+  // the tooltip.
+  const categoryNames = useCategoryNameMap()
   const savingsGoals = useSavingsGoals()
   const balanceEntries = useBalanceEntries()
 
@@ -156,7 +162,7 @@ export function HomePage() {
         name: source.name,
         amount: source.amount,
         frequency: source.frequency,
-        category: source.category ?? source.name, // Use explicit category if available, fallback to name
+        category: resolveCategoryLabel(source.categoryId, source.name, categoryNames),
         type: 'income' as const,
         date: sourceDate,
       })
@@ -183,14 +189,17 @@ export function HomePage() {
         name: expense.name,
         amount: expense.amount,
         frequency: expense.frequency,
-        category: expense.category ?? expense.name, // Use explicit category if available, fallback to name
+        category: resolveCategoryLabel(expense.categoryId, expense.name, categoryNames),
         type: 'expense' as const,
         date: expenseDate,
       })
     }
 
     return data
-  }, [incomeSources, expenses])
+    // ⚠️ `categoryNames` is load-bearing in this dependency list. Without it a
+    // RENAME leaves both pies showing the old label until some unrelated income
+    // or expense edit invalidates the memo — a silently stale chart.
+  }, [incomeSources, expenses, categoryNames])
 
   // Re-express each entry at the chosen cadence BEFORE aggregation (story 12-3,
   // AC-2). The breakdown previously summed raw entered amounts and ignored
@@ -433,12 +442,17 @@ export function HomePage() {
                   (UX review #4). Summing income and expense slices into one 100%
                   pie made every percentage meaningless — a category's share was
                   measured against income + expenses combined, two different
-                  wholes. Each pie now sums to its own type's total. The former
-                  click-to-drill-down was removed with the single pie: the entry
-                  forms capture no category distinct from the item name
-                  (category ?? name === name), so a drill only ever re-showed the
-                  clicked item itself, and one shared drill cannot span two
-                  independent pies. */}
+                  wholes. Each pie now sums to its own type's total.
+
+                  ⚠️ Since story 30.4b these group by the user's own CATEGORY,
+                  not by item name: `aggregateByCategoryAndType` merges rows that
+                  share a category, so four expenses in "Groceries" are one
+                  slice. A row with no category (or one this device cannot
+                  resolve — see `useCategoryLabels`) still falls back to its own
+                  name (Decision 10), so a merged category and a single
+                  uncategorized item render alike; distinguishing them is 30.5's
+                  concern. The former click-to-drill-down stays removed: one
+                  shared drill cannot span two independent pies. */}
               <section className="surface rounded-lg shadow-md p-6">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-xl font-semibold text-subheading">
@@ -463,7 +477,7 @@ export function HomePage() {
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <BreakdownPie
-                    title="Income by source"
+                    title="Income by category"
                     data={incomeData}
                     total={totalIncomeChart}
                     emptyLabel="No income to break down yet"
@@ -663,7 +677,7 @@ export function HomePage() {
 }
 
 interface BreakdownPieProps {
-  /** Sub-heading shown above the pie (e.g. "Income by source"). */
+  /** Sub-heading shown above the pie (e.g. "Income by category"). */
   title: string
   /** Pie slices for a SINGLE type, already period-scaled. */
   data: RechartsDataItem[]

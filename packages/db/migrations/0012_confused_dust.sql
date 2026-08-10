@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS "categories_userId_profileId_kind_name_live_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "categories_userId_profileId_kind_name_live_unique" ON "categories" USING btree ("userId","profileId","kind",lower("name")) WHERE "categories"."isDeleted" = false;

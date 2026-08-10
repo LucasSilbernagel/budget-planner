@@ -38,6 +38,22 @@ export const expenseSchema = z.object({
   userId: z.string().uuid(),
 })
 
+/**
+ * Story 30.4a: user-defined category (FR54).
+ *
+ * ⚠️ Like its siblings above, this schema is currently UNEXERCISED — nothing
+ * imports it. The gate that actually runs at queue time is
+ * `syncOperationDataSchema` below (see `validateOperationData` in
+ * synchronization.ts). It is declared anyway for parity, because the drift
+ * between these mirrors and the flat schema is exactly how the documented
+ * asymmetries in savingsGoalSchema arose. If you change one, change both.
+ */
+export const categorySchema = z.object({
+  name: z.string().min(1).max(255),
+  kind: z.enum(['income', 'expense']),
+  userId: z.string().uuid(),
+})
+
 export const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
   targetAmount: z.number().int(),
@@ -100,6 +116,17 @@ export const syncOperationDataSchema = z.object({
   allocationMode: z.enum(['manual', 'automatic']).optional(),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().optional(),
+  // Story 30.4a (FR54): the category entity's own `kind`, and the nullable
+  // `categoryId` reference carried by incomeSource/expense rows.
+  //
+  // ⚠️ `categoryId` MUST be `.nullable()`, not merely `.optional()`. Clearing a
+  // category sends an explicit `null` (an omitted key would leave the previous
+  // server value in place — updateEntity does a PARTIAL `.set()`), so a
+  // nullable-less schema would reject every un-categorize operation at the queue
+  // gate with a ZodError. This is the same trap savingsGoal.targetAmount hit in
+  // Story 16-1; see its note above.
+  kind: z.enum(['income', 'expense']).optional(),
+  categoryId: z.string().uuid().nullable().optional(),
   currency: z
     .enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD'])
     .optional(),
@@ -115,6 +142,20 @@ export type SyncEntityType =
   | 'savingsGoal'
   | 'balanceTracking'
   | 'userProfile'
+  // Story 30.4a: user-defined income/expense categories (FR54).
+  //
+  // ⚠️ Extending this union type-enforces exactly ONE downstream gate —
+  // `ENTITY_BINDINGS` in apps/web/src/lib/sync/applyServerChanges.ts, which is
+  // declared `Record<SyncEntityType, EntityBinding>`. Every other gate must be
+  // updated by hand and fails SILENTLY if missed:
+  //   - toServerPayload's switch (syncBridge.ts) — now has a `never`-exhaustive
+  //     default so it, too, is a compile error rather than a silent misroute
+  //   - syncOperationDataSchema below — zod STRIPS undeclared keys
+  //   - syncOperationSchema.entityType (server/api/sync.ts) — a hard-coded enum;
+  //     an unknown value fails the whole batch, not just its own operation
+  //   - getSyncChanges (server/api/sync.ts) — five hard-coded per-entity blocks
+  // A green `tsc` is NOT evidence the contract is complete.
+  | 'category'
 
 /**
  * Supported operation types for synchronization

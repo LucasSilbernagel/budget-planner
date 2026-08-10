@@ -11,7 +11,7 @@
 
 import { db } from '@budget-planner/db'
 import type { NewUserProfile, UserProfile } from '@budget-planner/db'
-import { userProfiles, users } from '@budget-planner/db/src/schema'
+import { categories, userProfiles, users } from '@budget-planner/db/src/schema'
 import { and, eq, ne } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
@@ -411,9 +411,25 @@ export async function deleteProfile(request: Request, profileId: string): Promis
       }
     }
 
-    // Delete the profile (cascade will delete related financial data)
+    // ⚠️ THERE IS NO CASCADE. Every FK in this schema is `ON DELETE no action`
+    // (correction by code review 30.4a — this comment previously claimed
+    // "cascade will delete related financial data", which has never been true).
+    // Children must be deleted explicitly, parent last, or Postgres raises
+    // 23503 and the raw driver message is returned to the UI.
+    //
+    // `categories` is deleted here because Story 30.4a made it a profile-scoped
+    // child: without this, deleting a profile that owns nothing but categories
+    // — a case that worked before this story — now fails.
+    //
+    // ⚠️ The other profile-scoped children (incomeSources, expenses,
+    // savingsGoals, balanceTracking, forecastingProfiles) are NOT deleted here.
+    // That gap PRE-DATES this story: deleting a profile holding any of them has
+    // always failed on the FK. Recorded in deferred-work.md rather than fixed
+    // in a review pass, because "delete a profile" silently destroying its
+    // financial data is a product decision, not a defect fix.
     // Wrap in transaction to ensure atomicity
     await db.transaction(async (tx) => {
+      await tx.delete(categories).where(eq(categories.profileId, profileId))
       await tx.delete(userProfiles).where(eq(userProfiles.id, profileId))
     })
 

@@ -67,6 +67,7 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
+      categoryId: null, // Story 30.4a — always forwarded, see syncBridge
       userId: SESSION_USER_ID,
     })
   })

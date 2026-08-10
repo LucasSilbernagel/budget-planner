@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useBalanceStore } from '../stores/balanceStore'
+import { useCategoryStore } from '../stores/categoryStore'
 import { useCurrencyStore } from '../stores/currencyStore'
 import { useExpenseStore } from '../stores/expenseStore'
 import { useIncomeStore } from '../stores/incomeStore'
@@ -29,6 +30,7 @@ export function StoreHydration() {
       useExpenseStore,
       useSavingsStore,
       useBalanceStore,
+      useCategoryStore,
       useCurrencyStore,
       useProfileStore,
       useThemeStore,

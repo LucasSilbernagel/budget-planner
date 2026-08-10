@@ -33,6 +33,9 @@ const ROUTES = [
   '/forecasting',
   '/settings',
   '/profiles',
+  // Premium-gated (story 30.4b): this sweep is unauthenticated, so what gets
+  // measured here is the full-page upgrade surface, not the manager.
+  '/categories',
   '/login',
   '/pricing',
   '/terms',
@@ -102,11 +105,18 @@ test.describe('no horizontal overflow at 320px', () => {
         name,
         amount,
         frequency,
+        // Story 30.4a: persist v2 shape. Seeding the CURRENT shape (rather than
+        // a v1 payload) keeps this a fixture of what a real user's storage holds
+        // instead of silently exercising the migration path.
+        categoryId: null,
         createdAt: now,
         updatedAt: now,
       })
-      // Amounts are in cents; large values stress numeric wrapping. Distinct
-      // names become distinct pie slices (category falls back to name).
+      // Amounts are in cents; large values stress numeric wrapping. These rows
+      // are UNCATEGORIZED (`categoryId: null`), and story 30.4b makes an
+      // uncategorized row fall back to its own name (Decision 10) — so distinct
+      // names still become distinct slices here. Rows that SHARE a category
+      // would merge into one; that path is covered by HomePage's unit suite.
       localStorage.setItem(
         'budget-planner-income-v1',
         JSON.stringify({
@@ -117,7 +127,7 @@ test.describe('no horizontal overflow at 320px', () => {
               row('Dividends', 12345600, 'monthly'),
             ],
           },
-          version: 1,
+          version: 2,
         })
       )
       localStorage.setItem(
@@ -133,7 +143,7 @@ test.describe('no horizontal overflow at 320px', () => {
               row('Entertainment & Dining', 19000000, 'monthly'),
             ],
           },
-          version: 1,
+          version: 2,
         })
       )
       // Explicit-symbols mode renders both currency + locale selects in the

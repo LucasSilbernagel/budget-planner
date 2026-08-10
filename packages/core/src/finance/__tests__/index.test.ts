@@ -235,6 +235,37 @@ describe('Finance Module Index', () => {
     })
   })
 
+  describe('Category breakdown exports', () => {
+    it('should export buildCategoryBreakdown function', () => {
+      expect(typeof finance.buildCategoryBreakdown).toBe('function')
+    })
+
+    it('should export CategoryBreakdownItem interface', () => {
+      const item: finance.CategoryBreakdownItem = {
+        categoryId: 'cat-1',
+        amount: 10000,
+        frequency: 'monthly',
+      }
+      expect(item.categoryId).toBe('cat-1')
+    })
+
+    it('should export CategoryBreakdownRow interface', () => {
+      const row: finance.CategoryBreakdownRow = {
+        categoryId: null,
+        label: 'Uncategorized',
+        totalCents: 10000,
+        sharePercent: 100,
+        count: 1,
+      }
+      expect(row.label).toBe('Uncategorized')
+    })
+
+    it('should export CategoryBreakdownResult interface', () => {
+      const result: finance.CategoryBreakdownResult = { rows: [], totalCents: 0 }
+      expect(result.totalCents).toBe(0)
+    })
+  })
+
   describe('Functional integration tests', () => {
     it('should calculate normalization using exported function', () => {
       const result = finance.normalizeToMonthly(10000, 'weekly')

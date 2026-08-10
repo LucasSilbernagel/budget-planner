@@ -25,6 +25,7 @@
  */
 
 import { useBalanceStore } from '@/stores/balanceStore'
+import { useCategoryStore } from '@/stores/categoryStore'
 import { useExpenseStore } from '@/stores/expenseStore'
 import { useIncomeStore } from '@/stores/incomeStore'
 import { useProfileStore } from '@/stores/profileStore'
@@ -65,6 +66,13 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
   safely(() => {
     useSavingsStore.setState({ savingsGoals: [] })
     useSavingsStore.persist.clearStorage()
+  })
+  // Categories (Story 30.4a) are user-authored financial metadata — the names a
+  // user chose for their own spending — so they are purged alongside the rows
+  // they categorize, not treated as a display preference.
+  safely(() => {
+    useCategoryStore.getState().reset()
+    useCategoryStore.persist.clearStorage()
   })
   // Profiles and balance expose reset() (back to their seeded/empty defaults).
   safely(() => {

@@ -5,9 +5,12 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { CategoryBadge } from './categories/CategoryBadge'
+import { CategoryPicker } from './categories/CategoryPicker'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 
@@ -24,6 +27,9 @@ export function ExpensesPage() {
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
+  // Rows store a category uuid, never a name (story 30.4b). Resolving here
+  // means a rename is reflected in this table with no per-row edit.
+  const categoryNames = useCategoryNameMap()
   // Currency preferences drive the input's symbol affordance and locale-aware
   // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
   // grouping uses the neutral en-US locale (per the store).
@@ -47,6 +53,9 @@ export function ExpensesPage() {
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
+  // `null` is a first-class, always-valid value here (AC-1): leaving a row
+  // uncategorized must stay possible, so this field is never `required`.
+  const [categoryId, setCategoryId] = useState<string | null>(null)
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -86,6 +95,7 @@ export function ExpensesPage() {
         setName('')
         setAmount('')
         setFrequency('monthly')
+        setCategoryId(null)
       }
       // Editing: fields are set by openEditModal
     }
@@ -112,6 +122,8 @@ export function ExpensesPage() {
     name: string
     amount: number
     frequency: Frequency
+    // Widened for the new field only — `id` is deliberately untouched (AC-10).
+    categoryId?: string | null
   }) => {
     setEditingId(source.id)
     setName(source.name)
@@ -121,6 +133,12 @@ export function ExpensesPage() {
     // scientific notation or long float tails) that a comma-decimal locale misreads.
     setAmount(formatForInputDisplay(source.amount, locale))
     setFrequency(source.frequency)
+    // ⚠️ Load-bearing (code review 30.4b). `closeModal` always resets this to
+    // null, so without seeding it here the edit form opens on "Uncategorized"
+    // for a categorized row and `handleSubmit` — which sends `categoryId`
+    // unconditionally — writes null back. Editing an amount would silently
+    // destroy the row's category, with the picker showing no sign of it.
+    setCategoryId(source.categoryId ?? null)
     clearErrors()
     setIsModalOpen(true)
   }
@@ -132,6 +150,7 @@ export function ExpensesPage() {
     setName('')
     setAmount('')
     setFrequency('monthly')
+    setCategoryId(null)
     clearErrors()
   }
 
@@ -162,6 +181,7 @@ export function ExpensesPage() {
         name: name.trim(),
         amount: parseFromInput(amount, locale),
         frequency,
+        categoryId,
       }
 
       if (editingId !== null) {
@@ -243,6 +263,9 @@ export function ExpensesPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Frequency
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                        Category
+                      </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                         Actions
                       </th>
@@ -261,6 +284,13 @@ export function ExpensesPage() {
                           <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
                             {expense.frequency}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <CategoryBadge
+                            categoryId={expense.categoryId}
+                            names={categoryNames}
+                            idPrefix="expense"
+                          />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                           <button
@@ -410,6 +440,13 @@ export function ExpensesPage() {
                 ))}
               </select>
             </div>
+
+            <CategoryPicker
+              kind="expense"
+              value={categoryId}
+              onChange={setCategoryId}
+              idPrefix="expense"
+            />
 
             <div className="flex justify-end gap-3 pt-4">
               <button

@@ -2,7 +2,8 @@
  * purgeLocalFinancialData tests (Story 10-5, AC-5 — code-review patch)
  *
  * Verifies the on-erasure local cleanup:
- *  - all five financial Zustand stores are reset + their persisted storage cleared;
+ *  - all SIX financial Zustand stores are reset + their persisted storage cleared
+ *    (categories joined the set in Story 30.4a);
  *  - the durable paid-tier sync queue (`bp-sync-queue-<userId>`) is cleared too —
  *    it holds raw financial SyncOperation payloads that would otherwise survive
  *    erasure (the review's HIGH finding);
@@ -24,6 +25,8 @@ const h = vi.hoisted(() => ({
   profileClear: vi.fn(),
   balanceReset: vi.fn(),
   balanceClear: vi.fn(),
+  categoryReset: vi.fn(),
+  categoryClear: vi.fn(),
   queueClear: vi.fn().mockResolvedValue(undefined),
   createSyncQueue: vi.fn(),
 }))
@@ -49,6 +52,12 @@ vi.mock('@/stores/balanceStore', () => ({
     persist: { clearStorage: h.balanceClear },
   },
 }))
+vi.mock('@/stores/categoryStore', () => ({
+  useCategoryStore: {
+    getState: () => ({ reset: h.categoryReset }),
+    persist: { clearStorage: h.categoryClear },
+  },
+}))
 vi.mock('@budget-planner/core/sync', () => ({ createSyncQueue: h.createSyncQueue }))
 
 import { purgeLocalFinancialData } from './purge-local-financial-data'
@@ -62,7 +71,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('purgeLocalFinancialData', () => {
-  it('resets + clears all five financial stores and the user-scoped sync queue', async () => {
+  it('resets + clears all six financial stores and the user-scoped sync queue', async () => {
     await purgeLocalFinancialData('user-9')
 
     expect(h.incomeSetState).toHaveBeenCalledWith({ incomeSources: [] })
@@ -73,6 +82,10 @@ describe('purgeLocalFinancialData', () => {
     expect(h.savingsClear).toHaveBeenCalledTimes(1)
     expect(h.profileReset).toHaveBeenCalledTimes(1)
     expect(h.profileClear).toHaveBeenCalledTimes(1)
+    // Story 30.4a: categories are user-authored financial metadata, so they are
+    // purged with the rows they categorize — not kept like a display preference.
+    expect(h.categoryReset).toHaveBeenCalledTimes(1)
+    expect(h.categoryClear).toHaveBeenCalledTimes(1)
     expect(h.balanceReset).toHaveBeenCalledTimes(1)
     expect(h.balanceClear).toHaveBeenCalledTimes(1)
 

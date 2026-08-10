@@ -250,6 +250,49 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(premium).not.toContain('retirement modeling')
   })
 
+  it('the Features page documents Custom categories under Premium only (story 30.4b, AC-8)', () => {
+    // Decision 9: categories are documented here and NOWHERE else — the canonical
+    // three-benefit set (premium-prompt / pricing-page) stays at three, which is
+    // what keeps all five pinned count assertions passing.
+    const { free, premium } = featureSections()
+    expect(premium).toContain('custom categories')
+    expect(free).not.toContain('custom categories')
+  })
+
+  it('the Custom categories bullet documents the per-category breakdown (story 30.5)', () => {
+    // Anchored on DISTINGUISHING phrasing rather than the word "breakdown",
+    // which the Advanced forecasting and overview copy could also carry: the
+    // "share of that side" framing is what 30.5 actually shipped, and it is
+    // what would go missing if the sentence were dropped.
+    const { premium, free } = featureSections()
+    expect(premium).toContain('what share of that side it is')
+    expect(premium).toContain('uncategorized line')
+    expect(free).not.toContain('what share of that side it is')
+  })
+
+  it('the Custom categories bullet claims no cross-device sync (story 30.4b)', () => {
+    // ⚠️ Category rows cannot reach the server at all yet (deferred sync-create
+    // repair). Copy that said otherwise would be a false premise shipped to
+    // users, which is the exact failure mode this batch keeps producing. Scope
+    // the check to the bullet, since the section legitimately advertises sync
+    // as a SEPARATE benefit.
+    const { premium } = featureSections()
+    const start = premium.indexOf('**custom categories**')
+    // `>= 0`, not `> 0`: this is an existence check, and `indexOf` returning 0
+    // is a hit, not a miss.
+    expect(start).toBeGreaterThanOrEqual(0)
+    // ⚠️ Every "not found" must fall back to the END of the section, never to
+    // the raw -1: `slice(start, -1)` silently drops the last character, so a
+    // sync claim appended at the very end of the section could partly escape
+    // this guard (code review 30.4b).
+    const candidates = [premium.indexOf('\n- **', start), premium.indexOf('\n###', start)].filter(
+      (index) => index > start
+    )
+    const end = candidates.length > 0 ? Math.min(...candidates) : premium.length
+    const bullet = premium.slice(start, end)
+    expect(bullet).not.toMatch(/sync|across (?:all )?your devices|other devices|phone to laptop/)
+  })
+
   it('the Features page describes Advanced forecasting honestly (stories 20-1, 30-2)', () => {
     // The forecasting copy must describe only what ships. Story 20-1 wrote this
     // guard when saved forecasts could NOT be reopened and the Projections chart

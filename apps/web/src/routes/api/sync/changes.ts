@@ -10,8 +10,9 @@
  *   DB-authoritative session cookie (Story 5-7). 401 = no session,
  *   403 = authenticated but not a paid sync tier, 200 = ok.
  * - The premium gate uses the SAME statuses as the sync PUSH path
- *   (`PAID_SYNC_STATUSES` = active|past_due), NOT the calculations gate
+ *   (`PAID_SYNC_STATUSES` = active|past_due|lifetime), NOT the calculations gate
  *   (active-only): pull must be reachable wherever push is.
+ *   ⚠️ `lifetime` added by Story 30.4a AC-8; comment corrected by its code review.
  * - The delta is strictly scoped to the SESSION user id (and active profile for
  *   profile-scoped entities). A client-supplied userId is never trusted.
  */
@@ -34,7 +35,7 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     return json({ success: false, error: 'No user session' }, { status: 401 })
   }
 
-  // 2) Premium gate — match the PUSH path (active|past_due), not calculations.
+  // 2) Premium gate — match the PUSH path (active|past_due|lifetime), not calculations.
   if (!PAID_SYNC_STATUSES.includes(session.data.subscriptionStatus)) {
     return json(
       {

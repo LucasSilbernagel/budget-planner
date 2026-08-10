@@ -18,7 +18,7 @@
  * the stores (no cycle) and never imports server/db code (no client-bundle hazard).
  */
 
-import type { SyncEntityType } from '@budget-planner/core/sync'
+import type { SyncEntityType } from '@budget-planner/core'
 
 /** Queue functions the provider supplies (sourced from `useSync`). */
 export interface SyncBridgeHandle {
@@ -100,6 +100,30 @@ function toServerPayload(
         name: entity['name'],
         amount: entity['amount'],
         frequency: entity['frequency'],
+        // ⚠️⚠️ DELIBERATELY PINNED TO NULL UNTIL THE SYNC-CREATE REPAIR LANDS
+        // (code review 30.4b, Lucas's call). REVERT THIS TO
+        // `entity['categoryId'] ?? null` in the same pass that repairs category
+        // sync — `category-sync-payload.test.ts` fails the moment you do, which
+        // is how the revert stays discoverable.
+        //
+        // Why: `categories.id` is a REAL foreign key on both cashflow tables
+        // (schema.ts), but category rows cannot reach the server at all (the
+        // server strips `profileId` on create, and the missing client `id`
+        // escalates to a permanent 23503 — see deferred-work.md). So forwarding
+        // a real category uuid points the FK at a row that cannot exist. The
+        // server's `updateEntity` does `.set({...data})` without filtering, so
+        // the op fails 23503 — taking the name/amount edit bundled with it —
+        // and because the failure is not marked `retryable: false`, the client
+        // burns its retry budget, pins status FAILED and OPENS THE CIRCUIT
+        // BREAKER, suppressing sync for EVERY OTHER ENTITY. 30.4a added the
+        // column; 30.4b's picker is what first makes a non-null value reachable.
+        //
+        // Explicit `null` rather than an omitted key: `updateEntity` is a
+        // partial `.set()`, so omitting would leave any prior server value in
+        // place, and null is always a valid FK. Category assignments therefore
+        // stay LOCAL-ONLY for now — which is exactly the status quo, since
+        // categories never reached the server in the first place.
+        categoryId: null,
         userId,
       }
     case 'savingsGoal':
@@ -138,9 +162,15 @@ function toServerPayload(
       }
       return payload
     }
-    default: {
-      // userProfile (the only remaining SyncEntityType) — `default` rather than a
-      // named case so the switch is provably exhaustive for tsc.
+    case 'category':
+      return {
+        name: entity['name'],
+        // Story 30.4a: `kind` separates the income and expense namespaces. Drop
+        // it and every synced category becomes unplaceable server-side.
+        kind: entity['kind'],
+        userId,
+      }
+    case 'userProfile': {
       const payload: Record<string, unknown> = {
         name: entity['name'],
         isDefault: entity['isDefault'] ?? false,
@@ -151,6 +181,19 @@ function toServerPayload(
         payload['description'] = entity['description']
       }
       return payload
+    }
+    default: {
+      // ⚠️ Story 30.4a: this was previously the `userProfile` case itself, which
+      // made adding a SyncEntityType a SILENT defect — a new entity fell through
+      // to userProfile's shape and shipped `currency`/`isDefault`, both of which
+      // are declared in syncOperationDataSchema and so survive the strip gate and
+      // get written. Extending the union produced no compile error at all.
+      //
+      // Now every member is named and the residual `default` is provably
+      // unreachable, so `never` turns the next added entity type into a COMPILE
+      // ERROR here instead of corrupt data on the wire.
+      const exhaustive: never = entityType
+      throw new Error(`toServerPayload: unhandled sync entity type ${String(exhaustive)}`)
     }
   }
 }

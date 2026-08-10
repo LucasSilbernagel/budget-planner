@@ -24,6 +24,7 @@
  */
 
 import { useBalanceStore } from '../../stores/balanceStore'
+import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useSavingsStore } from '../../stores/savingsStore'
@@ -89,6 +90,39 @@ export async function seedLocalDataToServer(sessionUserId: string): Promise<numb
     }
   }
 
+  // ⚠️ ORDER IS NECESSARY BUT NOT SUFFICIENT — categories are seeded first
+  // (Story 30.4a; claim corrected by code review 30.4a).
+  //
+  // Each `consider(...)` enqueues immediately and the queue is drained in
+  // timestamp order (SyncQueue.getReadyOperations sorts ascending, and
+  // synchronization.ts stamps Date.now() at enqueue), so loop position here is
+  // wire order. `incomeSources.categoryId` / `expenses.categoryId` are real
+  // foreign keys to `categories`, so a cashflow row that reaches the server
+  // before its category is rejected on the FK and that operation fails.
+  //
+  // ⚠️ DO NOT READ THIS AS "ordering makes categorized rows sync correctly".
+  // It does not, and cannot, today: `toServerPayload` emits no `id` and
+  // `syncOperationDataSchema` declares none, so the server inserts every
+  // category under a fresh `defaultRandom()` uuid. The cashflow row that
+  // follows still carries the CLIENT's category uuid, which matches no server
+  // row — so it fails the FK (23503) no matter what order it arrives in.
+  // Ordering is a precondition for correctness once the sync-create repair
+  // lands (`profileId` AND `id` together — see deferred-work.md); on its own it
+  // protects nothing. Keep the order; do not trust it alone.
+  //
+  // Do not "tidy" this into alphabetical or store-declaration order.
+  //
+  // Tombstones are EXCLUDED (code review 30.4a). This is the only store that
+  // keeps soft-deleted rows locally, and `toServerPayload`'s category case does
+  // not forward `isDeleted` — so seeding one would insert it LIVE on the server
+  // (column default false) and the next pull would flip the user's own deletion
+  // back to visible on every device.
+  for (const row of useCategoryStore.getState().categories) {
+    if (row.isDeleted) {
+      continue
+    }
+    consider('category', row)
+  }
   for (const row of useIncomeStore.getState().incomeSources) {
     consider('incomeSource', row)
   }

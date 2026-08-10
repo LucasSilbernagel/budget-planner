@@ -15,6 +15,9 @@ interface ClientIncomeSource {
   name: string
   amount: number
   frequency: Frequency
+  // User-defined category (Story 30.4a, FR54). NULL/absent = uncategorized,
+  // which is a permanently valid state — no form gains a required field.
+  categoryId: string | null
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
 }
@@ -24,6 +27,7 @@ interface ClientNewIncomeSource {
   name: string
   amount: number
   frequency: Frequency
+  categoryId?: string | null
 }
 
 // Define the type for our store state
@@ -42,6 +46,9 @@ interface IncomeState {
 // uuid (Story 5-14) so an offline-created row keeps the SAME id once synced.
 const toClientIncomeSource = (newSource: ClientNewIncomeSource): ClientIncomeSource => ({
   ...newSource,
+  // Explicitly null rather than undefined so the persisted shape matches the
+  // v2 migration's backfill and the sync payload never carries `undefined`.
+  categoryId: newSource.categoryId ?? null,
   userId: newSource.userId ?? 0, // Default to 0 for free tier (no auth)
   id: generateUUID(),
   createdAt: new Date().toISOString(),
@@ -109,13 +116,48 @@ export const useIncomeStore = create<IncomeState>()(
       name: 'budget-planner-income-v1',
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
-      // v1 (Story 5-14): entity ids became uuid strings. Convert any legacy
-      // negative-integer ids persisted under v0 to fresh uuids on first load so
-      // they don't break sync push (uuid column) / pull reconciliation.
-      version: 1,
+      // v1 (Story 5-14): entity ids became uuid strings — convert any legacy
+      // negative-integer ids persisted under v0 to fresh uuids so they don't
+      // break sync push (uuid column) / pull reconciliation.
+      // v2 (Story 30.4a): backfill `categoryId: null` so a row written before
+      // categories existed is explicitly uncategorized rather than carrying an
+      // absent key. Both steps run for a v0/v1 payload.
+      //
+      // ⚠️ `migrate` runs on ANY version MISMATCH, not only on an upgrade
+      // (correction by code review 30.4a — the previous comment claimed
+      // "only ... BELOW version", which is false). zustand 4.5.7 gates on
+      // `deserializedStorageValue.version !== options.version`, so a payload
+      // written by a NEWER build (a downgrade) is put through this same function.
+      // Both steps here are idempotent, which is the only reason that is safe
+      // today — a future v3 must not assume it is only ever called upward.
+      // Note also that when `version` is absent or non-numeric zustand skips
+      // `migrate` entirely and uses the raw state, so `categoryId` stays
+      // undefined rather than null on such a payload.
+      //
+      // ⚠️ The persist KEY is unchanged. The `-v1` suffix in the name is part of
+      // the storage key, NOT the numeric `version` — renaming it would orphan
+      // every existing row instead of migrating it (see profileStore's note).
+      version: 2,
       migrate: (persisted) => {
-        const state = persisted as { incomeSources?: ClientIncomeSource[] }
-        return { incomeSources: withUuidIds(state?.incomeSources) }
+        const state = persisted as { incomeSources?: unknown }
+        // ⚠️ Sanitize BEFORE anything dereferences a row (code review 30.4a).
+        // The persisted array is untrusted JSON, not `ClientIncomeSource[]` — the
+        // cast asserts a shape nobody verified. A single null/non-object entry
+        // (truncated write, hand-edited storage, an older bug) made both
+        // `withUuidIds`' `item.id` and the `categoryId` backfill throw, and a
+        // throwing `migrate` fails rehydration entirely: the store keeps its
+        // empty default and the user's whole income list silently disappears.
+        // `withUuidIds` must therefore receive an already-clean array.
+        const raw = Array.isArray(state?.incomeSources) ? state.incomeSources : []
+        const rows = raw.filter(
+          (row): row is ClientIncomeSource => typeof row === 'object' && row !== null
+        )
+        return {
+          incomeSources: withUuidIds(rows).map((row) => ({
+            ...row,
+            categoryId: row.categoryId ?? null,
+          })),
+        }
       },
       partialize: (state) => ({
         incomeSources: state.incomeSources,

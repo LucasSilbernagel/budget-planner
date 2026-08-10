@@ -1,4 +1,5 @@
 import { AccountSection } from './account-section'
+import { CategoriesSection } from './categories-section'
 import { CurrencyToggle } from './currency-toggle'
 import { LocalDataSection } from './local-data-section'
 import { ReportSection } from './report-section'
@@ -70,6 +71,11 @@ export function SettingsPage() {
           free visitors (the /report route gates independently), and placed after
           Local data so the two data-facing controls sit together. */}
       <ReportSection />
+
+      {/* Premium custom categories — story 30.4b. Surfaced-but-locked for free
+          visitors (the /categories route gates independently). Placed after the
+          report so the two gated entry points sit together. */}
+      <CategoriesSection />
 
       {/* Account controls (sign-out + self-serve deletion) — story 10-5.
           Renders only for authenticated users; free/unauthenticated visitors

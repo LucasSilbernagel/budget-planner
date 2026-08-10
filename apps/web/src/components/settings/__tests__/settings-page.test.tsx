@@ -127,4 +127,26 @@ describe('SettingsPage', () => {
       '/report'
     )
   })
+
+  // Story 30.4b: category management is reached from here too. Same shape as the
+  // report section above — the gate's own suite covers every tier state; these
+  // two assert only that the section is composed into this page.
+  it('hosts the Premium categories section, locked for a free user (30.4b)', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
+    render(<SettingsPage />)
+
+    expect(screen.getByRole('heading', { level: 2, name: /^categories$/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Custom Categories — premium, locked' })
+    ).toBeInTheDocument()
+  })
+
+  it('links an active Premium user from Settings to category management (30.4b)', () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<SettingsPage />)
+    expect(screen.getByRole('link', { name: /custom categories/i })).toHaveAttribute(
+      'href',
+      '/categories'
+    )
+  })
 })

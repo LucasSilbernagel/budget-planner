@@ -19,8 +19,9 @@
  * from the id unification this story delivers — out of scope here.
  */
 
-import type { ServerChange, SyncEntityType } from '@budget-planner/core/sync'
+import type { ServerChange, SyncEntityType } from '@budget-planner/core'
 import { useBalanceStore } from '../../stores/balanceStore'
+import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
@@ -49,6 +50,7 @@ const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
   savingsGoal: { store: useSavingsStore as unknown as StoreApi, collection: 'savingsGoals' },
   balanceTracking: { store: useBalanceStore as unknown as StoreApi, collection: 'entries' },
   userProfile: { store: useProfileStore as unknown as StoreApi, collection: 'profiles' },
+  category: { store: useCategoryStore as unknown as StoreApi, collection: 'categories' },
 }
 
 /**

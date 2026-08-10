@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
+import { useCategoryStore } from '../../../stores/categoryStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
@@ -69,6 +70,20 @@ function seedStores() {
       },
     ],
   })
+  useCategoryStore.setState({
+    categories: [
+      {
+        id: 'cat-1',
+        userId: 0,
+        profileId: null,
+        name: 'Groceries',
+        kind: 'expense',
+        isDeleted: false,
+        createdAt: '2026-06-01T00:00:00.000Z',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+      },
+    ],
+  })
   useBalanceStore.setState({
     entries: [
       {
@@ -101,12 +116,84 @@ describe('seedLocalDataToServer', () => {
   it('enqueues a create for every never-synced financial row', async () => {
     const count = await seedLocalDataToServer(USER_ID)
 
-    expect(count).toBe(4)
-    expect(handle.queueCreate).toHaveBeenCalledTimes(4)
+    expect(count).toBe(5)
+    expect(handle.queueCreate).toHaveBeenCalledTimes(5)
     const types = handle.queueCreate.mock.calls.map((c) => c[0])
     expect(types).toEqual(
-      expect.arrayContaining(['incomeSource', 'expense', 'savingsGoal', 'balanceTracking'])
+      expect.arrayContaining([
+        'category',
+        'incomeSource',
+        'expense',
+        'savingsGoal',
+        'balanceTracking',
+      ])
     )
+  })
+
+  it('⚠️ enqueues CATEGORIES FIRST — loop order is wire order, and categoryId is a real FK', async () => {
+    // Story 30.4a. Each `consider(...)` enqueues immediately and the queue drains
+    // in timestamp order (SyncQueue.getReadyOperations sorts ascending;
+    // synchronization.ts stamps Date.now() at enqueue), so the ORDER OF THE LOOPS
+    // in seedLocalDataToServer is the order operations reach the server.
+    //
+    // `incomeSources.categoryId` / `expenses.categoryId` are real foreign keys to
+    // `categories`. A cashflow row that arrives before its category is rejected on
+    // the FK, so an upgrading user's first sync would drop rows.
+    //
+    // This asserts POSITION, not membership — the arrayContaining check above
+    // passes no matter where the category loop sits, which is exactly how this
+    // defect would ship unnoticed.
+    //
+    // ⚠️ SCOPE OF THIS GUARANTEE, corrected by code review 30.4a: ordering is
+    // NECESSARY BUT NOT SUFFICIENT. `toServerPayload` emits no `id` and
+    // `syncOperationDataSchema` declares none, so the server inserts each
+    // category under a fresh uuid; the cashflow row that follows still carries
+    // the CLIENT's category uuid and fails the FK (23503) whatever the order.
+    // This test pins the ordering so it survives a future tidy-up — it does NOT
+    // demonstrate that categorized rows sync. That needs the `profileId` + `id`
+    // repair recorded in deferred-work.md.
+    await seedLocalDataToServer(USER_ID)
+
+    const types = handle.queueCreate.mock.calls.map((c) => c[0])
+    expect(types[0]).toBe('category')
+    expect(types.indexOf('category')).toBeLessThan(types.indexOf('incomeSource'))
+    expect(types.indexOf('category')).toBeLessThan(types.indexOf('expense'))
+  })
+
+  it('does NOT seed a tombstoned category — a deleted one must not come back to life', async () => {
+    // Code review 30.4a. `categoryStore` is the only store that keeps
+    // soft-deleted rows locally, and `toServerPayload`'s category case does not
+    // forward `isDeleted`. Seeding a tombstone therefore inserts it LIVE on the
+    // server (column default false), and the next pull flips the user's own
+    // deletion back to visible on every device.
+    useCategoryStore.setState({
+      categories: [
+        {
+          id: 'cat-deleted',
+          userId: 0,
+          profileId: null,
+          name: 'Deleted',
+          kind: 'expense',
+          isDeleted: true,
+          createdAt: '2026-06-01T00:00:00.000Z',
+          updatedAt: '2026-06-02T00:00:00.000Z',
+        },
+      ],
+    })
+
+    await seedLocalDataToServer(USER_ID)
+
+    const categoryCalls = handle.queueCreate.mock.calls.filter((call) => call[0] === 'category')
+    expect(categoryCalls).toHaveLength(0)
+  })
+
+  it('still seeds LIVE categories — the tombstone filter is not a blanket skip', async () => {
+    // Negative control for the test above: proves the filter is keyed on
+    // isDeleted rather than having disabled category seeding altogether.
+    await seedLocalDataToServer(USER_ID)
+
+    const categoryCalls = handle.queueCreate.mock.calls.filter((call) => call[0] === 'category')
+    expect(categoryCalls).toHaveLength(1)
   })
 
   it('SKIPS rows already on the server (review P6: no create-create conflicts)', async () => {
@@ -128,6 +215,7 @@ describe('seedLocalDataToServer', () => {
     useExpenseStore.setState({ expenses: [] })
     useSavingsStore.setState({ savingsGoals: [] })
     useBalanceStore.setState({ entries: [] })
+    useCategoryStore.setState({ categories: [] })
 
     const count = await seedLocalDataToServer(USER_ID)
     expect(count).toBe(0)
@@ -150,6 +238,7 @@ describe('seedLocalDataToServer', () => {
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
+      categoryId: null, // Story 30.4a — always forwarded, see syncBridge
       userId: USER_ID,
     })
   })
@@ -159,7 +248,7 @@ describe('seedOnce — once-per-user gating', () => {
   it('seeds on the first call and sets the marker AFTER the enqueues resolve', async () => {
     expect(hasSeeded(USER_ID)).toBe(false)
     const count = await seedOnce(USER_ID)
-    expect(count).toBe(4)
+    expect(count).toBe(5)
     expect(hasSeeded(USER_ID)).toBe(true)
     expect(localStorage.getItem(seedMarkerKey(USER_ID))).not.toBeNull()
   })

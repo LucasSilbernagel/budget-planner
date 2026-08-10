@@ -18,6 +18,7 @@ import { getPaddleConfig } from '@budget-planner/config'
 import { db } from '@budget-planner/db'
 import {
   balanceTracking,
+  categories,
   expenses,
   forecastingProfiles,
   incomeSources,
@@ -80,10 +81,16 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
     //    rows and forecasting profiles reference BOTH users.id and
     //    userProfiles.id, so they precede userProfiles; rateLimits and
     //    loginTokens reference only users.id. `users` is deleted last.
+    //
+    //    ⚠️ `categories` (Story 30.4a) is referenced BY incomeSources.categoryId
+    //    and expenses.categoryId, so it must come AFTER both of them — and it
+    //    references users.id and userProfiles.id, so it must come BEFORE those.
+    //    It is the only table in this list with a parent AND a child here.
     await db.transaction(async (tx) => {
       await tx.delete(forecastingProfiles).where(eq(forecastingProfiles.userId, userId))
       await tx.delete(incomeSources).where(eq(incomeSources.userId, userId))
       await tx.delete(expenses).where(eq(expenses.userId, userId))
+      await tx.delete(categories).where(eq(categories.userId, userId))
       await tx.delete(savingsGoals).where(eq(savingsGoals.userId, userId))
       await tx.delete(balanceTracking).where(eq(balanceTracking.userId, userId))
       await tx.delete(loginTokens).where(eq(loginTokens.userId, userId))

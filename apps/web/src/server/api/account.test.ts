@@ -55,6 +55,7 @@ vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn() } }))
 
 import {
   balanceTracking,
+  categories,
   expenses,
   forecastingProfiles,
   incomeSources,
@@ -66,11 +67,20 @@ import {
 } from '@budget-planner/db/src/schema'
 import { deleteUserAccount } from './account'
 
-/** FK-safe deletion order: children before parents, `users` last. */
+/**
+ * FK-safe deletion order: children before parents, `users` last.
+ *
+ * ⚠️ `categories` (Story 30.4a) sits after incomeSources/expenses — which
+ * reference it via categoryId — and before userProfiles/users, which it
+ * references. It is the only entry here with both a parent and a child in this
+ * list, so its position is load-bearing in BOTH directions: move it earlier and
+ * the cashflow FKs break; move it later and its own FKs do.
+ */
 const EXPECTED_ORDER = [
   forecastingProfiles,
   incomeSources,
   expenses,
+  categories,
   savingsGoals,
   balanceTracking,
   loginTokens,

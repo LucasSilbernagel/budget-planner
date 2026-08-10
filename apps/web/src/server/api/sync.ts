@@ -23,6 +23,7 @@ import type { User } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import {
   balanceTracking,
+  categories,
   expenses,
   incomeSources,
   savingsGoals,
@@ -155,6 +156,10 @@ const incomeSourceSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  // Story 30.4a: nullable FK to `categories`. Must accept an explicit null —
+  // un-categorizing a row sends null, and updateEntity does a partial .set(), so
+  // the client always forwards the key rather than omitting it.
+  categoryId: z.string().uuid().nullable().optional(),
   userId: z.string().uuid(),
 })
 
@@ -162,6 +167,21 @@ const expenseSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  // Story 30.4a: see incomeSourceSchema above.
+  categoryId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid(),
+})
+
+/**
+ * Story 30.4a: user-defined income/expense category (FR54).
+ *
+ * Untrusted-input gate for the category entity. Mirrors core's `categorySchema`
+ * but is declared independently, matching this file's existing convention of
+ * hand-duplicating the per-entity schemas rather than importing core's.
+ */
+const categorySchema = z.object({
+  name: z.string().min(1).max(255),
+  kind: z.enum(['income', 'expense']),
   userId: z.string().uuid(),
 })
 
@@ -212,12 +232,21 @@ export const syncOperationSchema = z
   .object({
     id: z.string(),
     type: z.enum(['create', 'update', 'delete']),
+    // ⚠️ Hard-coded, NOT derived from core's SyncEntityType — so adding an entity
+    // type upstream does NOT surface here at compile time. Omitting a value is a
+    // SILENT and unusually destructive defect: this schema is applied via
+    // `z.array(syncOperationSchema)` in batchSyncRequestSchema, so ONE operation
+    // with an unrecognised entityType fails the WHOLE batch (processedCount 0,
+    // failedOperationIds empty). The client then retries the same batch forever
+    // and NO entity's operations ever drain. Keep in lockstep with
+    // SyncEntityType in packages/core/src/sync/types.ts.
     entityType: z.enum([
       'incomeSource',
       'expense',
       'savingsGoal',
       'balanceTracking',
       'userProfile',
+      'category',
     ]),
     entityId: z.string(),
     data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
@@ -259,6 +288,9 @@ export const syncOperationSchema = z
       case 'userProfile':
         userProfileSchema.parse(entityData)
         break
+      case 'category':
+        categorySchema.parse(entityData)
+        break
     }
   })
 
@@ -277,13 +309,22 @@ export const batchSyncRequestSchema = z.object({
 
 /**
  * Map of entity types to their database tables
+ *
+ * ⚠️ EXPORTED FOR TESTING (code review 30.4a). This is an enumerated gate: a
+ * `SyncEntityType` with no entry here makes `getTable` throw
+ * `Unknown entity type` at apply time, so every push of that entity fails while
+ * the client sees nothing wrong. It had zero coverage — removing
+ * `category: categories` left 240/240 green across `src/server` + `src/lib/sync`.
+ * `sync-category-gates.test.ts` now pins the map against the `SyncEntityType`
+ * union itself, so a new entity cannot be added to the union without landing here.
  */
-const entityTableMap = {
+export const entityTableMap = {
   incomeSource: incomeSources,
   expense: expenses,
   savingsGoal: savingsGoals,
   balanceTracking: balanceTracking,
   userProfile: userProfiles,
+  category: categories,
 } as const
 
 /**
@@ -314,12 +355,28 @@ const RATE_LIMIT_CONFIG = {
 /**
  * Subscription statuses permitted to use server-side sync (push AND pull).
  *
- * NOTE: this deliberately includes `past_due` (a paying customer with a failed
- * latest charge keeps access during the dunning window) and therefore differs
- * from the calculations gate, which is `active`-only. The pull route must match
- * the push gate, not the calculations gate (Story 4-18).
+ * The full permitted set, and why each is here:
+ *  - `active`    — the ordinary paying subscriber.
+ *  - `past_due`  — a paying customer whose latest charge failed keeps access
+ *                  during the dunning window. This is why the sync gate differs
+ *                  from the calculations gate, which is `active`-only. The pull
+ *                  route must match the PUSH gate, not the calculations gate
+ *                  (Story 4-18).
+ *  - `lifetime`  — a one-time lifetime purchase (Story 25-2). Permanent Premium,
+ *                  deliberately distinct from `active` so a subscription
+ *                  lifecycle event can never downgrade a lifetime buyer.
+ *
+ * ⚠️ `lifetime` was MISSING here from Story 25-2 until Story 30.4a. The status
+ * was added to the schema and to `usePremiumAccess` (active OR lifetime) but
+ * never to this array, so a lifetime buyer saw every premium surface unlocked
+ * and received a 403 on both sync push and pull — their data silently never
+ * left the device. Restored with a regression test that asserts this set
+ * directly, so a future status addition cannot re-open the same hole.
+ *
+ * Keep in lockstep with `usePremiumAccess` (hooks/usePremiumAccess.ts) and the
+ * server tier guards in server/functions/profiles.ts.
  */
-export const PAID_SYNC_STATUSES = ['active', 'past_due']
+export const PAID_SYNC_STATUSES = ['active', 'past_due', 'lifetime']
 
 /**
  * Check rate limit for a user using DanubeData PostgreSQL
@@ -1212,6 +1269,35 @@ export async function getSyncChanges(
     for (const row of incomeRows) {
       changes.push({
         entityType: 'incomeSource',
+        entityId: row.id,
+        data: row,
+        updatedAt: toEpochMs(row.updatedAt),
+        isDeleted: row.isDeleted,
+      })
+    }
+
+    // Categories (profile-scoped, Story 30.4a)
+    //
+    // ⚠️ This function is FIVE (now six) hand-written per-entity blocks, not a
+    // table-driven loop. A new field rides along free because select() returns
+    // the whole row — but a new ENTITY reaches no second device at all unless a
+    // block like this is added. Silent: nothing fails, the data simply never
+    // arrives.
+    const categoryRows = await db
+      .select()
+      .from(categories)
+      .where(
+        and(
+          eq(categories.userId, userId),
+          eq(categories.profileId, profileId),
+          sinceDate ? gt(categories.updatedAt, sinceDate) : undefined
+        )
+      )
+      .orderBy(asc(categories.updatedAt))
+      .limit(cappedLimit)
+    for (const row of categoryRows) {
+      changes.push({
+        entityType: 'category',
         entityId: row.id,
         data: row,
         updatedAt: toEpochMs(row.updatedAt),

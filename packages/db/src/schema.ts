@@ -45,6 +45,15 @@ export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt'])
 // of the leftover pool (computed in Story 26.2). Defaults to 'automatic'.
 export const allocationModeEnum = pgEnum('allocationMode', ['manual', 'automatic'])
 
+// Which side of the ledger a user-defined category applies to (Story 30.4a).
+// Income and expense categories are separate namespaces so an expense category
+// ("Groceries") can never be offered on the income form, and so core's
+// aggregateByCategoryAndType — which already partitions by `${type}:${category}`
+// — is matched rather than fought. A NEW enum is deliberate: extending an
+// existing one needs `ALTER TYPE ... ADD VALUE`, which cannot run inside a
+// transaction block on older PG (see 0009_absent_molten_man.sql).
+export const categoryKindEnum = pgEnum('categoryKind', ['income', 'expense'])
+
 // Subscription status enum for user accounts
 // Values use snake_case as per architecture
 export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
@@ -125,6 +134,10 @@ export const incomeSources = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
     frequency: frequencyEnum('frequency').notNull(),
+    // User-defined category (Story 30.4a, FR54). NULLABLE: uncategorized is a
+    // permanently valid state, so every row predating this column stays valid
+    // and no form gains a required field.
+    categoryId: uuid('categoryId').references(() => categories.id),
     // Soft-delete tombstone (Story 4-18): cross-device delete propagation. A hard
     // DELETE can never be surfaced by a delta-by-updatedAt pull, so deletes are
     // soft (isDeleted=true + updatedAt bump) and filtered from normal reads.
@@ -157,6 +170,8 @@ export const expenses = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
     frequency: frequencyEnum('frequency').notNull(),
+    // User-defined category (Story 30.4a, FR54); see incomeSources note above.
+    categoryId: uuid('categoryId').references(() => categories.id),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
@@ -291,6 +306,75 @@ export const userProfiles = pgTable(
   },
   (table) => ({
     userIdIdx: index('userProfiles_userId_idx').on(table.userId),
+  })
+)
+
+// Categories table - user-defined income/expense categories (Story 30.4a, FR54)
+//
+// Premium capability. Modelled as a first-class entity rather than a
+// denormalized string on each row because the feature requires rename and
+// delete: renaming must update every referencing row with no per-row edit, and
+// a denormalized copy cannot be renamed or deleted coherently.
+//
+// `incomeSources.categoryId` / `expenses.categoryId` reference this table and
+// are NULLABLE — every pre-existing row stays valid and uncategorized, and no
+// form gains a required field.
+//
+// ⚠️ This is the FIRST foreign key in this schema between two entities the user
+// creates at will. Every other FK targets `users` or `userProfiles`, which
+// always exist before any child row. Consequences the sync layer must respect:
+//   - PUSH: a category must reach the server before any row referencing it.
+//     Interactive use is safe because the queue is timestamp-FIFO, but
+//     seedLocalData's free->paid backfill enqueues in hard-coded entity order,
+//     so categories are seeded FIRST there (see lib/sync/seedLocalData.ts).
+//   - PULL: changes are paginated by updatedAt, so a device can legitimately
+//     receive a row whose category it has not pulled yet. There is no FK in
+//     localStorage, so a dangling categoryId is a NORMAL client state that must
+//     be rendered as "uncategorized" rather than assumed to resolve.
+//     ⚠️ Code review 30.4a: this paragraph previously asserted "the UI resolves
+//     it to uncategorized" as though that were implemented. It is not — no
+//     resolver exists anywhere in the client, and the pickable-set filters do
+//     not cover a cashflow row pointing at a category this device has never
+//     seen. Story 30.4b OWNS building it; until then this is a documented
+//     requirement, not a description of the code.
+export const categories = pgTable(
+  'categories',
+  {
+    // Client-generatable uuid PK, same rationale as incomeSources (Story 5-14).
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    profileId: uuid('profileId')
+      .references(() => userProfiles.id)
+      .notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    kind: categoryKindEnum('kind').notNull(),
+    // Soft-delete tombstone (Story 4-18), as on every other synced entity.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdProfileIdIdx: index('categories_userId_profileId_idx').on(table.userId, table.profileId),
+    // Duplicate names are rejected per (user, profile, kind) — but ONLY among
+    // LIVE rows. A plain `unique(...)` like forecastingProfiles' would collide
+    // with the soft-delete tombstone above: deleting "Groceries" and creating it
+    // again would hit a 23505 while the client store happily kept the new row —
+    // silent client/server divergence that no test would surface.
+    // forecastingProfiles has no isDeleted column, which is why its unmodified
+    // pattern is not safe here.
+    //
+    // ⚠️ CASE-INSENSITIVE on `lower(name)` (code review 30.4a, Lucas's call;
+    // migration 0012). The client's `isDuplicateName` has always compared
+    // `trim().toLocaleLowerCase()`, so a case-SENSITIVE index disagreed with it
+    // in both directions: it accepted "Groceries" and "groceries" as distinct
+    // rows that every client then treated as duplicates and no code path
+    // reconciled. Keep this expression and the client's `normalizeName` in step
+    // — they are one rule expressed twice.
+    liveNameUnique: uniqueIndex('categories_userId_profileId_kind_name_live_unique')
+      .on(table.userId, table.profileId, table.kind, sql`lower(${table.name})`)
+      .where(sql`${table.isDeleted} = false`),
   })
 )
 
@@ -439,6 +523,9 @@ export type NewForecastingProfile = InferInsertModel<typeof forecastingProfiles>
 export type LoginToken = InferSelectModel<typeof loginTokens>
 export type NewLoginToken = InferInsertModel<typeof loginTokens>
 
+export type Category = InferSelectModel<typeof categories>
+export type NewCategory = InferInsertModel<typeof categories>
+
 // Frequency enum type
 export type Frequency = (typeof frequencyEnum.enumValues)[number]
 
@@ -451,6 +538,9 @@ export type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[numb
 // Currency enum type
 export type Currency = (typeof currencyEnum.enumValues)[number]
 
+// Category kind enum type (Story 30.4a)
+export type CategoryKind = (typeof categoryKindEnum.enumValues)[number]
+
 // Export all tables for use in migrations and queries
 export const allTables = {
   users,
@@ -462,6 +552,7 @@ export const allTables = {
   rateLimits,
   forecastingProfiles,
   loginTokens,
+  categories,
 }
 
 // NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)

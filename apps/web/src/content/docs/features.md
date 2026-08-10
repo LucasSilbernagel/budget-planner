@@ -53,6 +53,13 @@ model, because there is no model. This holds for every visitor on both tiers.
   browser from the figures on your device, so nothing is sent anywhere to
   produce it. It is a document to read or keep, not a backup: it cannot be
   loaded back into the app.
+- **Custom categories** — create your own income and expense categories, pick one
+  when you add or edit an entry, and see the overview charts grouped the way you
+  think about your money instead of one slice per entry. Renaming a category
+  updates every entry that uses it, and deleting one leaves those entries in
+  place, simply uncategorized. The categories page also breaks your money down
+  by category, showing what each one totals and what share of that side it is,
+  with everything unassigned gathered into a single Uncategorized line.
 
 ### Privacy and data location
 
