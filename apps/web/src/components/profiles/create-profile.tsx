@@ -148,7 +148,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
       isOpen
       onClose={onClose}
       labelledBy="create-profile-title"
-      className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+      className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-xl w-full max-w-md"
     >
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-default">

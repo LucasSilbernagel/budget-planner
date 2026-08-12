@@ -109,7 +109,11 @@ export function PremiumPrompt({
         isOpen
         onClose={() => onClose?.()}
         ariaLabel="Go Premium"
-        className="relative w-full max-w-md"
+        // `rounded-xl` matches the visible gradient card rendered as this
+        // element's child. This wrapper is fully transparent, so its own radius
+        // is invisible — but story 31.3 makes it the SCROLL container, and a
+        // square clip box would crop the rounded card it contains.
+        className="relative w-full max-w-md rounded-xl"
       >
         <PremiumPromptContent
           featureName={featureName}

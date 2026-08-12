@@ -73,7 +73,22 @@ export function ConfirmDialog({
       <h3 id={titleId} className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {title}
       </h3>
-      <p id={descriptionId} className="text-gray-600 dark:text-gray-400 mb-6">
+      {/*
+        `break-words` is load-bearing at 320px, not cosmetic (story 31.3). The
+        message interpolates user-supplied names, and a long unbroken one ran
+        ~926px off screen — invisible to any document-level overflow check
+        because Modal locks body scroll while open.
+
+        ⚠️ It is load-bearing TOGETHER WITH `MODAL_CARD_CONSTRAINT`, not on its
+        own, and neither substitutes for the other. The card is a flex item of
+        the overlay, so its automatic minimum size is its min-content width —
+        the whole unbroken name — until `overflow` becomes non-`visible`, which
+        drops that floor to 0 (CSS Flexbox §4.5). So the constraint is what
+        keeps the card's BOX at 288px, and `break-words` is what stops the
+        content inside it from needing ~1214px of horizontal scroll. Remove
+        either and the 320px rendering breaks again, in different ways.
+      */}
+      <p id={descriptionId} className="text-gray-600 dark:text-gray-400 mb-6 break-words">
         {message}
       </p>
       <div className="flex gap-3 justify-end">

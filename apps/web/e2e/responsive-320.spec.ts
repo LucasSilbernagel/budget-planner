@@ -1,7 +1,7 @@
-import { type Page, expect, test } from '@playwright/test'
+import { type Locator, type Page, expect, test } from '@playwright/test'
 
 /**
- * Responsive guard E2E (Story 6.1 / UX-DR9).
+ * Responsive guard E2E (Story 6.1 / UX-DR9, extended by 31.2 and 31.3).
  *
  * Asserts that every primary route is free of horizontal overflow at a 320px
  * viewport — the narrowest target width (small/older phones). Horizontal
@@ -11,6 +11,24 @@ import { type Page, expect, test } from '@playwright/test'
  * The check compares the document's full scroll width against its visible
  * client width; any element that pushes the page wider than the viewport makes
  * `scrollWidth > clientWidth` and fails the route.
+ *
+ * ⚠️ **That horizontal-only, document-level premise is no longer the whole
+ * story, and this file no longer claims it is.** Two later stories falsified
+ * it from opposite directions:
+ *
+ *  - 31.2 — every finance table sits in an `overflow-x-auto` wrapper, and a
+ *    scroll container ABSORBS its content's overflow instead of propagating it
+ *    to `documentElement`. The document-level check cannot see it (see the
+ *    31.2 block below).
+ *  - 31.3 — the failure mode on a phone in LANDSCAPE is vertical, not
+ *    horizontal, and it is invisible here twice over: `position: fixed` keeps
+ *    the modal overlay out of `documentElement.scrollHeight` entirely, and
+ *    `Modal` sets `body { overflow: hidden }` while open. A modal whose title
+ *    sat 96px above the top of the screen passed every check in this file.
+ *
+ * So the height-constrained block at the end of this file measures ELEMENTS,
+ * not the document — and the assertion that does the real work is a
+ * scrollability probe, not a visibility check.
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
@@ -715,4 +733,450 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await expect(confirm).toContainText(LONG_UNBROKEN_NAME)
     })
   }
+})
+
+// ---------------------------------------------------------------------------
+// Story 31.3 (UX-DR37) — modals fit height-constrained viewports.
+// ---------------------------------------------------------------------------
+
+/** Portrait phone, height-constrained. The epic's primary target. */
+const SHORT_HEIGHT = 480
+/** iPhone SE in LANDSCAPE — the epic's literal floor ("down to 320px height"). */
+const LANDSCAPE = { width: 568, height: 320 } as const
+/**
+ * Total vertical space the overlay's `p-4` takes from the card (1rem each side).
+ * The card is capped at `innerHeight - OVERLAY_GUTTER`, so this is the real
+ * "available height", and the threshold every fit assertion is measured against.
+ */
+const OVERLAY_GUTTER = 32
+
+/**
+ * ⚠️ Almost every Playwright matcher is VACUOUS on this story. Read before
+ * adding an assertion here.
+ *
+ *  - `toBeVisible()` is *attached + non-empty box + not `visibility:hidden`*.
+ *    It ignores viewport position, ancestor scroll offset and clipping, so it
+ *    is true even for a card whose title sits 96px above the screen. Ten such
+ *    assertions across five specs stay green through a completely botched
+ *    implementation of this story.
+ *  - `documentElement.scrollHeight <= clientHeight` is decoupled from modal
+ *    height entirely (fixed overlay + body scroll lock), and is measured FALSE
+ *    on `/balance` at 320x480 in all three states anyway, because the PAGE is
+ *    taller than the viewport.
+ *  - `card.scrollHeight > card.clientHeight` alone is green for the CLIPPED
+ *    variant (`max-h-full` without `overflow-y-auto`) — `scrollHeight` counts
+ *    overflowing content even under `overflow: visible`.
+ *  - `footerButton.bottom <= innerHeight` at `scrollTop === 0` is INVERTED, not
+ *    merely weak: `getBoundingClientRect()` reports UNCLIPPED geometry, so on a
+ *    CORRECT implementation the un-scrolled footer legitimately sits below the
+ *    card's visible box and this goes red.
+ *  - Anything measured after `click()` / `fill()` / `hover()` / `press()` /
+ *    `focus()` / `scrollIntoViewIfNeeded()` on the element being measured:
+ *    Playwright actionability scrolls ALL scrollable ancestors, including the
+ *    card this story creates. Everything below therefore measures through
+ *    `locator.evaluate()`, which performs no actionability and no scrolling.
+ *
+ * What DOES work: `toBeInViewport({ ratio: 1 })` (IntersectionObserver-backed,
+ * so the intersection rect is clipped by every ancestor scroll container) and
+ * the scrollability probe below.
+ */
+interface CardMetrics {
+  top: number
+  bottom: number
+  left: number
+  right: number
+  height: number
+  scrollHeight: number
+  clientHeight: number
+  scrollWidth: number
+  clientWidth: number
+  borderRadius: string
+  overflowY: string
+  innerHeight: number
+  innerWidth: number
+  bodyOverflow: string
+}
+
+async function readCardMetrics(card: Locator): Promise<CardMetrics> {
+  return card.evaluate((el) => {
+    const rect = el.getBoundingClientRect()
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left,
+      right: rect.right,
+      height: rect.height,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      borderRadius: getComputedStyle(el).borderTopLeftRadius,
+      overflowY: getComputedStyle(el).overflowY,
+      innerHeight: window.innerHeight,
+      innerWidth: window.innerWidth,
+      bodyOverflow: getComputedStyle(document.body).overflow,
+    }
+  })
+}
+
+/**
+ * THE load-bearing assertion of story 31.3.
+ *
+ * Setting `scrollTop` on a non-scroll container is a silent no-op that reads
+ * back 0. This is what separates a real scroll container from `max-h-full`
+ * plus `overflow: visible`, where the content simply spills — every geometric
+ * assertion above it is satisfied by both. Scroll position is restored so the
+ * caller can still measure the un-scrolled state afterwards.
+ *
+ * ⚠️ **The probe alone is NOT sufficient, and a mutation run proved it.**
+ * `overflow: hidden` is still programmatically scrollable — `scrollTop` moves
+ * on it exactly as it does on `auto` — so swapping `overflow-y-auto` for
+ * `overflow-y-hidden` leaves this probe, and the whole footer-reachability
+ * assertion below it, GREEN, while a real user can no longer reach the footer
+ * by any means. That is why the caller also pins the COMPUTED `overflow-y` to
+ * a user-scrollable value. Neither check subsumes the other: computed style
+ * cannot prove there is anything to scroll, and the probe cannot prove the
+ * user can do the scrolling.
+ *
+ * Deliberately NOT `scrollHeight <= clientHeight + 1`: that is scrollbar-model
+ * dependent. It holds under this Chromium's overlay scrollbars but a
+ * classic-scrollbar build reserves height for the horizontal scrollbar that
+ * `overflow-y-auto`'s computed `overflow-x: auto` introduces.
+ */
+async function probeScrollability(card: Locator): Promise<number> {
+  return card.evaluate((el) => {
+    const before = el.scrollTop
+    el.scrollTop = 1e6
+    const reached = el.scrollTop
+    el.scrollTop = before
+    return reached
+  })
+}
+
+/** Open the tallest modal in the app: the `/balance` Add form, 6 fields. */
+async function openBalanceAddModal(page: Page): Promise<Locator> {
+  const trigger = page.getByTestId('balance-add-button')
+  const dialog = page.getByRole('dialog', { name: 'Add Balance Entry' })
+  await expect(async () => {
+    // Check BEFORE clicking. If the first click opened the dialog but the
+    // visibility wait timed out once, a retry would re-click a trigger that is
+    // now covered by the fixed overlay — never actionable — burning the full
+    // 15s with the dialog already open. Same guard as the premium helper below.
+    if (!(await dialog.isVisible())) {
+      await trigger.click()
+    }
+    await expect(dialog).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 15000 })
+  return dialog
+}
+
+/**
+ * AC-3, AC-4, AC-8 — a genuinely over-tall modal fits and scrolls internally.
+ *
+ * `top >= -2` is half the defect, not padding on the assertion. The overlay
+ * centres with `flex items-center` and has no overflow of its own, so before
+ * this story an over-tall card overflowed BOTH ends and its top went negative
+ * (measured -96 for this fixture at 320x480). You cannot scroll up to a centred
+ * flex item, the overlay is `position: fixed`, and body scroll is locked — so
+ * the title and Close button were unreachable, which is the half users notice
+ * first. A bottom-only assertion misses it entirely.
+ */
+async function assertTallModalFitsAndScrolls(
+  card: Locator,
+  footer: Locator,
+  label: string
+): Promise<void> {
+  const metrics = await readCardMetrics(card)
+
+  // (1) Anti-vacuous precondition. A fixture that already fits satisfies every
+  //     check below trivially — 31.2's "an empty table would pass" guard,
+  //     transposed to the vertical axis.
+  //
+  //     Measured against the AVAILABLE height (viewport minus the overlay
+  //     gutter), which is what the card is actually capped at — not the raw
+  //     viewport, which would false-red a fixture over-tall by less than the
+  //     gutter. Deliberately NOT `scrollHeight > clientHeight`: that reads
+  //     equal on a BROKEN implementation (an unclipped card's scrollHeight IS
+  //     its clientHeight), so it would fail here with a misleading "fixture is
+  //     not over-tall" instead of letting the real assertion below report the
+  //     real defect. This threshold is independent of whether the fix works.
+  const available = metrics.innerHeight - OVERLAY_GUTTER
+  expect(
+    metrics.scrollHeight,
+    `${label}: fixture is NOT over-tall (content ${metrics.scrollHeight} <= available ${available}) — every assertion below is vacuous`
+  ).toBeGreaterThan(available)
+
+  // (2) Both ends inside the viewport.
+  expect(
+    metrics.top,
+    `${label}: card top ${metrics.top} is above the viewport`
+  ).toBeGreaterThanOrEqual(-2)
+  expect(
+    metrics.bottom,
+    `${label}: card bottom ${metrics.bottom} overruns the viewport (${metrics.innerHeight})`
+  ).toBeLessThanOrEqual(metrics.innerHeight + 2)
+
+  // (3) It is a REAL scroll container, and one the USER can scroll. Both halves
+  //     are needed: the probe alone cannot tell `auto` from `hidden` (both move
+  //     `scrollTop`), and the computed style alone cannot prove there is
+  //     anything to scroll.
+  expect(
+    ['auto', 'scroll'],
+    `${label}: card computes overflow-y: ${metrics.overflowY} — the user cannot scroll it`
+  ).toContain(metrics.overflowY)
+
+  const reached = await probeScrollability(card)
+  expect(
+    reached,
+    `${label}: card did not scroll (scrollTop stayed ${reached}) — max-height without an overflow value SPILLS`
+  ).toBeGreaterThan(0)
+
+  // (3b) The card's own computed `overflow-x: auto` (forced by `overflow-y`)
+  //      makes it a HORIZONTAL scroll container too, so its BOX can never
+  //      exceed the viewport however far its CONTENT overflows. Checking the
+  //      box position alone would be 31.2's absorption trap recreated by this
+  //      story's own constraint — on modals nobody had measured horizontally.
+  expect(
+    metrics.scrollWidth,
+    `${label}: card scrolls horizontally — scrollWidth ${metrics.scrollWidth} > clientWidth ${metrics.clientWidth}. Absorbed by the card, so no document-level check can see this.`
+  ).toBeLessThanOrEqual(metrics.clientWidth + 1)
+
+  // (4) The footer is genuinely out of reach before scrolling, and fully
+  //     reachable after. The negative half is what proves the positive half is
+  //     not a tautology, so it must be more than the bare complement of it:
+  //     `not.toBeInViewport({ ratio: 1 })` is satisfied by a footer one pixel
+  //     short of fully visible, which would let a barely-over-tall fixture
+  //     masquerade as proof.
+  //
+  //     MEASURED at rest: the `/balance` submit button is at ratio 0 (entirely
+  //     below the card's visible box) and the premium prompt's CTA at ~0.375
+  //     — its card is less over-tall. 0.5 is therefore the tightest shared
+  //     threshold, and it is a real claim: more than half the control is out of
+  //     reach until the user scrolls.
+  await expect(
+    footer,
+    `${label}: footer is already mostly visible without scrolling — fixture too short to prove reachability`
+  ).not.toBeInViewport({ ratio: 0.5 })
+
+  await card.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await expect(footer, `${label}: footer unreachable after scrolling to the bottom`).toBeInViewport(
+    {
+      ratio: 1,
+    }
+  )
+
+  const footerRect = await footer.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return { top: r.top, bottom: r.bottom }
+  })
+  const scrolled = await readCardMetrics(card)
+  expect(
+    footerRect.bottom,
+    `${label}: footer sits below the card's own box after scrolling`
+  ).toBeLessThanOrEqual(scrolled.bottom + 2)
+  expect(
+    footerRect.bottom,
+    `${label}: footer sits below the viewport after scrolling`
+  ).toBeLessThanOrEqual(scrolled.innerHeight + 2)
+
+  // (5) Body scroll stays locked THROUGHOUT — sampled before and after the
+  //     scroll sequence, since writing `scrollTop` on the card is exactly the
+  //     kind of thing that could release it.
+  expect(metrics.bodyOverflow, `${label}: body scroll is not locked on open`).toBe('hidden')
+  expect(
+    scrolled.bodyOverflow,
+    `${label}: body scroll lock was released by scrolling the card`
+  ).toBe('hidden')
+
+  await card.evaluate((el) => {
+    el.scrollTop = 0
+  })
+}
+
+test.describe('modals fit height-constrained viewports (story 31.3)', () => {
+  test(`the tallest modal fits and scrolls at ${NARROW_WIDTH}x${SHORT_HEIGHT}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+    // Deliberately UNSEEDED: the Add form renders all 6 fields on an empty
+    // /balance because the type defaults to `investment`, which is what makes
+    // the conditional "Max Contribution Limit" field present.
+    await page.goto('/balance')
+    await page.waitForLoadState('networkidle')
+
+    const card = await openBalanceAddModal(page)
+    const submit = card.getByRole('button', { name: 'Add Balance Entry' })
+
+    await assertTallModalFitsAndScrolls(
+      card,
+      submit,
+      `/balance add (${NARROW_WIDTH}x${SHORT_HEIGHT})`
+    )
+
+    // AC-6 at the element level. A document-level "no new horizontal overflow"
+    // claim is UNFALSIFIABLE inside a modal: `overflow-y-auto` computes
+    // `overflow-x` to `auto` too (CSS Overflow 3), so the card absorbs its own
+    // horizontal overflow, and the body lock hides it from `documentElement`.
+    const metrics = await readCardMetrics(card)
+    expect(metrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
+    expect(metrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
+  })
+
+  test(`the tallest modal fits and scrolls at ${LANDSCAPE.width}x${LANDSCAPE.height} (landscape)`, async ({
+    page,
+  }) => {
+    // iPhone SE landscape: only 320px of HEIGHT. Harsher than 640x360 and the
+    // epic's literal floor.
+    await page.setViewportSize({ width: LANDSCAPE.width, height: LANDSCAPE.height })
+    await page.goto('/balance')
+    await page.waitForLoadState('networkidle')
+
+    const card = await openBalanceAddModal(page)
+    const submit = card.getByRole('button', { name: 'Add Balance Entry' })
+
+    await assertTallModalFitsAndScrolls(
+      card,
+      submit,
+      `/balance add (${LANDSCAPE.width}x${LANDSCAPE.height})`
+    )
+  })
+
+  test(`a short modal is unchanged at ${NARROW_WIDTH}x${SHORT_HEIGHT} (AC-5, AC-6)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+    await seedFinanceRows(page, 'light')
+    await page.goto('/balance')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+
+    await page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` }).click()
+    const card = page.getByRole('alertdialog', { name: 'Confirm Delete' })
+    await expect(card).toBeVisible()
+
+    const metrics = await readCardMetrics(card)
+
+    // Nothing to scroll. This is what catches an `h-full` typo for `max-h-full`
+    // or a stray `min-h`: without it, a change that stretched EVERY modal to
+    // full height would ship green against the tall-modal tests above.
+    const reached = await probeScrollability(card)
+    expect(reached, 'a short dialog must have nothing to scroll').toBe(0)
+
+    // Not stretched: strictly under the cap (viewport minus the overlay's 1rem
+    // gutter on each side). `h-full` would land exactly ON the cap.
+    const cap = metrics.innerHeight - 32
+    expect(metrics.height, `short dialog was stretched to the height cap (${cap})`).toBeLessThan(
+      cap
+    )
+
+    // Still centred with the existing gutter.
+    expect(metrics.top, 'short dialog is not centred').toBeGreaterThan(0)
+    expect(metrics.bottom).toBeLessThan(metrics.innerHeight)
+    expect(
+      Math.abs(metrics.top - (metrics.innerHeight - metrics.height) / 2),
+      'short dialog is no longer vertically centred'
+    ).toBeLessThanOrEqual(2)
+
+    // AC-6 — the element-level horizontal check, the only version of this
+    // assertion that can fail. The delete message interpolates a 138-character
+    // unbroken name; before `break-words` this measured scrollWidth 1214 vs
+    // clientWidth 288, entirely invisible to `documentElement`.
+    expect(
+      metrics.scrollWidth,
+      `confirm dialog scrolls horizontally: scrollWidth ${metrics.scrollWidth} > clientWidth ${metrics.clientWidth}`
+    ).toBeLessThanOrEqual(metrics.clientWidth + 1)
+    expect(metrics.left).toBeGreaterThanOrEqual(0)
+    expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
+  })
+
+  for (const viewport of [
+    { width: NARROW_WIDTH, height: SHORT_HEIGHT },
+    { width: LANDSCAPE.width, height: LANDSCAPE.height },
+  ] as const) {
+    test(`dismissal still works at ${viewport.width}x${viewport.height} (AC-7, UX-DR10)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport)
+      await page.goto('/balance')
+      await page.waitForLoadState('networkidle')
+
+      const card = await openBalanceAddModal(page)
+      await page.keyboard.press('Escape')
+      await expect(card).toBeHidden()
+
+      const reopened = await openBalanceAddModal(page)
+      // Confirm the corner is actually backdrop at THIS viewport rather than
+      // inheriting `modal-dismissal.spec.ts`'s assumption — the card is wider
+      // relative to the viewport here, and a press that lands on the card
+      // would (correctly, per AC-7) no longer dismiss.
+      const cornerIsOverlay = await page.evaluate(() => {
+        const el = document.elementFromPoint(8, 8)
+        return el?.matches('.fixed.inset-0') ?? false
+      })
+      expect(cornerIsOverlay, 'the 8,8 corner is not the backdrop at this viewport').toBe(true)
+
+      await page.mouse.click(8, 8)
+      await expect(reopened).toBeHidden()
+    })
+  }
+
+  test(`the premium prompt fits and scrolls at ${NARROW_WIDTH}x${SHORT_HEIGHT}`, async ({
+    page,
+  }) => {
+    // The only OTHER tall modal reachable unauthenticated, and the one that
+    // covers the transparent-outer-card branch `/balance` cannot.
+    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+    await page.goto('/')
+
+    const lockedFeature = page.getByRole('button', {
+      name: /advanced forecasting — premium, locked/i,
+    })
+    const goPremium = page.getByRole('heading', { name: /go premium/i })
+    await expect(async () => {
+      if (!(await goPremium.isVisible())) {
+        await lockedFeature.click()
+      }
+      await expect(goPremium).toBeVisible({ timeout: 1000 })
+    }).toPass()
+
+    const card = page.getByRole('dialog', { name: 'Go Premium' })
+    // Use the SHARED assertion, not a hand-rolled subset. The first version of
+    // this test ran the scrollability probe alone, and the `overflow-hidden`
+    // mutation left it green while both `/balance` tests went red — the one
+    // fixture covering the transparent-outer-card branch had the weakest
+    // assertions in the file.
+    const upgrade = card.getByRole('link', { name: /upgrade to premium/i })
+    await assertTallModalFitsAndScrolls(
+      card,
+      upgrade,
+      `premium prompt (${NARROW_WIDTH}x${SHORT_HEIGHT})`
+    )
+
+    // This card is fully TRANSPARENT — the visible gradient panel is its child.
+    // Now that the wrapper is the scroll (and therefore clip) box, its clip
+    // radius must MATCH the panel's, or the panel's corners are cropped.
+    // Asserting equality rather than "not 0px": any nonzero radius passes a
+    // not-0px check while still cropping an `xl` corner.
+    const radii = await card.evaluate((el) => {
+      const panel = el.firstElementChild
+      return {
+        clipBox: getComputedStyle(el).borderTopLeftRadius,
+        panel: panel === null ? null : getComputedStyle(panel).borderTopLeftRadius,
+      }
+    })
+    expect(
+      radii.panel,
+      'the inner premium panel is not rounded — fixture assumption broken'
+    ).not.toBe('0px')
+    expect(
+      radii.clipBox,
+      `the scroll box radius (${radii.clipBox}) does not match the panel it clips (${radii.panel})`
+    ).toBe(radii.panel)
+
+    const metrics = await readCardMetrics(card)
+    expect(metrics.left).toBeGreaterThanOrEqual(0)
+    expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
+  })
 })
