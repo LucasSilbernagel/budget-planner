@@ -219,7 +219,20 @@ for (const { path, prefix, categoryText } of [
 
     // Guard against a spurious pass: an empty table would trivially satisfy the
     // overflow check. Assert the column actually rendered BOTH states.
-    await expect(page.getByRole('columnheader', { name: 'Category' })).toBeVisible()
+    //
+    // Story 31.2 deliberately HIDES the column header row below `sm` and gives
+    // each cell its own label instead, so the old
+    // `getByRole('columnheader', { name: 'Category' })` assertion can no longer
+    // hold at 320px. The equivalent proof on a card is the per-cell field
+    // label; the two testid assertions below still carry the real work.
+    // Scoped to the mobile field-label span inside the row that actually holds
+    // the categorized cell — NOT a bare tbody text match, which any row a user
+    // happened to name "Category" would satisfy. The <thead> <th> "Category" is
+    // still in the DOM (it returns at >= 640px), merely display:none, and it
+    // precedes the card labels in document order, so `.first()` alone resolved
+    // to the hidden header.
+    const categoryCell = page.getByTestId(`${prefix}-row-category`).locator('xpath=ancestor::td[1]')
+    await expect(categoryCell.locator('span.sm\\:hidden', { hasText: /^Category$/ })).toBeVisible()
     await expect(page.getByTestId(`${prefix}-row-category`)).toHaveText(categoryText)
     await expect(page.getByTestId(`${prefix}-row-uncategorized`)).toBeVisible()
 

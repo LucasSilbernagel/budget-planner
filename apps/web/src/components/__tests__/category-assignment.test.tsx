@@ -122,7 +122,7 @@ describe('IncomePage category assignment (AC-1)', () => {
     })
     render(<IncomePage />)
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Salary' }))
     const dialog = screen.getByRole('dialog')
     expect((within(dialog).getByLabelText('Category') as HTMLSelectElement).value).toBe('i2')
   })
@@ -182,7 +182,7 @@ describe('IncomePage category assignment (AC-1)', () => {
     })
     render(<IncomePage />)
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Salary' }))
     const dialog = screen.getByRole('dialog')
     await user.selectOptions(within(dialog).getByLabelText('Category'), '')
     await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
@@ -250,7 +250,7 @@ describe('ExpensesPage EDIT round-trip — the sibling the first pass never test
     seedCategorizedExpense('e2')
     render(<ExpensesPage />)
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Tesco run' }))
     const dialog = screen.getByRole('dialog')
     expect((within(dialog).getByLabelText('Category') as HTMLSelectElement).value).toBe('e2')
   })
@@ -265,7 +265,7 @@ describe('ExpensesPage EDIT round-trip — the sibling the first pass never test
     render(<ExpensesPage />)
 
     // Change ONLY the amount, never touching the picker, and save.
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Tesco run' }))
     const dialog = screen.getByRole('dialog')
     await user.clear(within(dialog).getByTestId('expense-amount-input'))
     await user.type(within(dialog).getByTestId('expense-amount-input'), '95')
@@ -287,7 +287,7 @@ describe('ExpensesPage EDIT round-trip — the sibling the first pass never test
     seedCategorizedExpense('e1')
     render(<ExpensesPage />)
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Tesco run' }))
     const dialog = screen.getByRole('dialog')
     await user.selectOptions(within(dialog).getByLabelText('Category'), '')
     await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))

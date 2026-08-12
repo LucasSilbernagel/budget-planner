@@ -1,3 +1,8 @@
+import {
+  assertHasFocusRing,
+  assertHasMobileTapTarget,
+  collectRetiredTokenViolations,
+} from '@/test/responsive-table-tokens'
 import { fireEvent, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useExpenseStore } from '../../stores/expenseStore'
@@ -231,10 +236,93 @@ describe('ExpensesPage edit modal prefills a grouped, locale-aware amount', () =
     useExpenseStore.getState().addExpense({ name: 'Rent', amount: 123456789, frequency: 'monthly' })
     renderWithProviders(<ExpensesPage />)
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Rent' }))
     const dialog = screen.getByRole('dialog')
 
     // Not "1234567.89" — re-saving without editing must not shift the stored cents.
     expect(within(dialog).getByTestId('expense-amount-input')).toHaveValue('1,234,567.89')
+  })
+})
+
+/**
+ * Mobile card presentation (story 31.2, UX-DR36).
+ *
+ * See `IncomePage.test.tsx` for the full rationale — one `<table>` in the DOM,
+ * CSS-only switching, class-TOKEN assertions, and the 320px geometry proofs
+ * deferred to `e2e/responsive-320.spec.ts` because jsdom computes no layout.
+ */
+describe('ExpensesPage mobile card presentation (story 31.2)', () => {
+  beforeEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+    useExpenseStore.getState().addExpense({ name: 'Rent', amount: 150000, frequency: 'monthly' })
+  })
+
+  afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  function rowFor(name: string): HTMLElement {
+    const row = screen.getByText(name).closest('tr')
+    if (!row) throw new Error(`no <tr> ancestor for "${name}"`)
+    return row as HTMLElement
+  }
+
+  it('carries every column value on the card', () => {
+    renderWithProviders(<ExpensesPage />)
+    const row = rowFor('Rent')
+
+    expect(within(row).getByText('1,500.00')).toBeInTheDocument()
+    expect(within(row).getByText('monthly')).toBeInTheDocument()
+    expect(within(row).getByTestId('expense-row-uncategorized')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit Rent' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Delete Rent' })).toBeInTheDocument()
+  })
+
+  it('labels every field on the card (AC-4)', () => {
+    renderWithProviders(<ExpensesPage />)
+    const row = rowFor('Rent')
+
+    for (const label of ['Name', 'Amount', 'Frequency', 'Category', 'Actions']) {
+      expect(within(row).getByText(label)).toBeInTheDocument()
+      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
+    }
+  })
+
+  it('has exactly one table in the DOM — no dual-rendered card list', () => {
+    const { container } = renderWithProviders(<ExpensesPage />)
+    expect(container.querySelectorAll('table')).toHaveLength(1)
+    expect(screen.getAllByText('Rent')).toHaveLength(1)
+  })
+
+  it('declares the shared card classes on the table, body and rows (AC-8)', () => {
+    const { container } = renderWithProviders(<ExpensesPage />)
+    const table = container.querySelector('table') as HTMLElement
+
+    expect([...table.classList]).toContain('max-sm:block')
+    expect([...(table.querySelector('thead') as HTMLElement).classList]).toContain('max-sm:hidden')
+    expect([...(table.querySelector('tbody') as HTMLElement).classList]).toContain('max-sm:block')
+    expect([...rowFor('Rent').classList]).toContain('max-sm:block')
+  })
+
+  it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+    renderWithProviders(<ExpensesPage />)
+    const row = rowFor('Rent')
+    for (const label of ['Edit Rent', 'Delete Rent']) {
+      assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+    renderWithProviders(<ExpensesPage />)
+    const row = rowFor('Rent')
+    for (const label of ['Edit Rent', 'Delete Rent']) {
+      assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+    const { container } = renderWithProviders(<ExpensesPage />)
+    const table = container.querySelector('table') as HTMLElement
+    expect(collectRetiredTokenViolations(table)).toEqual([])
   })
 })

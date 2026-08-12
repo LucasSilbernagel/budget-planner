@@ -1,4 +1,9 @@
 import {
+  assertHasFocusRing,
+  assertHasMobileTapTarget,
+  collectRetiredTokenViolations,
+} from '@/test/responsive-table-tokens'
+import {
   act,
   fireEvent,
   renderWithProviders,
@@ -87,7 +92,7 @@ describe('BalancePage add balance entry button', () => {
     renderWithProviders(<BalancePage />)
 
     // Open the edit modal — fields are populated from the entry.
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Existing 401k' }))
     const editDialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
     expect(within(editDialog).getByLabelText(/name/i)).toHaveValue('Existing 401k')
 
@@ -131,7 +136,7 @@ describe('BalancePage add balance entry button', () => {
     expect(useBalanceStore.getState().entries[0].frequency).toBe('biweekly')
 
     // Reopen for edit — the select reflects the stored value.
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Brokerage' }))
     const editDialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
     expect(within(editDialog).getByTestId('balance-frequency-select')).toHaveValue('biweekly')
 
@@ -629,5 +634,210 @@ describe('BalancePage form controls have a visible focus ring', () => {
       checked++
     }
     expect(checked).toBe(controls.length)
+  })
+})
+
+/**
+ * Mobile card presentation (story 31.2, UX-DR36).
+ *
+ * See `IncomePage.test.tsx` for the full rationale. Balance is the only page
+ * with TWO tables — the Investment Accounts breakdown (3 columns, no Actions,
+ * plus a `<tfoot>` summary row) and Your Balance Entries (7 columns, the widest
+ * table in the app and the primary 320px risk).
+ */
+describe('BalancePage mobile card presentation (story 31.2)', () => {
+  const ISO_31_2 = '2026-01-01T00:00:00.000Z'
+
+  beforeEach(() => {
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment',
+          name: 'Brokerage',
+          currentBalance: 250000,
+          maxContributionLimit: 700000,
+          monthlyContribution: 50000,
+          frequency: 'biweekly',
+          createdAt: ISO_31_2,
+          updatedAt: ISO_31_2,
+        },
+        {
+          id: 'debt-1',
+          type: 'debt',
+          name: 'Car Loan',
+          currentBalance: -400000,
+          monthlyContribution: 30000,
+          frequency: 'monthly',
+          createdAt: ISO_31_2,
+          updatedAt: ISO_31_2,
+        },
+      ],
+    })
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  function tables(container: HTMLElement): { breakdown: HTMLElement; entries: HTMLElement } {
+    const found = [...container.querySelectorAll('table')] as HTMLElement[]
+    expect(found).toHaveLength(2)
+    // Source order: the Investment Accounts breakdown section precedes the
+    // Your Balance Entries section.
+    return { breakdown: found[0] as HTMLElement, entries: found[1] as HTMLElement }
+  }
+
+  function rowIn(table: HTMLElement, name: string): HTMLElement {
+    const row = within(table).getByText(name).closest('tr')
+    if (!row) throw new Error(`no <tr> ancestor for "${name}"`)
+    return row as HTMLElement
+  }
+
+  it('carries every column value on a Balance Entries card', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const row = rowIn(tables(container).entries, 'Car Loan')
+
+    expect(within(row).getByText('Debt')).toBeInTheDocument()
+    expect(within(row).getByText('-4,000.00')).toBeInTheDocument()
+    // Contribution limit and remaining room are investment-only (FR41).
+    expect(within(row).getByText('None')).toBeInTheDocument()
+    expect(within(row).getByTestId('balance-remaining-room-debt-1')).toHaveTextContent('—')
+    expect(within(row).getByText('300.00')).toBeInTheDocument()
+    expect(within(row).getByText('Monthly')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit Car Loan' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Delete Car Loan' })).toBeInTheDocument()
+  })
+
+  it('labels all seven Balance Entries fields on the card (AC-4)', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const row = rowIn(tables(container).entries, 'Car Loan')
+
+    for (const label of [
+      'Type',
+      'Name',
+      'Current Balance',
+      'Max Contribution',
+      'Remaining Room',
+      'Contribution',
+      'Actions',
+    ]) {
+      expect(within(row).getByText(label)).toBeInTheDocument()
+      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
+    }
+  })
+
+  it('keeps the contribution amount and its cadence as ONE field', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const row = rowIn(tables(container).entries, 'Brokerage')
+    const cell = within(row).getByText('Contribution').closest('td') as HTMLElement
+
+    // Two flex children below `sm` — the label and one wrapper holding both the
+    // amount and the cadence. A third child would let `justify-between` fling
+    // the cadence to the far edge as if it were its own column.
+    expect(cell.children).toHaveLength(2)
+    const [, value] = [...cell.children] as HTMLElement[]
+    expect(value).toHaveTextContent('500.00')
+    expect(value).toHaveTextContent('Bi-weekly')
+  })
+
+  it('labels all three Investment breakdown fields and keeps its testids', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const { breakdown } = tables(container)
+    const row = rowIn(breakdown, 'Brokerage')
+
+    for (const label of ['Account', 'Current Balance', 'Remaining Room']) {
+      expect(within(row).getByText(label)).toBeInTheDocument()
+      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
+    }
+    expect(within(row).getByTestId('investment-breakdown-balance-inv-1')).toHaveTextContent(
+      '2,500.00'
+    )
+    expect(within(row).getByTestId('investment-breakdown-room-inv-1')).toHaveTextContent('4,500.00')
+    // No Actions column on this table.
+    expect(within(row).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('declares the breakdown footer as a summary strip, not a card', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const tfoot = tables(container).breakdown.querySelector('tfoot') as HTMLElement
+    const footRow = tfoot.querySelector('tr') as HTMLElement
+
+    // The <tfoot> must switch to block alongside the <tbody>: one table holding
+    // both block and table-internal subtrees is invalid layout.
+    expect([...tfoot.classList]).toContain('max-sm:block')
+    expect([...footRow.classList]).toContain('max-sm:flex')
+    // Not a card — no border, no bottom margin.
+    expect([...footRow.classList]).not.toContain('max-sm:border')
+    expect([...footRow.classList]).not.toContain('max-sm:mb-3')
+
+    expect(within(footRow).getByText('Combined Total')).toBeInTheDocument()
+    expect(within(footRow).getByTestId('investment-breakdown-total')).toHaveTextContent('2,500.00')
+
+    // The deliberate empty filler cell stays a REAL cell in the DOM (it keeps
+    // the footer structurally 3-wide at >= 640px); it is only display-hidden.
+    const cells = [...footRow.children] as HTMLElement[]
+    expect(cells).toHaveLength(3)
+    expect(cells[2]?.tagName).toBe('TD')
+    expect(cells[2]).not.toHaveAttribute('aria-hidden')
+    expect([...(cells[2] as HTMLElement).classList]).toContain('max-sm:hidden')
+  })
+
+  it('gives the footer total the same wrap relief as a data cell', () => {
+    // The total is the one unbounded string in the converted subtree and the
+    // call site adds an unprefixed `whitespace-nowrap`; without mobile relief
+    // it was the only unguarded nowrap below `sm`.
+    const { container } = renderWithProviders(<BalancePage />)
+    const totalCell = within(tables(container).breakdown)
+      .getByTestId('investment-breakdown-total')
+      .closest('td') as HTMLElement
+
+    expect([...totalCell.classList]).toContain('max-sm:whitespace-normal')
+    expect([...totalCell.classList]).toContain('max-sm:[overflow-wrap:anywhere]')
+  })
+
+  it('has exactly two tables in the DOM — no dual-rendered card lists', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    expect(container.querySelectorAll('table')).toHaveLength(2)
+    // 'Brokerage' appears once per table, never twice within one.
+    expect(screen.getAllByText('Brokerage')).toHaveLength(2)
+  })
+
+  it('declares the shared card classes on both tables (AC-8)', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const { breakdown, entries } = tables(container)
+
+    for (const table of [breakdown, entries]) {
+      expect([...table.classList]).toContain('max-sm:block')
+      expect([...(table.querySelector('thead') as HTMLElement).classList]).toContain(
+        'max-sm:hidden'
+      )
+      expect([...(table.querySelector('tbody') as HTMLElement).classList]).toContain('max-sm:block')
+    }
+    expect([...rowIn(entries, 'Car Loan').classList]).toContain('max-sm:block')
+    expect([...rowIn(breakdown, 'Brokerage').classList]).toContain('max-sm:block')
+  })
+
+  it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const row = rowIn(tables(container).entries, 'Car Loan')
+    for (const label of ['Edit Car Loan', 'Delete Car Loan']) {
+      assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const row = rowIn(tables(container).entries, 'Car Loan')
+    for (const label of ['Edit Car Loan', 'Delete Car Loan']) {
+      assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('introduces no retired surface/text tokens in either table region (AC-7)', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const { breakdown, entries } = tables(container)
+    expect(collectRetiredTokenViolations(breakdown)).toEqual([])
+    expect(collectRetiredTokenViolations(entries)).toEqual([])
   })
 })

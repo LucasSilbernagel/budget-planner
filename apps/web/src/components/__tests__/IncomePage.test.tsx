@@ -1,3 +1,8 @@
+import {
+  assertHasFocusRing,
+  assertHasMobileTapTarget,
+  collectRetiredTokenViolations,
+} from '@/test/responsive-table-tokens'
 import { fireEvent, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../stores/currencyStore'
@@ -29,7 +34,7 @@ describe('IncomePage delete confirmation', () => {
     renderWithProviders(<IncomePage />)
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Salary' }))
 
     const dialog = screen.getByRole('alertdialog', { name: 'Confirm Delete' })
     expect(dialog).toBeInTheDocument()
@@ -40,7 +45,7 @@ describe('IncomePage delete confirmation', () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Salary' }))
     await user.click(screen.getByTestId('delete-confirm-cancel'))
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
@@ -52,7 +57,7 @@ describe('IncomePage delete confirmation', () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Salary' }))
     await user.click(screen.getByTestId('delete-confirm-confirm'))
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
@@ -253,7 +258,7 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
       .addIncomeSource({ name: 'Salary', amount: 123456789, frequency: 'monthly' })
     renderWithProviders(<IncomePage />)
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: 'Edit Salary' }))
     const dialog = screen.getByRole('dialog')
 
     // Not "1234567.89" — the prefill goes through the same formatter as the blur
@@ -316,5 +321,111 @@ describe('IncomePage form controls have a visible focus ring', () => {
       checked++
     }
     expect(checked).toBe(controls.length)
+  })
+})
+
+/**
+ * Mobile card presentation (story 31.2, UX-DR36).
+ *
+ * Below `sm` the income table's rows render as stacked cards. There is exactly
+ * ONE `<table>` in the DOM at every viewport — the switch is CSS-only.
+ *
+ * ⚠️ These are STRUCTURE and CLASS assertions, not layout proofs. jsdom
+ * computes no layout (every width is 0), so nothing here can show that anything
+ * fits, stacks or hides; a width assertion would pass vacuously. The geometry
+ * proofs live in `e2e/responsive-320.spec.ts`. Titles below say "declares"
+ * rather than "does" for exactly that reason.
+ *
+ * Every class check asserts TOKEN membership, never a substring of `className`:
+ * `-` and `:` are substring boundaries, so `toContain('block')` false-matches
+ * `max-sm:block`.
+ */
+describe('IncomePage mobile card presentation (story 31.2)', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Salary', amount: 500000, frequency: 'monthly' })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  function rowFor(name: string): HTMLElement {
+    const row = screen.getByText(name).closest('tr')
+    if (!row) throw new Error(`no <tr> ancestor for "${name}"`)
+    return row as HTMLElement
+  }
+
+  it('carries every column value on the card', () => {
+    renderWithProviders(<IncomePage />)
+    const row = rowFor('Salary')
+
+    // The currency baseline in unit tests is `{ mode: 'none' }`, so amounts
+    // render as neutral grouped numbers rather than symbols.
+    expect(within(row).getByText('5,000.00')).toBeInTheDocument()
+    expect(within(row).getByText('monthly')).toBeInTheDocument()
+    expect(within(row).getByTestId('income-row-uncategorized')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit Salary' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Delete Salary' })).toBeInTheDocument()
+  })
+
+  it('labels every field on the card (AC-4)', () => {
+    renderWithProviders(<IncomePage />)
+    const row = rowFor('Salary')
+
+    // Scoped with `within(row)`: the <thead> <th> text and the mobile label
+    // text are BOTH in the DOM at all times (jsdom applies no media queries),
+    // so an unscoped getByText would be ambiguous.
+    for (const label of ['Name', 'Amount', 'Frequency', 'Category', 'Actions']) {
+      expect(within(row).getByText(label)).toBeInTheDocument()
+      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
+    }
+  })
+
+  it('has exactly one table in the DOM — no dual-rendered card list', () => {
+    // A `hidden sm:table` + `sm:hidden` card list would duplicate every value
+    // and make the queries above multi-match under jsdom.
+    const { container } = renderWithProviders(<IncomePage />)
+    expect(container.querySelectorAll('table')).toHaveLength(1)
+    expect(screen.getAllByText('Salary')).toHaveLength(1)
+  })
+
+  it('declares the shared card classes on the table, body and rows (AC-8)', () => {
+    const { container } = renderWithProviders(<IncomePage />)
+    const table = container.querySelector('table') as HTMLElement
+
+    expect([...table.classList]).toContain('max-sm:block')
+    expect([...(table.querySelector('thead') as HTMLElement).classList]).toContain('max-sm:hidden')
+    expect([...(table.querySelector('tbody') as HTMLElement).classList]).toContain('max-sm:block')
+    expect([...rowFor('Salary').classList]).toContain('max-sm:block')
+  })
+
+  it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+    // ENUMERATED, not grepped: these two buttons carried neither
+    // `focus:outline-none` nor `focus:ring-2` before this story, so the
+    // completeness grep that guards the modal controls above was structurally
+    // blind to them and returned zero either way. A missing guard has no
+    // mutation to run against — coverage has to come from naming the controls.
+    renderWithProviders(<IncomePage />)
+    const row = rowFor('Salary')
+    for (const label of ['Edit Salary', 'Delete Salary']) {
+      assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+    renderWithProviders(<IncomePage />)
+    const row = rowFor('Salary')
+    for (const label of ['Edit Salary', 'Delete Salary']) {
+      assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+    const { container } = renderWithProviders(<IncomePage />)
+    const table = container.querySelector('table') as HTMLElement
+    expect(collectRetiredTokenViolations(table)).toEqual([])
   })
 })

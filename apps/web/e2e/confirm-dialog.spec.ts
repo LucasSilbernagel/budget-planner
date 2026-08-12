@@ -36,10 +36,18 @@ async function addIncomeSource(page: Page, name: string) {
   await expect(page.getByText(name)).toBeVisible()
 }
 
-async function openDeleteConfirm(page: Page) {
+/**
+ * Story 31.2 gave each row's Delete button a per-row accessible name
+ * (`Delete <name>`), because N rows used to expose N identically named
+ * "Delete" buttons. The full name is matched EXACTLY on purpose: Playwright's
+ * `name` option is a case-insensitive SUBSTRING match by default, so a bare
+ * "Delete" now also matches "Edit DeleteMe", and `ConfirmDialog`'s own confirm
+ * button is likewise named "Delete".
+ */
+async function openDeleteConfirm(page: Page, rowName: string) {
   const confirm = page.getByRole('alertdialog', { name: 'Confirm Delete' })
   await expect(async () => {
-    await page.getByRole('button', { name: 'Delete' }).click()
+    await page.getByRole('button', { name: `Delete ${rowName}`, exact: true }).click()
     await expect(confirm).toBeVisible({ timeout: 1000 })
   }).toPass({ timeout: 15000 })
   return confirm
@@ -50,7 +58,7 @@ test.describe('Confirmation dialog (story 6-3)', () => {
     await page.goto('/income')
     await addIncomeSource(page, 'KeepMeEscape')
 
-    const confirm = await openDeleteConfirm(page)
+    const confirm = await openDeleteConfirm(page, 'KeepMeEscape')
     await page.keyboard.press('Escape')
     await expect(confirm).toBeHidden()
     await expect(page.getByText('KeepMeEscape')).toBeVisible()
@@ -60,7 +68,7 @@ test.describe('Confirmation dialog (story 6-3)', () => {
     await page.goto('/income')
     await addIncomeSource(page, 'KeepMeBackdrop')
 
-    const confirm = await openDeleteConfirm(page)
+    const confirm = await openDeleteConfirm(page, 'KeepMeBackdrop')
     await page.mouse.click(8, 8)
     await expect(confirm).toBeHidden()
     await expect(page.getByText('KeepMeBackdrop')).toBeVisible()
@@ -70,7 +78,7 @@ test.describe('Confirmation dialog (story 6-3)', () => {
     await page.goto('/income')
     await addIncomeSource(page, 'KeepMeCancel')
 
-    const confirm = await openDeleteConfirm(page)
+    const confirm = await openDeleteConfirm(page, 'KeepMeCancel')
     await confirm.getByTestId('delete-confirm-cancel').click()
     await expect(confirm).toBeHidden()
     await expect(page.getByText('KeepMeCancel')).toBeVisible()
@@ -80,7 +88,7 @@ test.describe('Confirmation dialog (story 6-3)', () => {
     await page.goto('/income')
     await addIncomeSource(page, 'DeleteMe')
 
-    const confirm = await openDeleteConfirm(page)
+    const confirm = await openDeleteConfirm(page, 'DeleteMe')
     await confirm.getByTestId('delete-confirm-confirm').click()
     await expect(confirm).toBeHidden()
     await expect(page.getByText('DeleteMe')).toBeHidden()

@@ -17,6 +17,19 @@ import {
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
+import {
+  FieldLabel,
+  RESPONSIVE_ACTIONS_CELL_CLASS,
+  RESPONSIVE_ACTIONS_GROUP_CLASS,
+  RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_CELL_CLASS,
+  RESPONSIVE_ROW_CLASS,
+  RESPONSIVE_STACKED_CELL_CLASS,
+  RESPONSIVE_TABLE_CLASS,
+  RESPONSIVE_TBODY_CLASS,
+  RESPONSIVE_THEAD_CLASS,
+  RESPONSIVE_WRAPPER_CLASS,
+} from './ui/ResponsiveTable'
 
 // Valid contribution cadences (mirrors the core Frequency enum). A persisted
 // investment `frequency` can be a corrupt/legacy non-null string — localStorage is
@@ -337,9 +350,9 @@ export function SavingsPage() {
                 <p className="text-faint text-sm">Click "Add Savings Goal" to get started</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
-                  <thead className="surface-inset">
+              <div className={RESPONSIVE_WRAPPER_CLASS}>
+                <table className={RESPONSIVE_TABLE_CLASS}>
+                  <thead className={RESPONSIVE_THEAD_CLASS}>
                     <tr>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Name
@@ -361,7 +374,7 @@ export function SavingsPage() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
+                  <tbody className={RESPONSIVE_TBODY_CLASS}>
                     {savingsGoals.map((goal) => {
                       // Account (Story 16-1): null target ⇒ absent progress (not 0%).
                       const isAccountRow = goal.targetAmount == null
@@ -379,8 +392,9 @@ export function SavingsPage() {
                         ? allocations[goal.id] ?? 0
                         : Math.max(0, goal.monthlyAllocation ?? 0)
                       return (
-                        <tr key={goal.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                          <td className="px-6 py-4 whitespace-nowrap">
+                        <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Name</FieldLabel>
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-heading text-sm">{goal.name}</span>
                               <span
@@ -395,19 +409,22 @@ export function SavingsPage() {
                               </span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Target</FieldLabel>
                             <div className="text-muted text-sm">
                               {goal.targetAmount == null
                                 ? 'No target'
                                 : formatAmount(goal.targetAmount)}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Current Balance</FieldLabel>
                             <div className="text-muted text-sm">
                               {formatAmount(goal.currentBalance)}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Monthly Allocation</FieldLabel>
                             <div className="flex items-center gap-2">
                               <span
                                 className="text-muted text-sm"
@@ -423,7 +440,11 @@ export function SavingsPage() {
                               </span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_STACKED_CELL_CLASS}>
+                            {/* Stacked, not label-left/value-right: the progress
+                                bar is full-width, so squeezing it beside its
+                                label at 320px would leave a ~150px track. */}
+                            <FieldLabel>Progress</FieldLabel>
                             {progress == null ? (
                               <div
                                 className="text-muted text-sm text-center"
@@ -445,21 +466,26 @@ export function SavingsPage() {
                               </>
                             )}
                           </td>
-                          <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(goal)}
-                              className="mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(goal.id)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                            >
-                              Delete
-                            </button>
+                          <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
+                            <FieldLabel>Actions</FieldLabel>
+                            <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(goal)}
+                                aria-label={`Edit ${goal.name}`}
+                                className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(goal.id)}
+                                aria-label={`Delete ${goal.name}`}
+                                className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )

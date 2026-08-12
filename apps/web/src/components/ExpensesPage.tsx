@@ -13,6 +13,18 @@ import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
+import {
+  FieldLabel,
+  RESPONSIVE_ACTIONS_CELL_CLASS,
+  RESPONSIVE_ACTIONS_GROUP_CLASS,
+  RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_CELL_CLASS,
+  RESPONSIVE_ROW_CLASS,
+  RESPONSIVE_TABLE_CLASS,
+  RESPONSIVE_TBODY_CLASS,
+  RESPONSIVE_THEAD_CLASS,
+  RESPONSIVE_WRAPPER_CLASS,
+} from './ui/ResponsiveTable'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -250,9 +262,9 @@ export function ExpensesPage() {
                 <p className="text-sm text-faint">Click "Add Expense" to get started</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="surface-inset">
+              <div className={RESPONSIVE_WRAPPER_CLASS}>
+                <table className={RESPONSIVE_TABLE_CLASS}>
+                  <thead className={RESPONSIVE_THEAD_CLASS}>
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Name
@@ -271,42 +283,51 @@ export function ExpensesPage() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
+                  <tbody className={RESPONSIVE_TBODY_CLASS}>
                     {expenses.map((expense) => (
-                      <tr key={expense.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                        <td className="px-6 py-4 whitespace-nowrap">
+                      <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
+                        <td className={RESPONSIVE_CELL_CLASS}>
+                          <FieldLabel>Name</FieldLabel>
                           <div className="text-sm font-medium text-heading">{expense.name}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className={RESPONSIVE_CELL_CLASS}>
+                          <FieldLabel>Amount</FieldLabel>
                           <div className="text-sm text-muted">{formatAmount(expense.amount)}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className={RESPONSIVE_CELL_CLASS}>
+                          <FieldLabel>Frequency</FieldLabel>
                           <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
                             {expense.frequency}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className={RESPONSIVE_CELL_CLASS}>
+                          <FieldLabel>Category</FieldLabel>
                           <CategoryBadge
                             categoryId={expense.categoryId}
                             names={categoryNames}
                             idPrefix="expense"
                           />
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(expense)}
-                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(expense.id)}
-                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                          >
-                            Delete
-                          </button>
+                        <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
+                          <FieldLabel>Actions</FieldLabel>
+                          <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(expense)}
+                              aria-label={`Edit ${expense.name}`}
+                              className={`text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(expense.id)}
+                              aria-label={`Delete ${expense.name}`}
+                              className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

@@ -1,4 +1,9 @@
 import {
+  assertHasFocusRing,
+  assertHasMobileTapTarget,
+  collectRetiredTokenViolations,
+} from '@/test/responsive-table-tokens'
+import {
   act,
   fireEvent,
   renderWithProviders,
@@ -522,5 +527,149 @@ describe('SavingsPage form controls have a visible focus ring', () => {
       checked++
     }
     expect(checked).toBe(controls.length)
+  })
+})
+
+/**
+ * Mobile card presentation (story 31.2, UX-DR36).
+ *
+ * See `IncomePage.test.tsx` for the full rationale. Savings is the one table
+ * with a cell that must STACK rather than sit label-left/value-right: the
+ * progress bar is full-width.
+ */
+describe('SavingsPage mobile card presentation (story 31.2)', () => {
+  const ISO_31_2 = '2026-01-01T00:00:00.000Z'
+
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'goal-1',
+          name: 'Vacation',
+          targetAmount: 400000,
+          currentBalance: 100000,
+          allocationMode: 'manual',
+          monthlyAllocation: 25000,
+          createdAt: ISO_31_2,
+          updatedAt: ISO_31_2,
+        },
+        {
+          // Account row: null target ⇒ "No target" + an absent (N/A) progress.
+          id: 'acct-1',
+          name: 'Buffer',
+          targetAmount: null,
+          currentBalance: 50000,
+          allocationMode: 'manual',
+          monthlyAllocation: 0,
+          createdAt: ISO_31_2,
+          updatedAt: ISO_31_2,
+        },
+      ],
+    })
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  function rowFor(name: string): HTMLElement {
+    const row = screen.getByText(name).closest('tr')
+    if (!row) throw new Error(`no <tr> ancestor for "${name}"`)
+    return row as HTMLElement
+  }
+
+  it('carries every column value and both derived badges on the card', () => {
+    renderWithProviders(<SavingsPage />)
+    const row = rowFor('Vacation')
+
+    expect(within(row).getByText('4,000.00')).toBeInTheDocument()
+    expect(within(row).getByText('1,000.00')).toBeInTheDocument()
+    expect(within(row).getByTestId('savings-badge-goal-1')).toHaveTextContent('Goal')
+    expect(within(row).getByTestId('savings-allocation-goal-1')).toHaveTextContent('250.00')
+    expect(within(row).getByTestId('savings-allocation-mode-goal-1')).toHaveTextContent('Fixed')
+    expect(within(row).getByText('25%')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit Vacation' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Delete Vacation' })).toBeInTheDocument()
+  })
+
+  it('keeps the account row’s absent-target and absent-progress states', () => {
+    renderWithProviders(<SavingsPage />)
+    const row = rowFor('Buffer')
+
+    expect(within(row).getByTestId('savings-badge-acct-1')).toHaveTextContent('Account')
+    expect(within(row).getByText('No target')).toBeInTheDocument()
+    expect(within(row).getByTestId('savings-progress-na-acct-1')).toHaveTextContent('N/A')
+  })
+
+  it('labels every field on the card (AC-4)', () => {
+    renderWithProviders(<SavingsPage />)
+    const row = rowFor('Vacation')
+
+    for (const label of [
+      'Name',
+      'Target',
+      'Current Balance',
+      'Monthly Allocation',
+      'Progress',
+      'Actions',
+    ]) {
+      expect(within(row).getByText(label)).toBeInTheDocument()
+      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
+    }
+  })
+
+  it('declares a stacked progress cell rather than label-left/value-right', () => {
+    renderWithProviders(<SavingsPage />)
+    const progressCell = within(rowFor('Vacation'))
+      .getByText('Progress')
+      .closest('td') as HTMLElement
+
+    expect([...progressCell.classList]).toContain('max-sm:block')
+    // A flex row would squeeze the full-width bar into ~150px at 320px.
+    expect([...progressCell.classList]).not.toContain('max-sm:flex')
+  })
+
+  it('has exactly one table in the DOM — no dual-rendered card list', () => {
+    const { container } = renderWithProviders(<SavingsPage />)
+    expect(container.querySelectorAll('table')).toHaveLength(1)
+    expect(screen.getAllByText('Vacation')).toHaveLength(1)
+  })
+
+  it('declares the shared card classes on the table, body and rows (AC-8)', () => {
+    const { container } = renderWithProviders(<SavingsPage />)
+    const table = container.querySelector('table') as HTMLElement
+
+    expect([...table.classList]).toContain('max-sm:block')
+    expect([...(table.querySelector('thead') as HTMLElement).classList]).toContain('max-sm:hidden')
+    expect([...(table.querySelector('tbody') as HTMLElement).classList]).toContain('max-sm:block')
+    expect([...rowFor('Vacation').classList]).toContain('max-sm:block')
+  })
+
+  it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+    renderWithProviders(<SavingsPage />)
+    const row = rowFor('Vacation')
+    for (const label of ['Edit Vacation', 'Delete Vacation']) {
+      assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+    renderWithProviders(<SavingsPage />)
+    const row = rowFor('Vacation')
+    for (const label of ['Edit Vacation', 'Delete Vacation']) {
+      assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+    const { container } = renderWithProviders(<SavingsPage />)
+    const table = container.querySelector('table') as HTMLElement
+    expect(collectRetiredTokenViolations(table)).toEqual([])
   })
 })

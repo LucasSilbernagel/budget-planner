@@ -18,6 +18,21 @@ import type { FinanceType } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
+import {
+  FieldLabel,
+  RESPONSIVE_ACTIONS_CELL_CLASS,
+  RESPONSIVE_ACTIONS_GROUP_CLASS,
+  RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_CELL_CLASS,
+  RESPONSIVE_FOOTER_CELL_CLASS,
+  RESPONSIVE_FOOTER_ROW_CLASS,
+  RESPONSIVE_ROW_CLASS,
+  RESPONSIVE_TABLE_CLASS,
+  RESPONSIVE_TBODY_CLASS,
+  RESPONSIVE_TFOOT_CLASS,
+  RESPONSIVE_THEAD_CLASS,
+  RESPONSIVE_WRAPPER_CLASS,
+} from './ui/ResponsiveTable'
 
 // Type options for the select dropdown
 const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
@@ -361,9 +376,9 @@ export function BalancePage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
-                  <thead className="surface-inset">
+              <div className={RESPONSIVE_WRAPPER_CLASS}>
+                <table className={RESPONSIVE_TABLE_CLASS}>
+                  <thead className={RESPONSIVE_THEAD_CLASS}>
                     <tr>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Account
@@ -376,18 +391,20 @@ export function BalancePage() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
+                  <tbody className={RESPONSIVE_TBODY_CLASS}>
                     {investmentAccounts.map((entry) => {
                       // Every row here is an investment (pre-filtered), so no
                       // `type === 'investment'` guard is needed — just the Story 26.4
                       // three-state room contract: null → "—", else formatted.
                       const room = remainingContributionRoom(entry)
                       return (
-                        <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                          <td className="px-6 py-4 whitespace-nowrap">
+                        <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Account</FieldLabel>
                             <div className="font-medium text-heading text-sm">{entry.name}</div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Current Balance</FieldLabel>
                             <div
                               className="text-muted text-sm"
                               data-testid={`investment-breakdown-balance-${entry.id}`}
@@ -395,7 +412,8 @@ export function BalancePage() {
                               {formatAmount(entry.currentBalance)}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Remaining Room</FieldLabel>
                             <div
                               className="text-muted text-sm"
                               data-testid={`investment-breakdown-room-${entry.id}`}
@@ -407,15 +425,22 @@ export function BalancePage() {
                       )
                     })}
                   </tbody>
-                  <tfoot className="surface-inset">
-                    <tr>
+                  {/* Below `sm` this footer becomes a one-line summary strip, not
+                      a card: label left, total right. The <tfoot> must switch to
+                      `block` alongside the <tbody> — leaving it as
+                      `table-footer-group` while the body is `block` would leave
+                      one table holding both block and table-internal subtrees. */}
+                  <tfoot className={RESPONSIVE_TFOOT_CLASS}>
+                    <tr className={RESPONSIVE_FOOTER_ROW_CLASS}>
                       <th
                         scope="row"
-                        className="px-6 py-3 font-semibold text-heading text-sm text-left"
+                        className={`${RESPONSIVE_FOOTER_CELL_CLASS} font-semibold text-heading text-sm text-left`}
                       >
                         Combined Total
                       </th>
-                      <td className="px-6 py-3 font-semibold text-heading text-sm whitespace-nowrap">
+                      <td
+                        className={`${RESPONSIVE_FOOTER_CELL_CLASS} font-semibold text-heading text-sm whitespace-nowrap`}
+                      >
                         <span data-testid="investment-breakdown-total">
                           {formatAmount(totalInvestments)}
                         </span>
@@ -423,8 +448,10 @@ export function BalancePage() {
                       {/* Empty filler cell keeps the footer row structurally 3-wide
                           (matching the 3-column head). Left as a real (empty) data
                           cell — inert to assistive tech — rather than aria-hidden,
-                          which would drop the column from the accessibility tree. */}
-                      <td className="px-6 py-3" />
+                          which would drop the column from the accessibility tree.
+                          `max-sm:hidden` is a display change, not a removal: the
+                          cell stays in the DOM and returns at >= 640px. */}
+                      <td className={`${RESPONSIVE_FOOTER_CELL_CLASS} max-sm:hidden`} />
                     </tr>
                   </tfoot>
                 </table>
@@ -448,9 +475,9 @@ export function BalancePage() {
                 <p className="text-faint text-sm">Click "Add Balance Entry" to get started</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
-                  <thead className="surface-inset">
+              <div className={RESPONSIVE_WRAPPER_CLASS}>
+                <table className={RESPONSIVE_TABLE_CLASS}>
+                  <thead className={RESPONSIVE_THEAD_CLASS}>
                     <tr>
                       <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
                         Type
@@ -475,27 +502,31 @@ export function BalancePage() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
+                  <tbody className={RESPONSIVE_TBODY_CLASS}>
                     {balanceEntries.map((entry) => {
                       const typeDisplay = getTypeDisplay(entry.type)
                       return (
-                        <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                          <td className="px-6 py-4 whitespace-nowrap">
+                        <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Type</FieldLabel>
                             <span
                               className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${typeDisplay.color}`}
                             >
                               {typeDisplay.label}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Name</FieldLabel>
                             <div className="font-medium text-heading text-sm">{entry.name}</div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Current Balance</FieldLabel>
                             <div className="text-muted text-sm">
                               {formatAmount(entry.currentBalance)}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Max Contribution</FieldLabel>
                             <div className="text-muted text-sm">
                               {/* Contribution limit is investment-only (FR41);
                                   debts show None, and a legacy null/undefined
@@ -505,7 +536,8 @@ export function BalancePage() {
                                 : 'None'}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Remaining Room</FieldLabel>
                             <div
                               className="text-muted text-sm"
                               data-testid={`balance-remaining-room-${entry.id}`}
@@ -520,29 +552,42 @@ export function BalancePage() {
                                 : '—'}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-muted text-sm">
-                              {formatAmount(entry.monthlyContribution)}
-                            </div>
-                            <div className="text-faint text-xs">
-                              {frequencyLabel(entry.frequency)}
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Contribution</FieldLabel>
+                            {/* The amount and its cadence sub-label are ONE field.
+                                Wrapped together so the cell has exactly two flex
+                                children below `sm` (label + value), not three —
+                                otherwise `justify-between` would fling the cadence
+                                to the far edge as a third column. */}
+                            <div>
+                              <div className="text-muted text-sm">
+                                {formatAmount(entry.monthlyContribution)}
+                              </div>
+                              <div className="text-faint text-xs">
+                                {frequencyLabel(entry.frequency)}
+                              </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-right whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(entry)}
-                              className="mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(entry.id)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                            >
-                              Delete
-                            </button>
+                          <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
+                            <FieldLabel>Actions</FieldLabel>
+                            <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(entry)}
+                                aria-label={`Edit ${entry.name}`}
+                                className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(entry.id)}
+                                aria-label={`Delete ${entry.name}`}
+                                className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
