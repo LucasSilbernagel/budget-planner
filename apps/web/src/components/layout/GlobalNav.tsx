@@ -1,12 +1,11 @@
 import { Link } from '@tanstack/react-router'
-import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 
 /**
  * Persistent global navigation (story 11-1, Epic 11 UX review P0-a).
  *
  * Mounted once in `routes/__root.tsx` so every route carries the same primary
  * navigation — replacing the ad-hoc, inconsistent per-page "Back to Home / View
- * X" footer link blocks each page used to hand-roll. Exposes the six top-level
+ * X" footer link blocks each page used to hand-roll. Exposes the eight top-level
  * sections. The premium *Forecasting* entry is intentionally NOT duplicated
  * here: it stays surfaced-but-locked on the Home dashboard via the Story 7-2
  * `PremiumFeatureGate`, so the primary nav needs no second premium gate to
@@ -18,16 +17,56 @@ import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
  * Overview (`/`) link uses `activeOptions={{ exact: true }}` so it is not marked
  * active on every sub-route (every path is prefixed by `/`).
  *
- * Responsive (AC-3): desktop renders a top bar; narrow/PWA viewports render a
- * fixed bottom tab bar (the pattern Task 3 recommends), switched via the shared
- * `useIsNarrowViewport` hook. That hook is SSR-safe and returns `false` on the
- * server and first client render, so SSR always emits the top bar and mobile
- * swaps to the bottom bar after hydration with no hydration mismatch. The bottom
- * bar is a 4-column grid (4x2) so eight destinations stay legible at 320px; the
- * root layout reserves `pb-24` (plus the iOS `safe-area-inset-bottom`) on narrow
- * viewports so the two-row fixed bar never covers the footer, and the bar itself
- * pads by that same inset so its bottom row clears the home indicator. Only one
- * `<nav>` landmark is ever in the DOM at a time.
+ * ## Responsive: ONE DOM subtree, switched by CSS alone (story 31.4)
+ *
+ * There is exactly one `<nav>`, one `<ul>` and eight `<a>` in the DOM at every
+ * viewport. Desktop (>= 640px) is the unprefixed cascade — an in-flow top bar;
+ * below `sm` the SAME elements become a fixed bottom tab bar via `max-sm:`
+ * utilities. No JavaScript decides the layout, so the first painted frame is
+ * already the final frame and there is no hydration race left to lose.
+ *
+ * ⚠️ That last claim is engine-independent BY CONSTRUCTION, not by test
+ * coverage: the automated gate is chromium-only (`playwright.config.ts:24-29`).
+ * Gecko was checked once by hand (Firefox 153.0.3, 320px: `matchMedia` true,
+ * `position: fixed`, geometry matching Chromium) but nothing re-checks it on
+ * every run. Treat cross-engine parity as reasoned, not regression-tested.
+ *
+ * This replaced a `useIsNarrowViewport()` branch that returned two different
+ * subtrees. That hook is `false` on the server AND on the first client render,
+ * so a phone painted the desktop top bar, then hydration unmounted it and
+ * mounted the bottom bar: a measured 133px vertical jump at 320px (the header
+ * wrapper 165px -> 32px, the page `<h1>` from y=181 to y=48). That is the reflow
+ * logged in `deferred-work.md:500` on day one, which prescribed exactly this
+ * fix. The hook itself is KEPT and unchanged — four Recharts call sites take
+ * numeric/enum props CSS cannot drive — this component simply stopped being one
+ * of its consumers.
+ *
+ * Two alternatives are rejected and must not be reintroduced (the same pair
+ * `ui/ResponsiveTable.tsx:19-30` rejects for the finance tables): a DUAL-RENDER
+ * (`hidden sm:block` top bar + `sm:hidden` bottom bar) would put two
+ * `<nav aria-label="Primary">` landmarks in the DOM — an a11y regression, a
+ * Playwright strict-mode violation, and a multi-match failure in jsdom, which
+ * applies no media queries; and any viewport hook re-creates the flash. Only one
+ * `<nav>` landmark is ever in the DOM.
+ *
+ * Composition rule (`ui/ResponsiveTable.tsx:31-39`): mobile-only styling on a
+ * shared element is a `max-sm:` variant APPENDED to the unchanged desktop
+ * string. Never neutralise a base class with an unprefixed override — that is
+ * what keeps ">= 640px is unchanged" provable by reading the diff.
+ *
+ * ⚠️ On the LINKS, keep every colour unprefixed. Tailwind emits all `max-sm:`
+ * rules AFTER the unprefixed utilities, so a `max-sm:` colour would beat the
+ * links' unprefixed `hover:bg-gray-100` / `hover:text-gray-900` below 640px and
+ * silently invert mobile hover behaviour; scope only layout/position/spacing/
+ * typography there. The `<nav>` itself is the deliberate exception — it has no
+ * unprefixed colour state to lose, and its `max-sm:` background/border are
+ * required precisely because the bar is out of flow below `sm` (see below).
+ *
+ * The bottom bar is a 4-column grid (4x2) so eight destinations stay legible at
+ * 320px; the root layout reserves `pb-[calc(6rem_+_env(safe-area-inset-bottom))]`
+ * on narrow viewports so the two-row fixed bar never covers the footer, and the
+ * bar itself pads by that same inset so its bottom row clears the home
+ * indicator. `e2e/nav-responsive-css.spec.ts` is the guard for all of it.
  */
 
 /** Registered route paths the nav links to — a subset of the app's route tree. */
@@ -72,79 +111,61 @@ const NAV_ITEMS: readonly NavItem[] = [
 ]
 
 export function GlobalNav() {
-  const isNarrow = useIsNarrowViewport()
-
-  if (isNarrow) {
-    return (
-      <nav
-        aria-label="Primary"
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] dark:border-gray-700 dark:bg-gray-800"
-      >
-        {/* 4-column grid (4x2), not a single flex row (story 18-2). Eight
-            destinations across a 320px viewport give a one-row flex layout only
-            ~40px per cell, where every label ("Net Worth", "Retirement", even
-            "Overview"/"Expenses") overflowed its cell and overlapped its
-            neighbours. A 4-column grid gives ~80px cells at 320px, so each label
-            stays single-line, legible and tappable (≥44px). The bar becomes two
-            rows (~89px tall) — the root layout reserves `pb-24` on narrow
-            viewports so the fixed bar still clears the Footer.
-
-            Coupling to watch when NAV_ITEMS changes: `grid-cols-4` fixes 8 items
-            at exactly 2 rows (4×2 ≈ 89px). A ninth item would spill to a third
-            row (~133px) and re-cover the Footer, so a count change means
-            revisiting BOTH `grid-cols-4` here and the `pb-24` reserve in
-            `__root.tsx` — `e2e/chrome-320.spec.ts` guards that footer clearance.
-            The `pb-[env(safe-area-inset-bottom)]` lifts the bottom row above the
-            iOS home indicator (0 on non-notched devices, so the ~89px is exact
-            there); the root reserve adds the same inset to stay in lockstep. */}
-        <ul className="grid grid-cols-4">
-          {NAV_ITEMS.map((item) => (
-            <li key={item.to} className="min-w-0">
-              <Link
-                to={item.to}
-                activeOptions={item.exact ? { exact: true } : undefined}
-                className="flex h-full min-h-[44px] items-center justify-center break-words px-1 py-2 text-center text-[11px] font-medium leading-tight text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                activeProps={{
-                  'aria-current': 'page',
-                  className: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-                }}
-              >
-                {item.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    )
-  }
-
   return (
     <nav
       aria-label="Primary"
-      // Desktop-row chrome (border + background) lives on the `__root.tsx`
-      // wrapper so the nav and the account indicator read as ONE bar (story
-      // 19-3). The `max-sm:` chrome here only paints during the brief mobile
-      // pre-hydration flash: SSR + the first client render emit this top bar
-      // (useIsNarrowViewport is false until after mount) before the bottom bar
-      // swaps in, so it needs its own border/background at <640px where the
-      // `sm:`-gated wrapper chrome is inert.
-      className="max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
+      // At >= 640px the nav carries NO chrome of its own: the border + background
+      // live on the `__root.tsx` wrapper so the nav and the account indicator
+      // read as ONE bar (story 19-3). Below `sm` the bar is `fixed` — out of
+      // flow, and therefore beyond the reach of that `sm:`-gated wrapper chrome
+      // — so it owns its border-top and background there.
+      className="max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-40 max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
-      {/* `flex-wrap`: SSR + the first client render always emit this top bar
-          (useIsNarrowViewport is false until after mount), so on a phone it is
-          briefly visible before hydration swaps in the bottom bar. Without
-          wrapping, the eight items overflow a 320px viewport and push the
-          document wider than the screen during that flash. Wrapping keeps it
-          contained. The `max-w-6xl` content column is now owned by the
-          `__root.tsx` row wrapper (story 19-3); at the mobile flash width the
-          list is full-width with its own `px-4`, unchanged from before. */}
-      <ul className="flex flex-wrap gap-1 px-4 py-2">
+      {/* `flex-wrap` is LOAD-BEARING at >= 640px — do not remove it. It arrived
+          (commit d4f3ffb) to contain the eight items during the old
+          pre-hydration flash, but the desktop bar is already two rows in its own
+          right from 640px to ~830px. Measured with the class removed: the row
+          wants 778px, so a 640px viewport overflows by 138px, 700px by 78px and
+          760px by 18px, clearing only at 800px. Nothing used to catch that —
+          `responsive-320.spec.ts` and `global-nav.spec.ts` both sweep 320px only
+          — so `e2e/nav-responsive-css.spec.ts` now measures 640/700/760px.
+
+          Below `sm` the list becomes the 4-column grid (4x2, story 18-2): the
+          eight destinations in one flex row at 320px give ~40px cells, where
+          every label ("Net Worth", "Retirement", even "Overview"/"Expenses")
+          overflowed its cell and overlapped its neighbour. A 4-column grid gives
+          80px cells, so each label stays single-line, legible and tappable
+          (>=44px). `max-sm:gap-0 max-sm:px-0 max-sm:py-0` neutralise the desktop
+          `gap-1 px-4 py-2`, which the mobile bar has never carried: with them
+          live the tracks compute to 69px instead of 80px and the labels
+          re-overflow.
+
+          Coupling to watch when NAV_ITEMS changes: `grid-cols-4` fixes 8 items
+          at exactly 2 rows (4x2 ~= 89px). A ninth item would spill to a third
+          row (~133px) and re-cover the Footer, so a count change means
+          revisiting BOTH `max-sm:grid-cols-4` here and the
+          `pb-[calc(6rem_+_env(safe-area-inset-bottom))]` reserve in
+          `__root.tsx` — `e2e/chrome-320.spec.ts` guards that footer clearance.
+          The nav's `max-sm:pb-[env(safe-area-inset-bottom)]` lifts the bottom
+          row above the iOS home indicator (0 on non-notched devices, so the
+          ~89px is exact there); the root reserve adds the same inset to stay in
+          lockstep. */}
+      <ul className="flex flex-wrap gap-1 px-4 py-2 max-sm:grid max-sm:grid-cols-4 max-sm:gap-0 max-sm:px-0 max-sm:py-0">
         {NAV_ITEMS.map((item) => (
-          <li key={item.to}>
+          <li key={item.to} className="max-sm:min-w-0">
             <Link
               to={item.to}
               activeOptions={item.exact ? { exact: true } : undefined}
-              className="inline-block rounded-md px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+              // `max-sm:rounded-none` and `max-sm:focus-visible:ring-inset` are
+              // not cosmetic, and both were measured. `rounded-md` is
+              // unprefixed, so without the first every mobile tab cell picks up
+              // 6px corners it has never had. And the grid tracks are 80px x 4
+              // flush to x=0..320, so without the second the 2px focus ring
+              // paints OUTSET at x=-2/x=322 — clipped off-screen on 4 of the 8
+              // cells. Both are ink: `border-radius` and `box-shadow` never move
+              // `scrollWidth`, height or line count, so the geometry assertions
+              // elsewhere in the suite are structurally blind to them.
+              className="inline-block rounded-md px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:items-center max-sm:justify-center max-sm:break-words max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
               activeProps={{
                 'aria-current': 'page',
                 className: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',

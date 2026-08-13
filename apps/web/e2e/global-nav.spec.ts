@@ -83,8 +83,11 @@ test('stays usable at a narrow mobile viewport', async ({ page }) => {
   await expect(nav).toBeVisible()
 
   // AC-3 (story 15-1): the extra Retirement entry must not push the document
-  // wider than the 320px viewport in the bottom-tab layout. The bottom bar's
-  // `min-w-0 flex-1` tabs shrink to fit, so there is no horizontal overflow.
+  // wider than the 320px viewport in the bottom-tab layout. The bottom bar is a
+  // 4-column grid (`max-sm:grid max-sm:grid-cols-4`, 80px tracks at 320px), so
+  // there is no horizontal overflow. NOTE this check is 320px-only, and a
+  // document-level width comparison at that: `e2e/nav-responsive-css.spec.ts`
+  // carries the >= 640px and element-level counterparts.
   const overflows = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth
   )

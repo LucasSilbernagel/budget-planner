@@ -13,11 +13,13 @@ import { expect, test } from '@playwright/test'
  *     AC-2's "no crushed/mid-word-broken labels" — a clean wrap would clear the
  *     overflow check but still fail here), and each tap target is >=44px tall.
  *  2. The fixed bottom bar does not cover the Footer when scrolled to the bottom
- *     (the root layout reserves `pb-24` for the two-row bar).
+ *     (the root layout reserves `pb-[calc(6rem_+_env(safe-area-inset-bottom))]`
+ *     for the two-row bar).
  *
- * The bottom bar only appears after hydration flips `useIsNarrowViewport` to
- * true (SSR + first client render emit the desktop top bar), so the test waits
- * for the fixed positioning before measuring.
+ * Since story 31.4 the bottom bar is decided by the CSS cascade alone — it is
+ * present in the very first painted frame, with no hydration swap to wait for.
+ * That first-paint guarantee is proven in `e2e/nav-responsive-css.spec.ts`; this
+ * file measures the settled layout.
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
@@ -31,7 +33,11 @@ test.describe('global chrome at 320px (story 18-2)', () => {
     const response = await page.goto('/')
     expect(response?.ok(), 'expected / to load').toBeTruthy()
     await page.waitForLoadState('networkidle')
-    // Wait for hydration to swap in the fixed bottom bar.
+    // This USED to be the wait for hydration to swap in the fixed bottom bar.
+    // Since 31.4 it waits for nothing — `max-sm:fixed` is satisfied on the first
+    // frame. Kept because it is still a real guard: it is the precondition that
+    // everything measured below is the BOTTOM bar and not the desktop top bar,
+    // and it goes red the moment `max-sm:fixed` stops being load-bearing.
     await expect(page.locator('nav[aria-label="Primary"]')).toHaveCSS('position', 'fixed')
   })
 

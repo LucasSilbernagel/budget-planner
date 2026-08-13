@@ -6,44 +6,39 @@ import { AuthIndicator } from '../../auth/auth-indicator'
 import { GlobalNav } from '../GlobalNav'
 
 /**
- * Nav + account row composition (story 19-3).
+ * Nav + account row composition (story 19-3; updated for the 31.4 CSS switch).
  *
  * On desktop the primary nav (`GlobalNav`) and the account/sign-in indicator
  * (`AuthIndicator`) share one visual bar, laid out by the `__root.tsx` wrapper
- * (nav leading, indicator trailing); on mobile `GlobalNav` becomes a fixed
+ * (nav leading, indicator trailing); below `sm` `GlobalNav` becomes a fixed
  * bottom tab bar while `AuthIndicator` stays a top strip. This test co-renders
- * the two — the way `__root` does — and locks the STRUCTURAL invariant the merge
- * must never break, in BOTH of GlobalNav's `<nav>` branches: the "Sign in"
- * affordance is NEVER a descendant of the single `<nav aria-label="Primary">`
- * landmark, so the nav always holds exactly its eight section links.
+ * the two — the way `__root` does — and locks the STRUCTURAL invariant that
+ * composition must never break: the "Sign in" affordance is NEVER a descendant
+ * of the single `<nav aria-label="Primary">` landmark, so the nav always holds
+ * exactly its eight section links.
  *
- * Why both branches: the GlobalNav suite asserts the nav holds exactly eight
- * links. A future refactor could nest `AuthIndicator`'s `<Link to="/login">`
- * inside `<nav>` to co-locate sign-in — and the most tempting place to do that is
- * the *mobile* bottom bar (the exact "don't crowd the 320px tab bar" trade-off
- * Story 13-2 guards). jsdom has no `matchMedia`, so `useIsNarrowViewport` is
- * mocked here to drive each branch explicitly; without the mock only the desktop
- * branch would ever render and a mobile-only regression would escape.
+ * Why it matters: the GlobalNav suite asserts the nav holds exactly eight links.
+ * A future refactor could nest `AuthIndicator`'s `<Link to="/login">` inside
+ * `<nav>` to co-locate sign-in — and the most tempting place to do that is the
+ * *mobile* bottom bar (the exact "don't crowd the 320px tab bar" trade-off Story
+ * 13-2 guards).
+ *
+ * ⚠️ Since 31.4 there is no `useIsNarrowViewport` branch to mock: one DOM
+ * subtree carries both layouts, switched by `max-sm:` utilities. Mocking the
+ * hook here would select nothing, and re-asserting the link count on a second
+ * render would be a byte-for-byte duplicate of the two tests above it. The third
+ * test therefore pins the mobile claim the other two cannot make — that the nav
+ * excluding Sign-in is the SAME element that becomes the fixed bottom bar.
  *
  * The signed-out state is seeded (SSR seed, story UX-1) so "Sign in" paints
  * synchronously without waiting on the post-mount `/api/auth/me` fetch, which is
  * stubbed to the signed-out shape for good measure.
  */
 
-// Mutable branch selector: false → desktop top-bar <nav>, true → mobile
-// fixed-bottom <nav>. Named `mock*` so Vitest permits referencing it inside the
-// hoisted `vi.mock` factory. Reset per test in beforeEach (desktop default).
-const mockIsNarrow = vi.fn(() => false)
-vi.mock('../../../hooks/useIsNarrowViewport', () => ({
-  useIsNarrowViewport: () => mockIsNarrow(),
-  NARROW_VIEWPORT_MAX_WIDTH: 639.98,
-}))
-
 const originalFetch = global.fetch
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockIsNarrow.mockReturnValue(false)
   global.fetch = vi.fn((input: RequestInfo | URL) => {
     if (String(input).includes('/api/auth/me')) {
       return Promise.resolve(new Response(JSON.stringify({ user: null }), { status: 200 }))
@@ -73,7 +68,7 @@ function NavAccountRow() {
 }
 
 describe('Nav + account row (story 19-3)', () => {
-  it('keeps exactly one Primary nav landmark holding exactly the eight section links (desktop branch)', async () => {
+  it('keeps exactly one Primary nav landmark holding exactly the eight section links', async () => {
     renderWithRouter(<NavAccountRow />)
 
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
@@ -82,7 +77,7 @@ describe('Nav + account row (story 19-3)', () => {
     expect(within(navs[0]).getAllByRole('link')).toHaveLength(8)
   })
 
-  it('renders the "Sign in" affordance OUTSIDE the nav landmark — sibling, not descendant (desktop branch)', async () => {
+  it('renders the "Sign in" affordance OUTSIDE the nav landmark — sibling, not descendant', async () => {
     renderWithRouter(<NavAccountRow />)
 
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -95,18 +90,22 @@ describe('Nav + account row (story 19-3)', () => {
     expect(status.contains(signIn)).toBe(true)
   })
 
-  it('keeps the "Sign in" affordance OUT of the mobile fixed-bottom <nav> too (story 13-2 crowding guard)', async () => {
-    // Drive GlobalNav's narrow branch: the fixed bottom tab bar. This is the
-    // branch most tempting for a future dev to fold sign-in into (to surface it
-    // on mobile), which would push the primary landmark to nine links.
-    mockIsNarrow.mockReturnValue(true)
+  it('keeps the "Sign in" affordance OUT of the element that BECOMES the mobile fixed-bottom bar (story 13-2 crowding guard)', async () => {
     renderWithRouter(<NavAccountRow />)
 
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const signIn = await screen.findByRole('link', { name: /sign in/i })
 
-    // Still exactly the eight sections in the mobile nav — Sign-in is not one of
-    // them — and it remains a sibling in the account `status` region.
+    // The claim the two tests above cannot make: the landmark that excludes
+    // Sign-in is the SAME element that becomes the fixed bottom tab bar below
+    // `sm` — the layout a future dev is most tempted to fold sign-in into, which
+    // would push the primary landmark to nine links. Before 31.4 this was a
+    // separate `useIsNarrowViewport` branch reached by mocking the hook; now the
+    // bottom bar IS this element, so pinning `max-sm:fixed` on it is what keeps
+    // the guard about mobile rather than a duplicate of the desktop assertions.
+    expect(nav.className.split(/\s+/), 'this nav is not the mobile bottom bar').toContain(
+      'max-sm:fixed'
+    )
     expect(within(nav).getAllByRole('link')).toHaveLength(8)
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
