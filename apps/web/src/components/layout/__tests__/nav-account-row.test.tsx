@@ -23,6 +23,18 @@ import { GlobalNav } from '../GlobalNav'
  * *mobile* bottom bar (the exact "don't crowd the 320px tab bar" trade-off Story
  * 13-2 guards).
  *
+ * ⚠️ Story 31.5 makes that temptation strictly WORSE, and adds a second place to
+ * yield to it. The bar now has only FIVE slots — four destinations and a "More"
+ * trigger — so "there is no room, put Sign in behind More" is the natural next
+ * thought. The sheet is a nav descendant like any other, so folding sign-in into
+ * it would break this same invariant just as thoroughly as folding it into the
+ * bar. Both are asserted below.
+ *
+ * ⚠️ The link counts here STAY 8. jsdom applies no media queries, so all eight
+ * anchors resolve regardless of which four sit behind the More trigger in a real
+ * browser; "fixing" these to 5 would turn correct tests red. Which four are in
+ * the bar is a rendered fact, asserted in `e2e/chrome-320.spec.ts`.
+ *
  * ⚠️ Since 31.4 there is no `useIsNarrowViewport` branch to mock: one DOM
  * subtree carries both layouts, switched by `max-sm:` utilities. Mocking the
  * hook here would select nothing, and re-asserting the link count on a second
@@ -110,5 +122,26 @@ describe('Nav + account row (story 19-3)', () => {
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(signIn)).toBe(true)
+  })
+
+  it('keeps the "Sign in" affordance OUT of the mobile "More" sheet too (story 31.5)', async () => {
+    renderWithRouter(<NavAccountRow />)
+
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    const signIn = await screen.findByRole('link', { name: /sign in/i })
+
+    // The 31.5 shape: an outer bar list plus a nested sheet list inside its
+    // fifth <li>. With only five bar slots, the sheet is the new tempting place
+    // to fold sign-in into — and it is a nav descendant, so doing so would push
+    // the primary landmark to nine links exactly as the bar would.
+    const lists = nav.querySelectorAll('ul')
+    expect(lists, 'expected the outer bar list and the nested sheet list').toHaveLength(2)
+    const sheet = [...lists][1]
+
+    expect(sheet.contains(signIn), 'Sign in was folded into the More sheet').toBe(false)
+    expect(
+      [...sheet.querySelectorAll('a')].map((a) => a.getAttribute('href')),
+      'the More sheet holds something other than its four destinations'
+    ).toEqual(['/balance', '/net-worth-projection', '/retirement', '/settings'])
   })
 })

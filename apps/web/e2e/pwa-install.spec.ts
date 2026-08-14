@@ -103,10 +103,72 @@ test.describe('PWA install affordance (story 17-1)', () => {
 
     // Vertical clearance: the banner's bottom edge must sit above the top of the
     // fixed bottom navigation, not merely fit horizontally.
+    //
+    // ⚠️ Two-sided since story 31.5. `bottom-[calc(3.75rem_+_env(...))]` here is
+    // one of THREE coupled call sites (`__root.tsx`'s reserve and the nav's own
+    // inset are the others), and the one-directional form of this check fails
+    // only when the offset is too SMALL. Left at the old 6rem against the
+    // 56.75px bar, the banner floats 39.25px above it and this assertion passes
+    // MORE comfortably than on a correct build — so the gap is bounded above too.
     const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
     expect(navBox).not.toBeNull()
     if (box && navBox) {
-      expect(box.y + box.height).toBeLessThanOrEqual(navBox.y)
+      const gap = navBox.y - (box.y + box.height)
+      expect(
+        gap,
+        `the install banner overlaps the bottom nav (gap ${gap}px)`
+      ).toBeGreaterThanOrEqual(0)
+      expect(gap, `the install banner floats ${gap}px above the bottom nav`).toBeLessThanOrEqual(8)
     }
   })
+
+  /**
+   * ⚠️⚠️ THE TEST ABOVE RUNS AT THE DEFAULT ROOT FONT SIZE ONLY, AND THAT IS NOT
+   * ENOUGH — a real regression slipped through it during code review.
+   *
+   * This banner's offset is the third leg of a three-way coupling with the
+   * `__root.tsx` reserve and the nav's own inset. The bar's height is
+   * `2.625rem + 14.75px`: its spacing scales with the root font but its
+   * `text-[11px]` label line box does NOT, so a pure-rem offset is correct at
+   * 16px and drifts everywhere else. `3.75rem` and `calc(2.625rem + 18px)` are
+   * both exactly 60px at the 16px default — indistinguishable to the assertion
+   * above — yet at a 12px root font the pure-rem form leaves the banner
+   * overlapping the bar, and at 24px it floats it clear by 12px.
+   *
+   * Without this, the offset can silently revert to the pure-rem form (or to the
+   * pre-31.5 `6rem`) while every other assertion stays green.
+   */
+  for (const root of [12, 24]) {
+    test(`the install banner clears the bottom nav at a ${root}px root font size`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 320, height: 640 })
+      await page.addInitScript((px) => {
+        document.addEventListener('DOMContentLoaded', () => {
+          document.documentElement.style.fontSize = `${px}px`
+        })
+      }, root)
+      await page.goto('/')
+      await page.evaluate((px) => {
+        document.documentElement.style.fontSize = `${px}px`
+      }, root)
+      const region = await showPrompt(page)
+
+      const box = await region.boundingBox()
+      const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
+      expect(box).not.toBeNull()
+      expect(navBox).not.toBeNull()
+      if (box && navBox) {
+        const gap = Math.round((navBox.y - (box.y + box.height)) * 100) / 100
+        expect(
+          gap,
+          `the install banner overlaps the bottom nav at a ${root}px root font (gap ${gap}px)`
+        ).toBeGreaterThanOrEqual(0)
+        expect(
+          gap,
+          `the install banner floats ${gap}px above the bottom nav at a ${root}px root font`
+        ).toBeLessThanOrEqual(8)
+      }
+    })
+  }
 })

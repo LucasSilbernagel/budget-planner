@@ -130,12 +130,40 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
             {/* Column layout so the global Footer is pushed to the bottom of the
               viewport on short pages (mt-auto) yet flows after content on long ones.
               The narrow reserve keeps GlobalNav's fixed bottom tab bar (story 11-1)
-              from covering the footer; the bar is a two-row 4-column grid (~89px at
-              320px, story 18-2), so the reserve is 6rem (96px, was `pb-16`/64px)
-              plus `env(safe-area-inset-bottom)` — the same inset the bar itself
-              pads by, so the two stay in lockstep (0 on non-notched devices).
+              from covering the footer. Since story 31.5 the bar is a SINGLE-row
+              5-column grid (four destinations + a "More" trigger) measuring
+              56.75px at 320px — invariant across 320x568/320x720/360x640/390x844/
+              412x915/639x720 and both themes — so the reserve is 3.75rem (60px,
+              was 6rem/96px for the old two-row 4x2 bar) plus
+              `env(safe-area-inset-bottom)` — the same inset the bar itself pads
+              by, so the two stay in lockstep (0 on non-notched devices). Measured
+              footer->nav gap at this value: 3.25px.
+              ⚠️ This is a THREE-way coupling, and the third site is the one every
+              prior story's comment forgot: `pwa/InstallPrompt.tsx`'s
+              `bottom-[calc(3.75rem_+_env(safe-area-inset-bottom))]` must move with
+              it. `pb-14` (3.5rem/56px) is NOT a valid substitute — the bar is
+              56.75px, so 56px covers the footer by 0.75px.
+              ⚠️ Too LARGE is a real defect too, and it used to be unguarded:
+              leaving the 96px reserve against the 56.75px bar strands the footer
+              above 39.25px of dead space while BOTH clearance guards pass more
+              comfortably than before. `e2e/chrome-320.spec.ts` and
+              `e2e/pwa-install.spec.ts` assert the gap two-sided now.
+              ⚠️⚠️ THE RESERVE MUST BE MIXED rem+px, NOT PURE rem, AND CODE
+              REVIEW CAUGHT WHY. The bar's height is `2.625rem + 14.75px`: the
+              spacing tokens (`py-2` + `h-6` + `gap-0.5` = 2.625rem) scale with
+              the root font, but the label's line box does NOT — `text-[11px]` is
+              a fixed px size, giving a fixed 13.75px line plus the 1px border.
+              A pure-rem `3.75rem` reserve therefore DRIFTS away from the bar as
+              soon as the user changes their browser's default font size.
+              Measured footer gap at the old pure-rem value: 12px root -> -1.25px
+              (the fixed bar COVERS the footer), 16px -> 3.25px, 24px -> +12.25px
+              of dead space. Both two-sided guards only ever measured at the
+              default root size, so neither could see it. `2.625rem + 18px`
+              mirrors the bar's own composition and holds the gap at a constant
+              3.25px at EVERY root font size — and is identical to the old value
+              at the 16px default.
               Desktop renders GlobalNav as a top bar and needs no padding. */}
-            <div className="flex min-h-screen flex-col pb-[calc(6rem_+_env(safe-area-inset-bottom))] sm:pb-0">
+            <div className="flex min-h-screen flex-col pb-[calc(2.625rem_+_18px_+_env(safe-area-inset-bottom))] sm:pb-0">
               {/* Desktop (≥640px): the primary nav and the account/sign-in
                 indicator share ONE bar — nav links leading (left), the indicator
                 trailing (right-aligned) — so the top of the app reads as a single

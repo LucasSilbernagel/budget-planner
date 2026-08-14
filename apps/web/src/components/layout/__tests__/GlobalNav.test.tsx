@@ -34,19 +34,47 @@ import { GlobalNav } from '../GlobalNav'
  * precisely the distinction this component now turns on.
  */
 
-const SECTIONS: readonly [label: RegExp, href: string][] = [
+/**
+ * Split into the two groups story 31.5 introduced — for READABILITY only.
+ *
+ * ⚠️⚠️ THE LINK COUNTS BELOW STAY 8 AND STAY GREEN. Do NOT "fix" them to 5.
+ * jsdom applies no media queries, so `display: none` is never computed and
+ * `getAllByRole('link')` resolves ALL EIGHT anchors regardless of which four are
+ * behind the More trigger at 320px in a real browser. Every one of the eight
+ * `it.each` rows passes unchanged too. Changing these counts to 5 would turn
+ * four correct, green tests red. The bar-versus-sheet distinction is a rendered
+ * fact, and it is asserted where it can actually be measured:
+ * `e2e/chrome-320.spec.ts` and `e2e/nav-responsive-css.spec.ts`.
+ */
+const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
   [/^overview$/i, '/'],
   [/^income$/i, '/income'],
   [/^expenses$/i, '/expenses'],
   [/^savings$/i, '/savings'],
+]
+
+const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
   [/^balance$/i, '/balance'],
   [/^net worth$/i, '/net-worth-projection'],
   [/^retirement$/i, '/retirement'],
   [/^settings$/i, '/settings'],
 ]
 
-/** Class-token membership helper (the canonical form used across the repo). */
-const tokens = (value: string): string[] => value.split(/\s+/).filter(Boolean)
+const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...MORE_DESTINATIONS]
+
+/**
+ * Class-token membership helper (the canonical form used across the repo).
+ *
+ * ⚠️ Takes an ELEMENT, not a string. `HTMLElement.className` is a string but
+ * `SVGElement.className` is an `SVGAnimatedString`, so the old
+ * `tokens(el.className)` form threw `TypeError: value.split is not a function`
+ * the moment story 31.5 put an inline `<svg>` in this subtree. `classList` is
+ * the idiom every other subtree sweep in the repo already uses
+ * (`docs-layout.test.tsx:22`, `legal-page-view.test.tsx:101`,
+ * `pricing-page.test.tsx:178`, `CategoryBreakdown.test.tsx:777`,
+ * `src/test/responsive-table-tokens.ts:116`) and it works for both.
+ */
+const tokens = (el: Element): string[] => [...el.classList]
 
 /**
  * Colour utilities, for the AC-5 guard below. Tailwind emits every `max-sm:`
@@ -147,27 +175,28 @@ describe('GlobalNav', () => {
 
     expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length)
     // The single <nav> carries the mobile bar's own positioning...
-    expect(tokens(nav.className)).toContain('max-sm:fixed')
+    expect(tokens(nav)).toContain('max-sm:fixed')
     // ...while the same <ul> carries BOTH the desktop flex row and the mobile grid.
-    const listTokens = tokens((list as HTMLElement).className)
+    const listTokens = tokens(list as HTMLElement)
     expect(listTokens).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'max-sm:grid']))
   })
 
-  // Story 18-2: eight destinations cannot fit one legible row at 320px (each
-  // cell would be ~40px and every label overflowed/overlapped its neighbour).
-  // The mobile bottom bar lays the eight items out as a 4-column grid (4x2) so
-  // each cell is 80px at 320px and every label stays single-line and tappable.
-  it('lays the mobile bottom bar out as a 4-column grid (story 18-2)', async () => {
+  // Story 31.5 supersedes 18-2's 4x2 grid. Eight destinations cannot fit one
+  // legible row at 320px (~40px cells), and stacking an icon over each label to
+  // make the bar recognisable would have taken the 4x2 grid to ~112px — WORSE
+  // than the 89px it replaced. Icons and eight items are arithmetically mutually
+  // exclusive at this width, so the bar carries FIVE cells (four destinations +
+  // the More trigger), giving 64px tracks and a 56.75px single-row bar.
+  it('lays the mobile bottom bar out as a 5-column grid (story 31.5)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const list = nav.querySelector('ul')
-    const listTokens = tokens(list?.className ?? '')
+    const listTokens = list ? tokens(list) : []
 
     expect(listTokens).toContain('max-sm:grid')
-    expect(listTokens).toContain('max-sm:grid-cols-4')
-    // The three neutralisers. `grid-cols-4` is `repeat(4, minmax(0,1fr))`, so any
-    // surviving desktop `gap-1 px-4 py-2` resizes every track: with both live the
-    // cells compute to 69px instead of the required 80px, and the labels
+    expect(listTokens).toContain('max-sm:grid-cols-5')
+    // The three neutralisers. `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so any
+    // surviving desktop `gap-1 px-4 py-2` resizes every track and the labels
     // re-overflow. Measured in `e2e/nav-responsive-css.spec.ts`.
     expect(listTokens).toContain('max-sm:gap-0')
     expect(listTokens).toContain('max-sm:px-0')
@@ -179,18 +208,167 @@ describe('GlobalNav', () => {
     )
   })
 
-  // Story 18-2 (review follow-ups): the two-row fixed bar pads by the iOS
-  // `safe-area-inset-bottom` so its bottom row clears the home indicator, and
-  // each anchor is `h-full` so it fills its stretched grid cell (the active
-  // background and centering hold when a row grows under text-zoom/wrap).
+  /**
+   * Story 31.5 — the structure that lets five cells and eight destinations
+   * coexist without duplicating a single label.
+   *
+   * The obvious implementation (leave eight `<li>` in the bar, hide four with
+   * `max-sm:hidden`, re-list them in a mobile-only sheet) is forbidden twice
+   * over: it puts four destination labels in the DOM TWICE — the dual-render
+   * this component's docblock rejects — and it breaks jsdom multi-match and
+   * Playwright strict mode alike. The compliant shape is a NESTED `<ul>` inside
+   * the fifth `<li>`, dissolved at >= 640px.
+   */
+  it('nests the More destinations in ONE list, with no duplicated label', async () => {
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const lists = nav.querySelectorAll('ul')
+    expect(lists, 'expected exactly one outer list and one nested sheet list').toHaveLength(2)
+    const [outer, sheet] = [...lists]
+    expect(outer.contains(sheet), 'the sheet list is not nested inside the outer list').toBe(true)
+
+    // The bar's own cells are the outer list's direct anchors; the sheet's rows
+    // sit one level deeper. Together they are the eight destinations, each once.
+    const barAnchors = [...outer.querySelectorAll(':scope > li > a')]
+    const sheetAnchors = [...sheet.querySelectorAll(':scope > li > a')]
+    expect(barAnchors.map((a) => a.textContent?.trim())).toEqual([
+      'Overview',
+      'Income',
+      'Expenses',
+      'Savings',
+    ])
+    expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual([
+      'Balance',
+      'Net Worth',
+      'Retirement',
+      'Settings',
+    ])
+
+    // No destination label appears twice anywhere in the subtree.
+    const hrefs = [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href'))
+    expect(new Set(hrefs).size, 'a destination is duplicated in the nav DOM').toBe(hrefs.length)
+
+    // ⚠️⚠️ BOTH `sm:contents` tokens are load-bearing and the e2e suite was
+    // blind to losing them: measured, the nested list without `sm:contents`
+    // takes the desktop nav from 52px to 160px at 1280px (140 computed diffs)
+    // with ZERO of 69 tests red.
+    const wrapper = sheet.parentElement as HTMLElement
+    expect(wrapper.tagName).toBe('LI')
+    expect(tokens(wrapper), 'the sheet wrapper <li> does not dissolve on desktop').toContain(
+      'sm:contents'
+    )
+    expect(tokens(sheet), 'the nested <ul> does not dissolve on desktop').toContain('sm:contents')
+  })
+
+  /**
+   * Story 31.5 — the More trigger. Every other sweep in this file misses it:
+   * the chrome test reads only `nav.className`, and the colour-scoping test
+   * iterates `getAllByRole('link')`, which skips a `<button>` entirely.
+   */
+  it('exposes a single More trigger that never reaches the desktop row', async () => {
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const buttons = within(nav).getAllByRole('button')
+    expect(buttons, 'expected exactly one <button> in the nav').toHaveLength(1)
+    const trigger = buttons[0]
+    expect(trigger).toHaveAccessibleName('More')
+    expect(trigger).toHaveAttribute('type', 'button')
+
+    // A mobile-only ELEMENT takes base classes + `sm:hidden` (the composition
+    // rule in `ui/ResponsiveTable.tsx:31-39`). A ninth item in the desktop flex
+    // row would change the widest-link right edge that
+    // `e2e/nav-responsive-css.spec.ts` measures at 640/700/760px.
+    const triggerTokens = tokens(trigger)
+    expect(triggerTokens, 'the More trigger reaches the desktop row').toContain('sm:hidden')
+    // Its own chrome, which no `nav.className` sweep can see.
+    expect(triggerTokens).toContain('flex-col')
+    expect(triggerTokens).toContain('min-h-[44px]')
+    expect(triggerTokens).toContain('text-[11px]')
+    expect(triggerTokens).toContain('focus-visible:ring-2')
+    expect(triggerTokens).toContain('focus-visible:ring-inset')
+
+    // Closed on the first render, so the server and client agree (AC-7).
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    const panelId = trigger.getAttribute('aria-controls')
+    expect(panelId, 'the More trigger has no aria-controls').toBeTruthy()
+    expect(nav.querySelector(`#${panelId}`), 'aria-controls names no element').not.toBeNull()
+  })
+
+  /**
+   * Story 31.5 (AC-7) — the state is a `max-sm:`-scoped CLASS, never the
+   * `hidden` attribute.
+   *
+   * ⚠️ `hidden={!isOpen}` is the textbook disclosure idiom and the first thing a
+   * dev reaches for. It applies at EVERY width, so it would delete Balance, Net
+   * Worth, Retirement and Settings from the DESKTOP nav entirely.
+   */
+  it('hides the closed sheet with a max-sm: class, not the `hidden` attribute', async () => {
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    const sheet = [...nav.querySelectorAll('ul')][1]
+
+    expect(sheet.hasAttribute('hidden'), 'the sheet uses the `hidden` attribute').toBe(false)
+    expect(tokens(sheet), 'the closed sheet is not hidden below `sm`').toContain('max-sm:hidden')
+    // Out of flow against the `max-sm:fixed` nav — NOT `max-sm:fixed` itself,
+    // which resolves `bottom: 100%` against the viewport and renders the sheet
+    // entirely off the top of the screen (measured at y=-279).
+    expect(tokens(sheet)).toContain('max-sm:absolute')
+    expect(tokens(sheet), 'the sheet is `fixed` — it will render off-screen').not.toContain(
+      'max-sm:fixed'
+    )
+    // Its own opaque background, for the same reason the bar has one.
+    expect(tokens(sheet)).toContain('max-sm:bg-white')
+    expect(tokens(sheet)).toContain('dark:max-sm:bg-gray-800')
+  })
+
+  /**
+   * Story 31.5 — every icon is a mobile-only element.
+   *
+   * ⚠️⚠️ Measured: an icon rendered without `sm:hidden` grows the desktop nav
+   * 52px -> 76px at 1280px and 92px -> 140px at 640px, every anchor 36px ->
+   * 60px, for 212 computed diffs — and NOT ONE test in the pre-31.5 suite went
+   * red, including the one named "the desktop cascade is untouched", because
+   * nothing anywhere read a height.
+   */
+  it('scopes every icon to mobile with `sm:hidden`', async () => {
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const icons = [...nav.querySelectorAll('svg')]
+    // Nine: one per bar tab, one for More, one per sheet row.
+    expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(9)
+    for (const icon of icons) {
+      expect(
+        tokens(icon),
+        'an icon is missing `sm:hidden` — it will grow the desktop nav'
+      ).toContain('sm:hidden')
+      // Decorative: the anchor's own label is the announced name.
+      expect(icon).toHaveAttribute('aria-hidden', 'true')
+    }
+
+    // Each label is wrapped so the e2e line-count probe can scope a Range to the
+    // TEXT — over the whole anchor it measures 3 rects on a correct cell.
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(9)
+  })
+
+  // Story 18-2 (review follow-ups), still true of the 31.5 single-row bar: the
+  // fixed bar pads by the iOS `safe-area-inset-bottom` so it clears the home
+  // indicator, and each anchor is `h-full` so it fills its stretched grid cell
+  // (the active background and centering hold when a cell grows under
+  // text-zoom/wrap). `flex-col` is what makes the cell an icon-over-label stack
+  // — the single token this whole redesign turns on.
   it('pads for the safe-area inset and stretches each mobile cell (story 18-2)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    expect(tokens(nav.className)).toContain('max-sm:pb-[env(safe-area-inset-bottom)]')
+    expect(tokens(nav)).toContain('max-sm:pb-[env(safe-area-inset-bottom)]')
     const anchor = within(nav).getByRole('link', { name: /^overview$/i })
-    const anchorTokens = tokens(anchor.className)
+    const anchorTokens = tokens(anchor)
     expect(anchorTokens).toContain('max-sm:h-full')
     expect(anchorTokens).toContain('max-sm:min-h-[44px]')
+    expect(anchorTokens).toContain('max-sm:flex-col')
+    expect(anchorTokens).toContain('max-sm:gap-0.5')
   })
 
   // Story 31.4 — the two mobile-only INK tokens. Neither has any geometric
@@ -200,15 +378,15 @@ describe('GlobalNav', () => {
   it('keeps the mobile cells square and their focus ring inset', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    const anchorTokens = tokens(within(nav).getByRole('link', { name: /^overview$/i }).className)
+    const anchorTokens = tokens(within(nav).getByRole('link', { name: /^overview$/i }))
 
     // `rounded-md` is unprefixed, so it reaches the mobile cells unless undone:
     // 6px corners on tab cells that have never had them.
     expect(anchorTokens).toContain('rounded-md')
     expect(anchorTokens).toContain('max-sm:rounded-none')
 
-    // The grid tracks are 80px x 4 flush to x=0..320, so an OUTSET 2px ring
-    // paints at x=-2/x=322 — clipped off-screen on 4 of the 8 cells.
+    // The grid tracks are 64px x 5 flush to x=0..320, so an OUTSET 2px ring
+    // paints at x=-2/x=322 — clipped off-screen on the 1st and 5th cells.
     expect(anchorTokens).toContain('focus-visible:ring-2')
     expect(anchorTokens).toContain('max-sm:focus-visible:ring-inset')
     // Mobile-only: unprefixed would change the >= 640px rendering (AC-3).
@@ -223,7 +401,7 @@ describe('GlobalNav', () => {
   it('never positions the nav out of flow at desktop widths', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    const navTokens = tokens(nav.className)
+    const navTokens = tokens(nav)
 
     // A denylist can only catch what it enumerates, so this one is checked two
     // ways. First the specific tokens that would re-create the bottom bar at
@@ -263,7 +441,7 @@ describe('GlobalNav', () => {
 
     for (const anchor of within(nav).getAllByRole('link')) {
       const label = anchor.textContent?.trim()
-      for (const token of tokens(anchor.className)) {
+      for (const token of tokens(anchor)) {
         const variants = token.split(':')
         const base = variants.pop() ?? token
         if (!variants.includes('max-sm')) continue
@@ -282,12 +460,58 @@ describe('GlobalNav', () => {
     // loop checked every element except the one that could break the rule.
     const subtree = [nav, ...nav.querySelectorAll('*')] as HTMLElement[]
     for (const el of subtree) {
-      for (const token of tokens(el.className ?? '')) {
+      for (const token of tokens(el)) {
         expect(
           token,
           `<${el.tagName.toLowerCase()}> uses \`max-sm:dark:\` — variant order must be \`dark:max-sm:\``
         ).not.toContain('max-sm:dark:')
       }
     }
+  })
+
+  /**
+   * Story 31.5 (AC-8) — the More tab's active state.
+   *
+   * ⚠️⚠️ `<Link activeProps>` CANNOT make this claim and would not fail loudly:
+   * More is not a route, so it would simply mark nothing, and the mobile bar
+   * would show NO active tab on four of eight destinations — worse orientation
+   * than the grid this story replaced. The state is derived from the router
+   * location instead, which is exactly as hydration-safe (`useRouterState` reads
+   * the same store `<Link>` does, seeded before the first React render).
+   */
+  describe('the More tab is active on the four routes it owns', () => {
+    const moreTrigger = (nav: HTMLElement): HTMLElement => within(nav).getByRole('button')
+
+    it.each(MORE_DESTINATIONS)('is active on %s (%s)', async (_label, href) => {
+      renderWithRouter(<GlobalNav />, { path: href })
+      const nav = await screen.findByRole('navigation', { name: /primary/i })
+      // The matching row inside the sheet is marked, by `<Link>`'s own active
+      // handling...
+      await screen.findByRole('link', { name: _label })
+      expect(screen.getByRole('link', { name: _label })).toHaveAttribute('aria-current', 'page')
+      // ...and the TAB that discloses it carries the same active treatment.
+      expect(tokens(moreTrigger(nav)), `the More tab is not marked active on ${href}`).toContain(
+        'bg-green-50'
+      )
+    })
+
+    it.each(PRIMARY_TABS)('is NOT active on %s (%s)', async (_label, href) => {
+      renderWithRouter(<GlobalNav />, { path: href })
+      const nav = await screen.findByRole('navigation', { name: /primary/i })
+      await screen.findByRole('link', { name: _label })
+      expect(
+        tokens(moreTrigger(nav)),
+        `the More tab is wrongly marked active on ${href}`
+      ).not.toContain('bg-green-50')
+    })
+
+    // Anti-vacuity: `bg-green-50` must actually be the token the active
+    // treatment uses, or both halves above would pass on a component that never
+    // applies any active styling at all.
+    it('uses the same active treatment the route tabs use', async () => {
+      renderWithRouter(<GlobalNav />, { path: '/income' })
+      const active = await screen.findByRole('link', { name: /^income$/i })
+      expect(tokens(active)).toContain('bg-green-50')
+    })
   })
 })

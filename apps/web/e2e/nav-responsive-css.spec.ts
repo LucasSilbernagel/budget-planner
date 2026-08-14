@@ -26,10 +26,25 @@ import { type Page, expect, test } from '@playwright/test'
  *     both sweep 320px only.
  *  3. **The ink**, which no geometry assertion can see (AC-10). A reference
  *     implementation carrying 6px corners on every mobile cell AND a 2px focus
- *     ring painting OUTSET at x=-2/x=322 (off-screen on 4 of the 8 cells)
- *     passed all 129 tests of this suite. `border-radius` and `box-shadow`
- *     never affect `scrollWidth`, height or line count, so they are asserted
- *     directly here.
+ *     ring painting OUTSET at x=-2/x=322 (off-screen on the 1st and 5th of the
+ *     five 64px cells) passed all 129 tests of this suite. `border-radius` and
+ *     `box-shadow` never affect `scrollWidth`, height or line count, so they are
+ *     asserted directly here.
+ *  4. **The heights** (story 31.5). `readMergedStyles` read no height at all
+ *     before, which is why the two worst regressions this redesign can ship —
+ *     icons without `sm:hidden`, the nested `<ul>` without `sm:contents` — were
+ *     each measured taking the desktop nav from 52px to 76px and 160px
+ *     respectively while ZERO tests went red, this file's own "the desktop
+ *     cascade is untouched" included.
+ *
+ * ⚠️ Since 31.5 the nav holds TWO lists: the bar's outer `<ul>` and a nested
+ * `<ul>` (the "More" sheet) inside its fifth `<li>`, dissolved at >= 640px with
+ * `sm:contents`. Every helper here is anchored with `:scope >` rather than
+ * `nav.querySelector('ul'|'a')`, which returns the first match in DOCUMENT
+ * order and would silently start measuring sheet elements if the JSX were
+ * reordered. And note that CSS queries match `display: none` elements: with the
+ * sheet closed `nav a` still counts 8, so any count assertion must distinguish
+ * bar from sheet structurally rather than by number.
  *
  * ⚠️ The 320px viewport is established BEFORE `page.goto` (via `test.use` /
  * `setViewportSize` in a fixture), never after. Resizing after navigation makes
@@ -50,6 +65,17 @@ interface NavSnapshot {
   position: string
   rect: { x: number; y: number; width: number; height: number; bottom: number }
   innerHeight: number
+  /** The sheet must be CLOSED on the first frame (story 31.5, AC-9). */
+  sheetDisplay: string
+  triggerExpanded: string | null
+  /**
+   * The More tab's active treatment. It is DERIVED from the router location
+   * rather than applied by `<Link activeProps>`, so unlike every other tab it
+   * could in principle disagree between the server render and the settled
+   * client one — which would be a flash of an unhighlighted bar on the four
+   * routes More owns. This is the assertion that would catch it.
+   */
+  moreActive: boolean
 }
 
 /** Read the nav's position + box exactly as the DCL listener does. */
@@ -58,10 +84,15 @@ function readNav(page: Page): Promise<NavSnapshot | null> {
     const nav = document.querySelector(selector)
     if (!nav) return null
     const r = nav.getBoundingClientRect()
+    const sheet = nav.querySelector(':scope > ul > li > ul')
+    const trigger = nav.querySelector('button')
     return {
       position: globalThis.getComputedStyle(nav).position,
       rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
       innerHeight: globalThis.innerHeight,
+      sheetDisplay: sheet ? globalThis.getComputedStyle(sheet).display : 'MISSING',
+      triggerExpanded: trigger ? trigger.getAttribute('aria-expanded') : null,
+      moreActive: trigger ? trigger.className.split(/\s+/).includes('bg-green-50') : false,
     }
   }, NAV)
 }
@@ -70,54 +101,81 @@ test.describe('the mobile nav paints its final position on the first frame (AC-2
   // Established BEFORE goto — see the file docblock.
   test.use({ viewport: { width: 320, height: 720 } })
 
-  test('nav position + geometry at DOMContentLoaded are already the settled values', async ({
-    page,
-  }) => {
-    await page.addInitScript((selector) => {
-      document.addEventListener('DOMContentLoaded', () => {
-        const nav = document.querySelector(selector)
-        const snapshot = nav
-          ? (() => {
-              const r = nav.getBoundingClientRect()
-              return {
-                position: globalThis.getComputedStyle(nav).position,
-                rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
-                innerHeight: globalThis.innerHeight,
-              }
-            })()
-          : null
-        ;(globalThis as unknown as { __navAtDCL?: unknown }).__navAtDCL = snapshot
-      })
-    }, NAV)
+  // `/` is not a More-owned route; `/retirement` is. Both are checked because
+  // the More tab's active state is the one piece of this nav that is DERIVED
+  // rather than declarative, so it is the only plausible source of a new flash.
+  for (const path of ['/', '/retirement']) {
+    test(`nav position + geometry at DOMContentLoaded are already the settled values (${path})`, async ({
+      page,
+    }) => {
+      await page.addInitScript((selector) => {
+        document.addEventListener('DOMContentLoaded', () => {
+          const nav = document.querySelector(selector)
+          const snapshot = nav
+            ? (() => {
+                const r = nav.getBoundingClientRect()
+                const sheet = nav.querySelector(':scope > ul > li > ul')
+                const trigger = nav.querySelector('button')
+                return {
+                  position: globalThis.getComputedStyle(nav).position,
+                  rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
+                  innerHeight: globalThis.innerHeight,
+                  sheetDisplay: sheet ? globalThis.getComputedStyle(sheet).display : 'MISSING',
+                  triggerExpanded: trigger ? trigger.getAttribute('aria-expanded') : null,
+                  moreActive: trigger
+                    ? trigger.className.split(/\s+/).includes('bg-green-50')
+                    : false,
+                }
+              })()
+            : null
+          ;(globalThis as unknown as { __navAtDCL?: unknown }).__navAtDCL = snapshot
+        })
+      }, NAV)
 
-    const response = await page.goto('/')
-    expect(response?.ok(), 'expected / to load').toBeTruthy()
+      const response = await page.goto(path)
+      expect(response?.ok(), `expected ${path} to load`).toBeTruthy()
 
-    const atDCL = (await page.evaluate(
-      () => (globalThis as unknown as { __navAtDCL?: NavSnapshot | null }).__navAtDCL ?? null
-    )) as NavSnapshot | null
+      const atDCL = (await page.evaluate(
+        () => (globalThis as unknown as { __navAtDCL?: NavSnapshot | null }).__navAtDCL ?? null
+      )) as NavSnapshot | null
 
-    // Anti-vacuous precondition: a null snapshot (listener never fired, nav not
-    // in the pre-hydration HTML) or a zero-area box would satisfy the equality
-    // check below while proving nothing.
-    expect(atDCL, 'no nav was present/measured at DOMContentLoaded').not.toBeNull()
-    const dcl = atDCL as NavSnapshot
-    expect(dcl.rect.width, 'nav had a zero-width box at DOMContentLoaded').toBeGreaterThan(0)
-    expect(dcl.rect.height, 'nav had a zero-height box at DOMContentLoaded').toBeGreaterThan(0)
+      // Anti-vacuous precondition: a null snapshot (listener never fired, nav not
+      // in the pre-hydration HTML) or a zero-area box would satisfy the equality
+      // check below while proving nothing.
+      expect(atDCL, 'no nav was present/measured at DOMContentLoaded').not.toBeNull()
+      const dcl = atDCL as NavSnapshot
+      expect(dcl.rect.width, 'nav had a zero-width box at DOMContentLoaded').toBeGreaterThan(0)
+      expect(dcl.rect.height, 'nav had a zero-height box at DOMContentLoaded').toBeGreaterThan(0)
 
-    // (a) The first painted frame is already the fixed bottom bar.
-    expect(dcl.position, 'nav is not fixed on the first painted frame').toBe('fixed')
-    expect(
-      Math.abs(dcl.rect.bottom - dcl.innerHeight),
-      `nav bottom ${dcl.rect.bottom} is not flush with the viewport bottom ${dcl.innerHeight}`
-    ).toBeLessThanOrEqual(2)
+      // (a) The first painted frame is already the fixed bottom bar.
+      expect(dcl.position, 'nav is not fixed on the first painted frame').toBe('fixed')
+      expect(
+        Math.abs(dcl.rect.bottom - dcl.innerHeight),
+        `nav bottom ${dcl.rect.bottom} is not flush with the viewport bottom ${dcl.innerHeight}`
+      ).toBeLessThanOrEqual(2)
 
-    // (b) Nothing moves afterwards — the flash was exactly this delta.
-    await page.waitForLoadState('networkidle')
-    const settled = await readNav(page)
-    expect(settled, 'nav disappeared after hydration').not.toBeNull()
-    expect(settled).toEqual(dcl)
-  })
+      // (b) The sheet is CLOSED on the first frame (story 31.5). Open state is
+      // user-initiated and initialised to closed precisely so the server render
+      // and the first client render agree — a viewport-derived or effect-derived
+      // open state would flash the sheet on every page load.
+      expect(dcl.sheetDisplay, 'the More sheet is not closed on the first painted frame').toBe(
+        'none'
+      )
+      expect(dcl.triggerExpanded, 'the More trigger is not collapsed at first paint').toBe('false')
+
+      // (c) The derived More-active state is already correct at first paint.
+      expect(
+        dcl.moreActive,
+        `the More tab's active state at DCL does not match the route (${path})`
+      ).toBe(path === '/retirement')
+
+      // (d) Nothing moves afterwards — the flash was exactly this delta.
+      await page.waitForLoadState('networkidle')
+      const settled = await readNav(page)
+      expect(settled, 'nav disappeared after hydration').not.toBeNull()
+      expect(settled).toEqual(dcl)
+    })
+  }
 })
 
 test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
@@ -159,8 +217,11 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
       await page.waitForLoadState('networkidle')
 
       const measured = await page.evaluate((selector) => {
-        const list = document.querySelector(`${selector} ul`)
+        const list = document.querySelector(`${selector} > ul`)
         if (!list) return null
+        // All eight anchors, deliberately: at >= 640px `sm:contents` dissolves
+        // the wrapper <li> and the nested <ul>, so every destination really is
+        // an item of this one row and every one of them must fit inside it.
         const rights = [...list.querySelectorAll('a')].map((a) => a.getBoundingClientRect().right)
         return {
           listOverflow: list.scrollWidth - list.clientWidth,
@@ -210,8 +271,10 @@ test.describe('exactly one nav layout applies at each viewport width', () => {
 
       const measured = await page.evaluate((selector) => {
         const nav = document.querySelector(selector)
-        const list = nav?.querySelector('ul')
-        const link = nav?.querySelector('a')
+        // Anchored to the bar's own outer list / first cell — see the note on
+        // `readMergedStyles` about document-order helpers drifting onto the sheet.
+        const list = nav?.querySelector(':scope > ul')
+        const link = nav?.querySelector(':scope > ul > li > a')
         if (!nav || !list || !link) return null
         const navStyle = globalThis.getComputedStyle(nav)
         const linkStyle = globalThis.getComputedStyle(link)
@@ -249,14 +312,14 @@ test.describe('exactly one nav layout applies at each viewport width', () => {
 test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', () => {
   test.use({ viewport: { width: 320, height: 720 } })
 
-  test('the list reproduces the 4x80px grid with no inherited desktop spacing', async ({
+  test('the list reproduces the 5x64px grid with no inherited desktop spacing', async ({
     page,
   }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
     const list = await page.evaluate((selector) => {
-      const el = document.querySelector(`${selector} ul`)
+      const el = document.querySelector(`${selector} > ul`)
       if (!el) return null
       const s = globalThis.getComputedStyle(el)
       return {
@@ -270,13 +333,15 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     expect(list).not.toBeNull()
     const m = list as NonNullable<typeof list>
 
-    // The exact tracks measured on the pre-31.4 mobile bar. This is the assertion
-    // with teeth: `grid-cols-4` is `repeat(4, minmax(0,1fr))`, so leaving ANY of
-    // the desktop `gap-1 px-4 py-2` un-neutralised resizes every track — with
-    // both live the cells compute to 69px, not 80px.
+    // The exact tracks measured on the 31.5 mobile bar. This is the assertion
+    // with teeth: `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so leaving ANY of
+    // the desktop `gap-1 px-4 py-2` un-neutralised resizes every track. The
+    // 64px figure is also the fit budget the labels were chosen against —
+    // `max-sm:px-1` leaves a 56px content box, and the widest bar label
+    // ("Expenses", 48.45px at 11px) clears it by 3.8px per side.
     expect(m.display).toBe('grid')
-    expect(m.gridTemplateColumns, 'the mobile grid is not 4 x 80px at 320px').toBe(
-      '80px 80px 80px 80px'
+    expect(m.gridTemplateColumns, 'the mobile grid is not 5 x 64px at 320px').toBe(
+      '64px 64px 64px 64px 64px'
     )
     expect(m.padding, 'the desktop `px-4 py-2` leaked onto the mobile bar').toBe('0px')
     // A grid with no gap declared computes `normal`, with `gap-0` it computes
@@ -290,23 +355,53 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     expect(await readMergedStyles(page)).toEqual(MOBILE_STYLES)
   })
 
-  test('every mobile tab cell has square corners (no `rounded-md` leak)', async ({ page }) => {
+  /**
+   * ⚠️ Re-scoped in 31.5, and NOT merely by changing an 8 to a 5.
+   * `querySelectorAll` is a CSS query and CSS queries match `display: none`, so
+   * with the sheet closed `${NAV} a` still returns all EIGHT anchors — a count
+   * that stays green while no longer distinguishing bar from sheet, which is the
+   * only distinction this story is about. The bar's cells and the sheet's rows
+   * are read separately, and BOTH are asserted square: the sheet's rows are new
+   * anchors that inherit none of the bar's ink coverage.
+   */
+  test('every mobile cell has square corners (no `rounded-md` leak), bar and sheet', async ({
+    page,
+  }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const radii = await page.evaluate(
-      (selector) =>
-        [...document.querySelectorAll(`${selector} a`)].map((a) => ({
-          label: a.textContent?.trim() ?? '',
-          radius: globalThis.getComputedStyle(a).borderRadius,
-        })),
-      NAV
-    )
+    const read = (selector: string) =>
+      page.evaluate(
+        (sel) =>
+          [...document.querySelectorAll(sel)].map((a) => ({
+            label: a.textContent?.trim() ?? '',
+            radius: globalThis.getComputedStyle(a).borderRadius,
+          })),
+        selector
+      )
 
-    expect(radii).toHaveLength(8)
-    for (const { label, radius } of radii) {
+    const barCells = await read(`${NAV} > ul > li > a`)
+    expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
+
+    const sheetRows = await read(`${NAV} > ul > li > ul > li > a`)
+    expect(sheetRows.map((r) => r.label)).toEqual([
+      'Balance',
+      'Net Worth',
+      'Retirement',
+      'Settings',
+    ])
+
+    // The More trigger is a <button>, so every anchor sweep in this file misses
+    // it — including this one before 31.5 added the line below.
+    const triggerRadius = await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('button', { name: 'More', exact: true })
+      .evaluate((el) => globalThis.getComputedStyle(el).borderRadius)
+
+    for (const { label, radius } of [...barCells, ...sheetRows]) {
       expect(radius, `"${label}" cell paints rounded corners at 320px`).toBe('0px')
     }
+    expect(triggerRadius, 'the More trigger paints rounded corners at 320px').toBe('0px')
   })
 
   test('the keyboard focus ring paints INSIDE the cell, not off the screen edge', async ({
@@ -321,9 +416,9 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     const focused = await tabToFirstNavLink(page)
     expect(focused, 'never reached a nav link by tabbing').not.toBeNull()
 
-    // The grid columns are 80px x 4, flush to x=0..320. An OUTSET 2px ring paints
-    // at x=-2 and x=322, i.e. clipped away on 4 of the 8 cells; `ring-inset` is
-    // what keeps it on screen, and it is mobile-only.
+    // The grid columns are 64px x 5, flush to x=0..320. An OUTSET 2px ring paints
+    // at x=-2 and x=322, i.e. clipped away on the 1st and 5th cells; `ring-inset`
+    // is what keeps it on screen, and it is mobile-only.
     expect(hasVisibleRing(focused), `the mobile nav has no visible focus ring (${focused})`).toBe(
       true
     )
@@ -411,6 +506,296 @@ for (const [theme, expected] of [
   })
 }
 
+/**
+ * The MORE SHEET's own chrome (story 31.5, AC-11).
+ *
+ * The sheet is a second out-of-flow surface below `sm` and needs its own opaque
+ * background for exactly the reason the bar does — it is `absolute`, so page
+ * content passes underneath it. The two-theme test above is scoped to the `<nav>`
+ * element and cannot see the sheet at all; a dropped background computes to
+ * `rgba(0, 0, 0, 0)` and the four destinations sit on whatever scrolls past.
+ */
+for (const [theme, expected] of [
+  ['light', 'rgb(255, 255, 255)'],
+  ['dark', 'rgb(31, 41, 55)'],
+] as const) {
+  test(`the open More sheet paints an opaque ${theme} background of its own`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.addInitScript((t) => {
+      globalThis.localStorage.setItem(
+        'budget-planner-theme-prefs-v1',
+        JSON.stringify({ state: { theme: t }, version: 0 })
+      )
+    }, theme)
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('button', { name: 'More', exact: true })
+      .click()
+
+    const bg = await page.evaluate(
+      (selector) =>
+        globalThis.getComputedStyle(document.querySelector(`${selector} > ul > li > ul`))
+          .backgroundColor,
+      NAV
+    )
+    expect(bg, `the ${theme} More sheet is transparent — content shows through`).not.toMatch(
+      /rgba\(.*,\s*0\)$/
+    )
+    expect(bg, `the ${theme} More sheet lost its background`).toBe(expected)
+  })
+}
+
+test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
+  test.use({ viewport: { width: 320, height: 720 } })
+
+  test('the open sheet sits ON SCREEN, flush on top of the bar', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('button', { name: 'More', exact: true })
+      .click()
+
+    const measured = await page.evaluate((selector) => {
+      const nav = document.querySelector(selector)
+      const sheet = nav.querySelector(':scope > ul > li > ul')
+      const s = sheet.getBoundingClientRect()
+      const n = nav.getBoundingClientRect()
+      return {
+        position: globalThis.getComputedStyle(sheet).position,
+        top: s.top,
+        bottom: s.bottom,
+        left: s.left,
+        right: s.right,
+        navTop: n.top,
+        innerHeight: globalThis.innerHeight,
+        innerWidth: globalThis.innerWidth,
+        // `overflow-y-auto` computes `overflow-x` to `auto` as well, which would
+        // make the panel a horizontal scroll container silently absorbing any
+        // overflowing label (31.2's absorption trap). Element-level, so no
+        // ancestor can absorb it either.
+        overflowX: sheet.scrollWidth - sheet.clientWidth,
+      }
+    }, NAV)
+
+    // ⚠️⚠️ `toBeVisible()` CANNOT MAKE THIS CLAIM. Measured on the `max-sm:fixed`
+    // version of this sheet — the mistake this assertion exists to catch —
+    // `bottom: 100%` resolved against the VIEWPORT and put the sheet at
+    // {x: 0, y: -279}, entirely above the top edge of the screen, and
+    // `toBeVisible()` PASSED on it because Playwright only checks for a
+    // non-empty box. Assert the rect is actually inside the viewport.
+    expect(measured.position, 'the sheet is not `absolute` — see the y=-279 trap').toBe('absolute')
+    expect(measured.top, 'the sheet is rendered above the top edge of the screen').toBeGreaterThan(
+      0
+    )
+    expect(measured.bottom, 'the sheet hangs below the viewport').toBeLessThanOrEqual(
+      measured.innerHeight
+    )
+    expect(measured.left).toBeGreaterThanOrEqual(0)
+    expect(measured.right).toBeLessThanOrEqual(measured.innerWidth)
+    // Anchored to the bar, not floating: its bottom edge is the bar's top edge.
+    expect(
+      Math.abs(measured.bottom - measured.navTop),
+      'the sheet is not flush on the bar'
+    ).toBeLessThanOrEqual(2)
+    expect(
+      measured.overflowX,
+      'the sheet absorbs a horizontally overflowing row'
+    ).toBeLessThanOrEqual(0)
+  })
+
+  /**
+   * ⚠️⚠️ FOUND BY CODE REVIEW. The panel's height is content-driven and anchored
+   * to the bar's TOP edge, so without a cap it grows off the top of the screen —
+   * and because it is out of flow, page scrolling cannot reach what it pushes
+   * away. Measured on the unfixed build at 568x320 with a 24px root font: panel
+   * 301px tall, top at y=-57.75, and the "Balance" row at y=-51 — off-screen,
+   * un-tappable and unscrollable.
+   *
+   * This runs OUTSIDE the 320x720 describe on purpose: it needs a short viewport
+   * AND an enlarged root font, which is exactly the combination every other
+   * measurement in this file holds fixed. Reachability is proven by
+   * `elementFromPoint`, never by `toBeVisible()`.
+   */
+  test.describe('the sheet stays reachable when it cannot fit above the bar', () => {
+    for (const [w, h, root] of [
+      [568, 320, 24],
+      [320, 400, 24],
+      [360, 320, 20],
+    ] as const) {
+      test(`every row is reachable at ${w}x${h} with a ${root}px root font`, async ({ page }) => {
+        await page.setViewportSize({ width: w, height: h })
+        await page.addInitScript((px) => {
+          document.addEventListener('DOMContentLoaded', () => {
+            document.documentElement.style.fontSize = `${px}px`
+          })
+        }, root)
+        await page.goto('/')
+        await page.waitForLoadState('networkidle')
+        await page.evaluate((px) => {
+          document.documentElement.style.fontSize = `${px}px`
+        }, root)
+
+        await page
+          .getByRole('navigation', { name: 'Primary' })
+          .getByRole('button', { name: 'More', exact: true })
+          .click()
+
+        const measured = await page.evaluate((selector) => {
+          const sheet = document.querySelector(`${selector} > ul > li > ul`) as HTMLElement
+          const r = sheet.getBoundingClientRect()
+          const style = globalThis.getComputedStyle(sheet)
+          return {
+            top: Math.round(r.top * 100) / 100,
+            overflowY: style.overflowY,
+            // The panel must be capped, and if content exceeds the cap it must
+            // be scrollable rather than clipped.
+            scrollable: sheet.scrollHeight > sheet.clientHeight,
+            // Element-level: `overflow-y-auto` computes `overflow-x` to `auto`
+            // too, so the panel could silently absorb an overflowing label.
+            overflowX: sheet.scrollWidth - sheet.clientWidth,
+            // Each row is scrolled into view within the PANEL before it is
+            // hit-tested, because once the panel is capped a lower row is
+            // legitimately below its fold. The claim is "reachable", not
+            // "reachable without scrolling".
+            //
+            // ⚠️ This is NOT the tautology 31.3 warned about (a probe that
+            // reaches its target by scripting the very affordance under test).
+            // The affordance under test is scrollABILITY, and that is pinned
+            // separately and independently by the computed `overflow-y`
+            // assertion below — a check that scrolling cannot manufacture.
+            // Neither subsumes the other: computed style cannot prove there is
+            // anything to scroll to, and the hit test cannot prove the user is
+            // allowed to scroll.
+            rows: [...sheet.querySelectorAll('a')].map((a) => {
+              a.scrollIntoView({ block: 'nearest' })
+              const rr = a.getBoundingClientRect()
+              const cx = Math.round(rr.x + rr.width / 2)
+              const cy = Math.round(rr.y + rr.height / 2)
+              const hit =
+                cy > 0 && cy < globalThis.innerHeight ? document.elementFromPoint(cx, cy) : null
+              return {
+                label: a.textContent?.trim() ?? '',
+                top: Math.round(rr.top),
+                reachable: !!hit && (a.contains(hit) || a === hit),
+              }
+            }),
+          }
+        }, NAV)
+
+        expect(
+          measured.top,
+          'the sheet is rendered off the top of the screen'
+        ).toBeGreaterThanOrEqual(0)
+        expect(measured.overflowY, 'the sheet cannot scroll when it does not fit').toMatch(
+          /^(auto|scroll)$/
+        )
+        expect(
+          measured.overflowX,
+          'the sheet absorbs a horizontally overflowing row'
+        ).toBeLessThanOrEqual(0)
+        for (const row of measured.rows) {
+          expect(row.reachable, `sheet row "${row.label}" is unreachable (top ${row.top})`).toBe(
+            true
+          )
+        }
+      })
+    }
+  })
+
+  test('every sheet row is a >=44px target with an INSET focus ring', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('button', { name: 'More', exact: true })
+      .click()
+
+    const rows = await page.evaluate(
+      (selector) =>
+        [...document.querySelectorAll(`${selector} > ul > li > ul > li > a`)].map((a) => ({
+          label: a.textContent?.trim() ?? '',
+          height: Math.round(a.getBoundingClientRect().height),
+          overflows: a.scrollWidth > a.clientWidth,
+        })),
+      NAV
+    )
+
+    expect(rows.map((r) => r.label)).toEqual(['Balance', 'Net Worth', 'Retirement', 'Settings'])
+    for (const { label, height, overflows } of rows) {
+      expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
+      expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)
+    }
+
+    // The rows are new anchors and inherit NONE of the bar's ink coverage.
+    // Keyboard focus so `:focus-visible` is guaranteed to match.
+    let ring: string | null = null
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press('Tab')
+      const found = await page.evaluate((selector) => {
+        const active = document.activeElement
+        if (!active?.closest(`${selector} > ul > li > ul`)) return null
+        return globalThis.getComputedStyle(active).boxShadow
+      }, NAV)
+      if (found !== null) {
+        ring = found
+        break
+      }
+    }
+    expect(ring, 'never reached a sheet row by tabbing').not.toBeNull()
+    expect(hasVisibleRing(ring), `a sheet row has no visible focus ring (${ring})`).toBe(true)
+    expect(ring, 'the sheet row focus ring is outset — clipped at the viewport edge').toContain(
+      'inset'
+    )
+  })
+})
+
+/**
+ * `sm:contents` on BOTH the wrapper `<li>` and the nested `<ul>` is what makes
+ * the nested structure legal — it dissolves them into the one desktop flex row.
+ * Measured by mutation: without it the desktop nav goes 52px -> 160px at 1280px
+ * (140 computed diffs) and NOT ONE of the 69 tests across this file,
+ * `global-nav.spec.ts` and `responsive-320.spec.ts` went red.
+ */
+test('the nested sheet list DISSOLVES into the desktop row at 1280px', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+
+  const measured = await page.evaluate((selector) => {
+    const nav = document.querySelector(selector)
+    const wrapper = nav.querySelector(':scope > ul > li:last-child')
+    const sheet = nav.querySelector(':scope > ul > li > ul')
+    const trigger = nav.querySelector('button')
+    const anchors = [...nav.querySelectorAll('a')]
+    return {
+      wrapperDisplay: globalThis.getComputedStyle(wrapper).display,
+      sheetDisplay: globalThis.getComputedStyle(sheet).display,
+      triggerDisplay: globalThis.getComputedStyle(trigger).display,
+      navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
+      // All eight anchors on ONE row: same y, ascending x, none clipped.
+      ys: [...new Set(anchors.map((a) => Math.round(a.getBoundingClientRect().y)))],
+      count: anchors.length,
+      // Icons are mobile-only elements; a stray one adds 24px to every cell.
+      visibleIcons: [...nav.querySelectorAll('svg')].filter(
+        (svg) => globalThis.getComputedStyle(svg).display !== 'none'
+      ).length,
+    }
+  }, NAV)
+
+  expect(measured.wrapperDisplay, 'the sheet wrapper <li> did not dissolve').toBe('contents')
+  expect(measured.sheetDisplay, 'the nested <ul> did not dissolve').toBe('contents')
+  expect(measured.triggerDisplay, 'the mobile-only More trigger reached the desktop row').toBe(
+    'none'
+  )
+  expect(measured.count).toBe(8)
+  expect(measured.ys, 'the desktop nav is no longer one row').toHaveLength(1)
+  expect(measured.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
+  expect(measured.navHeight, 'the desktop nav grew — a dissolution or icon regression').toBe(52)
+})
+
 test('the desktop nav carries NO background of its own — the wrapper owns it', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/')
@@ -453,22 +838,43 @@ test('the desktop nav carries NO background of its own — the wrapper owns it',
 function readMergedStyles(page: Page) {
   return page.evaluate((selector) => {
     const nav = document.querySelector(selector) as HTMLElement
-    const item = nav.querySelector('li') as HTMLElement
-    const link = nav.querySelector('a') as HTMLElement
+    // ⚠️ Anchored to the BAR's outer list explicitly. `nav.querySelector('li')`
+    // and `nav.querySelector('a')` return the first in DOCUMENT order, which is
+    // only the bar's first cell as long as the sheet happens to come later in
+    // source. Reorder the JSX and those helpers would silently start measuring
+    // SHEET elements while still reading perfectly plausibly.
+    const item = nav.querySelector(':scope > ul > li') as HTMLElement
+    const link = nav.querySelector(':scope > ul > li > a') as HTMLElement
     const n = globalThis.getComputedStyle(nav)
     const l = globalThis.getComputedStyle(link)
     return {
-      // nav: max-sm:fixed / inset-x-0 / z-40 / border-t
+      // nav: max-sm:fixed / inset-x-0 / z-50 / border-t
       navPosition: n.position,
       navLeft: n.left,
       navRight: n.right,
       navZIndex: n.zIndex,
       navBorderTopWidth: n.borderTopWidth,
+      // ⚠️⚠️ `navHeight` and `linkHeight` are the two properties whose ABSENCE
+      // made this partition blind to the redesign's two worst failure modes.
+      // Measured by mutation against a green control: icons rendered without
+      // `sm:hidden` take the desktop nav 52px -> 76px at 1280px (every anchor
+      // 36 -> 60px, 212 computed diffs) and the nested `<ul>` without
+      // `sm:contents` takes it 52px -> 160px (140 diffs) — and in BOTH cases
+      // ZERO of the 69 tests across this file, `global-nav` and `responsive-320`
+      // went red, including the test named "the desktop cascade is untouched"
+      // directly below, because nothing anywhere read a height.
+      navHeight: `${Math.round(nav.getBoundingClientRect().height * 100) / 100}px`,
+      linkHeight: `${Math.round(link.getBoundingClientRect().height * 100) / 100}px`,
       // li: max-sm:min-w-0
       itemMinWidth: globalThis.getComputedStyle(item).minWidth,
-      // link: max-sm:flex / items-center / justify-center / text-center /
-      // text-[11px] / leading-tight / px-1 / break-words / rounded-none
+      // link: max-sm:flex / flex-col / items-center / justify-center /
+      // text-center / text-[11px] / leading-tight / px-1 / break-words /
+      // rounded-none
       linkDisplay: l.display,
+      // ⚠️ `flex-col` is the single token this whole redesign turns on, and this
+      // helper did not read `flex-direction` before 31.5 — the file's own thesis
+      // is that a token with no assertion is a missing guard.
+      linkFlexDirection: l.flexDirection,
       linkAlignItems: l.alignItems,
       linkJustifyContent: l.justifyContent,
       linkTextAlign: l.textAlign,
@@ -481,15 +887,22 @@ function readMergedStyles(page: Page) {
   }, NAV)
 }
 
-/** Measured at 320px on the pre-31.4 mobile bar; matched exactly. */
+/** Measured at 320px on the 31.5 five-tab mobile bar; matched exactly. */
 const MOBILE_STYLES = {
   navPosition: 'fixed',
   navLeft: '0px',
   navRight: '0px',
-  navZIndex: '40',
+  // Raised from 40 in 31.5: at z-40 the z-50 InstallPrompt banner painted over
+  // the open More sheet and swallowed the whole "Retirement" row.
+  navZIndex: '50',
   navBorderTopWidth: '1px',
+  // py-2 16 + h-6 icon 24 + gap-0.5 2 + 11px label at leading-tight 13.75 + 1px
+  // border-t. The cell is the same stack without the nav's border.
+  navHeight: '56.75px',
+  linkHeight: '55.75px',
   itemMinWidth: '0px',
   linkDisplay: 'flex',
+  linkFlexDirection: 'column',
   linkAlignItems: 'center',
   linkJustifyContent: 'center',
   linkTextAlign: 'center',
@@ -511,8 +924,13 @@ const DESKTOP_STYLES = {
   navRight: 'auto',
   navZIndex: 'auto',
   navBorderTopWidth: '0px',
+  // Unchanged from `main` at 1280px, and the assertion that finally has teeth
+  // against a stray icon or a dissolved-list regression.
+  navHeight: '52px',
+  linkHeight: '36px',
   itemMinWidth: 'auto',
   linkDisplay: 'inline-block',
+  linkFlexDirection: 'row',
   linkAlignItems: 'normal',
   linkJustifyContent: 'normal',
   linkTextAlign: 'start',

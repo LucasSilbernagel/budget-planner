@@ -175,18 +175,29 @@ export function InstallPrompt() {
   return (
     <section
       ref={affordanceRef}
-      // Mobile offset must clear the story-18-2 two-row (`grid-cols-4`, 4×2 ≈ 89px)
+      // Mobile offset must clear the story-31.5 single-row (`grid-cols-5`, 56.75px)
       // GlobalNav bottom bar plus `env(safe-area-inset-bottom)`, so it is kept in
-      // lockstep with the `__root.tsx` `pb-[calc(6rem_+_env(safe-area-inset-bottom))]`
-      // reserve and the nav's own inset (a bare 64px `bottom-16` overlapped the bar).
-      // If `NAV_ITEMS` count changes the nav's row count, revisit this together with
+      // lockstep with the `__root.tsx`
+      // `pb-[calc(2.625rem_+_18px_+_env(safe-area-inset-bottom))]` reserve and the
+      // nav's own inset (a bare 64px `bottom-16` overlapped the bar).
+      // ⚠️ The rem+px split is deliberate and must be mirrored here, not
+      // "simplified" back to 3.75rem: the bar is `2.625rem + 14.75px` because its
+      // spacing scales with the root font while its `text-[11px]` label line box
+      // does not. A pure-rem offset drifts — measured, a 12px root font put the
+      // bar 1.25px OVER the footer. See the `__root.tsx` comment.
+      // If the bar/sheet split changes the nav's row count, revisit this together with
       // those (same coupling `GlobalNav.tsx` documents). `sm:` is a top bar → `sm:bottom-4`.
+      // ⚠️ This banner is z-50 and so is the nav. The nav renders AFTER this
+      // component in `__root.tsx`, so it wins the tie — which is what keeps the
+      // open "More" sheet tappable where this banner overlaps it. Measured: at
+      // z-40 the banner swallowed the whole "Retirement" row while every geometry
+      // and `toBeVisible()` assertion still passed.
       // Short form "Longhand", not "Longhand Budget" (story brand-1, AC-1):
       // this prompt is about the app icon, and the icon's label is the PWA
       // `short_name` — which is "Longhand". The two must agree or the user is
       // told to install one name and gets another on their home screen.
       aria-label="Install Longhand"
-      className="fixed bottom-[calc(6rem_+_env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
+      className="fixed bottom-[calc(2.625rem_+_18px_+_env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
