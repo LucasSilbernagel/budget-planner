@@ -257,7 +257,7 @@ export function ExpensesPage() {
                 rawTotalCents={rawTotalExpenses}
                 conversionApplied={conversionApplied}
                 unreadableCount={unreadableExpenseCount}
-                amountClassName="text-3xl font-bold text-red-600 dark:text-red-400 mt-2"
+                amountClassName="text-red-600 dark:text-red-400 mt-2"
                 tooltipLabel="More information about the expenses figure"
                 selectorLabel="Show expenses per"
               />

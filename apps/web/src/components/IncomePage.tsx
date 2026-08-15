@@ -253,7 +253,7 @@ export function IncomePage() {
                 rawTotalCents={rawTotalIncome}
                 conversionApplied={conversionApplied}
                 unreadableCount={unreadableIncomeCount}
-                amountClassName="text-3xl font-bold text-green-600 dark:text-green-400 mt-2"
+                amountClassName="text-green-600 dark:text-green-400 mt-2"
                 tooltipLabel="More information about the income figure"
                 selectorLabel="Show income per"
               />

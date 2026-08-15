@@ -694,6 +694,133 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     })
   }
 
+  /**
+   * The `PeriodTotal` headline figure fits 320px in a WIDE font stack.
+   *
+   * ⚠️ WHY THIS FORCES A FONT. The tests above found this defect in CI and could
+   * not reproduce it on a developer machine: the figure fitted in the local font
+   * and overflowed to 325px on the runner, purely on glyph metrics. An
+   * environment-dependent guard is not a guard — so this one pins the font to
+   * DejaVu Sans, the widest of the common Linux stacks, and is therefore
+   * deterministic everywhere.
+   *
+   * WHAT BROKE. Story 32.1 made this figure DENORMALIZE to the selected period,
+   * and the default period is `annually` — so the same data started rendering up
+   * to 12× larger ("$12,802,467.90" → "$153,629,614.80") with no change to its
+   * `text-3xl` styling. It needed ~285px in a card that has 240px.
+   *
+   * ⚠️ THE THREE ASSERTIONS PIN THREE DIFFERENT THINGS, and the split is
+   * deliberate — the fix has two halves and a page-overflow check alone can only
+   * see them BOTH reverted at once (measured; each half individually keeps the
+   * document at 320 and the guard would have stayed green):
+   *
+   *   1. page does not overflow    → RED only if BOTH halves are reverted
+   *   2. the figure stays on ONE line → RED if the `text-2xl` arm is reverted
+   *   3. the figure does not spill out of its own box (extreme amount)
+   *                                → RED if `[overflow-wrap:anywhere]` is dropped
+   *
+   * Nothing between the figure and the viewport has `overflow: hidden`, so a
+   * spill here paints over the card rather than being clipped — invisible to any
+   * document-level check, which is what assertion 3 exists for.
+   */
+  test.describe('the period total fits 320px in a wide font stack', () => {
+    const WIDE_FONT = '*,*::before,*::after{font-family:"DejaVu Sans"!important}'
+
+    async function renderTotal(page: Page, route: string, monthlyCents: number) {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+      await page.addInitScript(
+        ([key, listKey, amount]) => {
+          const now = '2026-08-11T00:00:00.000Z'
+          localStorage.setItem(
+            key as string,
+            JSON.stringify({
+              state: {
+                [listKey as string]: [
+                  {
+                    id: 'row-1',
+                    userId: 0,
+                    name: 'Salary',
+                    amount: amount as number,
+                    frequency: 'monthly',
+                    categoryId: null,
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                ],
+              },
+              version: 2,
+            })
+          )
+          // Symbol mode is the widest rendering (currency-less drops the "$").
+          localStorage.setItem(
+            'budget-planner-currency-prefs-v2',
+            JSON.stringify({ state: { mode: 'symbol', currency: 'USD' }, version: 2 })
+          )
+        },
+        [
+          route === '/income' ? 'budget-planner-income-v1' : 'budget-planner-expenses-v1',
+          route === '/income' ? 'incomeSources' : 'expenses',
+          monthlyCents,
+        ] as const
+      )
+      const response = await page.goto(route)
+      expect(response?.ok(), `expected ${route} to load`).toBeTruthy()
+      await page.waitForLoadState('networkidle')
+      await page.addStyleTag({ content: WIDE_FONT })
+      // Anti-vacuous: the figure must actually be the denormalized annual total.
+      // Without this a missing element would satisfy every check below.
+      await expect(page.getByTestId('period-total-amount')).toBeVisible()
+      return page.evaluate(() => {
+        const el = document.querySelector('[data-testid="period-total-amount"]') as HTMLElement
+        const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight)
+        return {
+          text: (el.textContent ?? '').trim(),
+          lines: Math.round(el.getBoundingClientRect().height / lineHeight),
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }
+      })
+    }
+
+    for (const route of ['/income', '/expenses'] as const) {
+      test(`${route} headline total fits 320px with a large annual figure`, async ({ page }) => {
+        // $12,802,467.90/month → "$153,629,614.80" at the `annually` default.
+        // This is the exact figure the seeded-rows tests above produce, and the
+        // one that overflowed CI to 325px.
+        const total = await renderTotal(page, route, 1_280_246_790)
+        expect(total.text, 'expected the annually-denormalized total').toBe('$153,629,614.80')
+
+        // 1. The page itself.
+        await assertNoHorizontalOverflow(
+          (fn) => page.evaluate(fn),
+          `${route} (wide font, big total)`
+        )
+
+        // 2. A realistic large total is not made to wrap. Money broken across
+        //    two lines mid-digits is legible only by accident.
+        expect(
+          total.lines,
+          `${route}: "${total.text}" wrapped onto ${total.lines} lines at 320px`
+        ).toBe(1)
+      })
+
+      test(`${route} headline total stays inside its card at any magnitude`, async ({ page }) => {
+        // Deliberately absurd ($1.23bn/month). The figure may wrap here — what it
+        // must never do is paint outside the card, which no page-level overflow
+        // assertion can see.
+        const total = await renderTotal(page, route, 123_456_789_000)
+        expect(
+          total.scrollWidth,
+          `${route}: "${total.text}" spills out of its card (scrollWidth ${total.scrollWidth} > clientWidth ${total.clientWidth})`
+        ).toBeLessThanOrEqual(total.clientWidth)
+        await assertNoHorizontalOverflow(
+          (fn) => page.evaluate(fn),
+          `${route} (wide font, extreme total)`
+        )
+      })
+    }
+  })
+
   // UX-DR9 requires controls to be "reachable and OPERABLE" at 320px, not
   // merely present. Presence is a class/DOM fact the unit suite already pins;
   // this drives the real card controls in a real browser, and covers the

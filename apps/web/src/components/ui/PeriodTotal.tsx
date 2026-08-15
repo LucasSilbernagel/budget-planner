@@ -49,7 +49,15 @@ interface PeriodTotalProps {
   conversionApplied: boolean
   /** Rows the store had to exclude because core could not read them. */
   unreadableCount: number
-  /** Tailwind classes for the amount, so each page keeps its accent colour. */
+  /**
+   * Accent colour (and spacing) for the amount, so each page keeps its own.
+   *
+   * ⚠️ Do NOT pass a `text-{size}` or `font-` class here. The size is owned by
+   * this component (see the render) because it is a shared 320px invariant, not
+   * a per-page style — and a caller-supplied `text-3xl` would not merely be
+   * redundant, it would WIN or LOSE by Tailwind SOURCE ORDER rather than by prop
+   * order, which is not something a call site can reason about (story 21 lesson).
+   */
   amountClassName: string
   /** Accessible name for the info affordance, e.g. "…the income figure". */
   tooltipLabel: string
@@ -100,7 +108,33 @@ export function PeriodTotal({
           button's label — an anchored `^…$` name matcher silently finds nothing
           in a real browser (jsdom's accname implementation disagrees, so unit
           tests alone will not catch it). */}
-      <p className={amountClassName} data-testid="period-total-amount">
+      {/* ⚠️ SIZE AND WRAPPING ARE OWNED HERE, and both are load-bearing at 320px.
+          This figure is DENORMALIZED to the selected period, and the default
+          period is `annually` — so story 32.1 multiplied what this element
+          renders by up to 12× without touching its `text-3xl` styling. A
+          $12.8M/month total became "$153,629,614.80", which needs ~285px in a
+          wide font stack against the 240px this card actually has, and the
+          overflow escaped the card and pushed the whole PAGE to 325px. It passed
+          locally and failed in CI purely on font metrics.
+
+          `[overflow-wrap:anywhere]`, not `break-words`: a currency figure has no
+          break opportunity, and `overflow-wrap: break-word` leaves the element's
+          MIN-CONTENT width equal to the whole unbroken string. Since this sits in
+          a flex column whose items default to `min-width: auto`, that min-content
+          is exactly what forced the page wider. Only `anywhere` shrinks the
+          min-content contribution, which is what actually stops the page
+          overflowing. Tailwind 3.4 has no `wrap-anywhere` utility (that is v4),
+          hence the arbitrary property.
+
+          Measured at 320px with the widest common Linux font (DejaVu Sans):
+          `text-3xl` needs 285px / has 240px → page 325px. `text-2xl` needs 228px
+          → fits on one line with 12px to spare, and the wrap rule keeps even a
+          $14.8bn figure on the page (it takes a second line instead). `sm:` and
+          up are unchanged, so the desktop design is untouched. */}
+      <p
+        className={`text-2xl sm:text-3xl font-bold [overflow-wrap:anywhere] ${amountClassName}`}
+        data-testid="period-total-amount"
+      >
         {formatAmount(amountForDuration)}
       </p>
 
