@@ -1,6 +1,8 @@
+import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
 
@@ -38,7 +40,10 @@ interface IncomeState {
   deleteIncomeSource: (id: string) => void
   getIncomeSourceById: (id: string) => ClientIncomeSource | undefined
   getIncomeSourcesByFrequency: (frequency: Frequency) => ClientIncomeSource[]
+  /** Monthly-normalized cents (story 32.1) — denormalize for display. */
   getTotalIncome: () => number
+  /** Rows excluded from `getTotalIncome` because core could not read them. */
+  getUnreadableIncomeCount: () => number
 }
 
 // Convert ClientNewIncomeSource to ClientIncomeSource (add id, userId, and timestamps as ISO strings)
@@ -107,9 +112,41 @@ export const useIncomeStore = create<IncomeState>()(
         return get().incomeSources.filter((source) => source.frequency === frequency)
       },
 
-      // Calculate total income (sum of all amounts in cents)
+      /**
+       * Total income as MONTHLY-NORMALIZED cents (story 32.1, FR58).
+       *
+       * ⚠️ This used to raw-`reduce` `amount` across mixed frequencies, adding a
+       * weekly $200 to a monthly $1,500 as if the units matched — the FR58
+       * defect. It now delegates to core, which is what makes it equal to the
+       * Overview's figure BY CONSTRUCTION rather than by coincidence:
+       * `calculateGrossPeriodIncome` (behind `calculateNetIncomeResult`) is a
+       * thin wrapper over this same function.
+       *
+       * ⚠️ Callers must denormalize for display —
+       * `denormalizeFromMonthly(total, duration)`. Never re-derive the
+       * multipliers; they are core-private on purpose.
+       *
+       * ⚠️ MUST return a `number`. `useTotalIncome` below calls this INSIDE a
+       * zustand selector, so an object return would fail v4's `Object.is`
+       * equality every render and spin an infinite re-render loop.
+       *
+       * Rows core cannot read are excluded, never coerced — see
+       * `lib/readable-rows` for why, and `getUnreadableIncomeCount` for the
+       * count the UI discloses.
+       */
       getTotalIncome: () => {
-        return get().incomeSources.reduce((sum, source) => sum + source.amount, 0)
+        return calculateTotalMonthlyNormalized(toNormalizableItems(get().incomeSources))
+      },
+
+      /**
+       * How many persisted rows `getTotalIncome` had to exclude because core
+       * could not read them (corrupt frequency or non-finite amount).
+       *
+       * Exists so the page can DISCLOSE the omission instead of silently
+       * under-reporting the user's money.
+       */
+      getUnreadableIncomeCount: () => {
+        return countUnreadableRows(get().incomeSources)
       },
     }),
     {
@@ -169,7 +206,11 @@ export const useIncomeStore = create<IncomeState>()(
 // Selector hooks for better performance
 export const useIncomeSources = () => useIncomeStore((state) => state.incomeSources)
 
+/** Monthly-normalized cents (story 32.1) — denormalize before display. */
 export const useTotalIncome = () => useIncomeStore((state) => state.getTotalIncome())
+
+export const useUnreadableIncomeCount = () =>
+  useIncomeStore((state) => state.getUnreadableIncomeCount())
 
 export const useIncomeByFrequency = (frequency: Frequency) =>
   useIncomeStore((state) => state.getIncomeSourcesByFrequency(frequency))

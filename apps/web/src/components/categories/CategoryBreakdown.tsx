@@ -55,7 +55,11 @@ import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../.
 import { useChartColors } from '../../lib/chartTheme'
 import { useExpenses, useIncomeSources } from '../../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
-import { type OverviewDuration, useOverviewDuration } from '../../stores/overviewDurationStore'
+import {
+  DURATION_LABEL,
+  type OverviewDuration,
+  useOverviewDuration,
+} from '../../stores/overviewDurationStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 
 /**
@@ -76,14 +80,25 @@ import { ErrorBoundary } from '../ErrorBoundary'
 const UNCATEGORIZED_LABEL = 'Uncategorized'
 
 /**
- * Cadence suffix for a side heading. Mirrors `HomePage`'s `DURATION_LABEL`
- * semantics; derived locally because that map is module-private there and this
- * section is not worth restructuring the dashboard for.
+ * Whether each cadence's monthly multiplier is NON-INTEGRAL, so per-bucket
+ * rounding and whole-set rounding can disagree by a few cents.
+ *
+ * weekly = ×12/52 and biweekly = ×12/26 are non-integral; monthly (×1) and
+ * annually (×12) are exact.
+ *
+ * ⚠️ A `Record<OverviewDuration, boolean>`, NOT a `Set`. Code review 32.1 caught
+ * the first version claiming a `Set` "forces a decision" when adding a cadence —
+ * it does not: a `Set` literal missing a member compiles clean, which is exactly
+ * how the original `duration === 'weekly'` check silently rotted when the union
+ * widened. An exhaustive `Record` makes a fifth duration a COMPILE ERROR here.
+ * The values are hand-classified because core's `FREQUENCY_MULTIPLIERS` is
+ * module-private; the `Record` is what stops that going stale unnoticed.
  */
-const CADENCE_LABEL: Record<OverviewDuration, string> = {
-  weekly: '(per week)',
-  monthly: '(per month)',
-  annually: '(per year)',
+const IS_NON_INTEGRAL_CADENCE: Record<OverviewDuration, boolean> = {
+  weekly: true,
+  biweekly: true,
+  monthly: false,
+  annually: false,
 }
 
 /** The four members of the core `Frequency` union — there is no quarterly. */
@@ -181,16 +196,22 @@ export function CategoryBreakdown(): ReactElement {
         What each category totals and its share of that side. Income and expenses are separate
         wholes, so each share is measured against its own total.
       </p>
-      {/* ⚠️ Only `weekly` can diverge. This breakdown rounds ONCE PER BUCKET so
-          its rows sum to the total shown beside them, while the dashboard
-          rounds once over the whole set — at ×12/52 those disagree by a few
-          cents. `monthly` (×1) and `annually` (×12) are integral and agree
-          exactly, so an unconditional note would be false two thirds of the
-          time. */}
-      {duration === 'weekly' ? (
+      {/* ⚠️ Only a NON-INTEGRAL cadence can diverge. This breakdown rounds ONCE
+          PER BUCKET so its rows sum to the total shown beside them, while the
+          dashboard rounds once over the whole set — at ×12/52 (weekly) and
+          ×12/26 (biweekly) those disagree by a few cents. `monthly` (×1) and
+          `annually` (×12) are integral and agree exactly, so an unconditional
+          note would be false half the time.
+
+          ⚠️ This used to read `duration === 'weekly'`, which was correct only
+          while `biweekly` was unreachable from the UI. Story 32.1 made it
+          selectable, turning that check into a silent omission — no type error,
+          no failing test. Derive from the multiplier set, never from one
+          hard-coded value. */}
+      {IS_NON_INTEGRAL_CADENCE[duration] ? (
         <p className="mt-1 text-xs text-muted" data-testid="breakdown-rounding-note">
-          Each category total is rounded on its own, so at a weekly view these figures can differ
-          from the dashboard total by a few cents.
+          Each category total is rounded on its own, so at this view these figures can differ from
+          the dashboard total by a few cents.
         </p>
       ) : null}
 
@@ -280,7 +301,7 @@ function BreakdownSide({
   currency,
 }: BreakdownSideProps): ReactElement {
   const headingId = useId()
-  const heading = `${title} ${CADENCE_LABEL[duration]}`
+  const heading = `${title} ${DURATION_LABEL[duration]}`
 
   // ⚠️ A share of a NET total is only meaningful when the parts compose to the
   // whole. Once a side holds BOTH signs the denominator is a net that can be

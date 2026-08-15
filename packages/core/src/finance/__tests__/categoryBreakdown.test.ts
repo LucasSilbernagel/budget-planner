@@ -95,10 +95,12 @@ describe('buildCategoryBreakdown', () => {
       // ⚠️ A NON-INTEGRAL cadence is what catches a wrong rounding order:
       // monthly (×1) and annually (×12) are integral, so they reconcile no
       // matter where the rounding happens. TWO cadences qualify, not one —
-      // `weekly` (×12/52) here and `biweekly` (×12/26) below. `biweekly` is
-      // unreachable from the UI (`OverviewDuration` offers three values) but
-      // the exported API takes the full `Frequency` union, so it is a real
-      // caller-facing path.
+      // `weekly` (×12/52) here and `biweekly` (×12/26) below.
+      //
+      // ⚠️ Both are now reachable from the UI. Story 32.1 added `biweekly` to
+      // `OverviewDuration` (a four-value union since), so this is no longer a
+      // caller-facing-API-only path — it is what a user sees after picking
+      // "Bi-weekly". The consumer's rounding-note gate was widened to match.
       //
       // Seven $100.00/month items, each in its OWN category:
       //   bucket (monthly space) per row                      = 10000

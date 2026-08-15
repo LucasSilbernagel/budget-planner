@@ -13,7 +13,7 @@ import type {
   FinancialDataPoint,
   RechartsDataItem,
 } from '@budget-planner/core/finance/visualization'
-import React, { useState, useMemo, useId, useRef, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Bar,
   BarChart,
@@ -33,21 +33,16 @@ import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import {
+  DURATION_LABEL,
+  DURATION_OPTION_LABEL,
   type OverviewDuration,
+  VALID_DURATIONS,
   useOverviewDuration,
   useSetOverviewDuration,
 } from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { PremiumFeatureGate } from './premium'
-
-// Card-label suffix for the selected overview duration (story 12-2). "monthly"
-// keeps the original "(per month)" copy so the surviving cards read naturally at
-// every duration.
-const DURATION_LABEL: Record<OverviewDuration, string> = {
-  weekly: '(per week)',
-  monthly: '(per month)',
-  annually: '(per year)',
-}
+import { InfoTooltip } from './ui/InfoTooltip'
 
 // Colors for the charts
 const INCOME_COLOR = '#10B981'
@@ -102,9 +97,19 @@ export function HomePage() {
   const incomeForDuration = denormalizeFromMonthly(totalNormalizedIncome, duration)
   const expensesForDuration = denormalizeFromMonthly(totalNormalizedExpenses, duration)
 
-  // Calculate totals for non-normalized display (raw amounts)
+  // Raw (unconverted) entered totals, quoted inside the conversion disclosure.
+  // Deliberately NOT normalized — this is the "before conversion" figure.
   const totalIncomeRaw = incomeSources.reduce((sum, source) => sum + source.amount, 0)
   const totalExpensesRaw = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+  // ⚠️ Gate the disclosure on whether conversion HAPPENED, not on whether the
+  // normalized and raw totals differ. Code review 32.1 showed the equality proxy
+  // has a false-negative: $330 weekly + $1,200 annually normalizes to exactly the
+  // raw sum (143000 + 10000 == 33000 + 120000 == 153000c), so a genuine
+  // conversion rendered no explanation at all. `PeriodTotal` on the Income and
+  // Expenses pages uses the same predicate, so all three surfaces now explain the
+  // same data the same way.
+  const incomeConversionApplied = incomeSources.some((source) => source.frequency !== 'monthly')
+  const expensesConversionApplied = expenses.some((expense) => expense.frequency !== 'monthly')
   const totalSavings = savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
   const totalInvestments = balanceEntries
     .filter((entry) => entry.type === 'investment')
@@ -351,8 +356,12 @@ export function HomePage() {
           <section className="surface rounded-lg shadow-md p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-xl font-semibold text-subheading">Financial Overview</h2>
-              {/* One global duration selector (story 12-2). Drives both the Total
-                  Income and Total Expenses cards from a single source of truth. */}
+              {/* One global duration selector (story 12-2, widened to four values
+                  by 32.1). Drives the Total Income and Total Expenses cards here,
+                  and the same store drives the Income and Expenses pages — one
+                  source of truth, no per-surface duplication.
+                  Options are derived from VALID_DURATIONS so a selectable option
+                  can never be one `coerceDuration` would reject on reload. */}
               <label className="flex items-center gap-1 text-sm text-label">
                 <span className="sr-only">Show income and expenses per</span>
                 <select
@@ -361,9 +370,11 @@ export function HomePage() {
                   onChange={(e) => setDuration(e.target.value as OverviewDuration)}
                   className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="annually">Annually</option>
+                  {VALID_DURATIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {DURATION_OPTION_LABEL[value]}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -371,7 +382,7 @@ export function HomePage() {
               <div className="surface-inset rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-muted">
                   {`Total Income ${DURATION_LABEL[duration]}`}
-                  {totalNormalizedIncome !== totalIncomeRaw && (
+                  {incomeConversionApplied && (
                     <InfoTooltip
                       label="More information about the income figure"
                       text={`We convert weekly, biweekly, monthly, and annual amounts to a common monthly basis so your totals are comparable — this uses an average of about 4.33 weeks a month, so these totals are estimates. Entered total before conversion: ${formatAmount(
@@ -387,7 +398,7 @@ export function HomePage() {
               <div className="surface-inset rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-muted">
                   {`Total Expenses ${DURATION_LABEL[duration]}`}
-                  {totalNormalizedExpenses !== totalExpensesRaw && (
+                  {expensesConversionApplied && (
                     <InfoTooltip
                       label="More information about the expenses figure"
                       text={`We convert weekly, biweekly, monthly, and annual amounts to a common monthly basis so your totals are comparable — this uses an average of about 4.33 weeks a month, so these totals are estimates. Entered total before conversion: ${formatAmount(
@@ -592,7 +603,8 @@ export function HomePage() {
               gone at every width. Nothing is orphaned — every destination stays
               reachable via GlobalNav (top bar ≥640px, fixed bottom bar <640px).
               Its SECTION_TILES data + five category icons were deleted with it;
-              `InfoIcon` (used by the stat-card tooltips) is kept. */}
+              `InfoIcon` (used by the stat-card tooltips) is kept — story 32.1
+              moved it into `ui/InfoTooltip` so Income and Expenses share it. */}
 
           {/* Premium features — discoverable but locked for free users (story
               7-2, FR24). Paid users get the working link; everyone else sees the
@@ -881,118 +893,6 @@ function BreakdownPie({
         </>
       )}
     </div>
-  )
-}
-
-/**
- * Small accessible info affordance (story 11-4). Reveals a plain-language
- * explanation on hover or keyboard focus — progressive disclosure — instead of
- * leading the card with a bare, jargon-y sub-line.
- *
- * Accessibility (hardened in code review):
- * - Hover and focus are tracked independently (`open = hovered || focused`) so a
- *   mouse-leave never hides a tooltip the keyboard user still has focused, and a
- *   blur never hides one the mouse is still over. Escape dismisses without moving
- *   focus.
- * - A short close delay plus hover handlers on the bubble let the pointer travel
- *   from the trigger onto the bubble without it vanishing, so the content stays
- *   hoverable (WCAG 1.4.13).
- * - The bubble is rendered only while open and positioned `fixed` with its left
- *   clamped to the viewport, so it can neither contribute to horizontal overflow
- *   nor clip off-screen at 320px regardless of which card edge the icon sits near.
- * - `aria-describedby` is wired only while the bubble exists.
- */
-function InfoTooltip({ label, text }: { label: string; text: string }): React.ReactElement {
-  const [hovered, setHovered] = useState(false)
-  const [focused, setFocused] = useState(false)
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const tooltipId = useId()
-  const open = hovered || focused
-
-  const openHover = (): void => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setHovered(true)
-  }
-  // Delay the close so the pointer can cross the small gap onto the bubble
-  // (which re-opens via its own onMouseEnter) before it unmounts.
-  const closeHoverSoon = (): void => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    closeTimer.current = setTimeout(() => setHovered(false), 120)
-  }
-
-  // Position the bubble in viewport space, clamped so it never overflows either
-  // edge. Runs after the trigger is laid out and whenever the tooltip opens.
-  useEffect(() => {
-    if (!open || !triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    const margin = 8
-    const width = Math.min(224, window.innerWidth - margin * 2)
-    const centered = rect.left + rect.width / 2 - width / 2
-    const left = Math.max(margin, Math.min(centered, window.innerWidth - width - margin))
-    setCoords({ top: rect.bottom + 4, left, width })
-  }, [open])
-
-  useEffect(() => () => clearTimeout(closeTimer.current), [])
-
-  return (
-    <span
-      className="inline-flex align-middle"
-      onMouseEnter={openHover}
-      onMouseLeave={closeHoverSoon}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={label}
-        aria-describedby={open ? tooltipId : undefined}
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:text-gray-200"
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            if (closeTimer.current) clearTimeout(closeTimer.current)
-            setHovered(false)
-            setFocused(false)
-          }
-        }}
-      >
-        <InfoIcon className="h-4 w-4" />
-      </button>
-      {open && coords && (
-        <span
-          role="tooltip"
-          id={tooltipId}
-          onMouseEnter={openHover}
-          onMouseLeave={closeHoverSoon}
-          style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width }}
-          className="z-20 rounded-md bg-gray-900 px-3 py-2 text-left text-xs font-normal text-gray-100 shadow-lg dark:bg-gray-700"
-        >
-          {text}
-        </span>
-      )}
-    </span>
-  )
-}
-
-function InfoIcon({ className }: { className: string }): React.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M11.25 11.25h.75v3.75m-.75 0h1.5M12 8.25h.008v.008H12V8.25zM21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-      />
-    </svg>
   )
 }
 

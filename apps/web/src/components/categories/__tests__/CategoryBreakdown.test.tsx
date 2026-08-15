@@ -703,16 +703,23 @@ describe('CategoryBreakdown', () => {
     })
   })
 
-  describe('the weekly rounding note', () => {
+  describe('the non-integral-cadence rounding note', () => {
     // ⚠️ This breakdown rounds once per BUCKET so its rows sum to its own
-    // total; the dashboard rounds once over the whole set. Only ×12/52 makes
-    // those disagree — monthly (×1) and annually (×12) are integral.
-    it('appears at a weekly cadence', () => {
+    // total; the dashboard rounds once over the whole set. Only a NON-INTEGRAL
+    // multiplier makes those disagree — monthly (×1) and annually (×12) are
+    // integral, weekly (×12/52) and biweekly (×12/26) are not.
+    //
+    // ⚠️ Story 32.1 made `biweekly` selectable for the first time. Until then the
+    // gate could read `duration === 'weekly'` and be correct; the moment a user
+    // could choose biweekly, that check silently omitted a note that IS
+    // warranted, with no type error and no failing test. These two tests are the
+    // partition that catches it.
+    it.each(['weekly', 'biweekly'] as const)('appears at a %s cadence', (duration) => {
       seed({
         categories: [category({ id: 'cat-a', name: 'Groceries' })],
         expenses: [row('e1', 'Shop', 100000, 'cat-a')],
       })
-      useOverviewDurationStore.setState({ duration: 'weekly' })
+      useOverviewDurationStore.setState({ duration })
       render(<CategoryBreakdown />)
 
       expect(screen.getByTestId('breakdown-rounding-note')).toHaveTextContent(

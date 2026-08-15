@@ -296,10 +296,20 @@ export function SavingsPage() {
           {/* Stats Card */}
           <section className="surface shadow-md p-6 rounded-lg">
             <div className="flex md:flex-row flex-col md:justify-between md:items-center gap-4">
+              {/* ⚠️ Story 32.1 (FR58) deliberately did NOT normalize this figure.
+                  A savings goal has no `frequency` — `currentBalance` is a
+                  point-in-time BALANCE (a stock), not a per-period FLOW like the
+                  Income and Expenses totals, so re-expressing it "per week" would
+                  be arithmetic on a quantity that has no period. Hence no duration
+                  selector here; the sub-line says what the number is instead. */}
               <div>
                 <h2 className="font-semibold text-subheading text-xl">Total Savings</h2>
                 <p className="mt-2 font-bold text-purple-600 dark:text-purple-400 text-3xl">
                   {formatAmount(totalSavings)}
+                </p>
+                <p className="mt-1 text-muted text-xs">
+                  What you have saved right now — the sum of your current balances, not a per-period
+                  amount.
                 </p>
               </div>
               <button

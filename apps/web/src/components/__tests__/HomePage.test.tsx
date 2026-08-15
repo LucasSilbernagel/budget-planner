@@ -468,8 +468,10 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     render(<HomePage />)
     // The duration suffix ("(per week/month/year)") is chosen by the story 12-2
     // selector; the plain-language intent is duration-agnostic.
-    expect(screen.getByText(/^Total Income \(per (week|month|year)\)$/)).toBeInTheDocument()
-    expect(screen.getByText(/^Total Expenses \(per (week|month|year)\)$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Total Income \(per (week|2 weeks|month|year)\)$/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/^Total Expenses \(per (week|2 weeks|month|year)\)$/)
+    ).toBeInTheDocument()
     expect(screen.queryByText(/Normalized/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/^Raw:/)).not.toBeInTheDocument()
   })
@@ -547,8 +549,10 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
 
   it('AC-1: the three remaining overview cards still render', () => {
     render(<HomePage />)
-    expect(screen.getByText(/^Total Income \(per (week|month|year)\)$/)).toBeInTheDocument()
-    expect(screen.getByText(/^Total Expenses \(per (week|month|year)\)$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Total Income \(per (week|2 weeks|month|year)\)$/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/^Total Expenses \(per (week|2 weeks|month|year)\)$/)
+    ).toBeInTheDocument()
     expect(screen.getByText('Net Worth')).toBeInTheDocument()
   })
 
@@ -618,13 +622,13 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 
   function incomeCard(): HTMLElement {
     return screen
-      .getByText(/^Total Income \(per (week|month|year)\)$/)
+      .getByText(/^Total Income \(per (week|2 weeks|month|year)\)$/)
       .closest('div.surface-inset') as HTMLElement
   }
 
   function expenseCard(): HTMLElement {
     return screen
-      .getByText(/^Total Expenses \(per (week|month|year)\)$/)
+      .getByText(/^Total Expenses \(per (week|2 weeks|month|year)\)$/)
       .closest('div.surface-inset') as HTMLElement
   }
 
@@ -655,6 +659,17 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     )
     expect(screen.getByText('Total Income (per year)')).toBeInTheDocument()
     expect(screen.getByText('Total Expenses (per year)')).toBeInTheDocument()
+
+    // Story 32.1 widened the control to the FOUR entry frequencies. Counting the
+    // options pins that the rendered list and the store's coercion set agree —
+    // a selectable option the store would reject on reload is the exact trap
+    // this story was written to close.
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      'weekly',
+      'biweekly',
+      'monthly',
+      'annually',
+    ])
   })
 
   it('AC-1/AC-2: figures start annual and re-express when the duration changes', () => {
@@ -681,6 +696,71 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     expect(screen.getByText('Total Income (per week)')).toBeInTheDocument()
     expect(within(incomeCard()).getByText('276.92')).toBeInTheDocument()
     expect(within(expenseCard()).getByText('138.46')).toBeInTheDocument()
+
+    // Switch to Bi-weekly (story 32.1): monthly ÷ (26/12), rounded to the cent.
+    //   income   round(120000 × 12/26) = round(55384.61…) = 55385 -> 553.85
+    //   expenses round( 60000 × 12/26) = round(27692.30…) = 27692 -> 276.92
+    fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
+      target: { value: 'biweekly' },
+    })
+    expect(screen.getByText('Total Income (per 2 weeks)')).toBeInTheDocument()
+    expect(within(incomeCard()).getByText('553.85')).toBeInTheDocument()
+    expect(within(expenseCard()).getByText('276.92')).toBeInTheDocument()
+  })
+
+  /**
+   * ⚠️ Story 32.1 code review. The conversion disclosure used to be gated on
+   * `totalNormalizedIncome !== totalIncomeRaw`. That equality is only a PROXY for
+   * "conversion happened", and it has a false negative:
+   *
+   *   $330 weekly  -> round(33000 × 52/12) = 143000c
+   *   $1,200 annually ->      round(120000/12) =  10000c
+   *   normalized total                        = 153000c
+   *   raw total       33000 + 120000          = 153000c   <- identical
+   *
+   * Both rows were genuinely converted, yet the old gate rendered no explanation.
+   * The gate now asks whether any row is non-monthly. Reverting it leaves every
+   * other test green, so this is the only assertion standing between that bug and
+   * a release.
+   */
+  it('AC-2: discloses the conversion even when it lands coincidentally on the raw sum', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-weekly',
+          userId: 0,
+          name: 'Weekly',
+          amount: 33000,
+          frequency: 'weekly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+        {
+          id: 'inc-annual',
+          userId: 0,
+          name: 'Annual',
+          amount: 120000,
+          frequency: 'annually',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+    useExpenseStore.setState({ expenses: [] })
+    render(<HomePage />)
+
+    expect(
+      screen.getByRole('button', { name: /more information about the income figure/i })
+    ).toBeInTheDocument()
+  })
+
+  it('AC-2: shows no conversion disclosure when every row is already monthly', () => {
+    seedMonthly()
+    render(<HomePage />)
+
+    expect(
+      screen.queryByRole('button', { name: /more information about the income figure/i })
+    ).not.toBeInTheDocument()
   })
 
   it('AC-3: the selection is a single source of truth that survives remount', () => {

@@ -6,6 +6,7 @@ import {
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
+import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
@@ -13,6 +14,7 @@ import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
+import { PeriodTotal } from './ui/PeriodTotal'
 import {
   FieldLabel,
   RESPONSIVE_ACTIONS_CELL_CLASS,
@@ -56,7 +58,17 @@ export function IncomePage() {
     if (value.trim() === '' || !/\d/.test(value)) return
     setter(formatForInputDisplay(parseFromInput(value, locale), locale))
   }
+  // Monthly-normalized cents (story 32.1) — `PeriodTotal` denormalizes it to the
+  // selected period. `summarizeReadableRows` supplies the disclosure inputs from
+  // READABLE rows only: a raw total that never quotes excluded money, and a
+  // `conversionApplied` flag that asks whether conversion happened rather than
+  // inferring it from two totals being unequal (code review 32.1).
   const totalIncome = useTotalIncome()
+  const {
+    rawTotalCents: rawTotalIncome,
+    unreadableCount: unreadableIncomeCount,
+    conversionApplied,
+  } = summarizeReadableRows(incomeSources)
   const { addIncomeSource, updateIncomeSource, deleteIncomeSource } = useIncomeStore()
 
   // State for the add/edit modal
@@ -231,12 +243,20 @@ export function IncomePage() {
           {/* Stats Card */}
           <section className="surface rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold text-subheading">Total Income</h2>
-                <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
-                  {formatAmount(totalIncome)}
-                </p>
-              </div>
+              {/* Story 32.1 (FR58): this figure used to be a raw sum of amounts
+                  across mixed frequencies, so it disagreed with the Overview on
+                  the same data. It is now the store's monthly-normalized total,
+                  re-expressed at the shared app-wide duration. */}
+              <PeriodTotal
+                label="Total Income"
+                monthlyTotalCents={totalIncome}
+                rawTotalCents={rawTotalIncome}
+                conversionApplied={conversionApplied}
+                unreadableCount={unreadableIncomeCount}
+                amountClassName="text-3xl font-bold text-green-600 dark:text-green-400 mt-2"
+                tooltipLabel="More information about the income figure"
+                selectorLabel="Show income per"
+              />
               <button
                 ref={addButtonRef}
                 type="button"

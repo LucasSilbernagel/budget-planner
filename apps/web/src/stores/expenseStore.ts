@@ -1,6 +1,8 @@
+import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
 
@@ -38,7 +40,10 @@ interface ExpenseState {
   deleteExpense: (id: string) => void
   getExpenseById: (id: string) => ClientExpense | undefined
   getExpensesByFrequency: (frequency: Frequency) => ClientExpense[]
+  /** Monthly-normalized cents (story 32.1) — denormalize for display. */
   getTotalExpenses: () => number
+  /** Rows excluded from `getTotalExpenses` because core could not read them. */
+  getUnreadableExpenseCount: () => number
 }
 
 // Convert ClientNewExpense to ClientExpense (add id, userId, and timestamps as ISO strings)
@@ -107,9 +112,29 @@ export const useExpenseStore = create<ExpenseState>()(
         return get().expenses.filter((expense) => expense.frequency === frequency)
       },
 
-      // Calculate total expenses (sum of all amounts in cents)
+      /**
+       * Total expenses as MONTHLY-NORMALIZED cents (story 32.1, FR58).
+       *
+       * See `incomeStore.getTotalIncome` for the full rationale — this is the
+       * expenses half of the same defect: a raw `reduce` added a weekly $50 to a
+       * monthly $900 as if the units matched. Delegating to core makes it equal
+       * to the Overview's `calculateNetIncomeResult(...).totalExpenses` by
+       * construction.
+       *
+       * ⚠️ Returns MONTHLY cents — denormalize for display. ⚠️ MUST stay a
+       * `number` (called inside the `useTotalExpenses` selector).
+       */
       getTotalExpenses: () => {
-        return get().expenses.reduce((sum, expense) => sum + expense.amount, 0)
+        return calculateTotalMonthlyNormalized(toNormalizableItems(get().expenses))
+      },
+
+      /**
+       * How many persisted rows `getTotalExpenses` had to exclude because core
+       * could not read them. Surfaced in the UI so the omission is disclosed
+       * rather than silently under-reported.
+       */
+      getUnreadableExpenseCount: () => {
+        return countUnreadableRows(get().expenses)
       },
     }),
     {
@@ -169,7 +194,11 @@ export const useExpenseStore = create<ExpenseState>()(
 // Selector hooks for better performance
 export const useExpenses = () => useExpenseStore((state) => state.expenses)
 
+/** Monthly-normalized cents (story 32.1) — denormalize before display. */
 export const useTotalExpenses = () => useExpenseStore((state) => state.getTotalExpenses())
+
+export const useUnreadableExpenseCount = () =>
+  useExpenseStore((state) => state.getUnreadableExpenseCount())
 
 export const useExpenseByFrequency = (frequency: Frequency) =>
   useExpenseStore((state) => state.getExpensesByFrequency(frequency))
