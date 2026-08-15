@@ -325,7 +325,7 @@ export function FinancialSummaryReport({
                 <p className="mt-2 text-sm text-body">
                   {emptySectionCopy(
                     model.netWorth.unreadableCount,
-                    'No investments or debts have been added, so there is no net worth to summarize.'
+                    'No investments, savings or debts have been added, so there is no net worth to summarize.'
                   )}
                 </p>
               ) : (
@@ -348,12 +348,31 @@ export function FinancialSummaryReport({
                       label="Total investments"
                       value={format(model.netWorth.totalInvestmentsCents)}
                     />
+                    {/* The savings total contributes to net worth (story 32.2), so
+                        it is printed here as well as in its own section — otherwise
+                        the three lines above the total would not add up to it on a
+                        page the user keeps. The individual goals stay below. */}
+                    <TotalRow
+                      label="Total savings"
+                      value={format(model.netWorth.totalSavingsCents)}
+                    />
                     <TotalRow label="Total debts" value={format(model.netWorth.totalDebtsCents)} />
                     <TotalRow emphasis label="Net worth" value={format(model.netWorth.netCents)} />
                   </dl>
                 </>
               )}
               <UnreadableNote count={model.netWorth.unreadableCount} />
+              {/* Savings rows are counted in their own section, but if any were
+                  excluded this figure is missing money and must say so — otherwise
+                  the net worth reads as complete while the Savings section below
+                  discloses that entries were dropped (code review 32.2). */}
+              {model.netWorth.excludedSavingsCount > 0 && (
+                <p className="mt-3 text-sm text-muted">
+                  {model.netWorth.excludedSavingsCount === 1
+                    ? '1 savings entry could not be read and is not included in this net worth.'
+                    : `${model.netWorth.excludedSavingsCount} savings entries could not be read and are not included in this net worth.`}
+                </p>
+              )}
             </section>
 
             <section aria-labelledby="report-savings-heading" className={SECTION_CLASS}>
@@ -429,6 +448,17 @@ export function FinancialSummaryReport({
                 </>
               )}
               <UnreadableNote count={model.savings.unreadableCount} />
+              {/* A row kept for its balance but stripped of a corrupt target renders
+                  "—" for target and progress — visually identical to a genuine
+                  no-target account. Disclose it so the two are distinguishable
+                  (story 32.2 code review). */}
+              {model.savings.unreadableTargetCount > 0 && (
+                <p className="mt-3 text-sm text-muted">
+                  {model.savings.unreadableTargetCount === 1
+                    ? "1 entry's target could not be read, so its balance is included but its progress is not shown."
+                    : `${model.savings.unreadableTargetCount} entries' targets could not be read, so their balances are included but their progress is not shown.`}
+                </p>
+              )}
             </section>
           </>
         )}

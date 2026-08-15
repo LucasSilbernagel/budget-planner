@@ -34,6 +34,7 @@
 
 import { calculateNetIncomeResult, normalizeToMonthly } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core'
+import { netWorthFromTotals } from '../net-worth'
 
 // ============================================================================
 // Input shapes (structural — deliberately not the store's own types)
@@ -138,9 +139,24 @@ export interface ReportNetWorthSection {
   debts: ReportBalanceRow[]
   totalInvestmentsCents: number
   totalDebtsCents: number
-  /** Investments − debts, in cents. May be negative. */
+  /**
+   * The savings total that contributes to {@link netCents} (story 32.2, FR59).
+   * The individual savings rows stay in the savings section; this is carried here
+   * so the printed net-worth arithmetic reconciles on the page.
+   */
+  totalSavingsCents: number
+  /** Investments + savings − debts, in cents. May be negative. */
   netCents: number
+  /** Excludes unreadable BALANCE rows only — savings rows are counted in their own section. */
   unreadableCount: number
+  /**
+   * Unreadable SAVINGS rows, carried here for disclosure only and deliberately
+   * NOT added to {@link unreadableCount} (which feeds the document-wide total).
+   * Without it this section can print a figure that silently omits savings money,
+   * or — worse — claim nothing was ever added when rows exist but could not be
+   * read. Code review 32.2 reproduced exactly that.
+   */
+  excludedSavingsCount: number
   isEmpty: boolean
 }
 
@@ -150,7 +166,15 @@ export interface ReportSavingsSection {
   totalTargetCents: number
   /** 0-100 across all targeted goals, or `null` when no goal carries a target. */
   overallProgressPercent: number | null
+  /** Rows excluded entirely because their BALANCE could not be read. */
   unreadableCount: number
+  /**
+   * Rows whose balance counted but whose TARGET was unreadable, so they show no
+   * progress. Disclosed separately and deliberately NOT added to
+   * {@link unreadableCount} — the row was not excluded, and the document-wide
+   * total counts exclusions.
+   */
+  unreadableTargetCount: number
   isEmpty: boolean
 }
 
@@ -214,31 +238,46 @@ function isReadableBalance(row: ReportBalanceInput): boolean {
 }
 
 /**
- * A savings row is readable when its balance is finite and its target is either
- * genuinely absent or a usable positive figure.
+ * Whether a savings row's MONEY can be read. This is the only question that
+ * matters for "how much have you saved" and for net worth.
  *
- * ⚠️ Two deliberate details:
- *  - **`== null`, not `=== null`.** An absent `targetAmount` key means the same
- *    thing as an explicit `null` — "savings account, no target" — and the store
- *    itself uses loose equality for exactly this (`savingsStore.ts:132,141`).
- *    Strict equality classified a legacy row as corrupt and silently dropped its
- *    balance from the saved total.
- *  - **A non-positive target is corrupt, not "a target of zero".** The domain
- *    validator requires a positive integer whenever a target is supplied, so 0
- *    or a negative value can only arrive from unvalidated/legacy data. Excluding
- *    it here (and counting it) stops one bad row from poisoning the section
- *    aggregate for every other, valid goal — the cross-contamination a review
- *    reproduced: a single `-100000` target cancelled a healthy goal's target to
- *    zero and blanked the whole section's progress.
+ * ⚠️ `Number.isFinite` does NOT coerce, so a persisted string (`"300000"`) is
+ * correctly rejected here. That matters more than it looks: elsewhere in the app
+ * a string balance makes `investments + savings` a string CONCATENATION and
+ * produces a large, plausible-looking wrong number with no `NaN` to flag it (see
+ * `deferred-work.md`). This report is immune by construction.
  */
-function isReadableSavings(row: ReportSavingsInput): boolean {
-  if (!Number.isFinite(row.currentBalance)) {
+function hasReadableBalance(row: ReportSavingsInput): boolean {
+  return Number.isFinite(row.currentBalance)
+}
+
+/**
+ * Whether a savings row carries a target that can be measured against — i.e.
+ * whether it is a GOAL with usable progress, as opposed to an account or a row
+ * whose target is corrupt.
+ *
+ * ⚠️ **`== null`, not `=== null`.** An absent `targetAmount` key means the same
+ * thing as an explicit `null` — "savings account, no target" — and the store
+ * itself uses loose equality for exactly this (`savingsStore.ts:132,141`).
+ * Strict equality classified a legacy row as corrupt.
+ *
+ * ⚠️ **A non-positive target is corrupt, not "a target of zero".** The domain
+ * validator requires a positive integer whenever a target is supplied, so 0 or a
+ * negative value can only arrive from unvalidated/legacy data.
+ */
+function hasUsableTarget(row: ReportSavingsInput): boolean {
+  if (row.targetAmount == null) {
     return false
   }
-  if (row.targetAmount == null) {
-    return true
-  }
   return Number.isFinite(row.targetAmount) && row.targetAmount > 0
+}
+
+/**
+ * A row whose target is corrupt — present, but not a figure progress can be
+ * measured against. Its BALANCE is still real money and still counts.
+ */
+function hasCorruptTarget(row: ReportSavingsInput): boolean {
+  return row.targetAmount != null && !hasUsableTarget(row)
 }
 
 // ============================================================================
@@ -294,20 +333,35 @@ function buildBudget(
 }
 
 /**
- * ⚠️ **Why this re-derives the totals instead of calling the store selectors.**
+ * ⚠️ **Why the TOTALS are re-derived but the DEFINITION is imported.**
  *
- * The §5 reuse rule points at `useTotalInvestmentBalance`/`useTotalDebtBalance`/
- * `useNetBalance` (`stores/balanceStore.ts:256,266,276`), and the intent behind
- * that rule — no silent drift between what the report prints and what the app
- * shows — is right. But those selectors sum RAW rows: a single non-finite
- * `currentBalance` (reachable, since the sync applier writes without validating)
- * makes every one of them return `NaN`, and this report must stay legible in
- * exactly that case. So the formula is replicated over the READABLE subset, and
- * the no-drift guarantee is enforced by a parity test asserting this section
- * equals the selectors for clean data. That is a stronger guarantee than the
- * import would have been, because it fails loudly if either side changes.
+ * The §5 reuse rule points at `useTotalInvestmentBalance`/`useTotalDebtBalance`
+ * (`stores/balanceStore.ts:256,266`), and the intent behind it — no silent drift
+ * between what the report prints and what the app shows — is right. Those
+ * selectors sum RAW rows: a single non-finite `currentBalance` (reachable, since
+ * the sync applier writes without validating) makes them return `NaN`, and this
+ * report must stay legible in exactly that case. So the per-type SUMS are
+ * replicated over the readable subset.
+ *
+ * The net-worth FORMULA is a different matter and is now imported from
+ * `lib/net-worth.ts` (story 32.2). It used to be replicated too, "guaranteed" by a
+ * parity test — but that test re-implemented the selector inside the test file
+ * and imported nothing from the store, so changing the app's definition could not
+ * fail it. A no-drift claim is only real when the test imports the thing it
+ * claims parity with; the definition now has exactly one home and every surface
+ * calls it.
+ *
+ * @param balances - Raw balance rows; unreadable ones are excluded and counted
+ * @param savings - The ALREADY-BUILT savings section. Taken whole rather than
+ *   re-filtering `input.savings` here on purpose: `totalUnreadableCount` sums the
+ *   per-section counts, so a second filter would count every corrupt savings row
+ *   twice and make the document's own disclosure wrong.
  */
-function buildNetWorth(balances: readonly ReportBalanceInput[]): ReportNetWorthSection {
+function buildNetWorth(
+  balances: readonly ReportBalanceInput[],
+  savings: ReportSavingsSection
+): ReportNetWorthSection {
+  const readableSavingsCents = savings.totalCurrentCents
   const readable = balances.filter(isReadableBalance)
   const investments = readable.filter((row) => row.type === 'investment')
   const debts = readable.filter((row) => row.type === 'debt')
@@ -329,11 +383,30 @@ function buildNetWorth(balances: readonly ReportBalanceInput[]): ReportNetWorthS
     debts: debts.map(toRow),
     totalInvestmentsCents,
     totalDebtsCents,
-    // Investments add, debts subtract — the same convention as `useNetBalance`,
-    // proven equal by the parity test rather than asserted by this comment.
-    netCents: totalInvestmentsCents - totalDebtsCents,
+    totalSavingsCents: readableSavingsCents,
+    // The app's one definition of net worth — shared with `useNetWorth()`, not
+    // restated here (story 32.2).
+    netCents: netWorthFromTotals({
+      investmentsCents: totalInvestmentsCents,
+      savingsCents: readableSavingsCents,
+      debtsCents: totalDebtsCents,
+    }),
     unreadableCount: balances.length - readable.length,
-    isEmpty: readable.length === 0,
+    excludedSavingsCount: savings.unreadableCount,
+    // ⚠️ Savings count toward net worth now, so a user with savings and no
+    // balance rows HAS a net worth. Keying this on balance rows alone printed
+    // "there is no net worth to summarize" over a real, positive figure. Tested
+    // against the savings section's own emptiness, not against a zero total: a
+    // savings account holding exactly 0 is still a row the user added.
+    //
+    // ⚠️ `savings.unreadableCount === 0` is the third clause and it is load-bearing
+    // (code review 32.2). `savings.isEmpty` counts READABLE rows, so a user whose
+    // only savings rows are corrupt satisfied the first two clauses and the section
+    // printed "No investments, savings or debts have been added" as flat fact —
+    // while the savings section on the same page disclosed that entries existed but
+    // could not be read. That is the self-contradiction class this story fixed in
+    // two other gates, reintroduced by the fix for the second one.
+    isEmpty: readable.length === 0 && savings.isEmpty && savings.unreadableCount === 0,
   }
 }
 
@@ -357,25 +430,45 @@ function buildNetWorth(balances: readonly ReportBalanceInput[]): ReportNetWorthS
  * in `build-financial-summary.test.ts`.
  */
 function toProgressPercent(currentCents: number, targetCents: number | null): number | null {
-  if (targetCents == null || targetCents <= 0) {
+  // `Number.isFinite` first: `NaN <= 0` is FALSE, so a non-finite target would slip
+  // past a bare `<= 0` guard and divide into `NaN`. Reachable now that a row with a
+  // corrupt target is kept for its balance instead of being dropped whole.
+  if (targetCents == null || !Number.isFinite(targetCents) || targetCents <= 0) {
     return null
   }
   return Math.min(100, Math.round((currentCents / targetCents) * 100))
 }
 
+/**
+ * ⚠️ **Balance-readability and target-readability are separate questions**
+ * (split during the story 32.2 code review).
+ *
+ * They used to be one predicate: a row with a finite balance but a corrupt target
+ * was dropped ENTIRELY. That was defensible while this section only reported
+ * savings — but 32.2 made the savings total feed NET WORTH, and the app's own
+ * `useTotalSavings` never looks at the target. So `{targetAmount: 0,
+ * currentBalance: 100_000}` produced a printed net worth of 0 where all three
+ * screens showed 1,000.00, with both figures perfectly legible and nothing to
+ * signal the divergence.
+ *
+ * Now: a finite balance is real money and always counts. A corrupt target only
+ * costs the row its PROGRESS (rendered "—", exactly like a genuine account) and
+ * is disclosed via {@link ReportSavingsSection.unreadableTargetCount} — so it is
+ * never silently indistinguishable from a legitimate no-target account.
+ */
 function buildSavings(savings: readonly ReportSavingsInput[]): ReportSavingsSection {
-  const readable = savings.filter(isReadableSavings)
+  const readable = savings.filter(hasReadableBalance)
 
   // Every readable row's balance counts toward "how much you have saved".
   const totalCurrentCents = readable.reduce((total, row) => total + row.currentBalance, 0)
 
-  // ⚠️ Overall PROGRESS is measured across targeted goals ONLY — an untargeted
-  // savings account contributes to neither the numerator nor the denominator.
-  // This mirrors `getOverallProgress` (`savingsStore.ts:140-146`) and its comment
-  // verbatim. Putting every balance over only the targeted totals (the original
-  // implementation) inflated the figure: 300,000/1,000,000 = 30% where the app
-  // itself reports 250,000/1,000,000 = 25%.
-  const targeted = readable.filter((row) => row.targetAmount != null)
+  // ⚠️ Overall PROGRESS is measured across rows with a USABLE target only — an
+  // untargeted savings account contributes to neither the numerator nor the
+  // denominator, and neither does a row whose target is corrupt. This mirrors
+  // `getOverallProgress` (`savingsStore.ts:140-146`) for clean data. Putting every
+  // balance over only the targeted totals (the original implementation) inflated
+  // the figure: 300,000/1,000,000 = 30% where the app reports 250,000/1,000,000 = 25%.
+  const targeted = readable.filter(hasUsableTarget)
   const targetedBalanceCents = targeted.reduce((total, row) => total + row.currentBalance, 0)
   const totalTargetCents = targeted.reduce((total, row) => total + (row.targetAmount ?? 0), 0)
 
@@ -383,7 +476,9 @@ function buildSavings(savings: readonly ReportSavingsInput[]): ReportSavingsSect
     goals: readable.map((row) => ({
       id: row.id,
       name: row.name,
-      targetCents: row.targetAmount ?? null,
+      // A corrupt target is reported as ABSENT, never printed as a figure — the
+      // document must not show `0` or `-1,000.00` as somebody's savings goal.
+      targetCents: hasUsableTarget(row) ? row.targetAmount ?? null : null,
       currentCents: row.currentBalance,
       progressPercent: toProgressPercent(row.currentBalance, row.targetAmount),
     })),
@@ -391,6 +486,7 @@ function buildSavings(savings: readonly ReportSavingsInput[]): ReportSavingsSect
     totalTargetCents,
     overallProgressPercent: toProgressPercent(targetedBalanceCents, totalTargetCents),
     unreadableCount: savings.length - readable.length,
+    unreadableTargetCount: readable.filter(hasCorruptTarget).length,
     isEmpty: readable.length === 0,
   }
 }
@@ -409,8 +505,10 @@ export function buildFinancialSummary(
   input: BuildFinancialSummaryInput
 ): FinancialSummaryReportModel {
   const budget = buildBudget(input.income, input.expenses)
-  const netWorth = buildNetWorth(input.balances)
+  // Savings first: net worth consumes its already-filtered total (story 32.2), so
+  // a corrupt savings row is excluded and counted exactly once, in one section.
   const savings = buildSavings(input.savings)
+  const netWorth = buildNetWorth(input.balances, savings)
 
   return {
     generatedAtISO: input.generatedAt.toISOString().slice(0, 10),

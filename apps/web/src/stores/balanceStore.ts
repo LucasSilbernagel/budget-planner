@@ -270,16 +270,16 @@ export const useTotalDebtBalance = (): number =>
       .reduce((sum, entry) => sum + entry.currentBalance, 0)
   )
 
-/**
- * Get net balance (investments - debts)
- */
-export const useNetBalance = (): number =>
-  useBalanceStore((state) =>
-    state.entries.reduce((sum, entry) => {
-      // Investments add to balance, debts subtract
-      return sum + (entry.type === 'investment' ? entry.currentBalance : -entry.currentBalance)
-    }, 0)
-  )
+// ⚠️ There is deliberately NO net-balance selector here (story 32.2, FR59).
+//
+// `useNetBalance` used to live at this spot and returned `investments − debts`.
+// Net worth is now `investments + savings − debts`, and savings live in a
+// different store this one cannot see — so any selector defined here is
+// structurally incapable of returning the right number. Its single consumer had
+// already imported it as `useNetBalance as useNetWorth`, i.e. the wrong
+// definition wearing the right name at the only call site, which is exactly how
+// it survived review. Read `useNetWorth()` (`hooks/useNetWorth.ts`) instead; the
+// arithmetic itself lives in `lib/net-worth.ts`.
 
 /**
  * Get current filter

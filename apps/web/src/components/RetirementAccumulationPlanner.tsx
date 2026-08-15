@@ -271,6 +271,12 @@ function chartHorizonYears(
  */
 function RetirementAccumulationPlannerInner() {
   const { mode, currency, locale } = useCurrencyPreferences()
+  // ⚠️ AUDITED for story 32.2 (FR59) and deliberately UNCHANGED: this is the
+  // NEST-EGG BASE, not net worth. It must stay assets-only — netting a mortgage
+  // off the pot you retire on is not the same question. Whether goal-less savings
+  // ACCOUNTS should feed this total is a separate, already-recorded decision
+  // (deferred-work.md, "Savings-page balances cannot reach the retirement
+  // planner"), not something FR59 settles.
   const totalInvestmentCents = useTotalInvestmentBalance()
   const balanceEntries = useBalanceEntries()
   const incomeSources = useIncomeSources()

@@ -28,6 +28,7 @@ import {
 } from 'recharts'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useNetWorth } from '../hooks/useNetWorth'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
@@ -117,7 +118,13 @@ export function HomePage() {
   const totalDebts = balanceEntries
     .filter((entry) => entry.type === 'debt')
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
-  const netWorth = totalInvestments - totalDebts
+  // Story 32.2 (FR59): net worth is investments + savings − debts, read through
+  // the one shared hook so this card, the Balance page and the projection page
+  // cannot drift apart. Note the balances bar chart below (`balancesBarData`) has
+  // always plotted Savings + Investments − Debts under a comment claiming
+  // consistency "with the Net Worth definition" — until now that comment was
+  // describing a definition this card did not use.
+  const netWorth = useNetWorth()
 
   // Check if we have any data worth showing the dashboard for. Includes balances
   // (savings/investments/debts), not just income/expense flows (story UX-2): a
@@ -416,10 +423,14 @@ export function HomePage() {
                   Net Worth
                   <InfoTooltip
                     label="More information about net worth"
-                    text="Net worth is what you own minus what you owe: your investments minus your debts, tracked on the Balance page. Income and expenses aren't counted here."
+                    text="Net worth is what you own minus what you owe: your investments and savings, minus your debts. Investments and debts are tracked on the Balance page, savings on the Savings page. Income and expenses aren't counted here."
                   />
                 </p>
+                {/* data-testid rather than an accessible-name matcher: story 32.1
+                    measured that a label wrapping the InfoTooltip button resolves to
+                    a different accessible name under jsdom than under Chromium. */}
                 <p
+                  data-testid="overview-net-worth"
                   className={`text-2xl font-bold ${
                     netWorth >= 0 ? 'text-purple-600' : 'text-red-600'
                   }`}
@@ -427,11 +438,16 @@ export function HomePage() {
                   {formatAmount(netWorth)}
                 </p>
                 {/* Explain a $0 net worth next to real income/expenses: it is $0
-                    because no investments or debts have been added yet, not
-                    because something is broken. Self-removes once any balance
-                    exists. */}
-                {hasData && balanceEntries.length === 0 && (
-                  <p className="mt-1 text-xs text-faint">
+                    because nothing it is made of has been added yet, not because
+                    something is broken. Self-removes once any balance exists.
+                    ⚠️ The gate must cover savings as well as balances (story 32.2):
+                    savings now COUNT toward net worth, so keying this on balance
+                    rows alone put "add something to track this" underneath a real,
+                    positive figure for a savings-only user — the card contradicting
+                    itself. Both lists must be empty for there to be nothing to
+                    show. */}
+                {hasData && balanceEntries.length === 0 && savingsGoals.length === 0 && (
+                  <p className="mt-1 text-xs text-faint" data-testid="net-worth-empty-hint">
                     Add investments or debts on the{' '}
                     <a
                       href="/balance"
@@ -439,7 +455,14 @@ export function HomePage() {
                     >
                       Balance
                     </a>{' '}
-                    page to track this.
+                    page, or savings on the{' '}
+                    <a
+                      href="/savings"
+                      className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      Savings
+                    </a>{' '}
+                    page, to track this.
                   </p>
                 )}
               </div>

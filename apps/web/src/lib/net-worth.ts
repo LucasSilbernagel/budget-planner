@@ -1,0 +1,58 @@
+/**
+ * The app's ONE definition of net worth (story 32.2, FR59).
+ *
+ * ## Why this module exists
+ *
+ * Before 32.2 net worth was re-derived independently in four places — the
+ * Overview card (`HomePage.tsx`), the Balance page stat card (via the balance
+ * store's `useNetBalance`), the "Current Net Worth" figure on
+ * `NetWorthProjectionPage`, and the printed Premium report
+ * (`lib/report/build-financial-summary.ts`) — and every one of them said
+ * `investments − debts`, omitting savings. Meanwhile the Overview's own balances
+ * bar chart already plotted `savings + investments − debts` under a comment
+ * claiming it was "consistent with the Net Worth definition". FR59 does not just
+ * add savings to four formulas; it collapses them into this one, so a fifth
+ * surface cannot be added wrong.
+ *
+ * ## Why it is pure, and why it lives in `apps/web/src/lib`
+ *
+ * Pure, because `lib/report/build-financial-summary.ts` is React-free and must
+ * import it — a hook cannot be. In `apps/web` rather than `packages/core`
+ * because it composes totals derived from the *client* store row shapes, which
+ * core would have to import upward to know, and because a core change drags in
+ * the `dist` rebuild. This is the same reasoning recorded at
+ * `build-financial-summary.ts:8-14`.
+ *
+ * React surfaces should read {@link useNetWorth} (`hooks/useNetWorth.ts`), which
+ * wires the three store selectors into this function.
+ *
+ * ## Corruption safety is deliberately NOT handled here
+ *
+ * The store selectors that feed this sum raw persisted rows, so a single
+ * non-finite `currentBalance` yields `NaN`. That is true before and after 32.2
+ * and is left alone on purpose: for a headline total the established response is
+ * PARTITION + DISCLOSE (`lib/readable-rows.ts`,
+ * `lib/report/build-financial-summary.ts:25-32`), never a silent drop — filtering
+ * a balance away without saying so removes money from the user's net worth with
+ * nothing on screen to explain it. The report already partitions and discloses,
+ * and passes this function its readable totals.
+ */
+
+export interface NetWorthTotals {
+  /** In cents. */
+  investmentsCents: number
+  /** In cents. */
+  savingsCents: number
+  /** In cents, held as a positive magnitude — this function subtracts it. */
+  debtsCents: number
+}
+
+/**
+ * Net worth = what you own (investments + savings) minus what you owe (debts).
+ *
+ * @param totals - The three component totals, in integer cents
+ * @returns Net worth in cents; may be negative
+ */
+export function netWorthFromTotals(totals: NetWorthTotals): number {
+  return totals.investmentsCents + totals.savingsCents - totals.debtsCents
+}

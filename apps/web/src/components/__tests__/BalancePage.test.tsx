@@ -14,6 +14,7 @@ import {
 } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 import { BalancePage } from '../BalancePage'
 
 /**
@@ -839,5 +840,139 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
     const { breakdown, entries } = tables(container)
     expect(collectRetiredTokenViolations(breakdown)).toEqual([])
     expect(collectRetiredTokenViolations(entries)).toEqual([])
+  })
+})
+
+/**
+ * BalancePage net-worth tests (Story 32.2, FR59).
+ *
+ * Net worth is now `investments + savings − debts`, read through the single
+ * shared `useNetWorth()` hook, and the page carries a fourth read-only "Savings"
+ * stat card so the four figures on screen visibly reconcile (a savings-inclusive
+ * net worth beside only Investments and Debts reads as broken arithmetic).
+ *
+ * ⚠️ Expectations are HAND-COMPUTED from the story §3 fixture and rendered in the
+ * suite-wide currency-less mode ("−127,000.00", not "−$127,000.00"):
+ *
+ *   investments 2,000,000c + savings 300,000c − debts 15,000,000c = −12,700,000c
+ *   the pre-32.2 formula gave −13,000,000c → "-130,000.00"
+ */
+describe('BalancePage net worth includes savings (Story 32.2)', () => {
+  const clearStores = () => {
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+
+  beforeEach(clearStores)
+  afterEach(clearStores)
+
+  const seedBalances = () => {
+    const add = useBalanceStore.getState().addBalanceEntry
+    add({
+      type: 'investment',
+      name: 'ISA',
+      currentBalance: 800_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    add({
+      type: 'investment',
+      name: 'Pension',
+      currentBalance: 1_200_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    add({
+      type: 'debt',
+      name: 'Mortgage',
+      currentBalance: 15_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+  }
+
+  const seedSavings = () => {
+    const add = useSavingsStore.getState().addSavingsGoal
+    add({ name: 'Emergency fund', targetAmount: 1_000_000, currentBalance: 250_000 })
+    add({ name: 'Rainy day', targetAmount: null, currentBalance: 50_000 })
+  }
+
+  it('adds savings into the Net Worth figure (AC-4)', () => {
+    seedBalances()
+    seedSavings()
+    renderWithProviders(<BalancePage />)
+
+    expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('-127,000.00')
+  })
+
+  it('no longer shows the pre-32.2 investments-minus-debts figure (AC-4)', () => {
+    seedBalances()
+    seedSavings()
+    renderWithProviders(<BalancePage />)
+
+    expect(screen.getByTestId('stat-net-worth')).not.toHaveTextContent('-130,000.00')
+  })
+
+  it('renders a fourth read-only Savings stat card so the arithmetic reconciles (AC-4)', () => {
+    seedBalances()
+    seedSavings()
+    renderWithProviders(<BalancePage />)
+
+    // 250,000 + 50,000 = 300,000c
+    expect(screen.getByTestId('stat-total-savings')).toHaveTextContent('3,000.00')
+    expect(screen.getByTestId('stat-total-investments')).toHaveTextContent('20,000.00')
+    expect(screen.getByTestId('stat-total-debts')).toHaveTextContent('150,000.00')
+
+    // The claimed invariant, actually asserted (code review 32.2: the original
+    // version of this test named reconciliation in its comment and then checked
+    // two of the four cards). Parse the four RENDERED strings back to numbers and
+    // prove investments + savings − debts equals the net-worth card on screen —
+    // not merely in the store the cards were built from.
+    const toNumber = (testId: string): number =>
+      Number.parseFloat((screen.getByTestId(testId).textContent ?? '').replaceAll(',', ''))
+
+    expect(
+      toNumber('stat-total-investments') +
+        toNumber('stat-total-savings') -
+        toNumber('stat-total-debts')
+    ).toBeCloseTo(toNumber('stat-net-worth'), 2)
+  })
+
+  it('shows a positive net worth equal to savings for a savings-only user (AC-6)', () => {
+    seedSavings()
+    renderWithProviders(<BalancePage />)
+
+    // No investments, no debts — net worth is exactly the savings total, not 0.
+    // Asserted as an exact match, not a `not.toHaveTextContent('0.00')` substring
+    // check: '0.00' is a substring of '3,000.00', so the negative form could only
+    // ever be written in a way that cannot fail (code review 32.2 caught exactly
+    // that — a stray trailing period made the guard unmatchable against anything).
+    expect(screen.getByTestId('stat-net-worth').textContent?.trim()).toBe('3,000.00')
+  })
+
+  it('shows the negated debt total for a debt-only user (AC-6)', () => {
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'debt',
+      name: 'Mortgage',
+      currentBalance: 15_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    renderWithProviders(<BalancePage />)
+
+    expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('-150,000.00')
+  })
+
+  it('shows zero with no rows at all, and no NaN (AC-6)', () => {
+    renderWithProviders(<BalancePage />)
+
+    const netWorth = screen.getByTestId('stat-net-worth')
+    expect(netWorth).toHaveTextContent('0.00')
+    expect(netWorth.textContent).not.toMatch(/NaN/)
+    expect(screen.getByTestId('stat-total-savings').textContent).not.toMatch(/NaN/)
   })
 })

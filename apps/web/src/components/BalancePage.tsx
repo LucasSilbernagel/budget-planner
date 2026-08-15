@@ -6,13 +6,14 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useNetWorth } from '../hooks/useNetWorth'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import {
   useBalanceEntries,
   useBalanceStore,
-  useNetBalance as useNetWorth,
   useTotalDebtBalance as useTotalDebts,
   useTotalInvestmentBalance as useTotalInvestments,
+  useTotalSavings,
 } from '../stores'
 import type { FinanceType } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
@@ -66,6 +67,12 @@ export function BalancePage() {
   const balanceEntries = useBalanceEntries()
   const totalInvestments = useTotalInvestments()
   const totalDebts = useTotalDebts()
+  // Story 32.2 (FR59): net worth is investments + savings − debts, read through
+  // the one shared hook so this card can never disagree with the Overview. The
+  // savings total is also displayed in its own card below — a savings-inclusive
+  // net worth sitting beside only Investments and Debts reads as broken
+  // arithmetic, so the contributing figure has to be on screen too.
+  const totalSavings = useTotalSavings()
   const netWorth = useNetWorth()
   // Story 26.5: the investment-only slice for the "Investment Accounts" breakdown.
   // Derived from the already-subscribed entries (no new store selector); the section
@@ -300,7 +307,9 @@ export function BalancePage() {
         <header className="mb-8">
           <div>
             <h1 className="font-bold text-heading text-3xl">Balance Tracking</h1>
-            <p className="mt-2 text-body">Monitor your investments and debts</p>
+            <p className="mt-2 text-body">
+              Monitor your investments and debts, and see your net worth including savings
+            </p>
           </div>
         </header>
 
@@ -319,7 +328,18 @@ export function BalancePage() {
                 + Add Balance Entry
               </button>
             </div>
-            <div className="gap-4 grid grid-cols-1 md:grid-cols-3">
+            {/* Four cards, not three (story 32.2): Investments + Savings − Debts
+                = Net Worth, so the arithmetic the user can see adds up.
+                ⚠️ Breakpoints are MEASURED, not guessed (code review 32.2): a bold
+                `text-2xl` figure like "-$127,000.00" needs ~145px and has no wrap
+                opportunity, and `grid-cols-*` uses `minmax(0,1fr)` so a column
+                shrinks below its content and CLIPS rather than overflowing the page
+                — which is why no page-level overflow test could see it. Going 4-up
+                at `md` gave each card 120px at 768px and clipped three of the four
+                figures. 4-up therefore starts at `lg` (1024px → 168px needed, 200px
+                available); `md` keeps the 2-up layout, and 1-up holds at the 320px
+                floor. */}
+            <div className="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="surface-inset p-4 rounded-lg">
                 <p className="text-muted text-sm">Total Investments</p>
                 <p
@@ -329,15 +349,38 @@ export function BalancePage() {
                   {formatAmount(totalInvestments)}
                 </p>
               </div>
+              {/* Read-only: savings are entered on /savings, so this card shows the
+                  figure and points there rather than offering a second entry path. */}
+              <div className="surface-inset p-4 rounded-lg">
+                <p className="text-muted text-sm">
+                  Total Savings{' '}
+                  <a
+                    href="/savings"
+                    className="text-blue-600 text-xs underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Savings page
+                  </a>
+                </p>
+                <p
+                  className="mt-1 font-bold text-blue-600 dark:text-blue-400 text-2xl"
+                  data-testid="stat-total-savings"
+                >
+                  {formatAmount(totalSavings)}
+                </p>
+              </div>
               <div className="surface-inset p-4 rounded-lg">
                 <p className="text-muted text-sm">Total Debts</p>
-                <p className="mt-1 font-bold text-red-600 dark:text-red-400 text-2xl">
+                <p
+                  className="mt-1 font-bold text-red-600 dark:text-red-400 text-2xl"
+                  data-testid="stat-total-debts"
+                >
                   {formatAmount(totalDebts)}
                 </p>
               </div>
               <div className="surface-inset p-4 rounded-lg">
                 <p className="text-muted text-sm">Net Worth</p>
                 <p
+                  data-testid="stat-net-worth"
                   className={`text-2xl font-bold mt-1 ${
                     netWorth >= 0
                       ? 'text-green-600 dark:text-green-400'

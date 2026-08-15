@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { netWorthFromTotals } from '../../net-worth'
 import { type BuildFinancialSummaryInput, buildFinancialSummary } from '../build-financial-summary'
 
 /** Fixed date so `generatedAtISO` is deterministic. */
@@ -113,7 +114,8 @@ describe('buildFinancialSummary — net worth section', () => {
     })
     expect(model.netWorth.totalInvestmentsCents).toBe(2_000_000)
     expect(model.netWorth.totalDebtsCents).toBe(15_000_000)
-    // Debts SUBTRACT — mirrors the `useNetBalance` selector.
+    // Debts SUBTRACT. No savings are seeded here, so the figure is unchanged by
+    // story 32.2; the savings-inclusive cases live in their own block below.
     expect(model.netWorth.netCents).toBe(-13_000_000)
     expect(model.netWorth.investments).toHaveLength(2)
     expect(model.netWorth.debts).toHaveLength(1)
@@ -188,29 +190,43 @@ describe('buildFinancialSummary — savings section', () => {
     expect(model.savings.goals[0].progressPercent).toBe(33)
   })
 
-  it('excludes a non-positive target as corrupt WITHOUT poisoning the aggregate', () => {
+  it('keeps a non-positive target out of the aggregate WITHOUT poisoning it', () => {
     // One negative target used to cancel a healthy goal's target to zero, blanking
     // the whole section's total and progress while reporting 0 unreadable rows —
     // one bad row silently corrupting every other valid goal's figures.
+    //
+    // ⚠️ UPDATED by the story 32.2 code review: the corrupt row is no longer
+    // dropped WHOLE. Its target is still excluded from every target aggregate (the
+    // protection this test was written for, unchanged below), but its BALANCE now
+    // counts — because 32.2 made the savings total feed net worth, and dropping the
+    // row made the printed net worth disagree with all three screens.
     const model = buildInput({
       savings: [
         { id: 's1', name: 'Emergency fund', targetAmount: 100_000, currentBalance: 50_000 },
         { id: 's2', name: 'Corrupt', targetAmount: -100_000, currentBalance: 0 },
       ],
     })
-    expect(model.savings.unreadableCount).toBe(1)
-    expect(model.savings.goals).toHaveLength(1)
+    // The row is kept, its bad target reported as absent rather than as a figure.
+    expect(model.savings.unreadableCount).toBe(0)
+    expect(model.savings.unreadableTargetCount).toBe(1)
+    expect(model.savings.goals).toHaveLength(2)
+    expect(model.savings.goals[1].targetCents).toBeNull()
+    // The original guarantee, intact: the healthy goal's figures are untouched.
     expect(model.savings.totalTargetCents).toBe(100_000)
     expect(model.savings.overallProgressPercent).toBe(50)
   })
 
-  it('excludes a zero target as corrupt rather than dividing by it', () => {
+  it('never divides by a zero target, and still counts the balance behind it', () => {
     const model = buildInput({
       savings: [{ id: 's1', name: 'Zeroed goal', targetAmount: 0, currentBalance: 50_000 }],
     })
-    expect(model.savings.unreadableCount).toBe(1)
-    expect(model.savings.isEmpty).toBe(true)
     expect(model.savings.overallProgressPercent).toBeNull()
+    // ⚠️ UPDATED (32.2 review): `isEmpty` was true here because the row was dropped
+    // whole. 50,000c of real money is not an empty section — and it now reaches net
+    // worth, exactly as the app's own `useTotalSavings` has always reported it.
+    expect(model.savings.isEmpty).toBe(false)
+    expect(model.savings.totalCurrentCents).toBe(50_000)
+    expect(model.savings.unreadableTargetCount).toBe(1)
   })
 })
 
@@ -370,17 +386,39 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
     return Math.min(100, Math.round((balance / target) * 100))
   }
 
-  /** `useTotalInvestmentBalance` / `useTotalDebtBalance` / `useNetBalance`. */
-  const canonicalNetWorth = (rows: { type: string; currentBalance: number }[]) => ({
-    investments: rows
+  /**
+   * `useTotalInvestmentBalance` / `useTotalDebtBalance` / `useTotalSavings`, then
+   * the app's ONE net-worth definition.
+   *
+   * ⚠️ `netWorthFromTotals` is IMPORTED, never re-implemented here (story 32.2).
+   * This block used to inline `investments − debts` and claim it proved the report
+   * could not drift from the app — but a copy of a formula cannot detect a change
+   * to the original, so the guarantee was vacuous: FR59 changed the app's
+   * definition and every assertion here would still have passed. A parity test is
+   * only real when it imports the thing it claims parity with. The per-type SUMS
+   * stay replicated on purpose — that is the deliberate corruption-safety
+   * divergence pinned by the last test in this block.
+   */
+  const canonicalNetWorth = (
+    rows: { type: string; currentBalance: number }[],
+    savingsRows: { currentBalance: number }[] = []
+  ) => {
+    const investments = rows
       .filter((r) => r.type === 'investment')
-      .reduce((s, r) => s + r.currentBalance, 0),
-    debts: rows.filter((r) => r.type === 'debt').reduce((s, r) => s + r.currentBalance, 0),
-    net: rows.reduce(
-      (s, r) => s + (r.type === 'investment' ? r.currentBalance : -r.currentBalance),
-      0
-    ),
-  })
+      .reduce((s, r) => s + r.currentBalance, 0)
+    const debts = rows.filter((r) => r.type === 'debt').reduce((s, r) => s + r.currentBalance, 0)
+    const savings = savingsRows.reduce((s, r) => s + r.currentBalance, 0)
+    return {
+      investments,
+      debts,
+      savings,
+      net: netWorthFromTotals({
+        investmentsCents: investments,
+        savingsCents: savings,
+        debtsCents: debts,
+      }),
+    }
+  }
 
   const cleanSavings = [
     { id: 's1', name: 'Emergency fund', targetAmount: 1_000_000, currentBalance: 250_000 },
@@ -417,6 +455,14 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
     expect(model.netWorth.netCents).toBe(canonical.net)
   })
 
+  it('net worth matches the app definition once savings are in play too (story 32.2)', () => {
+    // The case the old copied-formula parity block could not express at all.
+    const model = buildInput({ balances: cleanBalances, savings: cleanSavings })
+    const canonical = canonicalNetWorth(cleanBalances, cleanSavings)
+    expect(model.netWorth.totalSavingsCents).toBe(canonical.savings)
+    expect(model.netWorth.netCents).toBe(canonical.net)
+  })
+
   it('DIVERGES from the selectors only where they are not corruption-safe', () => {
     // The one deliberate difference, pinned so it stays deliberate: the selectors
     // return NaN on a non-finite row; the report drops and discloses it instead.
@@ -428,5 +474,185 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
     const model = buildInput({ balances: corrupt })
     expect(model.netWorth.totalInvestmentsCents).toBe(100_000)
     expect(model.netWorth.unreadableCount).toBe(1)
+  })
+})
+
+/**
+ * Net worth includes savings (story 32.2, FR59).
+ *
+ * The printed figure has to equal the one the app shows — a kept document that
+ * disagrees with the live pages is the worse failure. Savings keep their own
+ * section too; the net-worth section carries only the TOTAL, as a contributing
+ * line, so the printed arithmetic reconciles on paper.
+ */
+describe('buildFinancialSummary — net worth includes savings (story 32.2)', () => {
+  const BALANCES = [
+    { id: 'b1', name: 'ISA', type: 'investment', currentBalance: 800_000 },
+    { id: 'b2', name: 'Pension', type: 'investment', currentBalance: 1_200_000 },
+    { id: 'b3', name: 'Mortgage', type: 'debt', currentBalance: 15_000_000 },
+  ]
+  const SAVINGS = [
+    { id: 's1', name: 'Emergency fund', targetAmount: 1_000_000, currentBalance: 250_000 },
+    { id: 's2', name: 'Rainy day', targetAmount: null, currentBalance: 50_000 },
+  ]
+
+  it('adds the savings total into netCents', () => {
+    const model = buildInput({ balances: BALANCES, savings: SAVINGS })
+    // 2,000,000 + 300,000 − 15,000,000, hand-computed.
+    expect(model.netWorth.totalSavingsCents).toBe(300_000)
+    expect(model.netWorth.netCents).toBe(-12_700_000)
+    // The pre-32.2 figure, which the printed report must no longer show.
+    expect(model.netWorth.netCents).not.toBe(-13_000_000)
+  })
+
+  it('is NOT empty for a user who has only savings', () => {
+    const model = buildInput({ savings: SAVINGS })
+    // Previously `isEmpty` looked at balance rows alone, so this user's real
+    // +300,000c net worth was replaced by "there is no net worth to summarize".
+    expect(model.netWorth.isEmpty).toBe(false)
+    expect(model.netWorth.netCents).toBe(300_000)
+  })
+
+  it('is still empty when there are no balances AND no savings', () => {
+    const model = buildInput({})
+    expect(model.netWorth.isEmpty).toBe(true)
+    expect(model.netWorth.netCents).toBe(0)
+  })
+
+  it('counts an unreadable savings row EXACTLY ONCE across the whole document', () => {
+    // `totalUnreadableCount` sums the per-section counts. If the net-worth builder
+    // re-filters `input.savings` instead of consuming the savings section's already
+    // filtered total, every corrupt savings row is counted twice and the document's
+    // own disclosure becomes wrong.
+    const model = buildInput({
+      savings: [
+        { id: 's1', name: 'Emergency fund', targetAmount: 1_000_000, currentBalance: 250_000 },
+        { id: 's2', name: 'Corrupt', targetAmount: null, currentBalance: Number.NaN },
+      ],
+    })
+    expect(model.savings.unreadableCount).toBe(1)
+    expect(model.totalUnreadableCount).toBe(1)
+    // And the corrupt row's balance must not poison net worth either.
+    expect(model.netWorth.netCents).toBe(250_000)
+  })
+
+  it('excludes an unreadable savings row from netCents without inventing a number', () => {
+    const model = buildInput({
+      balances: [{ id: 'b1', name: 'ISA', type: 'investment', currentBalance: 800_000 }],
+      savings: [{ id: 's1', name: 'Corrupt', targetAmount: null, currentBalance: Number.NaN }],
+    })
+    expect(model.netWorth.netCents).toBe(800_000)
+    expect(Number.isNaN(model.netWorth.netCents)).toBe(false)
+  })
+})
+
+/**
+ * Corrupt-savings disclosure in the net-worth section (code review 32.2).
+ *
+ * `savings.isEmpty` counts READABLE rows, so a user whose only savings rows are
+ * corrupt satisfied "no balances AND no readable savings" and the section printed
+ * "No investments, savings or debts have been added" as flat fact — while the
+ * savings section on the same page disclosed that entries existed but could not be
+ * read. Two lines of one kept document contradicting each other.
+ */
+describe('buildFinancialSummary — unreadable savings and the net-worth section (32.2 review)', () => {
+  const CORRUPT = { id: 's1', name: 'Corrupt', targetAmount: null, currentBalance: Number.NaN }
+
+  it('is NOT "empty" when the only savings rows are unreadable', () => {
+    const model = buildInput({ savings: [CORRUPT] })
+    expect(model.savings.unreadableCount).toBe(1)
+    // The claim "nothing has been added" would be false — rows exist.
+    expect(model.netWorth.isEmpty).toBe(false)
+  })
+
+  it('carries the excluded savings count for disclosure without double-counting it', () => {
+    const model = buildInput({
+      balances: [{ id: 'b1', name: 'ISA', type: 'investment', currentBalance: 800_000 }],
+      savings: [CORRUPT],
+    })
+    expect(model.netWorth.excludedSavingsCount).toBe(1)
+    // Still counted exactly once document-wide: the savings section owns the row.
+    expect(model.netWorth.unreadableCount).toBe(0)
+    expect(model.totalUnreadableCount).toBe(1)
+  })
+
+  it('stays empty when there are genuinely no rows of any kind', () => {
+    const model = buildInput({})
+    expect(model.netWorth.isEmpty).toBe(true)
+    expect(model.netWorth.excludedSavingsCount).toBe(0)
+  })
+})
+
+/**
+ * Balance-readability vs target-readability (story 32.2 code review, Lucas's call).
+ *
+ * A savings row with a finite balance but a corrupt target used to be dropped
+ * ENTIRELY. Once 32.2 made the savings total feed NET WORTH — while the app's
+ * `useTotalSavings` never looks at the target — that dropped real money from the
+ * printed net worth while every screen counted it, with both figures legible and
+ * nothing signalling the divergence. The two questions are now separate.
+ */
+describe('buildFinancialSummary — a corrupt TARGET must not cost a row its BALANCE', () => {
+  const CORRUPT_TARGET = { id: 's1', name: 'Legacy goal', targetAmount: 0, currentBalance: 100_000 }
+
+  it('counts the balance toward savings and net worth', () => {
+    const model = buildInput({ savings: [CORRUPT_TARGET] })
+    // The app's `useTotalSavings` reports 100,000 for this row; so must the report.
+    expect(model.savings.totalCurrentCents).toBe(100_000)
+    expect(model.netWorth.netCents).toBe(100_000)
+    expect(model.netWorth.totalSavingsCents).toBe(100_000)
+  })
+
+  it('shows no progress and no target figure for that row, and discloses why', () => {
+    const model = buildInput({ savings: [CORRUPT_TARGET] })
+    expect(model.savings.goals).toHaveLength(1)
+    // Never print `0` as somebody's savings goal.
+    expect(model.savings.goals[0].targetCents).toBeNull()
+    expect(model.savings.goals[0].progressPercent).toBeNull()
+    // Disclosed as a target problem, NOT as an excluded row.
+    expect(model.savings.unreadableTargetCount).toBe(1)
+    expect(model.savings.unreadableCount).toBe(0)
+    // ...and it is not an exclusion, so the document-wide total stays 0.
+    expect(model.totalUnreadableCount).toBe(0)
+  })
+
+  it('keeps a corrupt target out of the overall progress aggregate', () => {
+    const model = buildInput({
+      savings: [
+        { id: 's1', name: 'Emergency fund', targetAmount: 1_000_000, currentBalance: 250_000 },
+        { id: 's2', name: 'Legacy', targetAmount: -100_000, currentBalance: 500_000 },
+      ],
+    })
+    // 250,000/1,000,000 = 25% — the healthy goal is not poisoned by the bad row...
+    expect(model.savings.overallProgressPercent).toBe(25)
+    // ...and the bad row's balance still counts as money.
+    expect(model.savings.totalCurrentCents).toBe(750_000)
+  })
+
+  it('never divides into a non-finite target (NaN <= 0 is false)', () => {
+    const model = buildInput({
+      savings: [{ id: 's1', name: 'Bad', targetAmount: Number.NaN, currentBalance: 100_000 }],
+    })
+    expect(model.savings.goals[0].progressPercent).toBeNull()
+    expect(model.savings.overallProgressPercent).toBeNull()
+    expect(model.savings.totalCurrentCents).toBe(100_000)
+  })
+
+  it('still excludes a row whose BALANCE cannot be read', () => {
+    const model = buildInput({
+      savings: [{ id: 's1', name: 'Bad', targetAmount: 1_000_000, currentBalance: Number.NaN }],
+    })
+    expect(model.savings.unreadableCount).toBe(1)
+    expect(model.savings.totalCurrentCents).toBe(0)
+  })
+
+  it('rejects a STRING balance rather than coercing it', () => {
+    // Number.isFinite does not coerce. Elsewhere a string balance makes
+    // `investments + savings` a string concatenation; this report is immune.
+    const model = buildInput({
+      savings: [{ id: 's1', name: 'Str', targetAmount: null, currentBalance: '300000' as never }],
+    })
+    expect(model.savings.unreadableCount).toBe(1)
+    expect(model.netWorth.netCents).toBe(0)
   })
 })

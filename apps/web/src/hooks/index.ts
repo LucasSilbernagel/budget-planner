@@ -6,6 +6,7 @@
  */
 
 export * from './useFinancialCalculations'
+export * from './useNetWorth'
 export * from './useSync'
 export * from './usePremiumAccess'
 export * from './useIsNarrowViewport'

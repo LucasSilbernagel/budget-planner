@@ -141,14 +141,32 @@ describe('FinancialSummaryReport — content', () => {
     expect(cells[2]).toHaveTextContent('433.33')
   })
 
-  it('renders net worth with debts subtracted', () => {
+  it('renders net worth with savings added and debts subtracted (story 32.2)', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     expect(totalFor('Total investments')).toHaveTextContent('8,000.00')
+    // The contributing savings figure is printed in the net-worth section too, so
+    // the arithmetic on the page reconciles without flipping back to the savings
+    // section for the number.
+    expect(totalFor('Total savings')).toHaveTextContent('3,000.00')
     expect(totalFor('Total debts')).toHaveTextContent('150,000.00')
-    // 800000 − 15000000 = −14200000 cents. Debts SUBTRACT.
-    expect(totalFor('Net worth')).toHaveTextContent('-142,000.00')
+    // 800000 + 300000 − 15000000 = −13900000 cents. Savings ADD, debts SUBTRACT.
+    expect(totalFor('Net worth')).toHaveTextContent('-139,000.00')
+    // The pre-32.2 figure, which omitted savings.
+    expect(totalFor('Net worth')).not.toHaveTextContent('-142,000.00')
+  })
+
+  it('summarizes a savings-only user instead of claiming they have no net worth (story 32.2)', () => {
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow('s1', 'Emergency fund', 1_000_000, 250_000)],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // Previously this section keyed emptiness on balance rows alone, so a real
+    // +2,500.00 net worth was replaced by "there is no net worth to summarize".
+    expect(totalFor('Net worth')).toHaveTextContent('2,500.00')
+    expect(screen.queryByText(/there is no net worth to summarize/i)).not.toBeInTheDocument()
   })
 
   it('renders savings progress, and a dash where there is no target', () => {
@@ -355,5 +373,94 @@ describe('FinancialSummaryReport — scope (story 30-3, Decision 1)', () => {
     expect(text).not.toMatch(/\byears? from now\b/i)
     // And the disclaimer that makes the net-worth figure unambiguous is present.
     expect(screen.getByText(/this is not a projection/i)).toBeInTheDocument()
+  })
+})
+
+/**
+ * Net-worth section copy and disclosure (code review 32.2).
+ *
+ * The empty-state sentence was rewritten by story 32.2 but pinned by nothing —
+ * reverting it to the pre-32.2 wording failed zero tests. And a user whose only
+ * savings rows are corrupt was told, as fact, that nothing had been added.
+ */
+describe('FinancialSummaryReport — net worth copy and savings disclosure (32.2 review)', () => {
+  it('names savings in the empty-state sentence', () => {
+    // Seed an unrelated section so the report renders its sections at all — with
+    // every store empty it shows the whole-document "nothing to report" state and
+    // this copy never appears.
+    useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 500_000, 'monthly')] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    expect(
+      screen.getByText(/no investments, savings or debts have been added/i)
+    ).toBeInTheDocument()
+    // The superseded wording, which omitted savings from the definition.
+    expect(
+      screen.queryByText(
+        'No investments or debts have been added, so there is no net worth to summarize.'
+      )
+    ).not.toBeInTheDocument()
+  })
+
+  it('discloses savings entries excluded from the net-worth figure', () => {
+    useBalanceStore.setState({ entries: [balanceRow('b1', 'ISA', 'investment', 800_000)] })
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow('s1', 'Corrupt', null, Number.NaN)],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(
+      screen.getByText(/1 savings entry could not be read and is not included in this net worth/i)
+    ).toBeInTheDocument()
+  })
+
+  it('does not claim nothing was added when the only savings rows are unreadable', () => {
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow('s1', 'Corrupt', null, Number.NaN)],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(
+      screen.queryByText(/no investments, savings or debts have been added/i)
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/1 savings entry could not be read and is not included in this net worth/i)
+    ).toBeInTheDocument()
+  })
+})
+
+/**
+ * Corrupt-target disclosure in the savings section (32.2 review, decision fix).
+ *
+ * A row kept for its balance but stripped of an unreadable target renders "—" for
+ * both target and progress — visually identical to a genuine no-target account.
+ * Without this note the document cannot tell the two apart.
+ */
+describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2 review)', () => {
+  it('explains that a balance counted but its target could not be read', () => {
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow('s1', 'Legacy goal', 0, 100_000)],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // The money is on the page...
+    expect(totalFor('Total saved')).toHaveTextContent('1,000.00')
+    // ...and the reason it shows no progress is stated, not left to look like an account.
+    expect(
+      screen.getByText(
+        /target could not be read, so its balance is included but its progress is not shown/i
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('says nothing when every target is readable', () => {
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsRow('s1', 'Emergency fund', 1_000_000, 250_000),
+        savingsRow('s2', 'Rainy day', null, 50_000),
+      ],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.queryByText(/target could not be read/i)).not.toBeInTheDocument()
   })
 })

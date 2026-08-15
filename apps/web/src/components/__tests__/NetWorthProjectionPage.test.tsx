@@ -1,7 +1,8 @@
-import { fireEvent, renderWithProviders, screen, within } from '@/test/utils'
+import { act, fireEvent, renderWithProviders, screen, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useIncomeStore } from '../../stores/incomeStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { NetWorthProjectionPage } from '../NetWorthProjectionPage'
 
@@ -368,5 +369,142 @@ describe('NetWorthProjectionPage focus rings (story 28-2)', () => {
       expect(tokens).toContain('focus:ring-2')
       expect(tokens).toContain('focus:ring-purple-500')
     }
+  })
+})
+
+/**
+ * NetWorthProjectionPage savings inclusion (story 32.2, FR59).
+ *
+ * Net worth is now `investments + savings − debts` everywhere. On this page that
+ * has to be true of BOTH the "Current Net Worth" card and the figure the model
+ * projects from — a card showing one starting point while the projection solves
+ * from another is the exact failure `RetirementAccumulationPlanner.tsx:311` calls
+ * out ("shows one number and solves another").
+ *
+ * ⚠️ HAND-COMPUTED, currency-less mode:
+ *   investments 2,000,000c + savings 300,000c − debts 15,000,000c = −12,700,000c
+ *   the pre-32.2 card showed −13,000,000c → "-130,000.00"
+ */
+describe('NetWorthProjectionPage includes savings (story 32.2)', () => {
+  const reset = () => {
+    useBalanceStore.setState({ entries: [] })
+    useIncomeStore.setState({ incomeSources: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+
+  beforeEach(reset)
+  afterEach(reset)
+
+  function seedBalances(): void {
+    const add = useBalanceStore.getState().addBalanceEntry
+    add({
+      type: 'investment',
+      name: 'ISA',
+      currentBalance: 800_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    add({
+      type: 'investment',
+      name: 'Pension',
+      currentBalance: 1_200_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    add({
+      type: 'debt',
+      name: 'Mortgage',
+      currentBalance: 15_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+  }
+
+  function seedSavings(): void {
+    const add = useSavingsStore.getState().addSavingsGoal
+    add({ name: 'Emergency fund', targetAmount: 1_000_000, currentBalance: 250_000 })
+    add({ name: 'Rainy day', targetAmount: null, currentBalance: 50_000 })
+  }
+
+  it('counts savings in the "Current Net Worth" card (AC-7)', () => {
+    seedBalances()
+    seedSavings()
+    renderWithProviders(<NetWorthProjectionPage />)
+
+    const card = screen.getByTestId('projection-current-net-worth')
+    expect(card).toHaveTextContent('-127,000.00')
+    expect(card).not.toHaveTextContent('-130,000.00')
+  })
+
+  it('projects from the same figure it displays (AC-7)', () => {
+    seedBalances()
+    seedSavings()
+    renderWithProviders(<NetWorthProjectionPage />)
+
+    // Year 0 of the Projection Summary is the model's starting point. If savings
+    // reached the card but not `currentAssetsCents`, these two disagree.
+    const summary = screen.getByText('Projection Summary').closest('section') as HTMLElement
+    const yearZero = within(summary).getByText('Year 0').parentElement as HTMLElement
+    expect(yearZero).toHaveTextContent('-127,000.00')
+  })
+
+  it('gives a savings-only user a positive current net worth (AC-6)', () => {
+    seedSavings()
+    renderWithProviders(<NetWorthProjectionPage />)
+
+    expect(screen.getByTestId('projection-current-net-worth')).toHaveTextContent('3,000.00')
+  })
+})
+
+/**
+ * The projection must not go stale when savings change (story 32.2).
+ *
+ * Savings feed `currentAssetsCents`, so they belong in the `useMemo` dependency
+ * list. Omitting them keeps the memoized projection from an earlier render while
+ * the "Current Net Worth" card — which is not memoized — updates immediately, so
+ * the page shows one figure and projects another. Every other test in this file
+ * seeds before the first render and cannot detect that.
+ */
+describe('NetWorthProjectionPage recomputes when savings change (story 32.2)', () => {
+  const reset = () => {
+    useBalanceStore.setState({ entries: [] })
+    useIncomeStore.setState({ incomeSources: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+
+  beforeEach(reset)
+  afterEach(reset)
+
+  it('updates both the card and the projection when a savings balance is added', async () => {
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment',
+      name: 'ISA',
+      currentBalance: 1_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+
+    renderWithProviders(<NetWorthProjectionPage />)
+    expect(screen.getByTestId('projection-current-net-worth')).toHaveTextContent('10,000.00')
+
+    await act(async () => {
+      useSavingsStore.getState().addSavingsGoal({
+        name: 'Emergency fund',
+        targetAmount: null,
+        currentBalance: 500_000,
+      })
+    })
+
+    // Card: 1,000,000 + 500,000 = 1,500,000c
+    expect(screen.getByTestId('projection-current-net-worth')).toHaveTextContent('15,000.00')
+
+    // ...and the model's year 0 must move with it, not stay memoized at 10,000.00.
+    const summary = screen.getByText('Projection Summary').closest('section') as HTMLElement
+    const yearZero = within(summary).getByText('Year 0').parentElement as HTMLElement
+    expect(yearZero).toHaveTextContent('15,000.00')
   })
 })

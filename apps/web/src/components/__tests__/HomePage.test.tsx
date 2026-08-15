@@ -1161,3 +1161,192 @@ describe('HomePage flows/balances split (story UX-2)', () => {
     expect(screen.queryByRole('heading', { name: /^balances$/i })).not.toBeInTheDocument()
   })
 })
+
+/**
+ * HomePage net-worth tests (Story 32.2, FR59).
+ *
+ * The Overview's "Net Worth" card now shows `investments + savings − debts`,
+ * read through the one shared `useNetWorth()` hook, so it can no longer disagree
+ * with the Balance page — or with the balances bar chart ten lines below it,
+ * which has always plotted Savings + Investments − Debts.
+ *
+ * ⚠️ Expectations are HAND-COMPUTED from the story §3 fixture, in the suite-wide
+ * currency-less mode:
+ *
+ *   2,000,000c investments + 300,000c savings − 15,000,000c debts = −12,700,000c
+ *   the pre-32.2 formula gave −13,000,000c → "-130,000.00"
+ *
+ * The figure is located by `data-testid`, never by an accessible-name matcher:
+ * story 32.1 measured that a heading/label containing an InfoTooltip button
+ * resolves to a different accessible name under jsdom than under Chromium.
+ */
+describe('HomePage net worth includes savings (Story 32.2)', () => {
+  const NW_TS = '2026-08-15T00:00:00.000Z'
+
+  function resetAll(): void {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+    useBalanceStore.setState({ entries: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+  }
+
+  beforeEach(() => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    resetAll()
+  })
+
+  afterEach(resetAll)
+
+  function seedSavings(): void {
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'sav-1',
+          name: 'Emergency fund',
+          targetAmount: 1_000_000,
+          currentBalance: 250_000,
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+        {
+          id: 'sav-2',
+          name: 'Rainy day',
+          targetAmount: null,
+          currentBalance: 50_000,
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+      ],
+    })
+  }
+
+  function seedBalances(): void {
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment',
+          name: 'ISA',
+          currentBalance: 800_000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+        {
+          id: 'inv-2',
+          type: 'investment',
+          name: 'Pension',
+          currentBalance: 1_200_000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+        {
+          id: 'debt-1',
+          type: 'debt',
+          name: 'Mortgage',
+          currentBalance: 15_000_000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+      ],
+    })
+  }
+
+  it('AC-3: adds savings into the Overview net-worth figure', () => {
+    seedSavings()
+    seedBalances()
+    render(<HomePage />)
+
+    expect(screen.getByTestId('overview-net-worth')).toHaveTextContent('-127,000.00')
+  })
+
+  it('AC-3: no longer shows the pre-32.2 investments-minus-debts figure', () => {
+    seedSavings()
+    seedBalances()
+    render(<HomePage />)
+
+    expect(screen.getByTestId('overview-net-worth')).not.toHaveTextContent('-130,000.00')
+  })
+
+  it('AC-3: the net-worth tooltip names savings as a component', async () => {
+    seedSavings()
+    seedBalances()
+    render(<HomePage />)
+
+    // Progressive disclosure: the bubble exists only while the trigger is
+    // focused/hovered, so focus it first (the story 11-4 pattern).
+    const trigger = screen.getByRole('button', { name: /more information about net worth/i })
+    fireEvent.focus(trigger)
+    const tooltip = await screen.findByRole('tooltip')
+
+    // Distinguishing phrasing, not a generic word (Epic 23 lesson): the copy has
+    // to say savings count, and must no longer state the superseded definition
+    // ("your investments minus your debts") as fact.
+    expect(tooltip).toHaveTextContent(/savings/i)
+    expect(tooltip).not.toHaveTextContent(/your investments minus your debts/i)
+    // The Savings page is where that money is entered, so name it alongside Balance.
+    expect(tooltip).toHaveTextContent(/balance/i)
+  })
+
+  it('AC-6: a savings-only user sees a positive net worth equal to their savings', () => {
+    seedSavings()
+    render(<HomePage />)
+
+    expect(screen.getByTestId('overview-net-worth')).toHaveTextContent('3,000.00')
+  })
+
+  it('AC-3: a savings-only user is NOT told the figure is untracked', () => {
+    seedSavings()
+    render(<HomePage />)
+
+    // The old gate keyed on balance rows alone, so this hint rendered beside a
+    // real, positive net worth — the card contradicting itself.
+    expect(screen.queryByTestId('net-worth-empty-hint')).not.toBeInTheDocument()
+  })
+
+  it('AC-3: a user with only flows still sees the hint, now naming both pages', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-1',
+          name: 'Salary',
+          amount: 500_000,
+          frequency: 'monthly',
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+      ],
+    })
+    render(<HomePage />)
+
+    const hint = screen.getByTestId('net-worth-empty-hint')
+    expect(hint).toBeInTheDocument()
+    expect(hint.textContent).toMatch(/savings/i)
+  })
+
+  it('AC-6: shows zero, not NaN, with no balances and no savings', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-1',
+          name: 'Salary',
+          amount: 500_000,
+          frequency: 'monthly',
+          createdAt: NW_TS,
+          updatedAt: NW_TS,
+        },
+      ],
+    })
+    render(<HomePage />)
+
+    const netWorth = screen.getByTestId('overview-net-worth')
+    expect(netWorth).toHaveTextContent('0.00')
+    expect(netWorth.textContent).not.toMatch(/NaN/)
+  })
+})

@@ -257,6 +257,11 @@ export function ScenarioBuilder({
         }
       : DEFAULT_FORM
   )
+  // ⚠️ AUDITED for story 32.2 (FR59) and deliberately UNCHANGED: these are
+  // what-if SCENARIO inputs the user types, seeded from DEFAULT_SAVINGS /
+  // DEFAULT_INVESTMENTS, not reads of the savings or balance stores. The
+  // "Starting/Ending Net Worth" figures downstream describe the scenario, not
+  // the app's net worth, so the savings-inclusive definition does not apply here.
   const [savings, setSavings] = useState<number>(
     () => initialForecast?.inputs?.savings ?? DEFAULT_SAVINGS
   )

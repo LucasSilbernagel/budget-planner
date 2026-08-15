@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useNetWorth } from '../hooks/useNetWorth'
 import { formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import {
@@ -19,6 +20,7 @@ import {
   useIncomeSources,
   useTotalDebtBalance,
   useTotalInvestmentBalance,
+  useTotalSavings,
 } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 
@@ -107,8 +109,15 @@ export function NetWorthProjectionPage() {
   // Theme-aware Recharts chrome so the chart stays legible on the dark card.
   const chartColors = useChartColors()
 
+  // Savings count toward net worth as of story 32.2 (FR59), and they are an ASSET
+  // — so they belong on the asset side of this model, not netted off anywhere.
+  const totalSavings = useTotalSavings()
+
   // Today's net worth, for display only — it is never fed back into the projection.
-  const initialNetWorth = totalInvestments - totalDebts
+  // Read through the shared hook so this card equals the Overview and the Balance
+  // page exactly; `currentAssetsCents` below starts from the same money, so the
+  // page cannot display one starting point and solve from another.
+  const initialNetWorth = useNetWorth()
 
   // Calculate monthly net income (gross income - expenses) for projection
   // For simplicity, we'll use the raw amounts without frequency normalization
@@ -138,9 +147,26 @@ export function NetWorthProjectionPage() {
   // The balance totals are clamped at 0 because the core model rejects negative assets
   // or liabilities outright. The entry form already enforces non-negative balances, but
   // `validateBalanceTracking` does not, so synced/imported data can still carry one.
+  //
+  // ⚠️ The asset clamp is applied ONCE to the COMBINED total (story 32.2), not per
+  // component. `Math.max(0, investments) + savings` would differ whenever a synced
+  // investment row is negative (legal below the entry form — deferred-work.md:585):
+  // it would discard the negative investment while keeping the savings. Clamping the
+  // sum keeps the two derived from the same numbers for all non-negative data. Do
+  // not "simplify" this back.
+  //
+  // ⚠️ What this does NOT guarantee, stated precisely because an earlier draft of
+  // this comment overclaimed it (code review 32.2): when the COMBINED asset total is
+  // itself negative — investments −5,000 + savings 3,000 — the clamp floors the
+  // model at 0 while the card renders the true, unclamped `useNetWorth()` figure, so
+  // "today" reads −3,000.00 on the card and −1,000.00 at Year 0. Reachable only from
+  // unvalidated synced/imported data, and it is the pre-existing card-vs-model
+  // divergence already recorded at deferred-work.md:585 — not something savings
+  // introduced. The fix belongs at the data boundary (reject negative balances on
+  // write), not in a second clamp here that would make the card lie about the money.
   const projectionState = useMemo<ProjectionState>(() => {
     const result = createNetWorthProjection({
-      currentAssetsCents: Math.max(0, totalInvestments),
+      currentAssetsCents: Math.max(0, totalInvestments + totalSavings),
       currentLiabilitiesCents: Math.max(0, totalDebts),
       // The model takes a monthly figure; the page's inflow is annual (net income plus
       // the contribution field, which is entered in whole currency units).
@@ -184,6 +210,10 @@ export function NetWorthProjectionPage() {
     return { kind: 'ok', yearly }
   }, [
     totalInvestments,
+    // Load-bearing (story 32.2): savings feed `currentAssetsCents`, so without
+    // this the projection keeps the value it was memoized with and silently goes
+    // stale the moment a savings balance changes.
+    totalSavings,
     totalDebts,
     annualNetIncome,
     additionalContribution,
@@ -219,7 +249,10 @@ export function NetWorthProjectionPage() {
             <div className="gap-4 grid grid-cols-1 md:grid-cols-2">
               <div className="surface-inset p-4 rounded-lg">
                 <p className="text-muted text-sm">Current Net Worth</p>
-                <p className="mt-1 font-bold text-purple-600 dark:text-purple-400 text-2xl">
+                <p
+                  data-testid="projection-current-net-worth"
+                  className="mt-1 font-bold text-purple-600 dark:text-purple-400 text-2xl"
+                >
                   {formatAmount(initialNetWorth)}
                 </p>
               </div>
