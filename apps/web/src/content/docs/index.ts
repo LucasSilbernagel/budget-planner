@@ -14,6 +14,7 @@
 import faq from './faq.md?raw'
 import features from './features.md?raw'
 import gettingStarted from './getting-started.md?raw'
+import howTotalsAreCalculated from './how-totals-are-calculated.md?raw'
 
 export interface DocPage {
   /** URL slug, used as the `$docId` route param (e.g. `getting-started`). */
@@ -38,6 +39,13 @@ export const DOC_PAGES: readonly DocPage[] = [
     title: 'Features',
     description: 'Everything Longhand can do, free and premium.',
     content: features,
+  },
+  // Reference material: after the tour, before the FAQ (story 32.3).
+  {
+    slug: 'how-totals-are-calculated',
+    title: 'How totals are calculated',
+    description: 'The exact conversion between weekly, biweekly, monthly and yearly amounts.',
+    content: howTotalsAreCalculated,
   },
   {
     slug: 'faq',

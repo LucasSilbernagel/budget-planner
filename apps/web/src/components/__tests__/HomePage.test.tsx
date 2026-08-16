@@ -29,7 +29,7 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-import { HomePage } from '../HomePage'
+import { HomePage, pieSliceLabel } from '../HomePage'
 
 function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   const status: PremiumAccessStatus = {
@@ -786,15 +786,32 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 })
 
 /**
- * Income vs Expense Breakdown period control (story 12-3, UX-DR20).
+ * Income vs Expense Breakdown period control (story 12-3, UX-DR20; rebound to
+ * the shared store by story 32.3).
  *
- * The six date-range presets are replaced with a plain Monthly/Annually toggle
- * defaulting to Annually, and the chart now re-aggregates through the core
- * frequency engine instead of summing raw amounts. This control is independent
- * of the overview duration selector (12-2) and has NO persistence.
+ * The six date-range presets are replaced with a period toggle defaulting to
+ * Annually, and the chart re-aggregates through the core frequency engine
+ * instead of summing raw amounts. Both of those guarantees are 12-3's and both
+ * are still asserted below, unchanged.
  *
- * Currency mode defaults to `none`, so the "Top Categories" figures print as
- * locale-grouped decimals (story 14-2). Seeding two income sources with EQUAL
+ * ⚠️ WHAT 32.3 CHANGED. This control used to hold its OWN component-local state,
+ * independent of the overview duration selector (12-2), with no persistence.
+ * That let the page show the same expenses twelve times apart on one screen —
+ * the Total Expenses card on Monthly reading $2,441.67 while these pies, still on
+ * their own Annually default, read $29,300.04. It now reads and writes the shared
+ * `overviewDurationStore`, so there is exactly ONE period on the page and it
+ * offers all FOUR durations. The two-option and independence claims below were
+ * updated in place rather than deleted.
+ *
+ * ⚠️ `vitest.setup.ts` pins THIS SUITE to `{ mode: 'none', currency: 'NONE' }`,
+ * so the breakdown figures print as locale-grouped decimals with no symbol
+ * (story 14-2). That is the UNIT-test environment, NOT the product default —
+ * new users get `$`/USD (FR38), which is what Playwright exercises. The older
+ * wording here ("Currency mode defaults to `none`") read as an app-wide default
+ * and is the exact ambiguity `e2e/breakdown-period.spec.ts` had to correct in
+ * its own header; fixed in code review 32.3 so it is not copied onward.
+ *
+ * Seeding two income sources with EQUAL
  * raw amounts (10000c) but different frequencies proves normalization is
  * applied: a weekly entry and an annual entry must NOT render as equal slices.
  *   weekly  10000c → monthly round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5,199.96"
@@ -844,19 +861,22 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     useOverviewDurationStore.setState({ duration: 'annually' })
   })
 
-  it('AC-1: offers only Monthly and Annually, defaulting to Annually, with no preset labels', () => {
+  it('AC-1: offers the four shared durations, defaulting to Annually, with no preset labels', () => {
     seedMixedFrequencyIncome()
     render(<HomePage />)
 
     const select = breakdownSelect()
     expect(select.value).toBe('annually')
 
+    // Four options since 32.3 — the same set the overview selector offers,
+    // because both now render from VALID_DURATIONS.
     const optionValues = Array.from(select.options).map((o) => o.value)
-    expect(optionValues).toEqual(['monthly', 'annually'])
+    expect(optionValues).toEqual(['weekly', 'biweekly', 'monthly', 'annually'])
     const optionLabels = Array.from(select.options).map((o) => o.textContent)
-    expect(optionLabels).toEqual(['Monthly', 'Annually'])
+    expect(optionLabels).toEqual(['Weekly', 'Bi-weekly', 'Monthly', 'Annually'])
 
-    // The old six-preset control and its labels are gone.
+    // 12-3's ORIGINAL guarantee, unchanged: the old six-preset control and its
+    // labels are gone. These must survive every later edit to this block.
     expect(screen.queryByText(/Last Month/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Last 3 Months/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Year to Date/i)).not.toBeInTheDocument()
@@ -882,6 +902,204 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     // The annual figures are no longer shown.
     expect(screen.queryByText('5,199.96')).not.toBeInTheDocument()
     expect(screen.queryByText('99.96')).not.toBeInTheDocument()
+  })
+
+  /**
+   * Story 32.3, AC-8/AC-10 — the ONE assertion that can fail if the breakdown
+   * pies and the Total cards ever drift back onto two independent controls.
+   *
+   * ⚠️ It drives BOTH selectors, because the two failure modes are different
+   * elements: reverting `periodScaledData` to a local `chartPeriod` breaks the
+   * overview-selector direction, while rebinding the breakdown `<select>` to
+   * local state breaks the breakdown-selector direction. Asserting only one
+   * direction leaves the other mutation green.
+   *
+   * Figures for the mixed fixture (monthly-normalized 43,333c + 833c = 44,166c):
+   *   annually  card 44,166 × 12 = 529,992c → "5,299.92"
+   *   monthly   card 44,166c                → "441.66"
+   * The pies scale per entry and, at these two INTEGRAL periods, sum to exactly
+   * the same figure — which is what makes a shared value provable here.
+   */
+  it('AC-8: changing EITHER selector moves BOTH the overview card and the pies', () => {
+    seedMixedFrequencyIncome()
+    render(<HomePage />)
+
+    const overviewSelect = () =>
+      screen.getByRole('combobox', { name: /show income and expenses per/i }) as HTMLSelectElement
+    const cardText = () => screen.getByTestId('overview-total-income').textContent
+    // The pie's own total figure, scoped to the breakdown section so the card's
+    // identical string cannot satisfy it.
+    const breakdownSection = (): HTMLElement => {
+      const section = screen
+        .getByRole('heading', { name: 'Income vs Expense Breakdown' })
+        .closest('section')
+      if (!(section instanceof HTMLElement)) throw new Error('breakdown <section> not found')
+      return section
+    }
+
+    // Both start at the shared default.
+    expect(overviewSelect().value).toBe('annually')
+    expect(breakdownSelect().value).toBe('annually')
+    expect(cardText()).toContain('5,299.92')
+    expect(within(breakdownSection()).getByText('5,299.92')).toBeInTheDocument()
+
+    // Direction 1: drive the BREAKDOWN selector — the card must follow.
+    fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
+    expect(overviewSelect().value).toBe('monthly')
+    expect(cardText()).toContain('441.66')
+    expect(within(breakdownSection()).getByText('441.66')).toBeInTheDocument()
+
+    // Direction 2: drive the OVERVIEW selector — the pies must follow.
+    fireEvent.change(overviewSelect(), { target: { value: 'annually' } })
+    expect(breakdownSelect().value).toBe('annually')
+    expect(cardText()).toContain('5,299.92')
+    expect(within(breakdownSection()).getByText('5,299.92')).toBeInTheDocument()
+  })
+
+  it('AC-8: each pie title states the period, so it is never implicit (FR58)', () => {
+    seedMixedFrequencyIncome()
+    render(<HomePage />)
+
+    expect(screen.getByText('Income by category (per year)')).toBeInTheDocument()
+    expect(screen.getByText('Expenses by category (per year)')).toBeInTheDocument()
+
+    fireEvent.change(breakdownSelect(), { target: { value: 'weekly' } })
+    expect(screen.getByText('Income by category (per week)')).toBeInTheDocument()
+    expect(screen.getByText('Expenses by category (per week)')).toBeInTheDocument()
+  })
+
+  /**
+   * Story 32.3, AC-9 — the divergence this story CREATED must be disclosed.
+   *
+   * The pies scale each entry then sum; the Total cards sum monthly then scale
+   * once. At ×12/52 and ×12/26 those disagree by a cent or two; at ×1 and ×12
+   * they are exact. So the note must appear at exactly the two non-integral
+   * periods and at neither integral one — an unconditional note would be false
+   * half the time, and a `duration === 'weekly'` note would be the 32.1 rot again.
+   */
+  it('AC-9: the pies disclose per-entry rounding at weekly and biweekly only', () => {
+    seedMixedFrequencyIncome()
+    render(<HomePage />)
+
+    // Annually (integral) — no note.
+    expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
+
+    fireEvent.change(breakdownSelect(), { target: { value: 'weekly' } })
+    expect(screen.getByTestId('breakdown-pies-rounding-note')).toBeInTheDocument()
+
+    // ⚠️ THE WORD "ENTRY" IS THE ASSERTION, not decoration. This note first read
+    // "Each CATEGORY is rounded on its own" — which describes the /categories
+    // page's per-bucket model, not what these pies do (they round each ENTRY,
+    // then aggregate). Pinning only the note's PRESENCE let that wrong copy ship
+    // and survive a mutation. Code review 32.3.
+    expect(screen.getByTestId('breakdown-pies-rounding-note')).toHaveTextContent(
+      /Each entry is rounded on its own/
+    )
+    expect(screen.getByTestId('breakdown-pies-rounding-note')).not.toHaveTextContent(
+      /Each category is rounded/
+    )
+    // The magnitude is stated per entry, so it stays true as the list grows —
+    // an unqualified "a few cents" is false for a 30-entry list (~15c).
+    expect(screen.getByTestId('breakdown-pies-rounding-note')).toHaveTextContent(
+      /about half a cent per entry/
+    )
+
+    fireEvent.change(breakdownSelect(), { target: { value: 'biweekly' } })
+    expect(screen.getByTestId('breakdown-pies-rounding-note')).toBeInTheDocument()
+
+    // Monthly (integral) — no note.
+    fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
+    expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
+  })
+
+  /**
+   * Story 32.3 code review — the note must not contradict the screen it sits on.
+   *
+   * ⚠️ THE FIX FOR THIS SHIPPED UNTESTED AND THE MUTATION SURVIVED. Reverting the
+   * gate to `IS_NON_INTEGRAL_CADENCE[duration]` alone left the whole suite green,
+   * which is the FOURTH consecutive story where a patch was applied without being
+   * mutation-verified. These two cases are what make the gate real.
+   *
+   * The note claims figures "can differ from the totals above". That is only ever
+   * true when a side has MORE THAN ONE entry for per-entry rounding to accumulate
+   * across — with zero entries there are no figures at all, and with one the pie
+   * total and the card are the same expression, `round(m / k)`.
+   */
+  it('AC-9: no rounding note when both pies are EMPTY (balances-only user)', () => {
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'b1',
+          type: 'investment',
+          name: 'ISA',
+          currentBalance: 500_000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: '2026-08-15T00:00:00.000Z',
+          updatedAt: '2026-08-15T00:00:00.000Z',
+        },
+      ],
+    })
+    useOverviewDurationStore.setState({ duration: 'weekly' })
+    render(<HomePage />)
+
+    // The dashboard renders (hasData is true via balances) with two empty pies…
+    expect(screen.getByText('No income to break down yet')).toBeInTheDocument()
+    expect(screen.getByText('No expenses to break down yet')).toBeInTheDocument()
+    // …so a note about figures differing would be describing nothing.
+    expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
+
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('AC-9: no rounding note for a SINGLE entry, where divergence is impossible', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-only',
+          userId: 0,
+          name: 'Salary',
+          amount: 10000,
+          frequency: 'weekly',
+          createdAt: '2026-08-15T00:00:00.000Z',
+          updatedAt: '2026-08-15T00:00:00.000Z',
+        },
+      ],
+    })
+    useOverviewDurationStore.setState({ duration: 'biweekly' })
+    render(<HomePage />)
+
+    // One entry: the pie total IS the card figure, by construction.
+    expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Pie slice label formatting (story 32.3 code review).
+ *
+ * ⚠️ Tested through the PURE helper, not the rendered chart: Recharts does not
+ * lay out its SVG under jsdom, so an assertion against the rendered label can
+ * never fail — removing the zero-total guard left the entire suite green. Both
+ * branches are pinned here against concrete values (epic 24's lesson).
+ */
+describe('pieSliceLabel (story 32.3)', () => {
+  it('renders a percentage when the pie has a non-zero total', () => {
+    expect(pieSliceLabel('Groceries', 0.25, 40_000)).toBe('Groceries: 25.0%')
+  })
+
+  it('falls back to the bare name on an all-zero total instead of "NaN%"', () => {
+    // Recharts computes percent as value/sum; sum 0 → NaN. Reachable since 32.3
+    // via a 2c monthly expense at the weekly view (round(2 × 12/52) = 0).
+    expect(pieSliceLabel('Groceries', Number.NaN, 0)).toBe('Groceries')
+    expect(pieSliceLabel('Groceries', Number.NaN, 0)).not.toContain('NaN')
+  })
+
+  it('truncates a long category name in both branches', () => {
+    // 20 chars > the 14 threshold, so it becomes the first 11 plus an ellipsis.
+    expect(pieSliceLabel('Supermarket shopping', 0.5, 100)).toBe('Supermarket...: 50.0%')
+    expect(pieSliceLabel('Supermarket shopping', Number.NaN, 0)).toBe('Supermarket...')
+    // A name at exactly the threshold is left alone.
+    expect(pieSliceLabel('Groceries only', 0.5, 100)).toBe('Groceries only: 50.0%')
   })
 })
 

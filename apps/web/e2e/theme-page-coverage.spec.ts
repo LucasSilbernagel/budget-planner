@@ -51,6 +51,10 @@ const PAGES = [
   // not sufficient. (Code review 2026-08-10.)
   '/docs',
   '/docs/getting-started',
+  // Story 32.3 — same docs detail layout, but it is the only page whose body
+  // renders a fenced code block, which `prose`/`dark:prose-invert` themes
+  // separately from ordinary paragraph text.
+  '/docs/how-totals-are-calculated',
   '/login',
   '/pricing',
   '/terms',

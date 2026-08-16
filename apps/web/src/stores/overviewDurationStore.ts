@@ -70,6 +70,34 @@ export const DURATION_OPTION_LABEL: Record<OverviewDuration, string> = {
 }
 
 /**
+ * Whether each duration's monthly multiplier is NON-INTEGRAL, so per-bucket (or
+ * per-entry) rounding and whole-set rounding can disagree by a few cents.
+ *
+ * weekly = ×12/52 and biweekly = ×12/26 are non-integral; monthly (×1) and
+ * annually (×12) are exact.
+ *
+ * ⚠️ A `Record<OverviewDuration, boolean>`, NOT a `Set`. Code review 32.1 caught
+ * the first version claiming a `Set` "forces a decision" when adding a duration —
+ * it does not: a `Set` literal missing a member compiles clean, which is exactly
+ * how the original `duration === 'weekly'` check silently rotted when the union
+ * widened. An exhaustive `Record` makes a fifth duration a COMPILE ERROR here.
+ * The values are hand-classified because core's `FREQUENCY_MULTIPLIERS` is
+ * module-private; the `Record` is what stops that going stale unnoticed.
+ *
+ * ⚠️ LIVES HERE, and is IMPORTED by every consumer — never copied. Story 32.3
+ * added the Overview's breakdown pies as a second consumer alongside the
+ * `/categories` breakdown, and this file's own header records why a copy is not
+ * acceptable: `DURATION_LABEL` and `CADENCE_LABEL` were byte-identical
+ * duplicates for twenty stories before 32.1 collapsed them.
+ */
+export const IS_NON_INTEGRAL_CADENCE: Record<OverviewDuration, boolean> = {
+  weekly: true,
+  biweekly: true,
+  monthly: false,
+  annually: false,
+}
+
+/**
  * Every selectable duration, in render order. Derived — never hand-written.
  * Drives both `coerceDuration` and the rendered `<option>` list, so a
  * user-selectable option cannot be one the store would reject on reload.

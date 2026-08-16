@@ -61,6 +61,13 @@ const ROUTES = [
   '/refund',
   '/docs',
   '/docs/getting-started',
+  // Story 32.3: the FIRST doc page with a fenced code block (the worked
+  // example). `prose pre` carries `overflow-x: auto`, so it should scroll inside
+  // itself rather than widen the page — but that is exactly the kind of
+  // assumption §4b's regression was made of, so it is measured here rather than
+  // reasoned about. The page also deliberately uses no markdown table, which
+  // `MarkdownRenderer` would render with no overflow wrapper at all.
+  '/docs/how-totals-are-calculated',
 ] as const
 
 async function assertNoHorizontalOverflow(evaluate: <R>(fn: () => R) => Promise<R>, label: string) {

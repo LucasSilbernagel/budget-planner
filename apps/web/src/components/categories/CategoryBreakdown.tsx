@@ -57,6 +57,7 @@ import { useExpenses, useIncomeSources } from '../../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
 import {
   DURATION_LABEL,
+  IS_NON_INTEGRAL_CADENCE,
   type OverviewDuration,
   useOverviewDuration,
 } from '../../stores/overviewDurationStore'
@@ -78,28 +79,6 @@ import { ErrorBoundary } from '../ErrorBoundary'
  * key on the attribute, never on the text.
  */
 const UNCATEGORIZED_LABEL = 'Uncategorized'
-
-/**
- * Whether each cadence's monthly multiplier is NON-INTEGRAL, so per-bucket
- * rounding and whole-set rounding can disagree by a few cents.
- *
- * weekly = ×12/52 and biweekly = ×12/26 are non-integral; monthly (×1) and
- * annually (×12) are exact.
- *
- * ⚠️ A `Record<OverviewDuration, boolean>`, NOT a `Set`. Code review 32.1 caught
- * the first version claiming a `Set` "forces a decision" when adding a cadence —
- * it does not: a `Set` literal missing a member compiles clean, which is exactly
- * how the original `duration === 'weekly'` check silently rotted when the union
- * widened. An exhaustive `Record` makes a fifth duration a COMPILE ERROR here.
- * The values are hand-classified because core's `FREQUENCY_MULTIPLIERS` is
- * module-private; the `Record` is what stops that going stale unnoticed.
- */
-const IS_NON_INTEGRAL_CADENCE: Record<OverviewDuration, boolean> = {
-  weekly: true,
-  biweekly: true,
-  monthly: false,
-  annually: false,
-}
 
 /** The four members of the core `Frequency` union — there is no quarterly. */
 const FREQUENCIES: readonly Frequency[] = ['weekly', 'biweekly', 'monthly', 'annually']
@@ -207,7 +186,13 @@ export function CategoryBreakdown(): ReactElement {
           while `biweekly` was unreachable from the UI. Story 32.1 made it
           selectable, turning that check into a silent omission — no type error,
           no failing test. Derive from the multiplier set, never from one
-          hard-coded value. */}
+          hard-coded value.
+
+          `IS_NON_INTEGRAL_CADENCE` is IMPORTED from `overviewDurationStore`, not
+          declared here: story 32.3 gave the Overview's breakdown pies the same
+          divergence (they scale per entry, the Total cards scale the whole set
+          once), so two surfaces now need the same predicate and a copy would be
+          the `DURATION_LABEL`/`CADENCE_LABEL` duplication all over again. */}
       {IS_NON_INTEGRAL_CADENCE[duration] ? (
         <p className="mt-1 text-xs text-muted" data-testid="breakdown-rounding-note">
           Each category total is rounded on its own, so at this view these figures can differ from

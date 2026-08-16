@@ -1,5 +1,25 @@
+import {
+  calculateTotalMonthlyNormalized,
+  denormalizeFromMonthly,
+  normalizeToMonthly,
+} from '@budget-planner/core/finance'
 import { describe, expect, it } from 'vitest'
 import { DOC_PAGES, getDocPage } from '../index'
+
+/**
+ * Cents → the grouped decimal string the docs print (e.g. 503_333 → '5,033.33').
+ *
+ * Deliberately a plain `Intl` call rather than the app's `formatAmount`: this is
+ * only turning a computed number into the substring to search the Markdown for.
+ * The VALUE it formats is what must come from core — see the worked-example
+ * guard below.
+ */
+function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
 
 /**
  * Documentation content registry tests (story 4-10, AC-2).
@@ -116,6 +136,16 @@ describe('documentation content accuracy (story 10-4)', () => {
     // orders are needed: the first pattern alone missed "a full data export".
     expect(faq).not.toMatch(new RegExp(`\\b${OBJECT}\\b[^.!?\\n]{0,20}?\\b${VERB}\\w*\\b`))
     expect(faq).not.toMatch(/\bsave a copy of\b/)
+    // ⚠️ These three are banned in the FAQ as proxies for an export TARGET ("a
+    // machine-readable file"). The ban is broader than that intent: story 32.3
+    // wanted the FAQ to say a total can differ from "the same sum in a
+    // spreadsheet" — honest copy about the USER'S OWN spreadsheet, with no
+    // export claim anywhere near it — and this went red on it. The FAQ sentence
+    // was reworded rather than the guard narrowed, because the word is a decent
+    // proxy and the FAQ is the one page it guards; the spreadsheet-reconciliation
+    // copy lives on `how-totals-are-calculated.md`, which this does not read.
+    // Narrow it only with a replacement that still catches "export to
+    // spreadsheet".
     expect(faq).not.toMatch(/\b(?:csv|spreadsheet|json)\b/)
 
     // ⚠️ "import" is deliberately NOT guarded, and must stay that way. The FAQ
@@ -409,12 +439,194 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(oldFraming.test(contentFor('getting-started'))).toBe(false)
   })
 
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * "How totals are calculated" (story 32.3, CONTENT-P)
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * ⚠️ Every guard below anchors on phrasing that ONLY THIS PAGE carries. `4.33`
+   * and `estimate` already appear in faq.md and features.md, so asserting them
+   * here would be true-by-construction and would prove nothing about the new
+   * page (the batch-5/23 lesson, and the reason the 23-1 guard above had to be
+   * re-anchored).
+   *
+   * ⚠️ Every interior space is `\s+`. Markdown hard-wraps at ~76 columns, so a
+   * literal-space `toContain` goes red on a pure reflow — Epic 23's recorded
+   * lesson, and the convention the four guards above already follow.
+   */
+  const howTotals = () => contentFor('how-totals-are-calculated')
+
+  /**
+   * The page's `###` sections, so a guard can prove WHERE a claim lives.
+   *
+   * ⚠️ AC-14's third rule ("assert the section, not just the page",
+   * `featureSections()` being the precedent) was NOT applied on the first pass —
+   * every guard matched the whole page, so moving the spreadsheet-equivalence
+   * sentence into the rounding section would have kept them all green. Caught in
+   * code review. Each heading is asserted to EXIST before slicing: `indexOf`
+   * returning -1 would otherwise silently widen a slice to most of the document,
+   * which is the 30-2 trap this file already records twice.
+   */
+  const howTotalsSections = () => {
+    const content = howTotals()
+    const bounds = [
+      ['factors', '### The conversion factors'],
+      ['spreadsheet', '### The same maths as your spreadsheet'],
+      ['example', '### A worked example'],
+      ['rounding', '### Why a few cents go missing'],
+    ] as const
+    const starts = bounds.map(([, heading]) => {
+      const index = content.indexOf(heading)
+      if (index === -1) throw new Error(`how-totals page is missing the heading: ${heading}`)
+      return index
+    })
+    const sections = {} as Record<(typeof bounds)[number][0], string>
+    for (const [i, [key]] of bounds.entries()) {
+      sections[key] = content.slice(starts[i], starts[i + 1] ?? content.length)
+    }
+    return sections
+  }
+
+  it('states the conversion factors as DIVISIONS, not as a 4.33 rule of thumb', () => {
+    // ⚠️ Scoped to the factors SECTION, not the page (AC-14 rule 3): the
+    // divisions must live under the heading that promises them.
+    const { factors } = howTotalsSections()
+    expect(factors).toMatch(/×\s*52\s*÷\s*12/)
+    expect(factors).toMatch(/×\s*26\s*÷\s*12/)
+    // The inverse rule for re-expressing a monthly figure at another period.
+    expect(factors).toMatch(/\*\*yearly\*\*\s*=\s*monthly\s*×\s*12/)
+    expect(factors).toMatch(/\*\*weekly\*\*\s*=\s*monthly\s*×\s*12\s*÷\s*52/)
+    // Names the period the SELECTOR shows, not only the prose form. The page
+    // exists to be checked against the UI, so it must use the UI's word.
+    expect(factors).toMatch(/\*\*Bi-weekly\*\*/)
+  })
+
+  it('tells a spreadsheet user the arithmetic is the SAME, so they check their data', () => {
+    // The verified claim FR58 rests on: the conversions are algebraically
+    // identical to the common spreadsheet approach, so a discrepancy points at
+    // the entries, not at a different model. Anchored on the distinguishing
+    // sentence rather than the word "spreadsheet", which the FAQ also uses, and
+    // scoped to the section that makes the claim.
+    const { spreadsheet } = howTotalsSections()
+    expect(spreadsheet).toMatch(/the\s+same\s+arithmetic\s+you\s+are\s*\n?\s*already\s+doing/)
+    expect(spreadsheet).toMatch(/algebraically\s+identical/)
+    expect(spreadsheet).toMatch(/yearly\s*÷\s*52/)
+    expect(spreadsheet).toMatch(/monthly\s*×\s*12\s*÷\s*52/)
+    // ⚠️ Rounding must be offered as a CAUSE here. Without it a user with a 4c
+    // gap audits every row, finds nothing, and files the "total is off" report
+    // this page was written to prevent.
+    expect(spreadsheet).toMatch(/only\s+a\s+few\s+cents/)
+  })
+
+  it('discloses BOTH rounding sources with their magnitudes, and the $99.96 case', () => {
+    const { rounding } = howTotalsSections()
+    // Source 1 — per-entry rounding on the way in, with its scale.
+    expect(rounding).toMatch(/rounded\s+to\s+the\s+nearest\s+cent\s+as\s+it\s+is\s+converted/)
+    expect(rounding).toMatch(/under\s+half\s+a\s+cent\s+per\s+entry/)
+    expect(rounding).toMatch(/under\s+about\s+six\s+cents\s+per\s+entry/)
+    // Source 2 — breakdown vs whole-set, consistent with the in-product notes.
+    // The two must be told apart, not conflated.
+    expect(rounding).toMatch(/rounded\s+separately\s+from\s+the\s+total/)
+    // The documented app-wide convention behind the $100 → $99.96 report, so the
+    // next sighting resolves against this page instead of a re-investigation.
+    expect(rounding).toContain('$99.96')
+  })
+
+  it('makes no claim about WHERE entries are stored (the app stores what you entered)', () => {
+    // ⚠️ The page said the monthly figure "is the one Longhand stores", and that
+    // entries were "stored as" their rounded monthly value. Both are false — the
+    // stores hold the ENTERED amount and frequency and derive monthly per render,
+    // which is what `faq.md` already tells the user. A false persistence claim on
+    // the one page whose purpose is to be reconcilable against is worse than no
+    // page. Caught in code review 32.3.
+    const page = howTotals()
+    expect(page).not.toMatch(/\bstores\b/)
+    expect(page).not.toMatch(/\bstored\s+as\b/)
+    // And the positive claim that replaced it.
+    expect(page).toMatch(/kept\s+exactly\s+as\s+you\s+typed\s+them/)
+  })
+
+  it('the worked example matches what core actually computes (computed, not retyped)', () => {
+    // ⚠️ COMPUTED FROM CORE, never retyped as a literal. If core's factors or its
+    // per-entry rounding ever change, this page's own numbers go red — whereas a
+    // hard-coded '60,399.96' would let the doc rot into a lie while the suite
+    // stayed green (the same failure family as 32.2's copied parity helper).
+    const monthly = calculateTotalMonthlyNormalized([
+      { amount: 200_000, frequency: 'biweekly' },
+      { amount: 60_000, frequency: 'monthly' },
+      { amount: 120_000, frequency: 'annually' },
+    ])
+    const yearly = denormalizeFromMonthly(monthly, 'annually')
+
+    const { example } = howTotalsSections()
+    expect(example).toContain(formatCents(monthly)) // 503_333c → '5,033.33'
+    expect(example).toContain(formatCents(yearly)) // 6_039_996c → '60,399.96'
+
+    // The spreadsheet comparison the example is built to expose: 4c apart.
+    const spreadsheetYearly = 2_000_00 * 26 + 600_00 * 12 + 1_200_00
+    expect(spreadsheetYearly - yearly).toBe(4)
+    expect(example).toContain(formatCents(spreadsheetYearly)) // '60,400.00'
+
+    // ⚠️ THE PER-ROW FIGURES ARE COMPUTED TOO, not just the totals. The first
+    // version guarded only the three totals, so a core per-row change that a
+    // later editor "fixed" by adjusting the totals alone would have left
+    // row-level lies the suite could not see — a smaller instance of exactly the
+    // rot this guard exists to stop. Caught in code review 32.3.
+    for (const [amount, frequency] of [
+      [200_000, 'biweekly'],
+      [60_000, 'monthly'],
+      [120_000, 'annually'],
+    ] as const) {
+      expect(example).toContain(formatCents(normalizeToMonthly(amount, frequency)))
+    }
+  })
+
+  it('the FAQ lists all FOUR selectable durations, including biweekly (story 32.3, AC-7)', () => {
+    // Story 32.1 added `biweekly` as a fourth selectable duration, which made
+    // this FAQ sentence false; 32.3 repaired it. ⚠️ THIS GUARD WAS MISSING on
+    // the first pass — the §6 mutation run reverted the repair and the whole
+    // suite stayed green, i.e. the fix had shipped untested. Interior spaces are
+    // `\s+`: the sentence hard-wraps between "duration" and "selector".
+    const faq = contentFor('faq')
+    expect(faq).toMatch(/weekly,\s+biweekly,\s+monthly,\s+and\s+annual\s+totals/)
+    // The stale three-value claim must be gone, not merely supplemented.
+    expect(faq).not.toMatch(/between\s+weekly,\s+monthly,\s+and\s+annual/)
+  })
+
+  it('all three existing surfaces link to the new page (story 32.3, AC-7)', () => {
+    // Each of these already stated a FRAGMENT of the conversion model with
+    // nowhere to send the reader. ⚠️ The internal-link guard below proves a link
+    // RESOLVES; only this proves the links EXIST — deleting all three would
+    // leave that guard perfectly green.
+    const link = '(/docs/how-totals-are-calculated)'
+    expect(contentFor('faq')).toContain(link)
+    expect(contentFor('features')).toContain(link)
+    expect(contentFor('getting-started')).toContain(link)
+  })
+
+  it('uses no markdown table — a bare <table> overflows the 320px floor', () => {
+    // `MarkdownRenderer` renders a bare <table> inside `prose` with no
+    // overflow-x wrapper, so a factor table would push the page into horizontal
+    // overflow and fail `e2e/responsive-320.spec.ts`. No other doc or legal page
+    // uses one; this page must not be the first.
+    const page = howTotals()
+    // Leading-pipe form: | a | b |
+    expect(page).not.toMatch(/^\s*\|/m)
+    // ⚠️ PIPELESS FORM TOO. GFM accepts `a | b` over `--- | ---` with no leading
+    // pipe, which renders the same bare <table> and reintroduces the same 320px
+    // overflow — and the leading-pipe regex above never sees it. Caught in code
+    // review 32.3. The delimiter row is the reliable signature of either form.
+    expect(page).not.toMatch(/^\s*:?-{3,}:?\s*\|/m)
+  })
+
   it('every internal doc link targets a real app route', () => {
     // The routes referenced by the docs; each exists under apps/web/src/routes.
     const knownRoutes = new Set([
       '/docs/getting-started',
       '/docs/features',
       '/docs/faq',
+      // Story 32.3 — linked from the FAQ, Features and Getting started.
+      '/docs/how-totals-are-calculated',
       '/privacy',
       '/settings',
       '/contact',

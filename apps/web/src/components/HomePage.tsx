@@ -13,7 +13,7 @@ import type {
   FinancialDataPoint,
   RechartsDataItem,
 } from '@budget-planner/core/finance/visualization'
-import React, { useState, useMemo } from 'react'
+import React, { useMemo } from 'react'
 import {
   Bar,
   BarChart,
@@ -36,6 +36,7 @@ import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencySt
 import {
   DURATION_LABEL,
   DURATION_OPTION_LABEL,
+  IS_NON_INTEGRAL_CADENCE,
   type OverviewDuration,
   VALID_DURATIONS,
   useOverviewDuration,
@@ -143,11 +144,18 @@ export function HomePage() {
   // ============================================================================
 
   // Income vs Expense Breakdown cadence (story 12-3). Replaces the old six
-  // date-range presets with a plain Monthly/Annually toggle, defaulting to
-  // Annually (UX-DR20). Unlike the overview duration selector (12-2) this control
-  // has NO persistence AC and is independent of it, so component-local state is
-  // correct and simplest — do not reuse overviewDurationStore.
-  const [chartPeriod, setChartPeriod] = useState<'monthly' | 'annually'>('annually')
+  // date-range presets with a period toggle defaulting to Annually (UX-DR20).
+  //
+  // ⚠️ Story 12-3 gave this control its OWN component-local state, deliberately
+  // independent of the overview duration selector (12-2). Story 32.3 reversed
+  // that: the two controls could show the SAME expenses twelve times apart on one
+  // screen (card on Monthly = $2,441.67, pies still on Annually = $29,300.04 —
+  // reproduced before the fix), which is the strongest candidate for the "total
+  // expenses way off" report. There is now exactly ONE period value on this page,
+  // read from the shared store, so that divergence is structurally impossible.
+  // The breakdown keeps its own <select> (it sits far below the fold, and
+  // removing the affordance would be a discoverability regression) — it is simply
+  // a second WRITER to the one store.
 
   // Convert stores data to FinancialDataPoint format for visualization utilities
   const financialData = useMemo<FinancialDataPoint[]>(() => {
@@ -213,24 +221,28 @@ export function HomePage() {
     // or expense edit invalidates the memo — a silently stale chart.
   }, [incomeSources, expenses, categoryNames])
 
-  // Re-express each entry at the chosen cadence BEFORE aggregation (story 12-3,
+  // Re-express each entry at the chosen period BEFORE aggregation (story 12-3,
   // AC-2). The breakdown previously summed raw entered amounts and ignored
   // frequency entirely, so a weekly $100 and an annual $100 rendered as equal
   // slices. We normalize every entry to monthly then denormalize to the target
-  // cadence, reusing the core frequency engine (annually ⇒ monthly ×12) rather
-  // than re-deriving any factors. Values stay integer cents, so formatAmount and
-  // the currency mode are unaffected.
+  // period, reusing the core frequency engine rather than re-deriving any
+  // factors. Values stay integer cents, so formatAmount and the currency mode are
+  // unaffected.
+  //
+  // ⚠️ UNCONDITIONAL — do not reintroduce a per-value branch. This read
+  // `chartPeriod === 'annually' ? denormalizeFromMonthly(monthly, 'annually') :
+  // monthly`, a special case that existed only because the control had two
+  // values. `monthly` is ×1, so `round(m / 1) === m` exactly and the old branch
+  // was a no-op. Hand-classifying four values here would be the same rot
+  // `IS_NON_INTEGRAL_CADENCE` exists to prevent (story 32.1's `duration ===
+  // 'weekly'`).
   const periodScaledData = useMemo<FinancialDataPoint[]>(
     () =>
       financialData.map((point) => {
         const monthly = normalizeToMonthly(point.amount, point.frequency)
-        const scaled =
-          chartPeriod === 'annually'
-            ? denormalizeFromMonthly(monthly, 'annually') // monthly ×12
-            : monthly
-        return { ...point, amount: scaled }
+        return { ...point, amount: denormalizeFromMonthly(monthly, duration) }
       }),
-    [financialData, chartPeriod]
+    [financialData, duration]
   )
 
   // Aggregate the period-scaled data into income and expense category buckets.
@@ -268,6 +280,31 @@ export function HomePage() {
     () => expenseData.reduce((sum, item) => sum + item.value, 0),
     [expenseData]
   )
+
+  // Whether the per-entry rounding disclosure below can actually be TRUE.
+  //
+  // ⚠️ The note is about per-entry rounding ACCUMULATING, so it needs a side with
+  // more than one entry to accumulate across: with a single entry the pie total is
+  // `round(m / k)` and the card is `round(m / k)` — the same expression, so they
+  // cannot differ. Counting ENTRIES, not slices, is the load-bearing part: the
+  // rounding happens per entry BEFORE `aggregateByCategoryAndType` merges entries
+  // into category slices, so one two-entry category diverges while two
+  // one-entry categories do not.
+  //
+  // ⚠️ Gating on the period ALONE (the first version of this) rendered "these
+  // figures can differ from the totals above" above two EMPTY pies for a
+  // balances-only user — a note contradicting the screen it sits on. Same defect
+  // class as the 32.2 gate that delegated to another section's `isEmpty`. Found in
+  // code review, verified by test.
+  const breakdownCanDiverge = useMemo(() => {
+    let incomeEntries = 0
+    let expenseEntries = 0
+    for (const point of financialData) {
+      if (point.type === 'income') incomeEntries++
+      else expenseEntries++
+    }
+    return incomeEntries >= 2 || expenseEntries >= 2
+  }, [financialData])
 
   // Financial Category Summary. Flows and balances are two different kinds of
   // number — a per-period FLOW (Income/Expenses, re-expressed at the overview
@@ -398,7 +435,16 @@ export function HomePage() {
                     />
                   )}
                 </p>
-                <p className="text-2xl font-bold text-green-600">
+                {/* data-testid rather than an accessible-name matcher: story 32.1
+                    measured that a label wrapping the InfoTooltip button resolves to
+                    a different accessible name under jsdom than under Chromium, so
+                    an anchored `^…$` matcher passes every unit test and finds
+                    nothing in a browser. Added by 32.3 so the reconciliation suite
+                    can assert this figure directly. */}
+                <p
+                  data-testid="overview-total-income"
+                  className="text-2xl font-bold text-green-600"
+                >
                   {formatAmount(incomeForDuration)}
                 </p>
               </div>
@@ -414,7 +460,12 @@ export function HomePage() {
                     />
                   )}
                 </p>
-                <p className="text-2xl font-bold text-red-600">
+                {/* See the income card above — same jsdom-vs-Chromium
+                    accessible-name reason for keying on a testid. */}
+                <p
+                  data-testid="overview-total-expenses"
+                  className="text-2xl font-bold text-red-600"
+                >
                   {formatAmount(expensesForDuration)}
                 </p>
               </div>
@@ -492,26 +543,69 @@ export function HomePage() {
                   <h2 className="text-xl font-semibold text-subheading">
                     Income vs Expense Breakdown
                   </h2>
-                  {/* Monthly/Annually cadence toggle (story 12-3, UX-DR20). The
-                      native select matches the dark-mode + a11y idiom of the
-                      overview selector (12-2). */}
+                  {/* Period toggle (story 12-3, UX-DR20), rebound to the SHARED
+                      store by story 32.3 and widened from two options to all
+                      four. A second writer to one store is deliberate: this
+                      section sits far below the fold, so removing its affordance
+                      would be a discoverability regression. Changing either
+                      selector now moves both — that is the point.
+                      Options derive from VALID_DURATIONS so a selectable option
+                      can never be one `coerceDuration` would reject on reload. */}
                   <label className="flex items-center gap-1 text-sm text-label">
                     <span className="sr-only">Show breakdown per</span>
                     <select
                       aria-label="Show breakdown per"
-                      value={chartPeriod}
-                      onChange={(e) => setChartPeriod(e.target.value as 'monthly' | 'annually')}
+                      value={duration}
+                      onChange={(e) => setDuration(e.target.value as OverviewDuration)}
                       className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                     >
-                      <option value="monthly">Monthly</option>
-                      <option value="annually">Annually</option>
+                      {VALID_DURATIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {DURATION_OPTION_LABEL[value]}
+                        </option>
+                      ))}
                     </select>
                   </label>
                 </div>
 
+                {/* ⚠️ Only a NON-INTEGRAL period can diverge, and story 32.3 is
+                    what made this reachable. These pies scale EACH ENTRY to the
+                    period and then sum; the Total Income / Total Expenses cards
+                    above sum monthly first and denormalize ONCE. At ×12/52
+                    (weekly) and ×12/26 (biweekly) those two disagree by a cent or
+                    two — measured 112,692c (card) vs 112,693c (pies) at biweekly
+                    on the story's own fixture. `monthly` (×1) and `annually`
+                    (×12) are integral and agree exactly, so an unconditional note
+                    would be false half the time. Before 32.3 this was unreachable
+                    only because the toggle offered just monthly and annually.
+
+                    Its own testid — the /categories page's
+                    `breakdown-rounding-note` is queried by that section's tests.
+                    The predicate is IMPORTED, never re-declared.
+
+                    ⚠️ THE COPY SAYS "ENTRY", NOT "CATEGORY", AND THAT DISTINCTION
+                    IS LOAD-BEARING. It first read "Each category is rounded on its
+                    own" — which describes the /categories page's model, not this
+                    one. THESE pies round each ENTRY and then aggregate, so a
+                    multi-entry category's figure here is NOT that category rounded
+                    on its own. The two models genuinely disagree: one category
+                    holding two 28c-monthly entries renders 12c here and 13c on
+                    /categories at weekly. That CROSS-SURFACE divergence is real,
+                    is NOT what this note discloses (it compares against the cards
+                    above), and is recorded in deferred-work.md pending a decision
+                    on which rounding model is canonical for a category figure.
+                    Found in code review 32.3 by two independent layers. */}
+                {IS_NON_INTEGRAL_CADENCE[duration] && breakdownCanDiverge ? (
+                  <p className="mb-4 text-xs text-muted" data-testid="breakdown-pies-rounding-note">
+                    Each entry is rounded on its own as it is converted, so at this view these
+                    figures can differ from the totals above by about half a cent per entry.
+                  </p>
+                ) : null}
+
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <BreakdownPie
-                    title="Income by category"
+                    testId="income"
+                    title={`Income by category ${DURATION_LABEL[duration]}`}
                     data={incomeData}
                     total={totalIncomeChart}
                     emptyLabel="No income to break down yet"
@@ -520,7 +614,8 @@ export function HomePage() {
                     formatAmount={formatAmount}
                   />
                   <BreakdownPie
-                    title="Expenses by category"
+                    testId="expense"
+                    title={`Expenses by category ${DURATION_LABEL[duration]}`}
                     data={expenseData}
                     total={totalExpenseChart}
                     emptyLabel="No expenses to break down yet"
@@ -711,8 +806,41 @@ export function HomePage() {
   )
 }
 
+/**
+ * The in-plot text for one pie slice (desktop only — narrow drops labels).
+ *
+ * ⚠️ EXPORTED AND PURE ON PURPOSE. Recharts does not lay out its SVG under
+ * jsdom, so a label rendered inside `<Pie label={...}>` is invisible to every
+ * unit test — code review 32.3 removed the `total > 0` guard below and the whole
+ * suite stayed green. Extracting the formatter is the repo's established answer
+ * to exactly this (epic 24's `get*Chrome()` helpers), and it lets both branches
+ * be tested against concrete values.
+ *
+ * ⚠️ `total > 0` mirrors the Tooltip's guard, which has always had it — the
+ * boundary was seen once and missed once. Recharts derives `percent` as
+ * value/sum, so an all-zero dataset gives 0/0 = NaN and every label reads
+ * "NaN%". Story 32.3 WIDENED the trigger: a 2c monthly expense rounds to 0c at
+ * the newly-selectable weekly view, where previously only a sub-5c ANNUAL entry
+ * could do it. Falling back to the bare name keeps the slice labelled rather
+ * than blanking it.
+ */
+export function pieSliceLabel(name: string, percent: number, total: number): string {
+  const short = name.length > 14 ? `${name.substring(0, 11)}...` : name
+  return total > 0 ? `${short}: ${(percent * 100).toFixed(1)}%` : short
+}
+
 interface BreakdownPieProps {
-  /** Sub-heading shown above the pie (e.g. "Income by category"). */
+  /**
+   * Stable identity for test queries — `breakdown-pie-<testId>` on the wrapper
+   * and `breakdown-pie-total-<testId>` on the total figure.
+   *
+   * ⚠️ `data-testid`, not the title, because the title now carries the period
+   * suffix (`Income by category (per week)`) and so changes with the selector —
+   * a title-anchored query would silently match nothing at three of the four
+   * periods. Same jsdom-vs-Chromium accessible-name reasoning the cards use.
+   */
+  testId: string
+  /** Sub-heading shown above the pie (e.g. "Income by category (per week)"). */
   title: string
   /** Pie slices for a SINGLE type, already period-scaled. */
   data: RechartsDataItem[]
@@ -816,6 +944,7 @@ function CategoryBarChart({
  * since Recharts' SVG is not laid out under jsdom.
  */
 function BreakdownPie({
+  testId,
   title,
   data,
   total,
@@ -826,11 +955,16 @@ function BreakdownPie({
 }: BreakdownPieProps): React.ReactElement {
   const sorted = [...data].sort((a, b) => b.value - a.value)
   return (
-    <div>
+    <div data-testid={`breakdown-pie-${testId}`}>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-subheading">{title}</h3>
         {data.length > 0 && (
-          <span className={`text-sm font-semibold ${accentClass}`}>{formatAmount(total)}</span>
+          <span
+            data-testid={`breakdown-pie-total-${testId}`}
+            className={`text-sm font-semibold ${accentClass}`}
+          >
+            {formatAmount(total)}
+          </span>
         )}
       </div>
       {data.length === 0 ? (
@@ -860,12 +994,7 @@ function BreakdownPie({
                     // Drop in-plot labels on narrow so they cannot push past the
                     // container at 320px; the list below still names every slice.
                     label={
-                      isNarrow
-                        ? false
-                        : ({ name, percent }) => {
-                            const short = name.length > 14 ? `${name.substring(0, 11)}...` : name
-                            return `${short}: ${(percent * 100).toFixed(1)}%`
-                          }
+                      isNarrow ? false : ({ name, percent }) => pieSliceLabel(name, percent, total)
                     }
                   >
                     {data.map((entry, index) => (

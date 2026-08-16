@@ -31,6 +31,7 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
+import { type OverviewDuration, useOverviewDurationStore } from '../../stores/overviewDurationStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { BalancePage } from '../BalancePage'
 import { HomePage } from '../HomePage'
@@ -54,6 +55,7 @@ function clearStores(): void {
   useExpenseStore.setState({ expenses: [] })
   useBalanceStore.setState({ entries: [] })
   useSavingsStore.setState({ savingsGoals: [] })
+  useOverviewDurationStore.setState({ duration: 'annually' })
 }
 
 /**
@@ -197,5 +199,70 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
     expect(overview).toContain('2,500.00')
     expect(balance).toBe(overview)
     expect(projection).toBe(overview)
+  })
+
+  /**
+   * Story 32.3 — net worth is POINT-IN-TIME and must stay period-invariant.
+   *
+   * ⚠️ NEW AXIS, and the reason this is an extension rather than a repeat. Every
+   * case above renders at the default period with no flows seeded, so all three
+   * surfaces were only ever measured at ONE point on the duration axis — the same
+   * blindness-by-construction 31.5 recorded. 32.3 puts a single period control in
+   * charge of the whole Overview, which is exactly the change that could sweep
+   * net worth up with the flow totals; if it ever did, the card would read
+   * −$29,307.69 at weekly — round(−12,700,000 × 12/52) = −2,930,769c — and
+   * −$1,524,000.00 at annually, while the Balance page held at −$127,000.00.
+   * (The weekly figure read −$29,230.77 until code review 32.3 re-derived it:
+   * that value divides −1,520,000 rather than the fixture's −1,524,000. No
+   * assertion depended on it, but a hand-computed comment whose only job is to
+   * be an audit trail must be right, or it costs the next reader time.)
+   *
+   * Flows ARE seeded here (the fixture from the 32.3 reconciliation) so the two
+   * kinds of number sit on screen together, which is the condition under which a
+   * mistaken denormalization would be written.
+   */
+  it('32.3: all three surfaces hold the same net worth at every duration, with flows on screen', () => {
+    seedSharedFixture()
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-salary',
+          userId: 0,
+          name: 'Salary',
+          amount: 200_000,
+          frequency: 'biweekly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-groceries',
+          userId: 0,
+          name: 'Groceries',
+          amount: 20_000,
+          frequency: 'weekly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+
+    const durations: readonly OverviewDuration[] = ['weekly', 'biweekly', 'monthly', 'annually']
+    for (const duration of durations) {
+      useOverviewDurationStore.setState({ duration })
+
+      const overview = netWorthTextFrom('overview')
+      const balance = netWorthTextFrom('balance')
+      const projection = netWorthTextFrom('projection')
+
+      expect(balance).toBe(overview)
+      expect(projection).toBe(overview)
+      // Pinned as well as compared: three surfaces agreeing on a period-scaled
+      // WRONG figure would satisfy the equalities on their own.
+      expect(overview).toContain('-127,000.00')
+    }
   })
 })

@@ -41,7 +41,12 @@ figure is an estimate rather than an exact calendar-month total. This lets incom
 and expenses with different frequencies be compared fairly. Totals are labelled
 with the period you choose — for example *(per month)* — and the info button on
 each figure shows the amount you entered before conversion. You can switch the
-overview between weekly, monthly, and annual totals with the duration selector.
+overview between weekly, biweekly, monthly, and annual totals with the duration
+selector.
+
+For the exact factors, a worked example, and why a total can land a few cents
+away from the same sum added up by hand, see
+[How totals are calculated](/docs/how-totals-are-calculated).
 
 ### Can I switch between currencies or hide currency symbols?
 

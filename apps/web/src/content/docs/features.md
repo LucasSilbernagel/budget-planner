@@ -24,6 +24,8 @@ model, because there is no model. This holds for every visitor on both tiers.
 - **A common monthly basis** — every value is converted to a per-month figure
   so totals are comparable; the conversion uses an average of about 4.33 weeks a
   month, so the monthly figure is an estimate.
+  [How totals are calculated](/docs/how-totals-are-calculated) sets out the exact
+  factors and a worked example.
 - **Savings goals** to track progress toward a target.
 - **Balance tracking** for investments and debts.
 - **Visual breakdowns** of income versus expenses and assets versus

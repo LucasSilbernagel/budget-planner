@@ -23,7 +23,9 @@ never connects to your bank.
 The **Expenses** page works the same way. Add each recurring expense with its
 amount and frequency. Longhand converts every entry to a common monthly
 basis before comparing them, so income and expenses with different frequencies
-line up correctly.
+line up correctly. If you want to check those figures against your own
+spreadsheet, [How totals are calculated](/docs/how-totals-are-calculated) gives
+the exact conversion.
 
 ### See your overview
 
