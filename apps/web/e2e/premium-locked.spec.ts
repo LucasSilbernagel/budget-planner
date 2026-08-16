@@ -207,3 +207,138 @@ test('30-1: only the route-backed tiles respond to hover (AC-4)', async ({ page 
     expect(await bgOf(sync), 'the listed sync benefit must not react to hover').toBe(syncRest)
   }
 })
+
+/** Every width the badge alignment must hold at (story 33.1, UX-DR39). */
+const ALIGNMENT_WIDTHS = [320, 375, 640, 768, 1024, 1280] as const
+
+/**
+ * How far apart the three badge left edges may sit, in px.
+ *
+ * 1.0 is chosen from measurement, not taste. The correct implementation — a
+ * chevron spacer mirroring the real glyph — measures 0.00px across six widths
+ * and six font stacks, with 0.00px run-to-run noise; a hard-coded px reserve
+ * drifts up to 1.20px by font; and the defect this must catch is 25.06–27.20px.
+ * So 1.0 is ~25x below the break (it cannot be accused of being unfalsifiable)
+ * while surviving sub-pixel flex/gap rounding. Do NOT relax it toward 25 —
+ * anything in the 2–20px range silently accepts a real half-fix.
+ */
+const BADGE_ALIGNMENT_TOLERANCE_PX = 1
+
+/**
+ * Same font pin as `responsive-320.spec.ts` (which owns the original and the
+ * story behind it: a 320px guard passed locally and failed in CI purely on glyph
+ * metrics, so every layout guard here forces the widest common Linux stack).
+ * Deliberately re-declared rather than exported across specs — nothing depends on
+ * these two strings matching; each spec pins its own measurement environment.
+ */
+const WIDE_FONT = '*,*::before,*::after{font-family:"DejaVu Sans"!important}'
+
+/**
+ * The three lock badges line up (story 33.1, UX-DR39).
+ *
+ * ⚠️ This CANNOT be a unit test. jsdom loads no CSS, so every rect reads 0,
+ * `getClientRects().length` is 0, and `getComputedStyle(box).display` is `block`
+ * rather than `flex` — `justify-between`, `mr-auto`, `gap-3` and `order-last`,
+ * every class that produces the defect, are inert there. A jsdom version of this
+ * assertion passes identically on broken and fixed code.
+ *
+ * ⚠️ It also cannot be an overflow check. Measured: `documentElement.scrollWidth`
+ * equals `clientWidth` in EVERY broken variant at every width, so the existing
+ * 320px sweep is structurally blind to misalignment.
+ *
+ * Asserted as a SPREAD across all three badges (max − min), never `Math.abs` on
+ * one pair and never at a single width. The half-fix that omits `mr-auto` from
+ * the sync label measures 0.00px at 320/375 and −276.93px at 1280 — negative and
+ * wide-only, so a narrow-only or single-direction check certifies it as correct.
+ *
+ * Relative deltas only, never an absolute x: absolute badge position swings
+ * 10.61px on font alone at 320px, which is exactly the local-green/CI-red failure
+ * the font pin exists to prevent.
+ */
+test('33.1: all three premium lock badges align at every width (UX-DR39)', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByTestId('premium-benefit-sync')).toBeVisible()
+  await expect(page.getByTestId('premium-gate-locked')).toHaveCount(2)
+  // Measure the RESOLVED free-tier state. The unresolved state renders an
+  // aria-hidden, `invisible` placeholder that still occupies layout, so measuring
+  // through it would compare a placeholder against two real badges.
+  await expect(page.getByTestId('premium-benefit-sync-badge-pending')).toHaveCount(0)
+
+  await page.addStyleTag({ content: WIDE_FONT })
+
+  // The affordance rule, checked in a real cascade before any geometry.
+  //
+  // ⚠️ Nothing else in the suite can see this. The alignment assertion below is
+  // INSENSITIVE to whether the sync chevron paints — its box is reserved either
+  // way, so a visible chevron yields the identical 0.00px spread. The unit test
+  // checks only the class TOKEN `invisible`, in jsdom, where `visibility` is
+  // never computed. So without this, a cascade regression (a later rule setting
+  // `visibility` on a `.text-accent` descendant, a Tailwind layer-order change)
+  // would ship a "tap me" affordance on the one box that is not openable, with
+  // every unit and e2e test green.
+  const chevronVisibility = await page.evaluate(() => {
+    const glyph = (nodes: Element | null) =>
+      [...(nodes?.querySelectorAll('span') ?? [])].find((s) => s.textContent?.trim() === '›')
+    const sync = glyph(document.querySelector('[data-testid="premium-benefit-sync"]'))
+    const tiles = [...document.querySelectorAll('[data-testid="premium-gate-locked"]')].map(
+      (tile) => glyph(tile)
+    )
+    return {
+      sync: sync ? getComputedStyle(sync).visibility : 'MISSING',
+      tiles: tiles.map((t) => (t ? getComputedStyle(t).visibility : 'MISSING')),
+    }
+  })
+  expect(chevronVisibility.sync, 'the sync chevron must reserve width without painting').toBe(
+    'hidden'
+  )
+  expect(chevronVisibility.tiles, 'the openable tiles must keep a VISIBLE chevron').toEqual([
+    'visible',
+    'visible',
+  ])
+
+  for (const width of ALIGNMENT_WIDTHS) {
+    await page.setViewportSize({ width, height: 720 })
+
+    const boxes = await page.evaluate(() => {
+      const nodes = [
+        document.querySelector('[data-testid="premium-benefit-sync"]'),
+        ...document.querySelectorAll('[data-testid="premium-gate-locked"]'),
+      ].filter((n): n is Element => n !== null)
+      return nodes.map((node) => {
+        const badges = node.querySelectorAll('.rounded-full')
+        return {
+          testid: (node as HTMLElement).dataset.testid ?? 'unknown',
+          badgeCount: badges.length,
+          x: badges.length === 1 ? badges[0].getBoundingClientRect().x : Number.NaN,
+        }
+      })
+    })
+
+    // Anti-vacuous: prove the fixture is what we think before believing the maths.
+    expect(boxes, `expected three benefit boxes at ${width}px`).toHaveLength(3)
+    for (const box of boxes) {
+      expect(box.badgeCount, `${box.testid} must carry exactly one lock badge at ${width}px`).toBe(
+        1
+      )
+    }
+
+    const xs = boxes.map((box) => box.x)
+    const spread = Math.max(...xs) - Math.min(...xs)
+    expect(
+      spread,
+      `badges misaligned at ${width}px — left edges ${xs.map((x) => x.toFixed(2)).join(', ')}`
+    ).toBeLessThanOrEqual(BADGE_ALIGNMENT_TOLERANCE_PX)
+
+    // The badge adds width to a box that had none, and the label reflows around
+    // it. Cheap companion check that it never spills the page at any width.
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }))
+    expect(
+      scrollWidth,
+      `overview overflows at ${width}px: ${scrollWidth} > ${clientWidth}`
+    ).toBeLessThanOrEqual(clientWidth)
+  }
+})

@@ -29,6 +29,7 @@ import {
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
+import { type PremiumAccessStatus, usePremiumAccess } from '../hooks/usePremiumAccess'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
@@ -43,7 +44,7 @@ import {
   useSetOverviewDuration,
 } from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
-import { PremiumFeatureGate } from './premium'
+import { PremiumFeatureGate, PremiumLockBadge } from './premium'
 import { InfoTooltip } from './ui/InfoTooltip'
 
 // Colors for the charts
@@ -73,6 +74,19 @@ export function HomePage() {
   // Below Tailwind `sm` (≤639px) charts must drop their desktop-width chrome
   // (vertical right legend, wide Y-axis) so the plot area stays usable at 320px.
   const isNarrowViewport = useIsNarrowViewport()
+
+  // The Premium Features section's sync box needs the tier to decide whether to
+  // show its lock badge (story 33.1, UX-DR39).
+  //
+  // ⚠️ This IS a third subscription — the two gated tiles each call
+  // `usePremiumAccess` internally (`PremiumFeatureGate.tsx:70`), and sync needs a
+  // tier signal it previously had none of, so the count goes 2 → 3 wherever the
+  // read is placed. Reading it here rather than inside the box saves nothing on
+  // that count; it keeps the section to ONE read per box instead of inviting a
+  // fourth if the box is later split. Each subscription is an independent,
+  // uncached check when the session seed is null (deferred-work.md:479) — see the
+  // divergence note on `SyncLockBadge`.
+  const { status: premiumStatus } = usePremiumAccess()
 
   // Theme-aware Recharts chrome (axis/grid/tooltip) for the summary bar chart so
   // it stays legible on the dark `.surface` card (story 11-2 / 12-4 AC-2).
@@ -739,11 +753,16 @@ export function HomePage() {
                 shares PREMIUM_BOX_BASE so the section reads as a single set;
                 only the two route-backed tiles add the interactive extras.
 
-                Multi-device sync is still an account-wide benefit and NOT an
-                openable page — there is no /sync route — so it stays LISTED as
-                static copy: never wrapped in a PremiumFeatureGate, never given a
-                lock badge, link, or "Open →" (story 20-2, CONTENT-G, still
-                binding). 30-1 changes only how it is PAINTED, not what it is.
+                The rule since story 33.1 (UX-DR39) is BADGE ON ALL THREE, ARROW
+                ON THE OPENABLE ONES ONLY. Multi-device sync is a premium benefit
+                like the other two, so it carries the same lock badge — but there
+                is still no /sync route, so it gains no link, no "Open →" and no
+                visible chevron, and it is never wrapped in a PremiumFeatureGate
+                (that would make it a button that opens an upgrade dialog). This
+                AMENDS story 20-2 / CONTENT-G, which withheld the badge from sync
+                on the grounds that a lock affordance implies an openable page;
+                UX-DR39 splits "is premium" from "is openable" instead. The badge
+                comes from `premiumStatus` above, not from a third gate.
                 It leads the section so the canonical benefit set reads first.
 
                 Each gate gets its own wrapper <div> inside the space-y-3 stack:
@@ -757,7 +776,8 @@ export function HomePage() {
                 className={`${PREMIUM_BOX_BASE} surface-inset`}
                 data-testid="premium-benefit-sync"
               >
-                <MultiDeviceSyncLabel />
+                <LockedTileContent label={<MultiDeviceSyncLabel />} chevronHidden />
+                <SyncLockBadge status={premiumStatus} />
               </div>
 
               <div>
@@ -1082,7 +1102,9 @@ const PREMIUM_BOX_BASE =
 const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2`
 
 /**
- * Locked-tile body: the feature label plus a persistent chevron (story 30-1).
+ * Benefit-box body: the feature label plus a chevron (story 30-1). Used by both
+ * gated tiles (chevron visible) and, since story 33.1, the sync box (chevron
+ * `invisible`, reserving width only).
  *
  * The chevron is the touch affordance. Once 30-1 removed the blue fill, hover
  * became the only thing separating a tappable tile from the listed sync
@@ -1096,18 +1118,113 @@ const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-le
  * badge, and the label takes `mr-auto` to absorb the free space so the badge
  * and chevron stay packed together on the right.
  *
- * `aria-hidden` because the gate's `<button>` already carries an accessible
- * name ("<feature> — premium, locked"); the glyph would only add noise.
+ * `aria-hidden` on the chevron for two different reasons depending on call site:
+ * in a gated tile the `<button>` already carries an accessible name
+ * ("<feature> — premium, locked") and the glyph would only add noise; in the sync
+ * box (story 33.1) the glyph is `invisible` and exists purely to reserve width,
+ * so announcing it would be announcing a spacer.
+ *
+ * ⚠️ `chevronHidden` is what keeps the three badges ALIGNED (story 33.1,
+ * UX-DR39). Whichever item is last in visual order sits flush against the
+ * content edge, so a badge with no chevron beside it lands ~26px right of one
+ * that has a chevron — measured at +25.06…+27.20px depending on font, which is
+ * exactly `chevron box width + gap-3`. The sync box therefore renders THIS
+ * component with the glyph made `invisible`: same element, same classes, same
+ * text, so the reserved width tracks the real glyph. Three things this must not
+ * become:
+ *   - `hidden` / `display:none` — collapses the box and reinstates the ~26px gap.
+ *   - a `w-[26px]`/`ch`/`em` literal — `›` is TEXT, 5.06–7.20px wide by font, so
+ *     a literal drifts (+1.20px under DejaVu Sans).
+ *   - a copied span in the sync box — a parity guarantee that re-implements
+ *     instead of importing guarantees nothing (story 32.2).
+ * And the `mr-auto` above is load-bearing for the same reason: without it the
+ * sync box has three flex children and no auto margin, so `justify-between`
+ * spreads them — measured at 0.00px at 320/375 but −259.45px at 1280 under the
+ * DejaVu Sans stack the alignment e2e pins (−276.93px in the default stack). The
+ * shape is what matters: invisible at narrow widths, enormous at wide ones.
  */
-function LockedTileContent({ label }: { label: React.ReactNode }): React.ReactElement {
+function LockedTileContent({
+  label,
+  chevronHidden = false,
+}: {
+  label: React.ReactNode
+  chevronHidden?: boolean
+}): React.ReactElement {
   return (
     <>
       <span className="mr-auto">{label}</span>
-      <span aria-hidden="true" className="order-last pl-2 text-lg leading-none text-accent">
+      <span
+        aria-hidden="true"
+        className={`order-last pl-2 text-lg leading-none text-accent${
+          chevronHidden ? ' invisible' : ''
+        }`}
+      >
         ›
       </span>
     </>
   )
+}
+
+/**
+ * The Multi-device sync box's lock badge (story 33.1, UX-DR39).
+ *
+ * Sync has no route, so it must not be a `PremiumFeatureGate` — that would make
+ * it a `<button>` owning an upgrade dialog, turn a listed benefit into an
+ * apparent link, and add a third non-portalled `Modal` to a page that already
+ * has two (deferred-work.md:477). This mirrors `CategoryPicker`, which
+ * implements the gate's three-state contract "without USING it" for the same
+ * reason: badge rendered directly on inert markup.
+ *
+ * The three states match `PremiumFeatureGate` exactly, in the same order:
+ *   - `isLoading` → an inert, aria-hidden placeholder. Reached when the session
+ *     seed is `null`, i.e. the resolver ERRORED (`session-seed.ts:44-50,73-79`
+ *     returns null = UNVERIFIED, never "signed out"). With a seed present — the
+ *     ordinary case — the tier is already resolved at SSR and at first client
+ *     paint, so this branch is NOT the normal server render.
+ *   - `hasAccess` → nothing.
+ *   - everything else (free / lapsed / unauthenticated / errored check) → the badge.
+ *
+ * ⚠️ Scope of the `hasAccess` branch: it guarantees THIS box shows no lock when
+ * THIS status says the user is entitled. It does not guarantee the section as a
+ * whole is lock-free for a paying user, because the two gates each own a separate
+ * `usePremiumAccess` subscription. With a seed all three read the same hydrated
+ * value and agree by construction; with a null seed all three fire independent,
+ * uncached checks (`usePremiumAccess.ts:193-198`, deferred-work.md:479), so they
+ * can resolve at different moments and, if one fails while the others succeed,
+ * can disagree for the rest of the session. Pre-existing between the two gates;
+ * this box joins that set rather than creating it. The real fix is the shared
+ * tier context already tracked in deferred-work, not a local workaround here.
+ *
+ * ⚠️ The placeholder wraps the REAL `<PremiumLockBadge />` in a
+ * `visibility:hidden` span so its width is the badge's own rather than a literal.
+ * That makes the reserved footprint correct BY CONSTRUCTION — it is not measured
+ * anywhere: jsdom computes no layout, and the alignment e2e deliberately waits
+ * the pending state out before measuring. Treat "no row shift on resolve" as a
+ * structural argument, not a tested claim.
+ *
+ * Fail-closed WITHOUT reading `status.error`, deliberately: no gate in this repo
+ * reads it, and an errored check already resolves to `hasAccess: false`, so it
+ * falls through to the badge on its own. An `error` branch here would be a
+ * divergence dressed up as caution.
+ */
+function SyncLockBadge({ status }: { status: PremiumAccessStatus }): React.ReactElement | null {
+  if (status.isLoading) {
+    return (
+      <span
+        aria-hidden="true"
+        className="invisible"
+        data-testid="premium-benefit-sync-badge-pending"
+      >
+        <PremiumLockBadge />
+      </span>
+    )
+  }
+
+  if (status.hasAccess) {
+    return null
+  }
+
+  return <PremiumLockBadge />
 }
 
 /**
@@ -1146,17 +1263,20 @@ function PremiumFeatureLabel(): React.ReactElement {
 }
 
 /**
- * Label for the Multi-device sync premium benefit (story 20-2, CONTENT-G).
- * Unlike Advanced Forecasting / Custom Profiles, sync is an account-wide benefit
- * with no route to open, so it is presented as a static listed benefit — never
- * wrapped in a PremiumFeatureGate and never given a link or lock badge. Copy is
- * kept consistent with the Features/Pricing "securely stored and synced" wording
- * and claims nothing sync does not do.
+ * Label for the Multi-device sync premium benefit (story 20-2, CONTENT-G;
+ * amended by story 33.1 / UX-DR39). Unlike Advanced Forecasting / Custom
+ * Profiles, sync is an account-wide benefit with no route to open, so it is
+ * presented as a static listed benefit — never wrapped in a PremiumFeatureGate
+ * and never given a link or an "Open →". Copy is kept consistent with the
+ * Features/Pricing "securely stored and synced" wording and claims nothing sync
+ * does not do.
  *
  * Since story 30-1 (FR51) its box shares PREMIUM_BOX_BASE with the two gated
- * tiles, so the section reads as one set. That is a purely visual change: the
- * 20-2 rule above is unchanged, and the difference that carries meaning is now
- * the affordance (hover + "Open →" on the openable tiles only), not the colour.
+ * tiles, so the section reads as one set. Story 33.1 completed that: sync now
+ * carries the same lock badge, because it is a premium benefit and the badge
+ * says "premium", not "tap me". The difference that carries meaning is the
+ * AFFORDANCE — hover, a visible chevron and "Open →" on the openable tiles only
+ * — not the colour and no longer the badge.
  */
 function MultiDeviceSyncLabel(): React.ReactElement {
   return (

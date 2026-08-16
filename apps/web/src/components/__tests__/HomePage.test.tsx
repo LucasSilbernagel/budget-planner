@@ -111,24 +111,110 @@ describe('HomePage premium discovery', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('20-2: lists Multi-device sync as an account-wide benefit — not a link or a locked page', () => {
-    // Story 20-2 (CONTENT-G): the Premium section must present the full canonical
-    // benefit set. Multi-device sync is an account-wide benefit, NOT a route — so
-    // it is LISTED (static copy), never a PremiumFeatureGate. It must not be a
-    // link, not a "premium, locked" button, and must not add a third "Premium"
-    // lock badge (only Forecasting + Custom Profiles are gated tiles).
+  it('33.1: badges every benefit including sync, but keeps sync unopenable (UX-DR39)', () => {
+    // ⚠️ This REPLACES story 20-2's rule, it does not extend it. 20-2 withheld the
+    // lock badge from Multi-device sync on the grounds that a lock affordance
+    // implies an openable page, and pinned that here as `toHaveLength(2)` — an
+    // assertion a code review then explicitly DISMISSED as correctly encoding
+    // "sync adds no third lock badge". UX-DR39 amends CONTENT-G: sync IS a premium
+    // benefit, so it now carries the same badge as the other two. What survives
+    // from 20-2 is the OTHER half — there is still no /sync route, so sync gains
+    // no arrow, no link and no gate button. Badge on all three; "Open →" on the
+    // two openable ones only.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
-    // The benefit is surfaced as text.
-    expect(screen.getByText('Multi-device sync')).toBeInTheDocument()
-    // …but never as an openable page or a lock affordance.
+    const sync = screen.getByTestId('premium-benefit-sync')
+    // The benefit is surfaced as text…
+    expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
+    // …and now carries the lock badge (the half of 20-2 that UX-DR39 retires).
+    expect(within(sync).getByText('Premium')).toBeInTheDocument()
+    // …but is still never an openable page or an interactive control.
     expect(screen.queryByRole('link', { name: /multi-device sync/i })).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: /multi-device sync — premium, locked/i })
     ).not.toBeInTheDocument()
-    // Exactly the two gated tiles carry a lock badge — sync adds none.
-    expect(screen.getAllByText('Premium')).toHaveLength(2)
+    expect(within(sync).queryByRole('button')).toBeNull()
+    expect(within(sync).queryByRole('link')).toBeNull()
+    expect(within(sync).queryByText('Open →')).toBeNull()
+
+    // All THREE boxes carry a badge now — this count was 2 before UX-DR39.
+    expect(screen.getAllByText('Premium')).toHaveLength(3)
+  })
+
+  it('33.1: shows no badge on sync while the tier is unresolved, but reserves its width', () => {
+    // AC-5. An errored SSR seed resolver yields `isLoading: true` (NOT signed
+    // out — `server/api/auth/session-seed.ts:44-50` returns null on error), so the
+    // loading branch is a real, reachable production state, not just first paint.
+    // Sync must not be the one box showing a lock while the tier is unknown.
+    //
+    // Scope note: the assertions below cover the SYNC box only. The claim that
+    // the gates also render no badge while loading is `PremiumFeatureGate`'s
+    // behaviour and is owned by `PremiumFeatureGate.test.tsx`, not proven here —
+    // asserted as the gate skeleton count so this test at least fails if the
+    // gates stop rendering skeletons in this state.
+    mockStatus({ hasAccess: false, isLoading: true, subscriptionStatus: null })
+    render(<HomePage />)
+
+    expect(screen.getAllByTestId('premium-gate-skeleton')).toHaveLength(2)
+    expect(screen.queryAllByTestId('premium-gate-locked')).toHaveLength(0)
+
+    const sync = screen.getByTestId('premium-benefit-sync')
+    const pending = within(sync).getByTestId('premium-benefit-sync-badge-pending')
+    expect(pending).toHaveAttribute('aria-hidden', 'true')
+    expect(pending.className.split(/\s+/)).toContain('invisible')
+
+    // The placeholder holds the REAL badge so the reserved width tracks the real
+    // glyph rather than a px literal — which means "Premium" is in the DOM here.
+    // What must hold is that it is the ONLY one in the box and that it is the
+    // hidden one: neither visible (`invisible`) nor announced (`aria-hidden`).
+    // Asserting `queryByText(...)` is null would be asserting the wrong thing.
+    const badges = within(sync).getAllByText('Premium')
+    expect(badges).toHaveLength(1)
+    expect(pending).toContainElement(badges[0])
+  })
+
+  it('33.1: badges sync when the tier check errors — fail-closed (AC-5)', () => {
+    // No gate in this repo reads `status.error`; fail-closed works because an
+    // errored check resolves to `hasAccess: false` and falls through to the locked
+    // branch. Sync must inherit that contract rather than inventing an error path.
+    mockStatus({
+      hasAccess: false,
+      isLoading: false,
+      error: 'network',
+      subscriptionStatus: 'free',
+      isAuthenticated: false,
+    })
+    render(<HomePage />)
+
+    const sync = screen.getByTestId('premium-benefit-sync')
+    expect(within(sync).getByText('Premium')).toBeInTheDocument()
+    expect(within(sync).queryByTestId('premium-benefit-sync-badge-pending')).toBeNull()
+  })
+
+  it('33.1: shows a paid user no lock badge on sync either (AC-4)', () => {
+    // The page-wide `queryByText('Premium')` assertion in the paid-tier test at
+    // the top of this describe block (`AC-3: … no badge for a paid user`) also
+    // fails if the sync badge is unconditional. This one names the box, so the
+    // failure message points at sync rather than at "somewhere on the page".
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<HomePage />)
+
+    const sync = screen.getByTestId('premium-benefit-sync')
+    expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
+    expect(within(sync).queryByText('Premium')).toBeNull()
+    expect(within(sync).queryByTestId('premium-benefit-sync-badge-pending')).toBeNull()
+
+    // AC-4's other half, asserted here rather than assumed: the openable boxes
+    // still link through and still carry their "Open →" for an entitled user.
+    for (const [name, href] of [
+      [/advanced forecasting/i, '/forecasting'],
+      [/custom profiles/i, '/profiles'],
+    ] as const) {
+      const link = screen.getByRole('link', { name })
+      expect(link).toHaveAttribute('href', href)
+      expect(within(link).getByText('Open →')).toBeInTheDocument()
+    }
   })
 
   it('30-1: all three premium benefit boxes share one chassis (AC-1/AC-3)', () => {
@@ -232,7 +318,18 @@ describe('HomePage premium discovery', () => {
       expect(chevron).toHaveAttribute('aria-hidden', 'true')
     }
 
-    expect(within(screen.getByTestId('premium-benefit-sync')).queryByText('›')).toBeNull()
+    // 33.1 (AC-2/AC-3): sync now RESERVES the chevron's box so its badge lines up
+    // with the other two badges, but the glyph itself is invisible — the visible
+    // chevron stays the openable tiles' affordance. `invisible` (visibility:hidden)
+    // keeps the layout box; `hidden`/`display:none` would collapse it and put the
+    // badge ~26px out of line. The reserve mirrors the REAL glyph rather than a px
+    // literal because `›` is text and its width varies 5.06–7.20px by font.
+    const syncChevron = within(screen.getByTestId('premium-benefit-sync')).getByText('›')
+    expect(syncChevron.className.split(/\s+/)).toContain('invisible')
+    expect(syncChevron).toHaveAttribute('aria-hidden', 'true')
+    for (const tile of tiles) {
+      expect(within(tile).getByText('›').className.split(/\s+/)).not.toContain('invisible')
+    }
   })
 
   it('20-2: explains Custom Profiles with a concrete example (CONTENT-H)', () => {
