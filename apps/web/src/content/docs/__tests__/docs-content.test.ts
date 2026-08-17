@@ -242,15 +242,37 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(free).toContain('estimate')
   })
 
-  // The Features page splits into a Free section and a Premium section; the two
-  // guards below assert *which* section a claim lives in, not just that a
+  // The Features page splits into an intro, a Free section and a Premium section;
+  // the guards below assert *which* section a claim lives in, not just that a
   // substring appears somewhere on the page.
+  //
+  // ⚠️ `free` is everything ABOVE the Premium heading, which means it includes the
+  // INTRO PARAGRAPH as well as the Free tier list. That conflation was harmless
+  // only for as long as the intro named a subset of the Premium benefits. Story
+  // 33.2 (FR56) requires the intro to enumerate the whole Premium set, at which
+  // point `expect(free).not.toContain('custom categories')` started failing on a
+  // sentence that reads "a Premium tier that adds … custom categories" — i.e. the
+  // assertion failed on copy that says exactly what the assertion wants to be true.
+  //
+  // So tier-PLACEMENT claims now use `freeTier`, the Free bullet list alone. A
+  // negative scoped to a slice is only as precise as the slice: this one was
+  // measuring "appears anywhere before the Premium heading" while claiming to
+  // measure "is advertised as a Free feature".
   const featureSections = () => {
     const content = getDocPage('features')?.content ?? ''
     const premiumIndex = content.indexOf('### Premium tier')
     if (premiumIndex === -1) throw new Error('Features page is missing the Premium tier section')
+    const freeIndex = content.indexOf('### Free tier')
+    if (freeIndex === -1) throw new Error('Features page is missing the Free tier section')
+    // Without this, a reordered file makes `freeTier` the EMPTY STRING and every
+    // `expect(freeTier).not.toContain(...)` below passes vacuously — including the
+    // categories tier-placement half, which has no positive to catch it indirectly.
+    if (freeIndex >= premiumIndex) {
+      throw new Error('Features page lists the Premium tier before the Free tier')
+    }
     return {
       free: content.slice(0, premiumIndex).toLowerCase(),
+      freeTier: content.slice(freeIndex, premiumIndex).toLowerCase(),
       premium: content.slice(premiumIndex).toLowerCase(),
     }
   }
@@ -265,28 +287,40 @@ describe('documentation content accuracy (story 10-4)', () => {
   })
 
   it('the Features page lists Dark mode under the Free tier, not Premium (story 25-3)', () => {
-    // Story 25-3 moved dark mode to Free: it must appear in the Free section and
-    // NOT be advertised under Premium.
-    const { free, premium } = featureSections()
-    expect(free).toContain('dark mode')
+    // Story 25-3 moved dark mode to Free: it must appear in the Free bullet list
+    // and NOT be advertised under Premium.
+    const { freeTier, premium } = featureSections()
+    expect(freeTier).toContain('dark mode')
     expect(premium).not.toContain('dark mode')
   })
 
   it('the Features page keeps Retirement modeling under the Free tier (story 13-1, AC-4)', () => {
     // AC-4 do-not-regress guard: retirement stays Free (decided 2026-07-06) — it
-    // must appear in the Free section and NOT be advertised under Premium.
-    const { free, premium } = featureSections()
-    expect(free).toContain('retirement modeling')
+    // must appear in the Free bullet list and NOT be advertised under Premium.
+    const { freeTier, premium } = featureSections()
+    expect(freeTier).toContain('retirement modeling')
     expect(premium).not.toContain('retirement modeling')
   })
 
   it('the Features page documents Custom categories under Premium only (story 30.4b, AC-8)', () => {
-    // Decision 9: categories are documented here and NOWHERE else — the canonical
-    // three-benefit set (premium-prompt / pricing-page) stays at three, which is
-    // what keeps all five pinned count assertions passing.
-    const { free, premium } = featureSections()
+    // Categories are a Premium benefit: they must be documented in the Premium
+    // section and must never appear as a Free tier bullet.
+    //
+    // ⚠️ This comment used to say "categories are documented here and NOWHERE else
+    // — the canonical three-benefit set (premium-prompt / pricing-page) stays at
+    // three, which is what keeps all five pinned count assertions passing." That is
+    // now false in every clause: story 33.2 (FR56) added categories to /pricing, the
+    // upgrade prompt and the Overview precisely BECAUSE documenting them here and
+    // nowhere else meant a paying user could not discover a feature they had bought.
+    // The set is five, and the count assertions are derived from
+    // PREMIUM_BENEFIT_IDS.length rather than pinned to a literal.
+    //
+    // The negative is scoped to `freeTier`, not `free`: the intro paragraph now
+    // enumerates the Premium set, so it names categories while correctly attributing
+    // them to Premium. See the note on `featureSections`.
+    const { freeTier, premium } = featureSections()
     expect(premium).toContain('custom categories')
-    expect(free).not.toContain('custom categories')
+    expect(freeTier).not.toContain('custom categories')
   })
 
   it('the Custom categories bullet documents the per-category breakdown (story 30.5)', () => {
@@ -294,6 +328,12 @@ describe('documentation content accuracy (story 10-4)', () => {
     // which the Advanced forecasting and overview copy could also carry: the
     // "share of that side" framing is what 30.5 actually shipped, and it is
     // what would go missing if the sentence were dropped.
+    // ⚠️ Deliberately still scoped to `free` (intro + Free list), NOT the narrower
+    // `freeTier`. The rescope elsewhere in this file exists only for anchors the
+    // intro must now legitimately contain — benefit NAMES. This phrase is not one of
+    // them, so narrowing it would have been a silent weakening dressed up as part of
+    // one uniform cleanup: it would let breakdown wording appear, mis-tiered, above
+    // the fold. Narrow a negative only when something forces you to.
     const { premium, free } = featureSections()
     expect(premium).toContain('what share of that side it is')
     expect(premium).toContain('uncategorized line')

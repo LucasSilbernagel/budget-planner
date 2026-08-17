@@ -10,6 +10,7 @@
 
 import { Link } from '@tanstack/react-router'
 import React from 'react'
+import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { Modal } from '../ui/Modal'
 
 // ============================================================================
@@ -42,23 +43,43 @@ export interface PremiumPromptProps {
 // Constants
 // ============================================================================
 
-// The canonical Premium benefit set — exactly these three, matched across every
-// surface that advertises Premium (HomePage, Features, Pricing) per Epic 20 /
-// Story 25.3. Keep to benefits the app actually delivers (Story 13.1); no
-// overpromises and no "coming soon" padding. Dark mode is NOT here — it is a
-// free feature for all users (Story 25.3); ad-freeness is universal, not a perk
-// (Story 25.1).
-//
-// Story 30.2 named the forecasting capability explicitly rather than leaving it
-// at "Scenario Modeling": reload shipped in story bug-3, so saved forecasts can
-// now be reopened in the builder. Keep this item terse — it sits beside two
-// ~20-character siblings in a scannable list — and never claim a side-by-side
-// comparison of two saved forecasts, which does not exist.
-const PREMIUM_FEATURES = [
-  'Multi-Device Data Sync',
-  'Custom User Profiles',
-  'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
-]
+/**
+ * This surface's copy for the canonical Premium benefit set.
+ *
+ * ⚠️ The set itself — which benefits, in what order — lives in
+ * `lib/premium/benefits.ts`, so dropping or inventing one here is a **compile
+ * error**. This comment previously said "exactly these three, matched across every
+ * surface that advertises Premium"; the *matched across every surface* half was
+ * aspirational — nothing enforced it, and by story 33.2 three of the four surfaces
+ * disagreed. It is now enforced by
+ * `components/premium/__tests__/benefit-set-parity.test.tsx`, and the set is FIVE:
+ * FR56 / story 33.2 added the financial summary report (FR53) and custom
+ * categories with their breakdown (FR54), both shipped in Epic 30 and listed
+ * nowhere until then.
+ *
+ * Still binding: keep to benefits the app actually delivers (Story 13.1); no
+ * overpromises and no "coming soon" padding. Dark mode is NOT here — it is a free
+ * feature for all users (Story 25.3); ad-freeness is universal, not a perk
+ * (Story 25.1).
+ *
+ * Story 30.2 named the forecasting capability explicitly rather than leaving it at
+ * "Scenario Modeling": reload shipped in story bug-3, so saved forecasts can now
+ * be reopened in the builder. Never claim a side-by-side comparison of two saved
+ * forecasts, which does not exist.
+ *
+ * These are deliberately TERSE names, not sentences — they sit in a scannable
+ * list beside a check glyph, and the list is now five rows in a dialog that must
+ * still fit a 320×480 viewport. The `categories` row names the breakdown because
+ * the manager and the breakdown share one route and one benefit entry; dropping
+ * the words "Category Breakdown" would silently drop half of FR54.
+ */
+export const PREMIUM_FEATURES: Record<PremiumBenefitId, string> = {
+  sync: 'Multi-Device Data Sync',
+  forecasting: 'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
+  profiles: 'Custom User Profiles',
+  report: 'Financial Summary Report',
+  categories: 'Custom Categories & Category Breakdown',
+}
 
 const DEFAULT_MESSAGE =
   'This is a premium feature. Please upgrade to access advanced financial tools and insights.'
@@ -198,7 +219,7 @@ function PremiumPromptContent({
           What you get:
         </h3>
         <ul className="space-y-2">
-          {PREMIUM_FEATURES.map((feature) => (
+          {PREMIUM_BENEFIT_IDS.map((id) => PREMIUM_FEATURES[id]).map((feature) => (
             <li
               key={feature}
               className="flex items-center text-sm text-gray-600 dark:text-gray-400"

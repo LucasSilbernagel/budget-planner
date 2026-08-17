@@ -1,10 +1,11 @@
 ## Simple, transparent pricing
 
-_Last updated: 7 August 2026_
+_Last updated: 17 August 2026_
 
 Longhand Budget has two tiers. Use the core planner for free, forever — no account
-required — or upgrade to Premium for multi-device sync, custom profiles, and
-advanced forecasting. The plans are compared above.
+required — or upgrade to Premium for multi-device sync, custom profiles, advanced
+forecasting, a financial summary report, and custom categories with a per-category
+breakdown. The plans are compared above.
 
 ### Billing & payments
 

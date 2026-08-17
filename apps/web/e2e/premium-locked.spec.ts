@@ -1,4 +1,21 @@
 import { expect, test } from '@playwright/test'
+import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../src/lib/premium/benefits'
+
+/**
+ * Benefits with no page to open. Sync is the only one — it is an account-wide
+ * capability with no `/sync` route (see `OVERVIEW_BENEFITS` in `HomePage.tsx`,
+ * which is the authority). Everything else renders as a `PremiumFeatureGate`.
+ *
+ * The canonical SET is imported rather than hard-coded, deliberately: story 33.2
+ * grew it from three benefits to five and had to hunt six stale literal 3s and 2s
+ * out of four files. `OVERVIEW_BENEFITS` itself is not imported here because it
+ * pulls React and Recharts into the Playwright process; this one fact is restated
+ * instead, and the box-count assertions below fail loudly if it goes wrong.
+ */
+const UNOPENABLE_BENEFIT_IDS = ['sync'] as const satisfies readonly PremiumBenefitId[]
+
+/** How many benefit boxes render as gated tiles. */
+const OPENABLE_COUNT = PREMIUM_BENEFIT_IDS.length - UNOPENABLE_BENEFIT_IDS.length
 
 /**
  * Premium locked-state E2E (story 7-2, FR24).
@@ -60,7 +77,7 @@ test('free visitor sees Advanced Forecasting locked and can open the upgrade pro
 
 const THEME_KEY = 'budget-planner-theme-prefs-v1'
 
-/** Computed chassis styles of the three premium benefit boxes, in DOM order. */
+/** Computed chassis styles of every premium benefit box, in DOM order. */
 function readBoxes(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     const nodes = [
@@ -93,7 +110,7 @@ async function gotoWithTheme(page: import('@playwright/test').Page, theme: 'ligh
   ] as const)
   await page.goto('/')
   await expect(page.getByTestId('premium-benefit-sync')).toBeVisible()
-  await expect(page.getByTestId('premium-gate-locked')).toHaveCount(2)
+  await expect(page.getByTestId('premium-gate-locked')).toHaveCount(OPENABLE_COUNT)
   await expect
     .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
     .toBe(theme === 'dark')
@@ -111,12 +128,12 @@ async function gotoWithTheme(page: import('@playwright/test').Page, theme: 'ligh
  * jsdom cannot do this: it computes no layout and no cascade, so the equivalent
  * unit assertion would pass vacuously.
  */
-test('30-1: the three premium benefit boxes are theme-correct and fit 320px', async ({ page }) => {
+test('30-1: every premium benefit box is theme-correct and fits 320px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
 
   await gotoWithTheme(page, 'light')
   const light = await readBoxes(page)
-  expect(light).toHaveLength(3)
+  expect(light).toHaveLength(PREMIUM_BENEFIT_IDS.length)
 
   // AC-1: one chassis — every box agrees on border colour and radius.
   for (const box of light) {
@@ -141,7 +158,7 @@ test('30-1: the three premium benefit boxes are theme-correct and fit 320px', as
   // assertion that cannot fail is worse than none.
   await gotoWithTheme(page, 'dark')
   const dark = await readBoxes(page)
-  expect(dark).toHaveLength(3)
+  expect(dark).toHaveLength(PREMIUM_BENEFIT_IDS.length)
   for (const [i, box] of dark.entries()) {
     expect(box.bg, `box ${i} did not repaint in dark`).not.toBe(light[i].bg)
     expect(box.border, `box ${i} border did not repaint in dark`).not.toBe(light[i].border)
@@ -234,7 +251,8 @@ const BADGE_ALIGNMENT_TOLERANCE_PX = 1
 const WIDE_FONT = '*,*::before,*::after{font-family:"DejaVu Sans"!important}'
 
 /**
- * The three lock badges line up (story 33.1, UX-DR39).
+ * Every lock badge lines up (story 33.1, UX-DR39; extended to the full canonical
+ * set by story 33.2).
  *
  * ⚠️ This CANNOT be a unit test. jsdom loads no CSS, so every rect reads 0,
  * `getClientRects().length` is 0, and `getComputedStyle(box).display` is `block`
@@ -246,23 +264,29 @@ const WIDE_FONT = '*,*::before,*::after{font-family:"DejaVu Sans"!important}'
  * equals `clientWidth` in EVERY broken variant at every width, so the existing
  * 320px sweep is structurally blind to misalignment.
  *
- * Asserted as a SPREAD across all three badges (max − min), never `Math.abs` on
- * one pair and never at a single width. The half-fix that omits `mr-auto` from
- * the sync label measures 0.00px at 320/375 and −276.93px at 1280 — negative and
- * wide-only, so a narrow-only or single-direction check certifies it as correct.
+ * Asserted as a SPREAD across ALL badges (max − min), never `Math.abs` on one pair
+ * and never at a single width. The half-fix that omits `mr-auto` from a label
+ * measures 0.00px at 320/375 and −276.93px at 1280 — negative and wide-only, so a
+ * narrow-only or single-direction check certifies it as correct.
+ *
+ * Story 33.2 grew the set from three boxes to five. Measured before writing the
+ * story: the two added boxes land on EXACTLY the same badge x as the original three
+ * (0.00px spread at all six widths), because `mr-auto` absorbs all label and
+ * sub-text length — alignment here is label-length-invariant, so this assertion is
+ * a regression guard rather than a risk the story took on.
  *
  * Relative deltas only, never an absolute x: absolute badge position swings
  * 10.61px on font alone at 320px, which is exactly the local-green/CI-red failure
  * the font pin exists to prevent.
  */
-test('33.1: all three premium lock badges align at every width (UX-DR39)', async ({ page }) => {
+test('33.1: every premium lock badge aligns at every width (UX-DR39)', async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   await expect(page.getByTestId('premium-benefit-sync')).toBeVisible()
-  await expect(page.getByTestId('premium-gate-locked')).toHaveCount(2)
+  await expect(page.getByTestId('premium-gate-locked')).toHaveCount(OPENABLE_COUNT)
   // Measure the RESOLVED free-tier state. The unresolved state renders an
   // aria-hidden, `invisible` placeholder that still occupies layout, so measuring
-  // through it would compare a placeholder against two real badges.
+  // through it would compare a placeholder against the real badges.
   await expect(page.getByTestId('premium-benefit-sync-badge-pending')).toHaveCount(0)
 
   await page.addStyleTag({ content: WIDE_FONT })
@@ -292,10 +316,9 @@ test('33.1: all three premium lock badges align at every width (UX-DR39)', async
   expect(chevronVisibility.sync, 'the sync chevron must reserve width without painting').toBe(
     'hidden'
   )
-  expect(chevronVisibility.tiles, 'the openable tiles must keep a VISIBLE chevron').toEqual([
-    'visible',
-    'visible',
-  ])
+  expect(chevronVisibility.tiles, 'the openable tiles must keep a VISIBLE chevron').toEqual(
+    Array.from({ length: OPENABLE_COUNT }, () => 'visible')
+  )
 
   for (const width of ALIGNMENT_WIDTHS) {
     await page.setViewportSize({ width, height: 720 })
@@ -316,7 +339,10 @@ test('33.1: all three premium lock badges align at every width (UX-DR39)', async
     })
 
     // Anti-vacuous: prove the fixture is what we think before believing the maths.
-    expect(boxes, `expected three benefit boxes at ${width}px`).toHaveLength(3)
+    expect(
+      boxes,
+      `expected ${PREMIUM_BENEFIT_IDS.length} benefit boxes at ${width}px`
+    ).toHaveLength(PREMIUM_BENEFIT_IDS.length)
     for (const box of boxes) {
       expect(box.badgeCount, `${box.testid} must carry exactly one lock badge at ${width}px`).toBe(
         1
@@ -342,3 +368,67 @@ test('33.1: all three premium lock badges align at every width (UX-DR39)', async
     ).toBeLessThanOrEqual(clientWidth)
   }
 })
+
+/**
+ * EVERY gated benefit's upgrade overlay covers the whole viewport (story 33.2, AC-7).
+ *
+ * ⚠️ This exists because the guard at the top of this file — the one whose comment
+ * explains the non-portalled-Modal hazard in detail — only ever opens the FIRST
+ * gate. It has been protecting one wrapper `<div>` out of two since story 30-1, and
+ * story 33.2 took that to four. A missing wrapper on any later box would have
+ * shipped with the whole suite green: the defect is a 12px undimmed strip at the top
+ * of a dialog nothing else opens.
+ *
+ * The mechanism, restated because it is not obvious from the markup: `ui/Modal.tsx`
+ * has no `createPortal`, and `PremiumFeatureGate` returns a FRAGMENT of its
+ * `<button>` plus a `<PremiumPrompt asDialog>`. Dropped straight into the
+ * `space-y-3` stack, the overlay becomes a spaced sibling, inherits
+ * `margin-top: .75rem`, and — being `fixed inset-0` with `height: auto` — shrinks by
+ * exactly that margin.
+ *
+ * Measured at both extremes because the stack's spacing is width-independent but the
+ * failure is a vertical offset: a wide viewport is where a 12px strip is least
+ * visible to a human reviewer and most likely to be waved through.
+ */
+for (const width of [320, 1280] as const) {
+  test(`33.2: every gated benefit's upgrade overlay covers the viewport at ${width}px (AC-7)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 720 })
+
+    for (let index = 0; index < OPENABLE_COUNT; index++) {
+      // Reload between gates: each gate owns its own `isPromptOpen` state and
+      // `Modal` assumes a single modal is open at a time (deferred-work.md:477), so
+      // opening a second prompt without closing the first would measure a state the
+      // app does not actually reach.
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      await expect(page.getByTestId('premium-gate-locked')).toHaveCount(OPENABLE_COUNT)
+
+      const gate = page.getByTestId('premium-gate-locked').nth(index)
+      const label = (await gate.getAttribute('aria-label')) ?? `gate ${index}`
+
+      // Same hydration-tolerant click as the first test in this file: the resolved
+      // locked control paints in the SSR HTML (story UX-1), so it is clickable
+      // before React wires up its onClick.
+      const goPremium = page.getByRole('heading', { name: /go premium/i })
+      await expect(async () => {
+        if (!(await goPremium.isVisible())) {
+          await gate.click()
+        }
+        await expect(goPremium).toBeVisible({ timeout: 1000 })
+      }).toPass()
+
+      const overlay = await page.locator('.fixed.inset-0').first().boundingBox()
+      const viewport = page.viewportSize()
+      expect(overlay, `${label}: the upgrade dialog overlay must be measurable`).not.toBeNull()
+      expect(
+        overlay?.y,
+        `${label}: overlay is offset from the top — this gate lost its wrapper div`
+      ).toBe(0)
+      expect(overlay?.height, `${label}: overlay does not span the viewport height`).toBe(
+        viewport?.height
+      )
+    }
+  })
+}

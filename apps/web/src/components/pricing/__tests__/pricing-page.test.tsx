@@ -5,13 +5,20 @@
  * PREMIUM_FEATURES arrays (separate from the pricing.md prose below them). These
  * guards pin the canonical split so a future edit can't reintroduce "Dark mode"
  * or "No ads" as a Premium perk on this surface — the exact miss this test closes:
- *   - Premium = exactly the 3 canonical benefits (Multi-device sync · Custom
- *     profiles · Advanced forecasting), never Dark mode or No ads.
+ *   - Premium = exactly the canonical benefit set of `lib/premium/benefits.ts`
+ *     (five since story 33.2 / FR56: multi-device sync · advanced forecasting ·
+ *     custom profiles · financial summary report · custom categories), never Dark
+ *     mode or No ads.
  *   - Dark mode is a FREE feature (story 25-3).
+ *
+ * Story 33.2 added the COUNT assertion this file was missing. Cross-surface parity
+ * (no surface omitting or inventing a benefit) is asserted once, centrally, in
+ * `components/premium/__tests__/benefit-set-parity.test.tsx`.
  */
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { PREMIUM_BENEFIT_IDS } from '../../../lib/premium/benefits'
 import { PricingPageView } from '../pricing-page'
 
 // Each plan renders as a card <div> whose first child is an <h2>{name}</h2>.
@@ -23,14 +30,32 @@ function card(name: string): HTMLElement {
 }
 
 describe('PricingPageView benefit lists', () => {
-  it('lists exactly the three canonical Premium benefits — no Dark mode, no No ads', () => {
+  it('lists exactly the canonical Premium benefit set — no Dark mode, no No ads', () => {
     render(<PricingPageView />)
     const premium = within(card('Premium'))
 
+    // ⚠️ This COUNT is the point of the test and it was missing until story 33.2.
+    // Before then the test was named "lists exactly the three canonical Premium
+    // benefits" but its body was three `getByText` calls and two negatives — so a
+    // fourth, fifth or sixth bullet passed it SILENTLY. The name was a claim about
+    // assertions the file did not contain. Derived from PREMIUM_BENEFIT_IDS.length
+    // rather than a literal so the next addition to the set cannot re-open the hole.
+    expect(premium.getAllByRole('listitem')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
+
     expect(premium.getByText('Multi-device sync, securely stored in the EU')).toBeInTheDocument()
-    expect(premium.getByText('Custom profiles (e.g. personal vs. household)')).toBeInTheDocument()
     expect(
       premium.getByText('Advanced forecasting — save, search, and reload what-if scenarios')
+    ).toBeInTheDocument()
+    expect(premium.getByText('Custom profiles (e.g. personal vs. household)')).toBeInTheDocument()
+    expect(
+      premium.getByText(
+        'Financial summary report — save your budget, net worth and savings as a PDF from your browser'
+      )
+    ).toBeInTheDocument()
+    expect(
+      premium.getByText(
+        'Custom income and expense categories, with a breakdown of what each one totals'
+      )
     ).toBeInTheDocument()
 
     // The ungated (25-3) / removed-ads (25-1) benefits must NOT be Premium perks.

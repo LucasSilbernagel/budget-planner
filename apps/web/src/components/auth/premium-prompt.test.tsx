@@ -1,5 +1,6 @@
 import { fireEvent, renderWithRouter, screen, within } from '@/test/utils'
 import { describe, expect, it, vi } from 'vitest'
+import { PREMIUM_BENEFIT_IDS } from '../../lib/premium/benefits'
 import { PremiumPrompt } from './premium-prompt'
 
 /**
@@ -9,32 +10,43 @@ import { PremiumPrompt } from './premium-prompt'
  * must show EXACTLY the canonical Premium benefit set and NO "+ more features
  * coming soon" placeholder. Before this file `premium-prompt.tsx` had no test,
  * so nothing stopped a future edit from reintroducing the placeholder, padding
- * the list past three, or listing a benefit that is actually free/universal
- * (Dark mode → free per 25-3; ad-freeness is universal per 25-1).
+ * the list, or listing a benefit that is actually free/universal (Dark mode →
+ * free per 25-3; ad-freeness is universal per 25-1).
  *
- * These pins encode the SCP 2026-07-18 canonical set:
- *   Multi-device sync · Custom profiles · Advanced forecasting.
+ * These pins encoded the SCP 2026-07-18 canonical set (multi-device sync · custom
+ * profiles · advanced forecasting). Story 33.2 / FR56 **amended** that set to five
+ * by adding the three Epic-30 capabilities that shipped and were listed nowhere —
+ * the financial summary report (FR53), user-defined categories, and the category
+ * breakdown view (FR54) — as TWO entries, because the categories manager and the
+ * breakdown share the `/categories` route and are therefore one benefit whose copy
+ * must name both (see `lib/premium/benefits.ts` for the full rationale). The counts below are derived from `PREMIUM_BENEFIT_IDS.length`, not
+ * written as literals, so the next amendment cannot leave a stale hard-coded
+ * number behind — which is exactly what had to be hunted down across six files
+ * to land 33.2.
  *
  * Rendered with `renderWithRouter` because the CTA is a TanStack Router `<Link>`
  * that needs a router in scope (see Footer.test.tsx for the same pattern).
  */
 
-/** The exact benefit strings the prompt must list — and only these three. */
+/** The exact benefit strings the prompt must list — and only these. */
 const CANONICAL_BENEFITS = [
   'Multi-Device Data Sync',
-  'Custom User Profiles',
   'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
+  'Custom User Profiles',
+  'Financial Summary Report',
+  'Custom Categories & Category Breakdown',
 ]
 
 describe('PremiumPrompt benefit list (story 20-3)', () => {
-  it('lists exactly the three canonical benefits and no more (inline)', async () => {
+  it('lists exactly the canonical benefit set and no more (inline)', async () => {
     renderWithRouter(<PremiumPrompt />)
 
     const list = await screen.findByRole('list')
     const items = within(list).getAllByRole('listitem')
 
-    // Exactly three — a 4th item or a "coming soon" row would break this.
-    expect(items).toHaveLength(3)
+    // An extra item or a "coming soon" row would break this.
+    expect(items).toHaveLength(PREMIUM_BENEFIT_IDS.length)
+    expect(CANONICAL_BENEFITS).toHaveLength(PREMIUM_BENEFIT_IDS.length)
     for (const benefit of CANONICAL_BENEFITS) {
       expect(within(list).getByText(benefit)).toBeInTheDocument()
     }
@@ -50,14 +62,14 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
     expect(screen.queryByText(/no ads/i)).not.toBeInTheDocument()
   })
 
-  it('renders as an accessible dialog named "Go Premium" with the same three benefits', async () => {
+  it('renders as an accessible dialog named "Go Premium" with the same benefit set', async () => {
     renderWithRouter(<PremiumPrompt asDialog onClose={vi.fn()} />)
 
     const dialog = await screen.findByRole('dialog', { name: /go premium/i })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
 
     const list = within(dialog).getByRole('list')
-    expect(within(list).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(list).getAllByRole('listitem')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
     for (const benefit of CANONICAL_BENEFITS) {
       expect(within(list).getByText(benefit)).toBeInTheDocument()
     }

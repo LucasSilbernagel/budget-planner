@@ -29,7 +29,31 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-import { HomePage, pieSliceLabel } from '../HomePage'
+import { PREMIUM_BENEFIT_IDS } from '../../lib/premium/benefits'
+import { HomePage, OVERVIEW_BENEFITS, pieSliceLabel } from '../HomePage'
+
+/**
+ * How many benefit boxes are route-backed, i.e. render as `PremiumFeatureGate`
+ * tiles rather than as the static sync `<div>`.
+ *
+ * Derived from the shipped map, never written as a literal. Story 33.2 had to hunt
+ * down six separate hard-coded 3s and 2s across four files to expand the set from
+ * three benefits to five; deriving means the next amendment cannot leave a stale
+ * number behind in this file.
+ */
+const OPENABLE_COUNT = PREMIUM_BENEFIT_IDS.filter((id) => OVERVIEW_BENEFITS[id].openable).length
+
+/** Every openable benefit's accessible-name matcher paired with its route. */
+const OPENABLE_ROUTES = PREMIUM_BENEFIT_IDS.flatMap((id) => {
+  const benefit = OVERVIEW_BENEFITS[id]
+  if (!benefit.openable) return []
+  // Escaped: this helper's whole promise is that a new openable benefit needs no
+  // edit here, and an unescaped `featureName` containing a regex metacharacter
+  // ("Reports (beta)", "Sync + Backup") breaks on exactly the additions it claims
+  // to absorb — silently matching the wrong element or none.
+  const name = new RegExp(benefit.featureName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+  return [[name, benefit.href] as const]
+})
 
 function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   const status: PremiumAccessStatus = {
@@ -138,8 +162,9 @@ describe('HomePage premium discovery', () => {
     expect(within(sync).queryByRole('link')).toBeNull()
     expect(within(sync).queryByText('Open →')).toBeNull()
 
-    // All THREE boxes carry a badge now — this count was 2 before UX-DR39.
-    expect(screen.getAllByText('Premium')).toHaveLength(3)
+    // EVERY box carries a badge now — this count was 2 before UX-DR39 and 3 before
+    // story 33.2 expanded the canonical set to five (FR56).
+    expect(screen.getAllByText('Premium')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
   })
 
   it('33.1: shows no badge on sync while the tier is unresolved, but reserves its width', () => {
@@ -156,7 +181,7 @@ describe('HomePage premium discovery', () => {
     mockStatus({ hasAccess: false, isLoading: true, subscriptionStatus: null })
     render(<HomePage />)
 
-    expect(screen.getAllByTestId('premium-gate-skeleton')).toHaveLength(2)
+    expect(screen.getAllByTestId('premium-gate-skeleton')).toHaveLength(OPENABLE_COUNT)
     expect(screen.queryAllByTestId('premium-gate-locked')).toHaveLength(0)
 
     const sync = screen.getByTestId('premium-benefit-sync')
@@ -207,28 +232,51 @@ describe('HomePage premium discovery', () => {
 
     // AC-4's other half, asserted here rather than assumed: the openable boxes
     // still link through and still carry their "Open →" for an entitled user.
-    for (const [name, href] of [
-      [/advanced forecasting/i, '/forecasting'],
-      [/custom profiles/i, '/profiles'],
-    ] as const) {
+    // Iterates the shipped map, so a new openable benefit is covered the moment it
+    // is added rather than needing this list edited too.
+    expect(OPENABLE_ROUTES).toHaveLength(OPENABLE_COUNT)
+    for (const [name, href] of OPENABLE_ROUTES) {
       const link = screen.getByRole('link', { name })
       expect(link).toHaveAttribute('href', href)
       expect(within(link).getByText('Open →')).toBeInTheDocument()
     }
   })
 
-  it('30-1: all three premium benefit boxes share one chassis (AC-1/AC-3)', () => {
+  it('33.2: pins the two new benefit sub-texts verbatim (FR56)', () => {
+    // The forecasting and profiles sub-texts have had verbatim pins since 20-2/30-2;
+    // the two added by 33.2 had none, and the parity test's honesty checks turned out
+    // to be satisfiable by the other surfaces — a mutation deleting ", and see what
+    // each category totals" from the Overview passed 79/79. Vague drift in either
+    // string now breaks here, on the surface that owns it.
+    //
+    // Both strings are bounded by what ships: the report is print-in-browser over
+    // budget/net worth/savings (no retirement, no charts, no app-generated PDF), and
+    // categories cover income and expenses only and never sync.
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    render(<HomePage />)
+
+    expect(
+      screen.getByText(
+        'A print-ready summary of your budget, net worth and savings, built in your browser'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Group your income and expenses your way, and see what each category totals')
+    ).toBeInTheDocument()
+  })
+
+  it('30-1: every premium benefit box shares one chassis (AC-1/AC-3)', () => {
     // FR51: the section must read as ONE set. Every benefit box — the listed sync
-    // benefit and the two gated tiles — carries an identical base class string.
+    // benefit and the gated tiles — carries an identical base class string.
     // Asserted by class-TOKEN membership (never substring), so `sm:p-6` can never
     // be mistaken for `p-6` (batch-4 lesson, mirrored from the 19-4 test below).
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
     const sync = screen.getByTestId('premium-benefit-sync')
-    // Two locked tiles render for a free user, so getBy* would throw here.
+    // Several locked tiles render for a free user, so getBy* would throw here.
     const tiles = screen.getAllByTestId('premium-gate-locked')
-    expect(tiles).toHaveLength(2)
+    expect(tiles).toHaveLength(OPENABLE_COUNT)
 
     const CHASSIS = [
       'flex',
@@ -257,7 +305,7 @@ describe('HomePage premium discovery', () => {
       expect(tokens.filter((t) => RETIRED.includes(t))).toEqual([])
     }
 
-    // AC-4: only the two route-backed tiles carry the interactive extras.
+    // AC-4: only the route-backed tiles carry the interactive extras.
     for (const tile of tiles) {
       const tokens = tile.className.split(/\s+/)
       expect(tokens).toContain('surface-interactive')
@@ -282,10 +330,8 @@ describe('HomePage premium discovery', () => {
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
-    const links = [
-      screen.getByRole('link', { name: /advanced forecasting/i }),
-      screen.getByRole('link', { name: /custom profiles/i }),
-    ]
+    const links = OPENABLE_ROUTES.map(([name]) => screen.getByRole('link', { name }))
+    expect(links).toHaveLength(OPENABLE_COUNT)
 
     for (const link of links) {
       const tokens = link.className.split(/\s+/)
@@ -304,13 +350,13 @@ describe('HomePage premium discovery', () => {
 
   it('30-1: locked tiles carry a persistent chevron; the sync benefit does not (AC-4)', () => {
     // Hover does not exist on touch and the locked state has no "Open →", so
-    // the chevron is the only cue a free visitor on a phone gets that these two
+    // the chevron is the only cue a free visitor on a phone gets that the openable
     // boxes do something and the sync box does not.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
     const tiles = screen.getAllByTestId('premium-gate-locked')
-    expect(tiles).toHaveLength(2)
+    expect(tiles).toHaveLength(OPENABLE_COUNT)
     for (const tile of tiles) {
       const chevron = within(tile).getByText('›')
       expect(chevron.className.split(/\s+/)).toContain('text-accent')

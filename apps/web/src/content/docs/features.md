@@ -1,8 +1,9 @@
 ## Features
 
 Longhand Budget is split into a Free tier that runs entirely on your device
-and a Premium tier that adds multi-device syncing, custom profiles, and
-forecasting. The free net-worth and retirement projections chart where your
+and a Premium tier that adds multi-device syncing, custom profiles, advanced
+forecasting, a financial summary report, and custom categories. The free
+net-worth and retirement projections chart where your
 current numbers lead. Premium forecasting is a separate what-if workspace:
 build a scenario from your own figures, save it to a searchable list, and
 reload any of them later.
@@ -49,7 +50,7 @@ model, because there is no model. This holds for every visitor on both tiers.
   and expense growth, one-time events, and current savings, then save each
   forecast to a searchable list and reload any of them back into the builder.
   Saved forecasts are stored on servers in the European Union.
-- **Printable summary report** — produce a clean summary of your budget, your
+- **Financial summary report** — produce a clean summary of your budget, your
   current net worth, and your savings goals, then save it as a PDF or print it
   through your browser's own print dialog. The summary is assembled in your
   browser from the figures on your device, so nothing is sent anywhere to

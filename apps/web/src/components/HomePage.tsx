@@ -32,6 +32,7 @@ import { useNetWorth } from '../hooks/useNetWorth'
 import { type PremiumAccessStatus, usePremiumAccess } from '../hooks/usePremiumAccess'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
+import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import {
@@ -749,70 +750,76 @@ export function HomePage() {
           <section className="surface rounded-lg shadow-md p-4 sm:p-6">
             <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
 
-            {/* One chassis, three benefits (story 30-1, FR51). Every box below
+            {/* One chassis, one benefit set (story 30-1, FR51). Every box below
                 shares PREMIUM_BOX_BASE so the section reads as a single set;
-                only the two route-backed tiles add the interactive extras.
+                only the route-backed tiles add the interactive extras.
 
-                The rule since story 33.1 (UX-DR39) is BADGE ON ALL THREE, ARROW
-                ON THE OPENABLE ONES ONLY. Multi-device sync is a premium benefit
-                like the other two, so it carries the same lock badge — but there
-                is still no /sync route, so it gains no link, no "Open →" and no
-                visible chevron, and it is never wrapped in a PremiumFeatureGate
+                The rule since story 33.1 (UX-DR39) is BADGE ON EVERY BENEFIT,
+                ARROW ON THE OPENABLE ONES ONLY. Multi-device sync is a premium
+                benefit like the rest, so it carries the same lock badge — but
+                there is still no /sync route, so it gains no link, no "Open →" and
+                no visible chevron, and it is never wrapped in a PremiumFeatureGate
                 (that would make it a button that opens an upgrade dialog). This
                 AMENDS story 20-2 / CONTENT-G, which withheld the badge from sync
                 on the grounds that a lock affordance implies an openable page;
                 UX-DR39 splits "is premium" from "is openable" instead. The badge
-                comes from `premiumStatus` above, not from a third gate.
-                It leads the section so the canonical benefit set reads first.
+                comes from `premiumStatus` above, not from a gate.
+                Sync leads the section so the canonical benefit set reads first.
+
+                The boxes are RENDERED FROM `OVERVIEW_BENEFITS`, keyed by
+                `PremiumBenefitId`, rather than written out by hand (story 33.2,
+                FR56). That is what makes it impossible for this surface to list a
+                different set from /pricing, the upgrade prompt or /docs: omitting a
+                benefit here is a compile error. Before 33.2 all four surfaces were
+                hand-written and three of them disagreed.
 
                 Each gate gets its own wrapper <div> inside the space-y-3 stack:
                 in the locked state PremiumFeatureGate returns a fragment of the
                 <button> PLUS a <PremiumPrompt asDialog>, and Modal renders in
                 normal flow (no portal), so an unwrapped overlay would become a
                 spaced sibling and pick up a 12px margin — leaving an undimmed
-                strip across the top of the open dialog. */}
+                strip across the top of the open dialog. ⚠️ Measured for EVERY gate
+                during story 33.2, not just the first: with the wrapper the overlay
+                is y=0/full-height from all four, and `e2e/premium-locked.spec.ts`
+                now opens the prompt from each one rather than only from the
+                first — until 33.2 it opened gate 0 only, so a missing wrapper on a
+                later box would have shipped undetected. */}
             <div className="space-y-3">
-              <div
-                className={`${PREMIUM_BOX_BASE} surface-inset`}
-                data-testid="premium-benefit-sync"
-              >
-                <LockedTileContent label={<MultiDeviceSyncLabel />} chevronHidden />
-                <SyncLockBadge status={premiumStatus} />
-              </div>
+              {PREMIUM_BENEFIT_IDS.map((id) => {
+                const benefit = OVERVIEW_BENEFITS[id]
+                const Label = benefit.label
 
-              <div>
-                <PremiumFeatureGate
-                  featureName="Advanced Forecasting"
-                  className={PREMIUM_BOX_INTERACTIVE}
-                  locked={<LockedTileContent label={<PremiumFeatureLabel />} />}
-                >
-                  <a href="/forecasting" className={PREMIUM_BOX_INTERACTIVE}>
-                    <PremiumFeatureLabel />
-                    <span className="text-sm font-medium text-accent whitespace-nowrap">
-                      Open →
-                    </span>
-                  </a>
-                </PremiumFeatureGate>
-              </div>
+                // The listed, unopenable benefit: a static <div>, never a gate.
+                if (!benefit.openable) {
+                  return (
+                    <div
+                      key={id}
+                      className={`${PREMIUM_BOX_BASE} surface-inset`}
+                      data-testid={`premium-benefit-${id}`}
+                    >
+                      <LockedTileContent label={<Label />} chevronHidden />
+                      <SyncLockBadge status={premiumStatus} />
+                    </div>
+                  )
+                }
 
-              {/* Custom Profiles — surfaced-but-locked next to Advanced Forecasting
-                  (story 13-3, AC-1/AC-4). Resolves the /profiles nav-orphan;
-                  enforcement stays server-side (the profile server functions' tier
-                  guard) + the /profiles route gate. */}
-              <div>
-                <PremiumFeatureGate
-                  featureName="Custom Profiles"
-                  className={PREMIUM_BOX_INTERACTIVE}
-                  locked={<LockedTileContent label={<CustomProfilesFeatureLabel />} />}
-                >
-                  <a href="/profiles" className={PREMIUM_BOX_INTERACTIVE}>
-                    <CustomProfilesFeatureLabel />
-                    <span className="text-sm font-medium text-accent whitespace-nowrap">
-                      Open →
-                    </span>
-                  </a>
-                </PremiumFeatureGate>
-              </div>
+                return (
+                  <div key={id}>
+                    <PremiumFeatureGate
+                      featureName={benefit.featureName}
+                      className={PREMIUM_BOX_INTERACTIVE}
+                      locked={<LockedTileContent label={<Label />} />}
+                    >
+                      <a href={benefit.href} className={PREMIUM_BOX_INTERACTIVE}>
+                        <Label />
+                        <span className="text-sm font-medium text-accent whitespace-nowrap">
+                          Open →
+                        </span>
+                      </a>
+                    </PremiumFeatureGate>
+                  </div>
+                )
+              })}
             </div>
           </section>
         </main>
@@ -1303,4 +1310,135 @@ function CustomProfilesFeatureLabel(): React.ReactElement {
       </span>
     </span>
   )
+}
+
+/**
+ * Shared label for the Financial summary report premium entry (story 33.2, FR56 /
+ * FR53), rendered identically in the locked and unlocked states.
+ *
+ * ⚠️ The subtitle is bounded by what `/report` actually does, which is LESS than
+ * FR53's own wording promises. FR53 says "budget, net worth, and retirement
+ * outlook"; story 30-3 formally narrowed it, and the shipped report covers budget,
+ * CURRENT net worth and savings only — the retirement and forward-projection inputs
+ * are ephemeral `useState` with no persistence, so there is nothing to report on.
+ * There are no charts either. And "as a PDF" is deliberately absent from this
+ * subtitle: the button calls `window.print()`, so any PDF comes from the user's own
+ * browser dialog and the app generates no file. "Built in your browser" carries
+ * both the privacy claim and that limit honestly.
+ *
+ * The name matches the shipped `/settings` tile and the route's `featureName`
+ * ("Financial summary report" / "Financial Summary Report") rather than
+ * `features.md`'s former "Printable summary report" — one feature must not have two
+ * names, which is the drift this whole story exists to remove.
+ */
+function ReportFeatureLabel(): React.ReactElement {
+  return (
+    <span className="flex flex-col">
+      <span className="font-medium text-subheading">Financial summary report</span>
+      <span className="text-sm text-muted">
+        A print-ready summary of your budget, net worth and savings, built in your browser
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Shared label for the Custom categories premium entry (story 33.2, FR56 / FR54),
+ * rendered identically in the locked and unlocked states.
+ *
+ * ⚠️ Two hard limits, both load-bearing:
+ *   - Categories apply to INCOME AND EXPENSES ONLY. Savings goals and balance
+ *     entries carry no `categoryId`, so "categorize your finances" would be false.
+ *   - Categories and their breakdown DO NOT SYNC across devices.
+ *     `lib/sync/syncBridge.ts` hard-pins `categoryId: null` on every outgoing row,
+ *     and story 30-5 states the copy rule as an absolute: no surface may claim they
+ *     do. That is why this subtitle says "your way" rather than anything about
+ *     devices, and `docs-content.test.ts` bans sync-adjacent wording from the
+ *     equivalent `features.md` bullet.
+ *
+ * The subtitle NAMES the breakdown ("what each category totals") on purpose. The
+ * manager and the breakdown share one route, so they are one benefit entry — which
+ * means this copy is the only thing carrying FR54's second half on this surface.
+ * Drop those words and half the requirement disappears silently.
+ */
+function CategoriesFeatureLabel(): React.ReactElement {
+  return (
+    <span className="flex flex-col">
+      <span className="font-medium text-subheading">Custom categories</span>
+      <span className="text-sm text-muted">
+        Group your income and expenses your way, and see what each category totals
+      </span>
+    </span>
+  )
+}
+
+/**
+ * One Overview benefit box, discriminated on whether it has a page to open.
+ *
+ * `openable` is a NEW name for something that already existed only as three
+ * co-varying JSX facts — gate-wrapped, `PREMIUM_BOX_INTERACTIVE` vs
+ * `surface-inset`, and an `<a href>` with "Open →". Story 33.1 split "is premium"
+ * from "is openable" behaviourally; story 33.2 needed the distinction as DATA in
+ * order to render the section from the canonical set. It is deliberately not a
+ * general capability registry — it describes this section's boxes and nothing else.
+ */
+type OverviewBenefit =
+  | { openable: false; label: () => React.ReactElement }
+  | {
+      openable: true
+      label: () => React.ReactElement
+      /** Route the box links to for an entitled user. */
+      href: string
+      /** Drives `PremiumFeatureGate`'s "<featureName> — premium, locked" name. */
+      featureName: string
+    }
+
+/**
+ * The Overview's copy for the canonical Premium benefit set (story 33.2, FR56).
+ *
+ * ⚠️ The set — which benefits, in what order — lives in `lib/premium/benefits.ts`.
+ * Because this is a `Record<PremiumBenefitId, …>`, forgetting a benefit here is a
+ * **compile error** and inventing one is an excess-property error. That is the
+ * structural fix for the drift FR56 describes: before story 33.2 this section
+ * hand-wrote three boxes while `/docs` listed five and two other surfaces listed a
+ * third and fourth variant of "three".
+ *
+ * Exported for `components/premium/__tests__/benefit-set-parity.test.tsx`, which
+ * asserts key-for-key agreement across every surface, and for `HomePage.test.tsx`,
+ * which derives its box and tile counts from it rather than hard-coding numbers —
+ * six stale literals across four files had to be hunted down to land this story.
+ *
+ * `featureName` values match the shipped `/settings` tiles exactly
+ * ("Financial Summary Report", "Custom Categories") so one feature does not gain a
+ * second accessible name.
+ */
+export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
+  sync: { openable: false, label: MultiDeviceSyncLabel },
+  forecasting: {
+    openable: true,
+    label: PremiumFeatureLabel,
+    href: '/forecasting',
+    featureName: 'Advanced Forecasting',
+  },
+  // Custom Profiles resolved the /profiles nav-orphan (story 13-3, AC-1/AC-4);
+  // enforcement stays server-side (the profile server functions' tier guard) plus
+  // the /profiles route gate.
+  profiles: {
+    openable: true,
+    label: CustomProfilesFeatureLabel,
+    href: '/profiles',
+    featureName: 'Custom Profiles',
+  },
+  report: {
+    openable: true,
+    label: ReportFeatureLabel,
+    href: '/report',
+    featureName: 'Financial Summary Report',
+  },
+  categories: {
+    openable: true,
+    label: CategoriesFeatureLabel,
+    href: '/categories',
+    featureName: 'Custom Categories',
+  },
 }

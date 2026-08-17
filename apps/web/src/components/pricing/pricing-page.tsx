@@ -1,5 +1,6 @@
 import type React from 'react'
 import { PRICING_PAGE } from '../../content/legal'
+import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { MarkdownRenderer } from '../docs/markdown-renderer'
 
 /**
@@ -72,7 +73,7 @@ export function PricingPageView(): React.ReactElement {
               priceSuffix="/ year"
               priceNote="or €99 once — lifetime license"
               tagline="Everything in Free, plus:"
-              features={PREMIUM_FEATURES}
+              features={PREMIUM_FEATURE_LIST}
               ctaLabel="Get Premium"
               ctaHref="/login"
               ctaPrimary
@@ -112,18 +113,51 @@ const FREE_FEATURES: readonly string[] = [
   'Private local storage — your data never leaves your device',
 ]
 
-// The canonical Premium benefit set — exactly these three (SCP 2026-07-18).
-// The forecasting line states only what ships (story 30-2): you build a what-if
-// scenario, save it to a searchable list, and reload it back into the builder.
-// It must NOT claim a side-by-side comparison of two saved forecasts — no such
-// view exists. EU storage is deliberately stated on the sync line only and, for
-// saved forecasts, in `features.md`; repeating it on a third bullet here reads
-// as padding (brand-1 review finding).
-const PREMIUM_FEATURES: readonly string[] = [
-  'Multi-device sync, securely stored in the EU',
-  'Custom profiles (e.g. personal vs. household)',
-  'Advanced forecasting — save, search, and reload what-if scenarios',
-]
+/**
+ * This surface's copy for the canonical Premium benefit set.
+ *
+ * ⚠️ The set itself — which benefits, in what order — lives in
+ * `lib/premium/benefits.ts`. Keying off `PremiumBenefitId` means dropping a
+ * benefit or inventing one here is a **compile error**, which is the whole point:
+ * before story 33.2 this file pinned the set to "exactly these three
+ * (SCP 2026-07-18)" while Epic 30 had already shipped two further capabilities
+ * that no surface listed. **That pin is AMENDED by FR56 / story 33.2** — the set
+ * is now five, adding the financial summary report (FR53) and custom categories
+ * with their breakdown (FR54). Cross-surface parity is asserted centrally in
+ * `components/premium/__tests__/benefit-set-parity.test.tsx`.
+ *
+ * The SCP's other rules are NOT amended and still bind here:
+ *   - The forecasting line states only what ships (story 30-2): you build a
+ *     what-if scenario, save it to a searchable list, and reload it back into the
+ *     builder. It must NOT claim a side-by-side comparison of two saved
+ *     forecasts — no such view exists.
+ *   - EU storage is stated on the sync line ONLY and, for saved forecasts, in
+ *     `features.md`. Repeating it on further bullets reads as padding (brand-1
+ *     review finding) — which is why neither new line mentions it. They also must
+ *     not: the report never leaves the browser, and categories do not sync at all.
+ *   - No "Dark mode" (free since 25-3) and no "No ads" (universal since 25-1).
+ *
+ * The two lines added in 33.2 are bounded by what the code actually does:
+ *   - The report is `window.print()`, so the PDF comes from the user's own browser
+ *     dialog — the app generates no file. It covers budget, current net worth and
+ *     savings; retirement and forward projections are excluded by design (story
+ *     30-3 narrowed FR53, whose own wording still says "retirement outlook").
+ *   - Categories apply to income and expenses only, and **never sync**
+ *     (`lib/sync/syncBridge.ts` pins `categoryId: null`).
+ */
+export const PREMIUM_FEATURES: Record<PremiumBenefitId, string> = {
+  sync: 'Multi-device sync, securely stored in the EU',
+  forecasting: 'Advanced forecasting — save, search, and reload what-if scenarios',
+  profiles: 'Custom profiles (e.g. personal vs. household)',
+  report:
+    'Financial summary report — save your budget, net worth and savings as a PDF from your browser',
+  categories: 'Custom income and expense categories, with a breakdown of what each one totals',
+}
+
+/** The Premium bullets in canonical order — the order IS `PREMIUM_BENEFIT_IDS`. */
+const PREMIUM_FEATURE_LIST: readonly string[] = PREMIUM_BENEFIT_IDS.map(
+  (id) => PREMIUM_FEATURES[id]
+)
 
 interface PlanCardProps {
   name: string
