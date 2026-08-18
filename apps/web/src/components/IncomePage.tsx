@@ -28,6 +28,7 @@ import {
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
+import { RowMoveControls } from './ui/RowMoveControls'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -108,7 +109,8 @@ export function IncomePage() {
     unreadableCount: unreadableIncomeCount,
     conversionApplied,
   } = summarizeReadableRows(incomeSources)
-  const { addIncomeSource, updateIncomeSource, deleteIncomeSource } = useIncomeStore()
+  const { addIncomeSource, updateIncomeSource, deleteIncomeSource, moveIncomeSource } =
+    useIncomeStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -350,7 +352,7 @@ export function IncomePage() {
                     </tr>
                   </thead>
                   <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {incomeSources.map((source) => (
+                    {incomeSources.map((source, index) => (
                       <tr key={source.id} className={RESPONSIVE_ROW_CLASS}>
                         <td className={RESPONSIVE_CELL_CLASS}>
                           <FieldLabel>Name</FieldLabel>
@@ -382,6 +384,12 @@ export function IncomePage() {
                         <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                           <FieldLabel>Actions</FieldLabel>
                           <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                            <RowMoveControls
+                              label={source.name}
+                              isFirst={index === 0}
+                              isLast={index === incomeSources.length - 1}
+                              onMove={(direction) => moveIncomeSource(source.id, direction)}
+                            />
                             <button
                               type="button"
                               onClick={() => openEditModal(source)}

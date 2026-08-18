@@ -30,6 +30,7 @@ import {
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
+import { RowMoveControls } from './ui/RowMoveControls'
 
 // Valid contribution cadences (mirrors the core Frequency enum). A persisted
 // investment `frequency` can be a corrupt/legacy non-null string — localStorage is
@@ -42,8 +43,13 @@ const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
   const totalSavings = useTotalSavings()
-  const { addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsProgress } =
-    useSavingsStore()
+  const {
+    addSavingsGoal,
+    updateSavingsGoal,
+    deleteSavingsGoal,
+    moveSavingsGoal,
+    getSavingsProgress,
+  } = useSavingsStore()
 
   // Leftover-allocation solver inputs (Story 26.3). Read the three other stores
   // the pool depends on; investment contributions are the `type === 'investment'`
@@ -385,7 +391,7 @@ export function SavingsPage() {
                     </tr>
                   </thead>
                   <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {savingsGoals.map((goal) => {
+                    {savingsGoals.map((goal, index) => {
                       // Account (Story 16-1): null target ⇒ absent progress (not 0%).
                       const isAccountRow = goal.targetAmount == null
                       const progress = getSavingsProgress(goal.id)
@@ -479,6 +485,12 @@ export function SavingsPage() {
                           <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                             <FieldLabel>Actions</FieldLabel>
                             <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                              <RowMoveControls
+                                label={goal.name}
+                                isFirst={index === 0}
+                                isLast={index === savingsGoals.length - 1}
+                                onMove={(direction) => moveSavingsGoal(goal.id, direction)}
+                              />
                               <button
                                 type="button"
                                 onClick={() => openEditModal(goal)}

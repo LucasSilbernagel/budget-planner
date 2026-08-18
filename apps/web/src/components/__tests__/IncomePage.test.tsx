@@ -507,7 +507,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     // mutation to run against — coverage has to come from naming the controls.
     renderWithProviders(<IncomePage />)
     const row = rowFor('Salary')
-    for (const label of ['Edit Salary', 'Delete Salary']) {
+    for (const label of ['Edit Salary', 'Delete Salary', 'Move Salary up', 'Move Salary down']) {
       assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
     }
   })
@@ -515,8 +515,21 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
   it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
     renderWithProviders(<IncomePage />)
     const row = rowFor('Salary')
-    for (const label of ['Edit Salary', 'Delete Salary']) {
+    for (const label of ['Edit Salary', 'Delete Salary', 'Move Salary up', 'Move Salary down']) {
       assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
+    }
+  })
+
+  it('separates the move controls from their siblings on desktop (34.1b review)', () => {
+    // Desktop-only: below `sm` the actions group supplies its own `gap-1`, so an
+    // unprefixed margin would stack on top of it. Without this the two chevrons
+    // rendered flush against each other and against Edit — `mr-4` separates only
+    // Edit from Delete. Pinned because it is otherwise invisible to every test.
+    renderWithProviders(<IncomePage />)
+    const row = rowFor('Salary')
+    for (const label of ['Move Salary up', 'Move Salary down']) {
+      const button = within(row).getByRole('button', { name: label })
+      expect(button.className.split(/\s+/)).toContain('sm:mr-2')
     }
   })
 
@@ -524,5 +537,179 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     const { container } = renderWithProviders(<IncomePage />)
     const table = container.querySelector('table') as HTMLElement
     expect(collectRetiredTokenViolations(table)).toEqual([])
+  })
+})
+
+/**
+ * Row reordering (Story 34.1b, FR60).
+ *
+ * ⚠️ Written per page rather than once over a table of four. These are four
+ * independent page components with four hand-rolled actions cells; stories 30-4b
+ * and 33.3 each shipped a HIGH by testing one surface and assuming its siblings.
+ */
+describe('IncomePage — reorder rows (34.1b)', () => {
+  const NAMES = ['Alpha', 'Beta', 'Gamma']
+
+  function seedRows() {
+    useIncomeStore.setState({ incomeSources: [] })
+    // Distinct createdAt per row: rows added inside one millisecond tie on the
+    // secondary sort key, and a tie-preserving stable sort can make an ordering
+    // assertion pass by accident (34.1a's M10).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
+    for (const name of NAMES) {
+      useIncomeStore.getState().addIncomeSource({ name, amount: 100000, frequency: 'monthly' })
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+  }
+
+  /** The rendered row names, top to bottom. */
+  function renderedOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      .slice(1) // drop the header row
+      .map((row) => NAMES.find((name) => within(row).queryByText(name)))
+      .filter((name): name is string => Boolean(name))
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    seedRows()
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    localStorage.clear()
+  })
+
+  it('offers a move-up and move-down control naming each row (AC-1)', () => {
+    renderWithProviders(<IncomePage />)
+    for (const name of NAMES) {
+      expect(screen.getByRole('button', { name: `Move ${name} up` })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: `Move ${name} down` })).toBeInTheDocument()
+    }
+  })
+
+  it('moves a row up when its control is activated (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+    expect(renderedOrder()).toEqual(NAMES)
+
+    await user.click(screen.getByRole('button', { name: 'Move Beta up' }))
+
+    expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Gamma'])
+  })
+
+  it('moves a row down when its control is activated (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Beta down' }))
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+
+  /**
+   * ⚠️ `aria-disabled`, NOT the native `disabled` attribute (story decision 2).
+   * `toBeDisabled()` deliberately does NOT pass here: a natively disabled button
+   * cannot hold focus, which would break the focus-retention AC below at exactly
+   * the boundary this assertion is about.
+   */
+  it('marks the boundary controls aria-disabled while keeping them focusable (AC-4)', () => {
+    renderWithProviders(<IncomePage />)
+    const firstUp = screen.getByRole('button', { name: 'Move Alpha up' })
+    const lastDown = screen.getByRole('button', { name: 'Move Gamma down' })
+
+    expect(firstUp).toHaveAttribute('aria-disabled', 'true')
+    expect(lastDown).toHaveAttribute('aria-disabled', 'true')
+    // Interior controls are NOT marked — otherwise the assertion above would
+    // pass on a component that marks every control.
+    expect(screen.getByRole('button', { name: 'Move Beta up' })).toHaveAttribute(
+      'aria-disabled',
+      'false'
+    )
+    expect(firstUp).not.toBeDisabled()
+  })
+
+  it('does nothing when a boundary control is activated (AC-4)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
+    await user.click(screen.getByRole('button', { name: 'Move Gamma down' }))
+
+    expect(renderedOrder()).toEqual(NAMES)
+  })
+
+  it('marks BOTH controls aria-disabled on a single-row list (AC-4)', () => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Solo', amount: 100000, frequency: 'monthly' })
+    renderWithProviders(<IncomePage />)
+
+    expect(screen.getByRole('button', { name: 'Move Solo up' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+    expect(screen.getByRole('button', { name: 'Move Solo down' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  })
+
+  /**
+   * ⚠️ THE POINT OF THIS TEST IS THAT IT CAN FAIL. It asserts the row actually
+   * moved AND that focus stayed on the control the user pressed — "something is
+   * focused" would prove nothing. Focus survives because all four tables key
+   * rows by `id`, so React moves the existing DOM node instead of remounting it.
+   */
+  it('keeps focus on the activated control after a keyboard move (AC-6)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+    const control = screen.getByRole('button', { name: 'Move Gamma up' })
+
+    control.focus()
+    await user.keyboard('{Enter}')
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Move Gamma up' })).toHaveFocus()
+    })
+  })
+
+  it('keeps focus on a control that becomes a boundary control (AC-6)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+    const control = screen.getByRole('button', { name: 'Move Beta up' })
+
+    control.focus()
+    await user.keyboard('{Enter}')
+
+    // Beta is now first, so its move-up control is aria-disabled — and must
+    // still hold focus. A native `disabled` here would drop focus to <body>.
+    const after = screen.getByRole('button', { name: 'Move Beta up' })
+    expect(after).toHaveAttribute('aria-disabled', 'true')
+    await waitFor(() => expect(after).toHaveFocus())
+  })
+
+  it('persists the new order across a reload (AC-2)', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderWithProviders(<IncomePage />)
+    await user.click(screen.getByRole('button', { name: 'Move Gamma up' }))
+    unmount()
+
+    // ⚠️ `setState` goes THROUGH the persist middleware, so clearing in-memory
+    // state would overwrite the blob we are about to read back. Snapshot it,
+    // clear, restore, then rehydrate — which is what a reload actually does.
+    const persisted = localStorage.getItem('budget-planner-income-v1')
+    expect(persisted).toBeTruthy()
+    useIncomeStore.setState({ incomeSources: [] })
+    localStorage.setItem('budget-planner-income-v1', persisted as string)
+    await useIncomeStore.persist.rehydrate()
+
+    renderWithProviders(<IncomePage />)
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
   })
 })

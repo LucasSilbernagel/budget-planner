@@ -160,6 +160,25 @@ describe('ResponsiveTable class layer', () => {
       expect(tokens(RESPONSIVE_STACKED_CELL_CLASS)).not.toContain('max-sm:flex')
     })
 
+    it('the actions cell stacks its label above the button group below sm (34.1b)', () => {
+      // Four 44px tap targets (move up, move down, Edit, Delete) do not fit
+      // beside the "Actions" label in the ~200px a 320px row leaves for the
+      // cell. `flex-col` puts the label on its own line and hands the full
+      // width to the buttons. Reverting this is what `e2e/responsive-320.spec.ts`
+      // catches as an overflow; this pins it one layer earlier.
+      expect(tokens(RESPONSIVE_ACTIONS_CELL_CLASS)).toContain('max-sm:flex-col')
+    })
+
+    it('the actions group separates and wraps its four buttons below sm (34.1b)', () => {
+      const groupTokens = tokens(RESPONSIVE_ACTIONS_GROUP_CLASS)
+      // 4 x 44px + 3 x 4px gap = 188px, inside the ~200px available.
+      expect(groupTokens).toContain('max-sm:gap-1')
+      // Wrapping is graceful degradation at a larger root font size, not the
+      // expected layout — story 31.5's lesson that a reserve computed at the
+      // 16px default drifts with the root font size.
+      expect(groupTokens).toContain('max-sm:flex-wrap')
+    })
+
     it('no cell variant carries two conflicting align-items utilities', () => {
       // Tailwind resolves competing utilities by CSS source order, not
       // className order, so a cell holding both would align unpredictably.

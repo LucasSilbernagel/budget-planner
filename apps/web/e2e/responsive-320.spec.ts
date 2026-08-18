@@ -891,6 +891,88 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await expect(confirm).toBeVisible()
       await expect(confirm).toContainText(LONG_UNBROKEN_NAME)
     })
+
+    // Story 34.1b: the same operability guarantee for the two move controls.
+    // `assertRowActionTapTargets` already sizes them (it selects every tbody
+    // button); this proves they can actually be pressed at 320px and that the
+    // press does something.
+    test(`${route} row move controls are operable at 320px`, async ({ page }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+      await seedFinanceRows(page, 'light')
+
+      await page.goto(route)
+      await page.waitForLoadState('networkidle')
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+
+      const moveUp = page.getByRole('button', { name: `Move ${LONG_UNBROKEN_NAME} up` })
+      const moveDown = page.getByRole('button', { name: `Move ${LONG_UNBROKEN_NAME} down` })
+      await expect(moveUp).toBeVisible()
+      await expect(moveDown).toBeVisible()
+
+      // ⚠️ aria-disabled, NOT the native disabled attribute (story decision 2):
+      // a natively disabled control cannot hold focus, which would break the
+      // keyboard focus-retention requirement at the boundary.
+      await expect(moveUp).toHaveAttribute('aria-disabled', 'true')
+
+      // ⚠️ Read rows from the EDITABLE table only. `/balance` renders `entries`
+      // twice — the read-only Investment Accounts breakdown is a filtered view of
+      // the same array — so an unscoped row query concatenates both tables.
+      const editableRows = page
+        .locator('div.overflow-x-auto table')
+        .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+        .locator('tbody tr')
+      const rowNames = () =>
+        editableRows.evaluateAll((rows) => rows.map((r) => r.textContent?.slice(0, 40) ?? ''))
+
+      const before = await rowNames()
+      expect(before.length).toBeGreaterThan(1)
+
+      // ⚠️ Press a control that is NOT at a boundary. The seeded long-named row
+      // is LAST on `/balance`, so its move-down is `aria-disabled` and correctly
+      // does nothing — asserting "the order changed" against it would fail for
+      // the right reason while telling us nothing about operability.
+      const movable = (await moveDown.getAttribute('aria-disabled')) === 'true' ? moveUp : moveDown
+      await expect(movable).toHaveAttribute('aria-disabled', 'false')
+
+      // ⚠️ Assert the press CHANGES SOMETHING, not merely that the button
+      // survives it. The first version asserted only `toBeVisible()` after the
+      // click, so a no-op handler kept it green — precisely the claim this test
+      // exists to make.
+      await movable.click()
+      await expect.poll(async () => (await rowNames()).join('|')).not.toBe(before.join('|'))
+    })
+  }
+
+  // Story 34.1b / the 33.3 lesson: "an overflow assertion is only as good as the
+  // widths it runs at, and the width that matters is the one just above the
+  // breakpoint". 320 and 1280 both passed while a 768px wrapper overflow went
+  // unseen in 33.3. The actions cell gained two more 44px targets here, so the
+  // just-above-`sm` width gets its own assertion.
+  for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
+    test(`${route} finance tables fit 768px with the move controls`, async ({ page }) => {
+      await page.setViewportSize({ width: 768, height: 900 })
+      await seedFinanceRows(page, 'light')
+
+      await page.goto(route)
+      await page.waitForLoadState('networkidle')
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: `Move ${LONG_UNBROKEN_NAME} down` })
+      ).toBeVisible()
+
+      // ⚠️ The assertion is DOCUMENT-level, not wrapper-level, and the distinction
+      // is the whole point. Above `sm` the cards revert to a real table and the
+      // `overflow-x-auto` wrapper is SUPPOSED to scroll — the 138-char unbroken
+      // seed name alone makes the table ~1500px wide. The first version of this
+      // test asserted `wrapper.scrollWidth <= clientWidth` and failed on all four
+      // routes for exactly that reason: it measured the feature, not a defect.
+      // What must hold is that the wrapper ABSORBS that width rather than pushing
+      // the PAGE wider than the viewport.
+      await assertNoHorizontalOverflow((fn) => page.evaluate(fn), `${route} at 768px`)
+
+      // ...and the row's other action controls stay reachable at this width.
+      await expect(page.getByRole('button', { name: `Edit ${LONG_UNBROKEN_NAME}` })).toBeVisible()
+    })
   }
 })
 

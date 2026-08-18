@@ -28,6 +28,7 @@ import {
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
+import { RowMoveControls } from './ui/RowMoveControls'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -108,7 +109,7 @@ export function ExpensesPage() {
     unreadableCount: unreadableExpenseCount,
     conversionApplied,
   } = summarizeReadableRows(expenses)
-  const { addExpense, updateExpense, deleteExpense } = useExpenseStore()
+  const { addExpense, updateExpense, deleteExpense, moveExpense } = useExpenseStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -348,7 +349,7 @@ export function ExpensesPage() {
                     </tr>
                   </thead>
                   <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {expenses.map((expense) => (
+                    {expenses.map((expense, index) => (
                       <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
                         <td className={RESPONSIVE_CELL_CLASS}>
                           <FieldLabel>Name</FieldLabel>
@@ -380,6 +381,12 @@ export function ExpensesPage() {
                         <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                           <FieldLabel>Actions</FieldLabel>
                           <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                            <RowMoveControls
+                              label={expense.name}
+                              isFirst={index === 0}
+                              isLast={index === expenses.length - 1}
+                              onMove={(direction) => moveExpense(expense.id, direction)}
+                            />
                             <button
                               type="button"
                               onClick={() => openEditModal(expense)}

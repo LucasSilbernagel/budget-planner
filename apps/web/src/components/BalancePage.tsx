@@ -34,6 +34,7 @@ import {
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
+import { RowMoveControls } from './ui/RowMoveControls'
 
 // Type options for the select dropdown
 const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
@@ -80,7 +81,8 @@ export function BalancePage() {
   // combined total below reuses `totalInvestments` (= useTotalInvestmentBalance) so
   // the breakdown total and the "Total Investments" stat card are the same number.
   const investmentAccounts = balanceEntries.filter((entry) => entry.type === 'investment')
-  const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry } = useBalanceStore()
+  const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry, moveBalanceEntry } =
+    useBalanceStore()
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -546,7 +548,7 @@ export function BalancePage() {
                     </tr>
                   </thead>
                   <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {balanceEntries.map((entry) => {
+                    {balanceEntries.map((entry, index) => {
                       const typeDisplay = getTypeDisplay(entry.type)
                       return (
                         <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
@@ -614,6 +616,12 @@ export function BalancePage() {
                           <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                             <FieldLabel>Actions</FieldLabel>
                             <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                              <RowMoveControls
+                                label={entry.name}
+                                isFirst={index === 0}
+                                isLast={index === balanceEntries.length - 1}
+                                onMove={(direction) => moveBalanceEntry(entry.id, direction)}
+                              />
                               <button
                                 type="button"
                                 onClick={() => openEditModal(entry)}

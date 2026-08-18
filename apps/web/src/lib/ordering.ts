@@ -216,6 +216,230 @@ export function nextSortOrder(rows: readonly DisplayOrdered[] | null): number {
  * positions the server DID supply. Unpositioned rows already sort last, so
  * assigning them values above the current max preserves the sorted order exactly.
  */
+/**
+ * Upper bound of a Postgres `integer`. Mirrors the private constant of the same
+ * name in `packages/core/src/sync/types.ts`, which is not exported; both sync
+ * gates declare `sortOrder` as `.int().min(0).max(PG_INT32_MAX)`.
+ */
+const PG_INT32_MAX = 2_147_483_647
+
+/** Which way a row is being moved through the list. */
+export type RowMoveDirection = 'up' | 'down'
+
+/** A single row's new position, as produced by {@link planRowMove}. */
+export interface RowPositionChange {
+  id: string
+  sortOrder: number
+}
+
+/** Is this a value both sync gates will accept? */
+function isContractPosition(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= PG_INT32_MAX
+}
+
+/** Apply a candidate plan to a copy and report whether it yields `expectedIds`. */
+function producesOrder<T extends DisplayOrdered>(
+  rows: readonly T[],
+  changes: readonly RowPositionChange[],
+  expectedIds: readonly string[]
+): boolean {
+  const byId = new Map(changes.map((change) => [change.id, change.sortOrder]))
+  const applied = rows.map((row) => {
+    const next = byId.get(idKey(row))
+    return next === undefined ? row : { ...row, sortOrder: next }
+  })
+  const actual = sortByDisplayOrder(applied).map(idKey)
+  return actual.length === expectedIds.length && actual.every((id, i) => id === expectedIds[i])
+}
+
+/**
+ * Plan the position changes needed to move one row up or down by one place
+ * (Story 34.1b, FR60). Pure: returns the changes, writes nothing.
+ *
+ * Returns `[]` for every no-op — an unknown id, a null/empty list, and both
+ * boundaries (the first row cannot move up, the last cannot move down). Callers
+ * can therefore treat an empty plan as "nothing happened" without re-deriving
+ * the boundary rule, and the UI's disabled state and the store's guard stay in
+ * agreement by construction rather than by two copies of the same condition.
+ *
+ * ⚠️ THE PREFERRED PLAN IS AN EXCHANGE OF THE TWO ROWS' POSITIONS — two writes,
+ * and gaps left by earlier deletes are preserved (34.1a decision 3 and 5: do NOT
+ * reindex, because reindexing emits one sync operation per row).
+ *
+ * ⚠️ BUT AN EXCHANGE IS NOT ALWAYS ENOUGH, AND THAT IS THE SUBTLE PART. Swapping
+ * two EQUAL values is a no-op, so a list holding duplicate positions — which
+ * 34.1a deliberately permits, because two devices reordering offline converge via
+ * the `createdAt`/`id` tiebreakers rather than via a unique constraint — would
+ * silently refuse to move. The same is true when a row's position is missing or
+ * outside the sync contract, and when a THIRD row happens to hold the destination
+ * value (the moved row would land tied with it, and the tiebreaker, not the user,
+ * would decide where it settles).
+ *
+ * Rather than enumerate those cases and hope the list is exhaustive, the exchange
+ * is PROPOSED and then VERIFIED against the order the user asked for. If it does
+ * not reproduce that order exactly, the intended order is renumbered densely and
+ * only the rows whose value actually changes are emitted. Correctness is
+ * structural, and the degenerate list heals itself on first use.
+ */
+export function planRowMove<T extends DisplayOrdered>(
+  rows: readonly T[] | null,
+  id: string,
+  direction: RowMoveDirection
+): RowPositionChange[] {
+  const sorted = sortByDisplayOrder(rows)
+  // `idKey` rather than a raw `row?.id === id`: every other id comparison in
+  // this module goes through it, and two lookup conventions in one function are
+  // a defect waiting for the day they disagree.
+  const from = sorted.findIndex((row) => idKey(row) === id)
+  if (from === -1) {
+    return []
+  }
+  const to = direction === 'up' ? from - 1 : from + 1
+  if (to < 0 || to >= sorted.length) {
+    // Boundary: communicated by the UI as aria-disabled, and a no-op here.
+    return []
+  }
+
+  const moved = sorted[from]
+  const neighbour = sorted[to]
+  if (!moved || !neighbour) {
+    return []
+  }
+  const movedId = idKey(moved)
+  const neighbourId = idKey(neighbour)
+  if (!movedId || !neighbourId || movedId === neighbourId) {
+    // A row with no usable id cannot be addressed in a sync operation.
+    return []
+  }
+
+  const intended = [...sorted]
+  intended.splice(from, 1)
+  intended.splice(to, 0, moved)
+  const intendedIds = intended.map(idKey)
+
+  const movedOrder = moved.sortOrder
+  const neighbourOrder = neighbour.sortOrder
+  if (
+    isContractPosition(movedOrder) &&
+    isContractPosition(neighbourOrder) &&
+    movedOrder !== neighbourOrder
+  ) {
+    const exchange: RowPositionChange[] = [
+      { id: movedId, sortOrder: neighbourOrder },
+      { id: neighbourId, sortOrder: movedOrder },
+    ]
+    if (producesOrder(sorted, exchange, intendedIds)) {
+      return exchange
+    }
+  }
+
+  // MINIMAL renumber (code review): walk the intended order and raise only the
+  // rows that must move to realize it, leaving every row that already sorts
+  // correctly — and its delete-gap — untouched.
+  //
+  // ⚠️ THIS DELIBERATELY IS NOT A DENSE 0..n-1 RENUMBER. The first version was,
+  // and review measured the cost on this story's own adversarial fixture
+  // (`a(0,newest), b(2), c(2,oldest), d(5)`, move `a` down): it emitted THREE
+  // changes including uninvolved row `d`, collapsing its 5 to a 3. That is the
+  // reindexing ratified decision 5 and §9.6 exist to forbid, because every
+  // emitted change is one more sync operation for a single click.
+  //
+  // Some third-row write IS forced here — no integer places `a` between two rows
+  // tied at 2 whose tiebreak runs against it — but only the colliding neighbour
+  // needs to move, not the whole list. Sweeping once and raising a row only when
+  // it fails to outrank its predecessor is the smallest plan that realizes the
+  // intended order, and it degrades to the dense case only for a list that is
+  // entirely tied.
+  const minimal: RowPositionChange[] = []
+  let floor: number | null = null
+  for (const row of intended) {
+    const rowId = idKey(row)
+    if (!rowId) {
+      // No addressable id: cannot be synced, so it cannot be repositioned.
+      continue
+    }
+    const current = row.sortOrder
+    const usable = isContractPosition(current) && (floor === null || current > floor)
+    if (usable) {
+      floor = current as number
+      continue
+    }
+    // Raise to just past the running floor (or to 0 to open the list).
+    const next: number = floor === null ? 0 : Math.min(floor + 1, PG_INT32_MAX)
+    minimal.push({ id: rowId, sortOrder: next })
+    floor = next
+  }
+  if (producesOrder(sorted, minimal, intendedIds)) {
+    return minimal
+  }
+
+  // Last resort: a dense renumber always realizes the intended order, at the
+  // cost of one change per row. Reached only when the minimal sweep cannot
+  // (e.g. a run long enough to hit the int32 ceiling).
+  return intended.flatMap((row, index) => {
+    const rowId = idKey(row)
+    if (!rowId) {
+      return []
+    }
+    return row.sortOrder === index ? [] : [{ id: rowId, sortOrder: index }]
+  })
+}
+
+/** One row's before/after pair, so the caller can queue a sync update. */
+export interface RowMoveChange<T> {
+  previous: T
+  updated: T
+}
+
+/** The outcome of a move: the re-sorted collection plus what actually changed. */
+export interface RowMoveResult<T> {
+  rows: T[]
+  changes: RowMoveChange<T>[]
+}
+
+/**
+ * Execute the plan from {@link planRowMove} against a collection (Story 34.1b).
+ *
+ * Returns `null` for every no-op — boundary, unknown id, empty/null list — so a
+ * caller can `if (!result) return` and leave the store untouched, queueing
+ * nothing. Otherwise it returns the canonically re-sorted collection together
+ * with a before/after pair per changed row, because `syncEntityUpdate` needs the
+ * PRE-edit row to derive its `baseVersion`.
+ *
+ * ⚠️ `updatedAt` is bumped on every changed row, matching the four update paths.
+ * One timestamp is taken for the whole move so the affected rows share it —
+ * two `new Date()` calls could straddle a millisecond and make the pair look
+ * like two unrelated edits to last-write-wins reconciliation.
+ *
+ * The four stores each own this behaviour through this one helper rather than
+ * four hand-rolled copies: they are four independent implementations with no
+ * shared factory, and testing one while assuming the other three is precisely
+ * how stories 30-4b and 33.3 each shipped a HIGH.
+ */
+export function applyRowMove<T extends DisplayOrdered & { updatedAt?: string }>(
+  rows: readonly T[] | null,
+  id: string,
+  direction: RowMoveDirection
+): RowMoveResult<T> | null {
+  const plan = planRowMove(rows, id, direction)
+  if (plan.length === 0) {
+    return null
+  }
+  const timestamp = new Date().toISOString()
+  const positionById = new Map(plan.map((change) => [change.id, change.sortOrder]))
+  const changes: RowMoveChange<T>[] = []
+  const next = (rows ?? []).map((row) => {
+    const sortOrder = positionById.get(idKey(row))
+    if (sortOrder === undefined) {
+      return row
+    }
+    const updated = { ...row, sortOrder, updatedAt: timestamp }
+    changes.push({ previous: row, updated })
+    return updated
+  })
+  return { rows: sortByDisplayOrder(next), changes }
+}
+
 export function stampMissingSortOrder<T extends DisplayOrdered>(rows: readonly T[] | null): T[] {
   const sorted = sortByDisplayOrder(rows)
   if (sorted.every((row) => typeof row?.sortOrder === 'number' && Number.isFinite(row.sortOrder))) {

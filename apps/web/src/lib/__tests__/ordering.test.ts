@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import {
   type DisplayOrdered,
   nextSortOrder,
+  planRowMove,
   sortByDisplayOrder,
   stampMissingSortOrder,
 } from '../ordering'
@@ -269,5 +270,200 @@ describe('stampMissingSortOrder — self-healing for rows that arrive unposition
 
   it('returns [] for null/non-array input', () => {
     expect(stampMissingSortOrder(null)).toEqual([])
+  })
+})
+
+describe('planRowMove — swap a row with its neighbour (Story 34.1b, AC-2)', () => {
+  /** Apply a plan and return the resulting display order, as ids. */
+  function applyPlan(rows: DisplayOrdered[], plan: ReturnType<typeof planRowMove>): string[] {
+    const byId = new Map(plan.map((change) => [change.id, change.sortOrder]))
+    const next = rows.map((r) =>
+      byId.has(r.id as string) ? { ...r, sortOrder: byId.get(r.id as string) } : r
+    )
+    return sortByDisplayOrder(next).map((r) => r.id as string)
+  }
+
+  const simple = [row('a', 0, '2026-01-01'), row('b', 1, '2026-01-02'), row('c', 2, '2026-01-03')]
+
+  it('moves a middle row up, swapping it with its predecessor', () => {
+    const plan = planRowMove(simple, 'b', 'up')
+    expect(applyPlan(simple, plan)).toEqual(['b', 'a', 'c'])
+  })
+
+  it('moves a middle row down, swapping it with its successor', () => {
+    const plan = planRowMove(simple, 'b', 'down')
+    expect(applyPlan(simple, plan)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('touches exactly the two affected rows in the ordinary case', () => {
+    expect(
+      planRowMove(simple, 'b', 'up')
+        .map((c) => c.id)
+        .sort()
+    ).toEqual(['a', 'b'])
+  })
+
+  it('is a no-op at the top boundary', () => {
+    expect(planRowMove(simple, 'a', 'up')).toEqual([])
+  })
+
+  it('is a no-op at the bottom boundary', () => {
+    expect(planRowMove(simple, 'c', 'down')).toEqual([])
+  })
+
+  it('is a no-op for a single-row list, in both directions', () => {
+    const one = [row('solo', 0, '2026-01-01')]
+    expect(planRowMove(one, 'solo', 'up')).toEqual([])
+    expect(planRowMove(one, 'solo', 'down')).toEqual([])
+  })
+
+  it('is a no-op for an unknown id, an empty list, and null input', () => {
+    expect(planRowMove(simple, 'nope', 'up')).toEqual([])
+    expect(planRowMove([], 'a', 'down')).toEqual([])
+    expect(planRowMove(null, 'a', 'down')).toEqual([])
+  })
+
+  it('preserves gaps left by a delete rather than reindexing', () => {
+    // 34.1a decision 3: deletes leave gaps and that is intended.
+    const gapped = [row('a', 0, '2026-01-01'), row('b', 7, '2026-01-02')]
+    expect(planRowMove(gapped, 'b', 'up')).toEqual([
+      { id: 'b', sortOrder: 0 },
+      { id: 'a', sortOrder: 7 },
+    ])
+  })
+
+  // ⚠️ THE TIE CASE. A plain value-swap is a NO-OP when both rows share a
+  // sortOrder, so a fixture with distinct values cannot detect a regression
+  // here (34.1a's M10 lesson: a test exercising a tie cannot detect a change
+  // to tie-breaking).
+  it('still reorders when the two rows share a sortOrder', () => {
+    const tied = [row('a', 3, '2026-01-01'), row('b', 3, '2026-01-02')]
+    const plan = planRowMove(tied, 'b', 'up')
+    expect(plan.length).toBeGreaterThan(0)
+    expect(applyPlan(tied, plan)).toEqual(['b', 'a'])
+  })
+
+  it('still reorders when a THIRD row shares the destination sortOrder', () => {
+    // Swapping values alone would leave the moved row tied with 'c' and the
+    // landing position decided by the createdAt tiebreaker, not by the user.
+    const tied = [
+      row('a', 0, '2026-01-01'),
+      row('b', 2, '2026-01-02'),
+      row('c', 2, '2026-01-03'),
+      row('d', 5, '2026-01-04'),
+    ]
+    expect(applyPlan(tied, planRowMove(tied, 'a', 'down'))).toEqual(['b', 'a', 'c', 'd'])
+  })
+
+  /**
+   * ⚠️ THIS TEST EXISTS BECAUSE MUTATION M6 CAME BACK GREEN WITHOUT IT.
+   *
+   * Deleting the verify-then-fall-back step left every assertion above passing.
+   * The earlier "third row shares the destination" case could not detect it: its
+   * createdAt values ascended with its positions, so the naive exchange happened
+   * to land in the right place anyway.
+   *
+   * Here `a` is the NEWEST row while `b` and `c` tie at position 2. Exchanging
+   * the two positions moves `a` PAST `b` as well, because `a` then ties with `b`
+   * at 2 and loses the createdAt tiebreak — a one-place "move down" that travels
+   * two places (measured: `c,b,a,d` instead of `c,a,b,d`). Only re-sorting the
+   * candidate and comparing it with the intended order catches that.
+   */
+  it('moves exactly ONE place when the destination value is shared and the tiebreak works against the moved row', () => {
+    const adversarial = [
+      row('a', 0, '2026-01-04T00:00:00.000Z'),
+      row('b', 2, '2026-01-02T00:00:00.000Z'),
+      row('c', 2, '2026-01-01T00:00:00.000Z'),
+      row('d', 5, '2026-01-05T00:00:00.000Z'),
+    ]
+    // Display order is a, c, b, d — c precedes b because they tie on sortOrder
+    // and c is older. Moving a down must swap it with c only.
+    expect(sortByDisplayOrder(adversarial).map((r) => r.id)).toEqual(['a', 'c', 'b', 'd'])
+    expect(applyPlan(adversarial, planRowMove(adversarial, 'a', 'down'))).toEqual([
+      'c',
+      'a',
+      'b',
+      'd',
+    ])
+  })
+
+  /**
+   * ⚠️ THE WRITE COUNT IS PART OF THE CONTRACT, not an implementation detail.
+   * Ratified decision 5 forbids reindexing precisely because every emitted
+   * change is one more sync operation for a single click. The first version of
+   * the fallback densely renumbered and emitted THREE changes here — including
+   * uninvolved row `d`, whose delete-gap collapsed from 5 to 3. Only the
+   * colliding neighbour has to move.
+   */
+  it('touches only the rows that must move, and preserves an uninvolved delete-gap', () => {
+    const adversarial = [
+      row('a', 0, '2026-01-04T00:00:00.000Z'),
+      row('b', 2, '2026-01-02T00:00:00.000Z'),
+      row('c', 2, '2026-01-01T00:00:00.000Z'),
+      row('d', 5, '2026-01-05T00:00:00.000Z'),
+    ]
+    const plan = planRowMove(adversarial, 'a', 'down')
+
+    // The order is still exactly right...
+    expect(applyPlan(adversarial, plan)).toEqual(['c', 'a', 'b', 'd'])
+    // ...and row `d` was never touched, so its gap at 5 survives.
+    expect(plan.map((change) => change.id)).not.toContain('d')
+    expect(plan.length).toBeLessThanOrEqual(2)
+  })
+
+  it('keeps an ordinary move to exactly two writes, gap intact', () => {
+    const gapped = [
+      row('a', 0, '2026-01-01T00:00:00.000Z'),
+      row('b', 9, '2026-01-02T00:00:00.000Z'),
+      row('c', 40, '2026-01-03T00:00:00.000Z'),
+    ]
+    const plan = planRowMove(gapped, 'c', 'up')
+    expect(plan).toHaveLength(2)
+    // `a` is untouched: its position and the 0->9 gap are both preserved.
+    expect(plan.map((change) => change.id)).not.toContain('a')
+    expect(applyPlan(gapped, plan)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('reorders a list in which NO row has a sortOrder', () => {
+    const unpositioned = [
+      row('a', undefined, '2026-01-01'),
+      row('b', undefined, '2026-01-02'),
+      row('c', undefined, '2026-01-03'),
+    ]
+    expect(applyPlan(unpositioned, planRowMove(unpositioned, 'c', 'up'))).toEqual(['a', 'c', 'b'])
+  })
+
+  it('reorders when only the neighbour lacks a sortOrder', () => {
+    const mixed = [row('a', 0, '2026-01-01'), row('b', undefined, '2026-01-02')]
+    expect(applyPlan(mixed, planRowMove(mixed, 'b', 'up'))).toEqual(['b', 'a'])
+  })
+
+  it('never emits a value the sync gates would reject', () => {
+    // Both gates declare .int().min(0).max(PG_INT32_MAX), and the client gate's
+    // rejection is swallowed into a console.error — an out-of-contract value
+    // renders locally and silently never syncs (34.1a code review).
+    const hostile = [
+      row('a', -5, '2026-01-01'),
+      row('b', 1.5, '2026-01-02'),
+      row('c', Number.NaN, '2026-01-03'),
+      row('d', 4, '2026-01-04'),
+    ]
+    for (const id of ['a', 'b', 'c', 'd']) {
+      for (const direction of ['up', 'down'] as const) {
+        for (const change of planRowMove(hostile, id, direction)) {
+          expect(Number.isInteger(change.sortOrder)).toBe(true)
+          expect(change.sortOrder).toBeGreaterThanOrEqual(0)
+          expect(change.sortOrder).toBeLessThanOrEqual(2_147_483_647)
+        }
+      }
+    }
+  })
+
+  it('does not mutate its input', () => {
+    const frozen = [row('a', 0, '2026-01-01'), row('b', 1, '2026-01-02')].map((r) =>
+      Object.freeze(r)
+    )
+    expect(() => planRowMove(frozen, 'a', 'down')).not.toThrow()
+    expect(frozen[0].sortOrder).toBe(0)
   })
 })

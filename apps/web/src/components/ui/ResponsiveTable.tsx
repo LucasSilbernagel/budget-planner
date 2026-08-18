@@ -127,19 +127,38 @@ const RESPONSIVE_CELL_BASE =
 /** A data `<td>`: label left, value right below `sm`. */
 export const RESPONSIVE_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-baseline`
 
-/** The trailing Edit/Delete `<td>`. Centred rather than baseline-aligned
- * because its children are >= 44px tap targets, not text. */
-export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-center text-right text-sm`
+/** The trailing row-actions `<td>`. Centred rather than baseline-aligned
+ * because its children are >= 44px tap targets, not text.
+ *
+ * ⚠️ `max-sm:flex-col` (story 34.1b): below `sm` the label stacks ABOVE the
+ * button group instead of sitting beside it. With four 44px targets in the group
+ * (move up, move down, Edit, Delete) the row simply does not fit otherwise — a
+ * 320px viewport leaves about 200px of inner cell width once the page, section,
+ * card and cell padding are subtracted, and the "Actions" label was consuming
+ * roughly a quarter of it. Stacking reclaims that width; `e2e/responsive-320.spec.ts`
+ * is what proves the result actually fits.
+ *
+ * `max-sm:items-center` is retained and still does real work under `flex-col`,
+ * where it centres the button group on the cross axis. */
+export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:flex-col max-sm:items-center text-right text-sm`
 
 /** A `<td>` whose content is full-width (the Savings progress bar) and so must
  * stack under its label instead of sitting beside it. */
 export const RESPONSIVE_STACKED_CELL_CLASS =
   'px-6 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
-/** Wraps the two row action buttons so the actions cell has exactly two flex
+/** Wraps the row action buttons so the actions cell has exactly two flex
  * children (label + button group) below `sm`. Inert on desktop: an unclassed
- * block `<div>` leaves the inline buttons right-aligned exactly as before. */
-export const RESPONSIVE_ACTIONS_GROUP_CLASS = 'max-sm:flex max-sm:items-center'
+ * block `<div>` leaves the inline buttons right-aligned exactly as before.
+ *
+ * ⚠️ The group holds FOUR buttons since story 34.1b — move up, move down, Edit,
+ * Delete. `max-sm:gap-1` gives them 4px of separation (4 x 44 + 3 x 4 = 188px,
+ * inside the ~200px the stacked cell above makes available), and
+ * `max-sm:flex-wrap` is graceful degradation rather than the expected layout: at
+ * a larger root font size the label or the buttons can grow, and wrapping to a
+ * second line is a better failure than overflowing the card. */
+export const RESPONSIVE_ACTIONS_GROUP_CLASS =
+  'max-sm:flex max-sm:items-center max-sm:flex-wrap max-sm:justify-center max-sm:gap-1'
 
 /** Mobile tap-target sizing for a row action button (>= 44px both dimensions).
  * Breakpoint-scoped on purpose — an unprefixed `min-h-[44px]` would change the

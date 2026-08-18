@@ -42,6 +42,12 @@ const STORES = [
       useIncomeStore.getState().addIncomeSource({ name, amount: 1000, frequency: 'monthly' }),
     read: () => useIncomeStore.getState().incomeSources,
     remove: (id: string) => useIncomeStore.getState().deleteIncomeSource(id),
+    move: (id: string, direction: 'up' | 'down') =>
+      useIncomeStore.getState().moveIncomeSource(id, direction),
+    tieAllPositions: () =>
+      useIncomeStore.setState((state) => ({
+        incomeSources: state.incomeSources.map((row) => ({ ...row, sortOrder: 4 })),
+      })),
     rehydrate: () => useIncomeStore.persist.rehydrate(),
     legacyRow: (id: string, createdAt: string) => ({
       id,
@@ -63,6 +69,12 @@ const STORES = [
       useExpenseStore.getState().addExpense({ name, amount: 1000, frequency: 'monthly' }),
     read: () => useExpenseStore.getState().expenses,
     remove: (id: string) => useExpenseStore.getState().deleteExpense(id),
+    move: (id: string, direction: 'up' | 'down') =>
+      useExpenseStore.getState().moveExpense(id, direction),
+    tieAllPositions: () =>
+      useExpenseStore.setState((state) => ({
+        expenses: state.expenses.map((row) => ({ ...row, sortOrder: 4 })),
+      })),
     rehydrate: () => useExpenseStore.persist.rehydrate(),
     legacyRow: (id: string, createdAt: string) => ({
       id,
@@ -84,6 +96,12 @@ const STORES = [
       useSavingsStore.getState().addSavingsGoal({ name, targetAmount: 5000, currentBalance: 0 }),
     read: () => useSavingsStore.getState().savingsGoals,
     remove: (id: string) => useSavingsStore.getState().deleteSavingsGoal(id),
+    move: (id: string, direction: 'up' | 'down') =>
+      useSavingsStore.getState().moveSavingsGoal(id, direction),
+    tieAllPositions: () =>
+      useSavingsStore.setState((state) => ({
+        savingsGoals: state.savingsGoals.map((row) => ({ ...row, sortOrder: 4 })),
+      })),
     rehydrate: () => useSavingsStore.persist.rehydrate(),
     legacyRow: (id: string, createdAt: string) => ({
       id,
@@ -111,6 +129,12 @@ const STORES = [
       }),
     read: () => useBalanceStore.getState().entries,
     remove: (id: string) => useBalanceStore.getState().deleteBalanceEntry(id),
+    move: (id: string, direction: 'up' | 'down') =>
+      useBalanceStore.getState().moveBalanceEntry(id, direction),
+    tieAllPositions: () =>
+      useBalanceStore.setState((state) => ({
+        entries: state.entries.map((row) => ({ ...row, sortOrder: 4 })),
+      })),
     rehydrate: () => useBalanceStore.persist.rehydrate(),
     legacyRow: (id: string, createdAt: string) => ({
       id,
@@ -471,4 +495,222 @@ describe.each(STORES)('$label — tier matrix (AC-9)', (store) => {
       expect(queueCreate.mock.calls[1][2]).toMatchObject({ sortOrder: 1 })
     }
   )
+})
+
+/**
+ * Reordering (Story 34.1b, FR60).
+ *
+ * Driven over all four stores for the reason at the top of this file: four
+ * independent implementations, no shared factory. The single shared piece is
+ * `applyRowMove`; everything below proves each store actually calls it, keeps
+ * its own collection sorted, and queues the right sync operations.
+ */
+describe.each(STORES)('$label — reorder rows (34.1b)', (store) => {
+  /** Seed `count` rows with DISTINCT createdAt values and return their ids in order. */
+  function seed(count: number): string[] {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    for (let i = 0; i < count; i += 1) {
+      store.add(`row-${i}`)
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+    const ids = store.read().map((row) => row.id as string)
+    // ⚠️ Guard the guard: if the clock were not driven, every row would share a
+    // createdAt and a tie-preserving sort could make these assertions pass by
+    // accident (34.1a's M10 lesson).
+    const created = store.read().map((row) => row.createdAt)
+    expect(new Set(created).size).toBe(count)
+    return ids
+  }
+
+  it('moves a row up, swapping it with its predecessor', () => {
+    const [a, b, c] = seed(3)
+    store.move(b as string, 'up')
+    expect(store.read().map((row) => row.id)).toEqual([b, a, c])
+  })
+
+  it('moves a row down, swapping it with its successor', () => {
+    const [a, b, c] = seed(3)
+    store.move(b as string, 'down')
+    expect(store.read().map((row) => row.id)).toEqual([a, c, b])
+  })
+
+  it('is a no-op at the top boundary', () => {
+    const [a, b, c] = seed(3)
+    store.move(a as string, 'up')
+    expect(store.read().map((row) => row.id)).toEqual([a, b, c])
+  })
+
+  it('is a no-op at the bottom boundary', () => {
+    const [a, b, c] = seed(3)
+    store.move(c as string, 'down')
+    expect(store.read().map((row) => row.id)).toEqual([a, b, c])
+  })
+
+  it('is a no-op for a single-row list in both directions', () => {
+    const [only] = seed(1)
+    store.move(only as string, 'up')
+    store.move(only as string, 'down')
+    expect(store.read().map((row) => row.id)).toEqual([only])
+  })
+
+  it('is a no-op for an unknown id', () => {
+    const ids = seed(2)
+    store.move('no-such-row', 'up')
+    expect(store.read().map((row) => row.id)).toEqual(ids)
+  })
+
+  it('survives a reload (the new order is persisted, not just in memory)', async () => {
+    const [a, b] = seed(2)
+    store.move(b as string, 'up')
+
+    // Simulate a reload. ⚠️ `reset()` goes THROUGH the persist middleware, so it
+    // overwrites the very blob we are about to read back (vitest.setup.ts:53-56
+    // records that `setState` hits the write path). Snapshot the persisted value
+    // first and restore it, so what rehydrates is what a real reload would find.
+    const persisted = localStorage.getItem(store.key)
+    expect(persisted).toBeTruthy()
+    store.reset()
+    expect(store.read()).toHaveLength(0)
+    localStorage.setItem(store.key, persisted as string)
+    await store.rehydrate()
+
+    expect(store.read().map((row) => row.id)).toEqual([b, a])
+  })
+
+  it('moves repeatedly, walking a row from bottom to top', () => {
+    const [a, b, c] = seed(3)
+    store.move(c as string, 'up')
+    store.move(c as string, 'up')
+    expect(store.read().map((row) => row.id)).toEqual([c, a, b])
+  })
+
+  it('still reorders when two adjacent rows share a sortOrder', () => {
+    // ⚠️ Duplicates are EXPECTED (34.1a decision 4): two devices reordering
+    // offline converge via the createdAt/id tiebreakers, not a unique index. A
+    // plain value-swap is a no-op on a tie, so this is the case that a fixture
+    // with distinct positions structurally cannot detect.
+    const [a, b] = seed(2)
+    store.tieAllPositions()
+    expect(store.read().map((row) => row.sortOrder)).toEqual([4, 4])
+
+    store.move(b as string, 'up')
+    expect(store.read().map((row) => row.id)).toEqual([b, a])
+  })
+
+  /**
+   * ⚠️ COMPARED BY ROW ID, NOT BY ARRAY POSITION — and that is the whole test.
+   *
+   * The first version of this test mapped `updatedAt` positionally before and
+   * after the move. But the move REORDERS the array, and the seed gives each row
+   * a distinct timestamp, so `after[i] !== before[i]` held at every index even
+   * when nothing was bumped at all: the values had merely swapped places.
+   * Measured — deleting the `updatedAt` bump from `applyRowMove` entirely left
+   * all 108 tests in this file green. Keying by id is what makes the assertion
+   * about the property it names.
+   */
+  it('bumps updatedAt on both affected rows', () => {
+    const [a, b] = seed(2)
+    const stamps = () => new Map(store.read().map((row) => [row.id as string, row.updatedAt]))
+    const before = stamps()
+
+    store.move(b as string, 'up')
+
+    const after = stamps()
+    expect(after.get(a as string)).not.toBe(before.get(a as string))
+    expect(after.get(b as string)).not.toBe(before.get(b as string))
+  })
+})
+
+/**
+ * Tier matrix for reordering (Story 34.1b, AC-3).
+ *
+ * ⚠️ Separate from the add-path matrix above because the failure it guards is
+ * different: a move writes TWO rows, so the question is not "did anything sync"
+ * but "did BOTH updates survive". 33.3's finding — `deferred-work.md:806` names
+ * Epic 34 by number — is that a tier-conditional regression is invisible to a
+ * suite whose tests all run under one tier.
+ */
+describe.each(STORES)('$label — reorder sync contract (34.1b AC-3)', (store) => {
+  function seedTwo(): string[] {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    store.add('row-0')
+    vi.advanceTimersByTime(1000)
+    store.add('row-1')
+    vi.useRealTimers()
+    return store.read().map((row) => row.id as string)
+  }
+
+  it('FREE (no session): reorders locally and enqueues NOTHING', () => {
+    // ⚠️ REGISTERED, THEN CLEARED — not merely left unregistered.
+    //
+    // Review found the earlier version tautological: a spy object handed to
+    // nobody can never be called, so `not.toHaveBeenCalled()` could not fail.
+    // Registering the bridge first proves these exact spies are reachable, and
+    // clearing it reproduces what "free tier" actually means at runtime — the
+    // module singleton is null. A store that captured the handle at module load,
+    // or that reached around `syncEntityUpdate`, now fails here.
+    const spies = {
+      userId: SESSION_USER_ID,
+      queueCreate: vi.fn(async () => {}),
+      queueUpdate: vi.fn(async () => {}),
+      queueDelete: vi.fn(async () => {}),
+    }
+    registerSyncBridge(spies)
+    clearSyncBridge()
+
+    const [a, b] = seedTwo()
+    store.move(b as string, 'up')
+
+    expect(store.read().map((row) => row.id)).toEqual([b, a])
+    expect(spies.queueUpdate).not.toHaveBeenCalled()
+    expect(spies.queueCreate).not.toHaveBeenCalled()
+    expect(spies.queueDelete).not.toHaveBeenCalled()
+  })
+
+  it.each(['active', 'lifetime'] as const)(
+    'PAID (%s): queues an update for BOTH affected rows, each carrying its new position',
+    (status) => {
+      // The status-sensitive gate lives in SyncProvider, not the store.
+      expect(PAID_SYNC_STATUSES as readonly string[]).toContain(status)
+
+      const [a, b] = seedTwo()
+      const queueUpdate = vi.fn(async () => {})
+      registerSyncBridge({
+        userId: SESSION_USER_ID,
+        queueCreate: vi.fn(async () => {}),
+        queueUpdate,
+        queueDelete: vi.fn(async () => {}),
+      })
+
+      store.move(b as string, 'up')
+
+      // ⚠️ TWO operations, not one. A swap that queued only the moved row would
+      // leave the neighbour's old position on the server, and the next pull would
+      // undo the reorder.
+      expect(queueUpdate).toHaveBeenCalledTimes(2)
+      const byId = new Map(
+        queueUpdate.mock.calls.map((call) => [call[1] as string, call[2] as { sortOrder: number }])
+      )
+      expect(byId.get(b as string)).toMatchObject({ sortOrder: 0 })
+      expect(byId.get(a as string)).toMatchObject({ sortOrder: 1 })
+    }
+  )
+
+  it('PAID: a boundary move queues nothing at all', () => {
+    const [a] = seedTwo()
+    const queueUpdate = vi.fn(async () => {})
+    registerSyncBridge({
+      userId: SESSION_USER_ID,
+      queueCreate: vi.fn(async () => {}),
+      queueUpdate,
+      queueDelete: vi.fn(async () => {}),
+    })
+
+    store.move(a as string, 'up')
+
+    expect(queueUpdate).not.toHaveBeenCalled()
+  })
 })

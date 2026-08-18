@@ -26,7 +26,13 @@ import {
 import type { FinanceType } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
+import {
+  type RowMoveDirection,
+  applyRowMove,
+  backfillSortOrder,
+  nextSortOrder,
+  sortByDisplayOrder,
+} from '../lib/ordering'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
 
@@ -50,6 +56,13 @@ interface BalanceState {
     id: string,
     data: Partial<ClientNewBalanceTracking>
   ) => ClientBalanceTracking | null
+  /**
+   * Move a row one place up or down (Story 34.1b, FR60). Takes a direction, not
+   * a position: `sortOrder` is absent from `ClientNewBalanceTracking`, so a
+   * reorder cannot be expressed through `updateBalanceEntry`, and the caller has
+   * no business knowing the numbering scheme. A boundary move is a silent no-op.
+   */
+  moveBalanceEntry: (id: string, direction: RowMoveDirection) => void
   deleteBalanceEntry: (id: string) => boolean
   setFilter: (filter: BalanceTrackingFilter) => void
   clearFilter: () => void
@@ -153,6 +166,28 @@ export const useBalanceStore = create<BalanceState>()(
           syncEntityUpdate('balanceTracking', updatedEntry, previous)
         }
         return updatedEntry || null
+      },
+
+      // Move a row one place up or down (Story 34.1b)
+      moveBalanceEntry: (id, direction) => {
+        const result = applyRowMove(get().entries, id, direction)
+        if (!result) {
+          // Boundary, unknown id, or empty list: change nothing, queue nothing.
+          return
+        }
+        set(() => ({ entries: result.rows }))
+        // One update per affected row. Both are queued in the SAME synchronous
+        // turn, which is why SyncQueue.add had to be made re-entrancy safe —
+        // before that fix the second enqueue clobbered the first and half of
+        // every reorder was silently lost on the paid tier.
+        //
+        // ⚠️ Deliberately NOT routed through updateBalanceEntry: that path runs
+        // validateBalanceTracking and would reject a row whose OTHER fields are
+        // already invalid, making such a row unmovable. A position is not a
+        // field the user is editing.
+        for (const { previous, updated } of result.changes) {
+          syncEntityUpdate('balanceTracking', updated, previous)
+        }
       },
 
       // Delete a balance entry

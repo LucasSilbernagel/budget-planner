@@ -822,7 +822,12 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
   it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
     const { container } = renderWithProviders(<BalancePage />)
     const row = rowIn(tables(container).entries, 'Car Loan')
-    for (const label of ['Edit Car Loan', 'Delete Car Loan']) {
+    for (const label of [
+      'Edit Car Loan',
+      'Delete Car Loan',
+      'Move Car Loan up',
+      'Move Car Loan down',
+    ]) {
       assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
     }
   })
@@ -830,7 +835,12 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
   it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
     const { container } = renderWithProviders(<BalancePage />)
     const row = rowIn(tables(container).entries, 'Car Loan')
-    for (const label of ['Edit Car Loan', 'Delete Car Loan']) {
+    for (const label of [
+      'Edit Car Loan',
+      'Delete Car Loan',
+      'Move Car Loan up',
+      'Move Car Loan down',
+    ]) {
       assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
     }
   })
@@ -974,5 +984,225 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
     expect(netWorth).toHaveTextContent('0.00')
     expect(netWorth.textContent).not.toMatch(/NaN/)
     expect(screen.getByTestId('stat-total-savings').textContent).not.toMatch(/NaN/)
+  })
+})
+
+/**
+ * Row reordering (Story 34.1b, FR60).
+ *
+ * ⚠️ Written per page rather than once over a table of four. These are four
+ * independent page components with four hand-rolled actions cells; stories 30-4b
+ * and 33.3 each shipped a HIGH by testing one surface and assuming its siblings.
+ */
+describe('BalancePage — reorder rows (34.1b)', () => {
+  const NAMES = ['Alpha', 'Beta', 'Gamma']
+
+  function seedRows() {
+    useBalanceStore.setState({ entries: [] })
+    // Distinct createdAt per row: rows added inside one millisecond tie on the
+    // secondary sort key, and a tie-preserving stable sort can make an ordering
+    // assertion pass by accident (34.1a's M10).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
+    for (const name of NAMES) {
+      useBalanceStore.getState().addBalanceEntry({
+        type: 'investment' as const,
+        name,
+        currentBalance: 100000,
+        monthlyContribution: 0,
+        frequency: 'monthly' as const,
+      })
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+  }
+
+  /**
+   * The rendered row names, top to bottom, in the EDITABLE table.
+   *
+   * ⚠️ Scoped deliberately. `/balance` renders `entries` TWICE — the read-only
+   * "Investment Accounts" breakdown is a filtered view of the same array — so an
+   * unscoped `getAllByRole('row')` returns both tables' rows concatenated and
+   * every ordering assertion here would compare six names against three. The
+   * editable table is identified as the one carrying the move controls.
+   */
+  function editableTable(): HTMLElement {
+    const control = screen.getAllByRole('button', { name: /^Move .+ up$/ })[0] as HTMLElement
+    return control.closest('table') as HTMLElement
+  }
+
+  function renderedOrder(): string[] {
+    return within(editableTable())
+      .getAllByRole('row')
+      .slice(1) // drop the header row
+      .map((row) => NAMES.find((name) => within(row).queryByText(name)))
+      .filter((name): name is string => Boolean(name))
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    seedRows()
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+    localStorage.clear()
+  })
+
+  it('offers a move-up and move-down control naming each row (AC-1)', () => {
+    renderWithProviders(<BalancePage />)
+    for (const name of NAMES) {
+      expect(screen.getByRole('button', { name: `Move ${name} up` })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: `Move ${name} down` })).toBeInTheDocument()
+    }
+  })
+
+  it('moves a row up when its control is activated (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    expect(renderedOrder()).toEqual(NAMES)
+
+    await user.click(screen.getByRole('button', { name: 'Move Beta up' }))
+
+    expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Gamma'])
+  })
+
+  it('moves a row down when its control is activated (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Beta down' }))
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+
+  /**
+   * ⚠️ `aria-disabled`, NOT the native `disabled` attribute (story decision 2).
+   * `toBeDisabled()` deliberately does NOT pass here: a natively disabled button
+   * cannot hold focus, which would break the focus-retention AC below at exactly
+   * the boundary this assertion is about.
+   */
+  it('marks the boundary controls aria-disabled while keeping them focusable (AC-4)', () => {
+    renderWithProviders(<BalancePage />)
+    const firstUp = screen.getByRole('button', { name: 'Move Alpha up' })
+    const lastDown = screen.getByRole('button', { name: 'Move Gamma down' })
+
+    expect(firstUp).toHaveAttribute('aria-disabled', 'true')
+    expect(lastDown).toHaveAttribute('aria-disabled', 'true')
+    // Interior controls are NOT marked — otherwise the assertion above would
+    // pass on a component that marks every control.
+    expect(screen.getByRole('button', { name: 'Move Beta up' })).toHaveAttribute(
+      'aria-disabled',
+      'false'
+    )
+    expect(firstUp).not.toBeDisabled()
+  })
+
+  it('does nothing when a boundary control is activated (AC-4)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
+    await user.click(screen.getByRole('button', { name: 'Move Gamma down' }))
+
+    expect(renderedOrder()).toEqual(NAMES)
+  })
+
+  it('marks BOTH controls aria-disabled on a single-row list (AC-4)', () => {
+    useBalanceStore.setState({ entries: [] })
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'investment' as const,
+      name: 'Solo',
+      currentBalance: 100000,
+      monthlyContribution: 0,
+      frequency: 'monthly' as const,
+    })
+    renderWithProviders(<BalancePage />)
+
+    expect(screen.getByRole('button', { name: 'Move Solo up' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+    expect(screen.getByRole('button', { name: 'Move Solo down' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  })
+
+  /**
+   * ⚠️ THE POINT OF THIS TEST IS THAT IT CAN FAIL. It asserts the row actually
+   * moved AND that focus stayed on the control the user pressed — "something is
+   * focused" would prove nothing. Focus survives because all four tables key
+   * rows by `id`, so React moves the existing DOM node instead of remounting it.
+   */
+  it('keeps focus on the activated control after a keyboard move (AC-6)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    const control = screen.getByRole('button', { name: 'Move Gamma up' })
+
+    control.focus()
+    await user.keyboard('{Enter}')
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Move Gamma up' })).toHaveFocus()
+    })
+  })
+
+  it('keeps focus on a control that becomes a boundary control (AC-6)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    const control = screen.getByRole('button', { name: 'Move Beta up' })
+
+    control.focus()
+    await user.keyboard('{Enter}')
+
+    // Beta is now first, so its move-up control is aria-disabled — and must
+    // still hold focus. A native `disabled` here would drop focus to <body>.
+    const after = screen.getByRole('button', { name: 'Move Beta up' })
+    expect(after).toHaveAttribute('aria-disabled', 'true')
+    await waitFor(() => expect(after).toHaveFocus())
+  })
+
+  it('persists the new order across a reload (AC-2)', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderWithProviders(<BalancePage />)
+    await user.click(screen.getByRole('button', { name: 'Move Gamma up' }))
+    unmount()
+
+    // ⚠️ `setState` goes THROUGH the persist middleware, so clearing in-memory
+    // state would overwrite the blob we are about to read back. Snapshot it,
+    // clear, restore, then rehydrate — which is what a reload actually does.
+    const persisted = localStorage.getItem('budget-planner:balance-tracking')
+    expect(persisted).toBeTruthy()
+    useBalanceStore.setState({ entries: [] })
+    localStorage.setItem('budget-planner:balance-tracking', persisted as string)
+    await useBalanceStore.persist.rehydrate()
+
+    renderWithProviders(<BalancePage />)
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+  /**
+   * ⚠️ AC-8: reordering the editable table ALSO reorders the read-only
+   * "Investment Accounts" breakdown, because both render the same `entries`
+   * array and a filter preserves relative order. That is coherent rather than a
+   * defect — one list, one order — but it is user-visible, so it is pinned here
+   * instead of being rediscovered as a surprise in review.
+   */
+  it('mirrors the new order in the read-only Investment Accounts breakdown (AC-8)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Gamma up' }))
+
+    const tables = screen.getAllByRole('table')
+    const breakdown = tables.find((table) => table !== editableTable()) as HTMLElement
+    const breakdownOrder = within(breakdown)
+      .getAllByRole('row')
+      .map((row) => NAMES.find((name) => within(row).queryByText(name)))
+      .filter((name): name is string => Boolean(name))
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+    expect(breakdownOrder).toEqual(['Alpha', 'Gamma', 'Beta'])
   })
 })

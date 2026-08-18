@@ -654,7 +654,12 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
   it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
     renderWithProviders(<SavingsPage />)
     const row = rowFor('Vacation')
-    for (const label of ['Edit Vacation', 'Delete Vacation']) {
+    for (const label of [
+      'Edit Vacation',
+      'Delete Vacation',
+      'Move Vacation up',
+      'Move Vacation down',
+    ]) {
       assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
     }
   })
@@ -662,7 +667,12 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
   it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
     renderWithProviders(<SavingsPage />)
     const row = rowFor('Vacation')
-    for (const label of ['Edit Vacation', 'Delete Vacation']) {
+    for (const label of [
+      'Edit Vacation',
+      'Delete Vacation',
+      'Move Vacation up',
+      'Move Vacation down',
+    ]) {
       assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
     }
   })
@@ -671,5 +681,179 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
     const { container } = renderWithProviders(<SavingsPage />)
     const table = container.querySelector('table') as HTMLElement
     expect(collectRetiredTokenViolations(table)).toEqual([])
+  })
+})
+
+/**
+ * Row reordering (Story 34.1b, FR60).
+ *
+ * ⚠️ Written per page rather than once over a table of four. These are four
+ * independent page components with four hand-rolled actions cells; stories 30-4b
+ * and 33.3 each shipped a HIGH by testing one surface and assuming its siblings.
+ */
+describe('SavingsPage — reorder rows (34.1b)', () => {
+  const NAMES = ['Alpha', 'Beta', 'Gamma']
+
+  function seedRows() {
+    useSavingsStore.setState({ savingsGoals: [] })
+    // Distinct createdAt per row: rows added inside one millisecond tie on the
+    // secondary sort key, and a tie-preserving stable sort can make an ordering
+    // assertion pass by accident (34.1a's M10).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
+    for (const name of NAMES) {
+      useSavingsStore.getState().addSavingsGoal({ name, targetAmount: 500000, currentBalance: 0 })
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+  }
+
+  /** The rendered row names, top to bottom. */
+  function renderedOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      .slice(1) // drop the header row
+      .map((row) => NAMES.find((name) => within(row).queryByText(name)))
+      .filter((name): name is string => Boolean(name))
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    seedRows()
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+    localStorage.clear()
+  })
+
+  it('offers a move-up and move-down control naming each row (AC-1)', () => {
+    renderWithProviders(<SavingsPage />)
+    for (const name of NAMES) {
+      expect(screen.getByRole('button', { name: `Move ${name} up` })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: `Move ${name} down` })).toBeInTheDocument()
+    }
+  })
+
+  it('moves a row up when its control is activated (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    expect(renderedOrder()).toEqual(NAMES)
+
+    await user.click(screen.getByRole('button', { name: 'Move Beta up' }))
+
+    expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Gamma'])
+  })
+
+  it('moves a row down when its control is activated (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Beta down' }))
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+
+  /**
+   * ⚠️ `aria-disabled`, NOT the native `disabled` attribute (story decision 2).
+   * `toBeDisabled()` deliberately does NOT pass here: a natively disabled button
+   * cannot hold focus, which would break the focus-retention AC below at exactly
+   * the boundary this assertion is about.
+   */
+  it('marks the boundary controls aria-disabled while keeping them focusable (AC-4)', () => {
+    renderWithProviders(<SavingsPage />)
+    const firstUp = screen.getByRole('button', { name: 'Move Alpha up' })
+    const lastDown = screen.getByRole('button', { name: 'Move Gamma down' })
+
+    expect(firstUp).toHaveAttribute('aria-disabled', 'true')
+    expect(lastDown).toHaveAttribute('aria-disabled', 'true')
+    // Interior controls are NOT marked — otherwise the assertion above would
+    // pass on a component that marks every control.
+    expect(screen.getByRole('button', { name: 'Move Beta up' })).toHaveAttribute(
+      'aria-disabled',
+      'false'
+    )
+    expect(firstUp).not.toBeDisabled()
+  })
+
+  it('does nothing when a boundary control is activated (AC-4)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
+    await user.click(screen.getByRole('button', { name: 'Move Gamma down' }))
+
+    expect(renderedOrder()).toEqual(NAMES)
+  })
+
+  it('marks BOTH controls aria-disabled on a single-row list (AC-4)', () => {
+    useSavingsStore.setState({ savingsGoals: [] })
+    useSavingsStore
+      .getState()
+      .addSavingsGoal({ name: 'Solo', targetAmount: 500000, currentBalance: 0 })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByRole('button', { name: 'Move Solo up' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+    expect(screen.getByRole('button', { name: 'Move Solo down' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  })
+
+  /**
+   * ⚠️ THE POINT OF THIS TEST IS THAT IT CAN FAIL. It asserts the row actually
+   * moved AND that focus stayed on the control the user pressed — "something is
+   * focused" would prove nothing. Focus survives because all four tables key
+   * rows by `id`, so React moves the existing DOM node instead of remounting it.
+   */
+  it('keeps focus on the activated control after a keyboard move (AC-6)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    const control = screen.getByRole('button', { name: 'Move Gamma up' })
+
+    control.focus()
+    await user.keyboard('{Enter}')
+
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Move Gamma up' })).toHaveFocus()
+    })
+  })
+
+  it('keeps focus on a control that becomes a boundary control (AC-6)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    const control = screen.getByRole('button', { name: 'Move Beta up' })
+
+    control.focus()
+    await user.keyboard('{Enter}')
+
+    // Beta is now first, so its move-up control is aria-disabled — and must
+    // still hold focus. A native `disabled` here would drop focus to <body>.
+    const after = screen.getByRole('button', { name: 'Move Beta up' })
+    expect(after).toHaveAttribute('aria-disabled', 'true')
+    await waitFor(() => expect(after).toHaveFocus())
+  })
+
+  it('persists the new order across a reload (AC-2)', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Move Gamma up' }))
+    unmount()
+
+    // ⚠️ `setState` goes THROUGH the persist middleware, so clearing in-memory
+    // state would overwrite the blob we are about to read back. Snapshot it,
+    // clear, restore, then rehydrate — which is what a reload actually does.
+    const persisted = localStorage.getItem('budget-planner:savings-goals')
+    expect(persisted).toBeTruthy()
+    useSavingsStore.setState({ savingsGoals: [] })
+    localStorage.setItem('budget-planner:savings-goals', persisted as string)
+    await useSavingsStore.persist.rehydrate()
+
+    renderWithProviders(<SavingsPage />)
+    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
   })
 })

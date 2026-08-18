@@ -70,6 +70,24 @@ export class SyncQueue {
   private readonly storage: SyncQueueStorage
 
   /**
+   * Tail of the mutation chain. Every method that reads `this.queue`, awaits a
+   * storage write, and then reassigns `this.queue` must run through
+   * `serialize()`, because that await is a window in which another caller can
+   * read the pre-write queue and clobber the result.
+   *
+   * This is not theoretical: callers routinely do NOT await. `syncEntityUpdate`
+   * (apps/web) returns `void` and only attaches `.catch()`, so a story-34.1b row
+   * swap enqueues twice in one synchronous turn and `useCategoryManager` loops N
+   * un-awaited updates. Before serialization a burst of 10,000 un-awaited adds
+   * left ONE operation in the queue — the rest were silently lost.
+   *
+   * Serializing only `add` would not be enough: the flush path calls
+   * `removeBatch` while the user may be adding, so an add racing a remove loses
+   * data just as readily. All mutators therefore share this one chain.
+   */
+  private mutations: Promise<unknown> = Promise.resolve()
+
+  /**
    * Create a new SyncQueue instance
    * @param userId - The user ID for this queue
    * @param storage - Optional persistent storage for the queue
@@ -80,10 +98,42 @@ export class SyncQueue {
   }
 
   /**
+   * Run `work` after every previously queued mutation has settled, so no two
+   * mutations interleave between reading and reassigning `this.queue`.
+   *
+   * A rejected mutation (e.g. the size-limit throw, or a storage failure) must
+   * NOT poison the chain for later callers, so the tail absorbs both outcomes.
+   * The rejection is still delivered to that call's own caller.
+   *
+   * ⚠️ TWO HAZARDS FOR WHOEVER EDITS THIS NEXT — neither is a defect today.
+   *  1. **A storage write that never settles blocks every later mutation.**
+   *     Before serialization a hung `saveQueue` cost one operation; now it parks
+   *     the whole chain for the lifetime of the instance. There is deliberately
+   *     no timeout here (silently abandoning a write would reintroduce exactly
+   *     the memory/storage divergence this class is careful to avoid), so a
+   *     storage implementation added later MUST settle.
+   *  2. **`serialize` is NOT re-entrant.** If a serialized method ever awaits
+   *     another serialized method on the same instance, it waits on a link that
+   *     cannot run until it returns — a silent self-deadlock. No current method
+   *     does this; keep it that way, or hoist the shared work into a private
+   *     unserialized helper that both call.
+   */
+  private serialize<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.mutations.then(work, work)
+    this.mutations = result.then(
+      () => undefined,
+      () => undefined
+    )
+    return result
+  }
+
+  /**
    * Initialize the queue by loading from storage
    */
   async initialize(): Promise<void> {
-    this.queue = await this.storage.loadQueue(this.userId)
+    return this.serialize(async () => {
+      this.queue = await this.storage.loadQueue(this.userId)
+    })
   }
 
   /**
@@ -91,19 +141,22 @@ export class SyncQueue {
    * @param operation - The sync operation to add
    */
   async add(operation: SyncOperation): Promise<void> {
-    // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
-    if (this.queue.length >= MAX_QUEUE_SIZE) {
-      throw new Error(
-        `Queue size limit (${MAX_QUEUE_SIZE}) exceeded. Please sync existing operations before adding more.`
-      )
-    }
+    return this.serialize(async () => {
+      // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
+      // (serialized, so this now sees the true length rather than a stale one)
+      if (this.queue.length >= MAX_QUEUE_SIZE) {
+        throw new Error(
+          `Queue size limit (${MAX_QUEUE_SIZE}) exceeded. Please sync existing operations before adding more.`
+        )
+      }
 
-    // Persist BEFORE mutating in-memory state so a storage failure does not
-    // leave the in-memory queue diverged from what is persisted (which would
-    // cause the operation to be lost or duplicated on the next reload).
-    const newQueue = [...this.queue, operation]
-    await this.storage.saveQueue(this.userId, newQueue)
-    this.queue = newQueue
+      // Persist BEFORE mutating in-memory state so a storage failure does not
+      // leave the in-memory queue diverged from what is persisted (which would
+      // cause the operation to be lost or duplicated on the next reload).
+      const newQueue = [...this.queue, operation]
+      await this.storage.saveQueue(this.userId, newQueue)
+      this.queue = newQueue
+    })
   }
 
   /**
@@ -111,17 +164,19 @@ export class SyncQueue {
    * @param operations - Array of sync operations to add
    */
   async addBatch(operations: SyncOperation[]): Promise<void> {
-    // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
-    if (this.queue.length + operations.length > MAX_QUEUE_SIZE) {
-      throw new Error(
-        `Queue size limit (${MAX_QUEUE_SIZE}) would be exceeded. Current: ${this.queue.length}, Adding: ${operations.length}. Please sync existing operations before adding more.`
-      )
-    }
+    return this.serialize(async () => {
+      // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
+      if (this.queue.length + operations.length > MAX_QUEUE_SIZE) {
+        throw new Error(
+          `Queue size limit (${MAX_QUEUE_SIZE}) would be exceeded. Current: ${this.queue.length}, Adding: ${operations.length}. Please sync existing operations before adding more.`
+        )
+      }
 
-    // Persist BEFORE mutating in-memory state (see add() for rationale).
-    const newQueue = [...this.queue, ...operations]
-    await this.storage.saveQueue(this.userId, newQueue)
-    this.queue = newQueue
+      // Persist BEFORE mutating in-memory state (see add() for rationale).
+      const newQueue = [...this.queue, ...operations]
+      await this.storage.saveQueue(this.userId, newQueue)
+      this.queue = newQueue
+    })
   }
 
   /**
@@ -153,17 +208,19 @@ export class SyncQueue {
    * @param operationId - The ID of the operation to remove
    */
   async remove(operationId: string): Promise<boolean> {
-    const filtered = this.queue.filter((op) => op.id !== operationId)
+    return this.serialize(async () => {
+      const filtered = this.queue.filter((op) => op.id !== operationId)
 
-    if (filtered.length < this.queue.length) {
-      // Persist BEFORE mutating in-memory state so a save failure leaves the
-      // in-memory and persisted queues consistent (no divergence on reload).
-      await this.storage.saveQueue(this.userId, filtered)
-      this.queue = filtered
-      return true
-    }
+      if (filtered.length < this.queue.length) {
+        // Persist BEFORE mutating in-memory state so a save failure leaves the
+        // in-memory and persisted queues consistent (no divergence on reload).
+        await this.storage.saveQueue(this.userId, filtered)
+        this.queue = filtered
+        return true
+      }
 
-    return false
+      return false
+    })
   }
 
   /**
@@ -171,18 +228,20 @@ export class SyncQueue {
    * @param operationIds - Array of operation IDs to remove
    */
   async removeBatch(operationIds: string[]): Promise<number> {
-    const idsSet = new Set(operationIds)
-    const filtered = this.queue.filter((op) => !idsSet.has(op.id))
+    return this.serialize(async () => {
+      const idsSet = new Set(operationIds)
+      const filtered = this.queue.filter((op) => !idsSet.has(op.id))
 
-    const removedCount = this.queue.length - filtered.length
+      const removedCount = this.queue.length - filtered.length
 
-    if (removedCount > 0) {
-      // Persist BEFORE mutating in-memory state (see remove() for rationale).
-      await this.storage.saveQueue(this.userId, filtered)
-      this.queue = filtered
-    }
+      if (removedCount > 0) {
+        // Persist BEFORE mutating in-memory state (see remove() for rationale).
+        await this.storage.saveQueue(this.userId, filtered)
+        this.queue = filtered
+      }
 
-    return removedCount
+      return removedCount
+    })
   }
 
   /**
@@ -191,28 +250,37 @@ export class SyncQueue {
    * @param entityId - The entity ID
    */
   async removeByEntity(entityType: string, entityId: string | number): Promise<number> {
-    const normalizedEntityId = String(entityId)
-    const filtered = this.queue.filter(
-      (op) => !(op.entityType === entityType && op.entityId === normalizedEntityId)
-    )
+    return this.serialize(async () => {
+      const normalizedEntityId = String(entityId)
+      const filtered = this.queue.filter(
+        (op) => !(op.entityType === entityType && op.entityId === normalizedEntityId)
+      )
 
-    const removedCount = this.queue.length - filtered.length
+      const removedCount = this.queue.length - filtered.length
 
-    if (removedCount > 0) {
-      // Persist BEFORE mutating in-memory state (see remove() for rationale).
-      await this.storage.saveQueue(this.userId, filtered)
-      this.queue = filtered
-    }
+      if (removedCount > 0) {
+        // Persist BEFORE mutating in-memory state (see remove() for rationale).
+        await this.storage.saveQueue(this.userId, filtered)
+        this.queue = filtered
+      }
 
-    return removedCount
+      return removedCount
+    })
   }
 
   /**
    * Clear all operations from the queue
    */
   async clear(): Promise<void> {
-    this.queue = []
-    await this.storage.clearQueue(this.userId)
+    return this.serialize(async () => {
+      // Persist BEFORE mutating in-memory state, matching every other mutator.
+      // The previous order emptied memory first, so a throwing `clearQueue` left
+      // memory saying "empty" while storage still held the operations — and they
+      // resurrected on the next reload, which is the exact divergence the
+      // persist-first rule exists to prevent.
+      await this.storage.clearQueue(this.userId)
+      this.queue = []
+    })
   }
 
   /**
@@ -240,18 +308,20 @@ export class SyncQueue {
    * Remove and return the next operation in the queue (FIFO)
    */
   async dequeue(): Promise<SyncOperation | undefined> {
-    if (this.queue.length === 0) {
-      return undefined
-    }
+    return this.serialize(async () => {
+      if (this.queue.length === 0) {
+        return undefined
+      }
 
-    const operation = this.queue[0]
-    const remaining = this.queue.slice(1)
-    // Persist BEFORE mutating in-memory state so a save failure does not drop
-    // the dequeued operation from memory while leaving it persisted.
-    await this.storage.saveQueue(this.userId, remaining)
-    this.queue = remaining
+      const operation = this.queue[0]
+      const remaining = this.queue.slice(1)
+      // Persist BEFORE mutating in-memory state so a save failure does not drop
+      // the dequeued operation from memory while leaving it persisted.
+      await this.storage.saveQueue(this.userId, remaining)
+      this.queue = remaining
 
-    return operation
+      return operation
+    })
   }
 
   /**
