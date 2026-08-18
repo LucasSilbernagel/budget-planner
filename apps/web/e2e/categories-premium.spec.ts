@@ -73,6 +73,27 @@ const OVERFLOW_WIDTH = 768
 const WIDE_WIDTH = 1280
 
 /**
+ * Slack allowed on the table-wrapper overflow assertion below, in CSS pixels.
+ *
+ * ⚠️ WHY IT IS NOT ZERO. The four-column table is content-sized (`min-w-full`
+ * with auto layout), so its intrinsic width is a sum of GLYPH widths — and the
+ * seed data deliberately maximises them (a 12-digit currency figure and a long
+ * name). At 768px that lands within a couple of pixels of the 656px wrapper:
+ * measured 656/656 exactly on a local Linux desktop, and 658/656 on the GitHub
+ * runner, whose fontconfig resolves `system-ui` to a slightly wider face. Both
+ * CI retries reported the identical 658, so this is a deterministic font-metric
+ * difference between hosts, not a flake — and a 2px scroll inside a wrapper that
+ * exists to scroll is not the failure this test is about.
+ *
+ * ⚠️ WHY IT IS STILL SMALL. The regression being guarded is the pre-33.3
+ * five-column table, which overflowed by ~156px (`/income`) and ~153px
+ * (`/expenses`) at this width. The tolerance is roughly a sixth of that, so a
+ * column leaking back in still fails loudly. Do not grow it to silence a
+ * failure without first measuring WHICH column reappeared.
+ */
+const OVERFLOW_TOLERANCE_PX = 24
+
+/**
  * Seed CATEGORIZED income and expense rows plus their categories.
  *
  * The rows carry real `categoryId`s deliberately. Since story 33.3 that is what
@@ -318,10 +339,12 @@ for (const { path, prefix, seededRowName, categoryText } of [
         return { scrollWidth: wrapper.scrollWidth, clientWidth: wrapper.clientWidth }
       })
       expect(wrapperOverflow, `expected a table scroll wrapper on ${path}`).not.toBeNull()
+      const scrollWidth = wrapperOverflow?.scrollWidth ?? 0
+      const clientWidth = wrapperOverflow?.clientWidth ?? 0
       expect(
-        wrapperOverflow?.scrollWidth,
-        `${path} table wrapper overflows at ${width}px`
-      ).toBeLessThanOrEqual(wrapperOverflow?.clientWidth ?? 0)
+        scrollWidth,
+        `${path} table wrapper overflows at ${width}px: scrollWidth ${scrollWidth} > clientWidth ${clientWidth} + ${OVERFLOW_TOLERANCE_PX}px tolerance`
+      ).toBeLessThanOrEqual(clientWidth + OVERFLOW_TOLERANCE_PX)
     })
   }
 }
