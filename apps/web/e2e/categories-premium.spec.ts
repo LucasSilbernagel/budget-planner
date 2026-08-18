@@ -10,16 +10,26 @@ import { type Page, expect, test } from '@playwright/test'
  *   2. That the LOCKED picker inside the Add/Edit modal opens no second dialog
  *      in a real browser (AC-5) — the default experience for every non-premium
  *      visitor, which is what this suite runs as.
- *   3. That the new Category column does not push the income/expense tables past
- *      320px. The `responsive-320.spec.ts` route sweep runs with EMPTY
- *      localStorage, so the tables render their empty state there and the new
- *      column is never exercised at the width the epic cares about.
+ *   3. That a free visitor's income/expense tables carry NO Category column at
+ *      all (story 33.3, FR57), against the real hydration path. The
+ *      `responsive-320.spec.ts` route sweep runs with EMPTY localStorage, so the
+ *      tables render their empty state there and the column's absence is never
+ *      exercised with rows present.
  *
  * ⚠️ SCOPE LIMIT, stated rather than hidden: this suite is UNAUTHENTICATED — the
  * same constraint `premium-locked.spec.ts` and `report-print.spec.ts` work
  * under, since there is no session seeding available here. So the management
  * list itself cannot be rendered end to end; `CategoryManager.test.tsx` covers
- * its behaviour and this file covers the gate plus the always-rendered column.
+ * its behaviour and this file covers the gate plus the free tier's absent column.
+ *
+ * ⚠️ AND THE SAME LIMIT NOW BOUNDS FR57: since story 33.3 the Category column
+ * renders ONLY for entitled users, and no unauthenticated run can reach that
+ * branch — so the 5-column table is UNREACHABLE in e2e entirely. Every
+ * assertion below is therefore a NEGATIVE. The entitled branch (and the
+ * header/cell parity that stops a half-applied gate) is proved in
+ * `category-assignment.test.tsx`, which is the only layer that can mock a tier.
+ * Do not add a "premium sees the column" test here; it could only ever pass by
+ * asserting nothing.
  *
  * ⚠️ THE SAME LIMIT APPLIES TO THE 30.5 BREAKDOWN SECTION, and it is a limit,
  * not a defect to be reported: the section renders only in `CategoriesPage`'s
@@ -34,13 +44,42 @@ import { type Page, expect, test } from '@playwright/test'
  */
 
 const NARROW_WIDTH = 320
+/**
+ * Just above the `sm` (640px) breakpoint, where story 31.2's card layout gives
+ * way to a real table and the `<thead>` is displayed again.
+ *
+ * ⚠️ THIS IS THE WIDTH THAT MATTERS FOR OVERFLOW, and the reason it is in this
+ * list (code review 33.3). The pre-33.3 five-column table overflowed its
+ * `div.overflow-x-auto` wrapper by ~156px (`/income`) and ~153px (`/expenses`)
+ * at exactly 768px — measured, and invisible to every documentElement check
+ * because the scroll wrapper absorbs it. The first version of this test ran only
+ * at 320px and 1280px, i.e. at the two widths where that failure mode CANNOT
+ * occur: at 320px the rows are cards, and at 1280px there is slack. The wrapper
+ * assertion below was therefore unable to fire. Do not drop this width.
+ */
+const OVERFLOW_WIDTH = 768
+/**
+ * A comfortable desktop width. Here the `<thead>` is displayed and the header
+ * query is the load-bearing claim, whereas at 320px the header is `display:none`
+ * and the per-cell field label carries it.
+ *
+ * ⚠️ Note what the extra widths do and do not buy. The gate is conditional JSX,
+ * so the DOM is identical at every width and the count assertions below would
+ * catch a half-applied gate at any one of them. What varies by width is the
+ * anti-vacuity visibility guard and the overflow measurement — which is exactly
+ * why 768px earns its place and why this comment no longer claims the widths
+ * discriminate on the gate itself.
+ */
+const WIDE_WIDTH = 1280
 
 /**
  * Seed CATEGORIZED income and expense rows plus their categories.
  *
- * The rows carry real `categoryId`s so the Category column renders a pill, not
- * the "—" placeholder — otherwise the column would be measured empty and the
- * width it actually costs would go unverified.
+ * The rows carry real `categoryId`s deliberately. Since story 33.3 that is what
+ * makes the absence assertions meaningful rather than vacuous: these rows WOULD
+ * render a populated category pill if the tier gate were removed, so the test
+ * fails if the gate regresses — instead of passing because there was nothing to
+ * show in the first place.
  */
 async function seedCategorizedRows(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -205,37 +244,84 @@ test('AC-5: the locked picker inside the Add Expense modal opens no second dialo
   await expect(dialog).toBeHidden()
 })
 
-for (const { path, prefix, categoryText } of [
-  { path: '/income', prefix: 'income', categoryText: 'Employment Income' },
-  { path: '/expenses', prefix: 'expense', categoryText: 'Household & Utilities' },
+for (const { path, prefix, seededRowName, categoryText } of [
+  {
+    path: '/income',
+    prefix: 'income',
+    seededRowName: 'Primary Salary Long Name',
+    categoryText: 'Employment Income',
+  },
+  {
+    path: '/expenses',
+    prefix: 'expense',
+    seededRowName: 'Mortgage & Housing Costs',
+    categoryText: 'Household & Utilities',
+  },
 ] as const) {
-  test(`${path} with a populated Category column fits a 320px viewport`, async ({ page }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-    await seedCategorizedRows(page)
+  for (const width of [NARROW_WIDTH, OVERFLOW_WIDTH, WIDE_WIDTH] as const) {
+    test(`${path} renders no Category column for a free visitor at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 720 })
+      await seedCategorizedRows(page)
 
-    const response = await page.goto(path)
-    expect(response?.ok(), `expected ${path} to load`).toBeTruthy()
-    await page.waitForLoadState('networkidle')
+      const response = await page.goto(path)
+      expect(response?.ok(), `expected ${path} to load`).toBeTruthy()
+      await page.waitForLoadState('networkidle')
 
-    // Guard against a spurious pass: an empty table would trivially satisfy the
-    // overflow check. Assert the column actually rendered BOTH states.
-    //
-    // Story 31.2 deliberately HIDES the column header row below `sm` and gives
-    // each cell its own label instead, so the old
-    // `getByRole('columnheader', { name: 'Category' })` assertion can no longer
-    // hold at 320px. The equivalent proof on a card is the per-cell field
-    // label; the two testid assertions below still carry the real work.
-    // Scoped to the mobile field-label span inside the row that actually holds
-    // the categorized cell — NOT a bare tbody text match, which any row a user
-    // happened to name "Category" would satisfy. The <thead> <th> "Category" is
-    // still in the DOM (it returns at >= 640px), merely display:none, and it
-    // precedes the card labels in document order, so `.first()` alone resolved
-    // to the hidden header.
-    const categoryCell = page.getByTestId(`${prefix}-row-category`).locator('xpath=ancestor::td[1]')
-    await expect(categoryCell.locator('span.sm\\:hidden', { hasText: /^Category$/ })).toBeVisible()
-    await expect(page.getByTestId(`${prefix}-row-category`)).toHaveText(categoryText)
-    await expect(page.getByTestId(`${prefix}-row-uncategorized`)).toBeVisible()
+      // ANTI-VACUITY GUARD, first. Every assertion below is a NEGATIVE, and a
+      // page that failed to render its rows at all would satisfy all of them.
+      // Prove the seeded rows really arrived before proving what is missing.
+      await expect(page.getByText(seededRowName)).toBeVisible()
 
-    await assertNoHorizontalOverflow(page, `${path} (categorized rows)`)
-  })
+      // The category pill and the "—" placeholder are BOTH absent — asserting
+      // only one leaves the other free to leak.
+      //
+      // ⚠️ `toHaveCount(0)`, never `toBeHidden()`. The gate is conditional JSX,
+      // so the honest claim is DOM absence — and `toBeHidden()` would also pass
+      // for a CSS-class implementation, which would still leak the column onto
+      // PRINTED output (print resolves at ~700-816px paper width, above the
+      // 640px `sm` breakpoint).
+      await expect(page.getByTestId(`${prefix}-row-category`)).toHaveCount(0)
+      await expect(page.getByTestId(`${prefix}-row-uncategorized`)).toHaveCount(0)
+      // The category NAME must not reach the page by any other route either.
+      await expect(page.getByText(categoryText)).toHaveCount(0)
+
+      // The header, queried by DOM text rather than by role.
+      //
+      // ⚠️ `getByRole('columnheader', { name: 'Category' })` would be VACUOUS at
+      // 320px: story 31.2 makes the <thead> `display:none` below `sm`, and
+      // Chromium drops it from the accessibility tree regardless of tier — so
+      // that assertion passes for free AND premium users and can never fail the
+      // mobile case. A DOM text query sees the element whether or not it is
+      // displayed, which is exactly what an absence claim needs.
+      await expect(page.locator('thead th', { hasText: /^Category$/ })).toHaveCount(0)
+
+      // And no card carries the mobile Category field label either (story 31.2
+      // renders it from the same <td>, so this falls out — assert it anyway, so
+      // a future split of the two cannot go unnoticed).
+      await expect(
+        page.locator('tbody span.sm\\:hidden').filter({ hasText: /^Category$/ })
+      ).toHaveCount(0)
+
+      await assertNoHorizontalOverflow(page, `${path} (free tier, ${width}px)`)
+
+      // ⚠️ The document-level check above cannot fail on these pages — every
+      // table sits inside a `div.overflow-x-auto`, and a scroll container
+      // ABSORBS its content's overflow (see `responsive-320.spec.ts:285-303`).
+      // The wrapper itself is where the overflow would show, and gating the
+      // column is what removes it: at 768px the 5-column table overflowed its
+      // wrapper by ~155px.
+      const wrapperOverflow = await page.evaluate(() => {
+        const wrapper = document.querySelector('div.overflow-x-auto')
+        if (!wrapper) return null
+        return { scrollWidth: wrapper.scrollWidth, clientWidth: wrapper.clientWidth }
+      })
+      expect(wrapperOverflow, `expected a table scroll wrapper on ${path}`).not.toBeNull()
+      expect(
+        wrapperOverflow?.scrollWidth,
+        `${path} table wrapper overflows at ${width}px`
+      ).toBeLessThanOrEqual(wrapperOverflow?.clientWidth ?? 0)
+    })
+  }
 }

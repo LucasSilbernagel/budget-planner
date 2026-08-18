@@ -4,8 +4,74 @@ import {
   collectRetiredTokenViolations,
 } from '@/test/responsive-table-tokens'
 import { fireEvent, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { useExpenseStore } from '../../stores/expenseStore'
+
+/**
+ * Tier control for the Premium-only Category column (story 33.3, FR57).
+ *
+ * ⚠️ A plain object mutated in place, NOT a `vi.fn()`. This file does not call
+ * `vi.clearAllMocks()` today, but `category-assignment.test.tsx` — which mocks
+ * the same hook and is the template this pattern came from — does (`:66`), and
+ * there `clearAllMocks` would strip a `mockReturnValue` and make the hook return
+ * `undefined`, so the page throws on `status.hasAccess` and every test in the
+ * file fails for a reason unrelated to its subject. A plain object cannot be
+ * cleared, so the pattern is safe to copy into either kind of file. Keeping it
+ * uniform is the point; do not "simplify" this to a `vi.fn()` here.
+ *
+ * ⚠️ The factory must export ONLY `usePremiumAccess`. If production code ever
+ * reaches for another export of that module, this mock fails at COLLECT time
+ * (every test in the file, no clean assertion failure) rather than pointing at
+ * the change that caused it.
+ */
+const premiumTier = vi.hoisted(() => ({
+  status: {
+    hasAccess: false,
+    subscriptionStatus: 'free',
+    isLoading: false,
+    error: null,
+    isAuthenticated: true,
+  } as PremiumAccessStatus,
+}))
+
+vi.mock('../../hooks/usePremiumAccess', () => ({
+  usePremiumAccess: () => ({ status: premiumTier.status }),
+}))
+
+function setTier(overrides: Partial<PremiumAccessStatus>): void {
+  premiumTier.status = {
+    hasAccess: false,
+    subscriptionStatus: 'free',
+    isLoading: false,
+    error: null,
+    isAuthenticated: true,
+    ...overrides,
+  }
+}
+
+const premium = () =>
+  setTier({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+const free = () => setTier({})
+
+// Reset the tier before EVERY test in this file, so a premium test cannot leak
+// entitlement into an unrelated one that renders the same page.
+beforeEach(() => {
+  free()
+})
+
+/**
+ * The row's mobile field labels, in document order.
+ *
+ * Asserting this array (rather than looping over a hand-written list) is what
+ * ties the "labels every field" claim to reality: it pins the COUNT and the
+ * ORDER, so a column that silently disappears fails the test instead of just
+ * shortening an unchecked loop.
+ */
+function mobileLabelsIn(row: HTMLElement): string[] {
+  return [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent ?? '')
+}
+
 import { ExpensesPage } from '../ExpensesPage'
 
 /**
@@ -268,6 +334,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
   }
 
   it('carries every column value on the card', () => {
+    premium()
     renderWithProviders(<ExpensesPage />)
     const row = rowFor('Rent')
 
@@ -278,14 +345,43 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
     expect(within(row).getByRole('button', { name: 'Delete Rent' })).toBeInTheDocument()
   })
 
-  it('labels every field on the card (AC-4)', () => {
+  it('carries every column value on a free user’s card, minus Category (story 33.3)', () => {
+    free()
     renderWithProviders(<ExpensesPage />)
     const row = rowFor('Rent')
 
+    // Everything the free tier IS entitled to still renders...
+    expect(within(row).getByText('1,500.00')).toBeInTheDocument()
+    expect(within(row).getByText('monthly')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit Rent' })).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Delete Rent' })).toBeInTheDocument()
+    // ...and BOTH category renderings are gone. Asserting only the placeholder
+    // would still pass if the assigned-category pill leaked through.
+    expect(within(row).queryByTestId('expense-row-uncategorized')).not.toBeInTheDocument()
+    expect(within(row).queryByTestId('expense-row-category')).not.toBeInTheDocument()
+  })
+
+  it('labels every field on the card (AC-4)', () => {
+    premium()
+    renderWithProviders(<ExpensesPage />)
+    const row = rowFor('Rent')
+
+    // ⚠️ The array equality is the point. The previous version of this test
+    // looped over a hand-written list with no count assertion, so its name
+    // ("every field") was a claim its assertions did not make — dropping a
+    // column left it green. Pin count and order, not just membership.
+    expect(mobileLabelsIn(row)).toEqual(['Name', 'Amount', 'Frequency', 'Category', 'Actions'])
     for (const label of ['Name', 'Amount', 'Frequency', 'Category', 'Actions']) {
-      expect(within(row).getByText(label)).toBeInTheDocument()
       expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
     }
+  })
+
+  it('labels every field on a free user’s card, with no Category field (story 33.3)', () => {
+    free()
+    renderWithProviders(<ExpensesPage />)
+    const row = rowFor('Rent')
+
+    expect(mobileLabelsIn(row)).toEqual(['Name', 'Amount', 'Frequency', 'Actions'])
   })
 
   it('has exactly one table in the DOM — no dual-rendered card list', () => {

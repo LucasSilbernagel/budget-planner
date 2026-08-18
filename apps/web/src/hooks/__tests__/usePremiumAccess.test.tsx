@@ -86,6 +86,26 @@ describe('usePremiumAccess — SSR seed (story UX-1)', () => {
     }
   )
 
+  it('a lifetime seed resolves to premium — a permanent purchase is entitled, like active', () => {
+    // ⚠️ `lifetime` (story 25-2) is the SECOND entitled state and the one that
+    // gets dropped when someone "simplifies" an entitlement check to
+    // `subscriptionStatus === 'active'`. Added by the story 33.3 code review,
+    // which found this mapping pinned NOWHERE despite the Category-column gate
+    // (and every other `hasAccess` consumer) depending on it.
+    renderWithSeed({
+      isAuthenticated: true,
+      userId: 'user-1',
+      email: 'user@example.com',
+      subscriptionStatus: 'lifetime',
+    })
+
+    expect(val('isLoading')).toBe('false')
+    expect(val('hasAccess')).toBe('true')
+    expect(val('isAuthenticated')).toBe('true')
+    expect(val('subscriptionStatus')).toBe('lifetime')
+    expect(checkPremiumAccessServer).not.toHaveBeenCalled()
+  })
+
   it('is fail-closed by construction: a not-authenticated seed never yields premium even if subscriptionStatus is active', () => {
     // A malformed/unexpected seed (not authenticated but tagged active) must NOT
     // unlock premium — hasAccess is gated on isAuthenticated.
@@ -133,5 +153,47 @@ describe('usePremiumAccess — no seed (pre-UX-1 fallback)', () => {
     await waitFor(() => expect(val('isLoading')).toBe('false'))
     expect(checkPremiumAccessServer).toHaveBeenCalledTimes(1)
     expect(val('hasAccess')).toBe('false')
+  })
+
+  /**
+   * The ERRORED path — both shapes it can take.
+   *
+   * ⚠️ Added by the story 33.3 code review, which found this pinned nowhere.
+   * Every premium gate in the app is fail-closed *by relying on this*: they
+   * branch on `hasAccess` alone and carry no separate error branch, precisely
+   * because an errored check is supposed to resolve to `hasAccess: false`. That
+   * made the contract load-bearing for `CategoryPicker`, `PremiumFeatureGate`,
+   * `CategoriesPage`, `ReportPage` and the story 33.3 Category column — while
+   * resting entirely on reading the source.
+   *
+   * The two shapes are genuinely different code paths in the hook: a RESOLVED
+   * failure envelope (`success: false`) takes the fallback branch, while a
+   * THROWN error takes the catch. Both must land fail-closed, and `isLoading`
+   * must clear either way — a gate stuck loading forever is its own defect.
+   */
+  it('a failed check (success: false) resolves fail-closed, not stuck loading', async () => {
+    checkPremiumAccessServer.mockResolvedValue({
+      success: false,
+      error: 'subscription lookup failed',
+    })
+
+    renderWithSeed(null)
+
+    await waitFor(() => expect(val('isLoading')).toBe('false'))
+    expect(val('hasAccess')).toBe('false')
+    expect(val('isAuthenticated')).toBe('false')
+  })
+
+  it('a THROWN check resolves fail-closed too — the catch branch, not the fallback branch', async () => {
+    // The real-world instance of this is the known "Buffer is not defined"
+    // failure on the no-seed client path: the dynamic server import throws
+    // rather than returning an envelope.
+    checkPremiumAccessServer.mockRejectedValue(new Error('Buffer is not defined'))
+
+    renderWithSeed(null)
+
+    await waitFor(() => expect(val('isLoading')).toBe('false'))
+    expect(val('hasAccess')).toBe('false')
+    expect(val('isAuthenticated')).toBe('false')
   })
 })

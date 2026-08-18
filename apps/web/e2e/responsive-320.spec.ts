@@ -321,6 +321,31 @@ const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspaces'.repe
  * normalization engine throw. Every store uses `skipHydration: true`, which is
  * why writing localStorage in `addInitScript` before `goto` takes effect.
  */
+/**
+ * ⚠️ THE CATEGORY ASSIGNMENTS BELOW ARE NOW INERT — deliberately kept, not
+ * overlooked (story 33.3, FR57).
+ *
+ * `inc-1`/`exp-1` carry real `categoryId`s so the Category pill would contribute
+ * width to the 320px measurement. Since 33.3 that column renders only for
+ * entitled users, and this suite — like every e2e suite here — is
+ * UNAUTHENTICATED, so the pill never appears and the seeded ids change nothing
+ * about what is measured.
+ *
+ * They stay because they cost nothing and because a future story that gives e2e
+ * a way to seed an entitled session would want them back. ⚠️ They do NOT protect
+ * anything today: `categories-premium.spec.ts` has its OWN file-local
+ * `seedCategorizedRows`, so this seed has no effect on that suite's assertions
+ * (an earlier version of this comment claimed otherwise — code review 33.3).
+ * Do not read their presence as evidence that this sweep exercises the Category
+ * column: it cannot, at any width, in either tier.
+ *
+ * ⚠️ Related blind spot, recorded rather than "fixed": the desktop header check
+ * in this file asserts `visibleHeaderCells > 0`, not a specific count. That is
+ * correct here (an unauthenticated visitor now legitimately sees four columns,
+ * not five) but it means this suite is structurally insensitive to the column
+ * count. Header/cell parity is pinned in `category-assignment.test.tsx`, which
+ * is the only layer that can render both tiers.
+ */
 async function seedFinanceRows(page: Page, theme: 'light' | 'dark'): Promise<void> {
   await page.addInitScript(
     ([longName, themeValue, themeKey]) => {

@@ -6,6 +6,7 @@ import {
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
+import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores'
@@ -43,7 +44,45 @@ export function IncomePage() {
   const formatAmount = useFormattedAmount()
   // Rows store a category uuid, never a name (story 30.4b). Resolving here
   // means a rename is reflected in this table with no per-row edit.
+  //
+  // ⚠️ Called UNCONDITIONALLY, deliberately. Gating this behind the tier check
+  // would be a conditional hook call. It is a pure `useCategoryStore` read plus
+  // a `useMemo` — no network — so the cost on the free path is a wasted empty
+  // Map, not a request.
   const categoryNames = useCategoryNameMap()
+  // The Category column is Premium-only (story 33.3, FR57). Before this story it
+  // always rendered, showing an em-dash for every free-tier row — advertising a
+  // feature as a permanently empty column instead of a locked, discoverable one.
+  //
+  // ⚠️ `status.hasAccess` ALONE is the whole gate; do NOT write
+  // `!status.isLoading && status.hasAccess`.
+  //
+  // On the INITIAL unresolved state — the only unresolved state either page can
+  // reach, since neither calls `refresh()` — `hasAccess` is already `false`, as
+  // are the errored, free, past_due, canceled and signed-out states. So the
+  // `!isLoading` term buys nothing here.
+  //
+  // It would also be actively worse. `checkAccess()` sets `isLoading: true`
+  // while PRESERVING the previous `hasAccess` (`usePremiumAccess.ts:119`), so
+  // for an already-entitled user a re-check makes the state
+  // `{isLoading: true, hasAccess: true}` — which the `!isLoading &&` form would
+  // render as NO column, ripping it out mid-session. That state is unreachable
+  // from these two pages today; the point is that `hasAccess` alone stays
+  // correct if `refresh()` is ever wired in, and the two-term form does not.
+  //
+  // Consequence, stated rather than hidden: within a mount this gate is
+  // MONOTONE — the column can appear once (when a no-seed check resolves
+  // entitled) but can never disappear. On the seeded path production actually
+  // serves it never changes at all. See `deferred-work.md` for the measured
+  // no-seed late-appearance.
+  //
+  // ⚠️ This must stay CONDITIONAL JSX, never a CSS `hidden` class. `max-sm:` is
+  // a WIDTH query evaluated against the PAPER width when printing (Letter/A4
+  // both land above the 640px `sm` breakpoint), so a class-based hide would leak
+  // the column onto printed output. DOM absence carries through to print for
+  // free.
+  const { status: premiumStatus } = usePremiumAccess()
+  const showCategoryColumn = premiumStatus.hasAccess
   // Currency preferences drive the input's symbol affordance and locale-aware
   // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
   // grouping uses the neutral en-US locale (per the store).
@@ -157,6 +196,12 @@ export function IncomePage() {
     // scientific notation or long float tails) that a comma-decimal locale misreads.
     setAmount(formatForInputDisplay(source.amount, locale))
     setFrequency(source.frequency)
+    // ⚠️ LOAD-BEARING (story 30.4b review; the same warning ExpensesPage carries).
+    // Seeding from the row is what makes an edit round-trip the category rather
+    // than destroy it. Since story 33.3 a non-entitled user cannot SEE this
+    // value, so dropping it here would silently wipe a lapsed premium user's
+    // assignment with nothing on screen to reveal it. Pinned by the
+    // "preserves a lapsed user's category" tests in category-assignment.test.tsx.
     setCategoryId(source.categoryId ?? null)
     clearErrors()
     setIsModalOpen(true)
@@ -291,9 +336,14 @@ export function IncomePage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                         Frequency
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                        Category
-                      </th>
+                      {/* Premium-only (story 33.3). Gated on the SAME expression
+                          as the matching <td> below — if the two ever disagree
+                          every column shifts at >= 640px. */}
+                      {showCategoryColumn && (
+                        <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                          Category
+                        </th>
+                      )}
                       <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                         Actions
                       </th>
@@ -316,14 +366,19 @@ export function IncomePage() {
                             {source.frequency}
                           </span>
                         </td>
-                        <td className={RESPONSIVE_CELL_CLASS}>
-                          <FieldLabel>Category</FieldLabel>
-                          <CategoryBadge
-                            categoryId={source.categoryId}
-                            names={categoryNames}
-                            idPrefix="income"
-                          />
-                        </td>
+                        {/* Removing this <td> removes the desktop cell AND the
+                            mobile card field in one edit — below `sm` the same
+                            cell becomes the labelled row via <FieldLabel>. */}
+                        {showCategoryColumn && (
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Category</FieldLabel>
+                            <CategoryBadge
+                              categoryId={source.categoryId}
+                              names={categoryNames}
+                              idPrefix="income"
+                            />
+                          </td>
+                        )}
                         <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                           <FieldLabel>Actions</FieldLabel>
                           <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
