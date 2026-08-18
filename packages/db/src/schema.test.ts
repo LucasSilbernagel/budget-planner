@@ -409,3 +409,59 @@ describe('Categories table (Story 30.4a)', () => {
     expect(indexedExpressions.join(' ')).toContain('lower')
   })
 })
+
+/**
+ * Story 34.1a (FR60) — the explicit display-order column.
+ *
+ * These are SHAPE assertions in the spirit of the 30.4a review note above: they
+ * pin the three properties every downstream layer actually depends on (integer,
+ * NOT NULL, DEFAULT 0) plus the two constraints that must deliberately NOT exist.
+ */
+describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
+  const ORDERED_TABLES = [
+    ['incomeSources', incomeSources],
+    ['expenses', expenses],
+    ['savingsGoals', savingsGoals],
+    ['balanceTracking', balanceTracking],
+  ] as const
+
+  it.each(ORDERED_TABLES)('%s.sortOrder is an integer, NOT NULL, DEFAULT 0', (_name, table) => {
+    // Integer, not a float/numeric: positions are counted, never interpolated.
+    expect(table.sortOrder.getSQLType()).toBe('integer')
+    // NOT NULL + a default is what makes the migration safe on a populated table
+    // without a nullable -> SET NOT NULL dance (see 0013's header).
+    expect(table.sortOrder.notNull).toBe(true)
+    expect(table.sortOrder.hasDefault).toBe(true)
+    expect(table.sortOrder.default).toBe(0)
+  })
+
+  /**
+   * ⚠️ Decision 4 pinned as a test, not just a comment. Duplicate sortOrder values
+   * are EXPECTED under two-device last-write-wins, and a unique index would make the
+   * losing insert fail at the database (the deferred-work.md:13 failure class that
+   * got `onConflictDoNothing` rejected for categories). Convergence comes from the
+   * read-time tiebreaker instead. Story 30-4a proved drizzle-kit 0.23.2 DOES emit
+   * partial unique indexes, so "it wouldn't have been emitted anyway" is not a
+   * defence here — this has to be asserted.
+   *
+   * MUTATION KILLED: add `.unique()` to sortOrder, or add a uniqueIndex over
+   * (userId, profileId, sortOrder) to any of the four tables.
+   */
+  it.each(ORDERED_TABLES)('%s has NO uniqueness constraint touching sortOrder', (_name, table) => {
+    const config = getTableConfig(table)
+
+    const uniqueIndexColumns = config.indexes
+      .filter((index) => index.config.unique)
+      .flatMap((index) => index.config.columns)
+      .map((column) => (column as { name?: string }).name)
+    expect(uniqueIndexColumns).not.toContain('sortOrder')
+
+    const uniqueConstraintColumns = config.uniqueConstraints.flatMap((constraint) =>
+      constraint.columns.map((column) => column.name)
+    )
+    expect(uniqueConstraintColumns).not.toContain('sortOrder')
+
+    // The column-level shorthand is a third, independent way to get uniqueness.
+    expect(table.sortOrder.isUnique).toBeFalsy()
+  })
+})

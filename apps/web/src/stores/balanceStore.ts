@@ -19,7 +19,6 @@ import type {
 } from '@budget-planner/core/services/balanceTracking'
 import {
   filterBalanceTracking,
-  sortByCreationDate,
   toClientBalanceTracking,
   validateBalanceTracking,
   withTimeline,
@@ -27,6 +26,7 @@ import {
 import type { FinanceType } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
 
@@ -84,12 +84,21 @@ export const useBalanceStore = create<BalanceState>()(
           return null
         }
 
-        // Convert to client entry with ID and timestamps
-        const newEntry = toClientBalanceTracking(data)
+        // Convert to client entry with ID and timestamps.
+        // Story 34.1a (AC-3, AC-7): this list used to run every add through core's
+        // `sortByCreationDate`, which is NEWEST-FIRST — so a new entry landed at the
+        // TOP. FR60 normalizes all four lists to oldest-first + append-at-bottom,
+        // which makes this a deliberate behaviour CHANGE here, not a preservation.
+        // The position is max+1 over the CURRENT list, so it is computed before the
+        // set() (the factory is a pure function and has no list access).
+        const newEntry: ClientBalanceTracking = {
+          ...toClientBalanceTracking(data),
+          sortOrder: nextSortOrder(get().entries),
+        }
 
         // Update state
         set((state) => ({
-          entries: sortByCreationDate([...state.entries, newEntry]),
+          entries: sortByDisplayOrder([...state.entries, newEntry]),
         }))
 
         // Paid tier: also push to the server (no-op for the free tier).
@@ -131,7 +140,10 @@ export const useBalanceStore = create<BalanceState>()(
 
         // Update state
         set((_state) => ({
-          entries: sortByCreationDate(updatedEntries),
+          // Story 34.1a (AC-7): was `sortByCreationDate`, which re-asserted
+          // `createdAt` as the ordering authority on EVERY edit — silently
+          // clobbering any explicit position on the next update to any row.
+          entries: sortByDisplayOrder(updatedEntries),
         }))
 
         // Return updated entry
@@ -187,15 +199,52 @@ export const useBalanceStore = create<BalanceState>()(
       // (pre-frequency entries were implicitly monthly). Required, not optional — the
       // normalization engine throws on an undefined frequency, so an un-backfilled row
       // would crash the timeline math.
-      version: 2,
+      // v3 (Story 34.1a, FR60): backfill an explicit `sortOrder` — dense 0..n-1
+      // assigned by createdAt ASC with id ASC as the tiebreaker.
+      //
+      // ⚠️ SCOPE OF THE "same rule as the SQL" CLAIM, narrowed by code review 34.1a.
+      // The SQL in migrations/0013_purple_retro_girl.sql numbers
+      // `PARTITION BY "userId","profileId"`; this backfill numbers the whole
+      // persisted array with NO partition. The two therefore agree only for a
+      // SINGLE-PROFILE array — which is the only coherent state, since this array is
+      // rendered as one list and a multi-profile array would already be showing the
+      // user two profiles' rows interleaved.
+      //
+      // That multi-profile state IS currently reachable: pulled rows carry
+      // `profileId` (getSyncChanges sends whole rows) and `switchProfile` does not
+      // clear these arrays. That is a PRE-EXISTING defect, logged in
+      // deferred-work.md; fixing it makes every array single-profile by
+      // construction and makes the two rules identical without any partition logic
+      // here. Do not add partitioning to this function — it would encode agreement
+      // with the SQL for a state in which the list is already wrong on screen.
+      //
+      // ⚠️ This list previously displayed NEWEST-FIRST, so ordering the backfill by
+      // createdAt ASC REVERSES it once, on purpose (34.1a decision 1). The app is
+      // pre-launch, so no user's data is affected.
+      version: 3,
       migrate: (persisted) => {
-        const state = persisted as { entries?: ClientBalanceTracking[] }
-        const withIds = withUuidIds(state?.entries)
+        const state = persisted as { entries?: unknown }
+        // ⚠️ Sanitize BEFORE anything dereferences a row. This store was missing
+        // the guard incomeStore/expenseStore already had (added by code review
+        // 30.4a): the persisted array is untrusted JSON, and a single null entry
+        // made `withUuidIds`' `item.id` — and now the sortOrder backfill's
+        // `createdAt` read — throw. A throwing `migrate` fails rehydration
+        // entirely, so the store keeps its empty default and the user's whole
+        // balance list silently disappears.
+        const raw = Array.isArray(state?.entries) ? state.entries : []
+        const rows = raw.filter(
+          (row): row is ClientBalanceTracking => typeof row === 'object' && row !== null
+        )
         return {
-          entries: withIds.map((entry) => ({
-            ...entry,
-            frequency: entry.frequency ?? 'monthly',
-          })),
+          // The backfill runs LAST, over rows that already have their uuid ids —
+          // the `id` tiebreaker must see the final ids, not the legacy ones it
+          // would otherwise sort by and then discard.
+          entries: backfillSortOrder(
+            withUuidIds(rows).map((entry) => ({
+              ...entry,
+              frequency: entry.frequency ?? 'monthly',
+            }))
+          ),
         }
       },
       partialize: (state) => ({

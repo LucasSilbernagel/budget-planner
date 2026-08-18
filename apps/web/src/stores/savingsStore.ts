@@ -2,10 +2,11 @@ import type {
   ClientNewSavingsGoal,
   ClientSavingsGoal,
 } from '@budget-planner/core/services/savingsGoals'
-import { sortByCreationDate, withProgress } from '@budget-planner/core/services/savingsGoals'
+import { withProgress } from '@budget-planner/core/services/savingsGoals'
 import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
 
@@ -48,9 +49,16 @@ export const useSavingsStore = create<SavingsState>()(
 
       // Add a new savings goal
       addSavingsGoal: (newGoal: ClientNewSavingsGoal) => {
-        const goal = toClientSavingsGoal(newGoal)
+        // Story 34.1a (AC-3, AC-7): this list used to run every add through core's
+        // `sortByCreationDate`, which is NEWEST-FIRST — so a new goal landed at the
+        // TOP. FR60 normalizes all four lists to oldest-first + append-at-bottom,
+        // which makes this a deliberate behaviour CHANGE here, not a preservation.
+        const goal: ClientSavingsGoal = {
+          ...toClientSavingsGoal(newGoal),
+          sortOrder: nextSortOrder(get().savingsGoals),
+        }
         set((state) => ({
-          savingsGoals: sortByCreationDate([...state.savingsGoals, goal]),
+          savingsGoals: sortByDisplayOrder([...state.savingsGoals, goal]),
         }))
         // Paid tier: also push to the server (no-op for the free tier).
         syncEntityCreate('savingsGoal', goal)
@@ -74,7 +82,10 @@ export const useSavingsStore = create<SavingsState>()(
         }
 
         set((state) => ({
-          savingsGoals: sortByCreationDate([
+          // Story 34.1a (AC-7): was `sortByCreationDate`, which re-asserted
+          // `createdAt` as the ordering authority on EVERY edit — silently
+          // clobbering any explicit position on the next update to any row.
+          savingsGoals: sortByDisplayOrder([
             ...state.savingsGoals.slice(0, index),
             updatedGoal,
             ...state.savingsGoals.slice(index + 1),
@@ -154,16 +165,53 @@ export const useSavingsStore = create<SavingsState>()(
       // 'automatic' with no manual amount — the free-tier counterpart to the DB
       // migration's server-side default. Non-destructive: existing values (incl.
       // an already-set manual amount) are preserved.
-      version: 2,
+      // v3 (Story 34.1a, FR60): backfill an explicit `sortOrder` — dense 0..n-1
+      // assigned by createdAt ASC with id ASC as the tiebreaker.
+      //
+      // ⚠️ SCOPE OF THE "same rule as the SQL" CLAIM, narrowed by code review 34.1a.
+      // The SQL in migrations/0013_purple_retro_girl.sql numbers
+      // `PARTITION BY "userId","profileId"`; this backfill numbers the whole
+      // persisted array with NO partition. The two therefore agree only for a
+      // SINGLE-PROFILE array — which is the only coherent state, since this array is
+      // rendered as one list and a multi-profile array would already be showing the
+      // user two profiles' rows interleaved.
+      //
+      // That multi-profile state IS currently reachable: pulled rows carry
+      // `profileId` (getSyncChanges sends whole rows) and `switchProfile` does not
+      // clear these arrays. That is a PRE-EXISTING defect, logged in
+      // deferred-work.md; fixing it makes every array single-profile by
+      // construction and makes the two rules identical without any partition logic
+      // here. Do not add partitioning to this function — it would encode agreement
+      // with the SQL for a state in which the list is already wrong on screen.
+      //
+      // ⚠️ This list previously displayed NEWEST-FIRST, so ordering the backfill by
+      // createdAt ASC REVERSES it once, on purpose (34.1a decision 1). The app is
+      // pre-launch, so no user's data is affected.
+      version: 3,
       migrate: (persisted) => {
-        const state = persisted as { savingsGoals?: ClientSavingsGoal[] }
-        const withIds = withUuidIds(state?.savingsGoals)
+        const state = persisted as { savingsGoals?: unknown }
+        // ⚠️ Sanitize BEFORE anything dereferences a row. This store was missing
+        // the guard incomeStore/expenseStore already had (added by code review
+        // 30.4a): the persisted array is untrusted JSON, and a single null entry
+        // made `withUuidIds`' `item.id` — and now the sortOrder backfill's
+        // `createdAt` read — throw. A throwing `migrate` fails rehydration
+        // entirely, so the store keeps its empty default and the user's whole
+        // savings list silently disappears.
+        const raw = Array.isArray(state?.savingsGoals) ? state.savingsGoals : []
+        const rows = raw.filter(
+          (row): row is ClientSavingsGoal => typeof row === 'object' && row !== null
+        )
         return {
-          savingsGoals: withIds.map((goal) => ({
-            ...goal,
-            allocationMode: goal.allocationMode ?? 'automatic',
-            monthlyAllocation: goal.monthlyAllocation ?? null,
-          })),
+          // The backfill runs LAST, over rows that already have their uuid ids —
+          // the `id` tiebreaker must see the final ids, not the legacy ones it
+          // would otherwise sort by and then discard.
+          savingsGoals: backfillSortOrder(
+            withUuidIds(rows).map((goal) => ({
+              ...goal,
+              allocationMode: goal.allocationMode ?? 'automatic',
+              monthlyAllocation: goal.monthlyAllocation ?? null,
+            }))
+          ),
         }
       },
       partialize: (state) => ({

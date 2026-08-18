@@ -2,6 +2,7 @@ import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
 import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
@@ -20,6 +21,16 @@ interface ClientIncomeSource {
   // User-defined category (Story 30.4a, FR54). NULL/absent = uncategorized,
   // which is a permanently valid state — no form gains a required field.
   categoryId: string | null
+  // Explicit display order (Story 34.1a, FR60). Zero-based integer assigned by the
+  // store as max+1 on insert; the server never computes or reshuffles it. NOT
+  // contiguous — deletes leave gaps on purpose, so this is an ORDER, not an index.
+  //
+  // ⚠️ OPTIONAL for the same structural reason as core's ClientSavingsGoal: the
+  // `toClientIncomeSource` factory below is a pure function of its input with no
+  // access to the list, so it cannot compute a position (story 34.1a §2). A store
+  // that forgot to stamp it is therefore NOT a compile error — the store tests pin
+  // insert-at-bottom for each of the four lists individually instead.
+  sortOrder?: number
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
 }
@@ -68,9 +79,14 @@ export const useIncomeStore = create<IncomeState>()(
 
       // Add a new income source
       addIncomeSource: (newIncomeSource) => {
-        const incomeSource = toClientIncomeSource(newIncomeSource)
+        // Story 34.1a: the position is max+1 over the CURRENT list, so it must be
+        // computed here (the factory has no list access) and BEFORE the set().
+        const incomeSource: ClientIncomeSource = {
+          ...toClientIncomeSource(newIncomeSource),
+          sortOrder: nextSortOrder(get().incomeSources),
+        }
         set((state) => ({
-          incomeSources: [...state.incomeSources, incomeSource],
+          incomeSources: sortByDisplayOrder([...state.incomeSources, incomeSource]),
         }))
         // Paid tier: also push to the server (no-op for the free tier).
         syncEntityCreate('incomeSource', incomeSource)
@@ -84,7 +100,13 @@ export const useIncomeStore = create<IncomeState>()(
         }
         const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() }
         set((state) => ({
-          incomeSources: state.incomeSources.map((source) => (source.id === id ? updated : source)),
+          // Story 34.1a (AC-7): re-sort on update too, so `sortOrder` is the single
+          // ordering authority at every write path. Today an in-place map would
+          // preserve position anyway; keeping the collection canonically sorted is
+          // what lets 34.1b change a row's position through this same path.
+          incomeSources: sortByDisplayOrder(
+            state.incomeSources.map((source) => (source.id === id ? updated : source))
+          ),
         }))
         // Paid tier: queue the update with the pre-edit row as the baseVersion.
         syncEntityUpdate('incomeSource', updated, previous)
@@ -174,7 +196,25 @@ export const useIncomeStore = create<IncomeState>()(
       // ⚠️ The persist KEY is unchanged. The `-v1` suffix in the name is part of
       // the storage key, NOT the numeric `version` — renaming it would orphan
       // every existing row instead of migrating it (see profileStore's note).
-      version: 2,
+      // v3 (Story 34.1a, FR60): backfill an explicit `sortOrder` — dense 0..n-1
+      // assigned by createdAt ASC with id ASC as the tiebreaker.
+      //
+      // ⚠️ SCOPE OF THE "same rule as the SQL" CLAIM, narrowed by code review 34.1a.
+      // The SQL in migrations/0013_purple_retro_girl.sql numbers
+      // `PARTITION BY "userId","profileId"`; this backfill numbers the whole
+      // persisted array with NO partition. The two therefore agree only for a
+      // SINGLE-PROFILE array — which is the only coherent state, since this array is
+      // rendered as one list and a multi-profile array would already be showing the
+      // user two profiles' rows interleaved.
+      //
+      // That multi-profile state IS currently reachable: pulled rows carry
+      // `profileId` (getSyncChanges sends whole rows) and `switchProfile` does not
+      // clear these arrays. That is a PRE-EXISTING defect, logged in
+      // deferred-work.md; fixing it makes every array single-profile by
+      // construction and makes the two rules identical without any partition logic
+      // here. Do not add partitioning to this function — it would encode agreement
+      // with the SQL for a state in which the list is already wrong on screen.
+      version: 3,
       migrate: (persisted) => {
         const state = persisted as { incomeSources?: unknown }
         // ⚠️ Sanitize BEFORE anything dereferences a row (code review 30.4a).
@@ -190,10 +230,15 @@ export const useIncomeStore = create<IncomeState>()(
           (row): row is ClientIncomeSource => typeof row === 'object' && row !== null
         )
         return {
-          incomeSources: withUuidIds(rows).map((row) => ({
-            ...row,
-            categoryId: row.categoryId ?? null,
-          })),
+          // v3 backfill runs LAST, over rows that already have their uuid ids —
+          // the `id` tiebreaker must see the final ids, not the legacy ones it
+          // would otherwise sort by and then discard.
+          incomeSources: backfillSortOrder(
+            withUuidIds(rows).map((row) => ({
+              ...row,
+              categoryId: row.categoryId ?? null,
+            }))
+          ),
         }
       },
       partialize: (state) => ({

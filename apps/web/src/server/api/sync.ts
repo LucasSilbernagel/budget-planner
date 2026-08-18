@@ -160,6 +160,15 @@ const incomeSourceSchema = z.object({
   // un-categorizing a row sends null, and updateEntity does a partial .set(), so
   // the client always forwards the key rather than omitting it.
   categoryId: z.string().uuid().nullable().optional(),
+  // Story 34.1a (FR60): explicit display position. This is a VALIDATION gate, not
+  // a stripping one — the per-entity schemas are invoked inside
+  // `syncOperationSchema`'s superRefine, which discards its callback's return
+  // value, so `operation.data` passes through unstripped (verified by probe; see
+  // lib/sync/__tests__/sort-order-gates.test.ts). Declaring the field is what makes
+  // a negative, fractional or over-int32 position get rejected HERE rather than
+  // blowing up at the INSERT. Bounds mirror the client gate in
+  // packages/core/src/sync/types.ts.
+  sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
 
@@ -169,6 +178,8 @@ const expenseSchema = z.object({
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
   // Story 30.4a: see incomeSourceSchema above.
   categoryId: z.string().uuid().nullable().optional(),
+  // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
+  sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
 
@@ -200,6 +211,8 @@ const savingsGoalSchema = z.object({
   // with the client gate's `.optional()`, not an exact mirror).
   monthlyAllocation: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
   allocationMode: z.enum(['manual', 'automatic']).default('automatic'),
+  // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
+  sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
 
@@ -213,6 +226,8 @@ const balanceTrackingSchema = z.object({
   // paid-tier rows round-trip. Server gate — must mirror the client gate in
   // packages/core/src/sync/types.ts (syncOperationDataSchema already carries `frequency`).
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
+  // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
+  sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
 

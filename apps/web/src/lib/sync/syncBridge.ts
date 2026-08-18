@@ -124,6 +124,21 @@ function toServerPayload(
         // stay LOCAL-ONLY for now — which is exactly the status quo, since
         // categories never reached the server in the first place.
         categoryId: null,
+        // Story 34.1a (FR60): the row's explicit display position. Emitted
+        // UNCONDITIONALLY — never behind an `if` — because `updateEntity` does a
+        // PARTIAL `.set()`, so an omitted key silently leaves the previous server
+        // value in place and the reorder never lands. Note this function returns
+        // `Record<string, unknown>`, so a forgotten key is NOT a type error: gate 2
+        // is pinned by tests.
+        //
+        // ⚠️ PRECISION, corrected by code review 34.1a: "always emitted" describes
+        // this CODE, not the wire. `sortOrder` is optional on the client types, and
+        // `JSON.stringify` drops an `undefined`-valued key — so a row that somehow
+        // reached here unpositioned would still serialize WITHOUT the key, hitting
+        // exactly the partial-`.set()` hazard above. That is now prevented upstream
+        // rather than here: `stampMissingSortOrder` gives every pulled row a
+        // position on arrival, and the persist migrations backfill the rest.
+        sortOrder: entity['sortOrder'],
         userId,
       }
     case 'savingsGoal':
@@ -142,6 +157,21 @@ function toServerPayload(
         // an omitted key would leave a stale prior amount (review 26-1 P1). Mirrors
         // how `targetAmount` is always forwarded.
         monthlyAllocation: entity['monthlyAllocation'] ?? null,
+        // Story 34.1a (FR60): the row's explicit display position. Emitted
+        // UNCONDITIONALLY — never behind an `if` — because `updateEntity` does a
+        // PARTIAL `.set()`, so an omitted key silently leaves the previous server
+        // value in place and the reorder never lands. Note this function returns
+        // `Record<string, unknown>`, so a forgotten key is NOT a type error: gate 2
+        // is pinned by tests.
+        //
+        // ⚠️ PRECISION, corrected by code review 34.1a: "always emitted" describes
+        // this CODE, not the wire. `sortOrder` is optional on the client types, and
+        // `JSON.stringify` drops an `undefined`-valued key — so a row that somehow
+        // reached here unpositioned would still serialize WITHOUT the key, hitting
+        // exactly the partial-`.set()` hazard above. That is now prevented upstream
+        // rather than here: `stampMissingSortOrder` gives every pulled row a
+        // position on arrival, and the persist migrations backfill the rest.
+        sortOrder: entity['sortOrder'],
         userId,
       }
     case 'balanceTracking': {
@@ -153,6 +183,21 @@ function toServerPayload(
         // Story 16-2: forward the contribution cadence, else paid-tier syncs silently
         // drop it and the server defaults every synced entry to 'monthly'.
         frequency: entity['frequency'] ?? 'monthly',
+        // Story 34.1a (FR60): the row's explicit display position. Emitted
+        // UNCONDITIONALLY — never behind an `if` — because `updateEntity` does a
+        // PARTIAL `.set()`, so an omitted key silently leaves the previous server
+        // value in place and the reorder never lands. Note this function returns
+        // `Record<string, unknown>`, so a forgotten key is NOT a type error: gate 2
+        // is pinned by tests.
+        //
+        // ⚠️ PRECISION, corrected by code review 34.1a: "always emitted" describes
+        // this CODE, not the wire. `sortOrder` is optional on the client types, and
+        // `JSON.stringify` drops an `undefined`-valued key — so a row that somehow
+        // reached here unpositioned would still serialize WITHOUT the key, hitting
+        // exactly the partial-`.set()` hazard above. That is now prevented upstream
+        // rather than here: `stampMissingSortOrder` gives every pulled row a
+        // position on arrival, and the persist migrations backfill the rest.
+        sortOrder: entity['sortOrder'],
         userId,
       }
       // Optional column — only forward when present (the schema rejects null but

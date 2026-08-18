@@ -9,8 +9,8 @@
  * Lifecycle:
  *  1. On the client, ask `/api/auth/me` who we are (the server resolves the
  *     HMAC-signed, DB-authoritative session — Story 5-7).
- *  2. If the session is a paid sync tier (active | past_due, matching the server
- *     push/pull gate), render <ActiveSync>; otherwise render nothing.
+ *  2. If the session is a paid sync tier (active | past_due | lifetime, matching
+ *     the server push/pull gate), render <ActiveSync>; otherwise render nothing.
  *  3. <ActiveSync> instantiates `useSync` (auto-pull poller on), registers the
  *     push queue with the sync bridge so paid store mutations are forwarded
  *     (Story 5-15 Task 3), and seeds the local stores with an initial pull.
@@ -29,13 +29,23 @@ import { useProfileStore } from '@/stores/profileStore'
 import { type ReactElement, useEffect, useRef, useState } from 'react'
 
 /**
- * Subscription statuses allowed to use server-side sync (push AND pull). Mirrors
- * the server's `PAID_SYNC_STATUSES` (apps/web/src/server/api/sync.ts) — kept as a
- * local literal so this client component never imports the server module (which
- * pulls `@budget-planner/db` into the bundle). `past_due` is included so a paying
- * customer in the dunning window keeps sync, matching the server gate exactly.
+ * Subscription statuses allowed to use server-side sync (push AND pull). Must
+ * mirror the server's `PAID_SYNC_STATUSES` (apps/web/src/server/api/sync.ts) —
+ * kept as a local literal so this client component never imports the server
+ * module (which would pull `@budget-planner/db` into the client bundle).
+ *
+ * `past_due` keeps sync alive for a paying customer inside the dunning window.
+ *
+ * ⚠️ THIS LIST WAS WRONG UNTIL STORY 34.1a, AND THE COMMENT ABOVE IT SAID
+ * OTHERWISE. `'lifetime'` was missing while the comment claimed the list matched
+ * the server "exactly". Because this gate decides whether `<ActiveSync>` mounts at
+ * all, a lifetime buyer got NO sync whatsoever — and silently: no 403, no console
+ * error, the request was never even fired. It is the same hole the server side
+ * already had and fixed (see the server constant's own note), re-opened on the
+ * client. Exported solely so `__tests__/sync-status-parity.test.ts` can assert the
+ * two real constants against each other instead of restating either one.
  */
-const PAID_SYNC_STATUSES = ['active', 'past_due'] as const
+export const PAID_SYNC_STATUSES = ['active', 'past_due', 'lifetime'] as const
 
 interface SessionUser {
   userId: string

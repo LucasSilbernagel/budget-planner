@@ -68,6 +68,11 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
       amount: 500000,
       frequency: 'monthly',
       categoryId: null, // Story 30.4a — always forwarded, see syncBridge
+      // Story 34.1a (FR60) — the row's display position, always forwarded (never
+      // conditionally omitted: updateEntity does a partial .set()). First row in
+      // an empty list ⇒ 0. This assertion stays EXHAUSTIVE on purpose, so an
+      // unexpected extra payload key fails here.
+      sortOrder: 0,
       userId: SESSION_USER_ID,
     })
   })
@@ -140,6 +145,8 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
       // manual→automatic switch can reset the server value.
       allocationMode: 'automatic',
       monthlyAllocation: null,
+      // Story 34.1a (FR60) — display position; first row in an empty list ⇒ 0.
+      sortOrder: 0,
       userId: SESSION_USER_ID,
     })
   })

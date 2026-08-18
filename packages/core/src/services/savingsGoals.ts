@@ -35,6 +35,22 @@ export interface ClientSavingsGoal {
   currentBalance: number // In cents
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
+  // Explicit display order (Story 34.1a, FR60). Zero-based integer assigned by the
+  // STORE as max+1 on insert; the server never computes or reshuffles it. NOT
+  // contiguous — deletes leave gaps on purpose, so this is an ORDER, not an index.
+  //
+  // ⚠️ OPTIONAL, and the reason is structural rather than a matter of taste:
+  // `toClientSavingsGoal` below is a pure function of its input and has no access
+  // to the list, so it cannot compute a position (see story 34.1a §2). The store
+  // stamps the value immediately after calling the factory. Declaring this field
+  // required would therefore make the factory itself a type error.
+  //
+  // Consequence worth stating plainly: a store that FORGOT to stamp `sortOrder` is
+  // NOT a compile error. That is why the store tests pin insert-at-bottom for all
+  // four lists individually rather than relying on tsc.
+  //
+  // A row without a value sorts LAST (never first) — see lib/ordering.ts.
+  sortOrder?: number
   // Per-account monthly allocation (Story 26.1). Optional so legacy persisted rows
   // (pre-26.1) and existing fixtures stay valid; read sites default an absent mode
   // to 'automatic' (see `resolveAllocationMode`). `monthlyAllocation` is the fixed

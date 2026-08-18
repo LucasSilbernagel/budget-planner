@@ -26,6 +26,7 @@ import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
+import { stampMissingSortOrder } from '../ordering'
 
 /** Minimal structural view of a Zustand vanilla store used here. */
 interface StoreApi {
@@ -57,12 +58,12 @@ const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
  * Apply a single pulled change to its store: remove on tombstone, otherwise
  * replace-or-insert by the shared uuid id.
  */
-function applyOne(change: ServerChange): void {
+function applyOne(change: ServerChange): boolean {
   const binding = ENTITY_BINDINGS[change.entityType]
   if (!binding) {
     // Unknown entity type — ignore defensively rather than throw (a future
     // server-side type should not crash an older client).
-    return
+    return false
   }
 
   const { store, collection } = binding
@@ -73,7 +74,7 @@ function applyOne(change: ServerChange): void {
   // would be an orphan that no later change can ever target. Skip it rather than
   // corrupt the store. (Replaces the old numeric NaN guard, which is now moot.)
   if (!id) {
-    return
+    return false
   }
 
   const state = store.getState()
@@ -88,12 +89,53 @@ function applyOne(change: ServerChange): void {
 
   if (change.isDeleted) {
     store.setState({ [collection]: without })
-    return
+    return true
   }
 
   // Insert the authoritative server row keyed by its shared uuid id.
   const entity = { ...change.data, id }
   store.setState({ [collection]: [...without, entity] })
+  return true
+}
+
+/**
+ * The entity types that carry an explicit `sortOrder` (Story 34.1a, FR60).
+ * `userProfile` and `category` have no user-arrangeable order and are excluded.
+ */
+const ORDERED_ENTITY_TYPES: ReadonlySet<SyncEntityType> = new Set<SyncEntityType>([
+  'incomeSource',
+  'expense',
+  'savingsGoal',
+  'balanceTracking',
+])
+
+/**
+ * Restore a collection's canonical display order after a pull (Story 34.1a, AC-5).
+ *
+ * ⚠️ THIS FIXES A LIVE, PRE-EXISTING ORDERING BUG, not just a hypothetical one.
+ * {@link applyOne} merges by REMOVE-THEN-APPEND, and nothing here used to re-sort.
+ * For income and expenses — whose array order simply IS their display order —
+ * that meant a pulled UPDATE to an existing row silently moved that row to the
+ * BOTTOM of the user's list, on every pull. For savings and balances it left the
+ * array in raw append order, contradicting the ordering the same store enforced
+ * on every local edit.
+ *
+ * Without this step `sortOrder` would be persisted correctly and then ignored on
+ * the very next pull — the field would look right in storage and wrong on screen.
+ */
+function resortCollection(entityType: SyncEntityType): void {
+  const binding = ENTITY_BINDINGS[entityType]
+  if (!binding) {
+    return
+  }
+  const { store, collection } = binding
+  const current =
+    (store.getState()[collection] as (Record<string, unknown> & { id: string })[]) ?? []
+  // `stampMissingSortOrder` sorts AND gives a position to any row that arrived
+  // without one — which every server row does until migration 0013 is applied.
+  // Without the stamping half, a list of unpositioned pulled rows makes the next
+  // locally-added row land at the TOP (code review 34.1a; see the helper's note).
+  store.setState({ [collection]: stampMissingSortOrder(current) })
 }
 
 /**
@@ -150,14 +192,36 @@ function reconcileActiveProfile(): void {
  */
 export function applyServerChangesToStores(changes: ServerChange[]): void {
   let appliedProfile = false
+  // Story 34.1a: which ordered collections this batch actually touched.
+  const touchedOrdered = new Set<SyncEntityType>()
   for (const change of changes) {
     try {
-      applyOne(change)
+      const applied = applyOne(change)
+      if (!applied) {
+        // Skipped defensively (unknown entity type, or a change with no id).
+        // Must NOT count as touched, or a batch that changed nothing still
+        // triggers a re-sort and the comment below would be false.
+        continue
+      }
       if (change.entityType === 'userProfile') {
         appliedProfile = true
       }
+      if (ORDERED_ENTITY_TYPES.has(change.entityType)) {
+        touchedOrdered.add(change.entityType)
+      }
     } catch {
       // Never let one bad change abort the batch; the next pull will retry.
+    }
+  }
+
+  // Story 34.1a (AC-5): re-sort ONCE per touched collection, after the whole loop.
+  // Deliberately not inside `applyOne` — that would be O(n²) across a large pull,
+  // and it would also obscure which collections were genuinely touched.
+  for (const entityType of touchedOrdered) {
+    try {
+      resortCollection(entityType)
+    } catch {
+      // A re-sort failure must not discard changes that were applied successfully.
     }
   }
   // Only touch the active-profile pointer when profiles actually changed, so an

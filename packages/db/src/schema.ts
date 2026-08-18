@@ -138,6 +138,26 @@ export const incomeSources = pgTable(
     // permanently valid state, so every row predating this column stays valid
     // and no form gains a required field.
     categoryId: uuid('categoryId').references(() => categories.id),
+    // Explicit display order (Story 34.1a, FR60). Zero-based integer scoped per
+    // (userId, profileId) list. The CLIENT assigns it as max+1 on insert; the
+    // server never computes or reshuffles it.
+    //
+    // ⚠️ "Dense" holds only immediately after the backfill. Deletes deliberately
+    // leave GAPS (see below), so treat the values as ORDERED, never as contiguous
+    // or as an index — 34.1b must not assume position N sits at sortOrder N.
+    //
+    // ⚠️ DELIBERATELY NOT UNIQUE and deliberately no CHECK (story 34.1a decision 4).
+    // Duplicates are EXPECTED: two devices reordering the same list offline both
+    // produce values in 0..n-1, and last-write-wins resolves each row independently.
+    // A unique index would make the losing insert fail at the database — the same
+    // failure class deferred-work.md records for `categories`. Convergence comes
+    // from the read-time tiebreaker instead (sortOrder -> createdAt -> id, all three
+    // device-independent). A CHECK would be inert regardless: drizzle-kit 0.23 emits
+    // none (see the note on savingsGoals.monthlyAllocation below).
+    //
+    // Deletes leave GAPS on purpose — max+1 is gap-tolerant, and reindexing would
+    // emit N sync updates for a single deletion (decision 3).
+    sortOrder: integer('sortOrder').notNull().default(0),
     // Soft-delete tombstone (Story 4-18): cross-device delete propagation. A hard
     // DELETE can never be surfaced by a delta-by-updatedAt pull, so deletes are
     // soft (isDeleted=true + updatedAt bump) and filtered from normal reads.
@@ -172,6 +192,8 @@ export const expenses = pgTable(
     frequency: frequencyEnum('frequency').notNull(),
     // User-defined category (Story 30.4a, FR54); see incomeSources note above.
     categoryId: uuid('categoryId').references(() => categories.id),
+    // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
+    sortOrder: integer('sortOrder').notNull().default(0),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
@@ -209,6 +231,12 @@ export const savingsGoals = pgTable(
     // share of the leftover pool). NOT NULL default 'automatic' so pre-26.1 rows
     // migrate non-destructively — mirrors balanceTracking.frequency's shape.
     allocationMode: allocationModeEnum('allocationMode').notNull().default('automatic'),
+    // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
+    // ⚠️ This list previously ordered NEWEST-FIRST via core's `sortByCreationDate`;
+    // 34.1a normalizes it to oldest-first + append-at-bottom, so the backfill below
+    // (createdAt ASC) intentionally REVERSES the visible order once. Pre-launch, so
+    // no user's data is affected.
+    sortOrder: integer('sortOrder').notNull().default(0),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
@@ -263,6 +291,10 @@ export const balanceTracking = pgTable(
     // Story 16-2: cadence of `monthlyContribution`, reusing the shared frequency enum.
     // Defaults to 'monthly' so existing rows preserve their current (monthly) behavior.
     frequency: frequencyEnum('frequency').notNull().default('monthly'),
+    // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
+    // ⚠️ Like savingsGoals, this list was newest-first via `sortByCreationDate` and
+    // is normalized to oldest-first here — the backfill reverses it once.
+    sortOrder: integer('sortOrder').notNull().default(0),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),

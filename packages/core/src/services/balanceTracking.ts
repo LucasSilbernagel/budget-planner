@@ -42,6 +42,10 @@ export interface ClientBalanceTracking {
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2); normalize before aggregating
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
+  // Explicit display order (Story 34.1a, FR60); see ClientSavingsGoal.sortOrder in
+  // ./savingsGoals.ts for why this is optional rather than required (the
+  // `toClient*` factory has no list access and so cannot compute a position).
+  sortOrder?: number
   // Optional UI display fields
   monthsToLimit?: number | null
   // Debt-specific fields

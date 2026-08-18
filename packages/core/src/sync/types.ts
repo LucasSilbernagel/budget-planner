@@ -127,6 +127,18 @@ export const syncOperationDataSchema = z.object({
   // Story 16-1; see its note above.
   kind: z.enum(['income', 'expense']).optional(),
   categoryId: z.string().uuid().nullable().optional(),
+  // Story 34.1a (FR60): explicit display position for the four financial lists.
+  //
+  // ⚠️ This gate STRIPS undeclared keys (see the note below), so omitting this line
+  // would drop `sortOrder` from the payload before the operation is ever queued —
+  // with no error, no rejection, and a "successful" sync that silently discards the
+  // user's ordering. Bounded to the int32 column range for the same
+  // defense-in-depth reason as monthlyAllocation.
+  //
+  // `.optional()` because entity types that have no ordering (userProfile,
+  // category) share this one schema; `.min(0)` because positions are dense and
+  // zero-based, and the backfill plus `max + 1` can never produce a negative.
+  sortOrder: z.number().int().min(0).max(PG_INT32_MAX).optional(),
   currency: z
     .enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD'])
     .optional(),
