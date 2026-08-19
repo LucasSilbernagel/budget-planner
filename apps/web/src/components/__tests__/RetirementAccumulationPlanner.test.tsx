@@ -140,7 +140,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
   it('prompts for input before all fields are provided', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
     expect(
-      screen.getByText('Enter all four details above to see your retirement outlook.')
+      screen.getByText('Enter all the details above to see your retirement outlook.')
     ).toBeInTheDocument()
     expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
   })
@@ -222,6 +222,17 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     // branch must not borrow.
     expect(notReachable.queryByText(/We don.t have your savings data yet/)).not.toBeInTheDocument()
     expect(notReachable.getByText('Retire on a lower annual income')).toBeInTheDocument()
+
+    // ⚠️ The return-rate lever must name ONLY the post-retirement rate. Since
+    // story 35.3 the saving-phase rate also drives the deplete requirement's
+    // income-growth term, so raising it can push retirement FURTHER away —
+    // measured on the real solver at 27 → 48 → 63 months for 6% → 8% → 10%.
+    // Advising it in the panel that exists for users in shortfall would tell
+    // them to deepen the shortfall. Both halves are asserted: the safe lever is
+    // present, and the ambiguous phrasing is absent.
+    expect(notReachable.getByText('Assume a higher return after you retire')).toBeInTheDocument()
+    expect(notReachable.queryByText(/higher return while saving/)).not.toBeInTheDocument()
+    expect(notReachable.queryByText(/higher annual return/)).not.toBeInTheDocument()
     // Saved-per-year is always populated.
     expect(notReachable.getByText(/600\.00/)).toBeInTheDocument()
     // No successful-outlook block leaked through.
@@ -344,6 +355,11 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     // Exactly one element may carry id="currentAge" — the planner and the chart
     // both shipped one, which is invalid HTML and mis-binds the second <label>.
     expect(container.ownerDocument.querySelectorAll('#currentAge')).toHaveLength(1)
+    // The two rate fields must not share an id either — copying the first field's
+    // markup wholesale is the obvious way to add the second, and it would put
+    // both controls behind one <label>.
+    expect(container.ownerDocument.querySelectorAll('#annualReturn')).toHaveLength(1)
+    expect(container.ownerDocument.querySelectorAll('#postRetirementReturn')).toHaveLength(1)
   })
 
   it('renders one required-nest-egg figure, not a second standalone one (AC-2)', async () => {
@@ -422,7 +438,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 
     expect(summary?.textContent).toContain(expectedDisplay)
     expect(summary?.textContent).toContain('at age 40')
-    expect(summary?.textContent).toContain('6.0% annual return')
+    expect(summary?.textContent).toContain('6.0% return while saving')
   })
 
   it('stops the curve at retirement rather than running to life expectancy (AC-2)', async () => {
@@ -750,7 +766,7 @@ describe('RetirementAccumulationPlanner money inputs reject non-numeric characte
 
     expect(input).toHaveValue('')
     expect(
-      screen.getByText('Enter all four details above to see your retirement outlook.')
+      screen.getByText('Enter all the details above to see your retirement outlook.')
     ).toBeInTheDocument()
   })
 
@@ -802,7 +818,7 @@ describe('RetirementAccumulationPlanner — mobile a11y', () => {
     // lower bound: an open bound would let a newly-added input slip in unringed
     // as long as the total stayed high enough, which is the failure this test
     // exists to catch.
-    expect(fields).toHaveLength(4)
+    expect(fields).toHaveLength(5)
     for (const field of fields) {
       expect(field.classList.contains('focus:ring-2')).toBe(true)
       expect(field.classList.contains('focus:outline-none')).toBe(true)
@@ -1236,5 +1252,190 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     await fillEditableFields(user)
 
     expect(screen.getByTestId('derived-floor-disclosure')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Story 35.3 — the post-retirement return rate.
+ *
+ * The rate a plan earns AFTER retirement is now separate from the one it earns
+ * while saving. The field mirrors the accumulation rate until the user edits it,
+ * which is what keeps an untouched planner numerically identical to its
+ * pre-35.3 behaviour at every rate rather than only at the 6.0 default.
+ */
+describe('RetirementAccumulationPlanner — post-retirement return rate (story 35.3)', () => {
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  const accumulationField = () => screen.getByLabelText('Expected Annual Return')
+  const postRetirementField = () => screen.getByLabelText('Post-Retirement Annual Return')
+
+  /** Replace an input's whole value. `user.type` APPENDS, and both fields ship pre-filled. */
+  async function setField(
+    user: ReturnType<typeof userEvent.setup>,
+    field: HTMLElement,
+    value: string
+  ) {
+    await user.clear(field)
+    await user.type(field, value)
+  }
+
+  it('mirrors the accumulation rate until the user edits it (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    // BEFORE: it starts showing the accumulation default, not an independent one.
+    expect(postRetirementField()).toHaveValue(6)
+
+    await setField(user, accumulationField(), '8')
+
+    expect(accumulationField()).toHaveValue(8)
+    expect(postRetirementField()).toHaveValue(8)
+  })
+
+  it('stops mirroring once edited, and the two then move independently (AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(postRetirementField()).toHaveValue(6)
+
+    await setField(user, postRetirementField(), '3')
+    expect(postRetirementField()).toHaveValue(3)
+
+    // Changing the accumulation rate must no longer drag the edited field with it.
+    await setField(user, accumulationField(), '8')
+    expect(accumulationField()).toHaveValue(8)
+    expect(postRetirementField()).toHaveValue(3)
+  })
+
+  it('a lower post-retirement rate raises the requirement and delays retirement (AC-7)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    // ⚠️ The default seeded fixture is already over-funded ($1,000,000 saved
+    // against a $540,000 requirement), so it retires at month 0 and NOTHING
+    // moves for a small rate change. The rate has to drop far enough for the
+    // requirement to clear the balance before this assertion means anything.
+    await fillReachableCase(user)
+
+    const outputValue = (label: string): string =>
+      within(screen.getByTestId('accumulation-outputs')).getByText(label).nextElementSibling
+        ?.textContent ?? ''
+
+    const requiredBefore = toMoney(outputValue('Required nest egg'))
+    const ageBefore = outputValue('Earliest retirement age')
+    expect(requiredBefore).toBeGreaterThan(0)
+
+    await setField(user, postRetirementField(), '2')
+
+    const requiredAfter = toMoney(outputValue('Required nest egg'))
+    expect(requiredAfter).toBeGreaterThan(requiredBefore)
+
+    // ⚠️ Assert the DIRECTION, not merely that the value moved. `not.toBe(before)`
+    // passes just as happily on an implementation that retires the user EARLIER,
+    // which is the opposite of what this test's name claims to protect — and this
+    // is the only UI-level check of the age effect.
+    expect(Number(outputValue('Earliest retirement age'))).toBeGreaterThan(Number(ageBefore))
+  })
+
+  it('a blank post-retirement rate is incomplete, not a silent 0% (Trap B)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await fillReachableCase(user)
+
+    // BEFORE: a real result is on screen.
+    expect(screen.getByTestId('accumulation-outputs')).toBeInTheDocument()
+
+    await user.clear(postRetirementField())
+
+    // `parsePercentageToDecimal` returns 0 for an empty string rather than
+    // throwing, so without the emptiness gate this would render a confident
+    // 0%-return answer instead of asking for the missing value.
+    expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Enter all the details above to see your retirement outlook.')
+    ).toBeInTheDocument()
+  })
+
+  it('both rate fields explain which phase they govern (AC-1, AC-10)', () => {
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(
+      screen.getByText(
+        /Expected yearly return while you are still saving — under this model it also sets how fast your retirement income is assumed to rise/
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /What your savings earn once you retire — lower it to model a safer allocation\. Follows the rate above until you change it/
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('drops the income-growth clause on the perpetual model, where it is false', async () => {
+    // The clause describes the deplete annuity's growth term. Perpetual sizes on
+    // income ÷ post-retirement rate and never reads this rate for anything but
+    // the growth curve — the core suite pins that a 0.12 accumulation rate does
+    // not move a perpetual target, so rendering the clause there states a
+    // mechanism the user's own calculation does not have.
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(screen.getByText(/under this model it also sets how fast/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: /Perpetual safe-withdrawal/ }))
+
+    expect(screen.queryByText(/under this model it also sets how fast/)).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Expected yearly return while you are still saving')
+    ).toBeInTheDocument()
+  })
+
+  it('stops promising to follow the rate above once that has stopped being true', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(screen.getByText(/Follows the rate above until you change it/)).toBeInTheDocument()
+
+    await setField(user, postRetirementField(), '3')
+
+    // Nothing ever resets the touched flag, so the sentence would otherwise keep
+    // asserting a behaviour that has permanently ended.
+    expect(screen.queryByText(/Follows the rate above until you change it/)).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'What your savings earn once you retire — lower it to model a safer allocation'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('names the real cause when the two rates overflow the requirement (AC-10)', async () => {
+    // The overflow throw used to need an absurd income; with two rates a long
+    // horizon plus a wide rate gap reaches it, so copy blaming the income alone
+    // points at the one field that is fine.
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await fillReachableCase(user)
+
+    await setField(user, screen.getByLabelText('Life Expectancy'), '900')
+    await setField(user, postRetirementField(), '0')
+
+    const panel = screen.getByTestId('accumulation-solve-failed')
+    expect(panel).toHaveTextContent(/gap between your two return rates/)
+  })
+
+  it('keeps the growth chart on the accumulation rate only (AC-5)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await fillReachableCase(user)
+
+    const summaryText = () => screen.getByText('Projection Summary:').closest('p')?.textContent
+    expect(summaryText()).toContain('5.0% return while saving')
+
+    await setField(user, postRetirementField(), '2')
+
+    // The curve describes the saving phase, so the post-retirement assumption
+    // must not appear in it.
+    expect(summaryText()).toContain('5.0% return while saving')
   })
 })

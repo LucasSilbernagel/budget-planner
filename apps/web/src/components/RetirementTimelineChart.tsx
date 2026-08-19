@@ -412,7 +412,7 @@ function RetirementTimelineChartInner({
         <p className="text-sm text-body">
           <strong>Projection Summary:</strong> Starting with{' '}
           {formatChartCurrency(Math.max(0, currentSavedCents), mode, currency, locale)} at age{' '}
-          {currentAge}, with a {(annualReturnRate * 100).toFixed(1)}% annual return and{' '}
+          {currentAge}, with a {(annualReturnRate * 100).toFixed(1)}% return while saving and{' '}
           {formatChartCurrency(Math.max(0, monthlySavingsCents) * 12, mode, currency, locale)} saved
           each year, your assets reach{' '}
           <strong>

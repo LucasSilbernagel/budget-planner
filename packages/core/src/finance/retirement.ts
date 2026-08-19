@@ -51,6 +51,9 @@ export interface RetirementResult {
  * Calculates the required future value of assets for safe retirement withdrawal
  * Formula: FV = Ir × (12 / r)
  *
+ * ⚠️ `input.annualReturnRate` is a WITHDRAWAL-PHASE rate — see
+ * `calculateRequiredAssets`, which this delegates to.
+ *
  * @param input - Retirement input parameters
  * @param currencyOptions - Optional currency formatting options
  * @returns Retirement calculation result
@@ -108,8 +111,16 @@ export function calculateRetirementRequirement(
  * Calculates the required future value directly using Safe Withdrawal Model
  * Formula: FV = Ir × (12 / r)
  *
+ * ⚠️ This rate is a WITHDRAWAL-PHASE quantity — it is what the nest egg earns
+ * once you are drawing from it, i.e. the post-retirement rate. It is NOT an
+ * accumulation rate, and it was never one; the parameter keeps its historical
+ * name because three other call sites share it (story 35.3 §2.3 deliberately did
+ * not re-sign this function). `calculateRequiredNestEgg`'s perpetual branch
+ * passes its `postRetirementReturnRate` here.
+ *
  * @param monthlyIncome - Desired monthly retirement income in cents
- * @param annualReturnRate - Annual rate of return as decimal (e.g., 0.06 for 6%)
+ * @param annualReturnRate - Post-retirement (withdrawal-phase) rate of return as
+ *   decimal (e.g., 0.06 for 6%)
  * @returns Required assets in cents
  * @throws Error if annualReturnRate is <= 0 or below minimum threshold (division by zero protection)
  */
@@ -185,8 +196,11 @@ export function toMonthlyIncomeCents(amountCents: number, basis: IncomeBasis): n
  * Calculates how much monthly income can be safely withdrawn from a given asset value
  * Reverse calculation: Ir = FV × (r / 12)
  *
+ * ⚠️ WITHDRAWAL-PHASE rate — see `calculateRequiredAssets`. This function is the
+ * inverse of that one and shares its rate semantics.
+ *
  * @param assets - Current assets in cents
- * @param annualReturnRate - Annual rate of return as decimal
+ * @param annualReturnRate - Post-retirement (withdrawal-phase) rate of return as decimal
  * @returns Safe monthly withdrawal amount in cents
  * @throws Error if annualReturnRate is <= 0 or below minimum threshold
  */
@@ -482,29 +496,58 @@ export function projectAccumulatedNestEgg(
 /**
  * Computes the nest egg required at retirement for the chosen target model.
  *
- * **deplete** — the desired annual income is drawn each year, growing at the
- * return rate, from `retirementAge` until `lifeExpectancy` (begin-of-year
- * withdrawals), reaching zero at life expectancy. Because the withdrawal growth
- * rate equals the discount (return) rate, the growing-annuity present value
- * collapses to exactly one year of income per retirement year:
- *   `required = yearsInRetirement × desiredAnnualIncome`,
- *   where `yearsInRetirement = max(0, lifeExpectancy − retirementAge)`.
- * This branch is defined for any finite rate (including 0).
+ * Takes TWO rates (story 35.3 / FR63):
+ * - `annualReturnRate` — the ACCUMULATION-phase rate. In the `deplete` model it
+ *   doubles as the rate at which the desired retirement income is assumed to
+ *   GROW during retirement (that is the shipped convention, preserved).
+ * - `postRetirementReturnRate` — what the nest egg is assumed to earn from
+ *   retirement onward. This is the discount rate, and the one a user lowers to
+ *   model a safer allocation.
+ *
+ * **deplete** — the desired annual income is drawn each year from
+ * `retirementAge` until `lifeExpectancy` (begin-of-year withdrawals), growing at
+ * `annualReturnRate` and discounted at `postRetirementReturnRate`, reaching zero
+ * at life expectancy. That is the present value of a growing annuity:
+ *   `k = (1 + annualReturnRate) / (1 + postRetirementReturnRate)`
+ *   `required = desiredAnnualIncome × Σ_{t=0}^{n-1} k^t`
+ *   `         = desiredAnnualIncome × (k === 1 ? n : (1 − k^n) / (1 − k))`
+ *   where `n = yearsInRetirement = max(0, lifeExpectancy − retirementAge)`.
+ *
+ * ⚠️ When the two rates are EQUAL, `k === 1` exactly (IEEE-754 gives
+ * `(1+r)/(1+r) === 1` for every finite `r`), the sum collapses to `n`, and this
+ * reduces bit-for-bit to the single-rate formula that shipped before 35.3:
+ * `required = yearsInRetirement × desiredAnnualIncome`. That identity is the
+ * regression guard — it is a property of the formula, not of the test data.
+ * A LOWER post-retirement rate makes `k > 1` and strictly RAISES the requirement.
+ * This branch is defined for any finite non-negative pair of rates (including 0).
  *
  * **perpetual** — the shipped Safe Withdrawal Model `FV = Ir × (12 / r)` fed the
- * monthly-equivalent income (equivalently `desiredAnnualIncome / rate`),
- * independent of `retirementAge` and `lifeExpectancy`. Reuses
- * `calculateRequiredAssets`, so it THROWS on a non-positive / sub-precision rate
- * (the shipped house contract). `solveRetirementAccumulation` guards that case
- * up front and reports it as not-reachable rather than throwing.
+ * monthly-equivalent income, where `r` is now the POST-RETIREMENT rate (it is a
+ * withdrawal-phase quantity), independent of `retirementAge` and
+ * `lifeExpectancy`. Reuses `calculateRequiredAssets`, so it THROWS on a
+ * non-positive / sub-precision rate (the shipped house contract).
+ * `solveRetirementAccumulation` guards that case up front and reports it as
+ * not-reachable rather than throwing.
+ * ⚠️ `calculateRequiredAssets`' rate messages say "Annual return rate…" even
+ * though the value handed to it is the post-retirement rate. That wording is
+ * shared with three other callers and is deliberately left alone (story 35.3
+ * §3.1c); the case is unreachable from the planner and the solver's own
+ * pre-check intercepts the sub-precision path.
  *
  * @returns Required nest egg in cents (>= 0)
- * @throws Error on non-finite inputs, or (perpetual only) a non-positive /
- *   sub-precision `annualReturnRate`, or safe-integer overflow.
+ * @throws Error if either rate is non-finite, or either is negative, or an input
+ *   is non-finite, or (perpetual only) `postRetirementReturnRate` is
+ *   non-positive / sub-precision, or the result overflows a safe integer.
+ *   ⚠️ Note the ONE asymmetry in the wording: under `perpetual` a non-positive
+ *   post-retirement rate throws the shipped `calculateRequiredAssets` message
+ *   ("…must be positive (greater than 0)…"), not this function's
+ *   "…non-negative finite…" message. Both reject; only the string differs, and
+ *   that string is pinned by the equal-rates regression tests.
  */
 export function calculateRequiredNestEgg(
   desiredAnnualIncomeCents: number,
   annualReturnRate: number,
+  postRetirementReturnRate: number,
   retirementAge: number,
   lifeExpectancy: number,
   model: RetirementModel
@@ -513,15 +556,56 @@ export function calculateRequiredNestEgg(
     throw new Error('Desired annual income must be a finite number')
   }
 
+  // Both rates are validated here rather than only in the solver: this function
+  // is exported and directly tested, and an unguarded post-retirement rate is
+  // silently WRONG rather than loud — Infinity yields k = 0, factor = 1 and a
+  // plausible-looking "one year of income" answer with no throw at all.
+  //
+  // ⚠️ Ordering matters, and it is NOT free to rearrange. The perpetual branch
+  // delegates to `calculateRequiredAssets`, whose shipped contract rejects a
+  // rate <= 0 with "…must be positive (greater than 0)…" — a message this
+  // module's tests pin. Hoisting a non-negative check above the branch would
+  // replace that message and silently break the contract. So: FINITE checks
+  // first, then the branch, and the non-negative checks sit where each model
+  // can enforce them without stealing that message.
   if (!Number.isFinite(annualReturnRate)) {
     throw new Error('Annual return rate must be a finite number')
   }
 
+  if (!Number.isFinite(postRetirementReturnRate)) {
+    throw new Error('Post-retirement return rate must be a finite number')
+  }
+
   if (model === 'perpetual') {
     // Reuse the shipped Safe Withdrawal Model (FV = Ir × 12/r) on the monthly
-    // income. Throws on rate <= 0 / below the precision floor.
+    // income, sized by the POST-RETIREMENT rate. Delegating FIRST is deliberate:
+    // it rejects a non-positive / sub-precision post-retirement rate with the
+    // shipped "must be positive" wording before anything else can pre-empt it.
     const monthlyIncomeCents = toMonthlyIncomeCents(desiredAnnualIncomeCents, 'annual')
-    return calculateRequiredAssets(monthlyIncomeCents, annualReturnRate)
+    const requiredCents = calculateRequiredAssets(monthlyIncomeCents, postRetirementReturnRate)
+
+    // …and only THEN the accumulation rate, which perpetual does not consume but
+    // must still not silently accept as garbage. Before this check a negative
+    // accumulation rate returned a normal answer here while the identical value
+    // threw under `deplete` and threw pre-35.3 — an asymmetry no caller could
+    // have predicted. Placed after the delegation so the perpetual rate keeps
+    // the "must be positive" message the equal-rates contract pins.
+    if (annualReturnRate < 0) {
+      throw new Error('Annual return rate must be a non-negative finite number')
+    }
+
+    return requiredCents
+  }
+
+  // Deplete: a negative rate on either side corrupts the annuity factor (a
+  // post-retirement rate of -1 makes k infinite), and unlike the perpetual
+  // branch there is no downstream function to catch it.
+  if (annualReturnRate < 0) {
+    throw new Error('Annual return rate must be a non-negative finite number')
+  }
+
+  if (postRetirementReturnRate < 0) {
+    throw new Error('Post-retirement return rate must be a non-negative finite number')
   }
 
   if (!Number.isFinite(retirementAge)) {
@@ -533,7 +617,29 @@ export function calculateRequiredNestEgg(
   }
 
   const yearsInRetirement = Math.max(0, lifeExpectancy - retirementAge)
-  const requiredCents = Math.round(Math.max(0, desiredAnnualIncomeCents) * yearsInRetirement)
+  const incomeCents = Math.max(0, desiredAnnualIncomeCents)
+
+  // Short-circuit a zero income before touching the annuity factor: with k > 1
+  // and a very large horizon the factor overflows to Infinity, and 0 × Infinity
+  // is NaN, which would trip the safe-integer guard below and THROW where the
+  // single-rate formula returned 0. (Same hazard 26.6 short-circuited for the
+  // both-zero accumulation case.)
+  if (incomeCents === 0) {
+    return 0
+  }
+
+  const k = (1 + annualReturnRate) / (1 + postRetirementReturnRate)
+  // `k === 1` is exact whenever the two rates are equal, and is what makes the
+  // equal-rates case reduce to the pre-35.3 formula. It is also the removable
+  // singularity of the closed form: at k = 1 the quotient below is 0/0.
+  const annuityFactor = k === 1 ? yearsInRetirement : (1 - k ** yearsInRetirement) / (1 - k)
+
+  // `+ 0` normalizes -0: at yearsInRetirement === 0 the numerator is 0 and
+  // (1 - k) is NEGATIVE whenever k > 1 (i.e. whenever the post-retirement rate
+  // is below the accumulation rate), so the quotient is -0 and Math.round
+  // preserves it. Object.is(-0, 0) is false, so callers asserting toBe(0) would
+  // fail against an otherwise correct result.
+  const requiredCents = Math.round(incomeCents * annuityFactor) + 0
 
   if (!Number.isSafeInteger(requiredCents)) {
     throw new Error('Required nest egg exceeds safe integer limit.')
@@ -550,7 +656,8 @@ export interface RetirementAccumulationInput {
   currentAge: number
   currentSavedCents: number // principal, cents
   monthlySavingsCents: number // monthly contribution, cents
-  annualReturnRate: number // decimal, e.g. 0.06 for 6%
+  annualReturnRate: number // ACCUMULATION-phase rate, decimal, e.g. 0.06 for 6%
+  postRetirementReturnRate: number // WITHDRAWAL-phase rate, decimal (story 35.3)
   desiredAnnualIncomeCents: number // desired retirement income, cents/year
   lifeExpectancy: number // age
   model: RetirementModel
@@ -585,14 +692,24 @@ export interface RetirementAccumulationResult {
  * together guarantee prompt termination. "Not reachable" means no feasible
  * retirement strictly before life expectancy.
  *
+ * Since story 35.3 the input carries TWO rates and they are used in disjoint
+ * halves of the search: `annualReturnRate` drives `projectAccumulatedNestEgg`
+ * (the accumulation curve) and `postRetirementReturnRate` drives
+ * `calculateRequiredNestEgg` (the withdrawal-phase target). Under `deplete` the
+ * accumulation rate additionally serves as the income-growth term inside the
+ * required-nest-egg annuity — see that function's JSDoc. Setting the two rates
+ * equal reproduces the pre-35.3 single-rate results bit-for-bit.
+ *
  * Inputs are validated up front — a non-finite age, life expectancy, saved
- * amount, income, or a non-finite/negative return rate throws (matching the rest
- * of the module). Given valid inputs the bounded search never loops for an
- * unreasonable number of iterations and never produces `NaN`:
+ * amount, income, or a non-finite/negative value for EITHER rate throws
+ * (matching the rest of the module). Given valid inputs the bounded search never
+ * loops for an unreasonable number of iterations and never produces `NaN`:
  * - `currentAge >= lifeExpectancy` → not reachable.
- * - `perpetual` with a sub-precision return rate (`[0, MIN_ANNUAL_RETURN_RATE)`)
- *   → the required principal is unbounded → not reachable (guarded here rather
- *   than letting the shipped `calculateRequiredAssets` throw).
+ * - `perpetual` with a sub-precision POST-RETIREMENT rate
+ *   (`[0, MIN_ANNUAL_RETURN_RATE)`) → the required principal is unbounded → not
+ *   reachable (guarded here rather than letting the shipped
+ *   `calculateRequiredAssets` throw). The accumulation rate is unconstrained by
+ *   this rule; a 0% accumulation rate is legitimate (linear growth).
  *
  * @returns The solve result. `savedPerYearCents` is always populated (finite).
  */
@@ -604,6 +721,7 @@ export function solveRetirementAccumulation(
     currentSavedCents,
     monthlySavingsCents,
     annualReturnRate,
+    postRetirementReturnRate,
     desiredAnnualIncomeCents,
     lifeExpectancy,
     model,
@@ -633,6 +751,10 @@ export function solveRetirementAccumulation(
     throw new Error('Annual return rate must be a non-negative finite number')
   }
 
+  if (!Number.isFinite(postRetirementReturnRate) || postRetirementReturnRate < 0) {
+    throw new Error('Post-retirement return rate must be a non-negative finite number')
+  }
+
   const savedPerYearCents = Math.max(0, monthlySavingsCents) * 12
 
   const notReachable: RetirementAccumulationResult = {
@@ -654,7 +776,12 @@ export function solveRetirementAccumulation(
   // rate in [0, MIN_ANNUAL_RETURN_RATE) makes the required principal unbounded →
   // not reachable (rather than throwing out of the search). The rate is already
   // validated finite and non-negative above.
-  if (model === 'perpetual' && annualReturnRate < MIN_ANNUAL_RETURN_RATE) {
+  // ⚠️ Since story 35.3 the perpetual target is sized by the POST-RETIREMENT
+  // rate (`calculateRequiredNestEgg`'s perpetual branch), so this pre-check must
+  // test that rate — testing the accumulation rate would let a sub-precision
+  // post-retirement rate reach `calculateRequiredAssets` and throw out of the
+  // search, which is exactly what this guard exists to prevent.
+  if (model === 'perpetual' && postRetirementReturnRate < MIN_ANNUAL_RETURN_RATE) {
     return notReachable
   }
 
@@ -673,6 +800,8 @@ export function solveRetirementAccumulation(
       break
     }
 
+    // The projection is pure ACCUMULATION — it takes the accumulation rate only,
+    // and is deliberately unaffected by the post-retirement rate.
     const projectedNestEggCents = projectAccumulatedNestEgg(
       currentSavedCents,
       monthlySavingsCents,
@@ -682,6 +811,7 @@ export function solveRetirementAccumulation(
     const requiredNestEggCents = calculateRequiredNestEgg(
       desiredAnnualIncomeCents,
       annualReturnRate,
+      postRetirementReturnRate,
       retirementAge,
       lifeExpectancy,
       model

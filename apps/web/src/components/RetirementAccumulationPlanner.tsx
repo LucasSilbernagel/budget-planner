@@ -127,6 +127,21 @@ const SOLVER_ERROR_COPY: Record<string, string> = {
     'Please enter a valid return rate (must be greater than 0%)',
   'Annual return rate must be at least 0.1% to avoid precision issues in calculations.':
     'Return rate must be at least 0.1% to ensure accurate calculations',
+  // Story 35.3 — the two rate guards, named by phase so the two fields are
+  // distinguishable. ⚠️ The accumulation entries below are NOT new copy for a new
+  // throw: `'Annual return rate must be a non-negative finite number'` has been
+  // thrown by `solveRetirementAccumulation` since 26.6 and was never a key here,
+  // so it rendered no detail line at all. Adding the post-retirement pair without
+  // its accumulation twin would have left that pre-existing hole open while
+  // looking symmetrical. `rate-guard-copy.test.ts` pins all four.
+  'Annual return rate must be a finite number':
+    'Please enter a valid expected annual return (while saving)',
+  'Annual return rate must be a non-negative finite number':
+    'Please enter a valid expected annual return (while saving) — it cannot be negative',
+  'Post-retirement return rate must be a finite number':
+    'Please enter a valid post-retirement annual return',
+  'Post-retirement return rate must be a non-negative finite number':
+    'Please enter a valid post-retirement annual return — it cannot be negative',
   'Calculation overflow: Required assets exceeds safe integer limit. Try a smaller income or higher return rate.':
     'The calculated amount is too large. Please try smaller values.',
   'Calculation overflow: Required assets exceeds safe integer limit.':
@@ -135,8 +150,13 @@ const SOLVER_ERROR_COPY: Record<string, string> = {
     'The calculated amount is too large. Please try smaller values.',
   'Number of years must not exceed 100 to prevent performance issues and calculation overflow.':
     'Please enter a projection period of 100 years or less',
+  // ⚠️ Reworded for story 35.3. This throw used to need an absurd income to fire;
+  // with two rates it also fires on a long life expectancy combined with a large
+  // gap between them (measured: deplete 6%/3% at $60k income overflows from a life
+  // expectancy of ~700, where the single-rate formula needed ~1.5e9). Blaming the
+  // income field alone would misdirect the user at the input that is fine.
   'Required nest egg exceeds safe integer limit.':
-    'The retirement income you entered is too large to plan for. Please try a smaller amount.',
+    'These numbers are too large to plan for. Check your life expectancy, and the gap between your two return rates — a big gap over a very long retirement grows beyond what can be calculated.',
   'Projection overflow: nest egg exceeds safe integer limit. Try smaller values or fewer months.':
     'Your savings grow beyond what can be calculated. Please try smaller amounts.',
   // The derived figures now guard non-finite values before the solver sees
@@ -158,8 +178,13 @@ const SOLVER_ERROR_COPY: Record<string, string> = {
  * Maps a thrown core error to friendly copy, or `null` when it has no specific
  * translation (the caller already shows a general message, so an unmapped error
  * must not add noise).
+ *
+ * Exported for `rate-guard-copy.test.ts`, which drives the REAL core guards and
+ * asserts each thrown message lands here. The mapping is keyed on exact core
+ * strings, so a reworded guard silently stops rendering its detail line —
+ * nothing type-checks it and, before that test, nothing covered it either.
  */
-function describeSolverError(error: unknown): string | null {
+export function describeSolverError(error: unknown): string | null {
   return error instanceof Error ? SOLVER_ERROR_COPY[error.message] ?? null : null
 }
 
@@ -477,6 +502,21 @@ function RetirementAccumulationPlannerInner() {
   const [annualReturnInput, setAnnualReturnInput] = useState<string>('6.0')
   const [model, setModel] = useState<RetirementModel>('deplete')
 
+  // The post-retirement rate MIRRORS the accumulation rate until the user edits
+  // it, after which it is independent. That is what makes an untouched planner
+  // numerically identical to its pre-35.3 behaviour at EVERY rate, not just at
+  // the 6.0 default — a user who sets accumulation to 8% and never touches this
+  // field still gets a single-rate 8% plan, exactly as before.
+  //
+  // ⚠️ The stored value starts EMPTY, not '6.0': a literal would end the mirror
+  // on the very first render. Everything downstream reads the derived
+  // `effectivePostRetirementReturnInput`, never the raw state.
+  const [postRetirementReturnInput, setPostRetirementReturnInput] = useState<string>('')
+  const [postRetirementTouched, setPostRetirementTouched] = useState<boolean>(false)
+  const effectivePostRetirementReturnInput = postRetirementTouched
+    ? postRetirementReturnInput
+    : annualReturnInput
+
   // The desired-income seed, which unlike the two derived figures above is still
   // a real editable field — with one extra hazard.
   //
@@ -533,7 +573,14 @@ function RetirementAccumulationPlannerInner() {
       // Only desired income is still a money INPUT — the other two figures are
       // derived and always present, so they can never be "not filled in".
       const anyMoneyEmpty = desiredIncomeInput.trim() === ''
-      const anyRateEmpty = annualReturnInput.trim() === ''
+      // ⚠️ Tests the EFFECTIVE post-retirement value, not the raw state — while
+      // the field is mirroring, the raw state is '' and testing it would leave an
+      // untouched planner permanently "incomplete". And the check itself is
+      // load-bearing: `parsePercentageToDecimal` returns 0 for an empty string
+      // rather than throwing, so a cleared field would otherwise silently become
+      // a 0% assumption and render a confident, badly wrong answer.
+      const anyRateEmpty =
+        annualReturnInput.trim() === '' || effectivePostRetirementReturnInput.trim() === ''
 
       if (currentAge === null || lifeExpectancy === null || anyMoneyEmpty || anyRateEmpty) {
         return { ok: false, reason: 'incomplete' }
@@ -548,6 +595,7 @@ function RetirementAccumulationPlannerInner() {
           currentSavedCents: derivedCurrentSaved.cents,
           monthlySavingsCents: derivedMonthlySavings.cents,
           annualReturnRate: parsePercentageToDecimal(annualReturnInput),
+          postRetirementReturnRate: parsePercentageToDecimal(effectivePostRetirementReturnInput),
           desiredAnnualIncomeCents: toAnnualIncomeCents(
             parseCurrencyToCents(desiredIncomeInput, locale),
             incomeBasis
@@ -567,6 +615,10 @@ function RetirementAccumulationPlannerInner() {
     desiredIncomeInput,
     incomeBasis,
     annualReturnInput,
+    // The DERIVED value, not the two raw states behind it: `useExhaustiveDependencies`
+    // is an error-level rule and would flag those as unused here. The derived
+    // value is a pure function of both, so the memo still recomputes correctly.
+    effectivePostRetirementReturnInput,
     model,
     locale,
   ])
@@ -797,29 +849,33 @@ function RetirementAccumulationPlannerInner() {
           <p className="text-sm text-muted mt-1">The age you plan through</p>
         </div>
 
-        {currencyField({
-          id: 'desiredIncome',
-          label: 'Desired Retirement Income',
-          help: `The ${incomeBasis} income you want in retirement`,
-          value: desiredIncomeInput,
-          onChange: setDesiredIncomeInput,
-          children: (
-            <div className="mt-2">
-              <label htmlFor="incomeBasis" className="block text-sm font-medium text-label mb-1">
-                Income period
-              </label>
-              <select
-                id="incomeBasis"
-                value={incomeBasis}
-                onChange={(e) => setIncomeBasis(e.target.value as IncomeBasis)}
-                className={`w-full px-3 py-2 ${controlChrome}`}
-              >
-                <option value="annual">Annual</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </div>
-          ),
-        })}
+        {/* Spans the full row so the two rate fields below can sit side by side
+            as the pair they are, rather than one of them being orphaned. */}
+        <div className="sm:col-span-2">
+          {currencyField({
+            id: 'desiredIncome',
+            label: 'Desired Retirement Income',
+            help: `The ${incomeBasis} income you want in retirement`,
+            value: desiredIncomeInput,
+            onChange: setDesiredIncomeInput,
+            children: (
+              <div className="mt-2">
+                <label htmlFor="incomeBasis" className="block text-sm font-medium text-label mb-1">
+                  Income period
+                </label>
+                <select
+                  id="incomeBasis"
+                  value={incomeBasis}
+                  onChange={(e) => setIncomeBasis(e.target.value as IncomeBasis)}
+                  className={`w-full px-3 py-2 ${controlChrome}`}
+                >
+                  <option value="annual">Annual</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+            ),
+          })}
+        </div>
 
         <div>
           <label htmlFor="annualReturn" className="block text-sm font-medium text-label mb-2">
@@ -844,8 +900,59 @@ function RetirementAccumulationPlannerInner() {
               %
             </span>
           </div>
+          {/* The second clause is TRUE ONLY under `deplete`, where this rate doubles
+              as the income-growth term of the required-nest-egg annuity. Under
+              `perpetual` the requirement is income ÷ post-retirement rate and this
+              rate touches nothing but the growth curve — pinned by the core test
+              asserting a 0.12 accumulation rate does not move a perpetual target. */}
           <p className="text-sm text-muted mt-1">
-            Expected yearly return on investments — used for every figure on this page
+            {model === 'deplete'
+              ? 'Expected yearly return while you are still saving — under this model it also sets how fast your retirement income is assumed to rise'
+              : 'Expected yearly return while you are still saving'}
+          </p>
+        </div>
+
+        {/* ⚠️ Structure copied from the field above, identifiers deliberately NOT:
+            reusing id="annualReturn" would put two controls behind one <label>,
+            which is the exact defect the #currentAge uniqueness assertion in the
+            planner's test file exists to catch. */}
+        <div>
+          <label
+            htmlFor="postRetirementReturn"
+            className="block text-sm font-medium text-label mb-2"
+          >
+            Post-Retirement Annual Return
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              id="postRetirementReturn"
+              name="postRetirementReturn"
+              value={effectivePostRetirementReturnInput}
+              onChange={(e) => {
+                setPostRetirementTouched(true)
+                setPostRetirementReturnInput(e.target.value)
+              }}
+              inputMode="decimal"
+              min="0"
+              step="0.1"
+              placeholder="6.0"
+              className={`${inputClass(false)} pr-10`}
+              aria-label="Post-Retirement Annual Return"
+              aria-required="true"
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+              %
+            </span>
+          </div>
+          {/* The "follows the rate above" clause stops being true the moment the
+              user edits this field, and nothing ever resets `postRetirementTouched`
+              — so it must disappear then rather than keep asserting a behaviour
+              that has permanently ended. */}
+          <p className="text-sm text-muted mt-1">
+            {postRetirementTouched
+              ? 'What your savings earn once you retire — lower it to model a safer allocation'
+              : 'What your savings earn once you retire — lower it to model a safer allocation. Follows the rate above until you change it'}
           </p>
         </div>
       </div>
@@ -893,7 +1000,7 @@ function RetirementAccumulationPlannerInner() {
         <div className="p-4 surface-inset rounded-lg text-body" role="status">
           {parsed.reason === 'invalid'
             ? 'Please check your inputs — one of the values is not a valid number.'
-            : 'Enter all four details above to see your retirement outlook.'}
+            : 'Enter all the details above to see your retirement outlook.'}
         </div>
       )}
 
@@ -1034,7 +1141,15 @@ function RetirementAccumulationPlannerInner() {
               <ul className="list-disc pl-5 mt-3 text-sm space-y-1">
                 <li>Raise your income or cut expenses on the Income and Expenses pages</li>
                 <li>Retire on a lower annual income</li>
-                <li>Assume a higher annual return</li>
+                {/* ⚠️ Deliberately names ONLY the post-retirement rate. Raising the
+                    SAVING-phase rate is no longer reliably helpful under `deplete`:
+                    it also drives the assumed income-growth term, so it inflates the
+                    requirement as well as the projection. Measured on the real solver
+                    (age 64, life 95, post rate held at 6%), raising it 6% → 8% → 10%
+                    pushed earliest retirement 27 → 48 → 63 months — further away. A
+                    higher POST-retirement rate always lowers the requirement in both
+                    models, so it is the only lever safe to state unconditionally. */}
+                <li>Assume a higher return after you retire</li>
                 <li>Extend your life-expectancy horizon</li>
               </ul>
             </>
@@ -1045,7 +1160,9 @@ function RetirementAccumulationPlannerInner() {
 
       {/* ── Growth over time ────────────────────────────────────────────────
           The same inputs, the same monthly-compounded math, drawn out year by
-          year. No second input set, no second return rate. */}
+          year. No second input set. The chart is pure ACCUMULATION, so it takes
+          the accumulation rate only — the post-retirement rate describes what
+          happens after this curve ends and deliberately does not appear here. */}
       <div>
         <h3 className="text-lg font-semibold text-subheading mb-4">
           Your Savings Until Retirement

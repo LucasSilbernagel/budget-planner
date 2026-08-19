@@ -116,7 +116,8 @@ function RetirementPage() {
                   <strong>Ir</strong> = Desired monthly retirement income
                 </li>
                 <li>
-                  <strong>r</strong> = Annual return rate (as decimal)
+                  <strong>r</strong> = Post-retirement annual return rate (as decimal) — the rate
+                  your savings earn once you are drawing on them, not the one you earn while saving
                 </li>
               </ul>
               <p className="text-xs text-muted mt-2">
@@ -135,7 +136,7 @@ function RetirementPage() {
                 can retire, and assumes:
               </p>
               <ul className="text-sm text-blue-600 dark:text-blue-300 mt-2 space-y-1">
-                <li>Consistent annual return rate</li>
+                <li>A consistent return rate while you are saving</li>
                 <li>Monthly compounding of returns</li>
                 <li>Your monthly savings continue unchanged until retirement</li>
                 <li>No withdrawals along the way</li>

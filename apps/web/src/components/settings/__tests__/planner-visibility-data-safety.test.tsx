@@ -3,10 +3,11 @@
  *
  * ⚠️ READ THIS BEFORE "IMPROVING" THE TEST. The epic asked us to prove that
  * "hiding the planner never deletes retirement inputs". Taken literally that is
- * VACUOUS: the planner persists nothing of its own. All six of its fields are
+ * VACUOUS: the planner persists nothing of its own. All seven of its fields are
  * plain `useState` in `RetirementAccumulationPlanner` — current age, life
- * expectancy, desired income, income basis, annual return, model — and they
- * already reset on every remount and reload today. There is no `retirementStore`
+ * expectancy, desired income, income basis, annual return, post-retirement
+ * return (story 35.3), model — and they already reset on every remount and
+ * reload today. There is no `retirementStore`
  * to clear. A test asserting those fields survive a toggle would fail against
  * CORRECT code.
  *
