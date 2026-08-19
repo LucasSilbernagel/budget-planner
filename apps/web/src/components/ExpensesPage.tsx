@@ -4,11 +4,13 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
+import { useTableSort } from '../hooks/useTableSort'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
+import { type FlowSortKey, createFlowSortExtractors } from '../lib/table-sort-keys'
 import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { CategoryBadge } from './categories/CategoryBadge'
@@ -22,6 +24,7 @@ import {
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
   RESPONSIVE_CELL_CLASS,
+  RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
   RESPONSIVE_TABLE_CLASS,
   RESPONSIVE_TBODY_CLASS,
@@ -29,6 +32,7 @@ import {
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
+import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -37,6 +41,18 @@ const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'monthly', label: 'Monthly' },
   { value: 'annually', label: 'Annually' },
 ]
+
+/**
+ * Column labels for the sortable header cells and for the mobile
+ * "Sorted by {Column}" notice, so the two can never drift apart (story 34.2).
+ * Module scope, like every other component and constant in this layer.
+ */
+const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
+  name: 'Name',
+  amount: 'Amount',
+  frequency: 'Frequency',
+  category: 'Category',
+}
 
 export function ExpensesPage() {
   const expenses = useExpenses()
@@ -84,6 +100,21 @@ export function ExpensesPage() {
   // free.
   const { status: premiumStatus } = usePremiumAccess()
   const showCategoryColumn = premiumStatus.hasAccess
+
+  // Column sorting (story 34.2, FR61). A VIEW-level projection: it never writes
+  // `sortOrder`, never calls a move action and never enqueues a sync operation —
+  // clearing it returns the table to the manual order untouched.
+  //
+  // ⚠️ The extractors are memoised on `categoryNames` because the Category key
+  // resolves a uuid through that map: renaming a category must re-sort this
+  // table even though no row changed. A projection memoised only on the rows
+  // would keep the stale order with no error anywhere.
+  const sortExtractors = useMemo(
+    () => createFlowSortExtractors(categoryNames, showCategoryColumn),
+    [categoryNames, showCategoryColumn]
+  )
+  const sort = useTableSort(expenses, sortExtractors)
+  const sortedRows = sort.rows
   // Currency preferences drive the input's symbol affordance and locale-aware
   // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
   // grouping uses the neutral en-US locale (per the store).
@@ -322,94 +353,129 @@ export function ExpensesPage() {
                 <p className="text-sm text-faint">Click "Add Expense" to get started</p>
               </div>
             ) : (
-              <div className={RESPONSIVE_WRAPPER_CLASS}>
-                <table className={RESPONSIVE_TABLE_CLASS}>
-                  <thead className={RESPONSIVE_THEAD_CLASS}>
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                        Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                        Frequency
-                      </th>
-                      {/* Premium-only (story 33.3). Gated on the SAME expression
+              <>
+                {/* The mobile escape hatch (story 34.2, decision 7). A sort can
+                    only be STARTED at >= 640px, but it survives a narrow — the
+                    `<thead>` that started it is `display: none` below `sm`, and
+                    the move arrows are disabled while it is active. Rendered
+                    only when a sort exists, so an unsorted mobile session sees
+                    no new DOM at all. */}
+                {sort.state !== null && (
+                  <TableSortNotice
+                    columnLabel={SORT_COLUMN_LABELS[sort.state.key]}
+                    onClear={sort.clear}
+                  />
+                )}
+                <div className={RESPONSIVE_WRAPPER_CLASS}>
+                  <table className={RESPONSIVE_TABLE_CLASS}>
+                    <thead className={RESPONSIVE_THEAD_CLASS}>
+                      <tr>
+                        {/* Sortable headers (story 34.2). Each `<th>`'s text
+                          content stays EXACTLY the column label — the direction
+                          indicator is an aria-hidden <svg> — because
+                          `category-assignment.test.tsx` pins these as an exact
+                          array on both pages. */}
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.name}
+                          ariaSort={sort.ariaSort('name')}
+                          onToggle={() => sort.toggle('name')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.amount}
+                          ariaSort={sort.ariaSort('amount')}
+                          onToggle={() => sort.toggle('amount')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.frequency}
+                          ariaSort={sort.ariaSort('frequency')}
+                          onToggle={() => sort.toggle('frequency')}
+                        />
+                        {/* Premium-only (story 33.3). Gated on the SAME expression
                           as the matching <td> below — if the two ever disagree
-                          every column shifts at >= 640px. */}
-                      {showCategoryColumn && (
-                        <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                          Category
-                        </th>
-                      )}
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {expenses.map((expense, index) => (
-                      <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
-                        <td className={RESPONSIVE_CELL_CLASS}>
-                          <FieldLabel>Name</FieldLabel>
-                          <div className="text-sm font-medium text-heading">{expense.name}</div>
-                        </td>
-                        <td className={RESPONSIVE_CELL_CLASS}>
-                          <FieldLabel>Amount</FieldLabel>
-                          <div className="text-sm text-muted">{formatAmount(expense.amount)}</div>
-                        </td>
-                        <td className={RESPONSIVE_CELL_CLASS}>
-                          <FieldLabel>Frequency</FieldLabel>
-                          <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
-                            {expense.frequency}
-                          </span>
-                        </td>
-                        {/* Removing this <td> removes the desktop cell AND the
+                          every column shifts at >= 640px. Story 34.2 reuses that
+                          one identifier for the sort target too, so a column a
+                          free user cannot see is not offered as a sort key. */}
+                        {showCategoryColumn && (
+                          <SortableColumnHeader
+                            label={SORT_COLUMN_LABELS.category}
+                            ariaSort={sort.ariaSort('category')}
+                            onToggle={() => sort.toggle('category')}
+                          />
+                        )}
+                        {/* Not sortable: no button, and no `aria-sort` at all
+                          (`none` would advertise a sortable column). */}
+                        <th className={RESPONSIVE_HEADER_CELL_RIGHT_CLASS}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={RESPONSIVE_TBODY_CLASS}>
+                      {sortedRows.map((expense, index) => (
+                        <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Name</FieldLabel>
+                            <div className="text-sm font-medium text-heading">{expense.name}</div>
+                          </td>
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Amount</FieldLabel>
+                            <div className="text-sm text-muted">{formatAmount(expense.amount)}</div>
+                          </td>
+                          <td className={RESPONSIVE_CELL_CLASS}>
+                            <FieldLabel>Frequency</FieldLabel>
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                              {expense.frequency}
+                            </span>
+                          </td>
+                          {/* Removing this <td> removes the desktop cell AND the
                             mobile card field in one edit — below `sm` the same
                             cell becomes the labelled row via <FieldLabel>. */}
-                        {showCategoryColumn && (
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Category</FieldLabel>
-                            <CategoryBadge
-                              categoryId={expense.categoryId}
-                              names={categoryNames}
-                              idPrefix="expense"
-                            />
+                          {showCategoryColumn && (
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Category</FieldLabel>
+                              <CategoryBadge
+                                categoryId={expense.categoryId}
+                                names={categoryNames}
+                                idPrefix="expense"
+                              />
+                            </td>
+                          )}
+                          <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
+                            <FieldLabel>Actions</FieldLabel>
+                            <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                              {/* A manual move and a column sort cannot both be
+                                live: `isFirst`/`isLast` come from the RENDERED
+                                index while `planRowMove` derives neighbours from
+                                the manual order, so under a sort they disagree
+                                (story 34.2, decision 2). */}
+                              <RowMoveControls
+                                label={expense.name}
+                                isFirst={index === 0}
+                                isLast={index === sortedRows.length - 1}
+                                disabled={sort.state !== null}
+                                onMove={(direction) => moveExpense(expense.id, direction)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(expense)}
+                                aria-label={`Edit ${expense.name}`}
+                                className={`text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(expense.id)}
+                                aria-label={`Delete ${expense.name}`}
+                                className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </td>
-                        )}
-                        <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
-                          <FieldLabel>Actions</FieldLabel>
-                          <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
-                            <RowMoveControls
-                              label={expense.name}
-                              isFirst={index === 0}
-                              isLast={index === expenses.length - 1}
-                              onMove={(direction) => moveExpense(expense.id, direction)}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(expense)}
-                              aria-label={`Edit ${expense.name}`}
-                              className={`text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(expense.id)}
-                              aria-label={`Delete ${expense.name}`}
-                              className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </main>

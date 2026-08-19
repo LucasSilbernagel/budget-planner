@@ -67,6 +67,23 @@ interface RowMoveControlsProps {
   isFirst: boolean
   /** True for the last row: move-down is a no-op and announces itself as such. */
   isLast: boolean
+  /**
+   * Forces BOTH controls into the disabled state regardless of position
+   * (story 34.2, ratified decision 2).
+   *
+   * ⚠️ This exists because a column sort and a manual move cannot both be live.
+   * The four pages derive `isFirst`/`isLast` from the RENDERED row index, while
+   * `planRowMove` derives a row's neighbours from the manual order
+   * (`sortByDisplayOrder`) — under a view sort those two disagree, so an arrow
+   * would swap the row with a neighbour the user cannot see, and the visually
+   * first row would report itself as movable. Rather than reconcile two
+   * orderings, a sort disables the arrows; clearing the sort restores them.
+   *
+   * Deliberately NOT expressed by passing `isFirst && isLast` from the pages:
+   * that would make a genuine single-row list indistinguishable from a sorted
+   * one, and it would put a fifth copy of the rule in each page.
+   */
+  disabled?: boolean
   onMove: (direction: RowMoveDirection) => void
 }
 
@@ -100,16 +117,27 @@ function ChevronDownIcon() {
   )
 }
 
-export function RowMoveControls({ label, isFirst, isLast, onMove }: RowMoveControlsProps) {
+export function RowMoveControls({
+  label,
+  isFirst,
+  isLast,
+  disabled = false,
+  onMove,
+}: RowMoveControlsProps) {
+  // Resolved once so the rendered attribute and the handler's guard can never
+  // disagree: `aria-disabled` is advisory only, and it is the guard that makes
+  // the control an actual no-op.
+  const upDisabled = disabled || isFirst
+  const downDisabled = disabled || isLast
+
   return (
     <>
       <button
         type="button"
         aria-label={`Move ${label} up`}
-        aria-disabled={isFirst}
+        aria-disabled={upDisabled}
         onClick={() => {
-          // `aria-disabled` is advisory only — the guard is what makes it a no-op.
-          if (isFirst) {
+          if (upDisabled) {
             return
           }
           onMove('up')
@@ -121,9 +149,9 @@ export function RowMoveControls({ label, isFirst, isLast, onMove }: RowMoveContr
       <button
         type="button"
         aria-label={`Move ${label} down`}
-        aria-disabled={isLast}
+        aria-disabled={downDisabled}
         onClick={() => {
-          if (isLast) {
+          if (downDisabled) {
             return
           }
           onMove('down')

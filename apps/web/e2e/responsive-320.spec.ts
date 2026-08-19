@@ -943,6 +943,171 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     })
   }
 
+  /**
+   * Column sorting (story 34.2, FR61).
+   *
+   * ⚠️ These run at 1280px, not 320px, and that is the point: the `<thead>` is
+   * `max-sm:hidden`, so the sort affordance does not exist below `sm`. Sorting is
+   * a >= 640px feature by ratified decision, and the escape hatch for a sort that
+   * SURVIVES a narrow is covered by the test after this one.
+   *
+   * ⚠️ Expected sequences are written out as LITERALS per route. Deriving them
+   * from the seed with a comparator would guard nothing — the comparator is the
+   * thing under test. The seed has two rows per table, and on `/balance` the
+   * ascending order deliberately EQUALS the manual order ('Longest…' < 'Mortgage'),
+   * which is why both directions are pinned rather than just "the order changed".
+   */
+  const SORT_BY_NAME_EXPECTATIONS: Record<string, { asc: string[]; desc: string[] }> = {
+    '/income': {
+      asc: ['Freelance & Consulting', LONG_UNBROKEN_NAME],
+      desc: [LONG_UNBROKEN_NAME, 'Freelance & Consulting'],
+    },
+    '/expenses': {
+      asc: ['Groceries', LONG_UNBROKEN_NAME],
+      desc: [LONG_UNBROKEN_NAME, 'Groceries'],
+    },
+    '/savings': {
+      asc: ['Emergency Fund', LONG_UNBROKEN_NAME],
+      desc: [LONG_UNBROKEN_NAME, 'Emergency Fund'],
+    },
+    '/balance': {
+      asc: [LONG_UNBROKEN_NAME, 'Mortgage'],
+      desc: ['Mortgage', LONG_UNBROKEN_NAME],
+    },
+  }
+
+  for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
+    /** The EDITABLE table's `<thead>` — the one carrying the move controls.
+     *
+     * ⚠️ Scoped, mirroring the BalancePage unit suite. `/balance` renders two
+     * tables and both `<thead>`s are visible at 1280px; an unscoped
+     * `getByRole('columnheader', {name})` passes today only because the
+     * breakdown's columns happen to be Account / Current Balance / Remaining
+     * Room. A rename there would turn this into a strict-mode failure instead of
+     * a caught regression. */
+    function sortHeader(page: import('@playwright/test').Page, name: string) {
+      return page
+        .locator('div.overflow-x-auto table')
+        .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+        .getByRole('columnheader', { name })
+    }
+
+    /** Row order in the EDITABLE table, by whichever seeded name each row carries.
+     *
+     * ⚠️ Scoped to the table holding the move controls: `/balance` renders
+     * `entries` twice, so an unscoped query concatenates both tables. */
+    function editableOrder(page: import('@playwright/test').Page, names: string[]) {
+      return page
+        .locator('div.overflow-x-auto table')
+        .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+        .locator('tbody tr')
+        .evaluateAll(
+          (rows, seeded) =>
+            rows.map((row) => seeded.find((name) => (row.textContent ?? '').includes(name)) ?? ''),
+          names
+        )
+    }
+
+    test(`${route} sorts by a column header at 1280px (34.2)`, async ({ page }) => {
+      const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
+      const names = expected.asc
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await seedFinanceRows(page, 'light')
+
+      await page.goto(route)
+      await page.waitForLoadState('networkidle')
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+
+      const nameHeader = sortHeader(page, 'Name')
+      await expect(nameHeader).toHaveAttribute('aria-sort', 'none')
+      const manual = await editableOrder(page, names)
+      expect(manual).toHaveLength(2)
+
+      const sortButton = nameHeader.getByRole('button', { name: 'Name' })
+      await sortButton.click()
+      await expect(nameHeader).toHaveAttribute('aria-sort', 'ascending')
+      await expect.poll(() => editableOrder(page, names)).toEqual(expected.asc)
+
+      await sortButton.click()
+      await expect(nameHeader).toHaveAttribute('aria-sort', 'descending')
+      await expect.poll(() => editableOrder(page, names)).toEqual(expected.desc)
+
+      // The third activation is the return to manual order — there is no
+      // separate reset control at this width.
+      await sortButton.click()
+      await expect(nameHeader).toHaveAttribute('aria-sort', 'none')
+      await expect.poll(() => editableOrder(page, names)).toEqual(manual)
+
+      // While sorted, the manual move controls stand down (story decision 2):
+      // their boundary flags come from the rendered index, which no longer
+      // matches the order a move would actually operate on.
+      await sortButton.click()
+      const anyMoveUp = page.getByRole('button', { name: /^Move .+ up$/ }).first()
+      await expect(anyMoveUp).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    /** ⚠️ Run in BOTH schemes: AC-11 claims the notice fits 320px in light and
+     * dark, and a light-only case proves half of that. */
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`${route} sort started on desktop stays escapable at 320px, ${scheme} (34.2)`, async ({
+        page,
+      }) => {
+        const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
+        const names = expected.asc
+        await page.setViewportSize({ width: 1280, height: 720 })
+        await seedFinanceRows(page, scheme)
+
+        await page.goto(route)
+        await page.waitForLoadState('networkidle')
+        await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+
+        // Nothing new in the DOM while unsorted — a phone session that never
+        // widened sees no notice at all.
+        await expect(page.getByText(/^Sorted by /)).toHaveCount(0)
+
+        // ⚠️ Sort to a state that DIFFERS from manual order on every route. On
+        // `/balance` the ascending order deliberately equals manual, so stopping at
+        // one click would leave both the post-sort and the post-reset assertions
+        // comparing an order that never changed — a broken reset would pass.
+        const sortButton = sortHeader(page, 'Name').getByRole('button', { name: 'Name' })
+        const manual = await editableOrder(page, names)
+        await sortButton.click()
+        if ((await editableOrder(page, names)).join('|') === manual.join('|')) {
+          await sortButton.click()
+        }
+        await expect.poll(() => editableOrder(page, names)).not.toEqual(manual)
+
+        // Narrow BELOW `sm`. The header that started this sort is now
+        // `display: none`, so without the notice the sort would be inescapable.
+        await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+        await expect(sortHeader(page, 'Name')).toBeHidden()
+
+        const notice = page.getByText('Sorted by Name')
+        await expect(notice).toBeVisible()
+        const reset = page.getByRole('button', { name: 'Show manual order' })
+        const box = await reset.boundingBox()
+        expect(box, 'the reset control has no layout box at 320px').not.toBeNull()
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+        expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
+
+        await reset.click()
+        await expect(page.getByText(/^Sorted by /)).toHaveCount(0)
+        // Manual order restored — compared against the order MEASURED before the
+        // sort, not a hand-written literal, so it cannot drift from the seed.
+        await expect.poll(() => editableOrder(page, names)).toEqual(manual)
+        await expect(page.getByRole('button', { name: /^Move .+ down$/ }).first()).toHaveAttribute(
+          'aria-disabled',
+          'false'
+        )
+
+        await assertNoHorizontalOverflow(
+          (fn) => page.evaluate(fn),
+          `${route} with the sort notice at 320px (${scheme})`
+        )
+      })
+    }
+  }
+
   // Story 34.1b / the 33.3 lesson: "an overflow assertion is only as good as the
   // widths it runs at, and the width that matters is the one just above the
   // breakpoint". 320 and 1280 both passed while a 768px wrapper overflow went

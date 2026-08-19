@@ -12,7 +12,8 @@ import {
   waitFor,
   within,
 } from '@/test/utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { BalancePage } from '../BalancePage'
@@ -1204,5 +1205,413 @@ describe('BalancePage — reorder rows (34.1b)', () => {
 
     expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
     expect(breakdownOrder).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+})
+
+/**
+ * Column sorting (Story 34.2, FR61).
+ *
+ * ⚠️ `/balance` renders `entries` TWICE — the read-only "Investment Accounts"
+ * breakdown is `entries.filter(e => e.type === 'investment')` over the same
+ * array. Only the EDITABLE table sorts, and a `.filter` preserves the relative
+ * order of whatever it is given, so a projection applied at page level would
+ * silently reorder the breakdown too. That is asserted here, not assumed.
+ */
+describe('BalancePage — sort by column (34.2)', () => {
+  /**
+   * manual (insertion):   Zeta, Alpha, Mid, Beta
+   * breakdown (manual):   Zeta, Mid, Beta          (investments only)
+   * by type:              Zeta, Mid, Beta, Alpha   (investment before debt)
+   * by name:              Alpha, Beta, Mid, Zeta
+   * by current balance:   Alpha(-500) Zeta(300) Mid(300) Beta(800)  <- Zeta/Mid TIE
+   * by contribution NORM: Mid(4_17) Beta(200_00) Alpha(300_00) Zeta(433_33)
+   * by contribution RAW:  Mid(50_00) Zeta(100_00) Beta(200_00) Alpha(300_00)
+   */
+  const SEED = [
+    {
+      type: 'investment' as const,
+      name: 'Zeta',
+      currentBalance: 300_00,
+      maxContributionLimit: 900_00,
+      monthlyContribution: 100_00,
+      frequency: 'weekly' as const,
+    },
+    {
+      type: 'debt' as const,
+      name: 'Alpha',
+      currentBalance: -500_00,
+      monthlyContribution: 300_00,
+      frequency: 'monthly' as const,
+    },
+    {
+      type: 'investment' as const,
+      name: 'Mid',
+      currentBalance: 300_00,
+      maxContributionLimit: 400_00,
+      monthlyContribution: 50_00,
+      frequency: 'annually' as const,
+    },
+    {
+      type: 'investment' as const,
+      name: 'Beta',
+      currentBalance: 800_00,
+      monthlyContribution: 200_00,
+      frequency: 'monthly' as const,
+    },
+  ]
+  const NAMES = SEED.map((entry) => entry.name)
+  const MANUAL_ORDER = ['Zeta', 'Alpha', 'Mid', 'Beta']
+  const BREAKDOWN_MANUAL_ORDER = ['Zeta', 'Mid', 'Beta']
+
+  function seedRows() {
+    useBalanceStore.setState({ entries: [] })
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
+    for (const entry of SEED) {
+      useBalanceStore.getState().addBalanceEntry(entry)
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+  }
+
+  /** The two tables, by source order (breakdown section precedes the entries one). */
+  function bothTables(): { breakdown: HTMLElement; entries: HTMLElement } {
+    const found = screen.getAllByRole('table') as HTMLElement[]
+    expect(found).toHaveLength(2)
+    return { breakdown: found[0] as HTMLElement, entries: found[1] as HTMLElement }
+  }
+
+  function orderIn(table: HTMLElement): string[] {
+    return within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => NAMES.find((name) => within(row).queryByText(name)) ?? '')
+      .filter((name) => name !== '')
+  }
+
+  function header(name: string): HTMLElement {
+    // Both tables carry a "Current Balance" and a "Remaining Room" header, so
+    // every lookup is scoped to the EDITABLE table.
+    return within(bothTables().entries).getByRole('columnheader', { name })
+  }
+
+  function sortBy(name: string): HTMLElement {
+    return within(header(name)).getByRole('button', { name })
+  }
+
+  beforeEach(() => {
+    seedRows()
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('renders in MANUAL order until a header is activated', () => {
+    renderWithProviders(<BalancePage />)
+    const { breakdown, entries } = bothTables()
+    expect(orderIn(entries)).toEqual(MANUAL_ORDER)
+    expect(orderIn(breakdown)).toEqual(BREAKDOWN_MANUAL_ORDER)
+  })
+
+  it('offers exactly the sortable columns on the EDITABLE table', () => {
+    renderWithProviders(<BalancePage />)
+    const { entries } = bothTables()
+    expect(
+      within(entries)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent?.trim())
+    ).toEqual([
+      'Type',
+      'Name',
+      'Current Balance',
+      'Max Contribution',
+      'Remaining Room',
+      'Contribution',
+      'Actions',
+    ])
+    for (const name of [
+      'Type',
+      'Name',
+      'Current Balance',
+      'Max Contribution',
+      'Remaining Room',
+      'Contribution',
+    ]) {
+      expect(within(header(name)).getByRole('button', { name })).toBeInTheDocument()
+      expect(header(name)).toHaveAttribute('aria-sort', 'none')
+    }
+    const actions = header('Actions')
+    expect(within(actions).queryByRole('button')).toBeNull()
+    expect(actions).not.toHaveAttribute('aria-sort')
+  })
+
+  it('leaves the read-only Investment Accounts breakdown entirely unsortable', () => {
+    renderWithProviders(<BalancePage />)
+    const { breakdown } = bothTables()
+    for (const th of within(breakdown).getAllByRole('columnheader')) {
+      expect(within(th).queryByRole('button')).toBeNull()
+      expect(th).not.toHaveAttribute('aria-sort')
+    }
+  })
+
+  it('does NOT reorder the breakdown table when the editable one is sorted', async () => {
+    // ⚠️ The two tables read the same array. Hoisting the projection to page
+    // level — the obvious place, since the sort state is per page — would pass
+    // every other test in this block and silently reorder this one.
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Name'))
+    const { breakdown, entries } = bothTables()
+    expect(orderIn(entries)).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    expect(orderIn(breakdown)).toEqual(BREAKDOWN_MANUAL_ORDER)
+  })
+
+  it('cycles a column ascending -> descending -> back to manual order', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Name'))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
+    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    await user.click(sortBy('Name'))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
+    expect(orderIn(bothTables().entries)).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+    await user.click(sortBy('Name'))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none')
+    expect(orderIn(bothTables().entries)).toEqual(MANUAL_ORDER)
+  })
+
+  it('sorts Type by the enum — investments before debts', async () => {
+    // ⚠️ Sorting by the DISPLAYED label would invert this: the labels are
+    // 'Investment' and 'Debt', and 'Debt'.localeCompare('Investment') < 0.
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Type'))
+    expect(orderIn(bothTables().entries)).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+    await user.click(sortBy('Type'))
+    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+  })
+
+  it('sorts Contribution by the FREQUENCY-NORMALIZED value', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Contribution'))
+    // Raw ascending would be ['Mid','Zeta','Beta','Alpha'] — a different order.
+    expect(orderIn(bothTables().entries)).toEqual(['Mid', 'Beta', 'Alpha', 'Zeta'])
+  })
+
+  it('sorts Current Balance RAW, with a negative debt first and ties on manual order', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Current Balance'))
+    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+    await user.click(sortBy('Current Balance'))
+    expect(orderIn(bothTables().entries)).toEqual(['Beta', 'Zeta', 'Mid', 'Alpha'])
+  })
+
+  it('treats a debt row as having no limit or room, in both directions', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Max Contribution'))
+    // The two debts-or-limitless rows (Alpha, Beta) render 'None' and sort last,
+    // in their manual relative order.
+    expect(orderIn(bothTables().entries)).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
+    await user.click(sortBy('Max Contribution'))
+    expect(orderIn(bothTables().entries)).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
+
+    await user.click(sortBy('Remaining Room'))
+    expect(orderIn(bothTables().entries)).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
+  })
+
+  it('keeps at most one column active', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Type'))
+    expect(header('Type')).toHaveAttribute('aria-sort', 'ascending')
+    await user.click(sortBy('Name'))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
+    expect(header('Type')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('keeps focus on the header the user activated', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Name'))
+    expect(orderIn(bothTables().entries)).not.toEqual(MANUAL_ORDER)
+    expect(sortBy('Name')).toHaveFocus()
+  })
+
+  it('disables every move control while sorted, and restores them on clear (AC-7)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Name'))
+    for (const name of NAMES) {
+      expect(screen.getByRole('button', { name: `Move ${name} up` })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+      expect(screen.getByRole('button', { name: `Move ${name} down` })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+    }
+    const sorted = orderIn(bothTables().entries)
+    await user.click(screen.getByRole('button', { name: 'Move Mid up' }))
+    expect(orderIn(bothTables().entries)).toEqual(sorted)
+    expect(useBalanceStore.getState().entries.map((e) => e.name)).toEqual(MANUAL_ORDER)
+
+    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
+    expect(orderIn(bothTables().entries)).toEqual(MANUAL_ORDER)
+    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
+      'aria-disabled',
+      'false'
+    )
+    await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
+    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+  })
+
+  it('shows the mobile escape hatch only while a sort is active', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+    await user.click(sortBy('Contribution'))
+    expect(screen.getByText('Sorted by Contribution')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
+    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+  })
+
+  it('adds no retired colour tokens to either header row', () => {
+    renderWithProviders(<BalancePage />)
+    const { breakdown, entries } = bothTables()
+    expect(collectRetiredTokenViolations(breakdown)).toEqual([])
+    expect(collectRetiredTokenViolations(entries)).toEqual([])
+  })
+
+  it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+    // ⚠️ REGISTERED, not left unregistered. A spy handed to nobody can never be
+    // called, so `not.toHaveBeenCalled()` could not fail — the tautology story
+    // 34.1b's review caught in the sibling store suite. Registering proves these
+    // exact spies are reachable from the code under test.
+    //
+    // ⚠️ And PAID, not free: `deferred-work.md:822-832` records a mutation that
+    // passed 1525 green tests because every test in the suite ran under one tier.
+    // Sorting must be inert on the tier that actually has a sync path.
+    const spies = {
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      queueCreate: vi.fn(async () => {}),
+      queueUpdate: vi.fn(async () => {}),
+      queueDelete: vi.fn(async () => {}),
+    }
+    registerSyncBridge(spies)
+    try {
+      const user = userEvent.setup()
+      renderWithProviders(<BalancePage />)
+      const before = useBalanceStore.getState().entries.map((row) => [row.id, row.sortOrder])
+
+      const button = () => within(header('Name')).getByRole('button', { name: 'Name' })
+      await user.click(button())
+      await user.click(button())
+      await user.click(button())
+
+      expect(spies.queueUpdate).not.toHaveBeenCalled()
+      expect(spies.queueCreate).not.toHaveBeenCalled()
+      expect(spies.queueDelete).not.toHaveBeenCalled()
+      // And the persisted order itself is byte-identical — no `sortOrder` write.
+      expect(useBalanceStore.getState().entries.map((row) => [row.id, row.sortOrder])).toEqual(
+        before
+      )
+    } finally {
+      clearSyncBridge()
+    }
+  })
+
+  it('places an entry added under an active sort in its SORTED position, not at the bottom', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Name'))
+
+    await act(async () => {
+      useBalanceStore.getState().addBalanceEntry({
+        type: 'investment' as const,
+        name: 'Bravo',
+        currentBalance: 1_00,
+        monthlyContribution: 0,
+        frequency: 'monthly' as const,
+      })
+    })
+
+    const names = [...NAMES, 'Bravo']
+    const rendered = within(bothTables().entries)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
+      .filter((n) => n !== '')
+    expect(rendered).toEqual(['Alpha', 'Beta', 'Bravo', 'Mid', 'Zeta'])
+    expect(useBalanceStore.getState().entries.map((e) => e.name)).toEqual([
+      ...MANUAL_ORDER,
+      'Bravo',
+    ])
+  })
+
+  it('MOVES each row node rather than relabelling positions (rows keyed by id)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    const before = screen.getByRole('button', { name: 'Edit Zeta' })
+    await user.click(sortBy('Name'))
+    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    expect(screen.getByRole('button', { name: 'Edit Zeta' })).toBe(before)
+  })
+
+  it('places an unreadable contribution LAST without blanking the page (AC-4)', async () => {
+    // ⚠️ Balance is the one page whose `isReadableRow` call has an ADAPTED shape
+    // (`{amount: monthlyContribution, frequency}`), so the lib-level proof does
+    // not cover this wiring. `sortOrder: -1` puts the row FIRST manually, so
+    // "last under the sort" cannot be an accident of its manual position.
+    const user = userEvent.setup()
+    useBalanceStore.setState((state) => ({
+      entries: [
+        {
+          id: 'corrupt-balance-row',
+          type: 'investment' as const,
+          name: 'Corrupt',
+          currentBalance: 1_00,
+          monthlyContribution: 1_00,
+          frequency: 'fortnightly' as never,
+          sortOrder: -1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        ...state.entries,
+      ],
+    }))
+    renderWithProviders(<BalancePage />)
+    const names = [...NAMES, 'Corrupt']
+    const order = () =>
+      within(bothTables().entries)
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
+        .filter((n) => n !== '')
+    expect(order()[0]).toBe('Corrupt')
+
+    await user.click(sortBy('Contribution'))
+    expect(order().at(-1)).toBe('Corrupt')
+    await user.click(sortBy('Contribution'))
+    expect(order().at(-1)).toBe('Corrupt')
+  })
+
+  it('gives every sortable header the standard focus ring', () => {
+    renderWithProviders(<BalancePage />)
+    // ⚠️ ENUMERATED, not grepped.
+    for (const name of [
+      'Type',
+      'Name',
+      'Current Balance',
+      'Max Contribution',
+      'Remaining Room',
+      'Contribution',
+    ]) {
+      assertHasFocusRing(sortBy(name), name)
+    }
   })
 })

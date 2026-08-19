@@ -107,6 +107,29 @@ export const RESPONSIVE_TABLE_CLASS =
 /** The `<thead>`. Hidden below `sm`; each cell carries its own label instead. */
 export const RESPONSIVE_THEAD_CLASS = 'surface-inset max-sm:hidden'
 
+/** A column header `<th>` (story 34.2).
+ *
+ * Before this story the five `<thead>`s each hand-rolled this literal, and two
+ * of them wrote the same token set in a different order (`text-left text-xs
+ * font-medium text-muted ...` on Income/Expenses vs `font-medium text-muted
+ * text-xs text-left ...` on Savings/Balance). Identical computed output, and
+ * nothing pins a `<th>` className, so collapsing them into one constant is safe
+ * — and it is what lets {@link SortableColumnHeader} match a plain `<th>` on
+ * every page without five per-page overrides.
+ *
+ * ⚠️ The `<thead>` is `display: none` below `sm` ({@link RESPONSIVE_THEAD_CLASS}),
+ * so anything placed in a header cell is unreachable on a phone. That is why
+ * sorting is a >= 640px affordance and why header controls deliberately do NOT
+ * carry {@link RESPONSIVE_ACTION_BUTTON_CLASS}: a 44px floor on a `display: none`
+ * ancestor is dead CSS, and `assertHasMobileTapTarget` would be asserting
+ * nothing. */
+export const RESPONSIVE_HEADER_CELL_CLASS =
+  'px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider'
+
+/** A right-aligned column header `<th>` — the trailing `Actions` column. */
+export const RESPONSIVE_HEADER_CELL_RIGHT_CLASS =
+  'px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider'
+
 /** The `<tbody>`. */
 export const RESPONSIVE_TBODY_CLASS =
   'surface divide-y divide-gray-200 dark:divide-gray-700 max-sm:block max-sm:divide-y-0'

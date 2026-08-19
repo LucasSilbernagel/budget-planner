@@ -3,9 +3,18 @@ import {
   assertHasMobileTapTarget,
   collectRetiredTokenViolations,
 } from '@/test/responsive-table-tokens'
-import { fireEvent, renderWithProviders, screen, userEvent, waitFor, within } from '@/test/utils'
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
+import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
 import { useExpenseStore } from '../../stores/expenseStore'
 
 /**
@@ -592,5 +601,360 @@ describe('ExpensesPage — reorder rows (34.1b)', () => {
 
     renderWithProviders(<ExpensesPage />)
     expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+})
+
+/**
+ * Column sorting (Story 34.2, FR61).
+ *
+ * ⚠️ Written per page rather than once over a table of four, for the same reason
+ * the 34.1b reorder block is: four independent page components, four hand-rolled
+ * `<thead>`s and four extractor sets. 30-4b, 33.3 and 34.1b each shipped (or
+ * nearly shipped) a HIGH by testing one surface and assuming its siblings.
+ */
+describe('ExpensesPage — sort by column (34.2)', () => {
+  /**
+   * The fixture is built so that NO two of the four orderings coincide.
+   *
+   * manual (insertion):   Zeta, Alpha, Mid, Beta
+   * by name:              Alpha, Beta, Mid, Zeta
+   * by amount NORMALIZED: Zeta(5000), Beta(43333), Alpha(50000), Mid(50000)
+   * by amount RAW:        Beta(100_00), Alpha(500_00), Mid(500_00), Zeta(600_00)
+   * by frequency:         Beta(w), Alpha(m), Mid(m), Zeta(a)
+   *
+   * Alpha and Mid TIE on both amount and frequency while sitting in a known
+   * manual order, so the tie fallback is exercised by construction — and the raw
+   * and normalized amount orders disagree completely, so an un-normalized
+   * comparator cannot pass.
+   */
+  const SEED = [
+    { name: 'Zeta', amount: 600_00, frequency: 'annually' as const },
+    { name: 'Alpha', amount: 500_00, frequency: 'monthly' as const },
+    { name: 'Mid', amount: 500_00, frequency: 'monthly' as const },
+    { name: 'Beta', amount: 100_00, frequency: 'weekly' as const },
+  ]
+  const MANUAL_ORDER = ['Zeta', 'Alpha', 'Mid', 'Beta']
+
+  function seedRows() {
+    useExpenseStore.setState({ expenses: [] })
+    // Distinct createdAt per row: rows added inside one millisecond tie on the
+    // secondary manual key, and a tie-preserving stable sort can then make an
+    // ordering assertion pass by accident (34.1a's M10, 34.1b's M6).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
+    for (const row of SEED) {
+      useExpenseStore.getState().addExpense(row)
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+  }
+
+  /** The rendered row names, top to bottom (first cell of each body row). */
+  function renderedOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => row.querySelector('td')?.textContent?.replace('Name', '').trim() ?? '')
+  }
+
+  function header(name: string): HTMLElement {
+    return screen.getByRole('columnheader', { name })
+  }
+
+  beforeEach(() => {
+    seedRows()
+  })
+
+  afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  it('renders in MANUAL order until a header is activated', () => {
+    renderWithProviders(<ExpensesPage />)
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+    for (const name of ['Name', 'Amount', 'Frequency']) {
+      expect(header(name)).toHaveAttribute('aria-sort', 'none')
+    }
+  })
+
+  it('offers exactly the sortable columns, and Actions is not one of them', () => {
+    renderWithProviders(<ExpensesPage />)
+    const headers = screen.getAllByRole('columnheader')
+    expect(headers.map((th) => th.textContent?.trim())).toEqual([
+      'Name',
+      'Amount',
+      'Frequency',
+      'Actions',
+    ])
+    for (const name of ['Name', 'Amount', 'Frequency']) {
+      expect(within(header(name)).getByRole('button', { name })).toBeInTheDocument()
+    }
+    const actions = header('Actions')
+    expect(within(actions).queryByRole('button')).toBeNull()
+    // Not `none` — no attribute at all. `aria-sort="none"` advertises a column
+    // as sortable, which this one is not.
+    expect(actions).not.toHaveAttribute('aria-sort')
+  })
+
+  it('cycles a column ascending -> descending -> back to manual order', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
+    expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none')
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+  })
+
+  it('sorts Amount by the FREQUENCY-NORMALIZED value, not the raw number', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
+    // Raw ascending would be ['Beta','Alpha','Mid','Zeta'] — a completely
+    // different sequence, so this assertion can actually fail.
+    expect(renderedOrder()).toEqual(['Zeta', 'Beta', 'Alpha', 'Mid'])
+  })
+
+  it('falls back to MANUAL order for rows that tie, in both directions', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    const button = () => within(header('Frequency')).getByRole('button', { name: 'Frequency' })
+
+    await user.click(button())
+    // Alpha and Mid are both monthly; Alpha precedes Mid manually.
+    expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Mid', 'Zeta'])
+    await user.click(button())
+    // Descending flips the CADENCES but must not flip the tied pair.
+    expect(renderedOrder()).toEqual(['Zeta', 'Alpha', 'Mid', 'Beta'])
+  })
+
+  it('keeps at most one column active', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
+    expect(header('Amount')).toHaveAttribute('aria-sort', 'ascending')
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
+    expect(header('Amount')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('places an unreadable row LAST without blanking the page', async () => {
+    const user = userEvent.setup()
+    // A corrupt cadence with a sortOrder that puts the row FIRST manually, so
+    // "last under the sort" cannot be an accident of its manual position.
+    useExpenseStore.setState((state) => ({
+      expenses: [
+        {
+          id: 'corrupt-row',
+          userId: 0,
+          name: 'Corrupt',
+          amount: 1_00,
+          frequency: 'fortnightly' as never,
+          categoryId: null,
+          sortOrder: -1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        ...state.expenses,
+      ],
+    }))
+    renderWithProviders(<ExpensesPage />)
+    expect(renderedOrder()[0]).toBe('Corrupt')
+
+    await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
+    expect(renderedOrder()).toEqual(['Zeta', 'Beta', 'Alpha', 'Mid', 'Corrupt'])
+    // Absent values stay last under DESCENDING too — they are not merely the
+    // ascending order reversed.
+    await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
+    expect(renderedOrder().at(-1)).toBe('Corrupt')
+  })
+
+  it('keeps focus on the header the user activated', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    const button = within(header('Amount')).getByRole('button', { name: 'Amount' })
+    await user.click(button)
+    expect(renderedOrder()).not.toEqual(MANUAL_ORDER)
+    expect(within(header('Amount')).getByRole('button', { name: 'Amount' })).toHaveFocus()
+  })
+
+  describe('interaction with the manual move controls (AC-7)', () => {
+    it('disables EVERY move control while a sort is active, and the clicks are no-ops', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<ExpensesPage />)
+      await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+      const sorted = renderedOrder()
+
+      for (const name of MANUAL_ORDER) {
+        expect(screen.getByRole('button', { name: `Move ${name} up` })).toHaveAttribute(
+          'aria-disabled',
+          'true'
+        )
+        expect(screen.getByRole('button', { name: `Move ${name} down` })).toHaveAttribute(
+          'aria-disabled',
+          'true'
+        )
+      }
+      await user.click(screen.getByRole('button', { name: 'Move Mid up' }))
+      expect(renderedOrder()).toEqual(sorted)
+      // And the underlying manual order is untouched.
+      expect(useExpenseStore.getState().expenses.map((r) => r.name)).toEqual(MANUAL_ORDER)
+    })
+
+    it('restores the 34.1b boundary behaviour when the sort is cleared', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<ExpensesPage />)
+      const button = () => within(header('Name')).getByRole('button', { name: 'Name' })
+      await user.click(button())
+      await user.click(button())
+      await user.click(button())
+
+      expect(renderedOrder()).toEqual(MANUAL_ORDER)
+      expect(screen.getByRole('button', { name: 'Move Zeta up' })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+      expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
+        'aria-disabled',
+        'false'
+      )
+      expect(screen.getByRole('button', { name: 'Move Beta down' })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+      await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
+      expect(renderedOrder()).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+    })
+  })
+
+  it('places a row added under an active sort in its SORTED position, not at the bottom', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+
+    await act(async () => {
+      useExpenseStore.getState().addExpense({
+        name: 'Bravo',
+        amount: 1_00,
+        frequency: 'monthly',
+      })
+    })
+    expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Bravo', 'Mid', 'Zeta'])
+    // The MANUAL order still has it at the bottom — sorting never writes to it.
+    expect(useExpenseStore.getState().expenses.map((r) => r.name)).toEqual([
+      ...MANUAL_ORDER,
+      'Bravo',
+    ])
+  })
+
+  it('shows the mobile escape hatch only while a sort is active', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+
+    await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
+    expect(screen.getByText('Sorted by Amount')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
+    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+    // Clearing the sort re-enables the arrows (AC-11 -> AC-7).
+    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
+      'aria-disabled',
+      'false'
+    )
+  })
+
+  describe('Category is a sort target only for entitled users (AC-5)', () => {
+    it('offers no Category header at all on the free tier', () => {
+      free()
+      renderWithProviders(<ExpensesPage />)
+      expect(screen.queryByRole('columnheader', { name: 'Category' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Category' })).toBeNull()
+    })
+
+    it('offers a sortable Category header for an entitled user', async () => {
+      premium()
+      const user = userEvent.setup()
+      renderWithProviders(<ExpensesPage />)
+      const categoryHeader = screen.getByRole('columnheader', { name: 'Category' })
+      expect(categoryHeader).toHaveAttribute('aria-sort', 'none')
+      await user.click(within(categoryHeader).getByRole('button', { name: 'Category' }))
+      expect(screen.getByRole('columnheader', { name: 'Category' })).toHaveAttribute(
+        'aria-sort',
+        'ascending'
+      )
+    })
+  })
+
+  it('adds no retired colour tokens to the header row', () => {
+    renderWithProviders(<ExpensesPage />)
+    // The sweep covers the whole <table>, `<thead>` included, so the new header
+    // buttons are enrolled with no test change.
+    const table = screen.getAllByRole('table')[0] as HTMLElement
+    expect(collectRetiredTokenViolations(table)).toEqual([])
+  })
+
+  it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+    // ⚠️ REGISTERED, not left unregistered. A spy handed to nobody can never be
+    // called, so `not.toHaveBeenCalled()` could not fail — the tautology story
+    // 34.1b's review caught in the sibling store suite. Registering proves these
+    // exact spies are reachable from the code under test.
+    //
+    // ⚠️ And PAID, not free: `deferred-work.md:822-832` records a mutation that
+    // passed 1525 green tests because every test in the suite ran under one tier.
+    // Sorting must be inert on the tier that actually has a sync path.
+    const spies = {
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      queueCreate: vi.fn(async () => {}),
+      queueUpdate: vi.fn(async () => {}),
+      queueDelete: vi.fn(async () => {}),
+    }
+    registerSyncBridge(spies)
+    try {
+      const user = userEvent.setup()
+      renderWithProviders(<ExpensesPage />)
+      const before = useExpenseStore.getState().expenses.map((row) => [row.id, row.sortOrder])
+
+      const button = () => within(header('Amount')).getByRole('button', { name: 'Amount' })
+      await user.click(button())
+      await user.click(button())
+      await user.click(button())
+
+      expect(spies.queueUpdate).not.toHaveBeenCalled()
+      expect(spies.queueCreate).not.toHaveBeenCalled()
+      expect(spies.queueDelete).not.toHaveBeenCalled()
+      // And the persisted order itself is byte-identical — no `sortOrder` write.
+      expect(useExpenseStore.getState().expenses.map((row) => [row.id, row.sortOrder])).toEqual(
+        before
+      )
+    } finally {
+      clearSyncBridge()
+    }
+  })
+
+  it('MOVES each row node rather than relabelling positions (rows keyed by id)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    const before = screen.getByRole('button', { name: 'Edit Zeta' })
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    expect(screen.getByRole('button', { name: 'Edit Zeta' })).toBe(before)
+  })
+
+  it('gives every sortable header the standard focus ring', () => {
+    renderWithProviders(<ExpensesPage />)
+    // ⚠️ ENUMERATED, not grepped — `assertHasFocusRing` takes one element, so a
+    // control missing from this array is silently uncovered.
+    for (const name of ['Name', 'Amount', 'Frequency']) {
+      assertHasFocusRing(within(header(name)).getByRole('button', { name }), name)
+    }
   })
 })

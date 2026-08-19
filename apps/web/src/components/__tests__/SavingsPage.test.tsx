@@ -12,7 +12,8 @@ import {
   waitFor,
   within,
 } from '@/test/utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
@@ -855,5 +856,292 @@ describe('SavingsPage — reorder rows (34.1b)', () => {
 
     renderWithProviders(<SavingsPage />)
     expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+})
+
+/**
+ * Column sorting (Story 34.2, FR61).
+ *
+ * ⚠️ Written per page rather than once over a table of four: four independent
+ * page components, four hand-rolled `<thead>`s, four extractor sets. 30-4b, 33.3
+ * and 34.1b each shipped (or nearly shipped) a HIGH by testing one surface and
+ * assuming its siblings.
+ *
+ * ⚠️ NEITHER money column here is frequency-normalized, and that is the subject
+ * of a test rather than an omission. A savings balance is a point-in-time STOCK,
+ * not a per-period flow (story 32.1 / FR58), and `ClientSavingsGoal` carries no
+ * `frequency` field to normalize by.
+ */
+describe('SavingsPage — sort by column (34.2)', () => {
+  /**
+   * manual (insertion):  Zeta, Alpha, Mid, Beta
+   * by name:             Alpha, Beta, Mid, Zeta
+   * by current balance:  Zeta(300) Mid(300) Alpha(500) Beta(800)   <- Zeta/Mid TIE
+   * by target:           Beta(200) Mid(400) Zeta(900) Alpha(null)
+   * by progress:         Zeta(33) Mid(75) Beta(100) Alpha(null)
+   *
+   * Zeta and Mid tie on Current Balance while sitting in a known manual order,
+   * and the balance order differs from the manual order — so a comparator that
+   * silently degraded to "manual order" (which is what routing this column
+   * through the normalized path would produce) cannot pass.
+   */
+  const SEED = [
+    { name: 'Zeta', targetAmount: 900_00, currentBalance: 300_00 },
+    { name: 'Alpha', targetAmount: null, currentBalance: 500_00 },
+    { name: 'Mid', targetAmount: 400_00, currentBalance: 300_00 },
+    { name: 'Beta', targetAmount: 200_00, currentBalance: 800_00 },
+  ]
+  const MANUAL_ORDER = ['Zeta', 'Alpha', 'Mid', 'Beta']
+
+  function seedRows() {
+    useSavingsStore.setState({ savingsGoals: [] })
+    // Distinct createdAt per row — rows added inside one millisecond tie on the
+    // secondary manual key, and a stable sort can then make an ordering
+    // assertion pass by accident (34.1a M10, 34.1b M6).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
+    for (const goal of SEED) {
+      useSavingsStore.getState().addSavingsGoal(goal)
+      vi.advanceTimersByTime(1000)
+    }
+    vi.useRealTimers()
+  }
+
+  /** Row names top to bottom. The name cell also carries a Goal/Account badge,
+   * so the seeded name is matched rather than the whole cell's text. */
+  function renderedOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => SEED.map((s) => s.name).find((n) => within(row).queryByText(n)) ?? '')
+  }
+
+  function header(name: string): HTMLElement {
+    return screen.getByRole('columnheader', { name })
+  }
+
+  beforeEach(() => {
+    seedRows()
+  })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('renders in MANUAL order until a header is activated', () => {
+    renderWithProviders(<SavingsPage />)
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+  })
+
+  it('offers exactly the sortable columns, and Actions is not one of them', () => {
+    renderWithProviders(<SavingsPage />)
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent?.trim())).toEqual([
+      'Name',
+      'Target',
+      'Current Balance',
+      'Monthly Allocation',
+      'Progress',
+      'Actions',
+    ])
+    for (const name of ['Name', 'Target', 'Current Balance', 'Monthly Allocation', 'Progress']) {
+      expect(within(header(name)).getByRole('button', { name })).toBeInTheDocument()
+      expect(header(name)).toHaveAttribute('aria-sort', 'none')
+    }
+    const actions = header('Actions')
+    expect(within(actions).queryByRole('button')).toBeNull()
+    expect(actions).not.toHaveAttribute('aria-sort')
+  })
+
+  it('cycles a column ascending -> descending -> back to manual order', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    const button = () => within(header('Name')).getByRole('button', { name: 'Name' })
+
+    await user.click(button())
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
+    expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    await user.click(button())
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+    await user.click(button())
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none')
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+  })
+
+  it('sorts Current Balance by the RAW stored value, with ties falling back to manual order', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(
+      within(header('Current Balance')).getByRole('button', { name: 'Current Balance' })
+    )
+    // Zeta and Mid tie at 300_00 and keep their manual relative order.
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
+    await user.click(
+      within(header('Current Balance')).getByRole('button', { name: 'Current Balance' })
+    )
+    // Descending flips the distinct values but NOT the tied pair.
+    expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Zeta', 'Mid'])
+  })
+
+  it('places a goal with no target last under Target, in both directions', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    const button = () => within(header('Target')).getByRole('button', { name: 'Target' })
+    await user.click(button())
+    expect(renderedOrder()).toEqual(['Beta', 'Mid', 'Zeta', 'Alpha'])
+    await user.click(button())
+    // 'Alpha' has no target — absent, not smallest, so it stays last.
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+  })
+
+  it('places absent Progress last', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(within(header('Progress')).getByRole('button', { name: 'Progress' }))
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+  })
+
+  it('keeps at most one column active', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(within(header('Target')).getByRole('button', { name: 'Target' }))
+    expect(header('Target')).toHaveAttribute('aria-sort', 'ascending')
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
+    expect(header('Target')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('keeps focus on the header the user activated', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(renderedOrder()).not.toEqual(MANUAL_ORDER)
+    expect(within(header('Name')).getByRole('button', { name: 'Name' })).toHaveFocus()
+  })
+
+  it('disables every move control while sorted, and restores them on clear (AC-7)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    for (const name of MANUAL_ORDER) {
+      expect(screen.getByRole('button', { name: `Move ${name} up` })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+      expect(screen.getByRole('button', { name: `Move ${name} down` })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+    }
+    const sorted = renderedOrder()
+    await user.click(screen.getByRole('button', { name: 'Move Mid up' }))
+    expect(renderedOrder()).toEqual(sorted)
+    expect(useSavingsStore.getState().savingsGoals.map((g) => g.name)).toEqual(MANUAL_ORDER)
+
+    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
+      'aria-disabled',
+      'false'
+    )
+    await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
+    expect(renderedOrder()).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+  })
+
+  it('shows the mobile escape hatch only while a sort is active', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+    await user.click(within(header('Target')).getByRole('button', { name: 'Target' }))
+    expect(screen.getByText('Sorted by Target')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
+    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+  })
+
+  it('adds no retired colour tokens to the header row', () => {
+    renderWithProviders(<SavingsPage />)
+    const table = screen.getAllByRole('table')[0] as HTMLElement
+    expect(collectRetiredTokenViolations(table)).toEqual([])
+  })
+
+  it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+    // ⚠️ REGISTERED, not left unregistered. A spy handed to nobody can never be
+    // called, so `not.toHaveBeenCalled()` could not fail — the tautology story
+    // 34.1b's review caught in the sibling store suite. Registering proves these
+    // exact spies are reachable from the code under test.
+    //
+    // ⚠️ And PAID, not free: `deferred-work.md:822-832` records a mutation that
+    // passed 1525 green tests because every test in the suite ran under one tier.
+    // Sorting must be inert on the tier that actually has a sync path.
+    const spies = {
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      queueCreate: vi.fn(async () => {}),
+      queueUpdate: vi.fn(async () => {}),
+      queueDelete: vi.fn(async () => {}),
+    }
+    registerSyncBridge(spies)
+    try {
+      const user = userEvent.setup()
+      renderWithProviders(<SavingsPage />)
+      const before = useSavingsStore.getState().savingsGoals.map((row) => [row.id, row.sortOrder])
+
+      const button = () => within(header('Target')).getByRole('button', { name: 'Target' })
+      await user.click(button())
+      await user.click(button())
+      await user.click(button())
+
+      expect(spies.queueUpdate).not.toHaveBeenCalled()
+      expect(spies.queueCreate).not.toHaveBeenCalled()
+      expect(spies.queueDelete).not.toHaveBeenCalled()
+      // And the persisted order itself is byte-identical — no `sortOrder` write.
+      expect(useSavingsStore.getState().savingsGoals.map((row) => [row.id, row.sortOrder])).toEqual(
+        before
+      )
+    } finally {
+      clearSyncBridge()
+    }
+  })
+
+  it('places a goal added under an active sort in its SORTED position, not at the bottom', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+
+    await act(async () => {
+      useSavingsStore
+        .getState()
+        .addSavingsGoal({ name: 'Bravo', targetAmount: 100_00, currentBalance: 0 })
+    })
+
+    const names = [...SEED.map((g) => g.name), 'Bravo']
+    const rendered = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
+    expect(rendered).toEqual(['Alpha', 'Beta', 'Bravo', 'Mid', 'Zeta'])
+    // The MANUAL order still appends it at the bottom — sorting never writes.
+    expect(useSavingsStore.getState().savingsGoals.map((g) => g.name)).toEqual([
+      ...MANUAL_ORDER,
+      'Bravo',
+    ])
+  })
+
+  it('MOVES each row node rather than relabelling positions (rows keyed by id)', async () => {
+    // ⚠️ Replicated per page deliberately: this is the only assertion that fails
+    // under `key={index}`, and a regression on one page passes every other suite.
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    const before = screen.getByRole('button', { name: 'Edit Zeta' })
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    expect(screen.getByRole('button', { name: 'Edit Zeta' })).toBe(before)
+  })
+
+  it('gives every sortable header the standard focus ring', () => {
+    renderWithProviders(<SavingsPage />)
+    // ⚠️ ENUMERATED, not grepped — a control missing from this array is silently
+    // uncovered.
+    for (const name of ['Name', 'Target', 'Current Balance', 'Monthly Allocation', 'Progress']) {
+      assertHasFocusRing(within(header(name)).getByRole('button', { name }), name)
+    }
   })
 })

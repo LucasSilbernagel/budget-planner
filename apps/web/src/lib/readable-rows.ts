@@ -53,6 +53,24 @@ export interface NormalizableItem {
 }
 
 /**
+ * True when a persisted string is one of the four cadences core understands.
+ *
+ * Exported for story 34.2's Frequency comparator, which needs the frequency
+ * check WITHOUT the amount check: it orders rows by cadence, so a row with a
+ * corrupt `amount` still sorts fine, while a row with an unknown `frequency` has
+ * no position at all and must be placed last.
+ *
+ * ⚠️ This is the guard that stops the Frequency sort returning `NaN`.
+ * `getNormalizationMultiplier` does not throw on an unknown cadence — it returns
+ * `undefined`, so an unguarded key silently produces `NaN`, and `lib/ordering.ts`
+ * records what a `NaN` comparator does: undefined behaviour that can leave the
+ * array in an arbitrary order, with no error anywhere.
+ */
+export function isKnownFrequency(frequency: unknown): frequency is Frequency {
+  return typeof frequency === 'string' && KNOWN_FREQUENCIES.has(frequency)
+}
+
+/**
  * True when core can normalize this row — i.e. exactly the conditions under
  * which `validateAmount` and `validateFrequency` do NOT throw.
  *

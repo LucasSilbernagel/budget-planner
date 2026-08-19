@@ -7,7 +7,9 @@ import {
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNetWorth } from '../hooks/useNetWorth'
+import { useTableSort } from '../hooks/useTableSort'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
+import { type BalanceSortKey, createBalanceSortExtractors } from '../lib/table-sort-keys'
 import {
   useBalanceEntries,
   useBalanceStore,
@@ -27,6 +29,7 @@ import {
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_FOOTER_CELL_CLASS,
   RESPONSIVE_FOOTER_ROW_CLASS,
+  RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
   RESPONSIVE_TABLE_CLASS,
   RESPONSIVE_TBODY_CLASS,
@@ -35,6 +38,7 @@ import {
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
+import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
 
 // Type options for the select dropdown
 const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
@@ -64,6 +68,23 @@ const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
 const frequencyLabel = (frequency: Frequency): string =>
   FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label ?? frequency
 
+/**
+ * Column labels for the sortable header cells and the mobile "Sorted by
+ * {Column}" notice, so the two cannot drift apart (story 34.2).
+ */
+/** Module scope: the factory takes no arguments and closes over nothing, so a
+ * per-instance `useMemo` would allocate an identical object on every mount. */
+const BALANCE_SORT_EXTRACTORS = createBalanceSortExtractors()
+
+const SORT_COLUMN_LABELS: Record<BalanceSortKey, string> = {
+  type: 'Type',
+  name: 'Name',
+  currentBalance: 'Current Balance',
+  maxContribution: 'Max Contribution',
+  remainingRoom: 'Remaining Room',
+  contribution: 'Contribution',
+}
+
 export function BalancePage() {
   const balanceEntries = useBalanceEntries()
   const totalInvestments = useTotalInvestments()
@@ -83,6 +104,23 @@ export function BalancePage() {
   const investmentAccounts = balanceEntries.filter((entry) => entry.type === 'investment')
   const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry, moveBalanceEntry } =
     useBalanceStore()
+
+  // Column sorting for the EDITABLE table only (story 34.2, FR61). A VIEW-level
+  // projection: it never writes `sortOrder`, never calls a move action and never
+  // enqueues a sync operation.
+  //
+  // ⚠️ Scoped to this one table on purpose. `investmentAccounts` above is a
+  // `.filter` of the SAME array, and a filter preserves the relative order of
+  // whatever it is given — so hoisting this projection to page level would
+  // silently reorder the read-only Investment Accounts breakdown too. The
+  // breakdown stays in manual order at all times.
+  //
+  // ⚠️ Only `contribution` is frequency-normalized. `currentBalance` is a
+  // point-in-time STOCK (and may be negative for a debt), so normalizing it
+  // would contradict the stat cards above.
+  const sortExtractors = BALANCE_SORT_EXTRACTORS
+  const sort = useTableSort(balanceEntries, sortExtractors)
+  const sortedRows = sort.rows
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -520,132 +558,159 @@ export function BalancePage() {
                 <p className="text-faint text-sm">Click "Add Balance Entry" to get started</p>
               </div>
             ) : (
-              <div className={RESPONSIVE_WRAPPER_CLASS}>
-                <table className={RESPONSIVE_TABLE_CLASS}>
-                  <thead className={RESPONSIVE_THEAD_CLASS}>
-                    <tr>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Current Balance
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Max Contribution
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Remaining Room
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Contribution
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {balanceEntries.map((entry, index) => {
-                      const typeDisplay = getTypeDisplay(entry.type)
-                      return (
-                        <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Type</FieldLabel>
-                            <span
-                              className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${typeDisplay.color}`}
-                            >
-                              {typeDisplay.label}
-                            </span>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Name</FieldLabel>
-                            <div className="font-medium text-heading text-sm">{entry.name}</div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Current Balance</FieldLabel>
-                            <div className="text-muted text-sm">
-                              {formatAmount(entry.currentBalance)}
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Max Contribution</FieldLabel>
-                            <div className="text-muted text-sm">
-                              {/* Contribution limit is investment-only (FR41);
+              <>
+                {/* The mobile escape hatch (story 34.2, decision 7): a sort can
+                    only be STARTED at >= 640px but survives a narrow, where the
+                    `<thead>` is `display: none` and the move arrows are
+                    disabled. Rendered only when a sort exists. */}
+                {sort.state !== null && (
+                  <TableSortNotice
+                    columnLabel={SORT_COLUMN_LABELS[sort.state.key]}
+                    onClear={sort.clear}
+                  />
+                )}
+                <div className={RESPONSIVE_WRAPPER_CLASS}>
+                  <table className={RESPONSIVE_TABLE_CLASS}>
+                    <thead className={RESPONSIVE_THEAD_CLASS}>
+                      <tr>
+                        {/* Sortable headers (story 34.2) for the EDITABLE table
+                          only. Each `<th>`'s text content stays EXACTLY the
+                          column label — the indicator is an aria-hidden <svg>. */}
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.type}
+                          ariaSort={sort.ariaSort('type')}
+                          onToggle={() => sort.toggle('type')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.name}
+                          ariaSort={sort.ariaSort('name')}
+                          onToggle={() => sort.toggle('name')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.currentBalance}
+                          ariaSort={sort.ariaSort('currentBalance')}
+                          onToggle={() => sort.toggle('currentBalance')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.maxContribution}
+                          ariaSort={sort.ariaSort('maxContribution')}
+                          onToggle={() => sort.toggle('maxContribution')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.remainingRoom}
+                          ariaSort={sort.ariaSort('remainingRoom')}
+                          onToggle={() => sort.toggle('remainingRoom')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.contribution}
+                          ariaSort={sort.ariaSort('contribution')}
+                          onToggle={() => sort.toggle('contribution')}
+                        />
+                        {/* Not sortable: no button, and no `aria-sort` at all. */}
+                        <th className={RESPONSIVE_HEADER_CELL_RIGHT_CLASS}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={RESPONSIVE_TBODY_CLASS}>
+                      {sortedRows.map((entry, index) => {
+                        const typeDisplay = getTypeDisplay(entry.type)
+                        return (
+                          <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Type</FieldLabel>
+                              <span
+                                className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${typeDisplay.color}`}
+                              >
+                                {typeDisplay.label}
+                              </span>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Name</FieldLabel>
+                              <div className="font-medium text-heading text-sm">{entry.name}</div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Current Balance</FieldLabel>
+                              <div className="text-muted text-sm">
+                                {formatAmount(entry.currentBalance)}
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Max Contribution</FieldLabel>
+                              <div className="text-muted text-sm">
+                                {/* Contribution limit is investment-only (FR41);
                                   debts show None, and a legacy null/undefined
                                   limit also reads None (loose != null). */}
-                              {entry.type === 'investment' && entry.maxContributionLimit != null
-                                ? formatAmount(entry.maxContributionLimit)
-                                : 'None'}
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Remaining Room</FieldLabel>
-                            <div
-                              className="text-muted text-sm"
-                              data-testid={`balance-remaining-room-${entry.id}`}
-                            >
-                              {/* Remaining contribution room is investment-only
+                                {entry.type === 'investment' && entry.maxContributionLimit != null
+                                  ? formatAmount(entry.maxContributionLimit)
+                                  : 'None'}
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Remaining Room</FieldLabel>
+                              <div
+                                className="text-muted text-sm"
+                                data-testid={`balance-remaining-room-${entry.id}`}
+                              >
+                                {/* Remaining contribution room is investment-only
                                   (FR41) — debts show the em-dash placeholder. */}
-                              {entry.type === 'investment'
-                                ? (() => {
-                                    const room = remainingContributionRoom(entry)
-                                    return room === null ? '—' : formatAmount(room)
-                                  })()
-                                : '—'}
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Contribution</FieldLabel>
-                            {/* The amount and its cadence sub-label are ONE field.
+                                {entry.type === 'investment'
+                                  ? (() => {
+                                      const room = remainingContributionRoom(entry)
+                                      return room === null ? '—' : formatAmount(room)
+                                    })()
+                                  : '—'}
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Contribution</FieldLabel>
+                              {/* The amount and its cadence sub-label are ONE field.
                                 Wrapped together so the cell has exactly two flex
                                 children below `sm` (label + value), not three —
                                 otherwise `justify-between` would fling the cadence
                                 to the far edge as a third column. */}
-                            <div>
-                              <div className="text-muted text-sm">
-                                {formatAmount(entry.monthlyContribution)}
+                              <div>
+                                <div className="text-muted text-sm">
+                                  {formatAmount(entry.monthlyContribution)}
+                                </div>
+                                <div className="text-faint text-xs">
+                                  {frequencyLabel(entry.frequency)}
+                                </div>
                               </div>
-                              <div className="text-faint text-xs">
-                                {frequencyLabel(entry.frequency)}
+                            </td>
+                            <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
+                              <FieldLabel>Actions</FieldLabel>
+                              <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                                <RowMoveControls
+                                  label={entry.name}
+                                  isFirst={index === 0}
+                                  isLast={index === sortedRows.length - 1}
+                                  disabled={sort.state !== null}
+                                  onMove={(direction) => moveBalanceEntry(entry.id, direction)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(entry)}
+                                  aria-label={`Edit ${entry.name}`}
+                                  className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(entry.id)}
+                                  aria-label={`Delete ${entry.name}`}
+                                  className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                                >
+                                  Delete
+                                </button>
                               </div>
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
-                            <FieldLabel>Actions</FieldLabel>
-                            <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
-                              <RowMoveControls
-                                label={entry.name}
-                                isFirst={index === 0}
-                                isLast={index === balanceEntries.length - 1}
-                                onMove={(direction) => moveBalanceEntry(entry.id, direction)}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => openEditModal(entry)}
-                                aria-label={`Edit ${entry.name}`}
-                                className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(entry.id)}
-                                aria-label={`Delete ${entry.name}`}
-                                className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </main>

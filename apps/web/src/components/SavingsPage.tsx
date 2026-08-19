@@ -5,7 +5,9 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useTableSort } from '../hooks/useTableSort'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
+import { type SavingsSortKey, createSavingsSortExtractors } from '../lib/table-sort-keys'
 import {
   useExpenses,
   useIncomeSources,
@@ -23,6 +25,7 @@ import {
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
   RESPONSIVE_CELL_CLASS,
+  RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
@@ -31,6 +34,7 @@ import {
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
+import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
 
 // Valid contribution cadences (mirrors the core Frequency enum). A persisted
 // investment `frequency` can be a corrupt/legacy non-null string — localStorage is
@@ -39,6 +43,18 @@ import { RowMoveControls } from './ui/RowMoveControls'
 // 'monthly' at this boundary so it degrades instead of crashing the page, mirroring
 // the Balance page's `monthlyContributionCents`.
 const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
+
+/**
+ * Column labels for the sortable header cells and the mobile "Sorted by
+ * {Column}" notice, so the two cannot drift apart (story 34.2).
+ */
+const SORT_COLUMN_LABELS: Record<SavingsSortKey, string> = {
+  name: 'Name',
+  target: 'Target',
+  currentBalance: 'Current Balance',
+  monthlyAllocation: 'Monthly Allocation',
+  progress: 'Progress',
+}
 
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
@@ -76,6 +92,26 @@ export function SavingsPage() {
       }),
     [incomeSources, expenses, investmentEntries, savingsGoals]
   )
+
+  // Column sorting (story 34.2, FR61). A VIEW-level projection only: it never
+  // writes `sortOrder`, never calls a move action and never enqueues a sync
+  // operation, so clearing it returns the table to the manual order untouched.
+  //
+  // ⚠️ Memoised on `allocations` and `getSavingsProgress` as well as the rows,
+  // because two of the five keys read data the row does not carry: the Monthly
+  // Allocation column reads the solver's pool (which is recomputed when ANY
+  // other goal changes) and Progress is a store selector. A projection memoised
+  // on the rows alone would keep a stale order with no error anywhere.
+  //
+  // ⚠️ Neither money column is frequency-normalized. A savings balance is a
+  // point-in-time STOCK, not a per-period flow — story 32.1 (FR58) settled that,
+  // and `ClientSavingsGoal` has no `frequency` field to normalize by.
+  const sortExtractors = useMemo(
+    () => createSavingsSortExtractors(allocations, getSavingsProgress),
+    [allocations, getSavingsProgress]
+  )
+  const sort = useTableSort(savingsGoals, sortExtractors)
+  const sortedRows = sort.rows
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -366,155 +402,183 @@ export function SavingsPage() {
                 <p className="text-faint text-sm">Click "Add Savings Goal" to get started</p>
               </div>
             ) : (
-              <div className={RESPONSIVE_WRAPPER_CLASS}>
-                <table className={RESPONSIVE_TABLE_CLASS}>
-                  <thead className={RESPONSIVE_THEAD_CLASS}>
-                    <tr>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Target
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Current Balance
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Monthly Allocation
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Progress
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-right uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {savingsGoals.map((goal, index) => {
-                      // Account (Story 16-1): null target ⇒ absent progress (not 0%).
-                      const isAccountRow = goal.targetAmount == null
-                      const progress = getSavingsProgress(goal.id)
-                      // Allocation (Story 26.3): an account is automatic iff the
-                      // solver placed it in `allocations` (every automatic account
-                      // is present, value may be 0); manual accounts are absent and
-                      // show their stored fixed amount. (`in` rather than
-                      // Object.hasOwn to stay within the tsconfig lib target; ids
-                      // are uuids, so no Object.prototype key can collide.)
-                      const isAutomatic = goal.id in allocations
-                      // Clamp a (corrupt-data) negative manual amount to 0 so the row
-                      // matches the solver, which floors manual allocations at 0.
-                      const effectiveAllocation = isAutomatic
-                        ? allocations[goal.id] ?? 0
-                        : Math.max(0, goal.monthlyAllocation ?? 0)
-                      return (
-                        <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Name</FieldLabel>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-heading text-sm">{goal.name}</span>
-                              <span
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs ${
-                                  isAccountRow
-                                    ? 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
-                                    : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                                }`}
-                                data-testid={`savings-badge-${goal.id}`}
-                              >
-                                {isAccountRow ? 'Account' : 'Goal'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Target</FieldLabel>
-                            <div className="text-muted text-sm">
-                              {goal.targetAmount == null
-                                ? 'No target'
-                                : formatAmount(goal.targetAmount)}
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Current Balance</FieldLabel>
-                            <div className="text-muted text-sm">
-                              {formatAmount(goal.currentBalance)}
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Monthly Allocation</FieldLabel>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="text-muted text-sm"
-                                data-testid={`savings-allocation-${goal.id}`}
-                              >
-                                {formatAmount(effectiveAllocation)}
-                              </span>
-                              <span
-                                className="inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs"
-                                data-testid={`savings-allocation-mode-${goal.id}`}
-                              >
-                                {isAutomatic ? 'Auto' : 'Fixed'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_STACKED_CELL_CLASS}>
-                            {/* Stacked, not label-left/value-right: the progress
+              <>
+                {/* The mobile escape hatch (story 34.2, decision 7): a sort can
+                    only be STARTED at >= 640px but survives a narrow, where the
+                    `<thead>` is `display: none` and the move arrows are
+                    disabled. Rendered only when a sort exists. */}
+                {sort.state !== null && (
+                  <TableSortNotice
+                    columnLabel={SORT_COLUMN_LABELS[sort.state.key]}
+                    onClear={sort.clear}
+                  />
+                )}
+                <div className={RESPONSIVE_WRAPPER_CLASS}>
+                  <table className={RESPONSIVE_TABLE_CLASS}>
+                    <thead className={RESPONSIVE_THEAD_CLASS}>
+                      <tr>
+                        {/* Sortable headers (story 34.2). Each `<th>`'s text
+                          content stays EXACTLY the column label — the direction
+                          indicator is an aria-hidden <svg>. */}
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.name}
+                          ariaSort={sort.ariaSort('name')}
+                          onToggle={() => sort.toggle('name')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.target}
+                          ariaSort={sort.ariaSort('target')}
+                          onToggle={() => sort.toggle('target')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.currentBalance}
+                          ariaSort={sort.ariaSort('currentBalance')}
+                          onToggle={() => sort.toggle('currentBalance')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.monthlyAllocation}
+                          ariaSort={sort.ariaSort('monthlyAllocation')}
+                          onToggle={() => sort.toggle('monthlyAllocation')}
+                        />
+                        <SortableColumnHeader
+                          label={SORT_COLUMN_LABELS.progress}
+                          ariaSort={sort.ariaSort('progress')}
+                          onToggle={() => sort.toggle('progress')}
+                        />
+                        {/* Not sortable: no button, and no `aria-sort` at all
+                          (`none` would advertise a sortable column). */}
+                        <th className={RESPONSIVE_HEADER_CELL_RIGHT_CLASS}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={RESPONSIVE_TBODY_CLASS}>
+                      {sortedRows.map((goal, index) => {
+                        // Account (Story 16-1): null target ⇒ absent progress (not 0%).
+                        const isAccountRow = goal.targetAmount == null
+                        const progress = getSavingsProgress(goal.id)
+                        // Allocation (Story 26.3): an account is automatic iff the
+                        // solver placed it in `allocations` (every automatic account
+                        // is present, value may be 0); manual accounts are absent and
+                        // show their stored fixed amount. (`in` rather than
+                        // Object.hasOwn to stay within the tsconfig lib target; ids
+                        // are uuids, so no Object.prototype key can collide.)
+                        const isAutomatic = goal.id in allocations
+                        // Clamp a (corrupt-data) negative manual amount to 0 so the row
+                        // matches the solver, which floors manual allocations at 0.
+                        const effectiveAllocation = isAutomatic
+                          ? allocations[goal.id] ?? 0
+                          : Math.max(0, goal.monthlyAllocation ?? 0)
+                        return (
+                          <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Name</FieldLabel>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-heading text-sm">
+                                  {goal.name}
+                                </span>
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs ${
+                                    isAccountRow
+                                      ? 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
+                                      : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                                  }`}
+                                  data-testid={`savings-badge-${goal.id}`}
+                                >
+                                  {isAccountRow ? 'Account' : 'Goal'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Target</FieldLabel>
+                              <div className="text-muted text-sm">
+                                {goal.targetAmount == null
+                                  ? 'No target'
+                                  : formatAmount(goal.targetAmount)}
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Current Balance</FieldLabel>
+                              <div className="text-muted text-sm">
+                                {formatAmount(goal.currentBalance)}
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_CELL_CLASS}>
+                              <FieldLabel>Monthly Allocation</FieldLabel>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="text-muted text-sm"
+                                  data-testid={`savings-allocation-${goal.id}`}
+                                >
+                                  {formatAmount(effectiveAllocation)}
+                                </span>
+                                <span
+                                  className="inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs"
+                                  data-testid={`savings-allocation-mode-${goal.id}`}
+                                >
+                                  {isAutomatic ? 'Auto' : 'Fixed'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className={RESPONSIVE_STACKED_CELL_CLASS}>
+                              {/* Stacked, not label-left/value-right: the progress
                                 bar is full-width, so squeezing it beside its
                                 label at 320px would leave a ~150px track. */}
-                            <FieldLabel>Progress</FieldLabel>
-                            {progress == null ? (
-                              <div
-                                className="text-muted text-sm text-center"
-                                data-testid={`savings-progress-na-${goal.id}`}
-                              >
-                                N/A
+                              <FieldLabel>Progress</FieldLabel>
+                              {progress == null ? (
+                                <div
+                                  className="text-muted text-sm text-center"
+                                  data-testid={`savings-progress-na-${goal.id}`}
+                                >
+                                  N/A
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="bg-gray-200 dark:bg-gray-700 rounded-full w-full h-2">
+                                    <div
+                                      className="bg-purple-600 rounded-full h-2"
+                                      style={{ width: `${progress}%` }}
+                                    />
+                                  </div>
+                                  <div className="mt-1 text-muted text-xs text-center">
+                                    {progress}%
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                            <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
+                              <FieldLabel>Actions</FieldLabel>
+                              <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
+                                <RowMoveControls
+                                  label={goal.name}
+                                  isFirst={index === 0}
+                                  isLast={index === sortedRows.length - 1}
+                                  disabled={sort.state !== null}
+                                  onMove={(direction) => moveSavingsGoal(goal.id, direction)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(goal)}
+                                  aria-label={`Edit ${goal.name}`}
+                                  className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(goal.id)}
+                                  aria-label={`Delete ${goal.name}`}
+                                  className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                                >
+                                  Delete
+                                </button>
                               </div>
-                            ) : (
-                              <>
-                                <div className="bg-gray-200 dark:bg-gray-700 rounded-full w-full h-2">
-                                  <div
-                                    className="bg-purple-600 rounded-full h-2"
-                                    style={{ width: `${progress}%` }}
-                                  />
-                                </div>
-                                <div className="mt-1 text-muted text-xs text-center">
-                                  {progress}%
-                                </div>
-                              </>
-                            )}
-                          </td>
-                          <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
-                            <FieldLabel>Actions</FieldLabel>
-                            <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
-                              <RowMoveControls
-                                label={goal.name}
-                                isFirst={index === 0}
-                                isLast={index === savingsGoals.length - 1}
-                                onMove={(direction) => moveSavingsGoal(goal.id, direction)}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => openEditModal(goal)}
-                                aria-label={`Edit ${goal.name}`}
-                                className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(goal.id)}
-                                aria-label={`Delete ${goal.name}`}
-                                className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
         </main>
