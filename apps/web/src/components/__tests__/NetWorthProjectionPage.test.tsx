@@ -37,12 +37,12 @@ describe('NetWorthProjectionPage annual return rate input', () => {
     })
   }
 
-  it('renders the rate input with a 2-decimal step and the default 7% (AC-1)', () => {
+  it('renders the rate input with a 2-decimal step and the default 6% (AC-1)', () => {
     renderWithProviders(<NetWorthProjectionPage />)
     const input = screen.getByLabelText(/annual return rate/i)
     expect(input).toHaveAttribute('step', '0.01')
     expect(input).toHaveAttribute('max', '100')
-    expect(input).toHaveValue(7)
+    expect(input).toHaveValue(6)
   })
 
   it('quantizes a floating-point-noisy value to at most 2 decimals (AC-2)', () => {
@@ -103,8 +103,14 @@ describe('NetWorthProjectionPage annual return rate input', () => {
     seedInvestment(1_000_000)
     renderWithProviders(<NetWorthProjectionPage />)
 
-    // Default rate 7% over 10 years ≈ $19,671 (1.07^10 ≈ 1.967).
-    // If the code wrongly passed 7 (i.e. 700%) as the decimal, the final value
+    // ⚠️ This is a percent-vs-decimal guard, NOT a check of the default rate. The band
+    // below spans roughly 0%–11.6% (10,000 × 1.116^10 ≈ 30,000), so a regression to the
+    // old 7% default would sail straight through it. The default is pinned by
+    // `toHaveValue(6)` in the AC-1 test above — there and nowhere else.
+    // For reference only, unasserted: the model returns $17,908.46 at 6% over 10 years
+    // (1.06^10 ≈ 1.791), compounding monthly at (1.06)^(1/12) and rounding to whole cents
+    // each month, which lands two cents under the closed form.
+    // If the code wrongly passed 6 (i.e. 600%) as the decimal, the final value
     // would be astronomically larger — this range check disproves that.
     expect(screen.getByText('Projection Summary')).toBeInTheDocument()
     const summary = screen.getByText('Projection Summary').closest('section') as HTMLElement
@@ -115,7 +121,7 @@ describe('NetWorthProjectionPage annual return rate input', () => {
     const values = valueEls.map((el) => Number.parseFloat((el.textContent ?? '').replace(/,/g, '')))
     const maxValue = Math.max(...values)
     expect(maxValue).toBeGreaterThan(10_000) // grew above the $10,000 principal
-    expect(maxValue).toBeLessThan(30_000) // consistent with 7%, impossible at 700%
+    expect(maxValue).toBeLessThan(30_000) // 600% would be astronomically larger; see above
   })
 })
 

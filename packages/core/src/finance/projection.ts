@@ -27,7 +27,7 @@ export interface NetWorthProjectionInput {
   /** Monthly net income (income - expenses) in cents */
   monthlyNetIncomeCents: number
 
-  /** Expected annual return rate on assets (as decimal, e.g., 0.07 for 7%) */
+  /** Expected annual return rate on assets (as decimal, e.g., 0.06 for 6%) */
   assetReturnRate: number
 
   /** Expected annual growth rate for net income (as decimal) */

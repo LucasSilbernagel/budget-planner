@@ -128,10 +128,10 @@ export function NetWorthProjectionPage() {
   const annualNetIncome = monthlyNetIncome * 12
 
   // State for projection parameters. The return rate is held as a *percentage*
-  // (e.g. 7 for 7%), not a decimal, so the input binds to it directly without a
+  // (e.g. 6 for 6%), not a decimal, so the input binds to it directly without a
   // `* 100` round-trip that would surface floating-point noise (7.2 → 7.199999999999999).
   const [years, setYears] = useState(10)
-  const [returnRatePercent, setReturnRatePercent] = useState(7) // 7% default
+  const [returnRatePercent, setReturnRatePercent] = useState(6) // 6% default (FR62, story 35.1)
   const [additionalContribution, setAdditionalContribution] = useState(0) // Additional annual contribution
 
   // Convert to a decimal only at the calculation boundary — the math must use the
