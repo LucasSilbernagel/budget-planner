@@ -107,6 +107,44 @@ export const RESPONSIVE_TABLE_CLASS =
 /** The `<thead>`. Hidden below `sm`; each cell carries its own label instead. */
 export const RESPONSIVE_THEAD_CLASS = 'surface-inset max-sm:hidden'
 
+/**
+ * ## ⚠️ THE `max-lg:px-4` ON EVERY CELL CONSTANT BELOW IS A WIDTH BUDGET, NOT A
+ * STYLE PREFERENCE. Do not "simplify" it back to a bare `px-6`.
+ *
+ * Between `sm` (640px) and `lg` (1024px) these tables are a real `<table>` with
+ * no card fallback, and the four-column free-tier `/income` and `/expenses`
+ * tables do not fit their `overflow-x-auto` wrapper at `px-6`. Measured on
+ * `/income` at a 768px viewport (656px of wrapper client width), with the
+ * long-name/12-digit-amount seed `e2e/categories-premium.spec.ts` uses:
+ *
+ * | build                          | Noto Sans (dev) | DejaVu Sans (CI) |
+ * | ------------------------------ | --------------- | ---------------- |
+ * | pre-34.1b, `px-6`              | 656 (fits)      | 658 (+2)         |
+ * | post-34.1b move arrows, `px-6` | 672 (+16)       | 706 (+50)        |
+ * | post-34.1b, `max-lg:px-4`      | 656 (fits)      | 656 (fits)       |
+ *
+ * Story 34.1b's two move chevrons cost a host-INDEPENDENT 48px in the Actions
+ * column (2 x 16px icon + 2 x 8px `sm:mr-2`) — 658 + 48 = 706 exactly. Dev
+ * fonts hid it: the text columns still had 32px of compressible slack, so the
+ * local number landed at 672, inside the guard's 24px tolerance, and the suite
+ * went green while CI went red. Dropping 8px of horizontal padding per side on
+ * four columns reclaims 64px, which covers the 48px and restores the pre-34.1b
+ * fit on BOTH hosts.
+ *
+ * ⚠️ `system-ui` DOES NOT RESOLVE TO THE SAME FACE ON THE RUNNER. GitHub's
+ * ubuntu image resolves it to DejaVu Sans, which is materially wider than the
+ * Noto Sans a typical dev box picks. To reproduce a CI width locally, inject
+ * `* { font-family: "DejaVu Sans" !important }` — that reproduced 706 to the
+ * pixel. A green local run is NOT evidence about a width budget.
+ *
+ * The cascade is `max-sm:px-3` (< 640) -> `max-lg:px-4` (640-1023) -> `px-6`
+ * (>= 1024), and it resolves in that order because Tailwind sorts `max-*`
+ * variants by DESCENDING breakpoint, so `max-sm` is emitted after `max-lg` and
+ * wins on a phone. Verified by computed style at 320/640/768/1023/1024/1280.
+ * `px-6` stays in every string as the `lg`-and-up base, which is also what keeps
+ * `ResponsiveTable.test.tsx`'s class-TOKEN pins passing.
+ */
+
 /** A column header `<th>` (story 34.2).
  *
  * Before this story the five `<thead>`s each hand-rolled this literal, and two
@@ -124,11 +162,11 @@ export const RESPONSIVE_THEAD_CLASS = 'surface-inset max-sm:hidden'
  * ancestor is dead CSS, and `assertHasMobileTapTarget` would be asserting
  * nothing. */
 export const RESPONSIVE_HEADER_CELL_CLASS =
-  'px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider'
+  'px-6 max-lg:px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider'
 
 /** A right-aligned column header `<th>` — the trailing `Actions` column. */
 export const RESPONSIVE_HEADER_CELL_RIGHT_CLASS =
-  'px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider'
+  'px-6 max-lg:px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider'
 
 /** The `<tbody>`. */
 export const RESPONSIVE_TBODY_CLASS =
@@ -145,7 +183,7 @@ export const RESPONSIVE_ROW_CLASS =
  * on one element (Tailwind resolves those by CSS source order, not className
  * order — an unreliable thing to rely on). */
 const RESPONSIVE_CELL_BASE =
-  'px-6 py-4 whitespace-nowrap max-sm:flex max-sm:justify-between max-sm:gap-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
+  'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:flex max-sm:justify-between max-sm:gap-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
 /** A data `<td>`: label left, value right below `sm`. */
 export const RESPONSIVE_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-baseline`
@@ -168,7 +206,7 @@ export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:fle
 /** A `<td>` whose content is full-width (the Savings progress bar) and so must
  * stack under its label instead of sitting beside it. */
 export const RESPONSIVE_STACKED_CELL_CLASS =
-  'px-6 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
+  'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
 /** Wraps the row action buttons so the actions cell has exactly two flex
  * children (label + button group) below `sm`. Inert on desktop: an unclassed
@@ -206,9 +244,15 @@ export const RESPONSIVE_FOOTER_ROW_CLASS = 'max-sm:flex max-sm:justify-between m
  * padding: the total is the one string in the converted subtree that can grow
  * without bound (a near-`MAX_SAFE_INTEGER` balance in symbol mode), and the
  * call site adds an unprefixed `whitespace-nowrap` on top. Without this it was
- * the only unguarded nowrap left below `sm`. */
+ * the only unguarded nowrap left below `sm`.
+ *
+ * ⚠️ It carries `max-lg:px-4` for ALIGNMENT, not for width. A `<tfoot>` cell
+ * shares its column with the `<tbody>` cells above it, so the padding only moves
+ * the total's text inside that column — but if the body dropped to `px-4`
+ * between `sm` and `lg` and the summary row stayed at `px-6`, the Balance page's
+ * total would sit 8px inboard of the figures it totals. */
 export const RESPONSIVE_FOOTER_CELL_CLASS =
-  'px-6 py-3 max-sm:px-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]'
+  'px-6 max-lg:px-4 py-3 max-sm:px-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]'
 
 /** The mobile-only field label. */
 export const FIELD_LABEL_CLASS = 'sm:hidden text-xs font-medium uppercase tracking-wider text-muted'

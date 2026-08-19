@@ -85,6 +85,21 @@ const WIDE_WIDTH = 1280
  * difference between hosts, not a flake — and a 2px scroll inside a wrapper that
  * exists to scroll is not the failure this test is about.
  *
+ * ⚠️ AND THAT HOST DIFFERENCE IS LARGER THAN "A COUPLE OF PIXELS" ONCE THE
+ * TABLE STOPS FITTING. Story 34.1b added two move chevrons to the Actions
+ * column, worth a host-independent 48px. On a dev box the text columns absorbed
+ * 32px of that by compressing, so this guard measured 672 — under the 680 limit,
+ * green. On the runner there was nothing left to compress and it measured 706
+ * (`/income`) and 697 (`/expenses`), and CI went red three retries running.
+ * The fix was to reclaim the 48px in `ResponsiveTable.tsx` (`max-lg:px-4`), NOT
+ * to grow the tolerance; see the width-budget block there for the measurements.
+ *
+ * The lesson this file should carry: THIS ASSERTION IS THE ONE THING IN THE
+ * SUITE A GREEN LOCAL RUN SAYS NOTHING ABOUT. Every other assertion here is a
+ * DOM count, identical on every host. If you change anything that adds fixed
+ * pixels to these tables, re-measure with `system-ui` forced to DejaVu Sans
+ * (what the runner picks) before believing a local pass.
+ *
  * ⚠️ WHY IT IS STILL SMALL. The regression being guarded is the pre-33.3
  * five-column table, which overflowed by ~156px (`/income`) and ~153px
  * (`/expenses`) at this width. The tolerance is roughly a sixth of that, so a

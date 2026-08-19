@@ -7,6 +7,8 @@ import {
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_FOOTER_CELL_CLASS,
   RESPONSIVE_FOOTER_ROW_CLASS,
+  RESPONSIVE_HEADER_CELL_CLASS,
+  RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
@@ -36,9 +38,20 @@ const tokens = (value: string): string[] => value.split(/\s+/).filter(Boolean)
 
 describe('ResponsiveTable class layer', () => {
   describe('desktop classes are preserved verbatim (AC-2)', () => {
-    // Each entry: the constant, and the exact unprefixed classes the four
-    // pages carried before this story. Nothing in this column may change
-    // value, and nothing unprefixed may be added.
+    // Each entry: the constant, and the exact classes it carries at `lg` and
+    // above. Nothing in this column may change value, and nothing may be added
+    // that is not breakpoint-scoped below `lg`.
+    //
+    // ⚠️ `max-lg:px-4` IS LISTED EXPLICITLY RATHER THAN FILTERED OUT, and that
+    // is the whole point of the shape below. It is the width budget that keeps
+    // the four-column `/income` and `/expenses` tables inside their scroll
+    // wrapper between `sm` and `lg` on the CI font (see the block above
+    // `RESPONSIVE_HEADER_CELL_CLASS` for the measurements). Widening the filter
+    // to skip every `max-*` token instead would have made this suite silent
+    // about the one class that a future "simplify the padding" edit is most
+    // likely to delete — and a local run cannot catch that deletion, because
+    // dev fonts are narrow enough to fit either way. Pinned exactly, deleting
+    // it fails HERE, in milliseconds, instead of on the runner.
     const cases: [string, string, string[]][] = [
       ['wrapper', RESPONSIVE_WRAPPER_CLASS, ['overflow-x-auto']],
       [
@@ -53,23 +66,44 @@ describe('ResponsiveTable class layer', () => {
         ['surface', 'divide-y', 'divide-gray-200', 'dark:divide-gray-700'],
       ],
       ['row', RESPONSIVE_ROW_CLASS, ['hover:bg-gray-50', 'dark:hover:bg-gray-700/40']],
-      ['cell', RESPONSIVE_CELL_CLASS, ['px-6', 'py-4', 'whitespace-nowrap']],
+      ['cell', RESPONSIVE_CELL_CLASS, ['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap']],
       [
         'actions cell',
         RESPONSIVE_ACTIONS_CELL_CLASS,
-        ['px-6', 'py-4', 'whitespace-nowrap', 'text-right', 'text-sm'],
+        ['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap', 'text-right', 'text-sm'],
       ],
-      ['stacked cell', RESPONSIVE_STACKED_CELL_CLASS, ['px-6', 'py-4', 'whitespace-nowrap']],
+      [
+        'stacked cell',
+        RESPONSIVE_STACKED_CELL_CLASS,
+        ['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap'],
+      ],
       ['tfoot', RESPONSIVE_TFOOT_CLASS, ['surface-inset']],
-      ['footer cell', RESPONSIVE_FOOTER_CELL_CLASS, ['px-6', 'py-3']],
+      ['footer cell', RESPONSIVE_FOOTER_CELL_CLASS, ['px-6', 'max-lg:px-4', 'py-3']],
     ]
 
     for (const [name, value, expected] of cases) {
-      it(`${name} keeps exactly its pre-31.2 unprefixed classes`, () => {
+      it(`${name} keeps exactly its pre-31.2 desktop classes`, () => {
         const unprefixed = tokens(value).filter((t) => !t.startsWith('max-sm:'))
         expect(unprefixed.sort()).toEqual([...expected].sort())
       })
     }
+
+    // The `px-6` half of each pair above is what renders at `lg` and up, so the
+    // pre-31.2 desktop claim in this block's title still holds literally: no
+    // constant lost `px-6`, and `max-lg:px-4` cannot apply at >= 1024px.
+    it('every padded constant keeps px-6 as its >= lg base alongside the max-lg override', () => {
+      for (const value of [
+        RESPONSIVE_CELL_CLASS,
+        RESPONSIVE_ACTIONS_CELL_CLASS,
+        RESPONSIVE_STACKED_CELL_CLASS,
+        RESPONSIVE_FOOTER_CELL_CLASS,
+        RESPONSIVE_HEADER_CELL_CLASS,
+        RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
+      ]) {
+        expect(tokens(value)).toContain('px-6')
+        expect(tokens(value)).toContain('max-lg:px-4')
+      }
+    })
 
     it('the mobile-only constants add no unprefixed class that could reach desktop', () => {
       // These three exist ONLY below `sm`. Every token must be breakpoint-scoped.
