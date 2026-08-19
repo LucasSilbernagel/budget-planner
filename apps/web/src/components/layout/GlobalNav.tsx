@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import type React from 'react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 
 /**
  * Persistent global navigation (story 11-1, Epic 11 UX review P0-a).
@@ -323,7 +324,36 @@ export function GlobalNav() {
    * the `activeProps` this component already ships.
    */
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const isMoreActive = MORE_DESTINATIONS.some((item) => item.to === pathname)
+
+  /**
+   * The sheet's destinations after the Retirement visibility preference (story
+   * 35.2, FR55).
+   *
+   * ⚠️⚠️ ONE list, read TWICE — deliberately. The rendered rows and
+   * `isMoreActive` below both derive from this, so the trigger cannot claim a
+   * destination the sheet no longer holds. Deriving the active state from
+   * `MORE_DESTINATIONS` instead would light the More tab on `/retirement` while
+   * the sheet it discloses is empty of it: an orientation cue pointing at
+   * nothing. Keeping the two in agreement by discipline is exactly the kind of
+   * invariant that rots, so they are not separately computable.
+   *
+   * This is the post-hydration half of the feature. The FIRST frame is handled
+   * before React runs, by the `<head>` script in
+   * `lib/nav/no-flash-planner-visibility-script` plus the `[data-hide-retirement]`
+   * rule in `styles/global.css` — because every persisted store here is
+   * `skipHydration: true`, so the server and the first client render must both
+   * paint the deterministic default (visible).
+   */
+  const showRetirementPlanner = useShowRetirementPlanner()
+  const visibleMoreDestinations = useMemo(
+    () =>
+      showRetirementPlanner
+        ? MORE_DESTINATIONS
+        : MORE_DESTINATIONS.filter((item) => item.to !== '/retirement'),
+    [showRetirementPlanner]
+  )
+
+  const isMoreActive = visibleMoreDestinations.some((item) => item.to === pathname)
 
   /**
    * Close the sheet.
@@ -471,7 +501,7 @@ export function GlobalNav() {
           in lockstep. */}
       <ul className="flex flex-wrap gap-1 px-4 py-2 max-sm:grid max-sm:grid-cols-5 max-sm:gap-0 max-sm:px-0 max-sm:py-0">
         {PRIMARY_TABS.map((item) => (
-          <li key={item.to} className="max-sm:min-w-0">
+          <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
             <Link
               to={item.to}
               activeOptions={item.exact ? { exact: true } : undefined}
@@ -511,8 +541,8 @@ export function GlobalNav() {
             id={panelId}
             className={isMoreOpen ? SHEET_PANEL_CLASS : `${SHEET_PANEL_CLASS} max-sm:hidden`}
           >
-            {MORE_DESTINATIONS.map((item) => (
-              <li key={item.to} className="max-sm:min-w-0">
+            {visibleMoreDestinations.map((item) => (
+              <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
                 <Link
                   to={item.to}
                   className={SHEET_ROW_CLASS}

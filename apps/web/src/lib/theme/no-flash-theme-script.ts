@@ -16,11 +16,15 @@ import { THEME_STORAGE_KEY } from '../../stores/themeStore'
  * Extracted to this leaf module (story sec-1) so the exact rendered script body
  * is a single importable source of truth shared by two consumers that must never
  * drift apart:
- *   1. `routes/__root.tsx` — renders it as an inline `<script>` (the only inline
- *      script in the document).
+ *   1. `routes/__root.tsx` — renders it as an inline `<script>`.
  *   2. `server/middleware/security-headers.ts` — hashes it (sha256) to pin the
- *      Content-Security-Policy `script-src`, so the strict CSP allows exactly
- *      this script and nothing else inline.
+ *      Content-Security-Policy `script-src`.
+ *
+ * ⚠️ Story 35.2 added a SECOND self-authored inline bootstrap
+ * (`lib/nav/no-flash-planner-visibility-script`), hashed the same way. This
+ * script is no longer the only inline script in the document; the CSP now
+ * authorizes exactly two static hashes plus the per-request nonce for TanStack
+ * Start's own dynamic inline scripts, and nothing else inline.
  *
  * Keeping it here (a React/CSS-free leaf that only depends on the theme storage
  * key) lets the security-headers unit test import and hash it without pulling the

@@ -4,6 +4,7 @@
 
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { NO_FLASH_PLANNER_SCRIPT } from '../../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_THEME_SCRIPT } from '../../../lib/theme/no-flash-theme-script'
 import {
   PERMISSIONS_POLICY,
@@ -122,6 +123,29 @@ describe('applySecurityHeaders', () => {
         .digest('base64')}`
       const d = parseCsp(csp ?? '')
       expect(d['script-src']).toContain(`'${expectedHash}'`)
+    })
+
+    // Story 35.2 — the SECOND inline bootstrap. Same drift guard, recomputed
+    // independently: a future edit to NO_FLASH_PLANNER_SCRIPT that forgets the
+    // policy blocks the script, and a blocked script means the Retirement entry
+    // paints on the first frame for a user who turned it off.
+    it('pins the sha256 of the EXACT inline planner-visibility script in script-src (35.2 AC-10)', () => {
+      const expectedHash = `sha256-${createHash('sha256')
+        .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
+        .digest('base64')}`
+      const d = parseCsp(csp ?? '')
+      expect(d['script-src']).toContain(`'${expectedHash}'`)
+    })
+
+    // Anti-vacuity: the two hashes must be DIFFERENT sources, not one hash
+    // asserted twice. If the scripts were ever collapsed into one constant, both
+    // guards above would pass while only one bootstrap actually shipped.
+    it('authorizes two distinct inline script hashes', () => {
+      const themeHash = createHash('sha256').update(NO_FLASH_THEME_SCRIPT, 'utf8').digest('base64')
+      const plannerHash = createHash('sha256')
+        .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
+        .digest('base64')
+      expect(plannerHash).not.toBe(themeHash)
     })
   })
 

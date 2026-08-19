@@ -2,6 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import React from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import RetirementAccumulationPlanner from '../components/RetirementAccumulationPlanner'
+import { RetirementDisabledNotice } from '../components/retirement/RetirementDisabledNotice'
+import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 
 export const Route = createFileRoute('/retirement')({
   component: RetirementPage,
@@ -25,6 +27,36 @@ export const Route = createFileRoute('/retirement')({
  * budget, leaving four editable fields.
  */
 function RetirementPage() {
+  /**
+   * Story 35.2 (FR55, AC-5): the route stays registered and reachable — the
+   * preference gates the CONTENT, not the routing. Deliberately the same shape
+   * as `routes/forecasting.tsx`'s premium gate, and deliberately NOT a
+   * `beforeLoad`/`redirect()`: no route guard exists anywhere in this app, and
+   * bouncing the user would explain nothing and break the in-app doc link.
+   *
+   * The Settings toggle and this gate read the same store independently, so
+   * neither is the only thing standing between the user and the planner (the
+   * dual-gate discipline `settings/report-section.tsx` documents).
+   *
+   * ⚠️ KNOWN AND ACCEPTED: unlike the nav entry, this branch has no pre-paint
+   * equivalent. Every persisted store is `skipHydration: true`, so a direct
+   * visit here with the planner hidden renders the planner on the first frame
+   * and swaps to this notice after rehydration. Accepted on frequency: the nav
+   * renders on EVERY page load for a hidden-planner user, whereas this route is
+   * reached rarely and deliberately by someone who already knows they turned it
+   * off. Covering it too would mean rendering both trees and swapping them in
+   * CSS, which doubles the DOM and makes the planner do real work while hidden.
+   */
+  const showRetirementPlanner = useShowRetirementPlanner()
+
+  if (!showRetirementPlanner) {
+    return (
+      <ErrorBoundary>
+        <RetirementDisabledNotice />
+      </ErrorBoundary>
+    )
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">

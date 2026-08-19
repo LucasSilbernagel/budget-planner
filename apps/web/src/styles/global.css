@@ -108,6 +108,51 @@
   .text-accent {
     @apply text-blue-700 dark:text-blue-300;
   }
+
+  /* --- Pre-paint Retirement nav suppression (story 35.2, FR55, AC-4) ---
+     `data-hide-retirement="1"` is set on <html> by the synchronous <head>
+     bootstrap in `lib/nav/no-flash-planner-visibility-script`, before first
+     paint. This rule is the half of the feature that runs BEFORE React: every
+     persisted store is `skipHydration: true`, so the server render and the first
+     client render must both paint the deterministic default (visible), and
+     GlobalNav's own filter cannot apply until after mount. Without this rule the
+     entry paints and then vanishes on every page load for a user who hid it.
+
+     ⚠️ THE ATTRIBUTE IS KEPT IN SYNC AFTER HYDRATION, AND THAT IS NOT OPTIONAL.
+     An earlier version of this comment claimed the rule "then matches nothing"
+     because GlobalNav stops rendering the <li>. That was FALSE on the re-enable
+     path, and shipped a real bug: the <head> script only ever SETS the
+     attribute, so after a user turned the planner back on in the same session,
+     React re-rendered the entry and this rule went on hiding it until a reload.
+     `components/nav/PlannerVisibilityProvider` now removes the attribute when
+     the preference is on, mirroring how ThemeProvider syncs `.dark`. This rule
+     is authoritative only for the first frame, but it stays live, so the
+     attribute must remain truthful for the whole document lifetime.
+
+     ⚠️ `display: none` (not visibility/opacity) so the entry leaves the
+     accessibility tree too, matching the post-hydration DOM.
+
+     ⚠️ WHY A COMPONENTS-LAYER RULE IS SAFE HERE, PRECISELY — and note this is
+     NOT the source-order hazard documented for `.surface-inset` above. This is
+     Tailwind 3.4 with `@tailwind` directives: the layers are resolved at BUILD
+     time into plain CSS, not native `@layer` blocks, so normal specificity still
+     decides. This selector is 0-2-0 (two attribute selectors) and a `display`
+     utility like `sm:contents` is 0-1-0 (a media query adds no specificity), so
+     this rule wins even though utilities are emitted later. An earlier version
+     of this comment claimed the opposite; it was corrected in code review.
+
+     The rule would only lose to a higher-specificity or `!important` display
+     declaration on the same element. Today the target <li> carries
+     `max-sm:min-w-0` and no display utility at all.
+
+     Either way `e2e/nav-planner-visibility.spec.ts` asserts the first frame at
+     BOTH 320px and 1280px, because the failure mode would be asymmetric: at
+     >= 640px `sm:contents` on the ancestor list dissolves the sheet into the
+     desktop row, so a broken rule could hide the entry on mobile and reveal it
+     on desktop — which a narrow-only test reports as green. */
+  [data-hide-retirement='1'] [data-nav-path='/retirement'] {
+    display: none;
+  }
 }
 
 /* Custom utility styles */

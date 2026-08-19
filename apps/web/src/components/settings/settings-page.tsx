@@ -3,6 +3,7 @@ import { CategoriesSection } from './categories-section'
 import { CurrencyToggle } from './currency-toggle'
 import { LocalDataSection } from './local-data-section'
 import { ReportSection } from './report-section'
+import { RetirementVisibilityToggle } from './retirement-visibility-toggle'
 import { ThemeToggle } from './theme-toggle'
 
 /**
@@ -58,6 +59,25 @@ export function SettingsPage() {
           </div>
           <div>
             <ThemeToggle />
+          </div>
+          {/* Retirement planner visibility — story 35.2, FR55. Placed in
+              "Display" because it governs what the navigation shows, not what
+              the app calculates: turning it off hides the entry and the page,
+              and deletes nothing. */}
+          <div>
+            {/* ⚠️ The description is linked with `aria-describedby`, not merely
+                placed nearby. It carries the data-safety reassurance, and this
+                control sits in the same Settings surface as "Clear local data" —
+                a screen-reader user who heard only "Show Retirement planner,
+                switch, on" would get the switch without the reassurance. */}
+            <RetirementVisibilityToggle describedBy="settings-retirement-visibility-description" />
+            <p
+              id="settings-retirement-visibility-description"
+              className="mt-2 text-sm text-gray-500 dark:text-gray-400"
+            >
+              Turn this off to remove the Retirement planner from your navigation. Your income,
+              expenses and balances are unaffected.
+            </p>
           </div>
         </div>
       </section>

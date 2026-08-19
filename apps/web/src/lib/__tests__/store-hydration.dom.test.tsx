@@ -24,6 +24,7 @@ import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useOverviewDurationStore } from '../../stores/overviewDurationStore'
+import { usePlannerVisibilityStore } from '../../stores/plannerVisibilityStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { useThemeStore } from '../../stores/themeStore'
@@ -40,6 +41,10 @@ const PERSISTED_STORES = [
   ['profile', useProfileStore],
   ['theme', useThemeStore],
   ['overviewDuration', useOverviewDurationStore],
+  // Story 35.2: a store missing from the list here is the story's Trap A — the
+  // Retirement-visibility preference would persist correctly and never load, so
+  // a user who hid the planner would see it return on every reload.
+  ['plannerVisibility', usePlannerVisibilityStore],
 ] as const
 
 afterEach(() => {

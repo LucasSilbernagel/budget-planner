@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { AuthIndicator } from '../components/auth/auth-indicator'
 import { Footer } from '../components/layout/Footer'
 import { GlobalNav } from '../components/layout/GlobalNav'
+import { PlannerVisibilityProvider } from '../components/nav/PlannerVisibilityProvider'
 import { InstallPrompt } from '../components/pwa/InstallPrompt'
 import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
@@ -10,11 +11,15 @@ import { ThemeProvider } from '../components/theme/ThemeProvider'
 import { MetadataProvider } from '../context/metadata-context'
 import { type SessionSeed, SessionSeedProvider } from '../context/session-seed'
 import { buildAnalyticsScripts } from '../lib/analytics/counter'
+// Single source of truth for EACH inline no-flash bootstrap — the planner
+// visibility one (story 35.2) and the theme one (story sec-1). Both are shared
+// with the CSP builder (server/middleware/security-headers.ts), which hashes
+// these exact strings to pin the `script-src` — keep them imported, never
+// re-inline either here (a divergent copy would silently break the strict CSP).
+// ⚠️ These two imports are not adjacent: `organizeImports` sorts by path, so
+// `lib/store-hydration` sits between them. This comment governs both.
+import { NO_FLASH_PLANNER_SCRIPT } from '../lib/nav/no-flash-planner-visibility-script'
 import { StoreHydration } from '../lib/store-hydration'
-// Single source of truth for the inline no-flash theme bootstrap. Shared with
-// the CSP builder (server/middleware/security-headers.ts), which hashes this
-// exact string to pin the `script-src` — keep it imported, never re-inline it
-// here (a divergent copy would silently break the strict CSP; story sec-1).
 import { NO_FLASH_THEME_SCRIPT } from '../lib/theme/no-flash-theme-script'
 import { getSessionSeed } from '../server/api/auth/session-seed'
 import appCss from '../styles/global.css?url'
@@ -91,14 +96,26 @@ function RootComponent() {
 
 function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSeed | null }) {
   return (
-    // suppressHydrationWarning: the no-flash script mutates <html>'s className
-    // before hydration (adds `.dark`), which the server HTML does not carry.
+    // suppressHydrationWarning: the no-flash scripts mutate <html> before
+    // hydration — the theme one adds `.dark`, and the planner-visibility one
+    // (story 35.2) adds `data-hide-retirement="1"` — neither of which the
+    // server HTML carries.
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Blocking, self-authored bootstrap — must run before the stylesheet
-            paints to prevent a theme flash (story 7-3, AC-4). */}
+        {/* Blocking, self-authored bootstraps — must run before the stylesheet
+            paints. Both are authorized in the CSP by sha256 HASH (not the
+            per-request nonce), each derived from its own imported constant in
+            `server/middleware/security-headers.ts`, so neither can silently
+            drift out of sync with the policy that allows it.
+            1. Theme (story 7-3, AC-4) — prevents a flash of light on a dark reload.
+            2. Planner visibility (story 35.2, AC-4) — prevents the Retirement nav
+               entry painting for a user who turned it off. Necessary because every
+               persisted store is `skipHydration: true`, so React cannot know the
+               preference until after mount. */}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_PLANNER_SCRIPT }} />
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
@@ -113,6 +130,12 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
               dark mode moved to Free in story 25-3, so no tier fail-safe).
               Renders nothing. */}
           <ThemeProvider />
+          {/* Keeps <html data-hide-retirement> in sync with the persisted
+              planner preference (story 35.2). Required, not decorative: the
+              <head> bootstrap only SETS the attribute, so without this the
+              entry stays CSS-hidden after an in-session re-enable. Renders
+              nothing. */}
+          <PlannerVisibilityProvider />
           {/* Registers the PWA service worker on the client (story 7-1): SSR-safe
             (dynamic import in an effect), renders nothing. */}
           <RegisterSW />

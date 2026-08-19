@@ -1,6 +1,7 @@
 import { renderWithRouter, screen, within } from '@/test/utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
+import { usePlannerVisibilityStore } from '../../../stores/plannerVisibilityStore'
 import { GlobalNav } from '../GlobalNav'
 
 /**
@@ -513,5 +514,144 @@ describe('GlobalNav', () => {
       const active = await screen.findByRole('link', { name: /^income$/i })
       expect(tokens(active)).toContain('bg-green-50')
     })
+  })
+})
+
+/**
+ * Story 35.2 (FR55) — the Retirement planner visibility preference.
+ *
+ * ⚠️ These counts are 7 and 8, and that does NOT contradict the "stay 8, stay
+ * green" warning at the top of this file. That warning is about jsdom computing
+ * no CSS: the four sheet anchors are always in the DOM because `display: none`
+ * is never applied here. This block asserts something different in kind — with
+ * the preference off, the Retirement `<li>` is NEVER RENDERED, so it is absent
+ * from the DOM at every width, in jsdom and in a real browser alike.
+ *
+ * The pre-paint half of the feature (the `<head>` script + the CSS rule that
+ * suppress the entry BEFORE React runs) is deliberately NOT asserted here —
+ * jsdom applies no stylesheet, so an assertion of it would be measuring a class
+ * string, not a style. It is measured in `e2e/nav-planner-visibility.spec.ts`.
+ */
+describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
+  const hidePlanner = () => usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
+
+  afterEach(() => {
+    usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
+  })
+
+  it('omits the Retirement entry entirely when the preference is off', async () => {
+    hidePlanner()
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    expect(within(nav).queryByRole('link', { name: /^retirement$/i })).toBeNull()
+    expect(
+      [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href')),
+      'the Retirement href survived the filter'
+    ).not.toContain('/retirement')
+    // Seven, not eight: the node is not rendered, rather than hidden by CSS.
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1)
+  })
+
+  it('leaves the sheet holding exactly its other three destinations', async () => {
+    hidePlanner()
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const lists = nav.querySelectorAll('ul')
+    const sheet = [...lists][1]
+    expect(
+      [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
+    ).toEqual(['Balance', 'Net Worth', 'Settings'])
+  })
+
+  it('drops exactly one icon and one label with the entry', async () => {
+    hidePlanner()
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    // Eight: four bar tabs, the More trigger, three sheet rows.
+    expect([...nav.querySelectorAll('svg')]).toHaveLength(8)
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(8)
+  })
+
+  it('leaves the four bar tabs and the More trigger untouched', async () => {
+    hidePlanner()
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const outer = [...nav.querySelectorAll('ul')][0]
+    expect(
+      [...outer.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
+    ).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
+    expect(within(nav).getAllByRole('button')).toHaveLength(1)
+  })
+
+  /**
+   * AC-3 — the More trigger cannot claim a destination the sheet does not hold.
+   *
+   * ⚠️ This is the state the story made unrepresentable rather than guarded:
+   * `isMoreActive` is derived from the SAME filtered list the rows render from.
+   * Computing it from the unfiltered constant would light the trigger here while
+   * the sheet it discloses holds no Retirement row — an orientation cue pointing
+   * at nothing.
+   */
+  it('does not mark the More trigger active on /retirement while hidden', async () => {
+    hidePlanner()
+    renderWithRouter(<GlobalNav />, { path: '/retirement' })
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    expect(
+      tokens(within(nav).getByRole('button')),
+      'the More tab claims a destination its sheet no longer holds'
+    ).not.toContain('bg-green-50')
+  })
+
+  it('restores the entry when the preference is switched back on', async () => {
+    hidePlanner()
+    const { unmount } = renderWithRouter(<GlobalNav />)
+    const hiddenNav = await screen.findByRole('navigation', { name: /primary/i })
+    // ⚠️ Assert the BEFORE state too. Checking only the restored render would
+    // pass identically on a component that never filters anything — the test
+    // could not tell the feature from its absence.
+    expect(within(hiddenNav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1)
+    unmount()
+
+    usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    expect(within(nav).getByRole('link', { name: /^retirement$/i })).toHaveAttribute(
+      'href',
+      '/retirement'
+    )
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length)
+  })
+
+  /**
+   * The CSS hook the pre-paint script targets.
+   *
+   * `[data-hide-retirement='1'] [data-nav-path='/retirement']` is what suppresses
+   * the entry on the first frame. jsdom cannot evaluate that rule, but it CAN
+   * prove the attribute the selector depends on exists on every destination —
+   * without which the rule silently matches nothing and the flash returns.
+   */
+  it('tags every destination <li> with its route for the pre-paint CSS hook', async () => {
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const tagged = [...nav.querySelectorAll('li[data-nav-path]')].map((li) =>
+      li.getAttribute('data-nav-path')
+    )
+    expect(tagged).toEqual([
+      '/',
+      '/income',
+      '/expenses',
+      '/savings',
+      '/balance',
+      '/net-worth-projection',
+      '/retirement',
+      '/settings',
+    ])
   })
 })
