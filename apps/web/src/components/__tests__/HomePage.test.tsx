@@ -12,6 +12,8 @@
  * is exactly what SSR-only smoke misses (project memory, 4-11).
  */
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -395,27 +397,66 @@ describe('HomePage premium discovery', () => {
 })
 
 /**
- * Privacy-first tagline (story 27-4, FR44 — amends story 25-4 / CONTENT-F).
+ * Subtitle parity across the two first-contact surfaces (story 36-1).
  *
- * The overview header leads with the tagline "The budget app that minds its own
- * business." as the single subtitle beneath the app-name heading. This
- * supersedes the old "The budget planner that never sees your money" tagline and
- * the 19-4 "bird's-eye" secondary subtitle (both removed). Tier-independent, so a
- * single free-user render is sufficient.
+ * `HomePage.tsx` and `routes/login.tsx` both render the wordmark plus this
+ * subtitle, and the decision to ship it WITHOUT a trailing period exists only
+ * so the two read identically. Until this test, that invariant was asserted in
+ * two shipped comments and pinned by nothing: editing `login.tsx` would have
+ * left every suite green while silently falsifying both comments.
+ *
+ * Asserted by reading source rather than rendering, because `login.tsx` is a
+ * `Route.useSearch()` component that cannot be rendered via `renderWithRouter`
+ * (project memory, epic 21). Reading the file is what makes the invariant
+ * testable at all — and it is the string, not the render, that must match.
  */
-describe('HomePage tagline (story 27-4)', () => {
+describe('subtitle parity: HomePage and login (story 36-1)', () => {
+  const SUBTITLE = 'Track your finances with privacy and control'
+  const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf-8')
+
+  it('both first-contact surfaces render the identical subtitle string', () => {
+    expect(read('../HomePage.tsx')).toContain(`>${SUBTITLE}</p>`)
+    expect(read('../../routes/login.tsx')).toContain(`>${SUBTITLE}</p>`)
+  })
+
+  it('neither surface has re-grown a trailing period', () => {
+    // The whole point of the no-period decision. A period on either side makes
+    // the two surfaces differ, which is what this pair exists to prevent.
+    expect(read('../HomePage.tsx')).not.toContain(`>${SUBTITLE}.</p>`)
+    expect(read('../../routes/login.tsx')).not.toContain(`>${SUBTITLE}.</p>`)
+  })
+})
+
+/**
+ * Homepage subtitle (story 36-1, CONTENT-N — supersedes story 27-4 / FR44).
+ *
+ * The overview header leads with "Track your finances with privacy and control"
+ * as the single subtitle beneath the app-name heading. This retires the 27-4
+ * privacy-stance tagline, which in turn had superseded the 25-4 "never sees your
+ * money" line and the 19-4 "bird's-eye" secondary subtitle. Tier-independent, so
+ * a single free-user render is sufficient.
+ *
+ * The expected string carries NO trailing period. That is deliberate: it is
+ * byte-identical to the line already shipped at `routes/login.tsx`, and
+ * `getByText` with a plain string is an exact whole-text match, so a stray
+ * period fails here rather than drifting the two surfaces apart silently.
+ */
+describe('HomePage subtitle (story 36-1)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
   })
 
-  it('surfaces the privacy-first tagline while keeping the app name', () => {
+  it('surfaces the new subtitle while keeping the app name', () => {
     render(<HomePage />)
-    expect(screen.getByText('The budget app that minds its own business.')).toBeInTheDocument()
+    expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
     // The app name still appears as the header heading.
     expect(screen.getByRole('heading', { name: 'Longhand Budget', level: 1 })).toBeInTheDocument()
     // Guard: the retired SoluBudget wordmark must not return (story brand-1).
     expect(screen.queryByText(/solubudget/i)).toBeNull()
-    // Guard: the superseded tagline must not return (batch-5 regression lesson).
+    // Guards: BOTH superseded taglines must stay gone (batch-5 regression
+    // lesson). The 27-4 line is the one this story retires; the 25-4 line was
+    // retired before it, and dropping its guard would quietly widen the gap.
+    expect(screen.queryByText(/minds its own business/i)).toBeNull()
     expect(screen.queryByText('The budget planner that never sees your money')).toBeNull()
   })
 })
@@ -424,9 +465,10 @@ describe('HomePage tagline (story 27-4)', () => {
  * Overview subtitle + mobile section padding (story 19-4, CONTENT-F / UX-DR32).
  *
  * Story 27-4 superseded the two-line header: the "bird's-eye" secondary subtitle
- * that 19-4 added is REMOVED, leaving the single 27-4 tagline as the only
- * subtitle. The mobile-padding coverage from 19-4 is independent of the header
- * copy and remains in force — the empty-state onboarding and Premium Features
+ * that 19-4 added is REMOVED, leaving a single line as the only subtitle — since
+ * story 36-1 that line is "Track your finances with privacy and control". The
+ * mobile-padding coverage from 19-4 is independent of the header copy and
+ * remains in force — the empty-state onboarding and Premium Features
  * sections stay tightened with responsive utilities (p-4 sm:p-6 / p-6 sm:p-8) so
  * the ≥640px desktop spacing is unchanged.
  *
@@ -441,8 +483,8 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
 
   it("no longer renders the bird's-eye secondary subtitle (removed by story 27-4)", () => {
     render(<HomePage />)
-    // The 27-4 tagline is the single subtitle; the 19-4 supporting line is gone.
-    expect(screen.getByText('The budget app that minds its own business.')).toBeInTheDocument()
+    // The 36-1 subtitle is the single subtitle; the 19-4 supporting line is gone.
+    expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
     expect(
       screen.queryByText("Get a bird's-eye view of your income, expenses, savings, and more!")
     ).toBeNull()

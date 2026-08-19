@@ -40,17 +40,22 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1.0' },
-      { title: 'Longhand Budget — the budget app that minds its own business' },
-      // Privacy-first tagline (story 27-4, FR44 — amends story 25-4) for
+      { title: 'Longhand Budget — track your finances with privacy and control' },
+      // Subtitle (story 36-1, CONTENT-N — supersedes story 27-4 / FR44) for
       // social/search previews. The TITLE above carries the Longhand Budget
       // brand (story brand-1); the description below deliberately carries only
-      // the tagline and no brand token, which is why the brand pin in
+      // the subtitle and no brand token, which is why the brand pin in
       // root-head.test.ts asserts against the title alone. This default title is
       // inherited by every route without its own head().
+      //
+      // The subtitle absorbs the list rather than sitting in front of it: the
+      // pre-36-1 description opened its second sentence with "Track income…",
+      // so a straight swap of sentence one would have put "Track" twice, four
+      // words apart. The privacy claim is carried over verbatim (FR45).
       {
         name: 'description',
         content:
-          'The budget app that minds its own business. Track income, expenses, savings, and long-term plans — the free tier runs entirely in your browser, so your financial data never leaves your device.',
+          'Track your finances with privacy and control — income, expenses, savings, and long-term plans. The free tier runs entirely in your browser, so your financial data never leaves your device.',
       },
       // Drives the standalone titlebar color when installed as a PWA (story 7-1,
       // AC-2). Matches the manifest theme_color and the accent green.

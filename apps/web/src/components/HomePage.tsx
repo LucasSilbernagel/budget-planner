@@ -380,15 +380,18 @@ export function HomePage() {
         <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
-            {/* Primary tagline (story 27-4, FR44 — amends story 25-4 / CONTENT-F):
-                the privacy-stance tagline is the single subtitle beneath the
-                wordmark. Supersedes the old "never sees your money" tagline and
-                the 19-4 "bird's-eye" secondary subtitle (both removed). */}
-            <p className="text-lg text-body mt-2">The budget app that minds its own business.</p>
+            {/* Primary subtitle (story 36-1, CONTENT-N — supersedes story 27-4 /
+                FR44): a single line beneath the wordmark saying what the app
+                does for the reader. Retires the 27-4 privacy-stance tagline,
+                which had itself replaced the 25-4 tagline and the 19-4
+                "bird's-eye" secondary subtitle. No trailing period
+                — byte-identical to the subtitle on routes/login.tsx, so the two
+                first-contact surfaces read the same. */}
+            <p className="text-lg text-body mt-2">Track your finances with privacy and control</p>
             {/* Privacy positioning (story 27-5, FR45 as amended by brand-1): the
                 three privacy pillars + the "intentional budgeting without bank
                 sync or AI integrations" framing, shown compactly beneath the
-                tagline. Every claim is true — the Free tier is client-only (no
+                subtitle. Every claim is true — the Free tier is client-only (no
                 account; data stays in the browser), the OPTIONAL Premium sync is
                 EU-hosted (DanubeData, Germany), the app has no bank/financial-
                 institution integration, and there is no AI/LLM dependency in any
