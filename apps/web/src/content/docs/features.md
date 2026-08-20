@@ -29,6 +29,8 @@ model, because there is no model. This holds for every visitor on both tiers.
   factors and a worked example.
 - **Savings goals** to track progress toward a target.
 - **Balance tracking** for investments and debts.
+  [Where a mortgage belongs](/docs/where-a-mortgage-belongs) covers loans, which
+  are a recurring payment and a debt at the same time.
 - **Visual breakdowns** of income versus expenses and assets versus
   liabilities.
 - **Net-worth projections** that look forward over time.

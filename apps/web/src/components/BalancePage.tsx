@@ -845,6 +845,22 @@ export function BalancePage() {
                   {getFieldError('currentBalance')}
                 </p>
               )}
+              {/* Story 36.3 (UX-DR40). Debts only: this one input carries the
+                  amount still owed, and the field name alone does not say so.
+                  It also sends the recurring payment to the Expenses page,
+                  where it is the only place it counts against cash flow — a
+                  debt's Contribution value reaches no cash-flow calculation.
+                  Deliberately says where the payment IS counted rather than
+                  telling anyone to leave Contribution blank, since that field
+                  is still shown and still labelled required. `text-muted` (not
+                  the `text-faint` used elsewhere) because gray-400 on the white
+                  modal card measures 2.54:1, below WCAG AA. */}
+              {type === 'debt' && (
+                <p className="mt-1 text-xs text-muted" data-testid="balance-debt-hint">
+                  Enter what you still owe today. Record the recurring payment on the Expenses page
+                  — that's where it counts against your cash flow.
+                </p>
+              )}
             </div>
 
             {/* A contribution limit applies only to investment/retirement

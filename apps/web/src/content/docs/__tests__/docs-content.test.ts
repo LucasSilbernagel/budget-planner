@@ -656,7 +656,11 @@ describe('documentation content accuracy (story 10-4)', () => {
     // pipe, which renders the same bare <table> and reintroduces the same 320px
     // overflow — and the leading-pipe regex above never sees it. Caught in code
     // review 32.3. The delimiter row is the reliable signature of either form.
-    expect(page).not.toMatch(/^\s*:?-{3,}:?\s*\|/m)
+    // ⚠️ `-+`, NOT `-{3,}`. GFM accepts ONE dash per delimiter cell, so `-|-`
+    // and `:-:|:-:` are valid tables that a three-dash regex sails past. The
+    // how-totals guard above still has the narrower form; widening it is not
+    // this story's change to make, but the new page gets the correct one.
+    expect(page).not.toMatch(/^\s*:?-+:?\s*\|/m)
   })
 
   it('every internal doc link targets a real app route', () => {
@@ -667,6 +671,14 @@ describe('documentation content accuracy (story 10-4)', () => {
       '/docs/faq',
       // Story 32.3 — linked from the FAQ, Features and Getting started.
       '/docs/how-totals-are-calculated',
+      // Story 36.3 — linked from Features and Getting started.
+      '/docs/where-a-mortgage-belongs',
+      // Story 36.3: the mortgage page sends readers to the two entry surfaces.
+      // Both routes have existed since epic 1 but no doc had ever linked them,
+      // which is why they were absent from this allow-list rather than omitted
+      // on purpose.
+      '/expenses',
+      '/balance',
       '/privacy',
       '/settings',
       '/contact',
@@ -679,5 +691,104 @@ describe('documentation content accuracy (story 10-4)', () => {
         expect(knownRoutes.has(match[1])).toBe(true)
       }
     }
+  })
+
+  /**
+   * Story 36.3 (CONTENT-O). The mortgage page makes factual claims about which
+   * calculations read which figure, so these guards pin the CLAIMS, not the
+   * page's existence.
+   *
+   * ⚠️ Every interior space is `\s+`: the body hard-wraps at ~76 columns like
+   * its siblings, so a literal-space `toContain` would go red on a pure reflow
+   * (Epic 23's recorded lesson, and the reason the guards above are written the
+   * same way).
+   */
+  const mortgage = () => contentFor('where-a-mortgage-belongs')
+
+  it('the mortgage page states the two-places model and scopes it to debts (36.3, AC-2)', () => {
+    const page = mortgage()
+    // The payment goes to Expenses, the balance owing goes to Balance as a Debt.
+    expect(page).toMatch(/recurring\s+\*\*payment\*\*\s+goes\s+on\s+the\s+\[Expenses\]/i)
+    expect(page).toMatch(/\*\*amount\s+still\s+owed\*\*\s+goes\s+on\s+the\s+\[Balance\]/i)
+    expect(page).toMatch(/type\s+\*\*Debt\*\*/)
+    // Both entry surfaces are linked, not merely named — Task 3's knownRoutes
+    // entries are dead weight otherwise, and the mutation table's M7 depends on
+    // the `/expenses` link existing.
+    expect(page).toContain('(/expenses)')
+    expect(page).toContain('(/balance)')
+    // The reassurance is DEBT-SCOPED. Entering the same money as an expense and
+    // as an INVESTMENT row's contribution IS double-counted today
+    // (`savingsAllocation.ts` subtracts both), so the unqualified form of this
+    // sentence would be false. The scoping list is the guard.
+    // ⚠️ ONE regex spanning the debt list THROUGH the reassurance, deliberately.
+    // Two independent assertions would both stay green if a future edit moved
+    // the reassurance into an unqualified standalone sentence while the loan
+    // list survived elsewhere on the page — which is precisely the failure this
+    // guard exists to prevent (review 36.3).
+    expect(page).toMatch(
+      /car\s+loan,\s+a\s+student\s+loan,\s+or\s+a\s+credit-card\s+balance[^.]*does\s+not\s+count\s+the\s+same\s+money\s+twice/i
+    )
+  })
+
+  it('the mortgage page says what each figure does NOT affect (36.3, AC-3)', () => {
+    const page = mortgage()
+    // The payment is cash flow, never net worth.
+    expect(page).toMatch(
+      /does\s+\*\*not\*\*\s+change\s+your\s+net\s+worth\s+as\s+it\s+stands\s+today/i
+    )
+    // ⚠️ The qualifier IS the claim. An unqualified "does not change your net
+    // worth on any page" contradicts the bullet three lines above it, which
+    // says the payment feeds the net-worth projection — and it does, in the
+    // forward direction. Review 36.3 caught the contradiction; this pins the fix.
+    expect(page).toMatch(/only\s+in\s+the\s+forward\s+direction/i)
+    // The balance owing is net worth, never cash flow.
+    expect(page).toMatch(/does\s+\*\*not\*\*\s+change\s+your\s+cash\s+flow/i)
+    // The retirement pot deliberately excludes debts.
+    expect(page).toMatch(/left\s+out\s+of\s+the\s+retirement\s+planner/i)
+  })
+
+  it('the mortgage page does not promise the debt shrinks (36.3, AC-3)', () => {
+    const page = mortgage()
+    // The projection holds liabilities flat for the whole horizon and models no
+    // repayment at all, so the page must say so rather than implying progress.
+    expect(page).toMatch(/does\s+not\s+pay\s+the\s+mortgage\s+down/i)
+    expect(page).toMatch(/holds\s+your\s+debts\s+at\s+their\s+current\s+balance/i)
+    // ⚠️ Negative guard: these are the sentences that would be FALSE if written.
+    expect(page).not.toMatch(/payment\s+reduces\s+(the|your)\s+(mortgage\s+)?balance/i)
+    expect(page).not.toMatch(/watch\s+(the|your)\s+mortgage\s+shrink/i)
+  })
+
+  it('the mortgage page discloses that a house cannot be recorded (36.3, AC-4)', () => {
+    const page = mortgage()
+    // The balance type enum is `investment | debt` with no third type, so a
+    // homeowner who follows this page's advice sees net worth fall by the whole
+    // mortgage with no asset opposite it. Ratified decision: say so.
+    expect(page).toMatch(/cannot\s+yet\s+record\s+a\s+house/i)
+    expect(page).toMatch(/negative\s+net\s+worth\s+after\s+adding\s+a\s+mortgage\s+is\s+expected/i)
+  })
+
+  it('the mortgage page uses no markdown table (36.3, AC-8)', () => {
+    // Same rationale as the how-totals guard above: `MarkdownRenderer` emits a
+    // bare <table> inside `prose` with no overflow-x wrapper, which would fail
+    // `e2e/responsive-320.spec.ts`. A payment-vs-principal comparison is the
+    // most natural shape for this page, which is exactly why it needs its own
+    // guard rather than relying on the one scoped to how-totals.
+    const page = mortgage()
+    expect(page).not.toMatch(/^\s*\|/m)
+    // ⚠️ The pipeless GFM form too — it renders the same bare <table> and the
+    // leading-pipe regex never sees it.
+    // ⚠️ `-+`, NOT `-{3,}`. GFM accepts ONE dash per delimiter cell, so `-|-`
+    // and `:-:|:-:` are valid tables that a three-dash regex sails past. The
+    // how-totals guard above still has the narrower form; widening it is not
+    // this story's change to make, but the new page gets the correct one.
+    expect(page).not.toMatch(/^\s*:?-+:?\s*\|/m)
+  })
+
+  it('two existing surfaces link to the mortgage page (36.3, AC-8)', () => {
+    // The internal-link guard above proves a link RESOLVES; only this proves
+    // the links EXIST — deleting both would leave that guard perfectly green.
+    const link = '(/docs/where-a-mortgage-belongs)'
+    expect(contentFor('getting-started')).toContain(link)
+    expect(contentFor('features')).toContain(link)
   })
 })

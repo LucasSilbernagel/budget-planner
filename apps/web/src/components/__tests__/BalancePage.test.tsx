@@ -1615,3 +1615,89 @@ describe('BalancePage — sort by column (34.2)', () => {
     }
   })
 })
+
+/**
+ * Story 36.3 (UX-DR40): debt guidance on the balance entry form.
+ *
+ * ⚠️ The present-for-debt and absent-for-investment claims live in SEPARATE
+ * `it()` blocks on purpose. In one block the first failing assertion aborts and
+ * the second never runs, which makes "the gate condition was inverted" and "the
+ * gate body was deleted" indistinguishable — and telling those two apart is the
+ * whole point of having both.
+ */
+describe('BalancePage — debt guidance (36.3)', () => {
+  /**
+   * ⚠️ The RATIFIED string, pinned WHOLE — see the matching note in
+   * `ExpensesPage.test.tsx`. Two distinguishing substrings proved the hint was
+   * the right hint but left its entire middle clause unpinned, so a reword or a
+   * truncation there would have passed. Review 36.3 caught it.
+   *
+   * The dash is a literal em dash (U+2014) and the apostrophe is ASCII; both are
+   * part of what "verbatim" means here. `textContent` is whitespace-normalized
+   * because JSX joins the source lines with newlines.
+   */
+  const DEBT_HINT =
+    'Enter what you still owe today. Record the recurring payment on the Expenses page — that\u2019s where it counts against your cash flow.'.replace(
+      '\u2019',
+      "'"
+    )
+
+  const hintText = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('explains the Current Balance field and where the payment goes, for debts', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+
+    const hint = within(dialog).getByTestId('balance-debt-hint')
+    expect(hintText(hint)).toBe(DEBT_HINT)
+  })
+
+  /**
+   * ⚠️ NEGATIVE-ONLY, deliberately, and this was MEASURED rather than reasoned.
+   *
+   * A first version of this test also asserted the hint APPEARS after switching
+   * to debt. That extra positive assertion destroyed the discrimination the pair
+   * exists for: deleting the gate's body and inverting its condition both turned
+   * this test red, producing identical failure signatures for two different
+   * defects. With only negative assertions here, deleting the body leaves this
+   * green (the hint is absent everywhere, which is what this test claims) while
+   * inverting the condition turns it red.
+   */
+  it('does not show the debt guidance on the default investment entry', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    // Default type is investment — the hint must not be there at all.
+    expect(within(dialog).queryByTestId('balance-debt-hint')).not.toBeInTheDocument()
+  })
+
+  it('withdraws the debt guidance when the type is switched back to investment', async () => {
+    // The gate must track the CURRENT type, not merely the type on open. Also
+    // negative-only, for the reason given above.
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'investment')
+
+    expect(within(dialog).queryByTestId('balance-debt-hint')).not.toBeInTheDocument()
+  })
+})

@@ -958,3 +958,65 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     }
   })
 })
+
+/**
+ * Story 36.3 (UX-DR40): mortgage guidance on the expense entry form.
+ *
+ * The hint is plain prose asserted by its text, not by `aria-describedby` —
+ * every such attribute in this app is a single id, and joining a permanent hint
+ * id into `:530` would break the exact-match assertion at `:118` of this file.
+ */
+describe('ExpensesPage — mortgage guidance (36.3)', () => {
+  /**
+   * ⚠️ The RATIFIED string, pinned WHOLE.
+   *
+   * A distinguishing substring proves the hint is the right hint; it does not
+   * pin the copy. The story fixes this sentence verbatim (§Ratified decisions
+   * 2), and with substrings alone the unpinned spans — here, the whole opening
+   * question — could be reworded, truncated or dropped with every test green.
+   * Review 36.3 caught exactly that gap. `textContent` is whitespace-normalized
+   * because JSX joins the source lines with newlines.
+   */
+  const EXPENSE_HINT =
+    'Paying off a loan or mortgage? Enter the payment here, and the amount still owed on the Balance page.'
+
+  const hintText = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+  beforeEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  it('points the user at the Balance page for the amount still owed', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+
+    // ⚠️ Anchored on the DISTINGUISHING half of the sentence. "mortgage" alone
+    // would be true-by-construction the moment any other copy on this page
+    // mentions one; this phrase appears nowhere else in the repo.
+    expect(hintText(within(dialog).getByTestId('expense-mortgage-hint'))).toBe(EXPENSE_HINT)
+  })
+
+  it('shows the same guidance when editing an existing expense', async () => {
+    // One modal serves both states (switched by `editingId`), so this pins that
+    // the hint is not accidentally gated to the add path.
+    // Seeded through the store's own action rather than a hand-built object, so
+    // the row cannot drift from the real shape (`displayOrder`, `categoryId`).
+    const user = userEvent.setup()
+    useExpenseStore
+      .getState()
+      .addExpense({ name: 'Mortgage', amount: 150_000, frequency: 'monthly' })
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    const dialog = screen.getByRole('dialog')
+
+    expect(hintText(within(dialog).getByTestId('expense-mortgage-hint'))).toBe(EXPENSE_HINT)
+  })
+})

@@ -55,6 +55,13 @@ const PAGES = [
   // renders a fenced code block, which `prose`/`dark:prose-invert` themes
   // separately from ordinary paragraph text.
   '/docs/how-totals-are-calculated',
+  // Story 36.3 — same docs detail layout, no fenced block.
+  // ⚠️ This list is HAND-MAINTAINED and nothing derives it from `DOC_PAGES`, so
+  // the next doc page added will silently have no dark-mode coverage here until
+  // someone remembers this file. Stated rather than implied — an earlier version
+  // of this comment claimed the set "stays complete as pages are added", which
+  // is precisely what it does not do (review 36.3).
+  '/docs/where-a-mortgage-belongs',
   '/login',
   '/pricing',
   '/terms',

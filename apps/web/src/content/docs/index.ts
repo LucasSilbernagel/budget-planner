@@ -15,6 +15,7 @@ import faq from './faq.md?raw'
 import features from './features.md?raw'
 import gettingStarted from './getting-started.md?raw'
 import howTotalsAreCalculated from './how-totals-are-calculated.md?raw'
+import whereAMortgageBelongs from './where-a-mortgage-belongs.md?raw'
 
 export interface DocPage {
   /** URL slug, used as the `$docId` route param (e.g. `getting-started`). */
@@ -46,6 +47,14 @@ export const DOC_PAGES: readonly DocPage[] = [
     title: 'How totals are calculated',
     description: 'The exact conversion between weekly, biweekly, monthly and yearly amounts.',
     content: howTotalsAreCalculated,
+  },
+  // Reference material: a mortgage is the one entry that belongs in two places
+  // at once, so it gets its own page rather than a bullet elsewhere (story 36.3).
+  {
+    slug: 'where-a-mortgage-belongs',
+    title: 'Where a mortgage belongs',
+    description: 'Why a loan is both a recurring payment and a debt, and what each one changes.',
+    content: whereAMortgageBelongs,
   },
   {
     slug: 'faq',
