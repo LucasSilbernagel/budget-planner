@@ -112,11 +112,11 @@ test.describe('no horizontal overflow at 320px', () => {
   // also visits /settings, where the CurrencyToggle now lives (story 11-6), to
   // guard its widest control layout (currency select revealed in symbol mode).
   //
-  // It deliberately seeds MANY distinct expense/income categories so the pie
-  // renders many slices: that is the path where the narrow-viewport change
-  // suppresses the per-slice labels and moves the legend to a wrapping bottom
-  // row, so we also assert the legend stays within its chart container (no
-  // vertical clipping that would silently hide the category breakdown).
+  // It deliberately seeds MANY distinct expense/income categories so the pies
+  // render many slices, which is the widest case for the colour-keyed list
+  // beneath each plot — since story 36.2 removed the in-plot slice labels at
+  // every width, that list plus the hover tooltip is the ONLY way to read the
+  // breakdown, so we assert it names every seeded slice.
   test('dashboard with multi-category data and currency symbols fits a 320px viewport', async ({
     page,
   }) => {
@@ -189,25 +189,36 @@ test.describe('no horizontal overflow at 320px', () => {
 
     await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/ (with data)')
 
-    // The bottom legend must stay inside its chart container — a wrapping
-    // multi-row legend that overflows the fixed-height box would clip the
-    // category names the suppressed slice labels used to show.
-    const clip = await page.evaluate(() => {
-      const container = document.querySelector('.recharts-responsive-container')
-      const legend = container?.querySelector('.recharts-legend-wrapper')
-      if (!container || !legend) {
-        return { ok: true, reason: 'no legend rendered' }
-      }
-      const c = container.getBoundingClientRect()
-      const l = legend.getBoundingClientRect()
-      // 2px tolerance for sub-pixel rounding.
-      return {
-        ok: l.bottom <= c.bottom + 2 && l.right <= c.right + 2,
-        legendBottom: l.bottom,
-        containerBottom: c.bottom,
-      }
-    })
-    expect(clip.ok, `pie legend clips its container: ${JSON.stringify(clip)}`).toBeTruthy()
+    // ⚠️ This replaced a probe that could not fail (story 36.2). It looked for
+    // `.recharts-legend-wrapper` inside the chart container and returned
+    // `{ ok: true, reason: 'no legend rendered' }` when it found none — but
+    // `BreakdownPie` renders NO Recharts `<Legend>` at all (story 12-4 removed
+    // it; `HomePage.tsx` does not even import `Legend`), so that branch was the
+    // only one ever taken and the assertion was vacuous.
+    //
+    // The real failure mode was never vertical clipping — the list is a plain
+    // `<ul>` in normal document flow BELOW the fixed-height chart box, so it
+    // grows the card rather than being clipped by it. What can actually go
+    // wrong is the list being short or missing, which since story 36.2 would
+    // leave a narrow user with no way at all to read the breakdown. So assert
+    // that: one row per seeded slice, each naming its category.
+    const expensePie = page.locator('[data-testid="breakdown-pie-expense"]')
+    const incomePie = page.locator('[data-testid="breakdown-pie-income"]')
+    await expect(expensePie.locator('li')).toHaveCount(6)
+    await expect(incomePie.locator('li')).toHaveCount(3)
+    for (const name of [
+      'Mortgage & Housing Costs',
+      'Groceries',
+      'Transportation',
+      'Utilities',
+      'Insurance Premiums',
+      'Entertainment & Dining',
+    ]) {
+      await expect(expensePie.locator('li').filter({ hasText: name })).toBeVisible()
+    }
+    for (const name of ['Primary Salary Long Name', 'Freelance & Consulting', 'Dividends']) {
+      await expect(incomePie.locator('li').filter({ hasText: name })).toBeVisible()
+    }
 
     // The CurrencyToggle's widest layout (currency <select> revealed in symbol
     // mode) now lives on /settings, not the page headers. The seeded symbol-mode

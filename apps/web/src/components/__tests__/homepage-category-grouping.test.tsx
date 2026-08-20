@@ -197,8 +197,15 @@ describe('AC-7: two rows sharing a category merge into one slice', () => {
     render(<HomePage />)
 
     expect(within(expenseLegend()).getByText('Groceries')).toBeInTheDocument()
-    // The slice label truncates to 11 chars + "...", so a leak would read
-    // "cccccccc-cc...". Assert page-wide: the uuid must reach no surface.
+    // The needle is the uuid's first 11 characters as a SUBSTRING regex, so it
+    // matches however the LIST renders a leak — full name or truncated. (Story
+    // 36.2 removed the in-plot slice label, which used to truncate to 11 chars
+    // plus an ellipsis, so "cccccccc-cc..." is no longer the shape to expect.)
+    //
+    // ⚠️ Scope: "page-wide" here means the jsdom DOM, and Recharts renders NO
+    // SVG under jsdom — so this cannot see the chart or its tooltip. It is a
+    // guard on the slice list only; the other two surfaces are unreachable from
+    // any unit test.
     expect(screen.queryByText(/cccccccc-cc/)).not.toBeInTheDocument()
   })
 })

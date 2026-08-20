@@ -59,9 +59,11 @@ export function HomePage() {
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
   // Rows carry a category uuid, never a name (story 30.4b). Both pies group by
-  // the RESOLVED name, so a raw `categoryId` must never reach a data point —
-  // it would surface as a truncated uuid in the slice label, the legend and
-  // the tooltip.
+  // the RESOLVED name, so a raw `categoryId` must never reach a data point — it
+  // would surface as a uuid in the hover tooltip and in the slice list beneath
+  // the plot (which the tests call the pie's "legend"; the Recharts `<Legend>`
+  // itself went in story 12-4). Story 36.2 removed the third surface, the
+  // in-plot slice label.
   const categoryNames = useCategoryNameMap()
   const savingsGoals = useSavingsGoals()
   const balanceEntries = useBalanceEntries()
@@ -836,29 +838,6 @@ export function HomePage() {
   )
 }
 
-/**
- * The in-plot text for one pie slice (desktop only — narrow drops labels).
- *
- * ⚠️ EXPORTED AND PURE ON PURPOSE. Recharts does not lay out its SVG under
- * jsdom, so a label rendered inside `<Pie label={...}>` is invisible to every
- * unit test — code review 32.3 removed the `total > 0` guard below and the whole
- * suite stayed green. Extracting the formatter is the repo's established answer
- * to exactly this (epic 24's `get*Chrome()` helpers), and it lets both branches
- * be tested against concrete values.
- *
- * ⚠️ `total > 0` mirrors the Tooltip's guard, which has always had it — the
- * boundary was seen once and missed once. Recharts derives `percent` as
- * value/sum, so an all-zero dataset gives 0/0 = NaN and every label reads
- * "NaN%". Story 32.3 WIDENED the trigger: a 2c monthly expense rounds to 0c at
- * the newly-selectable weekly view, where previously only a sub-5c ANNUAL entry
- * could do it. Falling back to the bare name keeps the slice labelled rather
- * than blanking it.
- */
-export function pieSliceLabel(name: string, percent: number, total: number): string {
-  const short = name.length > 14 ? `${name.substring(0, 11)}...` : name
-  return total > 0 ? `${short}: ${(percent * 100).toFixed(1)}%` : short
-}
-
 interface BreakdownPieProps {
   /**
    * Stable identity for test queries — `breakdown-pie-<testId>` on the wrapper
@@ -880,7 +859,11 @@ interface BreakdownPieProps {
   emptyLabel: string
   /** Tailwind text-color classes for the total figure (income green / expense red). */
   accentClass: string
-  /** Narrow viewport: drop in-plot slice labels so they cannot overflow at 320px. */
+  /**
+   * Narrow viewport: shrink the donut's radii so the plot stays inside its box
+   * at 320px. Since story 36.2 the in-plot slice labels are gone at every
+   * width, so the radii are all this flag drives here.
+   */
   isNarrow: boolean
   formatAmount: (cents: number) => string
 }
@@ -1021,11 +1004,22 @@ function BreakdownPie({
                     fill="#8884d8"
                     dataKey="value"
                     nameKey="name"
-                    // Drop in-plot labels on narrow so they cannot push past the
-                    // container at 320px; the list below still names every slice.
-                    label={
-                      isNarrow ? false : ({ name, percent }) => pieSliceLabel(name, percent, total)
-                    }
+                    // No in-plot slice labels, at ANY width (story 36.2 /
+                    // UX-DR41). With many categories the coloured labels collide
+                    // into an unreadable tangle on desktop; below 640px they
+                    // overflowed the container outright (story 6-1). The list
+                    // below names every slice, and the hover tooltip carries the
+                    // per-slice figure and share — so nothing is lost. The chart
+                    // is `role="img"`, so the labels never reached the
+                    // accessibility tree in the first place.
+                    //
+                    // ⚠️ `labelLine` above is now INERT: Recharts guards with
+                    // `label && this.renderLabels(sectors)`, and `labelLine` is
+                    // read only inside `renderLabels`. It is kept so that
+                    // restoring `label` cannot silently also restore the leader
+                    // lines. Both props are pinned in
+                    // `__tests__/HomePage.pie-labels.chart-wiring.test.tsx`.
+                    label={false}
                   >
                     {data.map((entry, index) => (
                       <Cell

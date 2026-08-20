@@ -32,7 +32,7 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 }))
 
 import { PREMIUM_BENEFIT_IDS } from '../../lib/premium/benefits'
-import { HomePage, OVERVIEW_BENEFITS, pieSliceLabel } from '../HomePage'
+import { HomePage, OVERVIEW_BENEFITS } from '../HomePage'
 
 /**
  * How many benefit boxes are route-backed, i.e. render as `PremiumFeatureGate`
@@ -1256,35 +1256,6 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 
     // One entry: the pie total IS the card figure, by construction.
     expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
-  })
-})
-
-/**
- * Pie slice label formatting (story 32.3 code review).
- *
- * ⚠️ Tested through the PURE helper, not the rendered chart: Recharts does not
- * lay out its SVG under jsdom, so an assertion against the rendered label can
- * never fail — removing the zero-total guard left the entire suite green. Both
- * branches are pinned here against concrete values (epic 24's lesson).
- */
-describe('pieSliceLabel (story 32.3)', () => {
-  it('renders a percentage when the pie has a non-zero total', () => {
-    expect(pieSliceLabel('Groceries', 0.25, 40_000)).toBe('Groceries: 25.0%')
-  })
-
-  it('falls back to the bare name on an all-zero total instead of "NaN%"', () => {
-    // Recharts computes percent as value/sum; sum 0 → NaN. Reachable since 32.3
-    // via a 2c monthly expense at the weekly view (round(2 × 12/52) = 0).
-    expect(pieSliceLabel('Groceries', Number.NaN, 0)).toBe('Groceries')
-    expect(pieSliceLabel('Groceries', Number.NaN, 0)).not.toContain('NaN')
-  })
-
-  it('truncates a long category name in both branches', () => {
-    // 20 chars > the 14 threshold, so it becomes the first 11 plus an ellipsis.
-    expect(pieSliceLabel('Supermarket shopping', 0.5, 100)).toBe('Supermarket...: 50.0%')
-    expect(pieSliceLabel('Supermarket shopping', Number.NaN, 0)).toBe('Supermarket...')
-    // A name at exactly the threshold is left alone.
-    expect(pieSliceLabel('Groceries only', 0.5, 100)).toBe('Groceries only: 50.0%')
   })
 })
 
