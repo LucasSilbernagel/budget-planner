@@ -7,6 +7,7 @@ import {
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTableSort } from '../hooks/useTableSort'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
+import { buildSavingsChartRows, hasPlottableData } from '../lib/savings-chart-data'
 import { type SavingsSortKey, createSavingsSortExtractors } from '../lib/table-sort-keys'
 import {
   useExpenses,
@@ -17,6 +18,7 @@ import {
   useTotalSavings,
 } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { SavingsChart } from './SavingsChart'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 import {
@@ -112,6 +114,13 @@ export function SavingsPage() {
   )
   const sort = useTableSort(savingsGoals, sortExtractors)
   const sortedRows = sort.rows
+  // ⚠️ Built from `sortedRows`, NOT `savingsGoals`: the chart must show the same
+  // entries in the same order as the table beside it, so a column sort re-orders
+  // both together and the two can never disagree.
+  // Memoised on `sortedRows`: without this every keystroke in the Add/Edit modal
+  // re-renders the page, hands `BarChart` a fresh array identity, and re-runs the
+  // whole Recharts axis/rect computation while the user is only typing.
+  const chartRows = useMemo(() => buildSavingsChartRows(sortedRows), [sortedRows])
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -390,6 +399,41 @@ export function SavingsPage() {
                 </p>
               )}
             </div>
+          </section>
+
+          {/* Savings at a Glance (Story 37.1, FR64 / UX-DR42). Sits BETWEEN the
+              summary and the detail table: summary → shape → detail. */}
+          <section data-testid="savings-chart-section" className="surface shadow-md p-6 rounded-lg">
+            <h2 className="mb-6 font-semibold text-subheading text-xl">Savings at a Glance</h2>
+
+            {hasPlottableData(chartRows) ? (
+              <SavingsChart
+                rows={chartRows}
+                formatAmount={formatAmount}
+                mode={mode}
+                currency={currency}
+              />
+            ) : (
+              /* ⚠️ `text-muted` (4.83:1 on white), never `text-faint` (2.54:1 —
+                 FAILS WCAG AA in light mode). Two `text-faint` hints already sit
+                 on this page; do not copy the wrong neighbour. */
+              <div
+                data-testid="savings-chart-empty"
+                className="surface-inset p-8 rounded-lg text-center"
+              >
+                {/* ⚠️ Two different unplottable states, two different truths. With
+                    no goals at all, "add one" is the right instruction. With goals
+                    that are all zero and target-less, the table below is already
+                    listing them — telling that user to add a savings goal is
+                    simply false, and adding a second empty one would change
+                    nothing. */}
+                <p className="text-muted">
+                  {savingsGoals.length === 0
+                    ? 'Add a savings goal to see it charted here'
+                    : 'Nothing to chart yet — add a balance or a target to a savings goal'}
+                </p>
+              </div>
+            )}
           </section>
 
           {/* Savings Goals List */}

@@ -1145,3 +1145,129 @@ describe('SavingsPage — sort by column (34.2)', () => {
     }
   })
 })
+
+/**
+ * Savings at a Glance chart section (story 37.1, FR64 / UX-DR42).
+ *
+ * ⚠️ These cases run against the REAL `SavingsChart`, which renders no SVG in
+ * jsdom. So they assert what IS observable without a mock: which branch the
+ * section took, the empty-state copy and its colour token, and the chart
+ * container's height — which encodes the row count that reached the chart. What
+ * the chart was HANDED is asserted in `SavingsPage.chart-contract.test.tsx`;
+ * what it PLOTS is in `SavingsChart.chart-wiring.test.tsx`; anything painted is
+ * in `e2e/savings-chart.spec.ts`.
+ */
+describe('SavingsPage chart section', () => {
+  const NOW = '2026-01-01T00:00:00.000Z'
+  const chartGoal = (
+    id: string,
+    name: string,
+    currentBalance: number,
+    targetAmount: number | null
+  ) => ({ id, name, targetAmount, currentBalance, createdAt: NOW, updatedAt: NOW })
+
+  afterEach(() => {
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('renders the chart section between the summary and the table', () => {
+    useSavingsStore.setState({ savingsGoals: [chartGoal('a', 'Vacation', 300_00, 900_00)] })
+    const { container } = renderWithProviders(<SavingsPage />)
+
+    const sections = [...container.querySelectorAll('main > section')]
+    expect(sections).toHaveLength(3)
+    expect(sections[1]).toBe(screen.getByTestId('savings-chart-section'))
+    expect(screen.getByRole('heading', { name: 'Savings at a Glance' })).toBeInTheDocument()
+  })
+
+  it('renders the chart when there is something to plot', () => {
+    useSavingsStore.setState({ savingsGoals: [chartGoal('a', 'Vacation', 300_00, 900_00)] })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-chart')).toBeInTheDocument()
+    expect(screen.queryByTestId('savings-chart-empty')).not.toBeInTheDocument()
+  })
+
+  // The container height is `rowCount * 72 + 72`, so it is an observable proxy
+  // for "the right number of rows reached the chart" — one of the few things
+  // about this chart jsdom can actually see.
+  it('sizes the chart container to the row count', () => {
+    useSavingsStore.setState({
+      savingsGoals: [
+        chartGoal('a', 'Vacation', 300_00, 900_00),
+        chartGoal('b', 'Emergency Fund', 900_00, 2_000_00),
+        chartGoal('c', 'TFSA', 150_00, null),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-chart')).toHaveStyle({ height: '288px' })
+  })
+
+  it('shows an empty state instead of a plot when there are no goals', () => {
+    useSavingsStore.setState({ savingsGoals: [] })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.queryByTestId('savings-chart')).not.toBeInTheDocument()
+    const empty = screen.getByTestId('savings-chart-empty')
+    // With NO goals at all, "add one" is the true instruction.
+    expect(empty).toHaveTextContent('Add a savings goal to see it charted here')
+    // Distinct from the TABLE's empty state, which is untouched by this story.
+    expect(screen.getByText('No savings goals recorded yet')).toBeInTheDocument()
+  })
+
+  // A plot of nothing but zeroes is an empty axis, which AC-4 calls a broken
+  // plot rather than a chart.
+  // ⚠️ Two unplottable states, two different truths. Telling a user who already
+  // HAS goals to "add a savings goal" is false — the table directly below is
+  // listing them, and adding another empty one would change nothing. The copy
+  // has to name the thing that would actually fix it.
+  it('shows the empty state when every entry is zero with no target', () => {
+    useSavingsStore.setState({
+      savingsGoals: [chartGoal('a', 'Vacation', 0, null), chartGoal('b', 'TFSA', 0, null)],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.queryByTestId('savings-chart')).not.toBeInTheDocument()
+    const empty = screen.getByTestId('savings-chart-empty')
+    expect(empty).toHaveTextContent(
+      'Nothing to chart yet — add a balance or a target to a savings goal'
+    )
+    expect(empty).not.toHaveTextContent('Add a savings goal to see it charted here')
+    // The goals the user already created are still listed below.
+    expect(screen.getByText('Vacation')).toBeInTheDocument()
+  })
+
+  it('plots a goal that has a target but nothing saved yet', () => {
+    useSavingsStore.setState({ savingsGoals: [chartGoal('a', 'New Car', 0, 5_000_00)] })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-chart')).toBeInTheDocument()
+  })
+
+  // ⚠️ `text-faint` measures 2.54:1 on white and FAILS WCAG AA; `text-muted` is
+  // 4.83:1 and is the house majority. Two `text-faint` hints already sit on this
+  // page, so the wrong neighbour is one line away. 36-3 measured this exact swap
+  // going GREEN elsewhere because no test pinned the token — this pins it.
+  it('uses the AA-passing muted token for the empty state, not text-faint', () => {
+    useSavingsStore.setState({ savingsGoals: [] })
+    renderWithProviders(<SavingsPage />)
+
+    const copy = screen.getByText('Add a savings goal to see it charted here')
+    // Class TOKEN membership, not substring: `text-muted` is a substring of
+    // nothing here, but the habit is what keeps these assertions honest.
+    expect([...copy.classList]).toContain('text-muted')
+    expect([...copy.classList]).not.toContain('text-faint')
+  })
+
+  // AC-10's fence, restated as a test: a savings balance is a STOCK, so the
+  // section must not sprout the period controls the flow pages carry.
+  it('adds no duration selector and no period suffix', () => {
+    useSavingsStore.setState({ savingsGoals: [chartGoal('a', 'Vacation', 300_00, 900_00)] })
+    renderWithProviders(<SavingsPage />)
+
+    const section = screen.getByTestId('savings-chart-section')
+    expect(section.querySelectorAll('select')).toHaveLength(0)
+    expect(section.textContent).not.toMatch(/per (week|month|year)|\/mo\b|annually/i)
+  })
+})
