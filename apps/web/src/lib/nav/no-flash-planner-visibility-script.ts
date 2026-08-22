@@ -10,7 +10,15 @@ import { PLANNER_VISIBILITY_STORAGE_KEY } from '../../stores/plannerVisibilitySt
  * ⚠️ WHY THIS IS NECESSARY AND NOT BELT-AND-BRACES. Every persisted store in
  * this app is `skipHydration: true` and rehydrated in a mount effect
  * (`lib/store-hydration`), so the server render and the first client render must
- * BOTH use the deterministic default (visible) or hydration mismatches. That
+ * BOTH use the deterministic default (visible) or hydration mismatches.
+ *
+ * ⚠️ NARROWED by story 38.1: that agreement holds for a selector that reads the
+ * state object React hands it, and NOT for one that calls a state method — a
+ * method closes over `get()` and returns live state even during hydration. The
+ * planner-visibility read below is a plain field read, so this reasoning stands
+ * here; do not generalise the sentence beyond that. See `lib/store-hydration`.
+ *
+ * That
  * means the React-side filter in `GlobalNav` can only ever apply *after* mount.
  * Applying the preference "after client rehydration" is therefore exactly what
  * causes the flash, not what prevents it — the same conclusion

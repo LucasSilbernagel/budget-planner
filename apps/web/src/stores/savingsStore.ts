@@ -54,6 +54,45 @@ import { toClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 // Using the key specified in Dev Notes: localStorage: `budget-planner:savings-goals`
 export const SAVINGS_GOALS_STORAGE_KEY = 'budget-planner:savings-goals'
 
+/**
+ * ⚠️ PURE DERIVATIONS — READ BEFORE ADDING A SELECTOR HOOK BELOW (story 38.1, BUG-F).
+ *
+ * These take the goals array as an ARGUMENT and are shared by the store methods
+ * and the selector hooks, so the two can never drift.
+ *
+ * A selector hook must call one of these with `state.savingsGoals`. It must NOT
+ * call the equivalent store METHOD. React hands a selector the server snapshot
+ * during hydration (zustand passes `getInitialState` as `getServerSnapshot`), but
+ * that snapshot's methods still close over `get()` and return LIVE state — so a
+ * `useSavingsStore((s) => s.getTotalSavings())` selector reads rehydrated data
+ * while the server rendered the default, and React discards the tree. Measured on
+ * six routes, in dev and in a production build (React #418).
+ *
+ * The methods stay: `getState().getTotalSavings()` callers outside React are
+ * unaffected by hydration and read live state on purpose.
+ */
+function savingsGoalsWithProgressFrom(
+  goals: readonly ClientSavingsGoal[]
+): SavingsGoalWithProgress[] {
+  return goals.map((goal) => withProgress(goal))
+}
+
+function totalSavingsFrom(goals: readonly ClientSavingsGoal[]): number {
+  return goals.reduce((sum, goal) => sum + goal.currentBalance, 0)
+}
+
+function totalTargetAmountFrom(goals: readonly ClientSavingsGoal[]): number {
+  return goals.reduce((sum, goal) => sum + (goal.targetAmount ?? 0), 0)
+}
+
+function overallProgressFrom(goals: readonly ClientSavingsGoal[]): number {
+  const withTarget = goals.filter((goal) => goal.targetAmount != null)
+  const totalBalance = totalSavingsFrom(withTarget)
+  const totalTarget = totalTargetAmountFrom(withTarget)
+  if (totalTarget <= 0) return 0
+  return Math.min(100, Math.round((totalBalance / totalTarget) * 100))
+}
+
 export const useSavingsStore = create<SavingsState>()(
   persist(
     (set, get) => ({
@@ -150,18 +189,18 @@ export const useSavingsStore = create<SavingsState>()(
 
       // Get all savings goals with progress calculated
       getSavingsGoalsWithProgress: () => {
-        return get().savingsGoals.map(withProgress)
+        return savingsGoalsWithProgressFrom(get().savingsGoals)
       },
 
       // Calculate total savings (sum of ALL current balances — accounts included)
       getTotalSavings: () => {
-        return get().savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
+        return totalSavingsFrom(get().savingsGoals)
       },
 
       // Calculate total target amount across goals only. Accounts (null target,
       // Story 16-1) contribute no target and are excluded.
       getTotalTargetAmount: () => {
-        return get().savingsGoals.reduce((sum, goal) => sum + (goal.targetAmount ?? 0), 0)
+        return totalTargetAmountFrom(get().savingsGoals)
       },
 
       // Calculate progress percentage for a specific savings goal. Returns null
@@ -179,11 +218,7 @@ export const useSavingsStore = create<SavingsState>()(
       // Calculate overall progress across GOALS only. An account balance must not
       // count toward goal progress (neither numerator nor denominator).
       getOverallProgress: () => {
-        const goals = get().savingsGoals.filter((goal) => goal.targetAmount != null)
-        const totalBalance = goals.reduce((sum, goal) => sum + goal.currentBalance, 0)
-        const totalTarget = goals.reduce((sum, goal) => sum + (goal.targetAmount ?? 0), 0)
-        if (totalTarget <= 0) return 0
-        return Math.min(100, Math.round((totalBalance / totalTarget) * 100))
+        return overallProgressFrom(get().savingsGoals)
       },
     }),
     {
@@ -254,15 +289,24 @@ export const useSavingsStore = create<SavingsState>()(
 // Selector hooks for better performance
 export const useSavingsGoals = () => useSavingsStore((state) => state.savingsGoals)
 
+/**
+ * ⚠️ Returns a NEW array on every store update, so it fails zustand v4's `Object.is`
+ * check and costs one extra re-render per update (not an infinite loop — see the
+ * correction above). Pre-existing: the method-selector form it replaced had the
+ * identical property. It has no consumers today; adopting it needs an equality fn
+ * (`useShallow`) or memoisation at the call site.
+ */
 export const useSavingsGoalsWithProgress = () =>
-  useSavingsStore((state) => state.getSavingsGoalsWithProgress())
+  useSavingsStore((state) => savingsGoalsWithProgressFrom(state.savingsGoals))
 
-export const useTotalSavings = () => useSavingsStore((state) => state.getTotalSavings())
+export const useTotalSavings = () =>
+  useSavingsStore((state) => totalSavingsFrom(state.savingsGoals))
 
-export const useTotalTargetAmount = () => useSavingsStore((state) => state.getTotalTargetAmount())
+export const useTotalTargetAmount = () =>
+  useSavingsStore((state) => totalTargetAmountFrom(state.savingsGoals))
 
 export const useOverallSavingsProgress = () =>
-  useSavingsStore((state) => state.getOverallProgress())
+  useSavingsStore((state) => overallProgressFrom(state.savingsGoals))
 
 // Selector for actions
 export const useSavingsActions = () => ({

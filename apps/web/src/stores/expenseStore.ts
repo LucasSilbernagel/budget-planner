@@ -84,6 +84,50 @@ const toClientExpense = (newExpense: ClientNewExpense): ClientExpense => ({
   updatedAt: new Date().toISOString(),
 })
 
+/**
+ * ⚠️ PURE DERIVATIONS — READ BEFORE ADDING A SELECTOR HOOK BELOW (story 38.1, BUG-F).
+ *
+ * These take the rows array as an ARGUMENT and are shared by the store methods and
+ * the selector hooks, so the two can never drift.
+ *
+ * A selector hook must call one of these with `state.expenses`. It must NOT call the
+ * equivalent store METHOD. React hands a selector the server snapshot during
+ * hydration (zustand passes `getInitialState` as `getServerSnapshot`), but that
+ * snapshot's methods still close over `get()` and return LIVE state — so a
+ * `useStore((s) => s.getTotalExpenses())` selector reads rehydrated data while the server
+ * rendered the default, and React discards the tree. Measured on six routes, in dev
+ * and in a production build (React #418).
+ *
+ * The methods stay: `getState().getTotalExpenses()` callers outside React are unaffected by
+ * hydration and read live state on purpose.
+ *
+ * ⚠️ `totalExpenseFrom` MUST return a `number`. It is called inside a zustand
+ * selector, and a selector returning a fresh object or array fails v4's `Object.is`
+ * check on every store update.
+ *
+ * ⚠️ CORRECTED IN CODE REVIEW: the sentence this replaces (inherited from the
+ * pre-existing `getTotalIncome` docblock) said such a return would "spin an
+ * infinite re-render loop". That is **not** true of zustand 4.5.7, which builds on
+ * `useSyncExternalStoreWithSelector` (`zustand/esm/index.mjs:4,7,17`) and memoises
+ * the selection per snapshot — the real cost is one extra re-render per update.
+ * The infinite-loop failure mode belongs to a bare `useSyncExternalStore` with an
+ * uncached `getSnapshot`. Kept accurate rather than scary, because a maintainer
+ * upgrading to v5 needs to know where the hazard actually lives.
+ */
+function totalExpenseFrom(rows: readonly ClientExpense[]): number {
+  return calculateTotalMonthlyNormalized(toNormalizableItems(rows))
+}
+
+function expensesByFrequencyFrom(
+  rows: readonly ClientExpense[],
+  frequency: Frequency
+): ClientExpense[] {
+  return rows.filter((row) => row.frequency === frequency)
+}
+
+function unreadableExpenseCountFrom(rows: readonly ClientExpense[]): number {
+  return countUnreadableRows(rows)
+}
 export const useExpenseStore = create<ExpenseState>()(
   persist(
     (set, get) => ({
@@ -161,7 +205,7 @@ export const useExpenseStore = create<ExpenseState>()(
 
       // Get expenses filtered by frequency
       getExpensesByFrequency: (frequency) => {
-        return get().expenses.filter((expense) => expense.frequency === frequency)
+        return expensesByFrequencyFrom(get().expenses, frequency)
       },
 
       /**
@@ -177,7 +221,7 @@ export const useExpenseStore = create<ExpenseState>()(
        * `number` (called inside the `useTotalExpenses` selector).
        */
       getTotalExpenses: () => {
-        return calculateTotalMonthlyNormalized(toNormalizableItems(get().expenses))
+        return totalExpenseFrom(get().expenses)
       },
 
       /**
@@ -186,7 +230,7 @@ export const useExpenseStore = create<ExpenseState>()(
        * rather than silently under-reported.
        */
       getUnreadableExpenseCount: () => {
-        return countUnreadableRows(get().expenses)
+        return unreadableExpenseCountFrom(get().expenses)
       },
     }),
     {
@@ -270,13 +314,20 @@ export const useExpenseStore = create<ExpenseState>()(
 export const useExpenses = () => useExpenseStore((state) => state.expenses)
 
 /** Monthly-normalized cents (story 32.1) — denormalize before display. */
-export const useTotalExpenses = () => useExpenseStore((state) => state.getTotalExpenses())
+export const useTotalExpenses = () => useExpenseStore((state) => totalExpenseFrom(state.expenses))
 
 export const useUnreadableExpenseCount = () =>
-  useExpenseStore((state) => state.getUnreadableExpenseCount())
+  useExpenseStore((state) => unreadableExpenseCountFrom(state.expenses))
 
+/**
+ * ⚠️ Returns a NEW array on every store update, so it fails zustand v4's `Object.is`
+ * check and costs one extra re-render per update (not an infinite loop — see the
+ * correction above). Pre-existing: the method-selector form it replaced had the
+ * identical property. It has no consumers today; adopting it needs an equality fn
+ * (`useShallow`) or memoisation at the call site.
+ */
 export const useExpenseByFrequency = (frequency: Frequency) =>
-  useExpenseStore((state) => state.getExpensesByFrequency(frequency))
+  useExpenseStore((state) => expensesByFrequencyFrom(state.expenses, frequency))
 
 // Client-side persistence enabled via Zustand persist middleware
 // Data persists in localStorage across page refreshes

@@ -84,6 +84,50 @@ const toClientIncomeSource = (newSource: ClientNewIncomeSource): ClientIncomeSou
   updatedAt: new Date().toISOString(),
 })
 
+/**
+ * ⚠️ PURE DERIVATIONS — READ BEFORE ADDING A SELECTOR HOOK BELOW (story 38.1, BUG-F).
+ *
+ * These take the rows array as an ARGUMENT and are shared by the store methods and
+ * the selector hooks, so the two can never drift.
+ *
+ * A selector hook must call one of these with `state.incomeSources`. It must NOT call the
+ * equivalent store METHOD. React hands a selector the server snapshot during
+ * hydration (zustand passes `getInitialState` as `getServerSnapshot`), but that
+ * snapshot's methods still close over `get()` and return LIVE state — so a
+ * `useStore((s) => s.getTotalIncome())` selector reads rehydrated data while the server
+ * rendered the default, and React discards the tree. Measured on six routes, in dev
+ * and in a production build (React #418).
+ *
+ * The methods stay: `getState().getTotalIncome()` callers outside React are unaffected by
+ * hydration and read live state on purpose.
+ *
+ * ⚠️ `totalIncomeFrom` MUST return a `number`. It is called inside a zustand
+ * selector, and a selector returning a fresh object or array fails v4's `Object.is`
+ * check on every store update.
+ *
+ * ⚠️ CORRECTED IN CODE REVIEW: the sentence this replaces (inherited from the
+ * pre-existing `getTotalIncome` docblock) said such a return would "spin an
+ * infinite re-render loop". That is **not** true of zustand 4.5.7, which builds on
+ * `useSyncExternalStoreWithSelector` (`zustand/esm/index.mjs:4,7,17`) and memoises
+ * the selection per snapshot — the real cost is one extra re-render per update.
+ * The infinite-loop failure mode belongs to a bare `useSyncExternalStore` with an
+ * uncached `getSnapshot`. Kept accurate rather than scary, because a maintainer
+ * upgrading to v5 needs to know where the hazard actually lives.
+ */
+function totalIncomeFrom(rows: readonly ClientIncomeSource[]): number {
+  return calculateTotalMonthlyNormalized(toNormalizableItems(rows))
+}
+
+function incomeSourcesByFrequencyFrom(
+  rows: readonly ClientIncomeSource[],
+  frequency: Frequency
+): ClientIncomeSource[] {
+  return rows.filter((row) => row.frequency === frequency)
+}
+
+function unreadableIncomeCountFrom(rows: readonly ClientIncomeSource[]): number {
+  return countUnreadableRows(rows)
+}
 export const useIncomeStore = create<IncomeState>()(
   persist(
     (set, get) => ({
@@ -161,7 +205,7 @@ export const useIncomeStore = create<IncomeState>()(
 
       // Get income sources filtered by frequency
       getIncomeSourcesByFrequency: (frequency) => {
-        return get().incomeSources.filter((source) => source.frequency === frequency)
+        return incomeSourcesByFrequencyFrom(get().incomeSources, frequency)
       },
 
       /**
@@ -187,7 +231,7 @@ export const useIncomeStore = create<IncomeState>()(
        * count the UI discloses.
        */
       getTotalIncome: () => {
-        return calculateTotalMonthlyNormalized(toNormalizableItems(get().incomeSources))
+        return totalIncomeFrom(get().incomeSources)
       },
 
       /**
@@ -198,7 +242,7 @@ export const useIncomeStore = create<IncomeState>()(
        * under-reporting the user's money.
        */
       getUnreadableIncomeCount: () => {
-        return countUnreadableRows(get().incomeSources)
+        return unreadableIncomeCountFrom(get().incomeSources)
       },
     }),
     {
@@ -282,13 +326,20 @@ export const useIncomeStore = create<IncomeState>()(
 export const useIncomeSources = () => useIncomeStore((state) => state.incomeSources)
 
 /** Monthly-normalized cents (story 32.1) — denormalize before display. */
-export const useTotalIncome = () => useIncomeStore((state) => state.getTotalIncome())
+export const useTotalIncome = () => useIncomeStore((state) => totalIncomeFrom(state.incomeSources))
 
 export const useUnreadableIncomeCount = () =>
-  useIncomeStore((state) => state.getUnreadableIncomeCount())
+  useIncomeStore((state) => unreadableIncomeCountFrom(state.incomeSources))
 
+/**
+ * ⚠️ Returns a NEW array on every store update, so it fails zustand v4's `Object.is`
+ * check and costs one extra re-render per update (not an infinite loop — see the
+ * correction above). Pre-existing: the method-selector form it replaced had the
+ * identical property. It has no consumers today; adopting it needs an equality fn
+ * (`useShallow`) or memoisation at the call site.
+ */
 export const useIncomeByFrequency = (frequency: Frequency) =>
-  useIncomeStore((state) => state.getIncomeSourcesByFrequency(frequency))
+  useIncomeStore((state) => incomeSourcesByFrequencyFrom(state.incomeSources, frequency))
 
 // Client-side persistence enabled via Zustand persist middleware
 // Data persists in localStorage across page refreshes
