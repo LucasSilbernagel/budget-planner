@@ -1701,3 +1701,240 @@ describe('BalancePage — debt guidance (36.3)', () => {
     expect(within(dialog).queryByTestId('balance-debt-hint')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * The assets-vs-liabilities chart section (story 37.2, FR64 / UX-DR42).
+ *
+ * ⚠️ Runs against the REAL chart, so every assertion here is limited to what
+ * jsdom can see: the section, its heading, the empty states, the excluded-rows
+ * notice, and the regression fence. Recharts draws no SVG under jsdom, so
+ * nothing about the plot itself is provable in this file — see
+ * `BalanceChart.chart-wiring.test.tsx` for what is handed to the chart and
+ * `e2e/balance-chart.spec.ts` for what is painted.
+ */
+describe('BalancePage chart section', () => {
+  const CHART_NOW = '2026-01-01T00:00:00.000Z'
+
+  function chartEntry(over: {
+    id: string
+    type?: 'investment' | 'debt'
+    name?: string
+    currentBalance?: number
+  }) {
+    return {
+      type: 'investment' as const,
+      name: `Account ${over.id}`,
+      currentBalance: 100_000,
+      monthlyContribution: 0,
+      frequency: 'monthly' as const,
+      createdAt: CHART_NOW,
+      updatedAt: CHART_NOW,
+      ...over,
+    }
+  }
+
+  function seedChart(entries: ReturnType<typeof chartEntry>[], savingsCents = 0) {
+    useBalanceStore.setState({ entries })
+    useSavingsStore.setState({
+      savingsGoals:
+        savingsCents === 0
+          ? []
+          : [
+              {
+                id: 'sav-1',
+                name: 'Emergency Fund',
+                targetAmount: null,
+                currentBalance: savingsCents,
+                createdAt: CHART_NOW,
+                updatedAt: CHART_NOW,
+              },
+            ],
+    })
+  }
+
+  beforeEach(() => {
+    seedChart([chartEntry({ id: 'a', name: 'Brokerage', currentBalance: 500_000 })])
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('is the SECOND of four sections — summary, then shape, then detail', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const sections = [...(container.querySelectorAll('main > section') ?? [])]
+    expect(sections).toHaveLength(4)
+    expect(sections[1]).toBe(screen.getByTestId('balance-chart-section'))
+    // ⚠️ Never first: `theme-page-coverage.spec.ts` asserts the computed
+    // background of `.surface` .first(), so the ordering also has to hold there.
+    expect(sections[0]).not.toBe(screen.getByTestId('balance-chart-section'))
+  })
+
+  it('carries the ratified heading', () => {
+    renderWithProviders(<BalancePage />)
+    expect(
+      screen.getByRole('heading', { name: 'What You Own vs What You Owe' })
+    ).toBeInTheDocument()
+  })
+
+  it('renders the chart when there is something to plot', () => {
+    renderWithProviders(<BalancePage />)
+    expect(screen.getByTestId('balance-chart')).toBeInTheDocument()
+    expect(screen.queryByTestId('balance-chart-empty')).not.toBeInTheDocument()
+  })
+
+  it('reserves the chart’s pixel height, since ResponsiveContainer needs a sized parent', () => {
+    renderWithProviders(<BalancePage />)
+    // Fixed, not row-count-driven: this chart always has exactly two columns.
+    expect(screen.getByTestId('balance-chart')).toHaveStyle({ height: '360px' })
+  })
+
+  it('shows the NO-DATA empty state when there are no entries and no savings', () => {
+    seedChart([])
+    renderWithProviders(<BalancePage />)
+    expect(screen.queryByTestId('balance-chart')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Add an investment or debt to see what you own against what you owe')
+    ).toBeInTheDocument()
+  })
+
+  it('shows the ALL-ZERO empty state when data exists but nothing is plottable', () => {
+    seedChart([chartEntry({ id: 'a', currentBalance: 0 })])
+    renderWithProviders(<BalancePage />)
+    expect(
+      screen.getByText('Nothing to chart yet — every balance is currently zero')
+    ).toBeInTheDocument()
+  })
+
+  it('shows the ALL-EXCLUDED empty state rather than telling the user to add data they have', () => {
+    seedChart([chartEntry({ id: 'bad', currentBalance: Number.NaN })])
+    renderWithProviders(<BalancePage />)
+    expect(
+      screen.getByText('None of your balances could be read, so there is nothing to chart')
+    ).toBeInTheDocument()
+  })
+
+  it('gives each empty-state string exactly ONE match on the page', () => {
+    // The page already renders 'No investment accounts yet' and 'No balance
+    // entries recorded yet'; an unscoped getByText on either throws on a second
+    // match, so the chart's copy has to stay distinct from both.
+    seedChart([])
+    renderWithProviders(<BalancePage />)
+    expect(
+      screen.getAllByText('Add an investment or debt to see what you own against what you owe')
+    ).toHaveLength(1)
+    expect(screen.getAllByText('No balance entries recorded yet')).toHaveLength(1)
+    expect(screen.getAllByText('No investment accounts yet')).toHaveLength(1)
+  })
+
+  it('uses text-muted, never text-faint, for the empty copy', () => {
+    seedChart([])
+    renderWithProviders(<BalancePage />)
+    const copy = screen.getByText(
+      'Add an investment or debt to see what you own against what you owe'
+    )
+    // Class-TOKEN membership, not substring: `text-faint` contains no `text-muted`
+    // but a substring check on the whole className is the wrong shape here.
+    expect([...copy.classList]).toContain('text-muted')
+    expect([...copy.classList]).not.toContain('text-faint')
+  })
+
+  it('says every READABLE balance is zero when some rows were excluded', () => {
+    // ⚠️ Without the qualifier this paragraph contradicts the notice directly
+    // below it: "every balance is currently zero" beside "1 balance could not be
+    // read".
+    seedChart([
+      chartEntry({ id: 'zero', currentBalance: 0 }),
+      chartEntry({ id: 'bad', currentBalance: Number.NaN }),
+    ])
+    renderWithProviders(<BalancePage />)
+    expect(
+      screen.getByText('Nothing to chart yet — every readable balance is currently zero')
+    ).toBeInTheDocument()
+  })
+
+  it('tells the user the net-worth line is HIDDEN, not that figures are missing from it', () => {
+    // The line is suppressed on exactly the state that renders this notice, so
+    // copy saying values are "not included in its net-worth line" always
+    // described something absent — and implied the line was still drawn.
+    seedChart([
+      chartEntry({ id: 'ok', currentBalance: 500_000 }),
+      chartEntry({ id: 'bad', currentBalance: Number.NaN }),
+    ])
+    renderWithProviders(<BalancePage />)
+    const notice = screen.getByTestId('balance-chart-excluded-notice')
+    expect(notice.textContent).toContain('The net-worth line is hidden')
+    expect(notice.textContent).not.toContain('its net-worth line')
+  })
+
+  it('sends the user to the Savings page when the SAVINGS total is what is unreadable', () => {
+    // It is one derived figure from another page; counting it among "balances"
+    // would point the user at this page's table, where nothing is wrong.
+    useBalanceStore.setState({ entries: [chartEntry({ id: 'a', currentBalance: 500_000 })] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'bad',
+          name: 'Corrupt',
+          targetAmount: null,
+          currentBalance: Number.NaN,
+          createdAt: CHART_NOW,
+          updatedAt: CHART_NOW,
+        },
+      ],
+    })
+    renderWithProviders(<BalancePage />)
+    const notice = screen.getByTestId('balance-chart-excluded-notice')
+    expect(notice.textContent).toContain('savings total could not be read')
+    expect(notice.textContent).not.toContain('1 balance could not be read')
+  })
+
+  it('discloses excluded rows, with their COUNT, and uses text-muted there too', () => {
+    seedChart([
+      chartEntry({ id: 'ok', currentBalance: 500_000 }),
+      chartEntry({ id: 'bad1', currentBalance: Number.NaN }),
+      chartEntry({ id: 'bad2', currentBalance: Number.POSITIVE_INFINITY }),
+    ])
+    renderWithProviders(<BalancePage />)
+    const notice = screen.getByTestId('balance-chart-excluded-notice')
+    // The COUNT, not merely the presence of a notice.
+    expect(notice.textContent).toContain('2 balances could not be read')
+    expect([...notice.classList]).toContain('text-muted')
+    expect([...notice.classList]).not.toContain('text-faint')
+  })
+
+  it('singularises the excluded-rows notice', () => {
+    seedChart([
+      chartEntry({ id: 'ok', currentBalance: 500_000 }),
+      chartEntry({ id: 'bad1', currentBalance: Number.NaN }),
+    ])
+    renderWithProviders(<BalancePage />)
+    expect(screen.getByTestId('balance-chart-excluded-notice').textContent).toContain(
+      '1 balance could not be read'
+    )
+  })
+
+  it('shows NO excluded-rows notice when every row was readable', () => {
+    renderWithProviders(<BalancePage />)
+    expect(screen.queryByTestId('balance-chart-excluded-notice')).not.toBeInTheDocument()
+  })
+
+  it('holds the AC-13 fence: no third table and no entry name in the section', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    // The two pre-existing tables, and no third one from the chart.
+    expect(container.querySelectorAll('table')).toHaveLength(2)
+    const section = screen.getByTestId('balance-chart-section')
+    expect(section.querySelectorAll('table')).toHaveLength(0)
+    // ⚠️ No entry name in the section's STATIC markup. The Recharts tooltip is
+    // the one sanctioned exception and never mounts under jsdom.
+    expect(section.textContent).not.toContain('Brokerage')
+  })
+
+  it('plots stocks only — no period selector and no per-period suffix', () => {
+    const section =
+      renderWithProviders(<BalancePage />) && screen.getByTestId('balance-chart-section')
+    expect(section.querySelectorAll('select')).toHaveLength(0)
+    expect(section.textContent ?? '').not.toMatch(/per (week|month|year)|\/mo\b|annually/i)
+  })
+})

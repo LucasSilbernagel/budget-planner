@@ -699,6 +699,35 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
             `${route} (${theme}, seeded): chart overflows its wrapper, ${chart.scrollWidth} > ${chart.clientWidth}`
           ).toBeLessThanOrEqual(chart.clientWidth + 1)
         }
+
+        // Story 37.2 — /balance now carries an assets-vs-liabilities chart above
+        // its two tables, and this loop's seed already supplies a mixed fixture
+        // with the 138-character name AND a negative debt balance.
+        //
+        // ⚠️ SAME MEASURED LIMIT as the /savings block above: this check guards
+        // HTML-box overflow only and is structurally blind to SVG text painted
+        // outside its box. It IS able to see the tooltip wrapper, which is an
+        // absolutely-positioned HTML element that keeps its width while hidden —
+        // that is the defect it actually caught during story 37.2 (scrollWidth
+        // 265 against clientWidth 240 at 320px). The detectors for everything
+        // else at this width live in `balance-chart.spec.ts`.
+        if (route === '/balance') {
+          await expect(page.getByTestId('balance-chart')).toBeVisible()
+          // ⚠️ WITNESS FIRST — same reason as above.
+          await expect(
+            page.locator('[data-testid="balance-chart"] path.recharts-rectangle')
+          ).not.toHaveCount(0)
+          const balanceChart = await page
+            .locator('[data-testid="balance-chart"]')
+            .evaluate((element) => ({
+              scrollWidth: element.scrollWidth,
+              clientWidth: element.clientWidth,
+            }))
+          expect(
+            balanceChart.scrollWidth,
+            `${route} (${theme}, seeded): chart overflows its wrapper, ${balanceChart.scrollWidth} > ${balanceChart.clientWidth}`
+          ).toBeLessThanOrEqual(balanceChart.clientWidth + 1)
+        }
       })
     }
   }

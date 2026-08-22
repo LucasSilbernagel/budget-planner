@@ -5,9 +5,10 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useTableSort } from '../hooks/useTableSort'
+import { buildBalanceChartModel, hasPlottableData } from '../lib/balance-chart-data'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { type BalanceSortKey, createBalanceSortExtractors } from '../lib/table-sort-keys'
 import {
@@ -19,6 +20,7 @@ import {
 } from '../stores'
 import type { FinanceType } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { BalanceChart } from './BalanceChart'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 import {
@@ -104,6 +106,21 @@ export function BalancePage() {
   const investmentAccounts = balanceEntries.filter((entry) => entry.type === 'investment')
   const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry, moveBalanceEntry } =
     useBalanceStore()
+
+  // Story 37.2 (FR64): the assets-vs-liabilities chart's model.
+  //
+  // ⚠️ Built from `balanceEntries` — the MANUAL order — not from `sortedRows`.
+  // The chart sits directly above the deliberately-unsorted Investment Accounts
+  // breakdown and mirrors its composition, so a column sort on the editable
+  // table below must not reorder it. That is the same reasoning the comment on
+  // `sort` gives for not hoisting the projection to page level.
+  //
+  // Memoised so a keystroke in the add/edit modal does not re-fold the model and
+  // re-run the Recharts layout on every render.
+  const chartModel = useMemo(
+    () => buildBalanceChartModel({ entries: balanceEntries, savingsCents: totalSavings }),
+    [balanceEntries, totalSavings]
+  )
 
   // Column sorting for the EDITABLE table only (story 34.2, FR61). A VIEW-level
   // projection: it never writes `sortOrder`, never calls a move action and never
@@ -431,6 +448,97 @@ export function BalancePage() {
                 </p>
               </div>
             </div>
+          </section>
+
+          {/* Assets vs liabilities chart (Story 37.2, FR64 / UX-DR42). Sits
+              BETWEEN the summary and the detail tables: summary → shape →
+              detail, the same placement story 37.1 ratified for /savings. It is
+              the SECOND of four sections, never the first — and the three
+              figures it aggregates are the same three the four cards above
+              carry, so the two surfaces provably agree. */}
+          <section
+            className="surface shadow-md p-6 rounded-lg"
+            data-testid="balance-chart-section"
+            aria-labelledby="balance-chart-heading"
+          >
+            <h2 id="balance-chart-heading" className="mb-6 font-semibold text-subheading text-xl">
+              What You Own vs What You Owe
+            </h2>
+
+            {hasPlottableData(chartModel) ? (
+              <BalanceChart
+                model={chartModel}
+                formatAmount={formatAmount}
+                mode={mode}
+                currency={currency}
+              />
+            ) : (
+              <div
+                data-testid="balance-chart-empty"
+                className="surface-inset p-8 rounded-lg text-center"
+              >
+                {/* ⚠️ `text-muted` (4.83:1), never `text-faint` (2.54:1, which
+                    FAILS WCAG AA in light mode). Both existing empty states on
+                    this page use `text-faint` on their second line — do not copy
+                    the neighbour. Those two are pre-existing and out of this
+                    story's fence. Each string is also distinct from
+                    "No investment accounts yet" and "No balance entries recorded
+                    yet", which unscoped `getByText` queries in the page suite
+                    would otherwise double-match. */}
+                {/* ⚠️ The all-zero branch says "every READABLE balance", and the
+                    qualifier is load-bearing. With `[investment 0, debt NaN]` the
+                    first branch does not fire (a zero segment survives), so an
+                    unqualified "every balance is currently zero" would sit
+                    directly above a notice saying one balance could not be read —
+                    the section contradicting itself in consecutive paragraphs. */}
+                <p className="text-muted">
+                  {chartModel.segments.length === 0 &&
+                  (chartModel.excludedCount > 0 || chartModel.savingsExcluded)
+                    ? 'None of your balances could be read, so there is nothing to chart'
+                    : balanceEntries.length === 0 && totalSavings === 0
+                      ? 'Add an investment or debt to see what you own against what you owe'
+                      : chartModel.excludedCount > 0 || chartModel.savingsExcluded
+                        ? 'Nothing to chart yet — every readable balance is currently zero'
+                        : 'Nothing to chart yet — every balance is currently zero'}
+                </p>
+              </div>
+            )}
+
+            {(chartModel.excludedCount > 0 || chartModel.savingsExcluded) && (
+              /* Partition and disclose, never silent drop — the pattern
+                 `net-worth.ts` names and `PeriodTotal.tsx` renders for
+                 income/expenses. ⚠️ The `NetWorthProjectionPage` variant of this
+                 is a whole-surface REFUSAL and uses `text-faint`; only the shape
+                 is borrowed, not the copy or the token.
+
+                 ⚠️ The copy says the net-worth line is HIDDEN, not that figures
+                 are "not included in it". The two conditions are mutually
+                 exclusive — the line is suppressed on exactly the state that
+                 renders this notice — so the old wording always described
+                 something absent, and told the reader the line was still drawn
+                 with the bad rows omitted, which is the opposite of the code.
+
+                 ⚠️ An unreadable SAVINGS total gets its own sentence. It is one
+                 derived figure from a different page, so counting it among
+                 "balances" would send the user to this page's table, where
+                 nothing is wrong. */
+              <p data-testid="balance-chart-excluded-notice" className="mt-4 text-muted text-sm">
+                {chartModel.excludedCount > 0
+                  ? `${
+                      chartModel.excludedCount === 1
+                        ? '1 balance'
+                        : `${chartModel.excludedCount} balances`
+                    } could not be read and ${
+                      chartModel.excludedCount === 1 ? 'is' : 'are'
+                    } not charted.`
+                  : ''}
+                {chartModel.excludedCount > 0 && chartModel.savingsExcluded ? ' ' : ''}
+                {chartModel.savingsExcluded
+                  ? 'Your savings total could not be read — check the Savings page.'
+                  : ''}
+                {' The net-worth line is hidden until every figure can be read.'}
+              </p>
+            )}
           </section>
 
           {/* Investment Accounts breakdown (Story 26.5) — investment-type accounts
