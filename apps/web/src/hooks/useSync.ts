@@ -17,6 +17,7 @@ import type {
   ProcessOperationFn,
   PullResult,
   ServerChange,
+  SyncEntityType,
   SyncResult,
   SyncStatus,
 } from '@budget-planner/core/sync'
@@ -180,14 +181,14 @@ export interface UseSyncReturn {
 
   /** Queue a create operation */
   queueCreate: (
-    entityType: string,
+    entityType: SyncEntityType,
     entityId: string | number,
     data: Record<string, unknown>
   ) => Promise<void>
 
   /** Queue an update operation */
   queueUpdate: (
-    entityType: string,
+    entityType: SyncEntityType,
     entityId: string | number,
     data: Record<string, unknown>,
     version?: number,
@@ -197,7 +198,7 @@ export interface UseSyncReturn {
 
   /** Queue a delete operation */
   queueDelete: (
-    entityType: string,
+    entityType: SyncEntityType,
     entityId: string | number,
     /** Server `updatedAt` (ms) this delete was based on, for causal pull LWW (4-18 D1). */
     baseVersion?: number
@@ -519,7 +520,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   // Queue operations
   const queueCreate = useCallback(
     async (
-      entityType: string,
+      entityType: SyncEntityType,
       entityId: string | number,
       data: Record<string, unknown>
     ): Promise<void> => {
@@ -547,7 +548,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
 
   const queueUpdate = useCallback(
     async (
-      entityType: string,
+      entityType: SyncEntityType,
       entityId: string | number,
       data: Record<string, unknown>,
       version?: number,
@@ -583,7 +584,11 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   )
 
   const queueDelete = useCallback(
-    async (entityType: string, entityId: string | number, baseVersion?: number): Promise<void> => {
+    async (
+      entityType: SyncEntityType,
+      entityId: string | number,
+      baseVersion?: number
+    ): Promise<void> => {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
       }
@@ -691,7 +696,12 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
 // ============================================================================
 
 /**
- * Sync status indicator labels
+ * ⚠️ `PARTIAL` was missing from all three maps below while
+ * `server/api/sync.ts:1044` genuinely produces it ("completed with some conflicts
+ * but no failures"). The getters' `|| 'Unknown'` fallbacks meant a
+ * partially-successful sync displayed as "Unknown ❓" in grey — reading as an
+ * error state for a sync that mostly worked. `Record<SyncStatus, string>` was
+ * always the right type; it just could not be checked until the module resolved.
  */
 export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   [SyncStatusEnum.PENDING]: 'Pending',
@@ -699,6 +709,7 @@ export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   [SyncStatusEnum.COMPLETED]: 'Synced',
   [SyncStatusEnum.FAILED]: 'Sync Failed',
   [SyncStatusEnum.CONFLICT]: 'Conflicts',
+  [SyncStatusEnum.PARTIAL]: 'Partially Synced',
   [SyncStatusEnum.OFFLINE]: 'Offline',
 }
 
@@ -711,6 +722,7 @@ export const SYNC_STATUS_ICONS: Record<SyncStatus, string> = {
   [SyncStatusEnum.COMPLETED]: '✅',
   [SyncStatusEnum.FAILED]: '❌',
   [SyncStatusEnum.CONFLICT]: '⚠️',
+  [SyncStatusEnum.PARTIAL]: '⚠️',
   [SyncStatusEnum.OFFLINE]: '📵',
 }
 
@@ -723,6 +735,7 @@ export const SYNC_STATUS_COLORS: Record<SyncStatus, string> = {
   [SyncStatusEnum.COMPLETED]: 'text-green-500',
   [SyncStatusEnum.FAILED]: 'text-red-500',
   [SyncStatusEnum.CONFLICT]: 'text-orange-500',
+  [SyncStatusEnum.PARTIAL]: 'text-orange-500',
   [SyncStatusEnum.OFFLINE]: 'text-gray-500',
 }
 
