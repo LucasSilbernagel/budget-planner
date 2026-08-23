@@ -216,10 +216,9 @@ function getRequestContext(): Request {
   const headers: Record<string, string> = {}
 
   if (typeof document !== 'undefined') {
-    headers.cookie = document.cookie
+    headers['cookie'] = document.cookie
   }
 
-  // @ts-expect-error - Creating Request with headers
   return new Request('http://localhost:5173', {
     headers,
   })

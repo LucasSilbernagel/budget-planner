@@ -103,6 +103,18 @@ export function CategoryBarCanvas({
   mode,
   currency,
 }: CategoryBarCanvasProps): React.ReactElement {
+  // `barDomainTicks` -> `niceAxisTicks` can never return an empty array — its
+  // `min === max` branch returns a single tick and its loop always pushes `start`
+  // (`lib/chart-axis.ts:63-85`) — but `noUncheckedIndexedAccess` cannot see that, so
+  // `ticks[0]` is `number | undefined` and the pair is not a valid `AxisDomain`.
+  // Narrowing rather than casting keeps the impossible case handled: `undefined`
+  // hands Recharts its own auto-domain, which is the right degradation for an input
+  // that cannot occur.
+  const first = ticks[0]
+  const last = ticks[ticks.length - 1]
+  const domain: [number, number] | undefined =
+    first !== undefined && last !== undefined ? [first, last] : undefined
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} layout="vertical">
@@ -112,7 +124,7 @@ export function CategoryBarCanvas({
             has no room for. */}
         <XAxis
           type="number"
-          domain={[ticks[0], ticks[ticks.length - 1]]}
+          domain={domain}
           ticks={ticks}
           tickFormatter={(value) => formatCompactAxisTick(value / 100, mode, currency)}
           tick={{ fontSize: 12, fill: chartColors.axis }}
@@ -209,7 +221,7 @@ export function BreakdownPieCanvas({
           {data.map((entry, index) => (
             <Cell
               key={`${entry.type}-${entry.name}`}
-              fill={entry.fill || entry.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+              fill={entry.fill || CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
               stroke="#fff"
               strokeWidth={2}
             />

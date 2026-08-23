@@ -1169,8 +1169,7 @@ function BreakdownPie({
                   <span
                     className="h-2 w-2 shrink-0 rounded-full"
                     style={{
-                      backgroundColor:
-                        item.fill || item.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                      backgroundColor: item.fill || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
                     }}
                   />
                   <span className="truncate text-body">{item.name}</span>

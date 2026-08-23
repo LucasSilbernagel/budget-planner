@@ -277,7 +277,7 @@ export const syncOperationSchema = z
     // For delete operations, data may be minimal
     if (type === 'delete') {
       // Delete operations only need userId in data
-      if (!entityData.userId) {
+      if (!entityData['userId']) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'Delete operations require userId in data',
@@ -471,14 +471,11 @@ async function getEntity(
   try {
     const table = getTable(entityType)
     let whereClause = and(
-      // @ts-expect-error - Dynamic column access
       eq(table.userId, userId),
-      // @ts-expect-error - Dynamic column access
       eq(table.id, entityId),
       // Soft-deleted rows are treated as absent (Story 4-18): excluded from
       // conflict checks AND from the app's normal reads so tombstones never
       // resurface as live entities.
-      // @ts-expect-error - Dynamic column access
       eq(table.isDeleted, false)
     )
 
@@ -488,7 +485,6 @@ async function getEntity(
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
-    // @ts-expect-error - Dynamic table access
     const result = await db.select().from(table).where(whereClause).limit(1)
 
     return result[0] || null
@@ -554,12 +550,7 @@ async function updateEntity(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const table = getTable(entityType)
-    let whereClause = and(
-      // @ts-expect-error - Dynamic column access
-      eq(table.userId, userId),
-      // @ts-expect-error - Dynamic column access
-      eq(table.id, entityId)
-    )
+    let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
 
     // Add profileId filter if provided and table has profileId column
     if (profileId && table.profileId) {
@@ -571,12 +562,7 @@ async function updateEntity(
     // set updatedAt would leave the cursor stale and a delta-by-updatedAt pull
     // would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
     const updateData = { ...data, updatedAt: new Date() }
-    // @ts-expect-error - Dynamic table update
-    await db
-      .update(table)
-      // @ts-expect-error - Dynamic column access
-      .set(updateData)
-      .where(whereClause)
+    await db.update(table).set(updateData).where(whereClause)
     return { success: true }
   } catch (error) {
     return {
@@ -603,12 +589,7 @@ async function deleteEntity(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const table = getTable(entityType)
-    let whereClause = and(
-      // @ts-expect-error - Dynamic column access
-      eq(table.userId, userId),
-      // @ts-expect-error - Dynamic column access
-      eq(table.id, entityId)
-    )
+    let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
 
     // Add profileId filter if provided and table has profileId column
     if (profileId && table.profileId) {
@@ -616,12 +597,7 @@ async function deleteEntity(
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
-    // @ts-expect-error - Dynamic table update (soft delete, not hard delete)
-    await db
-      .update(table)
-      // @ts-expect-error - Dynamic column access
-      .set({ isDeleted: true, updatedAt: new Date() })
-      .where(whereClause)
+    await db.update(table).set({ isDeleted: true, updatedAt: new Date() }).where(whereClause)
     return { success: true }
   } catch (error) {
     return {
@@ -655,7 +631,6 @@ async function applyOperation(
         if (exists) {
           return { success: false, error: 'Entity already exists' }
         }
-        // @ts-expect-error - Data may not have userId
         return createEntity(entityType, { ...operation.data, userId, profileId })
       }
 

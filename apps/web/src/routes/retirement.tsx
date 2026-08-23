@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import React from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import RetirementAccumulationPlanner from '../components/RetirementAccumulationPlanner'
 import { RetirementDisabledNotice } from '../components/retirement/RetirementDisabledNotice'

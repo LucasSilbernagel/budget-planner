@@ -22,7 +22,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 function isProduction(): boolean {
-  return process.env.NODE_ENV === 'production'
+  return process.env['NODE_ENV'] === 'production'
 }
 
 /**

@@ -67,7 +67,7 @@ export async function sendMagicLinkEmail(to: string, link: string): Promise<void
   const config = getEmailConfig()
 
   if (!config.isConfigured || !config.apiKey) {
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env['NODE_ENV'] === 'development') {
       // Dev-only affordance so local sign-in works without an email account.
       // `to` is redacted by the logger; the link survives so it can be copied.
       logger.warn('[mailer] EMAIL_API_KEY not set — magic link generated (dev only, not sent)', {

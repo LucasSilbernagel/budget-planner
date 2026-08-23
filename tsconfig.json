@@ -4,14 +4,14 @@
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "rootDir": ".",
     "paths": {
-      "@budget-planner/web": ["apps/web/src"],
-      "@budget-planner/db": ["packages/db/src"],
-      "@budget-planner/config": ["packages/config/src"],
-      "@budget-planner/core": ["packages/core/src"],
-      "@/*": ["apps/web/src/*"]
+      "@budget-planner/web": ["./apps/web/src"],
+      "@budget-planner/db": ["./packages/db/src"],
+      "@budget-planner/config": ["./packages/config/src"],
+      "@budget-planner/core": ["./packages/core/src"],
+      "@budget-planner/core/*": ["./packages/core/src/*"],
+      "@/*": ["./apps/web/src/*"]
     },
     "declaration": true,
     "declarationMap": true,

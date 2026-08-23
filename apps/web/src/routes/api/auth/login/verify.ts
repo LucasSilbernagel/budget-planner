@@ -48,7 +48,7 @@ const INVALID_REDIRECT = '/login?error=invalid_or_expired'
 const VERIFY_LIMIT = { windowMs: 60 * 1000, maxAttempts: 10 } as const
 
 function isProduction(): boolean {
-  return process.env.NODE_ENV === 'production'
+  return process.env['NODE_ENV'] === 'production'
 }
 
 function secureFlag(): string {

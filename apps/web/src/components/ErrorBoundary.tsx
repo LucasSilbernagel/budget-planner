@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 /**
  * Error Boundary Props
@@ -69,7 +69,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+  override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     // Log the full error to error reporting service (server-side)
     console.error('ErrorBoundary caught an error:', error, errorInfo)
 
@@ -77,7 +77,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.props.onError?.(error, errorInfo)
   }
 
-  render(): ReactNode {
+  override render(): ReactNode {
     if (this.state.hasError) {
       // Fallback UI if provided, otherwise show default error message
       if (this.props.fallback) {

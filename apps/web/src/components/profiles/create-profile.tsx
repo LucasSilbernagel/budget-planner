@@ -80,16 +80,16 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
     // Name validation
     if (!form.name.trim()) {
-      newErrors.name = 'Profile name is required'
+      newErrors['name'] = 'Profile name is required'
     } else if (form.name.length > 255) {
-      newErrors.name = 'Profile name must be 255 characters or less'
+      newErrors['name'] = 'Profile name must be 255 characters or less'
     } else if (profiles.some((p) => p.name === form.name && p.id !== activeProfileId)) {
-      newErrors.name = 'A profile with this name already exists'
+      newErrors['name'] = 'A profile with this name already exists'
     }
 
     // Description validation
     if (form.description && form.description.length > 500) {
-      newErrors.description = 'Description must be 500 characters or less'
+      newErrors['description'] = 'Description must be 500 characters or less'
     }
 
     setErrors(newErrors)
@@ -219,11 +219,11 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                 placeholder="e.g., Personal, Business, Investments"
                 maxLength={255}
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
-                  errors.name ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  errors['name'] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               />
-              {errors.name && (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.name}</p>
+              {errors['name'] && (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors['name']}</p>
               )}
             </div>
 
@@ -243,14 +243,16 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                 maxLength={500}
                 rows={3}
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
-                  errors.description ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  errors['description'] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               />
               <p className="text-xs text-muted mt-1 text-right">
                 {form.description.length}/500 characters
               </p>
-              {errors.description && (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.description}</p>
+              {errors['description'] && (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                  {errors['description']}
+                </p>
               )}
             </div>
 
@@ -285,9 +287,9 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
             </div>
 
             {/* Form error */}
-            {errors.form && (
+            {errors['form'] && (
               <div className="p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
-                <p className="text-sm text-red-700 dark:text-red-300">{errors.form}</p>
+                <p className="text-sm text-red-700 dark:text-red-300">{errors['form']}</p>
               </div>
             )}
 

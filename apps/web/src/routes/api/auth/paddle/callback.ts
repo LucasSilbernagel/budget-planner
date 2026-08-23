@@ -161,7 +161,7 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
   // so it cannot be forged or tampered with. Subscription status and currency
   // are intentionally NOT embedded — they are resolved authoritatively from the
   // database on each request in validateSessionToken().
-  const isProduction = process.env.NODE_ENV === 'production'
+  const isProduction = process.env['NODE_ENV'] === 'production'
   const sessionToken = signSession({
     userId: result.data.userId,
     paddleId: result.data.paddleId,

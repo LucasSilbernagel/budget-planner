@@ -73,7 +73,7 @@ export async function generatePaddleAuthUrl(): Promise<ApiResult<{ url: string }
     // This is a placeholder - actual implementation requires Paddle SDK
     const state = generateStateToken()
     const redirectUri = encodeURIComponent(
-      `${process.env.SITE_URL || 'http://localhost:5173'}/auth/callback`
+      `${process.env['SITE_URL'] || 'http://localhost:5173'}/auth/callback`
     )
 
     const url = `https://sandbox-paddle.com/oauth2/authorize?response_type=code&client_id=${paddleConfig.vendorId}&redirect_uri=${redirectUri}&state=${state}`
@@ -185,7 +185,7 @@ export async function getCurrentUserSession(
       }
     }
 
-    const sessionToken = cookies.session
+    const sessionToken = cookies['session']
 
     if (!sessionToken) {
       return {
