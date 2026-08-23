@@ -30,6 +30,7 @@ import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLa
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { type PremiumAccessStatus, usePremiumAccess } from '../hooks/usePremiumAccess'
+import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
@@ -47,6 +48,7 @@ import {
 import { ErrorBoundary } from './ErrorBoundary'
 import { PremiumFeatureGate, PremiumLockBadge } from './premium'
 import { InfoTooltip } from './ui/InfoTooltip'
+import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
 
 // Colors for the charts
 const INCOME_COLOR = '#10B981'
@@ -155,6 +157,18 @@ export function HomePage() {
     expenses.length > 0 ||
     savingsGoals.length > 0 ||
     balanceEntries.length > 0
+
+  /**
+   * Story 38.2 (UX-DR43): `hasData` above is computed from four stores that have
+   * NOT rehydrated yet on the server and during hydration, so it is `false` for
+   * a returning user with five years of data. Before this gate, that served them
+   * three `$0.00` cards and — via the ternary below — "Let's set up your budget".
+   * MEASURED in the server response at `d66c821`, seeded with a savings goal.
+   *
+   * So the page has THREE states, not two: pending, resolved-with-data, and
+   * resolved-empty. `hasData` distinguishes only the last two.
+   */
+  const hydrated = useStoresHydrated()
 
   // ============================================================================
   // Enhanced Visualization State (Story 3-3, simplified in 12-3)
@@ -379,6 +393,12 @@ export function HomePage() {
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
+        {/* Story 38.2, AC-8: ONE announced region for the whole page, not one
+            per skeleton. Every skeleton below is `aria-hidden`, which without
+            this would hand a screen reader a heading followed by nothing; N
+            regions would instead announce N times. `sr-only` — the visible
+            signal is the pulsing placeholders. */}
+        {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
@@ -465,7 +485,11 @@ export function HomePage() {
                   data-testid="overview-total-income"
                   className="text-2xl font-bold text-green-600"
                 >
-                  {formatAmount(incomeForDuration)}
+                  {hydrated ? (
+                    formatAmount(incomeForDuration)
+                  ) : (
+                    <PendingFigure testId="overview-total-income-skeleton" />
+                  )}
                 </p>
               </div>
               <div className="surface-inset rounded-lg p-4">
@@ -486,7 +510,11 @@ export function HomePage() {
                   data-testid="overview-total-expenses"
                   className="text-2xl font-bold text-red-600"
                 >
-                  {formatAmount(expensesForDuration)}
+                  {hydrated ? (
+                    formatAmount(expensesForDuration)
+                  ) : (
+                    <PendingFigure testId="overview-total-expenses-skeleton" />
+                  )}
                 </p>
               </div>
               <div className="surface-inset rounded-lg p-4">
@@ -506,7 +534,11 @@ export function HomePage() {
                     netWorth >= 0 ? 'text-purple-600' : 'text-red-600'
                   }`}
                 >
-                  {formatAmount(netWorth)}
+                  {hydrated ? (
+                    formatAmount(netWorth)
+                  ) : (
+                    <PendingFigure testId="overview-net-worth-skeleton" />
+                  )}
                 </p>
                 {/* Explain a $0 net worth next to real income/expenses: it is $0
                     because nothing it is made of has been added yet, not because
@@ -541,7 +573,58 @@ export function HomePage() {
           </section>
 
           {/* Enhanced Visualizations */}
-          {hasData ? (
+          {/* Story 38.2: THREE states. The pending branch mirrors the
+              resolved-EMPTY card's box model exactly — same section padding,
+              same inset card, same type scale, same button row — so a user who
+              genuinely has nothing sees zero layout shift when it resolves. A
+              user WITH data sees this block grow into the charts, which no fixed
+              height could avoid (the two resolved states differ by ~1000px); the
+              residual shift is measured and recorded in the story rather than
+              claimed to be zero.
+              ⚠️ The bars carry no `animate-pulse` of their own — the wrapping
+              `SkeletonBlock` already pulses, and nesting the animation makes the
+              two tick out of phase. */}
+          {!hydrated ? (
+            <SkeletonBlock
+              className="surface rounded-lg shadow-md p-4 sm:p-6"
+              testId="overview-sections-skeleton"
+            >
+              <div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
+                <p className="mb-1 text-lg font-medium">
+                  <span
+                    className={`${SKELETON_BAR} inline-block h-[1em] w-56 max-w-full align-middle`}
+                  />
+                </p>
+                <p className="mb-6 text-sm">
+                  <span
+                    className={`${SKELETON_BAR} inline-block h-[1em] w-80 max-w-full align-middle`}
+                  />
+                </p>
+                {/* ⚠️ `h-6`, not `h-[1em]`, and the difference is 8px — MEASURED.
+                    Inside a `<p>` an `h-[1em]` bar is invisible to the box height
+                    because the paragraph's own line-box strut is taller and wins.
+                    An `inline-flex … items-center` button has NO strut: the flex
+                    item's height IS the content height, so `h-[1em]` (16px) gave
+                    a 34px button against the resolved link's 42px. `h-6` is the
+                    `text-base` line-height, which Tailwind sets in `rem` — a
+                    font-independent constant, not a measured width, so the CI
+                    font cannot falsify it.
+
+                    `border-transparent`, not no border: the resolved "+ Add
+                    expense" link is bordered, and in an `items-center` row the
+                    tallest child sets the height. Two invisible pixels are the
+                    difference between a matching footprint and a 2px jump. */}
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <span className="inline-flex items-center rounded-md px-4 py-2 font-medium">
+                    <span className={`${SKELETON_BAR} inline-block h-6 w-24 align-middle`} />
+                  </span>
+                  <span className="inline-flex items-center rounded-md border border-transparent px-4 py-2 font-medium">
+                    <span className={`${SKELETON_BAR} inline-block h-6 w-28 align-middle`} />
+                  </span>
+                </div>
+              </div>
+            </SkeletonBlock>
+          ) : hasData ? (
             <>
               {/* Income and expense category breakdowns as TWO separate pies
                   (UX review #4). Summing income and expense slices into one 100%
@@ -704,7 +787,10 @@ export function HomePage() {
               </section>
             </>
           ) : (
-            <section className="surface rounded-lg shadow-md p-4 sm:p-6">
+            <section
+              className="surface rounded-lg shadow-md p-4 sm:p-6"
+              data-testid="overview-onboarding"
+            >
               <div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
                 <p className="mb-1 text-lg font-medium text-subheading">Let's set up your budget</p>
                 <p className="mb-6 text-sm text-muted">

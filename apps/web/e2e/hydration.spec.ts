@@ -253,6 +253,39 @@ test.describe('hydration', () => {
   })
 
   /**
+   * Story 38.2 added skeletons to the pending render, which means the markup
+   * React now hydrates on these routes is DIFFERENT markup — placeholders where
+   * figures used to be. This case pins that the substitution did not reintroduce
+   * the very mismatch 38.1 removed, in this file rather than only in the story's
+   * own spec: the server must serve a skeleton, the client must hydrate that
+   * markup, and no hydration error may result.
+   *
+   * ⚠️ Added in code review. 38.2's AC-4 asked for pending-state coverage HERE and
+   * the implementation put it all in `loading-state.spec.ts` instead — met in
+   * substance, missed in letter.
+   */
+  test('the pending markup 38.2 introduced hydrates without a mismatch', async ({ page }) => {
+    const hydrationErrors = collectHydrationErrors(page)
+
+    await page.addInitScript(seedAllStores)
+    const response = await page.goto('/')
+    expect(response?.status()).toBe(200)
+
+    // What the server actually sent is a placeholder, not a figure.
+    const html = await response?.text()
+    expect(html).toContain('overview-net-worth-skeleton')
+    expect(html).not.toContain('$0.00')
+
+    // ...and that markup hydrated into the real figure, cleanly.
+    await expect(page.getByTestId('overview-net-worth')).toHaveText('-$139,000.00')
+    await page.waitForLoadState('networkidle')
+    expect(
+      hydrationErrors,
+      `hydration errors on the pending markup:\n${hydrationErrors.join('\n---\n')}`
+    ).toEqual([])
+  })
+
+  /**
    * The figures still resolve after rehydration. Guards against "fixing" the
    * mismatch by never showing the user their data — a page that renders `$0.00`
    * forever would satisfy every assertion above.

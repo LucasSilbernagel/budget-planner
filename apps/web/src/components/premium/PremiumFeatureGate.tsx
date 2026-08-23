@@ -35,6 +35,7 @@ import { useState } from 'react'
 import type React from 'react'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumPrompt } from '../auth/premium-prompt'
+import { SkeletonBlock } from '../ui/Skeleton'
 import { PremiumLockBadge } from './PremiumLockBadge'
 
 export interface PremiumFeatureGateProps {
@@ -77,15 +78,20 @@ export function PremiumFeatureGate({
   // state; `aria-hidden` keeps this transient placeholder out of the a11y tree.
   // Identical on server + first client render → hydration-safe, and fail-closed:
   // never the premium children, never the lock badge, never the upgrade prompt.
+  //
+  // Story 38.2 lifted this shape into `ui/Skeleton`'s `SkeletonBlock` so the
+  // store-rehydration skeletons it adds are the same thing rather than a fourth
+  // convention. The rendered ELEMENT, its classes and the `premium-gate-skeleton`
+  // testid are unchanged; the attribute ORDER in the emitted HTML is not, since
+  // the primitive spells them out itself. (Raised in code review, because a test
+  // in this repo briefly depended on that order.) The pulse is now `motion-safe:`.
+  // ⚠️ The TRIGGER is still the premium-tier signal, NOT store rehydration — the
+  // two pending states are independent and this story did not merge them.
   if (status.isLoading) {
     return (
-      <div
-        aria-hidden="true"
-        className={`animate-pulse ${className ?? ''}`}
-        data-testid="premium-gate-skeleton"
-      >
+      <SkeletonBlock className={className} testId="premium-gate-skeleton">
         {locked}
-      </div>
+      </SkeletonBlock>
     )
   }
 

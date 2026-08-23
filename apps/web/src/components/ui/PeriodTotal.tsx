@@ -21,6 +21,7 @@
 
 import { denormalizeFromMonthly } from '@budget-planner/core'
 import type React from 'react'
+import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { useFormattedAmount } from '../../stores/currencyStore'
 import {
   DURATION_LABEL,
@@ -31,6 +32,7 @@ import {
   useSetOverviewDuration,
 } from '../../stores/overviewDurationStore'
 import { InfoTooltip } from './InfoTooltip'
+import { PendingFigure } from './Skeleton'
 
 interface PeriodTotalProps {
   /** e.g. "Total Income" — the period suffix is appended for you. */
@@ -78,6 +80,7 @@ export function PeriodTotal({
   const formatAmount = useFormattedAmount()
   const duration = useOverviewDuration()
   const setDuration = useSetOverviewDuration()
+  const hydrated = useStoresHydrated()
 
   // Re-express the monthly-canonical total at the selected period using the core
   // engine. Never re-derive the multipliers — they are core-private on purpose.
@@ -131,11 +134,21 @@ export function PeriodTotal({
           → fits on one line with 12px to spare, and the wrap rule keeps even a
           $14.8bn figure on the page (it takes a second line instead). `sm:` and
           up are unchanged, so the desktop design is untouched. */}
+      {/* Story 38.2 (UX-DR43): pending → a placeholder, never a formatted zero.
+          `PendingFigure`'s bar is `h-[1em]`, so it is exactly as tall as the text
+          it stands in for at BOTH type sizes above (`text-2xl` / `sm:text-3xl`)
+          without either size being restated here. The `<p>` keeps its testid, its
+          classes and the 320px wrapping rules above untouched — only its CONTENT
+          changes. */}
       <p
         className={`text-2xl sm:text-3xl font-bold [overflow-wrap:anywhere] ${amountClassName}`}
         data-testid="period-total-amount"
       >
-        {formatAmount(amountForDuration)}
+        {hydrated ? (
+          formatAmount(amountForDuration)
+        ) : (
+          <PendingFigure testId="period-total-amount-skeleton" widthClass="w-40" />
+        )}
       </p>
 
       {/* ⚠️ Disclosure, not silence. A row core cannot read is EXCLUDED from the

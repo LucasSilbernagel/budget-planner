@@ -7,6 +7,7 @@ import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
+import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
@@ -32,6 +33,7 @@ import {
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
+import { EmptyStateSkeleton, LoadingStatus } from './ui/Skeleton'
 import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
 
 // Frequency options for the select dropdown
@@ -304,9 +306,19 @@ export function ExpensesPage() {
     }
   }
 
+  // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
+  // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
+  // and NOT `persist.hasHydrated()`.
+  const hydrated = useStoresHydrated()
+
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
+        {/* Story 38.2, AC-8: ONE announced region per page. Every skeleton on
+            this page is `aria-hidden`, so without this a screen reader gets a
+            heading followed by nothing; one region per skeleton would announce
+            several times instead. */}
+        {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-heading">Expenses</h1>
@@ -347,7 +359,14 @@ export function ExpensesPage() {
           <section className="surface rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-subheading mb-6">Your Expenses</h2>
 
-            {expenses.length === 0 ? (
+            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
+                the server sent a returning user "No expenses recorded yet" — the store has not
+                rehydrated, so the list is empty and the page said so with
+                confidence. The skeleton mirrors this card's exact box model, so
+                a user who genuinely has nothing sees no shift when it resolves. */}
+            {!hydrated ? (
+              <EmptyStateSkeleton testId="expenses-list-skeleton" />
+            ) : expenses.length === 0 ? (
               <div className="surface-inset rounded-lg p-8 text-center">
                 <p className="text-muted mb-4">No expenses recorded yet</p>
                 <p className="text-sm text-faint">Click "Add Expense" to get started</p>

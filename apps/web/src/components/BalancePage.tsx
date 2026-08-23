@@ -7,6 +7,7 @@ import {
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNetWorth } from '../hooks/useNetWorth'
+import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
 import { buildBalanceChartModel, hasPlottableData } from '../lib/balance-chart-data'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
@@ -40,6 +41,7 @@ import {
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
+import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
 import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
 
 // Type options for the select dropdown
@@ -358,9 +360,19 @@ export function BalancePage() {
       : { label: type, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' }
   }
 
+  // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
+  // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
+  // and NOT `persist.hasHydrated()`.
+  const hydrated = useStoresHydrated()
+
   return (
     <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
+        {/* Story 38.2, AC-8: ONE announced region per page. Every skeleton on
+            this page is `aria-hidden`, so without this a screen reader gets a
+            heading followed by nothing; one region per skeleton would announce
+            several times instead. */}
+        {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
             <h1 className="font-bold text-heading text-3xl">Balance Tracking</h1>
@@ -403,7 +415,11 @@ export function BalancePage() {
                   className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl"
                   data-testid="stat-total-investments"
                 >
-                  {formatAmount(totalInvestments)}
+                  {hydrated ? (
+                    formatAmount(totalInvestments)
+                  ) : (
+                    <PendingFigure testId="stat-total-investments-skeleton" />
+                  )}
                 </p>
               </div>
               {/* Read-only: savings are entered on /savings, so this card shows the
@@ -422,7 +438,11 @@ export function BalancePage() {
                   className="mt-1 font-bold text-blue-600 dark:text-blue-400 text-2xl"
                   data-testid="stat-total-savings"
                 >
-                  {formatAmount(totalSavings)}
+                  {hydrated ? (
+                    formatAmount(totalSavings)
+                  ) : (
+                    <PendingFigure testId="stat-total-savings-skeleton" />
+                  )}
                 </p>
               </div>
               <div className="surface-inset p-4 rounded-lg">
@@ -431,7 +451,11 @@ export function BalancePage() {
                   className="mt-1 font-bold text-red-600 dark:text-red-400 text-2xl"
                   data-testid="stat-total-debts"
                 >
-                  {formatAmount(totalDebts)}
+                  {hydrated ? (
+                    formatAmount(totalDebts)
+                  ) : (
+                    <PendingFigure testId="stat-total-debts-skeleton" />
+                  )}
                 </p>
               </div>
               <div className="surface-inset p-4 rounded-lg">
@@ -444,7 +468,11 @@ export function BalancePage() {
                       : 'text-red-600 dark:text-red-400'
                   }`}
                 >
-                  {formatAmount(netWorth)}
+                  {hydrated ? (
+                    formatAmount(netWorth)
+                  ) : (
+                    <PendingFigure testId="stat-net-worth-skeleton" />
+                  )}
                 </p>
               </div>
             </div>
@@ -465,7 +493,16 @@ export function BalancePage() {
               What You Own vs What You Owe
             </h2>
 
-            {hasPlottableData(chartModel) ? (
+            {/* ⚠️ Story 38.2 CODE REVIEW: this section was originally left
+                OUT of the gate, on the stated grounds that it "already carries
+                its own empty label". That reasoning was backwards — the empty
+                label IS the confident empty. Pre-rehydration `balanceEntries` is the
+                default `[]`, so the server served a returning user
+                "Add an investment or debt to see what you own against what you owe".
+                MEASURED with `renderToString` against a seeded store. */}
+            {!hydrated ? (
+              <EmptyStateSkeleton testId="balance-chart-skeleton" lines={1} />
+            ) : hasPlottableData(chartModel) ? (
               <BalanceChart
                 model={chartModel}
                 formatAmount={formatAmount}
@@ -559,7 +596,13 @@ export function BalancePage() {
               Investment Accounts
             </h2>
 
-            {investmentAccounts.length === 0 ? (
+            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
+                the server told a returning user "No investment accounts yet" — the store had not
+                rehydrated, so the list was empty and the page said so with
+                confidence. */}
+            {!hydrated ? (
+              <EmptyStateSkeleton testId="balance-investments-skeleton" />
+            ) : investmentAccounts.length === 0 ? (
               <div className="surface-inset p-8 rounded-lg text-center">
                 <p className="mb-4 text-muted">No investment accounts yet</p>
                 <p className="text-faint text-sm">
@@ -660,7 +703,13 @@ export function BalancePage() {
               Your Balance Entries
             </h2>
 
-            {balanceEntries.length === 0 ? (
+            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
+                the server told a returning user "No balance entries recorded yet" — the store had not
+                rehydrated, so the list was empty and the page said so with
+                confidence. */}
+            {!hydrated ? (
+              <EmptyStateSkeleton testId="balance-entries-skeleton" />
+            ) : balanceEntries.length === 0 ? (
               <div className="surface-inset p-8 rounded-lg text-center">
                 <p className="mb-4 text-muted">No balance entries recorded yet</p>
                 <p className="text-faint text-sm">Click "Add Balance Entry" to get started</p>

@@ -5,6 +5,7 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { buildSavingsChartRows, hasPlottableData } from '../lib/savings-chart-data'
@@ -36,6 +37,7 @@ import {
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
+import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
 import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
 
 // Valid contribution cadences (mirrors the core Frequency enum). A persisted
@@ -333,9 +335,19 @@ export function SavingsPage() {
     }
   }
 
+  // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
+  // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
+  // and NOT `persist.hasHydrated()`.
+  const hydrated = useStoresHydrated()
+
   return (
     <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
+        {/* Story 38.2, AC-8: ONE announced region per page. Every skeleton on
+            this page is `aria-hidden`, so without this a screen reader gets a
+            heading followed by nothing; one region per skeleton would announce
+            several times instead. */}
+        {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
             <h1 className="font-bold text-heading text-3xl">Savings Goals</h1>
@@ -355,8 +367,18 @@ export function SavingsPage() {
                   selector here; the sub-line says what the number is instead. */}
               <div>
                 <h2 className="font-semibold text-subheading text-xl">Total Savings</h2>
+                {/* ⚠️ This is the page's HEADLINE figure and it carries no
+                    `data-testid`, so it was missing from story 38.2's own
+                    scope table — found only because the server-response
+                    assertion looks for the VALUE (`$0.00`) rather than for a
+                    list of testids it already knew about. A testid-shaped
+                    sweep would have shipped without it. */}
                 <p className="mt-2 font-bold text-purple-600 dark:text-purple-400 text-3xl">
-                  {formatAmount(totalSavings)}
+                  {hydrated ? (
+                    formatAmount(totalSavings)
+                  ) : (
+                    <PendingFigure testId="savings-total-skeleton" widthClass="w-40" />
+                  )}
                 </p>
                 <p className="mt-1 text-muted text-xs">
                   What you have saved right now — the sum of your current balances, not a per-period
@@ -377,8 +399,31 @@ export function SavingsPage() {
                 and how many automatic accounts share it; a calm note covers the
                 over-committed case (pool floored to 0 with automatic accounts). */}
             <div className="mt-4 pt-4 border-gray-200 dark:border-gray-700 border-t">
+              {/* Story 38.2: pending → one placeholder line. This sentence is
+                  entirely store-derived (the pool AND the account count), so
+                  before the gate it read "$0.00/mo is left over" to a user whose
+                  savings had simply not loaded. */}
               <p className="text-body text-sm" data-testid="savings-leftover-summary">
-                {automaticAccountCount === 0 ? (
+                {!hydrated ? (
+                  /* ⚠️ FOUR word-shaped bars, not one `w-full` bar — and the
+                     difference was MEASURED at 320px in code review. The resolved
+                     content here is a SENTENCE, so it wraps: one full-width bar
+                     is always exactly one line, while the resolved text is 1 line
+                     at 1280px, 2 lines with data at 320px and 4 lines empty at
+                     320px (20 / 40 / 80px). A single bar therefore shipped a
+                     20–60px downward shift on phones.
+                     Separate inline bars wrap through the SAME line-breaking the
+                     text does, so the placeholder now tracks the viewport instead
+                     of ignoring it. Sized to the with-data sentence (the case this
+                     story exists for); the resolved-EMPTY sentence is longer still
+                     and its residual is recorded in the story rather than claimed
+                     away. */
+                  <>
+                    <PendingFigure testId="savings-leftover-summary-skeleton" widthClass="w-24" />{' '}
+                    <PendingFigure widthClass="w-20" /> <PendingFigure widthClass="w-28" />{' '}
+                    <PendingFigure widthClass="w-16" />
+                  </>
+                ) : automaticAccountCount === 0 ? (
                   <>
                     <span className="font-semibold">{formatAmount(distributablePool)}/mo</span> is
                     left over — no automatic accounts to split it. Set an account to “Automatic” to
@@ -406,7 +451,16 @@ export function SavingsPage() {
           <section data-testid="savings-chart-section" className="surface shadow-md p-6 rounded-lg">
             <h2 className="mb-6 font-semibold text-subheading text-xl">Savings at a Glance</h2>
 
-            {hasPlottableData(chartRows) ? (
+            {/* ⚠️ Story 38.2 CODE REVIEW: this section was originally left
+                OUT of the gate, on the stated grounds that it "already carries
+                its own empty label". That reasoning was backwards — the empty
+                label IS the confident empty. Pre-rehydration `savingsGoals` is the
+                default `[]`, so the server served a returning user
+                "Add a savings goal to see it charted here".
+                MEASURED with `renderToString` against a seeded store. */}
+            {!hydrated ? (
+              <EmptyStateSkeleton testId="savings-chart-skeleton" lines={1} />
+            ) : hasPlottableData(chartRows) ? (
               <SavingsChart
                 rows={chartRows}
                 formatAmount={formatAmount}
@@ -440,7 +494,14 @@ export function SavingsPage() {
           <section className="surface shadow-md p-6 rounded-lg">
             <h2 className="mb-6 font-semibold text-subheading text-xl">Your Savings Goals</h2>
 
-            {savingsGoals.length === 0 ? (
+            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
+                the server sent a returning user "No savings goals recorded yet" — the store has not
+                rehydrated, so the list is empty and the page said so with
+                confidence. The skeleton mirrors this card's exact box model, so
+                a user who genuinely has nothing sees no shift when it resolves. */}
+            {!hydrated ? (
+              <EmptyStateSkeleton testId="savings-list-skeleton" />
+            ) : savingsGoals.length === 0 ? (
               <div className="surface-inset p-8 rounded-lg text-center">
                 <p className="mb-4 text-muted">No savings goals recorded yet</p>
                 <p className="text-faint text-sm">Click "Add Savings Goal" to get started</p>

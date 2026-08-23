@@ -32,6 +32,7 @@ import type React from 'react'
 import { useCategoriesForActiveProfile } from '../../hooks/useCategoryLabels'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumLockBadge } from '../premium'
+import { Skeleton } from '../ui/Skeleton'
 
 /**
  * Sentinel for "no category" in the `<select>`.
@@ -84,10 +85,18 @@ export function CategoryPicker({
   const selectId = `${idPrefix}-category`
 
   if (status.isLoading) {
+    // Story 38.2: the bar is now `ui/Skeleton`'s `Skeleton`, which owns the
+    // (`motion-safe:`) pulse and its own `aria-hidden`; the 42px height and the
+    // border classes stay here because the FOOTPRINT belongs to the caller — it
+    // is the height of the `<select>` this stands in for.
+    // ⚠️ The wrapper KEEPS its own `aria-hidden` so the caption goes with it, so
+    // the attribute is now nested. That is harmless (hiding a hidden subtree) but
+    // it is no longer true to say "the wrapper owns it" — both do. Noted in code
+    // review. Trigger unchanged: premium tier, not store rehydration.
     return (
       <div aria-hidden="true" data-testid={`${idPrefix}-category-skeleton`}>
         <InertPickerCaption />
-        <div className="h-[42px] w-full animate-pulse rounded-md border border-gray-300 dark:border-gray-600 surface-inset" />
+        <Skeleton className="block h-[42px] w-full rounded-md border border-gray-300 dark:border-gray-600 surface-inset" />
       </div>
     )
   }
