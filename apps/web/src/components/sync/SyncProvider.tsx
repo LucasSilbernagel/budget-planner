@@ -22,11 +22,19 @@
  * the client (after mount), so the server render is inert.
  */
 
-import { useSync } from '@/hooks/useSync'
-import { seedOnce } from '@/lib/sync/seedLocalData'
-import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
-import { useProfileStore } from '@/stores/profileStore'
-import { type ReactElement, useEffect, useRef, useState } from 'react'
+import { lazyWithRetry } from '@/lib/lazy-with-retry'
+import { type ReactElement, Suspense, useEffect, useState } from 'react'
+import { ErrorBoundary } from '../ErrorBoundary'
+
+/**
+ * The sync engine is fetched only once a PAID session is confirmed (story 38.3).
+ * Everything below the gate at {@link SyncProvider} is dead code for a free or
+ * signed-out visitor, yet it used to ship in the root chunk they must download
+ * before hydration. See `ActiveSync.tsx` for why this is hydration-safe.
+ */
+const ActiveSync = lazyWithRetry(() =>
+  import('./ActiveSync').then((m) => ({ default: m.ActiveSync }))
+)
 
 /**
  * Subscription statuses allowed to use server-side sync (push AND pull). Must
@@ -96,81 +104,31 @@ export function SyncProvider(): ReactElement | null {
     return null
   }
 
-  return <ActiveSync userId={user.userId} />
-}
-
-/**
- * The mounted-for-paid-sessions inner component. Split out so the `useSync` hook
- * (and its poller) only ever runs once we KNOW the session is a paid sync tier —
- * hooks cannot be called conditionally in the parent.
- */
-function ActiveSync({ userId }: { userId: string }): null {
-  const sync = useSync({ userId, autoSync: true, autoPull: true })
-  const initialPullRef = useRef(false)
-  const backfillRef = useRef(false)
-  // True once the active profile is a REAL server-backed profile (non-empty
-  // userId) — i.e. the reconciling pull has landed. BOTH the push bridge and the
-  // backlog seed gate on this so neither runs while config.profileId is still the
-  // un-reconciled bootstrap placeholder. Reactive: re-runs the gated effects when
-  // reconciliation flips it true.
-  const activeProfileReconciled = useProfileStore((s) => {
-    const active = s.profiles.find((p) => p.id === s.activeProfileId)
-    return active !== undefined && Boolean(active.userId)
-  })
-
-  const { queueCreate, queueUpdate, queueDelete, forcePull } = sync
-
-  // Register the push queue ONLY once the active profile is reconciled (review P1):
-  // before that, config.profileId is the 'local-default' placeholder, so any pushed
-  // op would carry an invalid profileId, fail non-retryably, stick in the queue and
-  // trip the circuit breaker. While unreconciled the bridge stays unregistered →
-  // paid edits are localStorage-only and are picked up by the backlog seed below.
-  // Clears on unmount (logout / downgrade) or if the profile de-reconciles.
-  useEffect(() => {
-    if (!activeProfileReconciled) {
-      return
-    }
-    registerSyncBridge({ userId, queueCreate, queueUpdate, queueDelete })
-    return () => {
-      clearSyncBridge()
-    }
-  }, [userId, activeProfileReconciled, queueCreate, queueUpdate, queueDelete])
-
-  // Seed local state with one immediate pull on mount (the poller otherwise waits
-  // a full interval). This also delivers the user's server profiles, which
-  // applyServerChanges uses to repoint the active profile (Story 5-15).
-  useEffect(() => {
-    if (initialPullRef.current) {
-      return
-    }
-    initialPullRef.current = true
-    forcePull().catch((error) => {
-      console.error('[SyncProvider] initial pull failed:', error)
-    })
-  }, [forcePull])
-
-  // Free→paid backlog seed (Task 5): once the active profile is reconciled (so the
-  // bridge above is registered and config.profileId is valid), push the user's
-  // pre-upgrade localStorage backlog ONCE. seedOnce awaits the durable enqueues and
-  // only then sets its per-user marker, skipping rows already on the server — so a
-  // re-login does not replay creates and seeding never generates create-create
-  // conflicts (review P2 + P6). On failure the ref is reset so a later trigger retries.
-  useEffect(() => {
-    if (backfillRef.current || !activeProfileReconciled) {
-      return
-    }
-    backfillRef.current = true
-    seedOnce(userId)
-      .then((seeded) => {
-        if (seeded > 0) {
-          console.info(`[SyncProvider] seeded ${seeded} local row(s) to the server`)
-        }
-      })
-      .catch((error) => {
-        backfillRef.current = false
-        console.error('[SyncProvider] seeding failed:', error)
-      })
-  }, [activeProfileReconciled, userId])
-
-  return null
+  // ⚠️ THE ERROR BOUNDARY IS LOAD-BEARING, AND ITS ABSENCE WAS A HIGH FINDING.
+  //
+  // Deferring this module created a failure mode that did not exist before: the sync
+  // engine used to ship inside the root chunk, so if the app rendered at all, the
+  // engine was present. Now `import('./ActiveSync')` can reject — offline, a blocking
+  // proxy, or a 404 in a tab left open across a redeploy (the service worker sets
+  // `cleanupOutdatedCaches` and claims open clients immediately). Without a boundary
+  // that rejection propagates out of `SyncProvider`, past `routes/__root.tsx:154`
+  // which wraps it in nothing, to TanStack Router's root catch — replacing the ENTIRE
+  // app, nav and figures included, for a PAYING customer whose local data was fine.
+  //
+  // The correct degradation for "the sync engine could not load" is "no sync", which
+  // is what this component renders anyway. `fallback={null}` on both the pending and
+  // the failed path says exactly that. The charts had a boundary from the start; the
+  // load-bearing surface did not, which was the wrong way round.
+  return (
+    <ErrorBoundary
+      fallback={null}
+      onError={(error) => {
+        console.error('[SyncProvider] sync engine failed to load; continuing without sync:', error)
+      }}
+    >
+      <Suspense fallback={null}>
+        <ActiveSync userId={user.userId} />
+      </Suspense>
+    </ErrorBoundary>
+  )
 }

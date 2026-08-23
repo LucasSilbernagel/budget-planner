@@ -26,9 +26,18 @@
  * branch is ever exercised. A regression to `label={isNarrow}` would pass every
  * assertion below while painting labels at 320px — that is what the 320px case
  * in `e2e/breakdown-pie-labels.spec.ts` exists to catch.
+ *
+ * ⚠️ **Every capture below must be `await`ed, and that is not a style choice.**
+ * Story 38.3 moved `<Pie>` behind `React.lazy(() => import('../HomeChartCanvases'))`
+ * to get the Recharts vendor chunk off the Overview's critical path. A bare
+ * `render(<HomePage />)` now returns with the `Suspense` fallback mounted and
+ * `captured.pies` still EMPTY. Reverting these awaits does not merely fail — it
+ * turns the length assertion into the only thing standing between this file and
+ * a vacuous pass, which is exactly the shape the `beforeEach` comment below warns
+ * about for a different reason.
  */
 
-import { render } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -135,14 +144,17 @@ beforeEach(() => {
 })
 
 describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
-  it('AC-1: hands BOTH pies `label={false}`, so no in-plot text can paint', () => {
+  it('AC-1: hands BOTH pies `label={false}`, so no in-plot text can paint', async () => {
     render(<HomePage />)
 
     // Two pies, income first (`HomePage.tsx` renders the income BreakdownPie
     // before the expense one). Asserting only `[0]` would let one pie stand in
     // for two — the per-surface blind spot stories 30-4b, 33.3, 34.1b and 34.2
     // each hit.
-    expect(captured.pies).toHaveLength(2)
+    //
+    // The `waitFor` is the lazy-chunk boundary (see the file docblock), and it
+    // doubles as the anti-vacuity guard: it cannot succeed on an empty array.
+    await waitFor(() => expect(captured.pies).toHaveLength(2))
 
     for (const [index, pie] of captured.pies.entries()) {
       // `toBe(false)`, not a truthiness check: `label={undefined}` would also
@@ -152,10 +164,10 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
     }
   })
 
-  it('AC-1: keeps `labelLine={false}` on BOTH pies', () => {
+  it('AC-1: keeps `labelLine={false}` on BOTH pies', async () => {
     render(<HomePage />)
 
-    expect(captured.pies).toHaveLength(2)
+    await waitFor(() => expect(captured.pies).toHaveLength(2))
 
     for (const [index, pie] of captured.pies.entries()) {
       // Inert while `label` is false — Recharts reads `labelLine` only inside
@@ -186,7 +198,7 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
  * stayed green. Deleting it from the tooltip must not be free.
  */
 describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () => {
-  it('emits no "NaN" when every slice is zero', () => {
+  it('emits no "NaN" when every slice is zero', async () => {
     // Non-empty data with a zero total: `BreakdownPie` gates its chart on
     // `data.length`, not on the total, so both pies still render `<Pie>` and
     // hand their `<Tooltip>` a formatter closed over `total === 0`.
@@ -201,7 +213,7 @@ describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () 
 
     // Both pies rendered, so their formatters were captured — otherwise this
     // test would pass by asserting over an empty array.
-    expect(captured.pies).toHaveLength(2)
+    await waitFor(() => expect(captured.pies).toHaveLength(2))
     expect(captured.tooltipFormatters.length).toBeGreaterThanOrEqual(2)
 
     for (const [index, formatter] of captured.tooltipFormatters.entries()) {

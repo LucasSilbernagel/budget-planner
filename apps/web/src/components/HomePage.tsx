@@ -13,26 +13,15 @@ import type {
   FinancialDataPoint,
   RechartsDataItem,
 } from '@budget-planner/core/finance/visualization'
-import React, { useMemo } from 'react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import React, { Suspense, useMemo } from 'react'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { type PremiumAccessStatus, usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
-import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../lib/chart-axis'
+import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
+import { lazyWithRetry } from '../lib/lazy-with-retry'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
@@ -49,6 +38,96 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { PremiumFeatureGate, PremiumLockBadge } from './premium'
 import { InfoTooltip } from './ui/InfoTooltip'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
+
+/**
+ * Recharts is pulled in ONLY when a chart is about to render (story 38.3, AC-6).
+ *
+ * Both handles resolve the SAME module, so the two together cost one fetch. The
+ * import is dynamic on purpose: `hydrateStart.js:28` awaits every route chunk's
+ * STATIC import graph before hydration begins, so a top-level `from 'recharts'`
+ * here put 104.0 KB gzipped — 36.1% of the measured critical path — in front of a
+ * user waiting to see their net worth. See `HomeChartCanvases.tsx` for the fence.
+ *
+ * ⚠️ Every call site below sits inside the `hydrated` branch, so neither canvas
+ * can render on the server. Hoisting one out re-creates BUG-F.
+ */
+let chartChunkResolved = false
+
+/**
+ * Whether the lazily-imported chart chunk has landed.
+ *
+ * ⚠️ Used ONLY to set `aria-busy` on the two chart sections. It deliberately does not
+ * add a `role="status"` region: `ui/Skeleton.tsx:198-202` records that a third live
+ * region per page is exactly what `loading-state.dom.test.tsx`'s count assertion
+ * exists to prevent, and three simultaneous "loading" announcements (one bar chart,
+ * two pies) would be worse than the silence this fixes. `aria-busy` says "this region
+ * is updating" without competing for the announcement queue.
+ *
+ * Calling `import()` here costs nothing extra: the same module is being fetched by the
+ * `Suspense` boundaries below at the same moment, and a module request is deduped.
+ */
+function useChartsChunkReady(): boolean {
+  const [ready, setReady] = React.useState(chartChunkResolved)
+
+  // The module flag is read once on mount and is deliberately NOT reactive — it only
+  // ever transitions false -> true, and the state setter below is what re-renders.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
+  React.useEffect(() => {
+    if (chartChunkResolved) {
+      return
+    }
+    let active = true
+    void import('./HomeChartCanvases')
+      .then(() => {
+        chartChunkResolved = true
+        if (active) {
+          setReady(true)
+        }
+      })
+      .catch(() => {
+        // The ErrorBoundary around each canvas owns the failure path; this hook only
+        // drives an aria attribute, so a rejection must not surface here.
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  return ready
+}
+
+/**
+ * What fills a chart's box while its chunk is in flight (story 38.3, code review).
+ *
+ * ⚠️ This replaced `fallback={null}`, which was a real gap: by the time a chart
+ * suspends, `hydrated` is already true, so `LoadingStatus` — the page's single
+ * `role="status"` announcer — has unmounted. The user was left looking at blank
+ * rectangles with no indication anything was coming, on exactly the connection
+ * classes this story set out to measure, and a screen-reader user got a heading
+ * followed by silence.
+ *
+ * It follows the contract `ui/Skeleton.tsx` already sets rather than inventing a
+ * fourth convention: `SKELETON_BAR` tokens, `motion-safe:` so an indefinite pulse
+ * never runs for someone who asked for less motion (WCAG 2.2.2), and `aria-hidden`
+ * so the placeholder itself is out of the accessibility tree. The `aria-busy` that
+ * marks the wait lives on the two chart SECTIONS (driven by {@link useChartsChunkReady})
+ * — one attribute per region, and no second live region competing with `LoadingStatus`.
+ *
+ * ⚠️ `h-full w-full` and nothing else: the CALLER owns the box. Giving this element
+ * its own dimensions would reintroduce exactly the guess that AC-11 removed.
+ */
+function ChartPending(): React.ReactElement {
+  return (
+    <div aria-hidden="true" className={`${SKELETON_BAR} h-full w-full motion-safe:animate-pulse`} />
+  )
+}
+
+const CategoryBarCanvas = lazyWithRetry(() =>
+  import('./HomeChartCanvases').then((m) => ({ default: m.CategoryBarCanvas }))
+)
+const BreakdownPieCanvas = lazyWithRetry(() =>
+  import('./HomeChartCanvases').then((m) => ({ default: m.BreakdownPieCanvas }))
+)
 
 // Colors for the charts
 const INCOME_COLOR = '#10B981'
@@ -169,6 +248,7 @@ export function HomePage() {
    * resolved-empty. `hasData` distinguishes only the last two.
    */
   const hydrated = useStoresHydrated()
+  const chartsReady = useChartsChunkReady()
 
   // ============================================================================
   // Enhanced Visualization State (Story 3-3, simplified in 12-3)
@@ -641,7 +721,7 @@ export function HomePage() {
                   uncategorized item render alike; distinguishing them is 30.5's
                   concern. The former click-to-drill-down stays removed: one
                   shared drill cannot span two independent pies. */}
-              <section className="surface rounded-lg shadow-md p-6">
+              <section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-xl font-semibold text-subheading">
                     Income vs Expense Breakdown
@@ -737,7 +817,7 @@ export function HomePage() {
                   point-in-time balances — each on its own axis so a large annual
                   flow can no longer flatten the balance bars. The section heading
                   stays the carrier the story-12-4 tests assert. */}
-              <section className="surface rounded-lg shadow-md p-6">
+              <section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
                 <h2 className="text-xl font-semibold text-subheading mb-4">
                   Financial Category Summary
                 </h2>
@@ -752,6 +832,7 @@ export function HomePage() {
                           Income &amp; expenses {DURATION_LABEL[duration]}
                         </h3>
                         <CategoryBarChart
+                          testId="category-bar-flows"
                           data={flowsBarData}
                           ticks={flowsBarTicks}
                           isNarrow={isNarrowViewport}
@@ -768,6 +849,7 @@ export function HomePage() {
                       <div>
                         <h3 className="text-sm font-semibold text-label mb-2">Balances</h3>
                         <CategoryBarChart
+                          testId="category-bar-balances"
                           data={balancesBarData}
                           ticks={balancesBarTicks}
                           isNarrow={isNarrowViewport}
@@ -957,6 +1039,13 @@ interface BreakdownPieProps {
 type CategoryBarDatum = { category: string; amount: number; fill: string }
 
 interface CategoryBarChartProps {
+  /**
+   * Stable handle for the footprint measurement (story 38.3, AC-11). The box is
+   * sized by a COMPUTED inline style rather than a fixed class, which makes it the
+   * chart surface most able to drift — and it was the one AC-11 originally left
+   * unmeasured.
+   */
+  testId: string
   /** Bars to plot (amounts in cents), rendered in Recharts' vertical layout. */
   data: CategoryBarDatum[]
   /** Round tick values (cents) spanning this chart's OWN diverging domain. */
@@ -979,6 +1068,7 @@ interface CategoryBarChartProps {
  * 11-2 / 12-4 AC-2 dark-mode constraint).
  */
 function CategoryBarChart({
+  testId,
   data,
   ticks,
   isNarrow,
@@ -988,48 +1078,24 @@ function CategoryBarChart({
   currency,
 }: CategoryBarChartProps): React.ReactElement {
   return (
-    <div style={{ height: categoryChartHeight(data.length) }}>
+    <div style={{ height: categoryChartHeight(data.length) }} data-testid={testId}>
       <ErrorBoundary
         fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
       >
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-            {/* Round ticks (amounts are cents) with a compact, cents-dropping
-                label — the full formatAmount value carries ".00" the narrow axis
-                has no room for. */}
-            <XAxis
-              type="number"
-              domain={[ticks[0], ticks[ticks.length - 1]]}
-              ticks={ticks}
-              tickFormatter={(value) => formatCompactAxisTick(value / 100, mode, currency)}
-              tick={{ fontSize: 12, fill: chartColors.axis }}
-              stroke={chartColors.axis}
-            />
-            <YAxis
-              dataKey="category"
-              type="category"
-              width={isNarrow ? 76 : 132}
-              tick={{ fontSize: isNarrow ? 11 : 12, fill: chartColors.axis }}
-              stroke={chartColors.axis}
-            />
-            <Tooltip
-              formatter={(value: number, name: string) => [formatAmount(value), name]}
-              contentStyle={{
-                backgroundColor: chartColors.tooltipBg,
-                border: `1px solid ${chartColors.tooltipBorder}`,
-                color: chartColors.tooltipText,
-              }}
-              labelStyle={{ color: chartColors.tooltipText }}
-              itemStyle={{ color: chartColors.tooltipText }}
-            />
-            <Bar dataKey="amount" name="Amount">
-              {data.map((entry) => (
-                <Cell key={entry.category} fill={entry.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {/* The sized wrapper above owns the box, so the footprint is identical
+            whether or not the chunk has landed — nothing to guess, nothing to
+            drift. The fallback fills that box rather than leaving it blank. */}
+        <Suspense fallback={<ChartPending />}>
+          <CategoryBarCanvas
+            data={data}
+            ticks={ticks}
+            isNarrow={isNarrow}
+            chartColors={chartColors}
+            formatAmount={formatAmount}
+            mode={mode}
+            currency={currency}
+          />
+        </Suspense>
       </ErrorBoundary>
     </div>
   )
@@ -1078,58 +1144,19 @@ function BreakdownPie({
                 <div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>
               }
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart aria-label={`${title} breakdown chart`} role="img">
-                  <Pie
-                    data={data}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    innerRadius={isNarrow ? 42 : 55}
-                    outerRadius={isNarrow ? 70 : 85}
-                    fill="#8884d8"
-                    dataKey="value"
-                    nameKey="name"
-                    // No in-plot slice labels, at ANY width (story 36.2 /
-                    // UX-DR41). With many categories the coloured labels collide
-                    // into an unreadable tangle on desktop; below 640px they
-                    // overflowed the container outright (story 6-1). The list
-                    // below names every slice, and the hover tooltip carries the
-                    // per-slice figure and share — so nothing is lost. The chart
-                    // is `role="img"`, so the labels never reached the
-                    // accessibility tree in the first place.
-                    //
-                    // ⚠️ `labelLine` above is now INERT: Recharts guards with
-                    // `label && this.renderLabels(sectors)`, and `labelLine` is
-                    // read only inside `renderLabels`. It is kept so that
-                    // restoring `label` cannot silently also restore the leader
-                    // lines. Both props are pinned in
-                    // `__tests__/HomePage.pie-labels.chart-wiring.test.tsx`.
-                    label={false}
-                  >
-                    {data.map((entry, index) => (
-                      <Cell
-                        key={`${entry.type}-${entry.name}`}
-                        fill={
-                          entry.fill ||
-                          entry.color ||
-                          CATEGORY_COLORS[index % CATEGORY_COLORS.length]
-                        }
-                        stroke="#fff"
-                        strokeWidth={2}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number, name: string) => [
-                      `${formatAmount(value)}${
-                        total > 0 ? ` (${((value / total) * 100).toFixed(1)}%)` : ''
-                      }`,
-                      name,
-                    ]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              {/* Exact footprint by construction — the `h-[240px]` wrapper above
+                  owns the box, so there is nothing for a placeholder to get
+                  wrong. Story 38.2 shipped an 8px error by guessing a
+                  placeholder height; this avoids the guess. */}
+              <Suspense fallback={<ChartPending />}>
+                <BreakdownPieCanvas
+                  title={title}
+                  data={data}
+                  total={total}
+                  isNarrow={isNarrow}
+                  formatAmount={formatAmount}
+                />
+              </Suspense>
             </ErrorBoundary>
           </div>
           <ul className="mt-3 space-y-1">
