@@ -127,6 +127,10 @@ export const useSavingsStore = create<SavingsState>()(
         }
 
         const previousGoal = state.savingsGoals[index]
+        // Unreachable: the `index === -1` branch above already returned.
+        if (previousGoal === undefined) {
+          return undefined
+        }
         const updatedGoal: ClientSavingsGoal = {
           ...previousGoal,
           ...updates,

@@ -94,7 +94,11 @@ export function useProfileSwitcher() {
 
     const currentIndex = profiles.findIndex((p) => p.id === activeProfileId)
     const nextIndex = (currentIndex + 1) % profiles.length
-    switchProfile(profiles[nextIndex].id)
+    // Modulo of a length > 1 always indexes a real element (including the
+    // `currentIndex === -1` case, which lands on 0), but `noUncheckedIndexedAccess`
+    // cannot prove it. Narrowed rather than asserted.
+    const next = profiles[nextIndex]
+    if (next) switchProfile(next.id)
   }
 
   /**
@@ -107,7 +111,8 @@ export function useProfileSwitcher() {
 
     const currentIndex = profiles.findIndex((p) => p.id === activeProfileId)
     const previousIndex = (currentIndex - 1 + profiles.length) % profiles.length
-    switchProfile(profiles[previousIndex].id)
+    const previous = profiles[previousIndex]
+    if (previous) switchProfile(previous.id)
   }
 
   return {

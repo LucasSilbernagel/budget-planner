@@ -109,12 +109,18 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
       // For now, we use a temporary userId - in production this would come from auth
       const userId = localStorage.getItem('userId') || 'temp-user'
 
-      const _newProfile = createProfile({
+      createProfile({
         ...form,
         // Never persist a consolidated code (story 8-2) — store the canonical
         // representative so profiles stay consistent with the shrunk selector.
         currency: canonicalizeCurrency(form.currency),
         userId,
+        // ⚠️ Required by `ClientProfile`, and it was never supplied — so every
+        // profile created through this form persisted `isDefault: undefined`.
+        // Harmless in practice (every consumer treats it as falsy, and the sync
+        // schema defaults it to `false` at `server/api/sync.ts:237`), but the
+        // record was malformed. A profile created here is never the default.
+        isDefault: false,
       })
 
       // Mark as default if it's the first profile

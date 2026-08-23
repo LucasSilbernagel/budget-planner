@@ -17,14 +17,12 @@ import {
   calculateSafeMonthlyWithdrawal,
 } from '@budget-planner/core'
 
-/**
- * Result type for API responses
- */
-export interface ApiResult<T> {
-  success: boolean
-  data?: T
-  error?: string
-}
+// Imported for local use AND re-exported so existing importers of this module
+// keep working; the single declaration lives in `../result` (it used to be
+// duplicated here and in the other barrel, identically).
+import type { ApiResult } from '../result'
+
+export type { ApiResult }
 
 /**
  * Server Function: Calculate retirement requirement

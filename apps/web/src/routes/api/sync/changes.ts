@@ -82,7 +82,11 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
   // 4) Fetch the delta, strictly scoped to the SESSION user id.
   try {
     const changes = await getSyncChanges(session.data.userId, since, limit, profileId)
-    const lastPullTimestamp = changes.length > 0 ? changes[changes.length - 1].updatedAt : since
+    // `changes.length > 0` already guarantees the element, but
+    // `noUncheckedIndexedAccess` cannot see through the ternary; read it once and
+    // narrow so the fallback stays explicit.
+    const newestChange = changes[changes.length - 1]
+    const lastPullTimestamp = newestChange ? newestChange.updatedAt : since
     return json({ success: true, changes, lastPullTimestamp })
   } catch (error) {
     return json(
