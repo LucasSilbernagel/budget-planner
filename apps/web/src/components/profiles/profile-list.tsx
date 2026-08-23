@@ -15,24 +15,12 @@ import {
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
+import { profileColor, profileIcon } from '@/lib/profile-appearance'
 import { canonicalizeCurrency } from '@budget-planner/core'
 import { useState } from 'react'
 
 // Profile color options for visual distinction
-const PROFILE_COLORS = [
-  'bg-blue-500',
-  'bg-green-500',
-  'bg-purple-500',
-  'bg-orange-500',
-  'bg-red-500',
-  'bg-teal-500',
-  'bg-indigo-500',
-  'bg-pink-500',
-]
-
 // Profile icon options (simple SVG icons)
-const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️']
-
 // Format date for display (module-scoped so both ProfileList and ProfileCard can use it)
 const formatDate = (dateString: string | undefined) => {
   // Validate date string before parsing
@@ -72,32 +60,8 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   }
 
   // Get color for a profile (consistent based on ID hash)
-  const getProfileColor = (profileId: string): string => {
-    // Use a simple hash of the UUID to get a consistent index
-    // Handle empty profileId gracefully
-    if (!profileId) return PROFILE_COLORS[0] ?? 'bg-blue-500'
-
-    let hash = 0
-    for (let i = 0; i < profileId.length; i++) {
-      hash = (hash << 5) - hash + profileId.charCodeAt(i)
-      hash |= 0 // Convert to 32-bit integer
-    }
-    return PROFILE_COLORS[Math.abs(hash) % PROFILE_COLORS.length] ?? 'bg-blue-500'
-  }
 
   // Get icon for a profile (consistent based on ID hash)
-  const getProfileIcon = (profileId: string): string => {
-    // Use a simple hash of the UUID to get a consistent index
-    // Handle empty profileId gracefully
-    if (!profileId) return PROFILE_ICONS[0] ?? '🏠'
-
-    let hash = 0
-    for (let i = 0; i < profileId.length; i++) {
-      hash = (hash << 5) - hash + profileId.charCodeAt(i)
-      hash |= 0 // Convert to 32-bit integer
-    }
-    return PROFILE_ICONS[Math.abs(hash) % PROFILE_ICONS.length] ?? '🏠'
-  }
 
   return (
     <div className="space-y-4">
@@ -131,8 +95,8 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
               isActive={profile.id === activeProfileId}
               isDeleting={deletingId === profile.id}
               onDelete={() => handleDelete(profile.id)}
-              color={getProfileColor(profile.id)}
-              icon={getProfileIcon(profile.id)}
+              color={profileColor(profile.id)}
+              icon={profileIcon(profile.id)}
             />
           ))}
         </div>

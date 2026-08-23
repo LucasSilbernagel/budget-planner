@@ -146,7 +146,12 @@ export function ExpensesPage() {
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  // ⚠️ `string`, not `number`. `ClientExpense.id` has been a client-generated uuid
+  // since story 5-14; this state and `openEditModal` below kept the pre-uuid
+  // `number` typing, so `updateExpense(editingId, …)` — whose store signature is
+  // `(id: string, …)` — was a type error that only `any`-adjacent slack hid.
+  // Runtime was always correct: JS passed the uuid straight through.
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
@@ -215,11 +220,10 @@ export function ExpensesPage() {
 
   // Open modal for editing existing expense
   const openEditModal = (source: {
-    id: number
+    id: string
     name: string
     amount: number
     frequency: Frequency
-    // Widened for the new field only — `id` is deliberately untouched (AC-10).
     categoryId?: string | null
   }) => {
     setEditingId(source.id)

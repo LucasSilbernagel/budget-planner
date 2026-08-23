@@ -259,9 +259,20 @@ export function CategoryDrillDown({
 
   // Get breadcrumb path from state
   const breadcrumb = useMemo(() => {
-    return state.path.map((entry) => {
-      const [type, name] = entry.split(':')
-      return { name, type: type as 'income' | 'expense' }
+    // ⚠️ Split on the FIRST colon only. Path entries are built as
+    // `${type}:${category}` (`core/finance/visualization.ts:409`), and a
+    // destructured `split(':')` truncated any category whose own name contains a
+    // colon ("Travel: Europe" became "Travel"). Slicing also removes the
+    // `string | undefined` that `noUncheckedIndexedAccess` correctly reported.
+    return state.path.flatMap((entry) => {
+      const separator = entry.indexOf(':')
+      if (separator === -1) return []
+      return [
+        {
+          name: entry.slice(separator + 1),
+          type: entry.slice(0, separator) as 'income' | 'expense',
+        },
+      ]
     })
   }, [state.path])
 
@@ -315,7 +326,11 @@ export function CategoryDrillDown({
                   let newState = drillToRoot()
                   for (let i = 0; i <= index; i++) {
                     const entry = prevState.path[i]
-                    const [type, category] = entry.split(':')
+                    if (entry === undefined) continue
+                    // First colon only — see the breadcrumb note above.
+                    const separator = entry.indexOf(':')
+                    const type = separator === -1 ? '' : entry.slice(0, separator)
+                    const category = separator === -1 ? '' : entry.slice(separator + 1)
                     if (category && type) {
                       newState = drillDownToCategory(
                         newState,
@@ -459,4 +474,5 @@ export function useCategoryDrillDown(
 
 export { DEFAULT_MAX_DEPTH, Breadcrumb, DrillDownControls }
 
-export type { CategoryDrillDownProps, DrillDownRenderProps, DrillDownRenderFunction }
+// The three types are already exported at their declarations (`:37`, `:57`, `:92`);
+// re-exporting them here was a duplicate declaration, not an additional export.

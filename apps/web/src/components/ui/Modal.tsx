@@ -208,6 +208,9 @@ export function Modal({
     }
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
+    // Unreachable: the `length === 0` branch above already returned. Narrowed
+    // rather than asserted so `noUncheckedIndexedAccess` stays honest here.
+    if (!first || !last) return
     const active = document.activeElement
 
     if (event.shiftKey && (active === first || active === content)) {

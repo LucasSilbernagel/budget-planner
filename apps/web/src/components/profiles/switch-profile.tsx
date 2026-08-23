@@ -13,22 +13,12 @@ import {
   useProfileSwitcher,
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
+import { profileColor, profileIcon } from '@/lib/profile-appearance'
 import { useEffect, useRef, useState } from 'react'
 
 // Profile color options (same as profile-list.tsx)
-const PROFILE_COLORS = [
-  'bg-blue-500',
-  'bg-green-500',
-  'bg-purple-500',
-  'bg-orange-500',
-  'bg-red-500',
-  'bg-teal-500',
-  'bg-indigo-500',
-  'bg-pink-500',
-]
 
 // Profile icon options (same as profile-list.tsx)
-const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️']
 
 export function SwitchProfileDropdown() {
   const { profiles, activeProfile } = useProfilesWithActive()
@@ -67,13 +57,16 @@ export function SwitchProfileDropdown() {
     return () => document.removeEventListener('keydown', handleEscape)
   }, [])
 
-  // Get color and icon for a profile
-  const getProfileColor = (profileId: number) => PROFILE_COLORS[profileId % PROFILE_COLORS.length]
-  const getProfileIcon = (profileId: number) => PROFILE_ICONS[profileId % PROFILE_ICONS.length]
+  // ⚠️ These were `(profileId: number) => PROFILE_COLORS[profileId % …]`, and a
+  // profile id has been a uuid STRING since story 5-14 — so `"a1b2…" % 8` was
+  // `NaN` and every avatar here rendered with no colour class and no icon. Now
+  // routed through the shared hash `profile-list.tsx` already used.
+  const getProfileColor = profileColor
+  const getProfileIcon = profileIcon
 
   const toggleDropdown = () => setIsOpen(!isOpen)
 
-  const handleSwitch = (profileId: number) => {
+  const handleSwitch = (profileId: string) => {
     switchToProfile(profileId)
     setIsOpen(false)
   }
@@ -192,19 +185,8 @@ export function SwitchProfileSimple() {
     return null
   }
 
-  const PROFILE_COLORS = [
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-purple-500',
-    'bg-orange-500',
-    'bg-red-500',
-    'bg-teal-500',
-    'bg-indigo-500',
-    'bg-pink-500',
-  ]
-  const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️']
-  const color = PROFILE_COLORS[activeProfile.id % PROFILE_COLORS.length]
-  const icon = PROFILE_ICONS[activeProfile.id % PROFILE_ICONS.length]
+  const color = profileColor(activeProfile.id)
+  const icon = profileIcon(activeProfile.id)
 
   return (
     <a
