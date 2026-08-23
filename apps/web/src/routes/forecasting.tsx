@@ -26,33 +26,26 @@ import type { ForecastingProfileOutput } from '../server/functions/forecastingPr
 // Route Configuration
 // ============================================================================
 
+/**
+ * ⚠️ THIS ROUTE HAS NO `loader`, AND THAT IS THE FIX, NOT AN OMISSION.
+ *
+ * It used to carry one that destructured `request` from the loader context —
+ * which has no such property, so `request` was `undefined` at runtime. It then
+ * called `checkPremiumAccessServer(undefined)`, whose first act is
+ * `request.headers.get('cookie')` (`api/auth/paddle.ts:168`); that threw, the
+ * function's own `try/catch` swallowed it, and the loader returned `null`.
+ *
+ * Every branch of that loader returned `null`, nothing read `Route.useLoaderData()`
+ * for this route, and the throw happened before any DB access — so the whole thing
+ * was a dynamic import and a guaranteed exception on every navigation to
+ * `/forecasting`, for no observable effect. Removing it is behaviour-preserving.
+ *
+ * Premium gating for this page is client-side and unchanged: `ForecastingPage`
+ * gates on `usePremiumAccess`, which is the fail-closed path that actually works.
+ * The removed loader never granted or denied anything.
+ */
 export const Route = createFileRoute('/forecasting')({
   component: ForecastingPage,
-  loader: async ({ request }) => {
-    // Server-side authentication check for premium features
-    // Import server function dynamically to avoid circular dependencies
-    const { checkPremiumAccessServer } = await import('../server/api/data/forecasting')
-
-    const result = await checkPremiumAccessServer(request)
-
-    // If check failed or user doesn't have access, redirect to home
-    // Note: We allow the route to load and show the upgrade prompt client-side
-    // This is a security measure to prevent unauthorized access to the route itself
-    if (result.success && result.data && !result.data.hasAccess) {
-      // User is authenticated but doesn't have premium access
-      // We still allow the route to load so the upgrade prompt can be shown
-      return null
-    }
-
-    if (!result.success) {
-      // Authentication check failed - redirect to login
-      // Note: In TanStack Start, we should use the router's redirect utility
-      // For now, we'll just return null and let client-side handle it
-      return null
-    }
-
-    return null
-  },
 })
 
 // ============================================================================
@@ -134,8 +127,13 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
       result: parsed.result,
       inputs,
       version: profile.version,
-      createdAt: profile.createdAt,
-      updatedAt: profile.updatedAt,
+      // Drizzle returns `Date` for a timestamp column, but `SavedForecast` declares
+      // these as ISO strings — the shape the rest of the app serialises. Both
+      // consumers (`forecast-list.tsx:109,368`) pass the value straight to
+      // `new Date(...)`, so this is behaviour-preserving; it just stops the type
+      // claiming `string` while holding a `Date`.
+      createdAt: new Date(profile.createdAt).toISOString(),
+      updatedAt: new Date(profile.updatedAt).toISOString(),
     }
   } catch {
     return null
@@ -206,8 +204,12 @@ function ForecastingPage(): React.ReactElement {
         if (profilesResult.success && profilesResult.data && profilesResult.data.length > 0) {
           const defaultProfile =
             profilesResult.data.find((p) => p.isDefault) ?? profilesResult.data[0]
-          resolvedProfileId = defaultProfile.id
-          setDefaultProfileId(resolvedProfileId)
+          // `length > 0` is checked above, so the `[0]` fallback is always a real
+          // element; narrowed rather than asserted.
+          if (defaultProfile) {
+            resolvedProfileId = defaultProfile.id
+            setDefaultProfileId(resolvedProfileId)
+          }
         }
 
         // Load saved forecasts scoped to the same profile saves target, so the

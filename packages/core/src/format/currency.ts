@@ -284,7 +284,9 @@ export function parseFromInput(value: string, locale?: string): number {
   // Handle floating point precision by working with the string
   // Convert to cents directly from string to avoid IEEE 754 issues
   if (cleaned.includes('.')) {
-    const [whole, decimal] = cleaned.split('.')
+    // `includes('.')` guarantees both halves exist; the defaults simply let
+    // `noUncheckedIndexedAccess` see it without an assertion.
+    const [whole = '', decimal = ''] = cleaned.split('.')
     const paddedDecimal = decimal.padEnd(2, '0').slice(0, 2)
     return parseInt(whole + paddedDecimal, 10) || 0
   }

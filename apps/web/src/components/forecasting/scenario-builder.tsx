@@ -38,6 +38,14 @@ const DEBOUNCE_DELAY_MS = 500
  */
 export interface LocalFinancialItem extends NormalizableFinancialItem {
   id: string
+  /**
+   * ⚠️ Was missing, and every value of this type has carried it all along —
+   * `DEFAULT_INCOME`/`DEFAULT_EXPENSES` set it, `toLocalItems` defensively
+   * coerces it (`name: item.name ?? ''`), and the row editor reads and writes it.
+   * `NormalizableFinancialItem` (core) is deliberately just `{amount, frequency}`,
+   * so the label belongs here, on the UI-local extension.
+   */
+  name: string
 }
 
 /**
@@ -169,8 +177,10 @@ function toNormalizableItems(items: LocalFinancialItem[]): NormalizableFinancial
 /**
  * Format percentage for display
  */
-function formatPercentage(value: number): string {
-  return `${(value * 100).toFixed(2)}%`
+function formatPercentage(value: string | number): string {
+  // `string | number` to match `InputFieldProps.formatValue`, which is what this is
+  // for. Both call sites pass a number, and `Number()` is identity on one.
+  return `${(Number(value) * 100).toFixed(2)}%`
 }
 
 /**
@@ -180,7 +190,11 @@ function formatPercentage(value: number): string {
  * no items of that kind.
  */
 function itemsFromSaved(
-  items: NormalizableFinancialItem[] | undefined,
+  // Saved items carry a label that `NormalizableFinancialItem` deliberately does
+  // not model (core keeps it to `{amount, frequency}`). Optional because a
+  // corrupt or older saved scenario may lack it — which the `?? ''` below already
+  // handled, before the type admitted it was possible.
+  items: (NormalizableFinancialItem & { name?: string })[] | undefined,
   prefix: string
 ): LocalFinancialItem[] {
   if (!items || items.length === 0) return []
@@ -652,7 +666,7 @@ export function ScenarioBuilder({
             onChange={handleSavingsChange}
             type="text"
             inputMode="decimal"
-            formatValue={formatCurrency}
+            formatValue={(v) => formatCurrency(Number(v))}
             parseValue={(v) => parseFromInput(v, locale)}
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
           />
@@ -664,7 +678,7 @@ export function ScenarioBuilder({
             onChange={handleInvestmentsChange}
             type="text"
             inputMode="decimal"
-            formatValue={formatCurrency}
+            formatValue={(v) => formatCurrency(Number(v))}
             parseValue={(v) => parseFromInput(v, locale)}
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
           />

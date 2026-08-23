@@ -7,15 +7,14 @@
  * Architecture Requirement: FR5 - Core calculations
  */
 
-import { type Frequency, calculateTotalMonthlyNormalized } from './normalization'
+import type { NormalizableFinancialItem } from './normalization'
+import { calculateTotalMonthlyNormalized } from './normalization'
 
-/**
- * Interface for financial items that can be normalized
- */
-export interface NormalizableFinancialItem {
-  amount: number
-  frequency: Frequency
-}
+// ⚠️ Declared once, in `./normalization`, and re-exported here so existing
+// importers of this module keep working. It used to be a SECOND, identical
+// declaration, which made the name ambiguous through both barrels (`finance/index.ts`
+// and the package root re-export both) and let the two copies drift apart silently.
+export type { NormalizableFinancialItem } from './normalization'
 
 /**
  * Calculates net period income from income sources and expenses

@@ -143,7 +143,11 @@ export function calculateFinancialForecast(
 
   // Calculate summary
   const startingNetWorth = currentData.savings + currentData.investments
-  const endingNetWorth = projection[projection.length - 1].netWorth
+  // `projection` has one entry per year, so a 0-year forecast leaves it empty.
+  // Falling back to the starting figure keeps `totalGrowth` at 0 rather than NaN,
+  // which is what an empty projection means.
+  const lastProjection = projection[projection.length - 1]
+  const endingNetWorth = lastProjection ? lastProjection.netWorth : startingNetWorth
   const totalGrowth = endingNetWorth - startingNetWorth
   const averageAnnualGrowth = totalGrowth / years
 
@@ -224,7 +228,6 @@ export function calculateGoalTimeline(
 
   // Calculate monthly amount needed to reach goal in a specific timeframe
   // Using future value of annuity formula
-  const _monthlyRate = annualReturnRate / 12
   const months = years * 12
   // FV = PMT * [((1 + r)^n - 1) / r] * (1 + r)
   // We need to solve for PMT, but for simplicity we'll use an approximation
