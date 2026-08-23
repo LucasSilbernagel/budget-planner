@@ -4,6 +4,7 @@ import {
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
+import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNetWorth } from '../hooks/useNetWorth'
@@ -249,21 +250,31 @@ export function BalancePage() {
   }
 
   // Open modal for editing existing balance entry
-  const openEditModal = (entry: {
-    id: string
-    type: FinanceType
-    name: string
-    currentBalance: number
-    maxContributionLimit: number | null
-    monthlyContribution: number
-    frequency: Frequency
-  }) => {
+  // Takes the stored row itself rather than a hand-copied structural echo of it —
+  // the inline type had drifted (`maxContributionLimit` non-optional `number | null`
+  // vs the store's optional `number | null`) and re-stating a shape only invites
+  // that. `Pick` keeps the parameter to the fields this actually reads.
+  const openEditModal = (
+    entry: Pick<
+      ClientBalanceTracking,
+      | 'id'
+      | 'type'
+      | 'name'
+      | 'currentBalance'
+      | 'maxContributionLimit'
+      | 'monthlyContribution'
+      | 'frequency'
+    >
+  ) => {
     setEditingId(entry.id)
     setType(entry.type)
     setName(entry.name)
     setCurrentBalance(formatForInputDisplay(entry.currentBalance, locale))
     setMaxContributionLimit(
-      entry.maxContributionLimit !== null
+      // `!= null` covers BOTH spellings of "no limit". The old `!== null` let an
+      // `undefined` limit — an older record predating the field — through to
+      // `formatForInputDisplay(undefined)`.
+      entry.maxContributionLimit != null
         ? formatForInputDisplay(entry.maxContributionLimit, locale)
         : ''
     )

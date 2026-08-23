@@ -165,7 +165,10 @@ interface BalanceRow {
   type: string
   name: string
   currentBalance: number
-  maxContributionLimit?: number
+  // `| null` matches `ClientBalanceTracking`: the app persists null for "no limit".
+  // Both readers below already cope — `finiteOrNull` is a `typeof === 'number'`
+  // check and `remainingContributionRoom` guards the same way.
+  maxContributionLimit?: number | null
   monthlyContribution: number
   frequency: string
 }

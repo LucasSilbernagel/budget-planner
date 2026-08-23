@@ -37,7 +37,12 @@ export interface ClientBalanceTracking {
   type: FinanceType
   name: string
   currentBalance: number // In cents (can be negative for debts)
-  maxContributionLimit?: number // In cents, optional
+  // ⚠️ `| null` is not cosmetic. `BalancePage` deliberately persists `null` for "no
+  // limit" — it is how a new debt, an investment->debt switch, or saving a legacy
+  // debt that had a limit all clear it (`BalancePage.tsx:313-319`). The type said
+  // `?: number` and was simply lying about what this field has held in
+  // localStorage since story 16-2.
+  maxContributionLimit?: number | null // In cents, optional
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2); normalize before aggregating
   createdAt: string // ISO string for localStorage serialization
@@ -60,7 +65,7 @@ export interface ClientNewBalanceTracking {
   type: FinanceType
   name: string
   currentBalance: number // In cents
-  maxContributionLimit?: number // In cents, optional
+  maxContributionLimit?: number | null // In cents, optional
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   // Debt-specific fields

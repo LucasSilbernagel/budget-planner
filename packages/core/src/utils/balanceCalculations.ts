@@ -33,20 +33,25 @@
  */
 export function calculateMonthsToLimit(
   currentBalance: number,
-  maxContributionLimit: number | undefined,
-  monthlyContribution: number | undefined
+  // ⚠️ `| null` because that is what the app persists for "no limit" — see
+  // `ClientBalanceTracking.maxContributionLimit`. The `!= null` checks below treat
+  // null and undefined identically, which is what "optional" was always meant to
+  // mean here. (Behaviour is unchanged: null already returned `null` from the
+  // finiteness check, and undefined from the completeness check.)
+  maxContributionLimit: number | null | undefined,
+  monthlyContribution: number | null | undefined
 ): number | null {
   // Validate all parameters are finite numbers
   if (
     !Number.isFinite(currentBalance) ||
-    (maxContributionLimit !== undefined && !Number.isFinite(maxContributionLimit)) ||
-    (monthlyContribution !== undefined && !Number.isFinite(monthlyContribution))
+    (maxContributionLimit != null && !Number.isFinite(maxContributionLimit)) ||
+    (monthlyContribution != null && !Number.isFinite(monthlyContribution))
   ) {
     return null
   }
 
   // Cannot calculate without both values
-  if (maxContributionLimit === undefined || monthlyContribution === undefined) {
+  if (maxContributionLimit == null || monthlyContribution == null) {
     return null
   }
 
@@ -211,16 +216,26 @@ export interface DebtCalculationResult {
  */
 export function calculateDebtMetrics(
   currentBalance: number,
-  maxContributionLimit: number | undefined,
-  monthlyContribution: number | undefined,
+  // ⚠️ `| null` for the same reason as `calculateMonthsToLimit`, but note this one
+  // was NOT merely a typing gap: `maxContributionLimit !== undefined &&
+  // !Number.isFinite(null)` is TRUE, so a null limit fell into the "Invalid data"
+  // branch below while undefined fell through to "No limit". `!= null` makes the
+  // two agree, which is the documented intent ("optional").
+  //
+  // Reachability, checked before changing it: `withTimeline` only calls this when
+  // `entry.type === 'debt' && entry.debtSubType`, and `debtSubType` is set NOWHERE
+  // in `apps/web/src` — so this path is dormant in the app today and no test passed
+  // null. The change is a consistency fix, not a live behaviour change.
+  maxContributionLimit: number | null | undefined,
+  monthlyContribution: number | null | undefined,
   debtSubType: DebtSubType,
   originalBalance?: number
 ): DebtCalculationResult {
   // Validate inputs
   if (
     !Number.isFinite(currentBalance) ||
-    (maxContributionLimit !== undefined && !Number.isFinite(maxContributionLimit)) ||
-    (monthlyContribution !== undefined && !Number.isFinite(monthlyContribution))
+    (maxContributionLimit != null && !Number.isFinite(maxContributionLimit)) ||
+    (monthlyContribution != null && !Number.isFinite(monthlyContribution))
   ) {
     return {
       progress: null,
@@ -246,7 +261,7 @@ export function calculateDebtMetrics(
   let progress: number | null = null
   let progressLabel = 'No limit'
 
-  if (maxContributionLimit !== undefined && maxContributionLimit > 0) {
+  if (maxContributionLimit != null && maxContributionLimit > 0) {
     switch (debtSubType) {
       case 'credit-card':
         // C1 Strategy: Utilization percentage
