@@ -7,7 +7,6 @@
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
 
-import type { ProcessOperationResult, SyncOperation } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import { getUserContext } from '../api/data/forecasting'
 import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
@@ -175,60 +174,25 @@ export async function syncGetStatus(request: Request): Promise<ReturnType<typeof
 }
 
 /**
- * Process a single sync operation
+ * ⚠️ `processSyncOperation` USED TO LIVE HERE AND HAS BEEN REMOVED (story 5-15).
  *
- * This is a helper function that can be used as a custom processOperation
- * implementation for the SynchronizationService on the client side.
+ * It wrapped one operation in a `BatchSyncRequest` and passed that plain object to
+ * `syncBatch(request: Request)`, which immediately calls `getUserContext(request)`
+ * → `request.headers.get('cookie')`. A `BatchSyncRequest` has no `headers`, so the
+ * call threw on every invocation and the function's own catch turned it into a
+ * generic failure result — it could never have succeeded.
  *
- * It wraps a single operation in a batch request and sends it to the server.
+ * It was already superseded: push moved over HTTP in story 5-15 precisely so the
+ * client never imports server/DB code, and the live transport is
+ * `sendSyncOperation` in `features/api/client.ts`, wired into the core service as
+ * `config.processOperation`. Both `routes/api/sync/batch.ts:11` and
+ * `features/api/client.ts:263` describe this function as the OLD direct import
+ * they replaced. Nothing imported it; no test referenced it.
  *
- * @param operation - The sync operation to process
- * @returns Promise resolving to the operation result
+ * Do not reinstate it — re-adding a direct client import of this module is the
+ * `@budget-planner/db`-in-the-client-bundle hazard that 5-12, 4-18 and 5-15 each
+ * fixed in turn.
  */
-export async function processSyncOperation(
-  operation: SyncOperation
-): Promise<ProcessOperationResult> {
-  try {
-    // Wrap the single operation in a batch request
-    const request: BatchSyncRequest = {
-      operations: [operation],
-      clientTimestamp: Date.now(),
-      deviceId: operation.deviceId,
-    }
-
-    // Call the server batch sync function
-    const response = await syncBatch(request)
-
-    // If the batch succeeded and processed one operation
-    if (response.success && response.processedCount === 1) {
-      return { success: true }
-    }
-
-    // If there were conflicts
-    if (response.conflictCount > 0) {
-      return { success: false, conflict: true }
-    }
-
-    // If there were failures
-    if (response.failedCount > 0) {
-      return {
-        success: false,
-        error: response.error || 'Operation failed on server',
-      }
-    }
-
-    // Fallback
-    return {
-      success: response.success,
-      error: response.error,
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
-}
 
 // Re-export types for convenience
 export type { BatchSyncRequest, BatchSyncResponse }

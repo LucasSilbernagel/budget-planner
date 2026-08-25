@@ -726,10 +726,11 @@ export async function complexAggregation(
         break
       case 'median': {
         const mid = Math.floor(sortedValues.length / 2)
-        result =
-          sortedValues.length % 2 !== 0
-            ? sortedValues[mid]
-            : (sortedValues[mid - 1] + sortedValues[mid]) / 2
+        // Non-empty is guaranteed by the `values.length === 0` guard above, so both
+        // reads land; `?? 0` only satisfies `noUncheckedIndexedAccess`.
+        const upper = sortedValues[mid] ?? 0
+        const lower = sortedValues[mid - 1] ?? upper
+        result = sortedValues.length % 2 !== 0 ? upper : (lower + upper) / 2
         break
       }
       case 'max':

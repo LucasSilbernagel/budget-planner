@@ -150,12 +150,18 @@ function calculateRetirementClient(input: RetirementInput): RetirementResult {
  * Client-side compounding projection fallback
  */
 function calculateProjectionClient(input: CompoundingInput): YearlyProjection[] {
-  return calculateCompoundingProjectionClient({
-    principal: input.principal,
-    annualReturnRate: input.annualReturnRate,
-    years: input.years,
-    monthlyContribution: input.monthlyContribution || 0,
-  })
+  // ⚠️ This used to rebuild the input as
+  // `{ principal, annualReturnRate, years, monthlyContribution: input.monthlyContribution || 0 }`.
+  // `CompoundingInput` has no `monthlyContribution` — the field is
+  // `annualContribution` (`core/finance/retirement.ts:248-253`) — so the rebuilt
+  // object dropped the contribution entirely, and
+  // `calculateCompoundingProjection` THROWS on a non-finite `annualContribution`
+  // (`:295`). The free-tier branch of `calculateProjection` therefore always
+  // errored. Latent rather than live: no component consumes this hook yet.
+  //
+  // `input` is already a `CompoundingInput`; forwarding it is both the fix and the
+  // reason a rebuild should never have been here.
+  return calculateCompoundingProjectionClient(input)
 }
 
 /**
@@ -191,6 +197,15 @@ function calculateNetWorthClient(input: NetWorthProjectionInput): NetWorthProjec
  * Client-side aggregation fallback
  */
 function calculateAggregationClient(input: AggregationInput): AggregationResult {
+  // ⚠️ The SERVER counterpart rejects an empty `values` outright
+  // (`server/functions/financial.ts:694`); this client fallback never did, so
+  // `median` and `average` of `[]` returned NaN here while the server returned an
+  // error. This function has no error channel — it returns a result — so 0 is the
+  // closest honest answer, and it keeps NaN out of the UI.
+  if (input.values.length === 0) {
+    return { result: 0, operation: input.operation, count: 0 }
+  }
+
   const sortedValues = [...input.values].sort((a, b) => a - b)
   let result: number
 
@@ -203,10 +218,11 @@ function calculateAggregationClient(input: AggregationInput): AggregationResult 
       break
     case 'median': {
       const mid = Math.floor(sortedValues.length / 2)
-      result =
-        sortedValues.length % 2 !== 0
-          ? sortedValues[mid]
-          : (sortedValues[mid - 1] + sortedValues[mid]) / 2
+      // Non-empty is guaranteed above, so both reads land; `?? 0` only satisfies
+      // `noUncheckedIndexedAccess` and is unreachable.
+      const upper = sortedValues[mid] ?? 0
+      const lower = sortedValues[mid - 1] ?? upper
+      result = sortedValues.length % 2 !== 0 ? upper : (lower + upper) / 2
       break
     }
     case 'max':
