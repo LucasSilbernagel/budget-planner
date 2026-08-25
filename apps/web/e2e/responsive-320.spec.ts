@@ -46,7 +46,6 @@ const ROUTES = [
   '/expenses',
   '/savings',
   '/balance',
-  '/net-worth-projection',
   '/retirement',
   '/forecasting',
   '/settings',

@@ -202,18 +202,30 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
     })
   }
 
-  // `flex-wrap` is the only thing keeping the eight desktop items inside a 640px
+  // `flex-wrap` is the only thing keeping the desktop items inside a 640px
   // viewport. Re-measured for story 43.2, which widened the Balance label to
-  // "Balance Tracking" and so widened this row:
+  // "Balance Tracking" and so widened this row, then RE-MEASURED for story 43.3,
+  // which removed the "Net Worth" destination and narrowed it again:
   //
   //                        row's intrinsic width   single-row from
   //   before 43.2 (DejaVu)        753px                857px
   //   after  43.2 (DejaVu)        815px                920px
+  //   after  43.3 (DejaVu)        717px                821px
   //
-  // i.e. 175px of overflow at 640px, 115px at 700px and 55px at 760px; the row
-  // needs a 920px viewport before it stops wrapping. Figures are CI-representative
-  // (`system-ui` -> DejaVu Sans); this repo's dev boxes resolve the narrower Noto
-  // Sans and measure 721 -> 780 / 822 -> 881.
+  // The row still WRAPS at all three tested widths (640/700/760): it needs an
+  // 821px VIEWPORT before it becomes one row. ⚠️ Note the two columns are not
+  // interchangeable — the intrinsic width (717px) is the row's own content, while
+  // the single-row threshold (821px) is the viewport it needs, and the ~104px gap
+  // is the wrapper's padding and gutters. Comparing 717px against a 760px viewport
+  // and concluding "it fits" is the mistake; the threshold is the number that
+  // predicts wrapping. Figures are CI-representative (`system-ui` -> DejaVu Sans);
+  // this repo's dev boxes resolve the narrower Noto Sans and measure
+  // 721 -> 780 -> 684 intrinsic / 822 -> 881 -> 785 single-row.
+  //
+  // ⚠️ Every figure above was MEASURED, at a viewport WIDER than the row, on the
+  // build under test. Do not carry one forward as an estimate: 43.3 found two
+  // further copies of the pre-43.2 "778px" in `GlobalNav.tsx` that had been stale
+  // for months. This comment is the single live record — do not duplicate it.
   //
   // ⚠️ The number this comment carried until 43.2 — "the row wants 778px …
   // clearing only at 800px" — did NOT reproduce at 43.2's baseline under either
@@ -236,7 +248,7 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
       const measured = await page.evaluate((selector) => {
         const list = document.querySelector(`${selector} > ul`)
         if (!list) return null
-        // All eight anchors, deliberately: at >= 640px `sm:contents` dissolves
+        // All seven anchors, deliberately: at >= 640px `sm:contents` dissolves
         // the wrapper <li> and the nested <ul>, so every destination really is
         // an item of this one row and every one of them must fit inside it.
         const rights = [...list.querySelectorAll('a')].map((a) => a.getBoundingClientRect().right)
@@ -375,7 +387,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
   /**
    * ⚠️ Re-scoped in 31.5, and NOT merely by changing an 8 to a 5.
    * `querySelectorAll` is a CSS query and CSS queries match `display: none`, so
-   * with the sheet closed `${NAV} a` still returns all EIGHT anchors — a count
+   * with the sheet closed `${NAV} a` still returns all SEVEN anchors — a count
    * that stays green while no longer distinguishing bar from sheet, which is the
    * only distinction this story is about. The bar's cells and the sheet's rows
    * are read separately, and BOTH are asserted square: the sheet's rows are new
@@ -401,12 +413,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
 
     const sheetRows = await read(`${NAV} > ul > li > ul > li > a`)
-    expect(sheetRows.map((r) => r.label)).toEqual([
-      'Balance Tracking',
-      'Net Worth',
-      'Retirement',
-      'Settings',
-    ])
+    expect(sheetRows.map((r) => r.label)).toEqual(['Balance Tracking', 'Retirement', 'Settings'])
 
     // The More trigger is a <button>, so every anchor sweep in this file misses
     // it — including this one before 31.5 added the line below.
@@ -530,7 +537,7 @@ for (const [theme, expected] of [
  * background for exactly the reason the bar does — it is `absolute`, so page
  * content passes underneath it. The two-theme test above is scoped to the `<nav>`
  * element and cannot see the sheet at all; a dropped background computes to
- * `rgba(0, 0, 0, 0)` and the four destinations sit on whatever scrolls past.
+ * `rgba(0, 0, 0, 0)` and the three destinations sit on whatever scrolls past.
  */
 for (const [theme, expected] of [
   ['light', 'rgb(255, 255, 255)'],
@@ -637,10 +644,18 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
    * `elementFromPoint`, never by `toBeVisible()`.
    */
   test.describe('the sheet stays reachable when it cannot fit above the bar', () => {
+    // ⚠️ RE-TUNED by story 43.3's code review, and the retune is the point.
+    // These viewports must make the sheet OVERFLOW its `max-h` cap; removing one
+    // sheet row shrank the panel ~72px (24px root) and two of the three original
+    // combos silently stopped overflowing — `320x400@24` measured 228/228 and
+    // `360x320@20` measured 190/190, i.e. the tests went on proving that a sheet
+    // which FITS is reachable, under a describe titled "when it CANNOT fit".
+    // Nothing went red because `scrollable` was collected and never asserted.
+    // Measured after the retune: 228/199, 228/219, 190/179 — all three overflow.
     for (const [w, h, root] of [
       [568, 320, 24],
-      [320, 400, 24],
-      [360, 320, 20],
+      [320, 340, 24],
+      [360, 280, 20],
     ] as const) {
       test(`every row is reachable at ${w}x${h} with a ${root}px root font`, async ({ page }) => {
         await page.setViewportSize({ width: w, height: h })
@@ -709,6 +724,14 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
         expect(measured.overflowY, 'the sheet cannot scroll when it does not fit').toMatch(
           /^(auto|scroll)$/
         )
+        // ⚠️ THE ANTI-VACUITY GUARD. `overflow-y: auto` is satisfied by a panel
+        // with nothing to scroll, so without this the whole describe passes on a
+        // sheet that fits — which is exactly what happened when 43.3 removed a
+        // row. This asserts the fixture still produces the condition it names.
+        expect(
+          measured.scrollable,
+          `the sheet does not overflow at ${w}x${h}@${root}px — this fixture no longer tests the cap`
+        ).toBe(true)
         expect(
           measured.overflowX,
           'the sheet absorbs a horizontally overflowing row'
@@ -763,12 +786,7 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
       NAV
     )
 
-    expect(rows.map((r) => r.label)).toEqual([
-      'Balance Tracking',
-      'Net Worth',
-      'Retirement',
-      'Settings',
-    ])
+    expect(rows.map((r) => r.label)).toEqual(['Balance Tracking', 'Retirement', 'Settings'])
     for (const { label, height, overflows, lineCount } of rows) {
       expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
       expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)
@@ -821,7 +839,7 @@ test('the nested sheet list DISSOLVES into the desktop row at 1280px', async ({ 
       sheetDisplay: globalThis.getComputedStyle(sheet).display,
       triggerDisplay: globalThis.getComputedStyle(trigger).display,
       navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
-      // All eight anchors on ONE row: same y, ascending x, none clipped.
+      // All seven anchors on ONE row: same y, ascending x, none clipped.
       ys: [...new Set(anchors.map((a) => Math.round(a.getBoundingClientRect().y)))],
       count: anchors.length,
       // Icons are mobile-only elements; a stray one adds 24px to every cell.
@@ -836,7 +854,8 @@ test('the nested sheet list DISSOLVES into the desktop row at 1280px', async ({ 
   expect(measured.triggerDisplay, 'the mobile-only More trigger reached the desktop row').toBe(
     'none'
   )
-  expect(measured.count).toBe(8)
+  // Seven anchors since story 43.3 removed the Net Worth destination (was 8).
+  expect(measured.count).toBe(7)
   expect(measured.ys, 'the desktop nav is no longer one row').toHaveLength(1)
   expect(measured.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
   expect(measured.navHeight, 'the desktop nav grew — a dissolution or icon regression').toBe(52)

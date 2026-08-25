@@ -39,8 +39,7 @@ money down by category so you can see where it goes at a glance.
 - Record investments and debts on the **Balance Tracking** page. If you have a
   mortgage or another loan, [Where a mortgage
   belongs](/docs/where-a-mortgage-belongs) explains which part goes where.
-- Look ahead with the [**Net Worth**](/net-worth-projection) page and the
-  [**retirement planner**](/retirement).
+- Look ahead with the [**retirement planner**](/retirement).
 
 Read the [Features](/docs/features) guide for a full tour, or check the
 [FAQ](/docs/faq) if you have questions.

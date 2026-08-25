@@ -950,8 +950,9 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   it('derives monthly savings from FREQUENCY-NORMALIZED net income (AC-2)', () => {
     // $500/week income = $2,166.67/mo normalized (×52/12); $166.67/mo expenses.
     // Net = 216667 − 16667 = 200000 cents = $2,000.00.
-    // ⚠️ Un-normalized (the rejected NetWorthProjectionPage derivation) would
-    // read 50000 − 16667 = $333.33 — a different, wrong number.
+    // ⚠️ Un-normalized (the derivation the removed Net Worth projection page
+    // used, and the one this page rejects) would read 50000 − 16667 = $333.33 —
+    // a different, wrong number.
     useIncomeStore.setState({ incomeSources: [incomeRow(50_000, 'weekly')] })
     useExpenseStore.setState({ expenses: [expenseRow(16_667)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -1132,8 +1133,8 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('treats a fractional-cent balance as unreadable rather than solving from it', () => {
-    // Sub-cent data makes the card and the solver disagree silently.
-    // `NetWorthProjectionPage` already refuses the identical row.
+    // Sub-cent data makes the card and the solver disagree silently. The removed
+    // Net Worth projection page refused the identical row; this guard outlived it.
     useBalanceStore.setState({
       entries: [{ ...investmentRow(0), currentBalance: 500_050.5 } as unknown as never],
     })

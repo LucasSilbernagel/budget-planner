@@ -26,7 +26,7 @@ import { type Page, expect, test } from '@playwright/test'
  *     means — and not the ">=2" a casual reading would guess. The Range is
  *     scoped to the `[data-nav-label]` span, which is what "the label is on one
  *     line" is actually a claim about.
- *   - The loop used to iterate all `nav a`. Four of those eight anchors are now
+ *   - The loop used to iterate all `nav a`. Three of those seven anchors are now
  *     the sheet's rows, which are `display: none` while the sheet is closed and
  *     therefore measure `height: 0` — so the >=44px assertion failed on the
  *     SHEET rather than on the bar. Every measurement here is scoped to the
@@ -55,8 +55,8 @@ const NAV = 'nav[aria-label="Primary"]'
 
 /** The four destinations that keep a cell in the bar. */
 const BAR_LABELS = ['Overview', 'Income', 'Expenses', 'Savings'] as const
-/** The four that moved behind the More trigger. */
-const SHEET_LABELS = ['Balance Tracking', 'Net Worth', 'Retirement', 'Settings'] as const
+/** The three that moved behind the More trigger (four until story 43.3). */
+const SHEET_LABELS = ['Balance Tracking', 'Retirement', 'Settings'] as const
 
 /**
  * The bar's own cells, structurally: anchors that are direct grandchildren of
@@ -113,9 +113,10 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
     await expect(nav.getByRole('button', { name: 'More', exact: true })).toHaveCount(1)
 
     // The negative claim this story is actually about: with the sheet closed the
-    // four More destinations are not reachable in the bar. Role locators respect
+    // More destinations are not reachable in the bar. Role locators respect
     // `display: none`; the CSS `locator('a')` count deliberately is NOT used here
-    // because it still returns 8 and would pass on a bar that shows all eight.
+    // because it still returns every anchor (7 since 43.3) and would pass on a
+    // bar that shows all of them.
     for (const label of SHEET_LABELS) {
       await expect(
         nav.getByRole('link', { name: label, exact: true }),

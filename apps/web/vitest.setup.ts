@@ -27,8 +27,8 @@ expect.extend(jestDomMatchers)
 
 // jsdom does not implement ResizeObserver, which Recharts' <ResponsiveContainer>
 // instantiates on mount. Provide a no-op stub so component tests that render charts
-// (e.g. NetWorthProjectionPage) don't throw. Only defined when missing, so a real
-// implementation (if ever present) is never clobbered.
+// (e.g. SavingsChart, RetirementTimelineChart) don't throw. Only defined when
+// missing, so a real implementation (if ever present) is never clobbered.
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class ResizeObserver {
     observe(): void {}

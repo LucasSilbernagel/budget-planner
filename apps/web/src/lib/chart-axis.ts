@@ -7,9 +7,10 @@ import {
 /**
  * Shared numeric-axis helpers for the dashboard Recharts charts.
  *
- * Extracted so the Net Worth Projection, Retirement Timeline, and Financial
- * Category Summary charts format their value axes identically instead of each
+ * Extracted so the Overview, Savings, Retirement Timeline and Category
+ * Breakdown charts format their value axes identically instead of each
  * re-deriving the logic (they had started to drift into per-file copies).
+ * The Net Worth Projection chart was a fifth reader until story 43.3 removed it.
  */
 
 /**

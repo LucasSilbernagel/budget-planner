@@ -8,8 +8,11 @@
  * Balance page's copy could not even see the savings store). The only assertion
  * that can fail on drift is one seed, both pages, one comparison.
  *
- * The Net Worth Projection page's "Current Net Worth" card is included for the
- * same reason: it is a third surface showing the user the same claim.
+ * ⚠️ This file covered THREE surfaces until story 43.3 (FR69) removed the free
+ * Net Worth projection page and its "Current Net Worth" card. Two remain. The
+ * invariant is unchanged and so is its reason — it is about every surface that
+ * shows the user this claim, not about a fixed count — so a third surface added
+ * later belongs here, in `netWorthTextFrom`, on the same seed.
  *
  * Harness note: the two page suites do not share one. `HomePage.test.tsx` uses a
  * bare `render` plus a `vi.mock` of `usePremiumAccess` (without it the Overview's
@@ -35,7 +38,6 @@ import { type OverviewDuration, useOverviewDurationStore } from '../../stores/ov
 import { useSavingsStore } from '../../stores/savingsStore'
 import { BalancePage } from '../BalancePage'
 import { HomePage } from '../HomePage'
-import { NetWorthProjectionPage } from '../NetWorthProjectionPage'
 
 const TS = '2026-08-15T00:00:00.000Z'
 
@@ -59,7 +61,7 @@ function clearStores(): void {
 }
 
 /**
- * ONE fixture, seeded once, read by all three surfaces.
+ * ONE fixture, seeded once, read by both surfaces.
  *
  * investments 2,000,000c + savings 300,000c − debts 15,000,000c = −12,700,000c
  * (the pre-32.2 definition gave −13,000,000c on every one of them).
@@ -122,20 +124,13 @@ function seedSharedFixture(): void {
 }
 
 /** Render one surface in isolation and return its net-worth text. */
-function netWorthTextFrom(surface: 'overview' | 'balance' | 'projection'): string {
-  const testId =
-    surface === 'overview'
-      ? 'overview-net-worth'
-      : surface === 'balance'
-        ? 'stat-net-worth'
-        : 'projection-current-net-worth'
+function netWorthTextFrom(surface: 'overview' | 'balance'): string {
+  const testId = surface === 'overview' ? 'overview-net-worth' : 'stat-net-worth'
 
   if (surface === 'overview') {
     render(<HomePage />)
-  } else if (surface === 'balance') {
-    renderWithProviders(<BalancePage />)
   } else {
-    renderWithProviders(<NetWorthProjectionPage />)
+    renderWithProviders(<BalancePage />)
   }
 
   const text = screen.getByTestId(testId).textContent ?? ''
@@ -169,16 +164,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
     expect(overview).toContain('-127,000.00')
   })
 
-  it('AC-5/AC-7: the Net Worth Projection page agrees with both', () => {
-    seedSharedFixture()
-
-    const overview = netWorthTextFrom('overview')
-    const projection = netWorthTextFrom('projection')
-
-    expect(projection).toBe(overview)
-  })
-
-  it('AC-6: all three agree for a savings-only user, where they used to show zero', () => {
+  it('AC-6: both agree for a savings-only user, where they used to show zero', () => {
     useSavingsStore.setState({
       savingsGoals: [
         {
@@ -194,18 +180,16 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
 
     const overview = netWorthTextFrom('overview')
     const balance = netWorthTextFrom('balance')
-    const projection = netWorthTextFrom('projection')
 
     expect(overview).toContain('2,500.00')
     expect(balance).toBe(overview)
-    expect(projection).toBe(overview)
   })
 
   /**
    * Story 32.3 — net worth is POINT-IN-TIME and must stay period-invariant.
    *
    * ⚠️ NEW AXIS, and the reason this is an extension rather than a repeat. Every
-   * case above renders at the default period with no flows seeded, so all three
+   * case above renders at the default period with no flows seeded, so both
    * surfaces were only ever measured at ONE point on the duration axis — the same
    * blindness-by-construction 31.5 recorded. 32.3 puts a single period control in
    * charge of the whole Overview, which is exactly the change that could sweep
@@ -221,7 +205,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
    * kinds of number sit on screen together, which is the condition under which a
    * mistaken denormalization would be written.
    */
-  it('32.3: all three surfaces hold the same net worth at every duration, with flows on screen', () => {
+  it('32.3: both surfaces hold the same net worth at every duration, with flows on screen', () => {
     seedSharedFixture()
     useIncomeStore.setState({
       incomeSources: [
@@ -256,12 +240,10 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
 
       const overview = netWorthTextFrom('overview')
       const balance = netWorthTextFrom('balance')
-      const projection = netWorthTextFrom('projection')
 
       expect(balance).toBe(overview)
-      expect(projection).toBe(overview)
-      // Pinned as well as compared: three surfaces agreeing on a period-scaled
-      // WRONG figure would satisfy the equalities on their own.
+      // Pinned as well as compared: two surfaces agreeing on a period-scaled
+      // WRONG figure would satisfy the equality on its own.
       expect(overview).toContain('-127,000.00')
     }
   })

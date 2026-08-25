@@ -30,7 +30,6 @@ const PAGES = [
   '/expenses',
   '/savings',
   '/balance',
-  '/net-worth-projection',
   '/retirement',
 
   // Story 31-1 (UX-DR35): the commercial/legal/docs/sign-in set, which had

@@ -38,12 +38,14 @@ import { GlobalNav } from '../GlobalNav'
 /**
  * Split into the two groups story 31.5 introduced — for READABILITY only.
  *
- * ⚠️⚠️ THE LINK COUNTS BELOW STAY 8 AND STAY GREEN. Do NOT "fix" them to 5.
+ * ⚠️⚠️ THE LINK COUNTS BELOW STAY 7 AND STAY GREEN. Do NOT "fix" them to 5.
  * jsdom applies no media queries, so `display: none` is never computed and
- * `getAllByRole('link')` resolves ALL EIGHT anchors regardless of which four are
- * behind the More trigger at 320px in a real browser. Every one of the eight
+ * `getAllByRole('link')` resolves ALL SEVEN anchors regardless of which three are
+ * behind the More trigger at 320px in a real browser. Every one of the seven
  * `it.each` rows passes unchanged too. Changing these counts to 5 would turn
- * four correct, green tests red. The bar-versus-sheet distinction is a rendered
+ * correct, green tests red. (It was EIGHT until story 43.3 removed
+ * `/net-worth-projection`; the count follows the nav, never the viewport.)
+ * The bar-versus-sheet distinction is a rendered
  * fact, and it is asserted where it can actually be measured:
  * `e2e/chrome-320.spec.ts` and `e2e/nav-responsive-css.spec.ts`.
  */
@@ -56,7 +58,6 @@ const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
 
 const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
   [/^balance tracking$/i, '/balance'],
-  [/^net worth$/i, '/net-worth-projection'],
   [/^retirement$/i, '/retirement'],
   [/^settings$/i, '/settings'],
 ]
@@ -130,7 +131,7 @@ describe('GlobalNav', () => {
     expect(link).toHaveAttribute('href', href)
   })
 
-  it('exposes exactly the eight top-level sections (no premium entry in the nav)', async () => {
+  it('exposes exactly the seven top-level sections (no premium entry in the nav)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length)
@@ -158,9 +159,9 @@ describe('GlobalNav', () => {
   })
 
   // Story 31.4. This replaces a test that mocked `useIsNarrowViewport` to render
-  // a second, mobile-only subtree and then re-counted the eight links. With one
+  // a second, mobile-only subtree and then re-counted the section links. With one
   // CSS-switched DOM that claim is a byte-for-byte duplicate of "exposes exactly
-  // the eight top-level sections" above and would stay green while proving
+  // the seven top-level sections" above and would stay green while proving
   // nothing about mobile. The claim that survives is the one the merge is
   // actually about: BOTH layouts live on the SAME elements at once.
   it('drives both layouts from ONE subtree — desktop and max-sm: utilities co-exist', async () => {
@@ -230,7 +231,7 @@ describe('GlobalNav', () => {
     expect(outer.contains(sheet), 'the sheet list is not nested inside the outer list').toBe(true)
 
     // The bar's own cells are the outer list's direct anchors; the sheet's rows
-    // sit one level deeper. Together they are the eight destinations, each once.
+    // sit one level deeper. Together they are the seven destinations, each once.
     const barAnchors = [...outer.querySelectorAll(':scope > li > a')]
     const sheetAnchors = [...sheet.querySelectorAll(':scope > li > a')]
     expect(barAnchors.map((a) => a.textContent?.trim())).toEqual([
@@ -241,7 +242,6 @@ describe('GlobalNav', () => {
     ])
     expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual([
       'Balance Tracking',
-      'Net Worth',
       'Retirement',
       'Settings',
     ])
@@ -338,8 +338,9 @@ describe('GlobalNav', () => {
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
     const icons = [...nav.querySelectorAll('svg')]
-    // Nine: one per bar tab, one for More, one per sheet row.
-    expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(9)
+    // Eight: one per bar tab (4), one for More, one per sheet row (3). Was NINE
+    // until story 43.3 removed the Net Worth destination and its icon.
+    expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(8)
     for (const icon of icons) {
       expect(
         tokens(icon),
@@ -351,7 +352,7 @@ describe('GlobalNav', () => {
 
     // Each label is wrapped so the e2e line-count probe can scope a Range to the
     // TEXT — over the whole anchor it measures 3 rects on a correct cell.
-    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(9)
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(8)
   })
 
   // Story 18-2 (review follow-ups), still true of the 31.5 single-row bar: the
@@ -475,7 +476,7 @@ describe('GlobalNav', () => {
    *
    * ⚠️⚠️ `<Link activeProps>` CANNOT make this claim and would not fail loudly:
    * More is not a route, so it would simply mark nothing, and the mobile bar
-   * would show NO active tab on four of eight destinations — worse orientation
+   * would show NO active tab on three of seven destinations — worse orientation
    * than the grid this story replaced. The state is derived from the router
    * location instead, which is exactly as hydration-safe (`useRouterState` reads
    * the same store `<Link>` does, seeded before the first React render).
@@ -549,11 +550,11 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href')),
       'the Retirement href survived the filter'
     ).not.toContain('/retirement')
-    // Seven, not eight: the node is not rendered, rather than hidden by CSS.
+    // Six, not seven: the node is not rendered, rather than hidden by CSS.
     expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1)
   })
 
-  it('leaves the sheet holding exactly its other three destinations', async () => {
+  it('leaves the sheet holding exactly its other two destinations', async () => {
     hidePlanner()
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -562,7 +563,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const sheet = [...lists][1]
     expect(
       [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
-    ).toEqual(['Balance Tracking', 'Net Worth', 'Settings'])
+    ).toEqual(['Balance Tracking', 'Settings'])
   })
 
   it('drops exactly one icon and one label with the entry', async () => {
@@ -570,9 +571,10 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    // Eight: four bar tabs, the More trigger, three sheet rows.
-    expect([...nav.querySelectorAll('svg')]).toHaveLength(8)
-    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(8)
+    // Seven: four bar tabs, the More trigger, two sheet rows. (Eight until
+    // story 43.3 removed the Net Worth destination.)
+    expect([...nav.querySelectorAll('svg')]).toHaveLength(7)
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(7)
   })
 
   it('leaves the four bar tabs and the More trigger untouched', async () => {
@@ -649,7 +651,6 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       '/expenses',
       '/savings',
       '/balance',
-      '/net-worth-projection',
       '/retirement',
       '/settings',
     ])

@@ -429,9 +429,9 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(premiumBullets.match(/european union/g) ?? []).toHaveLength(2)
   })
 
-  it('contrasts the free projection charts with Premium forecasting (story 30-2, AC-3)', () => {
+  it('contrasts the free retirement projection with Premium forecasting (story 30-2, AC-3)', () => {
     // FR52 requires Advanced forecasting to read as distinct from the FREE
-    // net-worth and retirement projections. The contrast is written into the
+    // retirement projection. The contrast is written into the
     // intro prose rather than the Premium bullet on purpose: the Premium section
     // is guarded against containing "retirement modeling" (story 13-1 AC-4,
     // above), so naming the free charts inside it would fail that guard.
@@ -449,8 +449,14 @@ describe('documentation content accuracy (story 10-4)', () => {
     // user retypes everything. "Separate workspace" is the honest framing — do
     // not reintroduce a continuity claim here (30-2 review).
     const { free } = featureSections()
+    // ⚠️ MOVED by story 43.3, not relaxed. FR69 removed the free net-worth
+    // projection page, so the old pin ("free net-worth and retirement
+    // projections chart where your current numbers lead") became FALSE by
+    // design. The distinguishing clause is still "charts where your current
+    // numbers lead" — do NOT weaken this to /projections/, which appears
+    // throughout the page and would be true-by-construction.
     expect(free).toMatch(
-      /free\s+net-worth\s+and\s+retirement\s+projections\s+chart\s+where\s+your\s+current\s+numbers\s+lead/
+      /free\s+retirement\s+projection\s+charts\s+where\s+your\s+current\s+numbers\s+lead/
     )
     expect(free).toMatch(/premium\s+forecasting\s+is\s+a\s+separate\s+what-if\s+workspace/)
   })
@@ -682,7 +688,9 @@ describe('documentation content accuracy (story 10-4)', () => {
       '/privacy',
       '/settings',
       '/contact',
-      '/net-worth-projection',
+      // Story 43.3 removed '/net-worth-projection'. This set is hand-maintained,
+      // so a stale entry here would let this test bless a doc link to a 404 —
+      // the entry must leave with the route, not after it.
       '/retirement',
     ])
     const internalLink = /\]\((\/[^)]*)\)/g
@@ -732,6 +740,15 @@ describe('documentation content accuracy (story 10-4)', () => {
     )
   })
 
+  /**
+   * ⚠️ COUPLING, recorded by story 43.3's code review. The three mortgage-page
+   * guards below pin prose that describes the FREE net-worth projection page as
+   * a live surface. Story 43.3 (FR69) REMOVED that page; story 43.5 rewrites this
+   * article and moves these pins with it. Until 43.5 lands, these pins actively
+   * enforce claims that are no longer true — so if you are here because you
+   * corrected the prose early, the pins are what went red, and 43.5 is the story
+   * that owns moving them. Do not relax them in place.
+   */
   it('the mortgage page says what each figure does NOT affect (36.3, AC-3)', () => {
     const page = mortgage()
     // The payment is cash flow, never net worth.

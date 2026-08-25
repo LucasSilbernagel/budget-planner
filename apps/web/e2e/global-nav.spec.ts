@@ -15,9 +15,9 @@ import { expect, test } from '@playwright/test'
  *    single click without routing back through Home.
  *  - AC-3: the nav stays usable at a narrow (mobile/PWA) viewport.
  *  - Story 31.5: below `sm` only four destinations keep a bar cell; the other
- *    four are disclosed by a "More" trigger. The tests above run at the default
+ *    three are disclosed by a "More" trigger. The tests above run at the default
  *    desktop viewport, where `sm:contents` dissolves the sheet back into the one
- *    row and all eight destinations are ordinary links — which is why they are
+ *    row and all seven destinations are ordinary links — which is why they are
  *    unchanged. The mobile half lives in the `describe` at the bottom.
  *
  * Requires browser binaries:
@@ -112,7 +112,7 @@ test('stays usable at a narrow mobile viewport', async ({ page }) => {
 /**
  * The "More" sheet (story 31.5, UX-DR35/38).
  *
- * The bar shows four destinations plus a More trigger; the other four live in a
+ * The bar shows four destinations plus a More trigger; the other three live in a
  * disclosure sheet. These tests prove reachability by ACTING — tapping through
  * to the destination — rather than by `toBeVisible()`, which 31.3 found staying
  * green through a broken implementation at ten call sites, and which was
@@ -291,9 +291,44 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await page.waitForLoadState('networkidle')
 
     await moreOf(page).click()
-    await page.mouse.move(160, 100)
+
+    // ⚠️ BOTH gesture endpoints are MEASURED against the live sheet box. The
+    // release point was hard-coded at y=500, which sat inside the sheet only
+    // while the sheet held four rows; story 43.3 removed one, the sheet's top
+    // edge dropped below 500, and the release landed OUTSIDE — dismissing the
+    // sheet and failing a test that is not about row count at all.
+    //
+    // ⚠️⚠️ 43.3's code review then found that the FIRST fix was half a fix: it
+    // measured the release but left the ORIGIN at a constant (160, 100), and
+    // guarded the release with `releaseY > sheet.y` — which is true for any box
+    // taller than 0px and so could not fail. Both endpoints are now measured AND
+    // bounds-checked in both axes, so this test states its own preconditions
+    // instead of trusting a layout constant.
+    const sheetBox = await page.locator('nav[aria-label="Primary"] > ul > li > ul').boundingBox()
+    expect(sheetBox, 'the open sheet has no box to release inside').not.toBeNull()
+    const sheet = sheetBox as NonNullable<typeof sheetBox>
+
+    const releaseX = Math.round(sheet.x + sheet.width / 2)
+    const releaseY = Math.round(sheet.y + sheet.height / 2)
+    // Strictly INSIDE, both axes — the assertion this replaces compared the
+    // midpoint against the top edge alone and was a tautology.
+    expect(releaseY, 'the release point is not inside the sheet vertically').toBeGreaterThan(
+      sheet.y
+    )
+    expect(releaseY, 'the release point is below the sheet').toBeLessThan(sheet.y + sheet.height)
+    expect(releaseX, 'the release point is not inside the sheet horizontally').toBeGreaterThan(
+      sheet.x
+    )
+    expect(releaseX, 'the release point is right of the sheet').toBeLessThan(sheet.x + sheet.width)
+
+    // The press must ORIGINATE outside the sheet or the gesture is not the one
+    // under test. Derived from the sheet's own top edge, not assumed.
+    const originY = Math.round(sheet.y / 2)
+    expect(originY, 'the press origin is not above the sheet').toBeLessThan(sheet.y)
+
+    await page.mouse.move(releaseX, originY)
     await page.mouse.down()
-    await page.mouse.move(160, 500)
+    await page.mouse.move(releaseX, releaseY)
     await page.mouse.up()
 
     await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')

@@ -339,8 +339,9 @@ function RetirementAccumulationPlannerInner() {
     // `validateBalanceTracking` (`lib/sync/applyServerChanges.ts:93-94`), so this
     // total can be NaN, Infinity or fractional. Left unguarded, `formatCurrency`
     // renders NaN as a confident "0.00" while the solver throws — and a fractional
-    // cent shows one number and solves another. `NetWorthProjectionPage` already
-    // refuses the identical data; this page now does too rather than guessing.
+    // cent shows one number and solves another. The free Net Worth projection
+    // page refused the identical data and set this precedent; story 43.3 removed
+    // that page, so this guard now stands on its own rather than by analogy.
     if (!Number.isSafeInteger(totalInvestmentCents)) {
       return {
         state: 'unreadable',
@@ -370,10 +371,10 @@ function RetirementAccumulationPlannerInner() {
     return { state: 'ok', cents: totalInvestmentCents, flooredFromNegative: false, note: null }
   }, [balanceEntries, totalInvestmentCents])
 
-  // Frequency-NORMALIZED net monthly income. ⚠️ Deliberately not the
-  // `NetWorthProjectionPage` derivation, which is explicitly un-normalized and
-  // would count a weekly $500 as $500/month — a wrong figure in a field the user
-  // can no longer correct.
+  // Frequency-NORMALIZED net monthly income. ⚠️ Deliberately NOT the
+  // un-normalized derivation the free Net Worth projection page used (removed by
+  // story 43.3): that one counted a weekly $500 as $500/month — a wrong figure in
+  // a field the user can no longer correct. Normalize; do not re-adopt it.
   const derivedMonthlySavings = useMemo<DerivedFigure>(() => {
     // Typed off the store rows so this needs no `Frequency` import — the core
     // barrel cannot export that name unambiguously anyway.
@@ -721,8 +722,8 @@ function RetirementAccumulationPlannerInner() {
   //
   // Rendered as a stat card rather than a read-only input: this repo has no
   // read-only-input convention at all, and its established shape for a figure the
-  // app computed for you is the label/value card (`NetWorthProjectionPage`'s
-  // "Current Net Worth" block, `BalancePage`'s "Total Investments"). A greyed-out
+  // app computed for you is the label/value card (`BalancePage`'s "Total
+  // Investments" stat card, and the Overview's own tiles). A greyed-out
   // box that still looks like a text field invites people to click and type into
   // something that can never accept input.
   const derivedField = ({

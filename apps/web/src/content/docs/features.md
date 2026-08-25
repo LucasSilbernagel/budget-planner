@@ -3,10 +3,9 @@
 Longhand Budget is split into a Free tier that runs entirely on your device
 and a Premium tier that adds multi-device syncing, custom profiles, advanced
 forecasting, a financial summary report, and custom categories. The free
-net-worth and retirement projections chart where your
-current numbers lead. Premium forecasting is a separate what-if workspace:
-build a scenario from your own figures, save it to a searchable list, and
-reload any of them later.
+retirement projection charts where your current numbers lead. Premium
+forecasting is a separate what-if workspace: build a scenario from your own
+figures, save it to a searchable list, and reload any of them later.
 
 Longhand is built for **intentional budgeting without bank sync or AI
 integrations**: you plan with the numbers you enter yourself. The core planner
@@ -33,7 +32,6 @@ model, because there is no model. This holds for every visitor on both tiers.
   are a recurring payment and a debt at the same time.
 - **Visual breakdowns** of income versus expenses and assets versus
   liabilities.
-- **Net-worth projections** that look forward over time.
 - **Retirement modeling** using a safe-withdrawal projection.
 - **Currency display** with locale-aware formatting, or a currency-less mode
   for raw numbers — set on the **Settings** page.

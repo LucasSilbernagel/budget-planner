@@ -4,9 +4,10 @@ import { useTheme } from '../stores/themeStore'
  * Recharts chrome colors (axes, grid, tooltip) for the current theme (story
  * 11-2, AC-1). Recharts renders SVG with hardcoded default strokes/fills that
  * are only legible on a light canvas, so charts on the dark `.surface` cards
- * need explicit colors. Centralized here so every chart (NetWorthProjection,
- * RetirementTimeline, forecasting projection) darkens identically instead of
- * each re-deriving the palette.
+ * need explicit colors. Centralized here so every chart (the Overview bars and
+ * pies, SavingsChart, RetirementTimeline, CategoryBreakdown, and the Premium
+ * forecasting projection) darkens identically instead of each re-deriving the
+ * palette.
  *
  * Values mirror the token palette in `global.css`: gray-500/200 on light,
  * gray-400/700 on dark (gray-400 axis text clears WCAG-AA on both canvases).

@@ -17,10 +17,13 @@
  *
  * Budget, CURRENT net worth and savings — the three domains the app actually
  * persists. The retirement outlook and the forward net-worth projection are
- * deliberately ABSENT: every one of their inputs is ephemeral component state
- * (`RetirementAccumulationPlanner` and `NetWorthProjectionPage` hold them in
- * `useState`, with no store and no persistence key), so a report generated from
- * `/settings` has no data to read. This narrows FR53 by design, not by omission.
+ * deliberately ABSENT. The retirement outlook's inputs are ephemeral component
+ * state (`RetirementAccumulationPlanner` holds them in `useState`, with no store
+ * and no persistence key), so a report generated from `/settings` has no data to
+ * read; the forward net-worth projection has no source at all since story 43.3
+ * (FR69) removed the free projection page. This narrows FR53 by design, not by
+ * omission — see `components/reports/FinancialSummaryReport.tsx` for the full
+ * record before adding either back.
  *
  * ## Corrupt rows are partitioned, never thrown on
  *

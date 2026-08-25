@@ -2,8 +2,10 @@
  * The single React entry point for net worth (story 32.2, FR59).
  *
  * Every REACT surface that shows the user "your net worth" reads this hook — the
- * Overview, the Balance page and the Net Worth Projection page — so those three
- * cannot drift apart. The arithmetic itself lives in `lib/net-worth.ts`, which the
+ * Overview and the Balance page — so the two cannot drift apart. There were
+ * three until story 43.3 (FR69) removed the free Net Worth projection page; the
+ * rule is "every React surface", not "these two", so a new one reads this too.
+ * The arithmetic itself lives in `lib/net-worth.ts`, which the
  * React-free report builder calls directly with its own corruption-filtered
  * totals (a deliberate divergence, pinned by a parity test). The forecasting
  * scenario's "Starting/Ending Net Worth" is NOT this figure at all: those inputs

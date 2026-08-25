@@ -218,8 +218,9 @@ export function HomePage() {
     .filter((entry) => entry.type === 'debt')
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
   // Story 32.2 (FR59): net worth is investments + savings − debts, read through
-  // the one shared hook so this card, the Balance page and the projection page
-  // cannot drift apart. Note the balances bar chart below (`balancesBarData`) has
+  // the one shared hook so this card and the Balance page cannot drift apart.
+  // (A third reader, the free Net Worth projection page, was removed by 43.3.)
+  // Note the balances bar chart below (`balancesBarData`) has
   // always plotted Savings + Investments − Debts under a comment claiming
   // consistency "with the Net Worth definition" — until now that comment was
   // describing a definition this card did not use.

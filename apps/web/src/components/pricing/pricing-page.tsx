@@ -107,7 +107,7 @@ export function PricingPageView(): React.ReactElement {
 const FREE_FEATURES: readonly string[] = [
   'Track income, expenses, savings goals, and balances',
   'Net income and savings-capacity calculations',
-  'Income-vs-expense and net-worth projection charts',
+  'Income-vs-expense and balances breakdown charts',
   'Retirement modelling',
   'Dark mode',
   'Private local storage — your data never leaves your device',

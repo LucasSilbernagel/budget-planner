@@ -4,9 +4,12 @@ import { expect, test } from '@playwright/test'
  * Net worth includes savings, on every surface (Story 32.2, FR59).
  *
  * Drives the hydrated app in a real browser to prove what unit tests cannot:
- * that the Overview, the Balance page and the Net Worth Projection page — three
- * separately-rendered routes reading two separately-persisted stores — resolve
- * the SAME figure from the same localStorage state after real rehydration.
+ * that the Overview and the Balance page — two separately-rendered routes reading
+ * two separately-persisted stores — resolve the SAME figure from the same
+ * localStorage state after real rehydration.
+ *
+ * ⚠️ There were THREE surfaces until story 43.3 (FR69) removed the free Net Worth
+ * projection page. The invariant is unchanged; only the count is.
  *
  * Both stores are `skipHydration: true` and rehydrate on mount, so a surface can
  * pass every jsdom test and still read an empty store in the browser. It also
@@ -130,9 +133,7 @@ function seedSavingsOnly() {
   )
 }
 
-test('the Overview, Balance and Projection pages all show a savings-inclusive net worth', async ({
-  page,
-}) => {
+test('the Overview and Balance pages both show a savings-inclusive net worth', async ({ page }) => {
   await page.addInitScript(seedBalancesAndSavings)
 
   await page.goto('/')
@@ -147,10 +148,6 @@ test('the Overview, Balance and Projection pages all show a savings-inclusive ne
   await expect(page.getByTestId('stat-total-savings')).toHaveText('$3,000.00')
   await expect(page.getByTestId('stat-total-debts')).toHaveText('$150,000.00')
   await expect(page.getByTestId('stat-net-worth')).toHaveText('-$127,000.00')
-
-  await page.goto('/net-worth-projection')
-  await page.waitForLoadState('networkidle')
-  await expect(page.getByTestId('projection-current-net-worth')).toHaveText('-$127,000.00')
 })
 
 test('a savings-only user sees a real net worth, not zero and not a "nothing tracked" hint', async ({

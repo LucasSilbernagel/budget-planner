@@ -195,9 +195,10 @@ function seedAllStores() {
 }
 
 /**
- * The six routes that read a persisted store through a component-level hook, each
+ * The five routes that read a persisted store through a component-level hook, each
  * paired with a testid that only renders once that store-backed content has
- * mounted.
+ * mounted. (Six until story 43.3 removed `/net-worth-projection` — the warning
+ * below is exactly the case that removal creates, so the entry left with it.)
  *
  * ⚠️ THE MARKER IS NOT DECORATION. Code review found that asserting only "zero
  * hydration errors" passes VACUOUSLY on a route that never rendered — a 404, an
@@ -211,7 +212,6 @@ const STORE_BACKED_ROUTES = [
   { path: '/expenses', marker: 'period-total-amount' },
   { path: '/savings', marker: 'savings-leftover-summary' },
   { path: '/balance', marker: 'stat-net-worth' },
-  { path: '/net-worth-projection', marker: 'projection-current-net-worth' },
 ] as const
 
 test.describe('hydration', () => {

@@ -15,9 +15,9 @@ import { GlobalNav } from '../GlobalNav'
  * the two — the way `__root` does — and locks the STRUCTURAL invariant that
  * composition must never break: the "Sign in" affordance is NEVER a descendant
  * of the single `<nav aria-label="Primary">` landmark, so the nav always holds
- * exactly its eight section links.
+ * exactly its seven section links.
  *
- * Why it matters: the GlobalNav suite asserts the nav holds exactly eight links.
+ * Why it matters: the GlobalNav suite asserts the nav holds exactly seven links.
  * A future refactor could nest `AuthIndicator`'s `<Link to="/login">` inside
  * `<nav>` to co-locate sign-in — and the most tempting place to do that is the
  * *mobile* bottom bar (the exact "don't crowd the 320px tab bar" trade-off Story
@@ -30,10 +30,11 @@ import { GlobalNav } from '../GlobalNav'
  * it would break this same invariant just as thoroughly as folding it into the
  * bar. Both are asserted below.
  *
- * ⚠️ The link counts here STAY 8. jsdom applies no media queries, so all eight
- * anchors resolve regardless of which four sit behind the More trigger in a real
+ * ⚠️ The link counts here STAY 7. jsdom applies no media queries, so all seven
+ * anchors resolve regardless of which three sit behind the More trigger in a real
  * browser; "fixing" these to 5 would turn correct tests red. Which four are in
- * the bar is a rendered fact, asserted in `e2e/chrome-320.spec.ts`.
+ * the bar is a rendered fact, asserted in `e2e/chrome-320.spec.ts`. (It was EIGHT
+ * until story 43.3 removed `/net-worth-projection` — the count tracks the nav.)
  *
  * ⚠️ Since 31.4 there is no `useIsNarrowViewport` branch to mock: one DOM
  * subtree carries both layouts, switched by `max-sm:` utilities. Mocking the
@@ -80,13 +81,13 @@ function NavAccountRow() {
 }
 
 describe('Nav + account row (story 19-3)', () => {
-  it('keeps exactly one Primary nav landmark holding exactly the eight section links', async () => {
+  it('keeps exactly one Primary nav landmark holding exactly the seven section links', async () => {
     renderWithRouter(<NavAccountRow />)
 
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
     expect(navs).toHaveLength(1)
     // The Sign-in link must not inflate the nav's link set (story 11-1 / 19-2).
-    expect(within(navs[0]).getAllByRole('link')).toHaveLength(8)
+    expect(within(navs[0]).getAllByRole('link')).toHaveLength(7)
   })
 
   it('renders the "Sign in" affordance OUTSIDE the nav landmark — sibling, not descendant', async () => {
@@ -118,7 +119,7 @@ describe('Nav + account row (story 19-3)', () => {
     expect(nav.className.split(/\s+/), 'this nav is not the mobile bottom bar').toContain(
       'max-sm:fixed'
     )
-    expect(within(nav).getAllByRole('link')).toHaveLength(8)
+    expect(within(nav).getAllByRole('link')).toHaveLength(7)
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(signIn)).toBe(true)
@@ -141,7 +142,7 @@ describe('Nav + account row (story 19-3)', () => {
     expect(sheet.contains(signIn), 'Sign in was folded into the More sheet').toBe(false)
     expect(
       [...sheet.querySelectorAll('a')].map((a) => a.getAttribute('href')),
-      'the More sheet holds something other than its four destinations'
-    ).toEqual(['/balance', '/net-worth-projection', '/retirement', '/settings'])
+      'the More sheet holds something other than its three destinations'
+    ).toEqual(['/balance', '/retirement', '/settings'])
   })
 })

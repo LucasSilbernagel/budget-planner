@@ -5,8 +5,8 @@
  *
  * Before 32.2 net worth was re-derived independently in four places — the
  * Overview card (`HomePage.tsx`), the Balance page stat card (via the balance
- * store's `useNetBalance`), the "Current Net Worth" figure on
- * `NetWorthProjectionPage`, and the printed Premium report
+ * store's `useNetBalance`), the "Current Net Worth" figure on the free Net Worth
+ * projection page (since removed by story 43.3), and the printed Premium report
  * (`lib/report/build-financial-summary.ts`) — and every one of them said
  * `investments − debts`, omitting savings. Meanwhile the Overview's own balances
  * bar chart already plotted `savings + investments − debts` under a comment

@@ -16,12 +16,21 @@
  *
  * ## What this report does NOT contain, and why
  *
- * No retirement outlook and no forward net-worth projection. Both are driven
- * entirely by ephemeral component state — `RetirementAccumulationPlanner` and
- * `NetWorthProjectionPage` hold their assumptions in `useState` with no store
- * and no persistence key — so there is nothing for a report opened from
- * `/settings` to read. Including them would mean inventing assumptions and
- * presenting the output as the user's plan. This narrows FR53 deliberately.
+ * No retirement outlook and no forward net-worth projection.
+ *
+ * The retirement outlook is driven entirely by ephemeral component state —
+ * `RetirementAccumulationPlanner` holds its assumptions in `useState` with no
+ * store and no persistence key — so there is nothing for a report opened from
+ * `/settings` to read. Including it would mean inventing assumptions and
+ * presenting the output as the user's plan.
+ *
+ * The forward net-worth projection has no source at all: story 43.3 (FR69)
+ * removed the free projection page, and Premium forecasting's projection is a
+ * what-if scenario the user types, not a statement about their real position.
+ *
+ * ⚠️ Both exclusions narrow FR53 DELIBERATELY. This paragraph is the record of
+ * that decision — a later reader who finds the report "missing" a projection
+ * should read this before adding one back.
  *
  * No charts either: Recharts sizes its SVG from a client-measured container and
  * prints unreliably, and a tabular summary gains nothing from it.

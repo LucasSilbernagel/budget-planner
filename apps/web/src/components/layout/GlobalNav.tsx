@@ -8,8 +8,9 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  *
  * Mounted once in `routes/__root.tsx` so every route carries the same primary
  * navigation — replacing the ad-hoc, inconsistent per-page "Back to Home / View
- * X" footer link blocks each page used to hand-roll. Exposes the eight top-level
- * sections. The premium *Forecasting* entry is intentionally NOT duplicated
+ * X" footer link blocks each page used to hand-roll. Exposes the seven top-level
+ * sections — eight until story 43.3 (FR69) removed the free Net Worth projection
+ * page. The premium *Forecasting* entry is intentionally NOT duplicated
  * here: it stays surfaced-but-locked on the Home dashboard via the Story 7-2
  * `PremiumFeatureGate`, so the primary nav needs no second premium gate to
  * maintain (scope decision, 2026-07-03).
@@ -23,7 +24,7 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  *
  * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
  *
- * There is exactly one `<nav>`, one OUTER `<ul>`, eight `<a>` and one `<button>`
+ * There is exactly one `<nav>`, one OUTER `<ul>`, seven `<a>` and one `<button>`
  * in the DOM at every viewport. Desktop (>= 640px) is the unprefixed cascade —
  * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
  * bar via `max-sm:` utilities. No JavaScript decides the layout, so the first
@@ -84,16 +85,17 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * "Retirement" alone). Measured label widths in the app's real font stack
  * decided the count: 5 columns give 64px tracks (comfortable), 8 give 40px
  * (overflowing). So the bar shows FIVE cells — Overview, Income, Expenses,
- * Savings and a "More" trigger — and the remaining four destinations live in a
+ * Savings and a "More" trigger — and the remaining three destinations live in a
  * sheet that More discloses. The bar is now 56.75px.
  *
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
  * `<li>`, dissolved at >= 640px with `sm:contents` on BOTH the wrapper `<li>`
- * and the nested `<ul>`. The obvious alternative — leaving eight `<li>` in the
- * bar and re-listing four of them in a mobile-only sheet — puts four
+ * and the nested `<ul>`. The obvious alternative — leaving every `<li>` in the
+ * bar and re-listing the sheet's share in a mobile-only sheet — puts those
  * destination labels in the DOM TWICE, which is the dual-render rejected above.
- * Measured against a flat eight-item control at 1280px, the nested structure
- * lays out 8 anchors with ZERO geometry mismatches. It is not free, though:
+ * Measured against a flat control at 1280px (when the nav held EIGHT items; it
+ * holds seven since 43.3), the nested structure laid out all 8 anchors with ZERO
+ * geometry mismatches. It is not free, though:
  * `display: contents` flattens the LAYOUT tree but NOT the ACCESSIBILITY tree,
  * so the desktop AX tree gains one nesting level (`list > 4 listitem`, then
  * `listitem > list > 4 listitem`). A nested list inside a nav is valid and
@@ -137,15 +139,7 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  */
 
 /** Registered route paths the nav links to — a subset of the app's route tree. */
-type NavPath =
-  | '/'
-  | '/income'
-  | '/expenses'
-  | '/savings'
-  | '/balance'
-  | '/net-worth-projection'
-  | '/retirement'
-  | '/settings'
+type NavPath = '/' | '/income' | '/expenses' | '/savings' | '/balance' | '/retirement' | '/settings'
 
 interface NavItem {
   label: string
@@ -175,24 +169,27 @@ const PRIMARY_TABS: readonly NavItem[] = [
 ]
 
 /**
- * The four destinations behind the mobile "More" trigger.
+ * The three destinations behind the mobile "More" trigger.
  *
  * At >= 640px these are ordinary items of the one desktop row — `sm:contents`
- * dissolves both the wrapper `<li>` and this nested list, so the eight anchors
+ * dissolves both the wrapper `<li>` and this nested list, so the seven anchors
  * lay out exactly as they did before this story.
+ *
+ * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69). Every
+ * "eight anchors" figure in this file dates from before that removal; the ones
+ * describing the CURRENT nav now say seven, and the ones narrating the former
+ * 4x2 grid are left as history.
  */
 const MORE_DESTINATIONS: readonly NavItem[] = [
   // Story 43.2 (UX-DR48): label renamed "Balance" -> "Balance Tracking" so the
   // nav matches the page's own H1 (`BalancePage.tsx`). The route (`to`) is
   // unchanged, so active-state/aria-current is unaffected.
   { label: 'Balance Tracking', to: '/balance', Icon: BalanceIcon },
-  // Story 19-2: label renamed "Projections" -> "Net Worth" so the nav matches the
-  // page's own H1 ("Net Worth Projection") and the app's "Net Worth" vocabulary.
-  // The route (`to`) is unchanged, so active-state/aria-current is unaffected.
-  { label: 'Net Worth', to: '/net-worth-projection', Icon: NetWorthIcon },
   // Retirement Planner (story 15-1): promoted from a docs-only, nav-orphan route
-  // to a first-class destination. Grouped with the other forward-looking planning
-  // surface (Net Worth); stays FREE (Epic 15 is UX-only, no premium gate).
+  // to a first-class destination. Story 43.3 (FR69) removed the free Net Worth
+  // projection page it used to sit beside, so this is now the only
+  // forward-looking planning surface in the nav. Stays FREE (Epic 15 is UX-only,
+  // no premium gate).
   { label: 'Retirement', to: '/retirement', Icon: RetirementIcon },
   // Consolidated settings surface (story 11-6): the single home for the currency
   // and dark-mode controls that used to be scattered across page headers and the
@@ -246,7 +243,7 @@ const TAB_LINK_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:h-full max-sm:min-h-
 const SHEET_ROW_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
 /**
- * The active treatment, applied by `<Link activeProps>` on the eight anchors and
+ * The active treatment, applied by `<Link activeProps>` on the seven anchors and
  * by hand on the More trigger (which is not a route — see `isMoreActive`).
  */
 const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -254,9 +251,15 @@ const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-
 /**
  * The More trigger is a mobile-only ELEMENT, so per the composition rule it
  * takes base classes + `sm:hidden` rather than `max-sm:`-scoped ones. It must
- * not reach the desktop row: a ninth item there changes the widest-link right
+ * not reach the desktop row: an eighth item there changes the widest-link right
  * edge that `e2e/nav-responsive-css.spec.ts` measures, whose premise is that the
- * eight-item row already wants 778px.
+ * row already overflows a 640px viewport on its own.
+ *
+ * ⚠️ This sentence carried "the eight-item row already wants 778px" until story
+ * 43.3. That figure was stale twice over: 43.2 measured the row at 753px (CI
+ * fonts) BEFORE its own change and 815px after, and 43.3 then removed an item.
+ * The live measurement lives in ONE place — `e2e/nav-responsive-css.spec.ts` —
+ * so it cannot go stale in three files again. Do not restate a width here.
  */
 const MORE_TRIGGER_CLASS =
   'flex h-full min-h-[44px] w-full flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-[11px] font-medium leading-tight text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 sm:hidden dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
@@ -318,7 +321,7 @@ export function GlobalNav() {
   /**
    * The More tab's active state CANNOT come from `<Link activeProps>`: More is
    * not a route, so `activeProps` would silently mark nothing and the bar would
-   * show NO active tab on four of eight destinations — worse orientation than
+   * show NO active tab on three of seven destinations — worse orientation than
    * the grid this replaced. `useRouterState` reads `router.stores.location`, the
    * same store `<Link>`'s own active computation reads, through a `useStore`
    * whose `getServerSnapshot` and `getSnapshot` are the same synchronous read.
@@ -476,13 +479,21 @@ export function GlobalNav() {
       className="max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-50 max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {/* `flex-wrap` is LOAD-BEARING at >= 640px — do not remove it. It arrived
-          (commit d4f3ffb) to contain the eight items during the old
-          pre-hydration flash, but the desktop bar is already two rows in its own
-          right from 640px to ~830px. Measured with the class removed: the row
-          wants 778px, so a 640px viewport overflows by 138px, 700px by 78px and
-          760px by 18px, clearing only at 800px. Nothing used to catch that —
-          `responsive-320.spec.ts` and `global-nav.spec.ts` both sweep 320px only
-          — so `e2e/nav-responsive-css.spec.ts` now measures 640/700/760px.
+          (commit d4f3ffb) to contain the eight items the nav then had, during the
+          old pre-hydration flash; the desktop bar is two rows in its own right
+          from 640px up to the single-row threshold recorded in
+          `e2e/nav-responsive-css.spec.ts` (821px under CI fonts as of 43.3),
+          above which it is one row. Nothing used to catch that —
+          `responsive-320.spec.ts` and
+          `global-nav.spec.ts` both sweep 320px only — so
+          `e2e/nav-responsive-css.spec.ts` now measures 640/700/760px.
+
+          ⚠️ This comment carried its own copy of the "row wants 778px …
+          clearing only at 800px" figures until story 43.3. It was the THIRD copy
+          in the repo and, like the other two, stale: 43.2 measured 753 -> 815px
+          intrinsic and 857 -> 920px single-row under CI fonts, and 43.3 then
+          removed an item. The one live measurement is in
+          `e2e/nav-responsive-css.spec.ts`; do not copy it back here.
 
           Below `sm` the list becomes the 5-column grid (story 31.5): four
           destinations plus the More trigger, 64px tracks at 320px, each cell an
@@ -538,8 +549,9 @@ export function GlobalNav() {
           </button>
           {/* ⚠️ The open/closed state is a `max-sm:`-scoped CLASS, never the
               `hidden` ATTRIBUTE. `hidden={!isMoreOpen}` — the textbook
-              disclosure idiom — applies at EVERY width and would delete Balance,
-              Net Worth, Retirement and Settings from the DESKTOP nav entirely. */}
+              disclosure idiom — applies at EVERY width and would delete
+              Balance Tracking, Retirement and Settings from the DESKTOP nav
+              entirely. */}
           <ul
             id={panelId}
             className={isMoreOpen ? SHEET_PANEL_CLASS : `${SHEET_PANEL_CLASS} max-sm:hidden`}
@@ -694,26 +706,6 @@ function BalanceIcon({ className }: { className: string }): React.ReactElement {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
-      />
-    </svg>
-  )
-}
-
-function NetWorthIcon({ className }: { className: string }): React.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
       />
     </svg>
   )
