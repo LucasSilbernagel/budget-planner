@@ -55,7 +55,7 @@ const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
 ]
 
 const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
-  [/^balance$/i, '/balance'],
+  [/^balance tracking$/i, '/balance'],
   [/^net worth$/i, '/net-worth-projection'],
   [/^retirement$/i, '/retirement'],
   [/^settings$/i, '/settings'],
@@ -240,7 +240,7 @@ describe('GlobalNav', () => {
       'Savings',
     ])
     expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual([
-      'Balance',
+      'Balance Tracking',
       'Net Worth',
       'Retirement',
       'Settings',
@@ -562,7 +562,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const sheet = [...lists][1]
     expect(
       [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
-    ).toEqual(['Balance', 'Net Worth', 'Settings'])
+    ).toEqual(['Balance Tracking', 'Net Worth', 'Settings'])
   })
 
   it('drops exactly one icon and one label with the entry', async () => {

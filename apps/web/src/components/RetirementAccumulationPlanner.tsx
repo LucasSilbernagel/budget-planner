@@ -165,7 +165,7 @@ const SOLVER_ERROR_COPY: Record<string, string> = {
   // pointing the user at a field that was not the problem, and since 29.2 is
   // not even editable. Kept as defence in depth.
   'Current saved amount must be a finite number':
-    'We could not read your saved amount. Please check your investment accounts on the Balance page.',
+    'We could not read your saved amount. Please check your investment accounts on the Balance Tracking page.',
   'Monthly savings must be a finite number':
     'We could not read your monthly savings. Please check your income and expenses.',
   'Current age must be a finite number': 'Please enter a valid current age.',
@@ -332,7 +332,7 @@ function RetirementAccumulationPlannerInner() {
         state: 'empty',
         cents: 0,
         flooredFromNegative: false,
-        note: 'Add investment accounts on the Balance page to include them here.',
+        note: 'Add investment accounts on the Balance Tracking page to include them here.',
       }
     }
     // ⚠️ The sync applier writes pulled rows straight into the store without
@@ -1119,9 +1119,9 @@ function RetirementAccumulationPlannerInner() {
                 We don&rsquo;t have your savings data yet
               </h3>
               <p className="text-sm">
-                This plan has nothing to grow yet. Add your investment accounts on the Balance page,
-                and your income and expenses on the Income and Expenses pages — both figures above
-                fill in automatically, and your outlook appears here.
+                This plan has nothing to grow yet. Add your investment accounts on the Balance
+                Tracking page, and your income and expenses on the Income and Expenses pages — both
+                figures above fill in automatically, and your outlook appears here.
               </p>
             </>
           ) : (

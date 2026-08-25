@@ -14,9 +14,9 @@ is worked out from the other.
 
 - The recurring **payment** goes on the [Expenses](/expenses) page, at whatever
   frequency you actually pay it.
-- The **amount still owed** goes on the [Balance](/balance) page, as an entry of
-  type **Debt**, in the *Current Balance* field. Enter it as a positive number —
-  Longhand subtracts what you owe for you.
+- The **amount still owed** goes on the [Balance Tracking](/balance) page, as an
+  entry of type **Debt**, in the *Current Balance* field. Enter it as a positive
+  number — Longhand subtracts what you owe for you.
 
 There is no separate "mortgage" type to choose. Every kind of borrowing is
 entered the same way, as a **Debt**.
@@ -45,7 +45,7 @@ here, never what it is right now.
 
 The outstanding balance is part of what you owe. It affects:
 
-- Total Debts and Net Worth on the Balance page
+- Total Debts and Net Worth on the Balance Tracking page
 - the Net Worth figure on the home page, and the debts bar in the balances chart
 - the starting point the net-worth projection builds on
 
@@ -66,8 +66,8 @@ update the balance yourself every few months.
 
 ### One thing that is missing on purpose
 
-The Balance page records investments and debts. It cannot yet record a house, a
-car, or plain cash as something you own.
+The Balance Tracking page records investments and debts. It cannot yet record a
+house, a car, or plain cash as something you own.
 
 That matters here more than anywhere else in Longhand. If you enter a mortgage,
 your net worth falls by the full amount you owe, and there is nothing on the

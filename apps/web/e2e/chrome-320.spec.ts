@@ -56,7 +56,7 @@ const NAV = 'nav[aria-label="Primary"]'
 /** The four destinations that keep a cell in the bar. */
 const BAR_LABELS = ['Overview', 'Income', 'Expenses', 'Savings'] as const
 /** The four that moved behind the More trigger. */
-const SHEET_LABELS = ['Balance', 'Net Worth', 'Retirement', 'Settings'] as const
+const SHEET_LABELS = ['Balance Tracking', 'Net Worth', 'Retirement', 'Settings'] as const
 
 /**
  * The bar's own cells, structurally: anchors that are direct grandchildren of

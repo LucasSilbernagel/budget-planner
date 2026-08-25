@@ -707,9 +707,11 @@ describe('documentation content accuracy (story 10-4)', () => {
 
   it('the mortgage page states the two-places model and scopes it to debts (36.3, AC-2)', () => {
     const page = mortgage()
-    // The payment goes to Expenses, the balance owing goes to Balance as a Debt.
+    // The payment goes to Expenses, the balance owing goes to Balance Tracking as a Debt.
     expect(page).toMatch(/recurring\s+\*\*payment\*\*\s+goes\s+on\s+the\s+\[Expenses\]/i)
-    expect(page).toMatch(/\*\*amount\s+still\s+owed\*\*\s+goes\s+on\s+the\s+\[Balance\]/i)
+    expect(page).toMatch(
+      /\*\*amount\s+still\s+owed\*\*\s+goes\s+on\s+the\s+\[Balance\s+Tracking\]/i
+    )
     expect(page).toMatch(/type\s+\*\*Debt\*\*/)
     // Both entry surfaces are linked, not merely named — Task 3's knownRoutes
     // entries are dead weight otherwise, and the mutation table's M7 depends on

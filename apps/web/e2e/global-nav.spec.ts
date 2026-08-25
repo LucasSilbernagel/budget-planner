@@ -31,12 +31,15 @@ test('reaches another section from a deep sub-page in one click', async ({ page 
   const nav = page.getByRole('navigation', { name: 'Primary' })
   await expect(nav).toBeVisible()
 
-  // One click from Savings to Balance — no detour through the Home dashboard.
-  await nav.getByRole('link', { name: 'Balance' }).click()
+  // One click from Savings to Balance Tracking — no detour through the Home dashboard.
+  await nav.getByRole('link', { name: 'Balance Tracking', exact: true }).click()
   await expect(page).toHaveURL(/\/balance$/)
 
   // The destination is marked active in the hydrated DOM.
-  await expect(nav.getByRole('link', { name: 'Balance' })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.getByRole('link', { name: 'Balance Tracking', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page'
+  )
 })
 
 test('marks the current section active and leaves others inactive', async ({ page }) => {
@@ -404,7 +407,9 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
     // The rows become reachable in the same traversal once disclosed.
     await page.keyboard.press('Tab')
-    await expect(navOf(page).getByRole('link', { name: 'Balance', exact: true })).toBeFocused()
+    await expect(
+      navOf(page).getByRole('link', { name: 'Balance Tracking', exact: true })
+    ).toBeFocused()
   })
 
   /**

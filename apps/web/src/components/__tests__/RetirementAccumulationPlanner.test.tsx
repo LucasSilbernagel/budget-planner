@@ -992,7 +992,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     // No rows at all → "add some", not "they net to zero".
     const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent(
-      'Add investment accounts on the Balance page'
+      'Add investment accounts on the Balance Tracking page'
     )
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
       'Add income and expenses to calculate this.'
@@ -1044,7 +1044,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
     const derived = screen.getByTestId('derived-current-saved')
     expect(derived).toHaveTextContent('Your investment accounts currently hold nothing.')
-    expect(derived).not.toHaveTextContent('Add investment accounts on the Balance page')
+    expect(derived).not.toHaveTextContent('Add investment accounts on the Balance Tracking page')
   })
 
   it('survives a corrupt persisted frequency without reaching the ErrorBoundary (AC-6)', () => {
@@ -1232,7 +1232,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     const notReachable = within(screen.getByTestId('accumulation-not-reachable'))
     expect(notReachable.getByText(/We don.t have your savings data yet/)).toBeInTheDocument()
     expect(
-      notReachable.getByText(/Add your investment accounts on the Balance page/)
+      notReachable.getByText(/Add your investment accounts on the Balance Tracking page/)
     ).toBeInTheDocument()
     expect(
       notReachable.queryByText(/Retirement isn.t reachable with these numbers/)

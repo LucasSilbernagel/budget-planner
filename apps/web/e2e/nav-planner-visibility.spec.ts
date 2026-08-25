@@ -173,7 +173,7 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
 
     const rows = nav.locator(':scope > ul > li > ul > li > a')
     await expect(rows).toHaveCount(3)
-    expect(await rows.allTextContents()).toEqual(['Balance', 'Net Worth', 'Settings'])
+    expect(await rows.allTextContents()).toEqual(['Balance Tracking', 'Net Worth', 'Settings'])
 
     for (const row of await rows.all()) {
       const box = await row.boundingBox()
@@ -182,6 +182,20 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
         (box as { height: number }).height,
         'a sheet row is under the 44px tap target'
       ).toBeGreaterThanOrEqual(44)
+      // ⚠️ The height check above is a FLOOR, so a label that wraps to two lines
+      // makes the row TALLER and satisfies it — story 43.2 proved exactly that by
+      // mutation (see `e2e/nav-responsive-css.spec.ts`'s sheet-row test). This
+      // fixture renders the same rows in the planner-hidden (free-tier) shape, so
+      // it needs the same line-count guard or it stays green for the wrong reason
+      // on a wrapped label. Added by 43.2's code review.
+      const lineCount = await row.evaluate((a) => {
+        const label = a.querySelector('[data-nav-label]')
+        const range = document.createRange()
+        if (label) range.selectNodeContents(label)
+        return label ? range.getClientRects().length : -1
+      })
+      const label = (await row.textContent())?.trim() ?? ''
+      expect(lineCount, `sheet row "${label}" wraps to ${lineCount} lines at 320px`).toBe(1)
     }
 
     // The bar is unaffected: Retirement never lived there, so `grid-cols-5` and

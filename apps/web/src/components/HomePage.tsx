@@ -602,7 +602,7 @@ export function HomePage() {
                   Net Worth
                   <InfoTooltip
                     label="More information about net worth"
-                    text="Net worth is what you own minus what you owe: your investments and savings, minus your debts. Investments and debts are tracked on the Balance page, savings on the Savings page. Income and expenses aren't counted here."
+                    text="Net worth is what you own minus what you owe: your investments and savings, minus your debts. Investments and debts are tracked on the Balance Tracking page, savings on the Savings page. Income and expenses aren't counted here."
                   />
                 </p>
                 {/* data-testid rather than an accessible-name matcher: story 32.1
@@ -636,7 +636,7 @@ export function HomePage() {
                       href="/balance"
                       className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                     >
-                      Balance
+                      Balance Tracking
                     </a>{' '}
                     page, or savings on the{' '}
                     <a

@@ -978,7 +978,7 @@ describe('ExpensesPage — mortgage guidance (36.3)', () => {
    * because JSX joins the source lines with newlines.
    */
   const EXPENSE_HINT =
-    'Paying off a loan or mortgage? Enter the payment here, and the amount still owed on the Balance page.'
+    'Paying off a loan or mortgage? Enter the payment here, and the amount still owed on the Balance Tracking page.'
 
   const hintText = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
 
@@ -990,7 +990,7 @@ describe('ExpensesPage — mortgage guidance (36.3)', () => {
     useExpenseStore.setState({ expenses: [] })
   })
 
-  it('points the user at the Balance page for the amount still owed', async () => {
+  it('points the user at the Balance Tracking page for the amount still owed', async () => {
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
 

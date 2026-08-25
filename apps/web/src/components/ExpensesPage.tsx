@@ -565,7 +565,7 @@ export function ExpensesPage() {
               )}
               {/* Story 36.3 (UX-DR40). A mortgage is the one entry that belongs
                   in two places at once: the payment is an expense, the amount
-                  still owed is a Debt on the Balance page. Plain prose, not a
+                  still owed is a Debt on the Balance Tracking page. Plain prose, not a
                   `<Link>` — this page is rendered without a router in three test
                   suites, and a hint is not worth rewiring them. Not wired via
                   `aria-describedby` either: every such attribute in this app is
@@ -574,7 +574,7 @@ export function ExpensesPage() {
                   the white modal card measures 2.54:1, below WCAG AA. */}
               <p className="mt-1 text-xs text-muted" data-testid="expense-mortgage-hint">
                 Paying off a loan or mortgage? Enter the payment here, and the amount still owed on
-                the Balance page.
+                the Balance Tracking page.
               </p>
             </div>
 

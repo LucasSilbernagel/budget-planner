@@ -203,9 +203,26 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   }
 
   // `flex-wrap` is the only thing keeping the eight desktop items inside a 640px
-  // viewport: measured with the class removed, the row wants 778px, i.e. 138px
-  // of overflow at 640px, 78px at 700px and 18px at 760px, clearing only at
-  // 800px. Both a document-level AND an element-level check are made: a scroll
+  // viewport. Re-measured for story 43.2, which widened the Balance label to
+  // "Balance Tracking" and so widened this row:
+  //
+  //                        row's intrinsic width   single-row from
+  //   before 43.2 (DejaVu)        753px                857px
+  //   after  43.2 (DejaVu)        815px                920px
+  //
+  // i.e. 175px of overflow at 640px, 115px at 700px and 55px at 760px; the row
+  // needs a 920px viewport before it stops wrapping. Figures are CI-representative
+  // (`system-ui` -> DejaVu Sans); this repo's dev boxes resolve the narrower Noto
+  // Sans and measure 721 -> 780 / 822 -> 881.
+  //
+  // ⚠️ The number this comment carried until 43.2 — "the row wants 778px …
+  // clearing only at 800px" — did NOT reproduce at 43.2's baseline under either
+  // font (753/857 DejaVu, 721/822 Noto). It was stale BEFORE this story, so it is
+  // replaced rather than adjusted. Measure with a viewport at least as wide as the
+  // row: setting `flex-wrap: nowrap` in a NARROWER one makes the anchors shrink
+  // (`flex-shrink` defaults to 1) and reports the container's width back at you.
+  //
+  // Both a document-level AND an element-level check are made: a scroll
   // container between the list and <html> would absorb the former (31.2), while
   // the latter cannot be absorbed.
   for (const width of [640, 700, 760]) {
@@ -385,7 +402,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
 
     const sheetRows = await read(`${NAV} > ul > li > ul > li > a`)
     expect(sheetRows.map((r) => r.label)).toEqual([
-      'Balance',
+      'Balance Tracking',
       'Net Worth',
       'Retirement',
       'Settings',
@@ -715,18 +732,47 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
 
     const rows = await page.evaluate(
       (selector) =>
-        [...document.querySelectorAll(`${selector} > ul > li > ul > li > a`)].map((a) => ({
-          label: a.textContent?.trim() ?? '',
-          height: Math.round(a.getBoundingClientRect().height),
-          overflows: a.scrollWidth > a.clientWidth,
-        })),
+        [...document.querySelectorAll(`${selector} > ul > li > ul > li > a`)].map((a) => {
+          // ⚠️ `lineCount` is NOT decoration, and story 43.2 proved it by mutation.
+          // A sheet row is `display: flex` with a wrapping label, so a label too
+          // wide for its box WRAPS instead of overflowing: `scrollWidth` never
+          // exceeds `clientWidth` and the height only GROWS, which the `>= 44`
+          // floor accepts. Measured under a mutation that cut the row's content
+          // box to 28px (`max-sm:px-4` -> `px-32`): "Balance Tracking" went to two
+          // lines at height 59 and this test stayed GREEN on every assertion it
+          // had. So the two guards below cannot see a label that WRAPS — the exact
+          // property 43.2's longer label needed verified.
+          //
+          // ⚠️ That does NOT make `overflows` dead, and code review caught this
+          // comment implying it was: an UNBREAKABLE token (no space to wrap at)
+          // still overflows its box and `overflows` still fires. The two guards
+          // and this one cover different failures — wrappable vs unwrappable
+          // content — so none of the three is redundant. Ranged over
+          // the LABEL, mirroring `e2e/chrome-320.spec.ts`'s bar-cell probe: on the
+          // whole anchor a correct row measures 2 rects (icon box + label), not 1.
+          const label = a.querySelector('[data-nav-label]')
+          const range = document.createRange()
+          if (label) range.selectNodeContents(label)
+          return {
+            label: a.textContent?.trim() ?? '',
+            height: Math.round(a.getBoundingClientRect().height),
+            overflows: a.scrollWidth > a.clientWidth,
+            lineCount: label ? range.getClientRects().length : -1,
+          }
+        }),
       NAV
     )
 
-    expect(rows.map((r) => r.label)).toEqual(['Balance', 'Net Worth', 'Retirement', 'Settings'])
-    for (const { label, height, overflows } of rows) {
+    expect(rows.map((r) => r.label)).toEqual([
+      'Balance Tracking',
+      'Net Worth',
+      'Retirement',
+      'Settings',
+    ])
+    for (const { label, height, overflows, lineCount } of rows) {
       expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
       expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)
+      expect(lineCount, `sheet row "${label}" wraps to ${lineCount} lines at 320px`).toBe(1)
     }
 
     // The rows are new anchors and inherit NONE of the bar's ink coverage.

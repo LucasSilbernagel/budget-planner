@@ -182,7 +182,10 @@ const PRIMARY_TABS: readonly NavItem[] = [
  * lay out exactly as they did before this story.
  */
 const MORE_DESTINATIONS: readonly NavItem[] = [
-  { label: 'Balance', to: '/balance', Icon: BalanceIcon },
+  // Story 43.2 (UX-DR48): label renamed "Balance" -> "Balance Tracking" so the
+  // nav matches the page's own H1 (`BalancePage.tsx`). The route (`to`) is
+  // unchanged, so active-state/aria-current is unaffected.
+  { label: 'Balance Tracking', to: '/balance', Icon: BalanceIcon },
   // Story 19-2: label renamed "Projections" -> "Net Worth" so the nav matches the
   // page's own H1 ("Net Worth Projection") and the app's "Net Worth" vocabulary.
   // The route (`to`) is unchanged, so active-state/aria-current is unaffected.
