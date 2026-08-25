@@ -226,6 +226,14 @@ export async function createForecastingProfile(
       .where(eq(userProfiles.id, input.profileId))
       .limit(1)
 
+    // ⚠️ `.returning()` yields an array, so the destructured row is
+    // possibly-undefined. Without this guard, spreading `undefined` produced a
+    // "success" payload carrying only `profileName` — a malformed row the caller
+    // would have taken at face value. A write that returns nothing is a failure.
+    if (!newProfile) {
+      return { success: false, error: 'Failed to create forecasting profile' }
+    }
+
     return {
       success: true,
       data: {
@@ -472,6 +480,14 @@ export async function updateForecastingProfile(
       .where(eq(userProfiles.id, existingProfile.profileId))
       .limit(1)
 
+    // ⚠️ `.returning()` yields an array, so the destructured row is
+    // possibly-undefined. Without this guard, spreading `undefined` produced a
+    // "success" payload carrying only `profileName` — a malformed row the caller
+    // would have taken at face value. A write that returns nothing is a failure.
+    if (!updatedProfile) {
+      return { success: false, error: 'Failed to update forecasting profile' }
+    }
+
     return {
       success: true,
       data: {
@@ -597,6 +613,14 @@ export async function setDefaultForecastingProfile(
       .from(userProfiles)
       .where(eq(userProfiles.id, profile.profileId))
       .limit(1)
+
+    // ⚠️ `.returning()` yields an array, so the destructured row is
+    // possibly-undefined. Without this guard, spreading `undefined` produced a
+    // "success" payload carrying only `profileName` — a malformed row the caller
+    // would have taken at face value. A write that returns nothing is a failure.
+    if (!updatedProfile) {
+      return { success: false, error: 'Failed to update forecasting profile' }
+    }
 
     return {
       success: true,

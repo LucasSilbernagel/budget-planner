@@ -21,6 +21,7 @@ import { verifySession } from './session'
 // Imported for local use AND re-exported so existing importers of this module
 // keep working; the single declaration lives in `../result` (it used to be
 // duplicated here and in the other barrel, identically).
+import type { Currency } from '@budget-planner/db'
 import type { ApiResult } from '../result'
 
 export type { ApiResult }
@@ -34,7 +35,9 @@ export interface PaddleUser {
   email: string
   name?: string
   subscriptionStatus?: 'free' | 'active' | 'past_due' | 'canceled'
-  currency?: string
+  // ⚠️ The DB column is `currencyEnum` (`packages/db/src/schema.ts:103`), so a bare
+  // `string` here let any value flow into a `.set()` on that column.
+  currency?: Currency
 }
 
 /**
@@ -46,7 +49,9 @@ export interface UserSession {
   email: string
   paddleId: string
   subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime'
-  currency: string
+  // Non-null: the column is nullable but carries a `'NONE'` default, and every
+  // construction site below falls back to that rather than propagating null.
+  currency: Currency
   isAuthenticated: boolean
   name?: string
 }
@@ -122,14 +127,26 @@ export async function handlePaddleCallback(
     const tokenResponse = await exchangeCodeForToken(code, paddleConfig)
 
     if (!tokenResponse.success) {
-      return tokenResponse
+      // Rebuilt, not returned across generics: this function yields
+      // `ApiResult<UserSession>` and the token result carries a different payload.
+      // On the failure path `data` is absent, so `error` is the only field of
+      // substance.
+      return { success: false, error: tokenResponse.error }
+    }
+
+    // ⚠️ FAIL CLOSED. `ApiResult.data` is optional, so `success: true` alone does
+    // not guarantee a token. Passing `undefined` on as an access token would have
+    // sent an unauthenticated request to Paddle and failed further from the cause.
+    const accessToken = tokenResponse.data?.accessToken
+    if (!accessToken) {
+      return { success: false, error: 'Paddle token exchange returned no access token' }
     }
 
     // Get user information from Paddle
-    const userResponse = await getPaddleUser(tokenResponse.data?.accessToken, paddleConfig)
+    const userResponse = await getPaddleUser(accessToken, paddleConfig)
 
     if (!userResponse.success) {
-      return userResponse
+      return { success: false, error: userResponse.error }
     }
 
     if (!userResponse.data) {
@@ -552,7 +569,9 @@ async function createOrUpdateUser(paddleUser: PaddleUser): Promise<ApiResult<Use
           .update(users)
           .set({
             subscriptionStatus: paddleUser.subscriptionStatus || existingUser.subscriptionStatus,
-            currency: paddleUser.currency || existingUser.currency,
+            // `users.currency` is nullable; `'NONE'` is the column's own default and
+            // the app's "currency-less" mode, so it is the correct floor here.
+            currency: paddleUser.currency || existingUser.currency || 'NONE',
           })
           .where(eq(users.paddleId, paddleUser.id))
       }
@@ -568,7 +587,7 @@ async function createOrUpdateUser(paddleUser: PaddleUser): Promise<ApiResult<Use
             | 'active'
             | 'past_due'
             | 'canceled',
-          currency: paddleUser.currency || existingUser.currency,
+          currency: paddleUser.currency || existingUser.currency || 'NONE',
           isAuthenticated: true,
           name: paddleUser.name,
         },
@@ -589,6 +608,14 @@ async function createOrUpdateUser(paddleUser: PaddleUser): Promise<ApiResult<Use
       })
       .returning()
 
+    // ⚠️ FAIL CLOSED. `.returning()` yields an array, so the row is
+    // possibly-undefined. Without this the next line dereferenced `newUser.id` and
+    // would have thrown mid-signup, after the INSERT — leaving a user row with no
+    // default profile and no session. Refusing is the safe outcome.
+    if (!newUser) {
+      return { success: false, error: 'Failed to create user record' }
+    }
+
     // Create default profile for the new user
     const defaultProfileResult = await createDefaultProfileForUser(newUser.id)
 
@@ -604,7 +631,9 @@ async function createOrUpdateUser(paddleUser: PaddleUser): Promise<ApiResult<Use
         email: newUser.email,
         paddleId: newUser.paddleId,
         subscriptionStatus: newUser.subscriptionStatus,
-        currency: newUser.currency,
+        // Column is nullable; `'NONE'` is its default and the app's currency-less
+        // mode, matching the existing-user branch above.
+        currency: newUser.currency ?? 'NONE',
         isAuthenticated: true,
         name: paddleUser.name,
       },
