@@ -54,7 +54,13 @@ export interface CreateIncomeSourceInput {
  * For paid tier: profileId is required
  */
 export interface UpdateIncomeSourceInput {
-  id: number
+  // ⚠️ `string`, not `number`. Every entity PK in this schema is
+  // `uuid('id').primaryKey()` (`packages/db/src/schema.ts:99,127,183,214,…`) — the
+  // client-generated uuid story 5-14 introduced. This module kept the pre-uuid
+  // `number` typing, so all sixteen `eq(<table>.id, id)` calls compared a PgUUID
+  // column against a number: Postgres would reject that outright. Nothing imports
+  // this module, so the breakage was never observed.
+  id: string
   name?: string
   amount?: number
   frequency?: 'weekly' | 'biweekly' | 'monthly' | 'annually'
@@ -77,7 +83,7 @@ export interface CreateExpenseInput {
  * For paid tier: profileId is required
  */
 export interface UpdateExpenseInput {
-  id: number
+  id: string
   name?: string
   amount?: number
   frequency?: 'weekly' | 'biweekly' | 'monthly' | 'annually'
@@ -100,7 +106,7 @@ export interface CreateSavingsGoalInput {
  * For paid tier: profileId is required
  */
 export interface UpdateSavingsGoalInput {
-  id: number
+  id: string
   name?: string
   targetAmount?: number
   currentBalance?: number
@@ -126,7 +132,7 @@ export interface CreateBalanceTrackingInput {
  * For paid tier: profileId is required
  */
 export interface UpdateBalanceTrackingInput {
-  id: number
+  id: string
   type?: 'investment' | 'debt'
   name?: string
   currentBalance?: number
@@ -234,7 +240,7 @@ export async function createIncomeSource(
 
 export async function updateIncomeSource(
   request: Request,
-  id: number,
+  id: string,
   data: UpdateIncomeSourceInput
 ): Promise<FinancialApiResult<IncomeSource>> {
   try {
@@ -294,7 +300,7 @@ export async function updateIncomeSource(
 
 export async function deleteIncomeSource(
   request: Request,
-  id: number,
+  id: string,
   profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
@@ -413,7 +419,7 @@ export async function createExpense(
 
 export async function updateExpense(
   request: Request,
-  id: number,
+  id: string,
   data: UpdateExpenseInput
 ): Promise<FinancialApiResult<Expense>> {
   try {
@@ -472,7 +478,7 @@ export async function updateExpense(
 
 export async function deleteExpense(
   request: Request,
-  id: number,
+  id: string,
   profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
@@ -598,7 +604,7 @@ export async function createSavingsGoal(
 
 export async function updateSavingsGoal(
   request: Request,
-  id: number,
+  id: string,
   data: UpdateSavingsGoalInput
 ): Promise<FinancialApiResult<SavingsGoal>> {
   try {
@@ -660,7 +666,7 @@ export async function updateSavingsGoal(
 
 export async function deleteSavingsGoal(
   request: Request,
-  id: number,
+  id: string,
   profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
@@ -796,7 +802,7 @@ export async function createBalanceTracking(
 
 export async function updateBalanceTracking(
   request: Request,
-  id: number,
+  id: string,
   data: UpdateBalanceTrackingInput
 ): Promise<FinancialApiResult<BalanceTracking>> {
   try {
@@ -865,7 +871,7 @@ export async function updateBalanceTracking(
 
 export async function deleteBalanceTracking(
   request: Request,
-  id: number,
+  id: string,
   profileId: string
 ): Promise<FinancialApiResult<void>> {
   try {
