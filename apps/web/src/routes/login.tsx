@@ -14,7 +14,9 @@
 import { MagicLinkForm } from '@/components/auth/magic-link-form'
 import { createFileRoute } from '@tanstack/react-router'
 
-interface LoginSearch {
+// Exported because `routeTree.gen.ts` infers `LoginRoute` from `validateSearch`'s
+// return type and cannot name a type that is module-private (TS4023).
+export interface LoginSearch {
   /** Generic error code from a failed verify redirect (e.g. invalid_or_expired). */
   error?: string
 }

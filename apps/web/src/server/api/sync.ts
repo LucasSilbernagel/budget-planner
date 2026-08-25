@@ -479,9 +479,13 @@ async function getEntity(
       eq(table.isDeleted, false)
     )
 
-    // Add profileId filter if provided and table has profileId column
-    if (profileId && table.profileId) {
-      // @ts-expect-error - Dynamic column access
+    // Add profileId filter if provided and table has profileId column.
+    // ⚠️ `'profileId' in table`, not `table.profileId`. The runtime behaviour was
+    // always right — `userProfiles` genuinely has no `profileId` column and the
+    // truthiness check skipped it — but READING the property to test for it is
+    // itself the type error on that union member. An `in` check narrows the union,
+    // which also retires the `@ts-expect-error` this used to need.
+    if (profileId && 'profileId' in table) {
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
@@ -552,9 +556,13 @@ async function updateEntity(
     const table = getTable(entityType)
     let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
 
-    // Add profileId filter if provided and table has profileId column
-    if (profileId && table.profileId) {
-      // @ts-expect-error - Dynamic column access
+    // Add profileId filter if provided and table has profileId column.
+    // ⚠️ `'profileId' in table`, not `table.profileId`. The runtime behaviour was
+    // always right — `userProfiles` genuinely has no `profileId` column and the
+    // truthiness check skipped it — but READING the property to test for it is
+    // itself the type error on that union member. An `in` check narrows the union,
+    // which also retires the `@ts-expect-error` this used to need.
+    if (profileId && 'profileId' in table) {
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
@@ -591,9 +599,13 @@ async function deleteEntity(
     const table = getTable(entityType)
     let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
 
-    // Add profileId filter if provided and table has profileId column
-    if (profileId && table.profileId) {
-      // @ts-expect-error - Dynamic column access
+    // Add profileId filter if provided and table has profileId column.
+    // ⚠️ `'profileId' in table`, not `table.profileId`. The runtime behaviour was
+    // always right — `userProfiles` genuinely has no `profileId` column and the
+    // truthiness check skipped it — but READING the property to test for it is
+    // itself the type error on that union member. An `in` check narrows the union,
+    // which also retires the `@ts-expect-error` this used to need.
+    if (profileId && 'profileId' in table) {
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
@@ -727,6 +739,25 @@ async function checkConflict(
 // ============================================================================
 
 // Sync history table name
+// ⚠️⚠️ THE SYNC AUDIT TRAIL AND HISTORY ARE NON-FUNCTIONAL. READ BEFORE EDITING.
+//
+// Every `db.execute()` below is suppressed with `@ts-expect-error`, and the
+// suppression is the honest signal, not a workaround. Three independent problems,
+// all pre-existing (tracked in `deferred-work.md`):
+//
+//   1. `db.execute()` takes ONE argument. These calls pass a template string plus a
+//      params array in node-postgres style, so the `$1, $2, …` placeholders are
+//      never bound and Postgres would reject the statement outright.
+//   2. NEITHER TABLE EXISTS. `packages/db/src/schema.ts` defines 11 tables and
+//      `syncHistory`/`syncAuditLogs` are not among them, nor anywhere in that package.
+//   3. Every call site swallows the failure into a `logger.error` fallback, which is
+//      why none of this has ever surfaced.
+//
+// Left exactly as-is on purpose: story 38.3's type sweep chose the type-only route
+// here rather than quietly rewriting a subsystem. Fixing it properly means a schema
+// migration plus drizzle `sql` templates so parameters bind — a story with its own
+// tests, not the tail end of a type cleanup. When that lands, these directives will
+// start reporting "unused" and should be deleted with the fix.
 const SYNC_HISTORY_TABLE = 'syncHistory'
 const SYNC_AUDIT_TABLE = 'syncAuditLogs'
 
@@ -753,6 +784,7 @@ async function logAudit(
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
       )
     `,
+      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
       [
         `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         userId,
@@ -827,6 +859,7 @@ async function recordSyncHistory(
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
       )
     `,
+      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
       [
         historyEntry.id,
         historyEntry.userId,
@@ -1087,9 +1120,14 @@ export async function getSyncHistory(userId: string): Promise<SyncHistoryEntry[]
       WHERE userId = $1 
       ORDER BY startTimestamp DESC
     `,
+      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
       [userId]
     )
-    return result.rows as SyncHistoryEntry[]
+    // The query above cannot run (see the SYNC_HISTORY_TABLE note), so this cast is
+    // never exercised. Routed through `unknown` because `Record<string, unknown>[]`
+    // and `SyncHistoryEntry[]` genuinely do not overlap — asserting otherwise would
+    // be claiming a shape nothing produces.
+    return result.rows as unknown as SyncHistoryEntry[]
   } catch {
     return []
   }
@@ -1107,9 +1145,11 @@ export async function getSyncAuditLogs(userId: string): Promise<SyncAuditLog[]> 
       ORDER BY timestamp DESC 
       LIMIT 1000
     `,
+      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
       [userId]
     )
-    return result.rows as SyncAuditLog[]
+    // See the note on the history query above — same non-functional path.
+    return result.rows as unknown as SyncAuditLog[]
   } catch {
     return []
   }
@@ -1133,6 +1173,7 @@ export async function getSyncStatus(userId: string): Promise<{
       ORDER BY startTimestamp DESC 
       LIMIT 1
     `,
+      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
       [userId]
     )
 
@@ -1210,16 +1251,22 @@ export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: numbe
   if (sorted.length <= cap) {
     return sorted
   }
-  const boundaryTs = sorted[cap].updatedAt // first EXCLUDED row's timestamp
+  const boundaryRow = sorted[cap] // first EXCLUDED row
+  // Unreachable: the `sorted.length <= cap` branch above already returned, so index
+  // `cap` is in range. Narrowed rather than asserted.
+  if (!boundaryRow) {
+    return sorted
+  }
+  const boundaryTs = boundaryRow.updatedAt
   let end = cap
-  while (end > 0 && sorted[end - 1].updatedAt === boundaryTs) {
+  while (end > 0 && sorted[end - 1]?.updatedAt === boundaryTs) {
     end--
   }
   if (end === 0) {
     // The whole page is a single timestamp larger than the cap: include the full
     // group for that timestamp to guarantee forward progress.
     let i = cap
-    while (i < sorted.length && sorted[i].updatedAt === boundaryTs) {
+    while (i < sorted.length && sorted[i]?.updatedAt === boundaryTs) {
       i++
     }
     return sorted.slice(0, i)
@@ -1436,4 +1483,6 @@ export async function resolveConflict(
 
 export { RATE_LIMIT_CONFIG }
 
-export type { BatchSyncRequest, BatchSyncResponse, SyncConflict, SyncHistoryEntry, SyncAuditLog }
+// The five types are already exported at their declarations (`:42`, `:54`, `:78`,
+// `:96`, `:122`); re-exporting them here was a duplicate declaration, not an
+// additional export.

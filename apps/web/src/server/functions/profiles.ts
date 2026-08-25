@@ -9,6 +9,7 @@
  * Authentication: Requires valid user session via Paddle
  */
 
+import type { Currency } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import type { NewUserProfile, UserProfile } from '@budget-planner/db'
 import { categories, userProfiles, users } from '@budget-planner/db/src/schema'
@@ -21,7 +22,10 @@ import type { ApiResult } from '../api/auth/paddle'
 export interface CreateProfileInput {
   name: string
   description?: string
-  currency?: string
+  // ⚠️ The `userProfiles.currency` column is `currencyEnum`
+  // (`packages/db/src/schema.ts:333`), so a bare `string` let any value reach a
+  // `.set()` on it. Same fix as `api/auth/paddle.ts`'s `PaddleUser.currency`.
+  currency?: Currency
 }
 
 export interface UpdateProfileInput extends Partial<CreateProfileInput> {
