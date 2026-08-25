@@ -5,15 +5,12 @@ import {
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
   RESPONSIVE_CELL_CLASS,
-  RESPONSIVE_FOOTER_CELL_CLASS,
-  RESPONSIVE_FOOTER_ROW_CLASS,
   RESPONSIVE_HEADER_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
   RESPONSIVE_TBODY_CLASS,
-  RESPONSIVE_TFOOT_CLASS,
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from '@/components/ui/ResponsiveTable'
@@ -77,8 +74,6 @@ describe('ResponsiveTable class layer', () => {
         RESPONSIVE_STACKED_CELL_CLASS,
         ['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap'],
       ],
-      ['tfoot', RESPONSIVE_TFOOT_CLASS, ['surface-inset']],
-      ['footer cell', RESPONSIVE_FOOTER_CELL_CLASS, ['px-6', 'max-lg:px-4', 'py-3']],
     ]
 
     for (const [name, value, expected] of cases) {
@@ -96,7 +91,6 @@ describe('ResponsiveTable class layer', () => {
         RESPONSIVE_CELL_CLASS,
         RESPONSIVE_ACTIONS_CELL_CLASS,
         RESPONSIVE_STACKED_CELL_CLASS,
-        RESPONSIVE_FOOTER_CELL_CLASS,
         RESPONSIVE_HEADER_CELL_CLASS,
         RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
       ]) {
@@ -106,12 +100,8 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('the mobile-only constants add no unprefixed class that could reach desktop', () => {
-      // These three exist ONLY below `sm`. Every token must be breakpoint-scoped.
-      for (const value of [
-        RESPONSIVE_FOOTER_ROW_CLASS,
-        RESPONSIVE_ACTIONS_GROUP_CLASS,
-        RESPONSIVE_ACTION_BUTTON_CLASS,
-      ]) {
+      // These exist ONLY below `sm`. Every token must be breakpoint-scoped.
+      for (const value of [RESPONSIVE_ACTIONS_GROUP_CLASS, RESPONSIVE_ACTION_BUTTON_CLASS]) {
         expect(tokens(value).every((t) => t.startsWith('max-sm:'))).toBe(true)
       }
     })
@@ -138,11 +128,8 @@ describe('ResponsiveTable class layer', () => {
       expect(tokens(RESPONSIVE_THEAD_CLASS)).toContain('max-sm:hidden')
     })
 
-    it('the body and footer switch to block alongside the table', () => {
-      // A <tfoot> left as `table-footer-group` while <tbody> is `block` would
-      // leave one table holding both block and table-internal subtrees.
+    it('the body switches to block alongside the table', () => {
       expect(tokens(RESPONSIVE_TBODY_CLASS)).toContain('max-sm:block')
-      expect(tokens(RESPONSIVE_TFOOT_CLASS)).toContain('max-sm:block')
     })
 
     it('a row declares bordered, spaced card styling below sm', () => {
@@ -220,15 +207,6 @@ describe('ResponsiveTable class layer', () => {
       expect(tokens(RESPONSIVE_CELL_CLASS)).not.toContain('max-sm:items-center')
       expect(tokens(RESPONSIVE_ACTIONS_CELL_CLASS)).toContain('max-sm:items-center')
       expect(tokens(RESPONSIVE_ACTIONS_CELL_CLASS)).not.toContain('max-sm:items-baseline')
-    })
-
-    it('the footer summary strip relaxes padding AND wrapping', () => {
-      // The combined total is the one unbounded string in the converted
-      // subtree, and the call site adds an unprefixed `whitespace-nowrap` on
-      // top — without this relief it was the only unguarded nowrap below `sm`.
-      expect(tokens(RESPONSIVE_FOOTER_CELL_CLASS)).toContain('max-sm:px-3')
-      expect(tokens(RESPONSIVE_FOOTER_CELL_CLASS)).toContain('max-sm:whitespace-normal')
-      expect(tokens(RESPONSIVE_FOOTER_CELL_CLASS)).toContain('max-sm:[overflow-wrap:anywhere]')
     })
 
     it('the wrapper stays a scroll container at every width', () => {

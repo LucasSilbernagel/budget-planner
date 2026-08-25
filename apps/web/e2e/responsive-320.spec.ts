@@ -699,35 +699,6 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
             `${route} (${theme}, seeded): chart overflows its wrapper, ${chart.scrollWidth} > ${chart.clientWidth}`
           ).toBeLessThanOrEqual(chart.clientWidth + 1)
         }
-
-        // Story 37.2 — /balance now carries an assets-vs-liabilities chart above
-        // its two tables, and this loop's seed already supplies a mixed fixture
-        // with the 138-character name AND a negative debt balance.
-        //
-        // ⚠️ SAME MEASURED LIMIT as the /savings block above: this check guards
-        // HTML-box overflow only and is structurally blind to SVG text painted
-        // outside its box. It IS able to see the tooltip wrapper, which is an
-        // absolutely-positioned HTML element that keeps its width while hidden —
-        // that is the defect it actually caught during story 37.2 (scrollWidth
-        // 265 against clientWidth 240 at 320px). The detectors for everything
-        // else at this width live in `balance-chart.spec.ts`.
-        if (route === '/balance') {
-          await expect(page.getByTestId('balance-chart')).toBeVisible()
-          // ⚠️ WITNESS FIRST — same reason as above.
-          await expect(
-            page.locator('[data-testid="balance-chart"] path.recharts-rectangle')
-          ).not.toHaveCount(0)
-          const balanceChart = await page
-            .locator('[data-testid="balance-chart"]')
-            .evaluate((element) => ({
-              scrollWidth: element.scrollWidth,
-              clientWidth: element.clientWidth,
-            }))
-          expect(
-            balanceChart.scrollWidth,
-            `${route} (${theme}, seeded): chart overflows its wrapper, ${balanceChart.scrollWidth} > ${balanceChart.clientWidth}`
-          ).toBeLessThanOrEqual(balanceChart.clientWidth + 1)
-        }
       })
     }
   }
@@ -745,9 +716,10 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await page.waitForLoadState('networkidle')
       await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-      // The column header row is back — in EVERY table. `/balance` has two, so
-      // a page-wide `.first()` would pass while the second table's <thead>
-      // stayed hidden at all widths.
+      // The column header row is back — in EVERY table. Asserted per-table
+      // rather than via a page-wide `.first()`, so a route that renders more
+      // than one table cannot pass on its first table while a later one's
+      // <thead> stays hidden at all widths.
       const headers = await page.evaluate(() =>
         [...document.querySelectorAll('div.overflow-x-auto table')].map((table, index) => ({
           index,
@@ -991,9 +963,10 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       // keyboard focus-retention requirement at the boundary.
       await expect(moveUp).toHaveAttribute('aria-disabled', 'true')
 
-      // ⚠️ Read rows from the EDITABLE table only. `/balance` renders `entries`
-      // twice — the read-only Investment Accounts breakdown is a filtered view of
-      // the same array — so an unscoped row query concatenates both tables.
+      // ⚠️ Read rows from the EDITABLE table only — the one carrying the move
+      // controls. Kept scoped on purpose even though `/balance` now renders a
+      // single table: an unscoped row query would silently start reading a
+      // second table if one were ever added back to any route in this loop.
       const editableRows = page
         .locator('div.overflow-x-auto table')
         .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
@@ -1056,12 +1029,11 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
     /** The EDITABLE table's `<thead>` — the one carrying the move controls.
      *
-     * ⚠️ Scoped, mirroring the BalancePage unit suite. `/balance` renders two
-     * tables and both `<thead>`s are visible at 1280px; an unscoped
-     * `getByRole('columnheader', {name})` passes today only because the
-     * breakdown's columns happen to be Account / Current Balance / Remaining
-     * Room. A rename there would turn this into a strict-mode failure instead of
-     * a caught regression. */
+     * ⚠️ Scoped on purpose, mirroring the BalancePage unit suite, even though
+     * `/balance` now renders a single table. An unscoped
+     * `getByRole('columnheader', {name})` would silently widen to any table a
+     * future story adds to this page, and a duplicated column name there would
+     * surface as a strict-mode violation rather than a caught regression. */
     function sortHeader(page: import('@playwright/test').Page, name: string) {
       return page
         .locator('div.overflow-x-auto table')
@@ -1071,8 +1043,10 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
 
     /** Row order in the EDITABLE table, by whichever seeded name each row carries.
      *
-     * ⚠️ Scoped to the table holding the move controls: `/balance` renders
-     * `entries` twice, so an unscoped query concatenates both tables. */
+     * ⚠️ Scoped to the table holding the move controls. Kept scoped even though
+     * `/balance` now renders one table: an unscoped query would concatenate the
+     * rows of any table later added to this page, silently corrupting every
+     * ordering assertion below rather than failing. */
     function editableOrder(page: import('@playwright/test').Page, names: string[]) {
       return page
         .locator('div.overflow-x-auto table')

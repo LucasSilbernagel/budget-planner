@@ -146,19 +146,9 @@ const GATED_ROUTES = [
       'stat-total-savings-skeleton',
       'stat-total-debts-skeleton',
       'stat-net-worth-skeleton',
-      'balance-chart-skeleton',
-      // ⚠️ Added in code review: this gate shipped with NO assertion anywhere,
-      // so reverting its one ternary left the whole suite green.
-      'balance-investments-skeleton',
       'balance-entries-skeleton',
     ],
-    absent: [
-      '$0.00',
-      'No balance entries recorded yet',
-      'No investment accounts yet',
-      'Add an investment or debt to see what you own against what you owe',
-      'balance-chart-empty',
-    ],
+    absent: ['$0.00', 'No balance entries recorded yet'],
   },
 ] as const
 
@@ -270,15 +260,7 @@ test.describe("positive controls — the absent strings really are the app's cop
         '$0.00',
       ],
     },
-    {
-      path: '/balance',
-      phrases: [
-        'No balance entries recorded yet',
-        'No investment accounts yet',
-        'Add an investment or debt to see what you own against what you owe',
-        '$0.00',
-      ],
-    },
+    { path: '/balance', phrases: ['No balance entries recorded yet', '$0.00'] },
   ] as const
 
   for (const { path, phrases } of RESOLVED_EMPTY_COPY) {
@@ -314,7 +296,11 @@ test.describe('every gated page resolves', () => {
     { path: '/income', marker: 'period-total-amount', skeleton: 'period-total-amount-skeleton' },
     { path: '/expenses', marker: 'period-total-amount', skeleton: 'period-total-amount-skeleton' },
     { path: '/savings', marker: 'savings-leftover-summary', skeleton: 'savings-chart-skeleton' },
-    { path: '/balance', marker: 'stat-net-worth', skeleton: 'balance-investments-skeleton' },
+    // ⚠️ Repointed by story 43.1: this row's original probe was
+    // `balance-investments-skeleton`, deleted with the Investment Accounts
+    // section. A probe naming an absent testid passes `toHaveCount(0)`
+    // instantly, so /balance would have kept a GREEN row that proved nothing.
+    { path: '/balance', marker: 'stat-net-worth', skeleton: 'balance-entries-skeleton' },
   ] as const
 
   for (const { path, marker, skeleton } of RESOLUTION) {

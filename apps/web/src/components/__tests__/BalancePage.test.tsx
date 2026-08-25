@@ -72,11 +72,9 @@ describe('BalancePage add balance entry button', () => {
     await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '250')
     await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
 
-    // Modal closes and the new entry is rendered. As an investment it now shows
-    // both in the "Investment Accounts" breakdown and in the entries table below
-    // (Story 26.5), so assert at least one occurrence rather than a single match.
+    // Modal closes and the new entry is rendered in the entries table.
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.getAllByText('My 401k').length).toBeGreaterThan(0)
+    expect(screen.getByText('My 401k')).toBeInTheDocument()
     expect(useBalanceStore.getState().entries).toHaveLength(1)
   })
 
@@ -393,157 +391,81 @@ describe('BalancePage max-contribution-limit field is investment-only (Story 26.
 })
 
 /**
- * BalancePage "Investment Accounts" breakdown tests (Story 26.5, FR-parity).
+ * The page's SECTION COMPOSITION (story 43.1, FR68).
  *
- * A dedicated section groups the investment-type accounts (name + current
- * balance + the Story 26.4 remaining room) with a combined total that REUSES
- * `useTotalInvestmentBalance()` — the same selector behind the "Total
- * Investments" stat card — so the two figures are provably equal (no
- * double-counting, no divergence). Debts are excluded. Amounts render in the
- * default currency-less mode ("50,000.00", not "$50,000.00").
+ * ⚠️ This replaces story 37.2's "is the SECOND of four sections" test, which was
+ * deleted with the chart. Without it nothing asserted the page's composition at
+ * all: a control that re-added an `<h2>Investment Accounts</h2>` section ran
+ * GREEN against the whole suite, because every other test scopes itself to a
+ * table, a stat card or a testid and none of them counts the sections.
+ *
+ * ⚠️ Asserts the ORDER and the exact set, not just a count. A count alone would
+ * accept the right number of the wrong sections, and `theme-page-coverage.spec.ts`
+ * asserts the computed background of `.surface` `.first()` — so which section is
+ * index 0 is load-bearing beyond this file.
+ *
+ * ⚠️ The `not.toBeInTheDocument()` guards below name subjects that can no longer
+ * exist — normally the vacuous shape this story spent its review budget deleting.
+ * They are kept DELIBERATELY: each was verified RED by re-adding the section
+ * (story control 8.1), each runs against a SEEDED store, and each sits beside a
+ * positive ordered-list `toEqual` that cannot go vacuous. A future sweep for
+ * dead absence guards should keep these and re-run that control instead.
  */
-describe('BalancePage investment accounts breakdown (Story 26.5)', () => {
-  beforeEach(() => {
-    useBalanceStore.setState({ entries: [] })
-  })
-
+describe('BalancePage section composition (43.1)', () => {
   afterEach(() => {
     useBalanceStore.setState({ entries: [] })
   })
 
-  // Seed two investments + one debt; return the seeded entries by name.
-  const seedMixed = () => {
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'investment',
-      name: 'Personal RRSP',
-      currentBalance: 5_000_000, // $50,000.00
-      maxContributionLimit: 8_000_000, // room = 3,000,000 → $30,000.00
-      monthlyContribution: 50_000,
-      frequency: 'monthly',
-    })
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'investment',
-      name: 'Personal TFSA',
-      currentBalance: 2_000_000, // $20,000.00
-      maxContributionLimit: null, // no limit → "—"
-      monthlyContribution: 30_000,
-      frequency: 'monthly',
-    })
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'debt',
-      name: 'Car Loan',
-      currentBalance: 1_500_000, // $15,000.00 — must NOT appear in the breakdown/total
-      maxContributionLimit: null,
-      monthlyContribution: 20_000,
-      frequency: 'monthly',
-    })
-    const entries = useBalanceStore.getState().entries
-    const rrsp = entries.find((e) => e.name === 'Personal RRSP')
-    const tfsa = entries.find((e) => e.name === 'Personal TFSA')
-    if (!rrsp || !tfsa) throw new Error('seed failed')
-    return { rrsp, tfsa }
+  /** The ordered `<h2>` of every `main > section`, so a heading-less section still
+   *  shows up as `(no h2)` rather than vanishing from the comparison. */
+  function sectionHeadings(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('main > section')].map(
+      (section) => section.querySelector('h2')?.textContent?.trim() ?? '(no h2)'
+    )
   }
 
-  it('lists investment accounts only, each with its balance and remaining room (AC-1)', async () => {
-    const { rrsp, tfsa } = seedMixed()
-    renderWithProviders(<BalancePage />)
+  const SECTIONS = ['Financial Overview', 'Your Balance Entries']
 
-    const breakdown = within(await screen.findByTestId('investment-breakdown'))
-
-    // Both investments appear inside the breakdown; the debt does NOT.
-    expect(breakdown.getByText('Personal RRSP')).toBeInTheDocument()
-    expect(breakdown.getByText('Personal TFSA')).toBeInTheDocument()
-    expect(breakdown.queryByText('Car Loan')).not.toBeInTheDocument()
-
-    // Per-account balances.
-    expect(breakdown.getByTestId(`investment-breakdown-balance-${rrsp.id}`)).toHaveTextContent(
-      '50,000.00'
-    )
-    expect(breakdown.getByTestId(`investment-breakdown-balance-${tfsa.id}`)).toHaveTextContent(
-      '20,000.00'
-    )
-
-    // Per-account remaining room: RRSP = max(0, 8,000,000 − 5,000,000) = 3,000,000
-    // → 30,000.00; TFSA has no limit → the "—" placeholder (never a formatted 0).
-    expect(breakdown.getByTestId(`investment-breakdown-room-${rrsp.id}`)).toHaveTextContent(
-      '30,000.00'
-    )
-    const tfsaRoom = breakdown.getByTestId(`investment-breakdown-room-${tfsa.id}`)
-    expect(tfsaRoom).toHaveTextContent('—')
-    expect(tfsaRoom).not.toHaveTextContent('0')
+  it('renders exactly two sections — summary, then detail', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    expect(sectionHeadings(container)).toEqual(SECTIONS)
   })
 
-  it('shows a combined total that equals the Total Investments stat and excludes debts (AC-2, AC-3)', async () => {
-    const { rrsp, tfsa } = seedMixed()
-    renderWithProviders(<BalancePage />)
-
-    // Combined total = 50,000 + 20,000 = 70,000.00 (the $15,000 debt is excluded).
-    const total = await screen.findByTestId('investment-breakdown-total')
-    expect(total).toHaveTextContent('70,000.00')
-
-    // Reconciliation is the real invariant: the footer total must equal the SUM of
-    // the per-account balance cells actually rendered above it — not merely re-assert
-    // the same formatted string (which is a tautology since both render the same
-    // expression). Parse the currency-less amounts and compare the numbers.
-    const parseAmount = (el: HTMLElement | null): number =>
-      Number((el?.textContent ?? '').replace(/,/g, ''))
-    const rowsSum =
-      parseAmount(screen.getByTestId(`investment-breakdown-balance-${rrsp.id}`)) +
-      parseAmount(screen.getByTestId(`investment-breakdown-balance-${tfsa.id}`))
-    expect(parseAmount(total)).toBe(rowsSum)
-
-    // And it reconciles with the "Total Investments" stat card (same selector value).
-    expect(screen.getByTestId('stat-total-investments')).toHaveTextContent('70,000.00')
-
-    // The debt's balance is never folded into the investment total.
-    expect(total).not.toHaveTextContent('85,000.00')
-  })
-
-  it('updates the per-account rows and combined total live when an investment is added (AC-4)', async () => {
-    seedMixed()
-    renderWithProviders(<BalancePage />)
-
-    // Baseline total before the change.
-    expect(await screen.findByTestId('investment-breakdown-total')).toHaveTextContent('70,000.00')
-
-    // Add a third investment via the store (no reload / no re-render call).
-    act(() => {
-      useBalanceStore.getState().addBalanceEntry({
-        type: 'investment',
-        name: 'Work RRSP',
-        currentBalance: 1_000_000, // +$10,000.00
-        maxContributionLimit: null,
-        monthlyContribution: 40_000,
-        frequency: 'monthly',
-      })
+  it('renders neither retired section, seeded or empty', () => {
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-43-1',
+          type: 'investment',
+          name: 'Brokerage',
+          currentBalance: 250_000,
+          monthlyContribution: 50_000,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
     })
+    const { container } = renderWithProviders(<BalancePage />)
 
-    // The new row appears and the combined total recomputes to 80,000.00.
-    const breakdown = within(await screen.findByTestId('investment-breakdown'))
-    expect(await breakdown.findByText('Work RRSP')).toBeInTheDocument()
-    await waitFor(() =>
-      expect(screen.getByTestId('investment-breakdown-total')).toHaveTextContent('80,000.00')
-    )
-  })
+    // ⚠️ WITNESS FIRST. Every other assertion in this test is an ABSENCE, and an
+    // absence is satisfied by a page that rendered nothing at all. Prove the seed
+    // reached the DOM before concluding anything from what is missing.
+    expect(screen.getByText('Brokerage')).toBeInTheDocument()
 
-  it('shows a calm placeholder and no total when there are no investment accounts (AC-5)', async () => {
-    // A debts-only book still has zero investment accounts.
-    act(() => {
-      useBalanceStore.getState().addBalanceEntry({
-        type: 'debt',
-        name: 'Only Debt',
-        currentBalance: 500_000,
-        maxContributionLimit: null,
-        monthlyContribution: 10_000,
-        frequency: 'monthly',
-      })
-    })
-    renderWithProviders(<BalancePage />)
+    // ⚠️ The composition assertion is repeated HERE, against the seeded DOM, and
+    // that repetition is the point. Both removed sections were data-dependent —
+    // the breakdown rendered only for `type === 'investment'` rows — so a
+    // regression that re-added one would be INVISIBLE to the empty-store arm
+    // above. Seeded is the state in which such a section actually appears.
+    expect(sectionHeadings(container)).toEqual(SECTIONS)
 
-    const breakdown = within(await screen.findByTestId('investment-breakdown'))
-    expect(breakdown.getByText('No investment accounts yet')).toBeInTheDocument()
-    // No table + no combined-total row when the group is empty.
-    expect(breakdown.queryByTestId('investment-breakdown-total')).not.toBeInTheDocument()
+    // Corroboration, not the fence: the retired headings and the breakdown's
+    // empty copy, none of which can exist once the list above is exact.
+    for (const name of ['Investment Accounts', 'What You Own vs What You Owe']) {
+      expect(screen.queryByRole('heading', { name })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByText('No investment accounts yet')).not.toBeInTheDocument()
   })
 })
 
@@ -642,10 +564,8 @@ describe('BalancePage form controls have a visible focus ring', () => {
 /**
  * Mobile card presentation (story 31.2, UX-DR36).
  *
- * See `IncomePage.test.tsx` for the full rationale. Balance is the only page
- * with TWO tables — the Investment Accounts breakdown (3 columns, no Actions,
- * plus a `<tfoot>` summary row) and Your Balance Entries (7 columns, the widest
- * table in the app and the primary 320px risk).
+ * See `IncomePage.test.tsx` for the full rationale. Your Balance Entries is the
+ * widest table in the app (7 columns) and the primary 320px risk.
  */
 describe('BalancePage mobile card presentation (story 31.2)', () => {
   const ISO_31_2 = '2026-01-01T00:00:00.000Z'
@@ -682,12 +602,11 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
     useBalanceStore.setState({ entries: [] })
   })
 
-  function tables(container: HTMLElement): { breakdown: HTMLElement; entries: HTMLElement } {
+  function tables(container: HTMLElement): { entries: HTMLElement } {
     const found = [...container.querySelectorAll('table')] as HTMLElement[]
-    expect(found).toHaveLength(2)
-    // Source order: the Investment Accounts breakdown section precedes the
-    // Your Balance Entries section.
-    return { breakdown: found[0] as HTMLElement, entries: found[1] as HTMLElement }
+    // The page renders exactly one table: Your Balance Entries.
+    expect(found).toHaveLength(1)
+    return { entries: found[0] as HTMLElement }
   }
 
   function rowIn(table: HTMLElement, name: string): HTMLElement {
@@ -743,81 +662,26 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
     expect(value).toHaveTextContent('Bi-weekly')
   })
 
-  it('labels all three Investment breakdown fields and keeps its testids', () => {
+  it('has exactly ONE table in the DOM — no dual-rendered card list', () => {
     const { container } = renderWithProviders(<BalancePage />)
-    const { breakdown } = tables(container)
-    const row = rowIn(breakdown, 'Brokerage')
+    expect(container.querySelectorAll('table')).toHaveLength(1)
+    // Each entry is rendered once. A card list rendered ALONGSIDE the converted
+    // table — the defect this guards — would show every name twice.
+    expect(screen.getAllByText('Brokerage')).toHaveLength(1)
+    expect(screen.getAllByText('Car Loan')).toHaveLength(1)
+  })
 
-    for (const label of ['Account', 'Current Balance', 'Remaining Room']) {
-      expect(within(row).getByText(label)).toBeInTheDocument()
-      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
-    }
-    expect(within(row).getByTestId('investment-breakdown-balance-inv-1')).toHaveTextContent(
-      '2,500.00'
+  it('declares the shared card classes on the entries table (AC-8)', () => {
+    const { container } = renderWithProviders(<BalancePage />)
+    const { entries } = tables(container)
+
+    expect([...entries.classList]).toContain('max-sm:block')
+    expect([...(entries.querySelector('thead') as HTMLElement).classList]).toContain(
+      'max-sm:hidden'
     )
-    expect(within(row).getByTestId('investment-breakdown-room-inv-1')).toHaveTextContent('4,500.00')
-    // No Actions column on this table.
-    expect(within(row).queryByRole('button')).not.toBeInTheDocument()
-  })
-
-  it('declares the breakdown footer as a summary strip, not a card', () => {
-    const { container } = renderWithProviders(<BalancePage />)
-    const tfoot = tables(container).breakdown.querySelector('tfoot') as HTMLElement
-    const footRow = tfoot.querySelector('tr') as HTMLElement
-
-    // The <tfoot> must switch to block alongside the <tbody>: one table holding
-    // both block and table-internal subtrees is invalid layout.
-    expect([...tfoot.classList]).toContain('max-sm:block')
-    expect([...footRow.classList]).toContain('max-sm:flex')
-    // Not a card — no border, no bottom margin.
-    expect([...footRow.classList]).not.toContain('max-sm:border')
-    expect([...footRow.classList]).not.toContain('max-sm:mb-3')
-
-    expect(within(footRow).getByText('Combined Total')).toBeInTheDocument()
-    expect(within(footRow).getByTestId('investment-breakdown-total')).toHaveTextContent('2,500.00')
-
-    // The deliberate empty filler cell stays a REAL cell in the DOM (it keeps
-    // the footer structurally 3-wide at >= 640px); it is only display-hidden.
-    const cells = [...footRow.children] as HTMLElement[]
-    expect(cells).toHaveLength(3)
-    expect(cells[2]?.tagName).toBe('TD')
-    expect(cells[2]).not.toHaveAttribute('aria-hidden')
-    expect([...(cells[2] as HTMLElement).classList]).toContain('max-sm:hidden')
-  })
-
-  it('gives the footer total the same wrap relief as a data cell', () => {
-    // The total is the one unbounded string in the converted subtree and the
-    // call site adds an unprefixed `whitespace-nowrap`; without mobile relief
-    // it was the only unguarded nowrap below `sm`.
-    const { container } = renderWithProviders(<BalancePage />)
-    const totalCell = within(tables(container).breakdown)
-      .getByTestId('investment-breakdown-total')
-      .closest('td') as HTMLElement
-
-    expect([...totalCell.classList]).toContain('max-sm:whitespace-normal')
-    expect([...totalCell.classList]).toContain('max-sm:[overflow-wrap:anywhere]')
-  })
-
-  it('has exactly two tables in the DOM — no dual-rendered card lists', () => {
-    const { container } = renderWithProviders(<BalancePage />)
-    expect(container.querySelectorAll('table')).toHaveLength(2)
-    // 'Brokerage' appears once per table, never twice within one.
-    expect(screen.getAllByText('Brokerage')).toHaveLength(2)
-  })
-
-  it('declares the shared card classes on both tables (AC-8)', () => {
-    const { container } = renderWithProviders(<BalancePage />)
-    const { breakdown, entries } = tables(container)
-
-    for (const table of [breakdown, entries]) {
-      expect([...table.classList]).toContain('max-sm:block')
-      expect([...(table.querySelector('thead') as HTMLElement).classList]).toContain(
-        'max-sm:hidden'
-      )
-      expect([...(table.querySelector('tbody') as HTMLElement).classList]).toContain('max-sm:block')
-    }
+    expect([...(entries.querySelector('tbody') as HTMLElement).classList]).toContain('max-sm:block')
     expect([...rowIn(entries, 'Car Loan').classList]).toContain('max-sm:block')
-    expect([...rowIn(breakdown, 'Brokerage').classList]).toContain('max-sm:block')
+    expect([...rowIn(entries, 'Brokerage').classList]).toContain('max-sm:block')
   })
 
   it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
@@ -846,10 +710,9 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
     }
   })
 
-  it('introduces no retired surface/text tokens in either table region (AC-7)', () => {
+  it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
     const { container } = renderWithProviders(<BalancePage />)
-    const { breakdown, entries } = tables(container)
-    expect(collectRetiredTokenViolations(breakdown)).toEqual([])
+    const { entries } = tables(container)
     expect(collectRetiredTokenViolations(entries)).toEqual([])
   })
 })
@@ -1019,13 +882,11 @@ describe('BalancePage — reorder rows (34.1b)', () => {
   }
 
   /**
-   * The rendered row names, top to bottom, in the EDITABLE table.
+   * The rendered row names, top to bottom, in the editable table.
    *
-   * ⚠️ Scoped deliberately. `/balance` renders `entries` TWICE — the read-only
-   * "Investment Accounts" breakdown is a filtered view of the same array — so an
-   * unscoped `getAllByRole('row')` returns both tables' rows concatenated and
-   * every ordering assertion here would compare six names against three. The
-   * editable table is identified as the one carrying the move controls.
+   * ⚠️ Still identified by its move controls rather than by `getAllByRole`'s
+   * first match, so an ordering assertion here can never silently start reading
+   * some other table if one is ever added back to this page.
    */
   function editableTable(): HTMLElement {
     const control = screen.getAllByRole('button', { name: /^Move .+ up$/ })[0] as HTMLElement
@@ -1183,44 +1044,19 @@ describe('BalancePage — reorder rows (34.1b)', () => {
     renderWithProviders(<BalancePage />)
     expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
   })
-  /**
-   * ⚠️ AC-8: reordering the editable table ALSO reorders the read-only
-   * "Investment Accounts" breakdown, because both render the same `entries`
-   * array and a filter preserves relative order. That is coherent rather than a
-   * defect — one list, one order — but it is user-visible, so it is pinned here
-   * instead of being rediscovered as a surprise in review.
-   */
-  it('mirrors the new order in the read-only Investment Accounts breakdown (AC-8)', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<BalancePage />)
-
-    await user.click(screen.getByRole('button', { name: 'Move Gamma up' }))
-
-    const tables = screen.getAllByRole('table')
-    const breakdown = tables.find((table) => table !== editableTable()) as HTMLElement
-    const breakdownOrder = within(breakdown)
-      .getAllByRole('row')
-      .map((row) => NAMES.find((name) => within(row).queryByText(name)))
-      .filter((name): name is string => Boolean(name))
-
-    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
-    expect(breakdownOrder).toEqual(['Alpha', 'Gamma', 'Beta'])
-  })
 })
 
 /**
  * Column sorting (Story 34.2, FR61).
  *
- * ⚠️ `/balance` renders `entries` TWICE — the read-only "Investment Accounts"
- * breakdown is `entries.filter(e => e.type === 'investment')` over the same
- * array. Only the EDITABLE table sorts, and a `.filter` preserves the relative
- * order of whatever it is given, so a projection applied at page level would
- * silently reorder the breakdown too. That is asserted here, not assumed.
+ * ⚠️ The sort is a VIEW-level projection over the store's array: it never writes
+ * `sortOrder`, never calls a move action and never enqueues a sync operation.
+ * That the store's manual order survives a column sort is asserted here, not
+ * assumed.
  */
 describe('BalancePage — sort by column (34.2)', () => {
   /**
    * manual (insertion):   Zeta, Alpha, Mid, Beta
-   * breakdown (manual):   Zeta, Mid, Beta          (investments only)
    * by type:              Zeta, Mid, Beta, Alpha   (investment before debt)
    * by name:              Alpha, Beta, Mid, Zeta
    * by current balance:   Alpha(-500) Zeta(300) Mid(300) Beta(800)  <- Zeta/Mid TIE
@@ -1261,7 +1097,6 @@ describe('BalancePage — sort by column (34.2)', () => {
   ]
   const NAMES = SEED.map((entry) => entry.name)
   const MANUAL_ORDER = ['Zeta', 'Alpha', 'Mid', 'Beta']
-  const BREAKDOWN_MANUAL_ORDER = ['Zeta', 'Mid', 'Beta']
 
   function seedRows() {
     useBalanceStore.setState({ entries: [] })
@@ -1274,11 +1109,11 @@ describe('BalancePage — sort by column (34.2)', () => {
     vi.useRealTimers()
   }
 
-  /** The two tables, by source order (breakdown section precedes the entries one). */
-  function bothTables(): { breakdown: HTMLElement; entries: HTMLElement } {
+  /** The page's only table — the editable "Your Balance Entries" one. */
+  function entriesTable(): HTMLElement {
     const found = screen.getAllByRole('table') as HTMLElement[]
-    expect(found).toHaveLength(2)
-    return { breakdown: found[0] as HTMLElement, entries: found[1] as HTMLElement }
+    expect(found).toHaveLength(1)
+    return found[0] as HTMLElement
   }
 
   function orderIn(table: HTMLElement): string[] {
@@ -1290,9 +1125,7 @@ describe('BalancePage — sort by column (34.2)', () => {
   }
 
   function header(name: string): HTMLElement {
-    // Both tables carry a "Current Balance" and a "Remaining Room" header, so
-    // every lookup is scoped to the EDITABLE table.
-    return within(bothTables().entries).getByRole('columnheader', { name })
+    return within(entriesTable()).getByRole('columnheader', { name })
   }
 
   function sortBy(name: string): HTMLElement {
@@ -1309,14 +1142,12 @@ describe('BalancePage — sort by column (34.2)', () => {
 
   it('renders in MANUAL order until a header is activated', () => {
     renderWithProviders(<BalancePage />)
-    const { breakdown, entries } = bothTables()
-    expect(orderIn(entries)).toEqual(MANUAL_ORDER)
-    expect(orderIn(breakdown)).toEqual(BREAKDOWN_MANUAL_ORDER)
+    expect(orderIn(entriesTable())).toEqual(MANUAL_ORDER)
   })
 
   it('offers exactly the sortable columns on the EDITABLE table', () => {
     renderWithProviders(<BalancePage />)
-    const { entries } = bothTables()
+    const entries = entriesTable()
     expect(
       within(entries)
         .getAllByRole('columnheader')
@@ -1346,39 +1177,18 @@ describe('BalancePage — sort by column (34.2)', () => {
     expect(actions).not.toHaveAttribute('aria-sort')
   })
 
-  it('leaves the read-only Investment Accounts breakdown entirely unsortable', () => {
-    renderWithProviders(<BalancePage />)
-    const { breakdown } = bothTables()
-    for (const th of within(breakdown).getAllByRole('columnheader')) {
-      expect(within(th).queryByRole('button')).toBeNull()
-      expect(th).not.toHaveAttribute('aria-sort')
-    }
-  })
-
-  it('does NOT reorder the breakdown table when the editable one is sorted', async () => {
-    // ⚠️ The two tables read the same array. Hoisting the projection to page
-    // level — the obvious place, since the sort state is per page — would pass
-    // every other test in this block and silently reorder this one.
-    const user = userEvent.setup()
-    renderWithProviders(<BalancePage />)
-    await user.click(sortBy('Name'))
-    const { breakdown, entries } = bothTables()
-    expect(orderIn(entries)).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
-    expect(orderIn(breakdown)).toEqual(BREAKDOWN_MANUAL_ORDER)
-  })
-
   it('cycles a column ascending -> descending -> back to manual order', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Name'))
     expect(header('Name')).toHaveAttribute('aria-sort', 'ascending')
-    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    expect(orderIn(entriesTable())).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
     await user.click(sortBy('Name'))
     expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
-    expect(orderIn(bothTables().entries)).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+    expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
     await user.click(sortBy('Name'))
     expect(header('Name')).toHaveAttribute('aria-sort', 'none')
-    expect(orderIn(bothTables().entries)).toEqual(MANUAL_ORDER)
+    expect(orderIn(entriesTable())).toEqual(MANUAL_ORDER)
   })
 
   it('sorts Type by the enum — investments before debts', async () => {
@@ -1387,9 +1197,9 @@ describe('BalancePage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Type'))
-    expect(orderIn(bothTables().entries)).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+    expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
     await user.click(sortBy('Type'))
-    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
   })
 
   it('sorts Contribution by the FREQUENCY-NORMALIZED value', async () => {
@@ -1397,16 +1207,16 @@ describe('BalancePage — sort by column (34.2)', () => {
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Contribution'))
     // Raw ascending would be ['Mid','Zeta','Beta','Alpha'] — a different order.
-    expect(orderIn(bothTables().entries)).toEqual(['Mid', 'Beta', 'Alpha', 'Zeta'])
+    expect(orderIn(entriesTable())).toEqual(['Mid', 'Beta', 'Alpha', 'Zeta'])
   })
 
   it('sorts Current Balance RAW, with a negative debt first and ties on manual order', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Current Balance'))
-    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
     await user.click(sortBy('Current Balance'))
-    expect(orderIn(bothTables().entries)).toEqual(['Beta', 'Zeta', 'Mid', 'Alpha'])
+    expect(orderIn(entriesTable())).toEqual(['Beta', 'Zeta', 'Mid', 'Alpha'])
   })
 
   it('treats a debt row as having no limit or room, in both directions', async () => {
@@ -1415,12 +1225,12 @@ describe('BalancePage — sort by column (34.2)', () => {
     await user.click(sortBy('Max Contribution'))
     // The two debts-or-limitless rows (Alpha, Beta) render 'None' and sort last,
     // in their manual relative order.
-    expect(orderIn(bothTables().entries)).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
     await user.click(sortBy('Max Contribution'))
-    expect(orderIn(bothTables().entries)).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
 
     await user.click(sortBy('Remaining Room'))
-    expect(orderIn(bothTables().entries)).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
   })
 
   it('keeps at most one column active', async () => {
@@ -1437,7 +1247,7 @@ describe('BalancePage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Name'))
-    expect(orderIn(bothTables().entries)).not.toEqual(MANUAL_ORDER)
+    expect(orderIn(entriesTable())).not.toEqual(MANUAL_ORDER)
     expect(sortBy('Name')).toHaveFocus()
   })
 
@@ -1455,19 +1265,19 @@ describe('BalancePage — sort by column (34.2)', () => {
         'true'
       )
     }
-    const sorted = orderIn(bothTables().entries)
+    const sorted = orderIn(entriesTable())
     await user.click(screen.getByRole('button', { name: 'Move Mid up' }))
-    expect(orderIn(bothTables().entries)).toEqual(sorted)
+    expect(orderIn(entriesTable())).toEqual(sorted)
     expect(useBalanceStore.getState().entries.map((e) => e.name)).toEqual(MANUAL_ORDER)
 
     await user.click(screen.getByRole('button', { name: 'Show manual order' }))
-    expect(orderIn(bothTables().entries)).toEqual(MANUAL_ORDER)
+    expect(orderIn(entriesTable())).toEqual(MANUAL_ORDER)
     expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
       'aria-disabled',
       'false'
     )
     await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
-    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
   })
 
   it('shows the mobile escape hatch only while a sort is active', async () => {
@@ -1480,11 +1290,9 @@ describe('BalancePage — sort by column (34.2)', () => {
     expect(screen.queryByText(/^Sorted by /)).toBeNull()
   })
 
-  it('adds no retired colour tokens to either header row', () => {
+  it('adds no retired colour tokens to the header row', () => {
     renderWithProviders(<BalancePage />)
-    const { breakdown, entries } = bothTables()
-    expect(collectRetiredTokenViolations(breakdown)).toEqual([])
-    expect(collectRetiredTokenViolations(entries)).toEqual([])
+    expect(collectRetiredTokenViolations(entriesTable())).toEqual([])
   })
 
   it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
@@ -1541,7 +1349,7 @@ describe('BalancePage — sort by column (34.2)', () => {
     })
 
     const names = [...NAMES, 'Bravo']
-    const rendered = within(bothTables().entries)
+    const rendered = within(entriesTable())
       .getAllByRole('row')
       .slice(1)
       .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
@@ -1558,7 +1366,7 @@ describe('BalancePage — sort by column (34.2)', () => {
     renderWithProviders(<BalancePage />)
     const before = screen.getByRole('button', { name: 'Edit Zeta' })
     await user.click(sortBy('Name'))
-    expect(orderIn(bothTables().entries)).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
+    expect(orderIn(entriesTable())).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
     expect(screen.getByRole('button', { name: 'Edit Zeta' })).toBe(before)
   })
 
@@ -1587,7 +1395,7 @@ describe('BalancePage — sort by column (34.2)', () => {
     renderWithProviders(<BalancePage />)
     const names = [...NAMES, 'Corrupt']
     const order = () =>
-      within(bothTables().entries)
+      within(entriesTable())
         .getAllByRole('row')
         .slice(1)
         .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
@@ -1699,242 +1507,5 @@ describe('BalancePage — debt guidance (36.3)', () => {
     await user.selectOptions(within(dialog).getByLabelText(/type/i), 'investment')
 
     expect(within(dialog).queryByTestId('balance-debt-hint')).not.toBeInTheDocument()
-  })
-})
-
-/**
- * The assets-vs-liabilities chart section (story 37.2, FR64 / UX-DR42).
- *
- * ⚠️ Runs against the REAL chart, so every assertion here is limited to what
- * jsdom can see: the section, its heading, the empty states, the excluded-rows
- * notice, and the regression fence. Recharts draws no SVG under jsdom, so
- * nothing about the plot itself is provable in this file — see
- * `BalanceChart.chart-wiring.test.tsx` for what is handed to the chart and
- * `e2e/balance-chart.spec.ts` for what is painted.
- */
-describe('BalancePage chart section', () => {
-  const CHART_NOW = '2026-01-01T00:00:00.000Z'
-
-  function chartEntry(over: {
-    id: string
-    type?: 'investment' | 'debt'
-    name?: string
-    currentBalance?: number
-  }) {
-    return {
-      type: 'investment' as const,
-      name: `Account ${over.id}`,
-      currentBalance: 100_000,
-      monthlyContribution: 0,
-      frequency: 'monthly' as const,
-      createdAt: CHART_NOW,
-      updatedAt: CHART_NOW,
-      ...over,
-    }
-  }
-
-  function seedChart(entries: ReturnType<typeof chartEntry>[], savingsCents = 0) {
-    useBalanceStore.setState({ entries })
-    useSavingsStore.setState({
-      savingsGoals:
-        savingsCents === 0
-          ? []
-          : [
-              {
-                id: 'sav-1',
-                name: 'Emergency Fund',
-                targetAmount: null,
-                currentBalance: savingsCents,
-                createdAt: CHART_NOW,
-                updatedAt: CHART_NOW,
-              },
-            ],
-    })
-  }
-
-  beforeEach(() => {
-    seedChart([chartEntry({ id: 'a', name: 'Brokerage', currentBalance: 500_000 })])
-  })
-
-  afterEach(() => {
-    useBalanceStore.setState({ entries: [] })
-    useSavingsStore.setState({ savingsGoals: [] })
-  })
-
-  it('is the SECOND of four sections — summary, then shape, then detail', () => {
-    const { container } = renderWithProviders(<BalancePage />)
-    const sections = [...(container.querySelectorAll('main > section') ?? [])]
-    expect(sections).toHaveLength(4)
-    expect(sections[1]).toBe(screen.getByTestId('balance-chart-section'))
-    // ⚠️ Never first: `theme-page-coverage.spec.ts` asserts the computed
-    // background of `.surface` .first(), so the ordering also has to hold there.
-    expect(sections[0]).not.toBe(screen.getByTestId('balance-chart-section'))
-  })
-
-  it('carries the ratified heading', () => {
-    renderWithProviders(<BalancePage />)
-    expect(
-      screen.getByRole('heading', { name: 'What You Own vs What You Owe' })
-    ).toBeInTheDocument()
-  })
-
-  it('renders the chart when there is something to plot', () => {
-    renderWithProviders(<BalancePage />)
-    expect(screen.getByTestId('balance-chart')).toBeInTheDocument()
-    expect(screen.queryByTestId('balance-chart-empty')).not.toBeInTheDocument()
-  })
-
-  it('reserves the chart’s pixel height, since ResponsiveContainer needs a sized parent', () => {
-    renderWithProviders(<BalancePage />)
-    // Fixed, not row-count-driven: this chart always has exactly two columns.
-    expect(screen.getByTestId('balance-chart')).toHaveStyle({ height: '360px' })
-  })
-
-  it('shows the NO-DATA empty state when there are no entries and no savings', () => {
-    seedChart([])
-    renderWithProviders(<BalancePage />)
-    expect(screen.queryByTestId('balance-chart')).not.toBeInTheDocument()
-    expect(
-      screen.getByText('Add an investment or debt to see what you own against what you owe')
-    ).toBeInTheDocument()
-  })
-
-  it('shows the ALL-ZERO empty state when data exists but nothing is plottable', () => {
-    seedChart([chartEntry({ id: 'a', currentBalance: 0 })])
-    renderWithProviders(<BalancePage />)
-    expect(
-      screen.getByText('Nothing to chart yet — every balance is currently zero')
-    ).toBeInTheDocument()
-  })
-
-  it('shows the ALL-EXCLUDED empty state rather than telling the user to add data they have', () => {
-    seedChart([chartEntry({ id: 'bad', currentBalance: Number.NaN })])
-    renderWithProviders(<BalancePage />)
-    expect(
-      screen.getByText('None of your balances could be read, so there is nothing to chart')
-    ).toBeInTheDocument()
-  })
-
-  it('gives each empty-state string exactly ONE match on the page', () => {
-    // The page already renders 'No investment accounts yet' and 'No balance
-    // entries recorded yet'; an unscoped getByText on either throws on a second
-    // match, so the chart's copy has to stay distinct from both.
-    seedChart([])
-    renderWithProviders(<BalancePage />)
-    expect(
-      screen.getAllByText('Add an investment or debt to see what you own against what you owe')
-    ).toHaveLength(1)
-    expect(screen.getAllByText('No balance entries recorded yet')).toHaveLength(1)
-    expect(screen.getAllByText('No investment accounts yet')).toHaveLength(1)
-  })
-
-  it('uses text-muted, never text-faint, for the empty copy', () => {
-    seedChart([])
-    renderWithProviders(<BalancePage />)
-    const copy = screen.getByText(
-      'Add an investment or debt to see what you own against what you owe'
-    )
-    // Class-TOKEN membership, not substring: `text-faint` contains no `text-muted`
-    // but a substring check on the whole className is the wrong shape here.
-    expect([...copy.classList]).toContain('text-muted')
-    expect([...copy.classList]).not.toContain('text-faint')
-  })
-
-  it('says every READABLE balance is zero when some rows were excluded', () => {
-    // ⚠️ Without the qualifier this paragraph contradicts the notice directly
-    // below it: "every balance is currently zero" beside "1 balance could not be
-    // read".
-    seedChart([
-      chartEntry({ id: 'zero', currentBalance: 0 }),
-      chartEntry({ id: 'bad', currentBalance: Number.NaN }),
-    ])
-    renderWithProviders(<BalancePage />)
-    expect(
-      screen.getByText('Nothing to chart yet — every readable balance is currently zero')
-    ).toBeInTheDocument()
-  })
-
-  it('tells the user the net-worth line is HIDDEN, not that figures are missing from it', () => {
-    // The line is suppressed on exactly the state that renders this notice, so
-    // copy saying values are "not included in its net-worth line" always
-    // described something absent — and implied the line was still drawn.
-    seedChart([
-      chartEntry({ id: 'ok', currentBalance: 500_000 }),
-      chartEntry({ id: 'bad', currentBalance: Number.NaN }),
-    ])
-    renderWithProviders(<BalancePage />)
-    const notice = screen.getByTestId('balance-chart-excluded-notice')
-    expect(notice.textContent).toContain('The net-worth line is hidden')
-    expect(notice.textContent).not.toContain('its net-worth line')
-  })
-
-  it('sends the user to the Savings page when the SAVINGS total is what is unreadable', () => {
-    // It is one derived figure from another page; counting it among "balances"
-    // would point the user at this page's table, where nothing is wrong.
-    useBalanceStore.setState({ entries: [chartEntry({ id: 'a', currentBalance: 500_000 })] })
-    useSavingsStore.setState({
-      savingsGoals: [
-        {
-          id: 'bad',
-          name: 'Corrupt',
-          targetAmount: null,
-          currentBalance: Number.NaN,
-          createdAt: CHART_NOW,
-          updatedAt: CHART_NOW,
-        },
-      ],
-    })
-    renderWithProviders(<BalancePage />)
-    const notice = screen.getByTestId('balance-chart-excluded-notice')
-    expect(notice.textContent).toContain('savings total could not be read')
-    expect(notice.textContent).not.toContain('1 balance could not be read')
-  })
-
-  it('discloses excluded rows, with their COUNT, and uses text-muted there too', () => {
-    seedChart([
-      chartEntry({ id: 'ok', currentBalance: 500_000 }),
-      chartEntry({ id: 'bad1', currentBalance: Number.NaN }),
-      chartEntry({ id: 'bad2', currentBalance: Number.POSITIVE_INFINITY }),
-    ])
-    renderWithProviders(<BalancePage />)
-    const notice = screen.getByTestId('balance-chart-excluded-notice')
-    // The COUNT, not merely the presence of a notice.
-    expect(notice.textContent).toContain('2 balances could not be read')
-    expect([...notice.classList]).toContain('text-muted')
-    expect([...notice.classList]).not.toContain('text-faint')
-  })
-
-  it('singularises the excluded-rows notice', () => {
-    seedChart([
-      chartEntry({ id: 'ok', currentBalance: 500_000 }),
-      chartEntry({ id: 'bad1', currentBalance: Number.NaN }),
-    ])
-    renderWithProviders(<BalancePage />)
-    expect(screen.getByTestId('balance-chart-excluded-notice').textContent).toContain(
-      '1 balance could not be read'
-    )
-  })
-
-  it('shows NO excluded-rows notice when every row was readable', () => {
-    renderWithProviders(<BalancePage />)
-    expect(screen.queryByTestId('balance-chart-excluded-notice')).not.toBeInTheDocument()
-  })
-
-  it('holds the AC-13 fence: no third table and no entry name in the section', () => {
-    const { container } = renderWithProviders(<BalancePage />)
-    // The two pre-existing tables, and no third one from the chart.
-    expect(container.querySelectorAll('table')).toHaveLength(2)
-    const section = screen.getByTestId('balance-chart-section')
-    expect(section.querySelectorAll('table')).toHaveLength(0)
-    // ⚠️ No entry name in the section's STATIC markup. The Recharts tooltip is
-    // the one sanctioned exception and never mounts under jsdom.
-    expect(section.textContent).not.toContain('Brokerage')
-  })
-
-  it('plots stocks only — no period selector and no per-period suffix', () => {
-    const section =
-      renderWithProviders(<BalancePage />) && screen.getByTestId('balance-chart-section')
-    expect(section.querySelectorAll('select')).toHaveLength(0)
-    expect(section.textContent ?? '').not.toMatch(/per (week|month|year)|\/mo\b|annually/i)
   })
 })

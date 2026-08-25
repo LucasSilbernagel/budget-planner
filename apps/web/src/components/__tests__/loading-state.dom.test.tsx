@@ -25,7 +25,7 @@
  * for a user with five years of data.
  */
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -307,8 +307,6 @@ describe('the remaining gated pages, pending → resolved (AC-5)', () => {
         'stat-total-savings-skeleton',
         'stat-total-debts-skeleton',
         'stat-net-worth-skeleton',
-        'balance-chart-skeleton',
-        'balance-investments-skeleton',
         'balance-entries-skeleton',
       ],
       emptyCopy: 'No balance entries recorded yet',
@@ -350,7 +348,7 @@ describe('the remaining gated pages, pending → resolved (AC-5)', () => {
  * sweep both missed them — they are neither a zero nor a known testid, just a
  * sentence telling a returning user to add data they already have.
  */
-describe('the chart sections must not preach the empty state while pending', () => {
+describe('the savings chart must not preach the empty state while pending', () => {
   beforeEach(() => {
     __resetStoresHydratedForTests()
     resolvedFreeTier()
@@ -367,24 +365,9 @@ describe('the chart sections must not preach the empty state while pending', () 
     expect(html).not.toContain('savings-chart-empty')
   })
 
-  it('/balance does not serve "Add an investment or debt…" while pending', () => {
-    const html = renderToString(<BalancePage />)
-
-    expect(html).toContain('balance-chart-skeleton')
-    expect(html).not.toContain('Add an investment or debt to see what you own against what you owe')
-    expect(html).not.toContain('balance-chart-empty')
-  })
-
-  it('both charts resolve to their genuine empty state', () => {
+  it('the savings chart resolves to its genuine empty state', () => {
     render(<SavingsPage />)
     expect(screen.getByTestId('savings-chart-empty')).toBeInTheDocument()
     expect(screen.queryByTestId('savings-chart-skeleton')).not.toBeInTheDocument()
-
-    cleanup()
-    __resetStoresHydratedForTests()
-
-    render(<BalancePage />)
-    expect(screen.getByTestId('balance-chart-empty')).toBeInTheDocument()
-    expect(screen.queryByTestId('balance-chart-skeleton')).not.toBeInTheDocument()
   })
 })

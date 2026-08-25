@@ -230,30 +230,6 @@ export const RESPONSIVE_ACTIONS_GROUP_CLASS =
 export const RESPONSIVE_ACTION_BUTTON_CLASS =
   'max-sm:inline-flex max-sm:items-center max-sm:justify-center max-sm:min-h-[44px] max-sm:min-w-[44px]'
 
-/** `<tfoot>` for the one table that has a summary row (the Balance page's
- * Investment Accounts breakdown). It must switch to `block` alongside the
- * `<tbody>`: leaving it as `table-footer-group` while the body is `block`
- * would leave one table holding both block and table-internal subtrees. */
-export const RESPONSIVE_TFOOT_CLASS = 'surface-inset max-sm:block'
-
-/** The `<tfoot>` `<tr>`. A summary strip, not a card — label and total on one
- * line, no border, no card padding. */
-export const RESPONSIVE_FOOTER_ROW_CLASS = 'max-sm:flex max-sm:justify-between max-sm:gap-3'
-
-/** A `<tfoot>` cell. Takes the same wrap relief as a data cell, not just the
- * padding: the total is the one string in the converted subtree that can grow
- * without bound (a near-`MAX_SAFE_INTEGER` balance in symbol mode), and the
- * call site adds an unprefixed `whitespace-nowrap` on top. Without this it was
- * the only unguarded nowrap left below `sm`.
- *
- * ⚠️ It carries `max-lg:px-4` for ALIGNMENT, not for width. A `<tfoot>` cell
- * shares its column with the `<tbody>` cells above it, so the padding only moves
- * the total's text inside that column — but if the body dropped to `px-4`
- * between `sm` and `lg` and the summary row stayed at `px-6`, the Balance page's
- * total would sit 8px inboard of the figures it totals. */
-export const RESPONSIVE_FOOTER_CELL_CLASS =
-  'px-6 max-lg:px-4 py-3 max-sm:px-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]'
-
 /** The mobile-only field label. */
 export const FIELD_LABEL_CLASS = 'sm:hidden text-xs font-medium uppercase tracking-wider text-muted'
 

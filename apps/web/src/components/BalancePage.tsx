@@ -6,11 +6,10 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
-import { buildBalanceChartModel, hasPlottableData } from '../lib/balance-chart-data'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { type BalanceSortKey, createBalanceSortExtractors } from '../lib/table-sort-keys'
 import {
@@ -22,7 +21,6 @@ import {
 } from '../stores'
 import type { FinanceType } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
-import { BalanceChart } from './BalanceChart'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { Modal } from './ui/Modal'
 import {
@@ -31,13 +29,10 @@ import {
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
   RESPONSIVE_CELL_CLASS,
-  RESPONSIVE_FOOTER_CELL_CLASS,
-  RESPONSIVE_FOOTER_ROW_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
   RESPONSIVE_TABLE_CLASS,
   RESPONSIVE_TBODY_CLASS,
-  RESPONSIVE_TFOOT_CLASS,
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
@@ -101,39 +96,18 @@ export function BalancePage() {
   // arithmetic, so the contributing figure has to be on screen too.
   const totalSavings = useTotalSavings()
   const netWorth = useNetWorth()
-  // Story 26.5: the investment-only slice for the "Investment Accounts" breakdown.
-  // Derived from the already-subscribed entries (no new store selector); the section
-  // re-renders on any store change, which is what makes its live update free. The
-  // combined total below reuses `totalInvestments` (= useTotalInvestmentBalance) so
-  // the breakdown total and the "Total Investments" stat card are the same number.
-  const investmentAccounts = balanceEntries.filter((entry) => entry.type === 'investment')
   const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry, moveBalanceEntry } =
     useBalanceStore()
 
-  // Story 37.2 (FR64): the assets-vs-liabilities chart's model.
-  //
-  // ⚠️ Built from `balanceEntries` — the MANUAL order — not from `sortedRows`.
-  // The chart sits directly above the deliberately-unsorted Investment Accounts
-  // breakdown and mirrors its composition, so a column sort on the editable
-  // table below must not reorder it. That is the same reasoning the comment on
-  // `sort` gives for not hoisting the projection to page level.
-  //
-  // Memoised so a keystroke in the add/edit modal does not re-fold the model and
-  // re-run the Recharts layout on every render.
-  const chartModel = useMemo(
-    () => buildBalanceChartModel({ entries: balanceEntries, savingsCents: totalSavings }),
-    [balanceEntries, totalSavings]
-  )
-
-  // Column sorting for the EDITABLE table only (story 34.2, FR61). A VIEW-level
+  // Column sorting for the entries table (story 34.2, FR61). A VIEW-level
   // projection: it never writes `sortOrder`, never calls a move action and never
   // enqueues a sync operation.
   //
-  // ⚠️ Scoped to this one table on purpose. `investmentAccounts` above is a
-  // `.filter` of the SAME array, and a filter preserves the relative order of
-  // whatever it is given — so hoisting this projection to page level would
-  // silently reorder the read-only Investment Accounts breakdown too. The
-  // breakdown stays in manual order at all times.
+  // ⚠️ Deliberately local to this component, not hoisted to page level. It is a
+  // projection over the store's array, so anything else that read a hoisted
+  // `sortedRows` would silently inherit this table's column order instead of the
+  // manual `sortOrder` the store actually holds. Keeping it here means the sort
+  // cannot reach a surface that never asked for it.
   //
   // ⚠️ Only `contribution` is frequency-normalized. `currentBalance` is a
   // point-in-time STOCK (and may be negative for a debt), so normalizing it
@@ -487,221 +461,6 @@ export function BalancePage() {
                 </p>
               </div>
             </div>
-          </section>
-
-          {/* Assets vs liabilities chart (Story 37.2, FR64 / UX-DR42). Sits
-              BETWEEN the summary and the detail tables: summary → shape →
-              detail, the same placement story 37.1 ratified for /savings. It is
-              the SECOND of four sections, never the first — and the three
-              figures it aggregates are the same three the four cards above
-              carry, so the two surfaces provably agree. */}
-          <section
-            className="surface shadow-md p-6 rounded-lg"
-            data-testid="balance-chart-section"
-            aria-labelledby="balance-chart-heading"
-          >
-            <h2 id="balance-chart-heading" className="mb-6 font-semibold text-subheading text-xl">
-              What You Own vs What You Owe
-            </h2>
-
-            {/* ⚠️ Story 38.2 CODE REVIEW: this section was originally left
-                OUT of the gate, on the stated grounds that it "already carries
-                its own empty label". That reasoning was backwards — the empty
-                label IS the confident empty. Pre-rehydration `balanceEntries` is the
-                default `[]`, so the server served a returning user
-                "Add an investment or debt to see what you own against what you owe".
-                MEASURED with `renderToString` against a seeded store. */}
-            {!hydrated ? (
-              <EmptyStateSkeleton testId="balance-chart-skeleton" lines={1} />
-            ) : hasPlottableData(chartModel) ? (
-              <BalanceChart
-                model={chartModel}
-                formatAmount={formatAmount}
-                mode={mode}
-                currency={currency}
-              />
-            ) : (
-              <div
-                data-testid="balance-chart-empty"
-                className="surface-inset p-8 rounded-lg text-center"
-              >
-                {/* ⚠️ `text-muted` (4.83:1), never `text-faint` (2.54:1, which
-                    FAILS WCAG AA in light mode). Both existing empty states on
-                    this page use `text-faint` on their second line — do not copy
-                    the neighbour. Those two are pre-existing and out of this
-                    story's fence. Each string is also distinct from
-                    "No investment accounts yet" and "No balance entries recorded
-                    yet", which unscoped `getByText` queries in the page suite
-                    would otherwise double-match. */}
-                {/* ⚠️ The all-zero branch says "every READABLE balance", and the
-                    qualifier is load-bearing. With `[investment 0, debt NaN]` the
-                    first branch does not fire (a zero segment survives), so an
-                    unqualified "every balance is currently zero" would sit
-                    directly above a notice saying one balance could not be read —
-                    the section contradicting itself in consecutive paragraphs. */}
-                <p className="text-muted">
-                  {chartModel.segments.length === 0 &&
-                  (chartModel.excludedCount > 0 || chartModel.savingsExcluded)
-                    ? 'None of your balances could be read, so there is nothing to chart'
-                    : balanceEntries.length === 0 && totalSavings === 0
-                      ? 'Add an investment or debt to see what you own against what you owe'
-                      : chartModel.excludedCount > 0 || chartModel.savingsExcluded
-                        ? 'Nothing to chart yet — every readable balance is currently zero'
-                        : 'Nothing to chart yet — every balance is currently zero'}
-                </p>
-              </div>
-            )}
-
-            {(chartModel.excludedCount > 0 || chartModel.savingsExcluded) && (
-              /* Partition and disclose, never silent drop — the pattern
-                 `net-worth.ts` names and `PeriodTotal.tsx` renders for
-                 income/expenses. ⚠️ The `NetWorthProjectionPage` variant of this
-                 is a whole-surface REFUSAL and uses `text-faint`; only the shape
-                 is borrowed, not the copy or the token.
-
-                 ⚠️ The copy says the net-worth line is HIDDEN, not that figures
-                 are "not included in it". The two conditions are mutually
-                 exclusive — the line is suppressed on exactly the state that
-                 renders this notice — so the old wording always described
-                 something absent, and told the reader the line was still drawn
-                 with the bad rows omitted, which is the opposite of the code.
-
-                 ⚠️ An unreadable SAVINGS total gets its own sentence. It is one
-                 derived figure from a different page, so counting it among
-                 "balances" would send the user to this page's table, where
-                 nothing is wrong. */
-              <p data-testid="balance-chart-excluded-notice" className="mt-4 text-muted text-sm">
-                {chartModel.excludedCount > 0
-                  ? `${
-                      chartModel.excludedCount === 1
-                        ? '1 balance'
-                        : `${chartModel.excludedCount} balances`
-                    } could not be read and ${
-                      chartModel.excludedCount === 1 ? 'is' : 'are'
-                    } not charted.`
-                  : ''}
-                {chartModel.excludedCount > 0 && chartModel.savingsExcluded ? ' ' : ''}
-                {chartModel.savingsExcluded
-                  ? 'Your savings total could not be read — check the Savings page.'
-                  : ''}
-                {' The net-worth line is hidden until every figure can be read.'}
-              </p>
-            )}
-          </section>
-
-          {/* Investment Accounts breakdown (Story 26.5) — investment-type accounts
-              grouped with a combined total, the way the source spreadsheet lays out
-              RRSP / Work RRSP / TFSA. The combined total renders `totalInvestments`
-              (= useTotalInvestmentBalance) — the SAME selector behind the "Total
-              Investments" stat card above — so the two are provably equal (no
-              re-summing, no divergence). Investment-only, so no per-row type guard. */}
-          <section
-            className="surface shadow-md p-6 rounded-lg"
-            data-testid="investment-breakdown"
-            aria-labelledby="investment-breakdown-heading"
-          >
-            <h2
-              id="investment-breakdown-heading"
-              className="mb-6 font-semibold text-subheading text-xl"
-            >
-              Investment Accounts
-            </h2>
-
-            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
-                the server told a returning user "No investment accounts yet" — the store had not
-                rehydrated, so the list was empty and the page said so with
-                confidence. */}
-            {!hydrated ? (
-              <EmptyStateSkeleton testId="balance-investments-skeleton" />
-            ) : investmentAccounts.length === 0 ? (
-              <div className="surface-inset p-8 rounded-lg text-center">
-                <p className="mb-4 text-muted">No investment accounts yet</p>
-                <p className="text-faint text-sm">
-                  Add an account with type Investment to see it grouped here
-                </p>
-              </div>
-            ) : (
-              <div className={RESPONSIVE_WRAPPER_CLASS}>
-                <table className={RESPONSIVE_TABLE_CLASS}>
-                  <thead className={RESPONSIVE_THEAD_CLASS}>
-                    <tr>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Account
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Current Balance
-                      </th>
-                      <th className="px-6 py-3 font-medium text-muted text-xs text-left uppercase tracking-wider">
-                        Remaining Room
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className={RESPONSIVE_TBODY_CLASS}>
-                    {investmentAccounts.map((entry) => {
-                      // Every row here is an investment (pre-filtered), so no
-                      // `type === 'investment'` guard is needed — just the Story 26.4
-                      // three-state room contract: null → "—", else formatted.
-                      const room = remainingContributionRoom(entry)
-                      return (
-                        <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Account</FieldLabel>
-                            <div className="font-medium text-heading text-sm">{entry.name}</div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Current Balance</FieldLabel>
-                            <div
-                              className="text-muted text-sm"
-                              data-testid={`investment-breakdown-balance-${entry.id}`}
-                            >
-                              {formatAmount(entry.currentBalance)}
-                            </div>
-                          </td>
-                          <td className={RESPONSIVE_CELL_CLASS}>
-                            <FieldLabel>Remaining Room</FieldLabel>
-                            <div
-                              className="text-muted text-sm"
-                              data-testid={`investment-breakdown-room-${entry.id}`}
-                            >
-                              {room === null ? '—' : formatAmount(room)}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  {/* Below `sm` this footer becomes a one-line summary strip, not
-                      a card: label left, total right. The <tfoot> must switch to
-                      `block` alongside the <tbody> — leaving it as
-                      `table-footer-group` while the body is `block` would leave
-                      one table holding both block and table-internal subtrees. */}
-                  <tfoot className={RESPONSIVE_TFOOT_CLASS}>
-                    <tr className={RESPONSIVE_FOOTER_ROW_CLASS}>
-                      <th
-                        scope="row"
-                        className={`${RESPONSIVE_FOOTER_CELL_CLASS} font-semibold text-heading text-sm text-left`}
-                      >
-                        Combined Total
-                      </th>
-                      <td
-                        className={`${RESPONSIVE_FOOTER_CELL_CLASS} font-semibold text-heading text-sm whitespace-nowrap`}
-                      >
-                        <span data-testid="investment-breakdown-total">
-                          {formatAmount(totalInvestments)}
-                        </span>
-                      </td>
-                      {/* Empty filler cell keeps the footer row structurally 3-wide
-                          (matching the 3-column head). Left as a real (empty) data
-                          cell — inert to assistive tech — rather than aria-hidden,
-                          which would drop the column from the accessibility tree.
-                          `max-sm:hidden` is a display change, not a removal: the
-                          cell stays in the DOM and returns at >= 640px. */}
-                      <td className={`${RESPONSIVE_FOOTER_CELL_CLASS} max-sm:hidden`} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
           </section>
 
           {/* Balance Entries List */}
