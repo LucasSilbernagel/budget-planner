@@ -156,6 +156,19 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     return json({ success: false, error: result.error }, { status: 400 })
   }
 
+  // ⚠️ FAIL CLOSED. `ApiResult.data` is optional, and `handlePaddleCallback`
+  // returns whatever `createOrUpdateUser` gave it (`api/auth/paddle.ts:145`) — so
+  // `success: true` does not itself guarantee a user. Without this the next lines
+  // dereferenced `result.data.userId` and would have thrown a 500 mid-callback,
+  // leaking a stack instead of refusing to mint a session. No session is worth
+  // minting from an absent identity.
+  if (!result.data) {
+    return json(
+      { success: false, error: 'Authentication succeeded but returned no user' },
+      { status: 400 }
+    )
+  }
+
   // Create secure session cookie.
   // The cookie carries an HMAC-signed identity token (Story 5-7), NOT raw JSON,
   // so it cannot be forged or tampered with. Subscription status and currency

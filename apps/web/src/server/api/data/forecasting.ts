@@ -14,7 +14,7 @@ import {
   calculateFinancialForecast,
   calculateGoalTimeline,
 } from '@budget-planner/core'
-import type { Frequency } from '@budget-planner/db'
+import type { Frequency, SubscriptionStatus } from '@budget-planner/db'
 import type { UserSession } from '../auth/paddle'
 import type { ApiResult } from '../auth/paddle'
 
@@ -51,7 +51,11 @@ export async function calculateForecastServer(
     const userResult = await getUserContext(request)
 
     if (!userResult.success) {
-      return userResult as ApiResult<ForecastingResult>
+      // Rebuilt rather than cast across generics: on the failure path `data` is
+      // absent, so the only meaningful fields are `success` and `error`. The cast
+      // asserted an overlap between `UserSession | null` and `ForecastingResult`
+      // that does not exist.
+      return { success: false, error: userResult.error }
     }
 
     const user = userResult.data
@@ -116,7 +120,8 @@ export async function calculateGoalTimelineServer(
     const userResult = await getUserContext(request)
 
     if (!userResult.success) {
-      return userResult as ApiResult<GoalCalculation>
+      // See `calculateForecastServer` above — rebuilt, not cast.
+      return { success: false, error: userResult.error }
     }
 
     const user = userResult.data
@@ -160,7 +165,11 @@ export async function calculateGoalTimelineServer(
  */
 export async function checkPremiumAccessServer(
   request: Request
-): Promise<ApiResult<{ hasAccess: boolean; subscriptionStatus: string }>> {
+  // ⚠️ `SubscriptionStatus`, not `string`. The value here is `user.subscriptionStatus`,
+  // which is already the pg enum union (`packages/db/src/schema.ts:568`); declaring
+  // it `string` widened it back out and forced three assignments in
+  // `hooks/usePremiumAccess.ts` to fail against the union THEY correctly declare.
+): Promise<ApiResult<{ hasAccess: boolean; subscriptionStatus: SubscriptionStatus }>> {
   try {
     const userResult = await getUserContext(request)
 

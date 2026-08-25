@@ -454,7 +454,13 @@ export async function updateForecastingProfile(
         scenarioData: scenarioDataString,
         version: input.version ?? existingProfile.version,
         isDefault: input.isDefault ?? existingProfile.isDefault,
-        updatedAt: new Date().toISOString(),
+        // ⚠️ `new Date()`, not `.toISOString()`. The column is
+        // `timestamp('updatedAt')` (`packages/db/src/schema.ts`), and drizzle's date
+        // mapper calls `.toISOString()` on the value it is given — so handing it a
+        // STRING throws at runtime. Every other `.set()` in the codebase passes a
+        // `Date` (e.g. `api/data/financialData.ts:223,272,402`); these were the odd
+        // ones out.
+        updatedAt: new Date(),
       })
       .where(eq(forecastingProfiles.id, input.id))
       .returning()
@@ -580,7 +586,8 @@ export async function setDefaultForecastingProfile(
     // Set this profile as default
     const [updatedProfile] = await db
       .update(forecastingProfiles)
-      .set({ isDefault: true, updatedAt: new Date().toISOString() })
+      // See the note above: a timestamp column needs a Date, not a string.
+      .set({ isDefault: true, updatedAt: new Date() })
       .where(eq(forecastingProfiles.id, id))
       .returning()
 

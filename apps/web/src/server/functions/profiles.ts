@@ -322,7 +322,13 @@ export async function updateProfile(
         name: input.name,
         description: input.description,
         currency: input.currency,
-        updatedAt: new Date().toISOString(),
+        // ⚠️ `new Date()`, not `.toISOString()`. The column is
+        // `timestamp('updatedAt')` (`packages/db/src/schema.ts`), and drizzle's date
+        // mapper calls `.toISOString()` on the value it is given — so handing it a
+        // STRING throws at runtime. Every other `.set()` in the codebase passes a
+        // `Date` (e.g. `api/data/financialData.ts:223,272,402`); these were the odd
+        // ones out.
+        updatedAt: new Date(),
       })
       .where(eq(userProfiles.id, input.id))
       .returning()
