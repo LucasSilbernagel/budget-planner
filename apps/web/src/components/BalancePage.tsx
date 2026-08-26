@@ -15,6 +15,7 @@ import { type BalanceSortKey, createBalanceSortExtractors } from '../lib/table-s
 import {
   useBalanceEntries,
   useBalanceStore,
+  useTotalAssetBalance as useTotalAssets,
   useTotalDebtBalance as useTotalDebts,
   useTotalInvestmentBalance as useTotalInvestments,
   useTotalSavings,
@@ -52,7 +53,33 @@ const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
     label: 'Debt',
     color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
   },
+  {
+    // Story 43.4 / FR70 / D10. "Asset" — something owned outright: a property,
+    // a vehicle, or a cash holding. Amber keeps it distinct from investment's
+    // green and debt's red in BOTH themes.
+    value: 'asset',
+    label: 'Asset',
+    color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  },
 ]
+
+/**
+ * Compile-time proof that every `FinanceType` has an option above.
+ *
+ * ⚠️ A `satisfies readonly FinanceType[]` on the array would NOT do this — a
+ * short list is assignable, so a missing type compiles clean. This `Exclude`
+ * catches the omission, which is the direction that actually bites: a type with
+ * no option is unreachable in the UI and renders as a grey pill showing the raw
+ * enum string via `getTypeDisplay`'s fallback.
+ */
+type _AllTypesHaveAnOption = Exclude<
+  FinanceType,
+  (typeof TYPE_OPTIONS)[number]['value']
+> extends never
+  ? true
+  : never
+const _optionCoverage: _AllTypesHaveAnOption = true
+void _optionCoverage
 
 // Contribution-frequency options for the select dropdown (Story 16-2).
 // Reuses the shared frequency enum; the normalization engine converts to a monthly
@@ -89,6 +116,7 @@ export function BalancePage() {
   const balanceEntries = useBalanceEntries()
   const totalInvestments = useTotalInvestments()
   const totalDebts = useTotalDebts()
+  const totalAssets = useTotalAssets()
   // Story 32.2 (FR59): net worth is investments + savings − debts, read through
   // the one shared hook so this card can never disagree with the Overview. The
   // savings total is also displayed in its own card below — a savings-inclusive
@@ -177,9 +205,14 @@ export function BalancePage() {
         next.maxContributionLimit = 'Please enter a valid non-negative max contribution limit'
       }
     }
-    const monthlyInCents = parseFromInput(monthlyContribution, locale)
-    if (monthlyInCents < 0) {
-      next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
+    // Story 43.4 (D2): the contribution field is hidden for assets, so never
+    // block an asset submit on a stale value left over from a type switch —
+    // the same reasoning as the investment-only `maxContributionLimit` check.
+    if (type !== 'asset') {
+      const monthlyInCents = parseFromInput(monthlyContribution, locale)
+      if (monthlyInCents < 0) {
+        next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
+      }
     }
     return next
   }, [type, name, currentBalance, maxContributionLimit, monthlyContribution, locale])
@@ -303,13 +336,27 @@ export function BalancePage() {
           ? parseFromInput(maxContributionLimit, locale)
           : null
 
+      // Story 43.4 (D2): an asset carries NO contribution. An owned thing changes
+      // value by appreciation, not by deposits — recurring saving toward one
+      // belongs on the Savings page. Both columns are NOT NULL in the schema, so
+      // the FIELDS are hidden but the VALUES are still written, exactly as the
+      // `maxContributionLimit` precedent above does.
+      // ⚠️ This is also what keeps `/savings` correct: `SavingsPage` sums the
+      // `monthlyContribution` of `type === 'investment'` rows into the
+      // distributable pool, so an asset that could carry one would overstate the
+      // pool and inflate every automatic allocation.
+      // ⚠️ KNOWN, DELIBERATE data loss: switching an investment that carries a
+      // contribution over to `asset` and saving zeroes it, and switching back does
+      // not restore it — the same one-way behaviour the limit gate above has for
+      // investment→debt.
+      const isAsset = type === 'asset'
       const newEntry = {
         type,
         name: name.trim(),
         currentBalance: parseFromInput(currentBalance, locale),
         maxContributionLimit: maxLimitInCents,
-        monthlyContribution: parseFromInput(monthlyContribution, locale),
-        frequency,
+        monthlyContribution: isAsset ? 0 : parseFromInput(monthlyContribution, locale),
+        frequency: isAsset ? ('monthly' as const) : frequency,
       }
 
       if (editingId !== null) {
@@ -362,7 +409,8 @@ export function BalancePage() {
           <div>
             <h1 className="font-bold text-heading text-3xl">Balance Tracking</h1>
             <p className="mt-2 text-body">
-              Monitor your investments and debts, and see your net worth including savings
+              Monitor your investments, debts and what you own outright, and see your net worth
+              including savings
             </p>
           </div>
         </header>
@@ -394,7 +442,7 @@ export function BalancePage() {
                 available); `md` keeps the 2-up layout, and 1-up holds at the 320px
                 floor. */}
             <div className="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="surface-inset p-4 rounded-lg">
+              <div className="surface-inset p-4 lg:px-3 rounded-lg">
                 <p className="text-muted text-sm">Total Investments</p>
                 <p
                   className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl"
@@ -409,7 +457,7 @@ export function BalancePage() {
               </div>
               {/* Read-only: savings are entered on /savings, so this card shows the
                   figure and points there rather than offering a second entry path. */}
-              <div className="surface-inset p-4 rounded-lg">
+              <div className="surface-inset p-4 lg:px-3 rounded-lg">
                 <p className="text-muted text-sm">
                   Total Savings{' '}
                   <a
@@ -430,7 +478,25 @@ export function BalancePage() {
                   )}
                 </p>
               </div>
-              <div className="surface-inset p-4 rounded-lg">
+              <div className="surface-inset p-4 lg:px-3 rounded-lg">
+                {/* Story 43.4 / D10. "Other Assets", not "Total Assets": this row
+                    already shows two other kinds of asset (investments, savings),
+                    so the unqualified word would invite the obvious objection that
+                    those are assets too. "Other" reads correctly precisely because
+                    they sit beside it. */}
+                <p className="text-muted text-sm">Other Assets</p>
+                <p
+                  className="mt-1 font-bold text-amber-600 dark:text-amber-400 text-2xl"
+                  data-testid="stat-total-assets"
+                >
+                  {hydrated ? (
+                    formatAmount(totalAssets)
+                  ) : (
+                    <PendingFigure testId="stat-total-assets-skeleton" />
+                  )}
+                </p>
+              </div>
+              <div className="surface-inset p-4 lg:px-3 rounded-lg">
                 <p className="text-muted text-sm">Total Debts</p>
                 <p
                   className="mt-1 font-bold text-red-600 dark:text-red-400 text-2xl"
@@ -443,7 +509,15 @@ export function BalancePage() {
                   )}
                 </p>
               </div>
-              <div className="surface-inset p-4 rounded-lg">
+              {/* Story 43.4 / D1: Net Worth spans the full row beneath the four
+                  INPUT cards rather than joining them as a fifth peer. Five peers
+                  is arithmetically impossible here — the page is capped at
+                  `max-w-4xl` (896px), so 5-up yields ~157px per card and ~125px of
+                  figure space against the ~145px a bold `text-2xl`
+                  "-$127,000.00" needs, and `minmax(0,1fr)` CLIPS rather than
+                  overflowing. Spanning also states the arithmetic more plainly:
+                  the four inputs add up to the result below them. */}
+              <div className="surface-inset sm:col-span-2 lg:col-span-4 p-4 lg:px-3 rounded-lg">
                 <p className="text-muted text-sm">Net Worth</p>
                 <p
                   data-testid="stat-net-worth"
@@ -594,14 +668,24 @@ export function BalancePage() {
                                 children below `sm` (label + value), not three —
                                 otherwise `justify-between` would fling the cadence
                                 to the far edge as a third column. */}
-                              <div>
-                                <div className="text-muted text-sm">
-                                  {formatAmount(entry.monthlyContribution)}
+                              {/* Story 43.4 (D2): an asset carries no contribution,
+                                  so show the same em-dash the Remaining Room cell
+                                  uses rather than a literal "$0.00 / Monthly",
+                                  which would contradict a form that never asked.
+                                  `table-sort-keys.ts` nulls the matching sort key
+                                  so the column sorts by what the CELL SHOWS. */}
+                              {entry.type === 'asset' ? (
+                                <div className="text-muted text-sm">—</div>
+                              ) : (
+                                <div>
+                                  <div className="text-muted text-sm">
+                                    {formatAmount(entry.monthlyContribution)}
+                                  </div>
+                                  <div className="text-faint text-xs">
+                                    {frequencyLabel(entry.frequency)}
+                                  </div>
                                 </div>
-                                <div className="text-faint text-xs">
-                                  {frequencyLabel(entry.frequency)}
-                                </div>
-                              </div>
+                              )}
                             </td>
                             <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                               <FieldLabel>Actions</FieldLabel>
@@ -788,6 +872,15 @@ export function BalancePage() {
                   — that's where it counts against your cash flow.
                 </p>
               )}
+              {/* Story 43.4 (Q3): the asset arm gets a hint for the same reason
+                  the debt arm does — the form hides a field the user may expect,
+                  so it must say where that money goes instead. */}
+              {type === 'asset' && (
+                <p className="mt-1 text-xs text-muted" data-testid="balance-asset-hint">
+                  Enter what it's worth today. Money you put aside toward it belongs on the Savings
+                  page — an asset's value here changes as it appreciates, not as you contribute.
+                </p>
+              )}
             </div>
 
             {/* A contribution limit applies only to investment/retirement
@@ -843,75 +936,87 @@ export function BalancePage() {
               </div>
             )}
 
-            <div>
-              <label
-                htmlFor="monthlyContribution"
-                className="block mb-1 font-medium text-label text-sm"
-              >
-                Contribution *
-              </label>
-              <div className="relative shadow-sm rounded-md">
-                {mode === 'symbol' && (
-                  <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                    <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+            {/* Story 43.4 (D2): an asset has no contribution concept, so the
+                Contribution amount and its Frequency are both hidden for it —
+                following the Max Contribution Limit precedent above, which has
+                been investment-only since 26.4. The persistence gate writes
+                `monthlyContribution: 0` / `frequency: 'monthly'` (both columns
+                are NOT NULL), so hiding the field never omits the value. */}
+            {type !== 'asset' && (
+              <>
+                <div>
+                  <label
+                    htmlFor="monthlyContribution"
+                    className="block mb-1 font-medium text-label text-sm"
+                  >
+                    Contribution *
+                  </label>
+                  <div className="relative shadow-sm rounded-md">
+                    {mode === 'symbol' && (
+                      <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
+                        <span className="text-muted text-sm">{currencySymbol(currency)}</span>
+                      </div>
+                    )}
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      id="monthlyContribution"
+                      value={monthlyContribution}
+                      onChange={(e) =>
+                        setMonthlyContribution(sanitizeMoneyChange(e.target, locale))
+                      }
+                      onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyContribution)}
+                      placeholder="0.00"
+                      className={`shadow-sm px-3 py-2 ${
+                        mode === 'symbol' ? 'pl-7' : ''
+                      } border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+                        hasFieldError('monthlyContribution')
+                          ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                          : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
+                      }`}
+                      aria-invalid={hasFieldError('monthlyContribution')}
+                      aria-required
+                      aria-describedby={
+                        hasFieldError('monthlyContribution')
+                          ? 'balance-monthly-contribution-error'
+                          : undefined
+                      }
+                      data-testid="balance-monthly-contribution-input"
+                    />
                   </div>
-                )}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  id="monthlyContribution"
-                  value={monthlyContribution}
-                  onChange={(e) => setMonthlyContribution(sanitizeMoneyChange(e.target, locale))}
-                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyContribution)}
-                  placeholder="0.00"
-                  className={`shadow-sm px-3 py-2 ${
-                    mode === 'symbol' ? 'pl-7' : ''
-                  } border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
-                    hasFieldError('monthlyContribution')
-                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                      : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
-                  }`}
-                  aria-invalid={hasFieldError('monthlyContribution')}
-                  aria-required
-                  aria-describedby={
-                    hasFieldError('monthlyContribution')
-                      ? 'balance-monthly-contribution-error'
-                      : undefined
-                  }
-                  data-testid="balance-monthly-contribution-input"
-                />
-              </div>
-              {hasFieldError('monthlyContribution') && (
-                <p
-                  id="balance-monthly-contribution-error"
-                  className="mt-1 text-sm text-red-600 dark:text-red-400"
-                  role="alert"
-                  data-testid="balance-monthly-contribution-error"
-                >
-                  {getFieldError('monthlyContribution')}
-                </p>
-              )}
-            </div>
+                  {hasFieldError('monthlyContribution') && (
+                    <p
+                      id="balance-monthly-contribution-error"
+                      className="mt-1 text-sm text-red-600 dark:text-red-400"
+                      role="alert"
+                      data-testid="balance-monthly-contribution-error"
+                    >
+                      {getFieldError('monthlyContribution')}
+                    </p>
+                  )}
+                </div>
 
-            <div>
-              <label htmlFor="frequency" className="block mb-1 font-medium text-label text-sm">
-                Contribution Frequency *
-              </label>
-              <select
-                id="frequency"
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value as Frequency)}
-                className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
-                required
-                data-testid="balance-frequency-select"
-              >
-                {FREQUENCY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div>
+                  <label htmlFor="frequency" className="block mb-1 font-medium text-label text-sm">
+                    Contribution Frequency *
+                  </label>
+                  <select
+                    id="frequency"
+                    value={frequency}
+                    onChange={(e) => setFrequency(e.target.value as Frequency)}
+                    className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
+                    required
+                    data-testid="balance-frequency-select"
+                  >
+                    {FREQUENCY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             <div className="flex justify-end gap-3 pt-4">
               <button

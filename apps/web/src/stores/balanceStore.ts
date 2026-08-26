@@ -169,6 +169,11 @@ export const useBalanceStore = create<BalanceState>()(
       },
 
       // Move a row one place up or down (Story 34.1b)
+      // ⚠️ Story 43.4 note (pre-existing behaviour, unchanged): this action skips
+      // `validateBalanceTracking` on purpose, while add/update do not. A row whose
+      // `type` this build does not recognise therefore stays REORDERABLE but is not
+      // EDITABLE — every partial update re-validates the merged row and fails on the
+      // type rule. Recorded because a widened enum makes that asymmetry reachable.
       moveBalanceEntry: (id, direction) => {
         const result = applyRowMove(get().entries, id, direction)
         if (!result) {
@@ -315,7 +320,7 @@ export const useFilteredBalanceEntries = (): BalanceTrackingWithTimeline[] =>
   })
 
 /**
- * Get entries by type (investment or debt)
+ * Get entries by type (investment, debt or asset)
  */
 export const useBalanceEntriesByType = (type: FinanceType): BalanceTrackingWithTimeline[] =>
   useBalanceStore((state) => {
@@ -335,12 +340,39 @@ export const useInvestmentEntries = (): BalanceTrackingWithTimeline[] =>
 export const useDebtEntries = (): BalanceTrackingWithTimeline[] => useBalanceEntriesByType('debt')
 
 /**
+ * Get asset entries — things owned outright (property, vehicle, cash). FR70.
+ *
+ * ⚠️ Added for symmetry with the two selectors above even though, like
+ * `useDebtEntries`, it has no production consumer today. The alternative —
+ * omitting it — leaves the next caller to hand-roll a filter, which is exactly
+ * how the Overview ended up re-deriving its own totals at `HomePage.tsx:214-219`
+ * instead of using these. Recorded as a deliberate judgement (story 43.4).
+ */
+export const useAssetEntries = (): BalanceTrackingWithTimeline[] => useBalanceEntriesByType('asset')
+
+/**
  * Get total investment balance
  */
 export const useTotalInvestmentBalance = (): number =>
   useBalanceStore((state) =>
     state.entries
       .filter((e) => e.type === 'investment')
+      .reduce((sum, entry) => sum + entry.currentBalance, 0)
+  )
+
+/**
+ * Get total balance of assets owned outright (story 43.4, FR70).
+ *
+ * ⚠️ Written in the derive-from-the-argument shape, NOT as a call to a store
+ * method: story 38.1 (BUG-F) measured that a selector which CALLS a state method
+ * diverges between the server render and the first client render on a
+ * lazily-mounted route. `stores/__tests__/no-method-selectors.guard.test.ts` is
+ * the tripwire — and calls itself a tripwire, not a proof.
+ */
+export const useTotalAssetBalance = (): number =>
+  useBalanceStore((state) =>
+    state.entries
+      .filter((e) => e.type === 'asset')
       .reduce((sum, entry) => sum + entry.currentBalance, 0)
   )
 

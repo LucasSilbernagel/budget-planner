@@ -1509,3 +1509,125 @@ describe('BalancePage — debt guidance (36.3)', () => {
     expect(within(dialog).queryByTestId('balance-debt-hint')).not.toBeInTheDocument()
   })
 })
+
+describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('offers Asset as a third type, selectable by its accessible name', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    const select = within(dialog).getByLabelText(/type/i)
+
+    await user.selectOptions(select, 'asset')
+    expect((select as HTMLSelectElement).value).toBe('asset')
+  })
+
+  it('asks an asset for NO contribution limit, contribution or frequency (D2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    // Default type is investment → all three are present.
+    expect(within(dialog).getByTestId('balance-max-contribution-input')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('balance-monthly-contribution-input')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('balance-frequency-select')).toBeInTheDocument()
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'asset')
+
+    // ⚠️ All three go, not just the limit. An owned asset changes value by
+    // appreciation, not by deposits — and a contribution on an asset would be
+    // excluded from `/savings`'s investment-only pool filter, overstating it.
+    expect(within(dialog).queryByTestId('balance-max-contribution-input')).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByTestId('balance-monthly-contribution-input')
+    ).not.toBeInTheDocument()
+    expect(within(dialog).queryByTestId('balance-frequency-select')).not.toBeInTheDocument()
+
+    // The asset arm gets a hint saying where recurring saving DOES belong, the
+    // same way the debt arm points at the Expenses page.
+    expect(within(dialog).getByTestId('balance-asset-hint')).toBeInTheDocument()
+  })
+
+  it('saves an asset with a zero contribution and a monthly frequency', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'asset')
+    await user.type(within(dialog).getByTestId('balance-name-input'), 'Condo')
+    await user.type(within(dialog).getByTestId('balance-current-balance-input'), '400000')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    const entries = useBalanceStore.getState().entries
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.type).toBe('asset')
+    expect(entries[0]?.currentBalance).toBe(40_000_000)
+    // Both columns are NOT NULL in the schema, so hiding the fields must still
+    // write values — never leave them undefined.
+    expect(entries[0]?.monthlyContribution).toBe(0)
+    expect(entries[0]?.frequency).toBe('monthly')
+    expect(entries[0]?.maxContributionLimit).toBeNull()
+  })
+
+  it('counts an asset on the ASSET side, in its own card, not folded into investments', async () => {
+    // ⚠️ The component totals are what make this test meaningful. Net worth is
+    // INVARIANT under classifying an asset as an investment — (I+A)+S−D === I+S+A−D
+    // — so a net-worth-only assertion would pass the exact mistake FR70 forbids.
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment',
+          name: 'ISA',
+          currentBalance: 5_000_000,
+          maxContributionLimit: null,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 'asset-1',
+          type: 'asset',
+          name: 'Condo',
+          currentBalance: 40_000_000,
+          maxContributionLimit: null,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 'debt-1',
+          type: 'debt',
+          name: 'Mortgage',
+          currentBalance: 30_000_000,
+          maxContributionLimit: null,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    renderWithProviders(<BalancePage />)
+
+    // Hand-computed: 5,000,000 + 0 savings + 40,000,000 − 30,000,000 = 15,000,000.
+    expect(screen.getByTestId('stat-total-investments')).toHaveTextContent('50,000.00')
+    expect(screen.getByTestId('stat-total-assets')).toHaveTextContent('400,000.00')
+    expect(screen.getByTestId('stat-total-debts')).toHaveTextContent('300,000.00')
+    expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('150,000.00')
+  })
+})

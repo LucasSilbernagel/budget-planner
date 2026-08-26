@@ -36,7 +36,7 @@ money down by category so you can see where it goes at a glance.
 ### Next steps
 
 - Track progress toward goals on the **Savings** page.
-- Record investments and debts on the **Balance Tracking** page. If you have a
+- Record investments, debts, and anything you own outright — a home, a car, cash — on the **Balance Tracking** page. If you have a
   mortgage or another loan, [Where a mortgage
   belongs](/docs/where-a-mortgage-belongs) explains which part goes where.
 - Look ahead with the [**retirement planner**](/retirement).

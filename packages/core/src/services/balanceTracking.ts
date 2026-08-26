@@ -2,7 +2,8 @@
  * Balance Tracking Service
  *
  * Core service layer for balance tracking operations.
- * Provides type definitions, validation, and business logic for investment and debt tracking.
+ * Provides type definitions, validation, and business logic for investment, debt
+ * and asset tracking.
  *
  * Architecture:
  * - Pure TypeScript functions, no side effects
@@ -25,6 +26,40 @@ import { generateUuid } from '../utils/uuid'
 // ============================================================================
 
 /**
+ * The finance-type values as a RUNTIME list, client-safe.
+ *
+ * ⚠️ Why this is restated here rather than imported from `@budget-planner/db`:
+ * that package's barrel (`src/index.ts`) re-exports `./client`, which THROWS at
+ * module scope when `window` is defined ("SERVER-ONLY package"). `packages/core`
+ * is client-bundled, so a VALUE import of the barrel would ship that throw into
+ * the browser. The `FinanceType` import above is `import type` and is erased at
+ * compile time, so it is safe.
+ *
+ * Drift is prevented at COMPILE time in both directions by `_financeTypeCoverage`
+ * below, and pinned against `financeTypeEnum.enumValues` by the gates test.
+ */
+export const FINANCE_TYPES = [
+  'investment',
+  'debt',
+  'asset',
+] as const satisfies readonly FinanceType[]
+
+/**
+ * Compile-time proof that `FINANCE_TYPES` covers EVERY member of `FinanceType`.
+ *
+ * ⚠️ `satisfies readonly FinanceType[]` alone is NOT enough — a SHORT tuple is
+ * assignable to it, so a missing member compiles clean. `satisfies` catches
+ * invalid/misspelled members; this `Exclude` catches OMISSIONS. Both directions
+ * are needed, which is the whole lesson of story 43.4: adding a third enum value
+ * produced exactly ONE compiler error across the monorepo.
+ */
+type _FinanceTypeCoverage = Exclude<FinanceType, (typeof FINANCE_TYPES)[number]> extends never
+  ? true
+  : never
+const _financeTypeCoverage: _FinanceTypeCoverage = true
+void _financeTypeCoverage
+
+/**
  * Client-side Balance Tracking interface for free tier
  * Uses number IDs (for localStorage/IndexedDB) and string timestamps
  * Omits userId for free tier (no authentication)
@@ -39,7 +74,7 @@ export interface ClientBalanceTracking {
   currentBalance: number // In cents (can be negative for debts)
   // ⚠️ `| null` is not cosmetic. `BalancePage` deliberately persists `null` for "no
   // limit" — it is how a new debt, an investment->debt switch, or saving a legacy
-  // debt that had a limit all clear it (`BalancePage.tsx:313-319`). The type said
+  // debt that had a limit all clear it (`BalancePage.tsx:301-304`). The type said
   // `?: number` and was simply lying about what this field has held in
   // localStorage since story 16-2.
   maxContributionLimit?: number | null // In cents, optional
@@ -226,7 +261,7 @@ export function getTypeDisplayProperties(type: FinanceType):
     }
   | undefined {
   // Validate type parameter
-  if (type !== 'investment' && type !== 'debt') {
+  if (!FINANCE_TYPES.includes(type)) {
     return undefined
   }
 
@@ -253,6 +288,19 @@ export function getTypeDisplayProperties(type: FinanceType):
       label: 'Debt',
       colorClass: 'text-red-600 dark:text-red-400',
       bgColorClass: 'bg-red-100 dark:bg-red-900/30',
+    },
+    asset: {
+      // Story 43.4 / FR70. An owned asset is a positive holding, so it reuses the
+      // 'success' theme rather than widening the union to a third value — the
+      // theme encodes "counts toward you / counts against you", and an asset is
+      // unambiguously the former.
+      // The ICON differs from investment's '↗' on purpose: an asset is HELD, not
+      // growing by contribution, so it gets a static marker rather than an arrow.
+      theme: 'success' as const,
+      icon: '◆',
+      label: 'Asset',
+      colorClass: 'text-amber-600 dark:text-amber-400',
+      bgColorClass: 'bg-amber-100 dark:bg-amber-900/30',
     },
   }
   return properties[type]
@@ -353,7 +401,7 @@ export function validateBalanceTracking(
   }
 
   // Type validation
-  const validTypes: FinanceType[] = ['investment', 'debt']
+  const validTypes: readonly FinanceType[] = FINANCE_TYPES
   if (input.type === undefined || input.type === null) {
     errors.push({
       field: 'type',
@@ -363,9 +411,31 @@ export function validateBalanceTracking(
   } else if (!validTypes.includes(input.type)) {
     errors.push({
       field: 'type',
-      message: 'Type must be either "investment" or "debt"',
+      message: `Type must be one of: ${FINANCE_TYPES.map((t) => `"${t}"`).join(', ')}`,
       value: input.type,
     })
+  }
+
+  // Story 43.4 (D2): an asset carries no contribution. Enforced HERE, not only in
+  // the form, because this runs on every write path the store has — `addBalanceEntry`
+  // and `updateBalanceEntry` both call it — whereas the form's zeroing covers only
+  // rows a user typed. Without this, a row reaching the store by any other route
+  // could hold a contribution that `SavingsPage`'s investment-only pool filter
+  // never deducts, overstating the distributable pool and inflating every
+  // automatic allocation.
+  // ⚠️ RESIDUAL, pre-existing and NOT closed by this rule: `applyServerChanges`
+  // writes pulled rows straight into the store WITHOUT validation, and
+  // `moveBalanceEntry` deliberately bypasses it. A synced or hand-edited asset row
+  // carrying a contribution is therefore still reachable. This narrows the hole to
+  // the pull path; it does not eliminate it.
+  if (input.type === 'asset' && typeof input.monthlyContribution === 'number') {
+    if (input.monthlyContribution !== 0) {
+      errors.push({
+        field: 'monthlyContribution',
+        message: 'An asset has no contribution — record recurring saving on the Savings page',
+        value: input.monthlyContribution,
+      })
+    }
   }
 
   // Frequency validation (Story 16-2): required, must be a valid cadence

@@ -13,12 +13,16 @@ import {
  *
  * ## One instance per TABLE, not per page
  *
- * `/balance` renders two tables over the same array — the read-only Investment
- * Accounts breakdown is `balanceEntries.filter(...)` of the editable list. Only
- * the editable one sorts, so the projection must be applied where that table
- * maps its rows, never at page level: hoisting it would silently reorder the
- * breakdown too, because a `.filter` preserves the relative order of whatever it
- * is given.
+ * ⚠️ This section USED to say `/balance` renders two tables over the same array
+ * — the editable list plus a read-only Investment Accounts breakdown built from
+ * `balanceEntries.filter(...)`. That breakdown was DELETED by story 43.1
+ * (`781ecb6`), so `/balance` now renders exactly one table.
+ *
+ * The rule still holds and is still the reason this hook is per-table: apply the
+ * sort projection where a table maps its rows, never at page level. Hoisting it
+ * would silently reorder any sibling view over the same array, because `.filter`
+ * preserves the relative order of whatever it is given — which is precisely how
+ * the deleted breakdown would have been corrupted.
  *
  * ## Session-only, per page (ratified decision 4)
  *

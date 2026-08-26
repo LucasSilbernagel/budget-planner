@@ -25,7 +25,7 @@ import { expect, test } from '@playwright/test'
 
 /**
  * investments 2,000,000c + savings 300,000c − debts 15,000,000c = −12,700,000c
- *   → "-$127,000.00"
+ *   → "$273,000.00"  (was "-$127,000.00" before FR70 added the condo)
  * The pre-32.2 definition (investments − debts) gave −13,000,000c → "-$130,000.00",
  * so the two are distinguishable in the rendered string.
  */
@@ -53,6 +53,21 @@ function seedBalancesAndSavings() {
             type: 'investment',
             name: 'Pension',
             currentBalance: 1200000,
+            maxContributionLimit: null,
+            monthlyContribution: 0,
+            frequency: 'monthly',
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            // Story 43.4 / FR70. Distinct from every other balance so
+            // cross-surface agreement cannot hold by coincidence, and large
+            // enough to flip net worth POSITIVE — the sign flip is the user-
+            // visible point of the requirement.
+            id: crypto.randomUUID(),
+            type: 'asset',
+            name: 'Condo',
+            currentBalance: 40000000,
             maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
@@ -139,7 +154,7 @@ test('the Overview and Balance pages both show a savings-inclusive net worth', a
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   const overview = page.getByTestId('overview-net-worth')
-  await expect(overview).toHaveText('-$127,000.00')
+  await expect(overview).toHaveText('$273,000.00')
 
   await page.goto('/balance')
   await page.waitForLoadState('networkidle')
@@ -147,7 +162,11 @@ test('the Overview and Balance pages both show a savings-inclusive net worth', a
   await expect(page.getByTestId('stat-total-investments')).toHaveText('$20,000.00')
   await expect(page.getByTestId('stat-total-savings')).toHaveText('$3,000.00')
   await expect(page.getByTestId('stat-total-debts')).toHaveText('$150,000.00')
-  await expect(page.getByTestId('stat-net-worth')).toHaveText('-$127,000.00')
+  await expect(page.getByTestId('stat-net-worth')).toHaveText('$273,000.00')
+  // The asset must also carry its OWN card figure — net worth alone is invariant
+  // under folding an asset into the investments arm, so it cannot prove placement.
+  await expect(page.getByTestId('stat-total-assets')).toHaveText('$400,000.00')
+  await expect(page.getByTestId('stat-total-investments')).toHaveText('$20,000.00')
 })
 
 test('a savings-only user sees a real net worth, not zero and not a "nothing tracked" hint', async ({

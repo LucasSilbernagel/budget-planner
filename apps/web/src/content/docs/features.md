@@ -27,11 +27,11 @@ model, because there is no model. This holds for every visitor on both tiers.
   [How totals are calculated](/docs/how-totals-are-calculated) sets out the exact
   factors and a worked example.
 - **Savings goals** to track progress toward a target.
-- **Balance tracking** for investments and debts.
+- **Balance tracking** for investments, debts, and things you own outright.
   [Where a mortgage belongs](/docs/where-a-mortgage-belongs) covers loans, which
   are a recurring payment and a debt at the same time.
-- **Visual breakdowns** of income versus expenses and assets versus
-  liabilities.
+- **Visual breakdowns** of income versus expenses, and of what you own —
+  savings, investments and anything owned outright — against what you owe.
 - **Retirement modeling** using a safe-withdrawal projection.
 - **Currency display** with locale-aware formatting, or a currency-less mode
   for raw numbers — set on the **Settings** page.

@@ -334,7 +334,7 @@ export function FinancialSummaryReport({
                 <p className="mt-2 text-sm text-body">
                   {emptySectionCopy(
                     model.netWorth.unreadableCount,
-                    'No investments, savings or debts have been added, so there is no net worth to summarize.'
+                    'No investments, savings, assets or debts have been added, so there is no net worth to summarize.'
                   )}
                 </p>
               ) : (
@@ -349,6 +349,9 @@ export function FinancialSummaryReport({
                       format={format}
                     />
                   )}
+                  {model.netWorth.assets.length > 0 && (
+                    <BalanceTable caption="Assets" rows={model.netWorth.assets} format={format} />
+                  )}
                   {model.netWorth.debts.length > 0 && (
                     <BalanceTable caption="Debts" rows={model.netWorth.debts} format={format} />
                   )}
@@ -359,11 +362,18 @@ export function FinancialSummaryReport({
                     />
                     {/* The savings total contributes to net worth (story 32.2), so
                         it is printed here as well as in its own section — otherwise
-                        the three lines above the total would not add up to it on a
+                        the FOUR lines above the total would not add up to it on a
                         page the user keeps. The individual goals stay below. */}
                     <TotalRow
                       label="Total savings"
                       value={format(model.netWorth.totalSavingsCents)}
+                    />
+                    {/* Story 43.4 (FR70). Assets sit on the owned side, printed
+                        between savings and debts so the column reads
+                        assets-then-liabilities. */}
+                    <TotalRow
+                      label="Total assets"
+                      value={format(model.netWorth.totalAssetsCents)}
                     />
                     <TotalRow label="Total debts" value={format(model.netWorth.totalDebtsCents)} />
                     <TotalRow emphasis label="Net worth" value={format(model.netWorth.netCents)} />

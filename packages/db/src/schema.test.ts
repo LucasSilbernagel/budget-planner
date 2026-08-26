@@ -2,8 +2,10 @@ import { getTableName } from 'drizzle-orm'
 import { getTableConfig } from 'drizzle-orm/pg-core'
 import { describe, expect, it } from 'vitest'
 import {
+  ALL_FINANCE_TYPES,
   type CategoryKind,
   type Currency,
+  type FinanceType,
   type NewUser,
   type SubscriptionStatus,
   type User,
@@ -308,6 +310,32 @@ describe('Categories table (Story 30.4a)', () => {
     const incomeKind: CategoryKind = 'income'
     const expenseKind: CategoryKind = 'expense'
     expect([incomeKind, expenseKind]).toEqual(categoryKindEnum.enumValues)
+  })
+
+  it('financeType carries all three balance categories, and FinanceType tracks it', () => {
+    // ⚠️ Story 43.4. Before this test NOTHING in the entire suite pinned an enum
+    // VALUE — `schema.test.ts` asserted only `expect(financeTypeEnum).toBeDefined()`.
+    // Widening the enum and forgetting a downstream gate left every suite green
+    // while asset rows silently failed to sync, so this is the anchor the rest of
+    // the value-level gates are checked against.
+    expect(financeTypeEnum.enumValues).toEqual(['investment', 'debt', 'asset'])
+
+    // The exported union must track the enum, so a widened enum cannot silently
+    // leave the TypeScript type behind.
+    const investment: FinanceType = 'investment'
+    const debt: FinanceType = 'debt'
+    const asset: FinanceType = 'asset'
+    expect([investment, debt, asset]).toEqual(financeTypeEnum.enumValues)
+
+    // ALL_FINANCE_TYPES is derived, not restated — this pins that it stays so.
+    expect(ALL_FINANCE_TYPES).toEqual(financeTypeEnum.enumValues)
+  })
+
+  it('balanceTracking.type is NOT NULL and carries no default', () => {
+    // No default is why widening the enum cannot silently re-type an existing
+    // row: every row's type was written explicitly by the app.
+    expect(balanceTracking.type.notNull).toBe(true)
+    expect(balanceTracking.type.hasDefault).toBe(false)
   })
 
   it('categoryId is NULLABLE on both cashflow tables so uncategorized stays valid', () => {

@@ -302,6 +302,17 @@ function RetirementAccumulationPlannerInner() {
   // ACCOUNTS should feed this total is a separate, already-recorded decision
   // (deferred-work.md, "Savings-page balances cannot reach the retirement
   // planner"), not something FR59 settles.
+  // ⚠️ Story 43.4 (D6), and this decision is LOAD-BEARING, not incidental.
+  // `RetirementTimelineChart` compounds this figure through
+  // `projectAccumulatedNestEgg` at the investment return rate, which makes this
+  // the ONLY surviving projection in the app fed by balance entries. Assets
+  // (FR70) are deliberately EXCLUDED from it.
+  // The reason is CONSISTENCY, not "a condo is not retirement savings": cash held
+  // in savings accounts is already excluded (see the note above), so excluding
+  // cash-recorded-as-an-asset is uniform treatment rather than a new carve-out.
+  // ⚠️ `deferred-work.md`'s "should a non-appreciating asset compound at the
+  // investment return rate?" is therefore CONTINGENTLY closed, not dissolved: it
+  // revives the moment any story folds asset rows into this total.
   const totalInvestmentCents = useTotalInvestmentBalance()
   const balanceEntries = useBalanceEntries()
   const incomeSources = useIncomeSources()
@@ -332,7 +343,11 @@ function RetirementAccumulationPlannerInner() {
         state: 'empty',
         cents: 0,
         flooredFromNegative: false,
-        note: 'Add investment accounts on the Balance Tracking page to include them here.',
+        // Story 43.4 (D6): name the RULE, not the absence. A user who holds only
+        // assets DOES have Balance Tracking entries, so the old copy ("Add
+        // investment accounts on the Balance Tracking page") sent them to a page
+        // they had already filled in.
+        note: 'Only investment accounts count toward your nest egg — add them on the Balance Tracking page.',
       }
     }
     // ⚠️ The sync applier writes pulled rows straight into the store without

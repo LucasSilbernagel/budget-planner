@@ -197,7 +197,58 @@ describe('balance sort keys', () => {
     frequency = 'monthly'
   ) => ({ name, type, currentBalance, maxContributionLimit, monthlyContribution, frequency })
 
-  it('sorts Type by the ENUM, investment before debt', () => {
+  it('sorts Type by the ENUM: investment, then asset, then debt', () => {
+    const rows = [
+      entry('loan', 'debt', 0, undefined),
+      entry('condo', 'asset', 0, undefined),
+      entry('tfsa', 'investment', 0, undefined),
+    ]
+    // ⚠️ Story 43.4: this key was BINARY (`type === 'investment' ? 0 : 1`), which
+    // would have tied every asset with every debt. `BalanceRow.type` is `string`,
+    // so nothing in the compiler could see that.
+    // ⚠️ Sorting by the DISPLAYED label would give Asset, Debt, Investment —
+    // assets adjacent to debts, the one grouping the page never shows.
+    expect(sortRowsBy(rows, keyOf(extractors, 'type'), 'asc').map((r) => r.name)).toEqual([
+      'tfsa',
+      'condo',
+      'loan',
+    ])
+    expect(sortRowsBy(rows, keyOf(extractors, 'type'), 'desc').map((r) => r.name)).toEqual([
+      'loan',
+      'condo',
+      'tfsa',
+    ])
+  })
+
+  it('sorts a prototype-named type LAST instead of reading Object.prototype', () => {
+    // ⚠️ A rank map keyed by a raw string is prototype-exposed: `RANK['constructor']`
+    // returns an inherited FUNCTION, which is not nullish, so a `?? FALLBACK` never
+    // fires and the comparator receives a function as a sort key. Unknown types are
+    // reachable — `balanceStore.dom.test.ts` pins that a hand-edited or
+    // newer-build row survives rehydrate untouched.
+    const rows = [
+      entry('weird', 'constructor', 0, undefined),
+      entry('tfsa', 'investment', 0, undefined),
+      entry('loan', 'debt', 0, undefined),
+    ]
+    expect(keyOf(extractors, 'type')(rows[0] as never)).toBe(3)
+    expect(sortRowsBy(rows, keyOf(extractors, 'type'), 'asc').map((r) => r.name)).toEqual([
+      'tfsa',
+      'loan',
+      'weird',
+    ])
+  })
+
+  it('gives an asset row NO contribution sort key, matching its em-dash cell', () => {
+    // Rule 2: sort by what the CELL SHOWS. The Contribution cell is an em-dash for
+    // an asset, so keying it at 0 would sort it among real zero-contribution rows.
+    const asset = entry('condo', 'asset', 40_000_000, undefined, 50_000, 'monthly')
+    expect(keyOf(extractors, 'contribution')(asset)).toBeNull()
+    expect(keyOf(extractors, 'maxContribution')(asset)).toBeNull()
+    expect(keyOf(extractors, 'remainingRoom')(asset)).toBeNull()
+  })
+
+  it('legacy two-type ordering still holds on its own', () => {
     const rows = [entry('loan', 'debt', 0, undefined), entry('tfsa', 'investment', 0, undefined)]
     // ⚠️ Sorting by the DISPLAYED label would invert this: the labels are
     // 'Investment' and 'Debt', and 'Debt'.localeCompare('Investment') < 0.

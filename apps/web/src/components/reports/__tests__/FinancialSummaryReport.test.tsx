@@ -35,7 +35,15 @@ const incomeRow = (id: string, name: string, amount: number, frequency: string) 
   updatedAt: ISO,
 })
 
-const balanceRow = (id: string, name: string, type: 'investment' | 'debt', balance: number) => ({
+// Story 43.4: widened from `'investment' | 'debt'`. A hand-written union in a
+// test factory is exactly the kind of two-value assumption the compiler cannot
+// connect back to the enum.
+const balanceRow = (
+  id: string,
+  name: string,
+  type: 'investment' | 'debt' | 'asset',
+  balance: number
+) => ({
   id,
   type,
   name,
@@ -391,7 +399,7 @@ describe('FinancialSummaryReport — net worth copy and savings disclosure (32.2
     useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 500_000, 'monthly')] })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
     expect(
-      screen.getByText(/no investments, savings or debts have been added/i)
+      screen.getByText(/no investments, savings, assets or debts have been added/i)
     ).toBeInTheDocument()
     // The superseded wording, which omitted savings from the definition.
     expect(
@@ -462,5 +470,56 @@ describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     expect(screen.queryByText(/target could not be read/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('FinancialSummaryReport — assets are printed, not just counted (Story 43.4, FR70)', () => {
+  it('renders an Assets table and a Total assets row that reconcile with net worth', () => {
+    // ⚠️ This test exists because the rendered Assets table and Total assets row
+    // could be DELETED with the whole suite staying green: the model-level tests
+    // in `build-financial-summary.test.ts` pin `totalAssetsCents`, not the render.
+    // On a printed page the user keeps, that would show component rows that do not
+    // add up to the net-worth figure beneath them — the exact reconciliation
+    // failure the surrounding code comments say those rows exist to prevent.
+    useBalanceStore.setState({
+      entries: [
+        balanceRow('b1', 'ISA', 'investment', 5_000_000),
+        balanceRow('b2', 'Condo', 'asset', 40_000_000),
+        balanceRow('b3', 'Mortgage', 'debt', 30_000_000),
+      ],
+    })
+
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // The asset appears BY NAME in its own captioned table...
+    expect(screen.getByText('Assets')).toBeInTheDocument()
+    expect(screen.getByText('Condo')).toBeInTheDocument()
+
+    // ...and as its own total line. Hand-computed: 5,000,000 + 0 savings
+    // + 40,000,000 − 30,000,000 = 15,000,000.
+    const totalAssets = screen.getByText('Total assets')
+    expect(totalAssets.parentElement).toHaveTextContent('400,000.00')
+    // `Net worth` appears more than once on the page (section heading + total
+    // row), so match the row that carries the figure rather than using a bare
+    // getByText — an ambiguous selector fails for the wrong reason.
+    const netWorthRows = screen.getAllByText('Net worth')
+    expect(netWorthRows.some((el) => el.parentElement?.textContent?.includes('150,000.00'))).toBe(
+      true
+    )
+  })
+
+  it('does not report a valid asset row as unreadable', () => {
+    // Before FR70 widened `KNOWN_FINANCE_TYPES`, an asset failed `isReadableBalance`
+    // — excluded from net worth AND counted into the "could not be read" disclosure,
+    // so the report accused the user's own freshly-entered condo of being corrupt.
+    useBalanceStore.setState({ entries: [balanceRow('b1', 'Condo', 'asset', 40_000_000)] })
+
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.queryByText(/could not be read/i)).toBeNull()
+    const netWorthRows = screen.getAllByText('Net worth')
+    expect(netWorthRows.some((el) => el.parentElement?.textContent?.includes('400,000.00'))).toBe(
+      true
+    )
   })
 })

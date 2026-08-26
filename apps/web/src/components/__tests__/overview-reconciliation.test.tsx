@@ -112,8 +112,18 @@ const EXPECTED: Record<OverviewDuration, { income: string; expenses: string }> =
   annually: { income: '60,399.96', expenses: '29,300.04' }, // 6,039,996c / 2,930,004c
 }
 
-/** Net worth is point-in-time — the same at every duration. −12,700,000c. */
-const EXPECTED_NET_WORTH = '-127,000.00'
+/**
+ * Net worth is point-in-time — the same at every duration.
+ *
+ * Hand-computed, story 43.4: investments 2,000,000c + savings 300,000c
+ * + assets 40,000,000c − debts 15,000,000c = **+27,300,000c**.
+ *
+ * ⚠️ This was −12,700,000c before FR70 added the $400,000 condo to the fixture.
+ * The SIGN FLIP is the point of this figure: a user whose mortgage exceeded their
+ * investments used to show a large negative net worth with nothing on the other
+ * side, which is the defect FR70 exists to fix.
+ */
+const EXPECTED_NET_WORTH = '273,000.00'
 
 const DURATIONS: readonly OverviewDuration[] = ['weekly', 'biweekly', 'monthly', 'annually']
 
@@ -200,6 +210,25 @@ function seedFixture(): void {
         type: 'debt',
         name: 'Mortgage',
         currentBalance: 15_000_000,
+        monthlyContribution: 0,
+        frequency: 'monthly',
+        createdAt: TS,
+        updatedAt: TS,
+      },
+      // ⚠️ Story 43.4 / FR70. This row is why this file is the guard for the
+      // single highest-risk site in that story: `HomePage.tsx` re-derives the
+      // balance totals INLINE for its bar chart instead of using the store
+      // selectors the Net Worth tile reads. Without an asset row here, an asset
+      // could count in the tile and be invisible in the chart eight lines below
+      // — the two contradicting each other on one screen — and every assertion in
+      // this file would still pass.
+      // Its value is DISTINCT from every other total so no assertion can agree by
+      // coincidence.
+      {
+        id: 'asset-1',
+        type: 'asset',
+        name: 'Condo',
+        currentBalance: 40_000_000,
         monthlyContribution: 0,
         frequency: 'monthly',
         createdAt: TS,

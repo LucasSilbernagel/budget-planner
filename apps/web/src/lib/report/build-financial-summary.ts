@@ -37,6 +37,7 @@
 
 import { calculateNetIncomeResult, normalizeToMonthly } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core'
+import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import { netWorthFromTotals } from '../net-worth'
 
 // ============================================================================
@@ -140,15 +141,19 @@ export interface ReportBudgetSection {
 export interface ReportNetWorthSection {
   investments: ReportBalanceRow[]
   debts: ReportBalanceRow[]
+  /** Things owned outright — property, vehicle, cash (story 43.4, FR70). */
+  assets: ReportBalanceRow[]
   totalInvestmentsCents: number
   totalDebtsCents: number
+  /** Total of {@link assets}, in cents. Counts toward {@link netCents}. */
+  totalAssetsCents: number
   /**
    * The savings total that contributes to {@link netCents} (story 32.2, FR59).
    * The individual savings rows stay in the savings section; this is carried here
    * so the printed net-worth arithmetic reconciles on the page.
    */
   totalSavingsCents: number
-  /** Investments + savings − debts, in cents. May be negative. */
+  /** Investments + savings + assets − debts, in cents. May be negative. */
   netCents: number
   /** Excludes unreadable BALANCE rows only — savings rows are counted in their own section. */
   unreadableCount: number
@@ -209,14 +214,21 @@ const KNOWN_FREQUENCIES: ReadonlySet<string> = new Set<Frequency>([
 ])
 
 /**
- * The balance categories this report knows how to place. Validated for the same
+ * The balance categories this report knows how to place. DERIVED from
+ * `FINANCE_TYPES` (story 43.4) rather than restated: while this was a literal
+ * `new Set(['investment', 'debt'])`, adding the `asset` type would have made
+ * every asset row "unreadable" — dropped from net worth AND counted into
+ * `unreadableCount`, so the printed report would have told the user that the
+ * condo they had just entered could not be read.
+ *
+ * Validated for the same
  * reason `frequency` is: a row whose `type` is neither of these belongs in no
  * column, so without this check it would be filtered out of both totals while
  * still counting as "readable" — i.e. it would vanish from the document with no
  * disclosure, which is precisely the failure this module claims to prevent.
  * (Code review 2026-08-09: the omission was real and reproducible.)
  */
-const KNOWN_FINANCE_TYPES: ReadonlySet<string> = new Set(['investment', 'debt'])
+const KNOWN_FINANCE_TYPES: ReadonlySet<string> = new Set<string>(FINANCE_TYPES)
 
 /** A cashflow row whose amount and frequency have both been proven readable. */
 type ReadableCashflow = ReportCashflowInput & { frequency: Frequency }
@@ -368,12 +380,14 @@ function buildNetWorth(
   const readable = balances.filter(isReadableBalance)
   const investments = readable.filter((row) => row.type === 'investment')
   const debts = readable.filter((row) => row.type === 'debt')
+  const assets = readable.filter((row) => row.type === 'asset')
 
   const sum = (rows: readonly ReportBalanceInput[]): number =>
     rows.reduce((total, row) => total + row.currentBalance, 0)
 
   const totalInvestmentsCents = sum(investments)
   const totalDebtsCents = sum(debts)
+  const totalAssetsCents = sum(assets)
 
   const toRow = (row: ReportBalanceInput): ReportBalanceRow => ({
     id: row.id,
@@ -384,14 +398,17 @@ function buildNetWorth(
   return {
     investments: investments.map(toRow),
     debts: debts.map(toRow),
+    assets: assets.map(toRow),
     totalInvestmentsCents,
     totalDebtsCents,
+    totalAssetsCents,
     totalSavingsCents: readableSavingsCents,
     // The app's one definition of net worth — shared with `useNetWorth()`, not
     // restated here (story 32.2).
     netCents: netWorthFromTotals({
       investmentsCents: totalInvestmentsCents,
       savingsCents: readableSavingsCents,
+      assetsCents: totalAssetsCents,
       debtsCents: totalDebtsCents,
     }),
     unreadableCount: balances.length - readable.length,

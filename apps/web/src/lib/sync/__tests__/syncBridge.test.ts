@@ -285,3 +285,42 @@ describe('syncBridge — paid tier (handle registered)', () => {
     await Promise.resolve()
   })
 })
+
+describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 falsifier)', () => {
+  beforeEach(() => {
+    registerSyncBridge(handle)
+  })
+  afterEach(() => {
+    clearSyncBridge()
+  })
+
+  it('forwards an asset balanceTracking row to queueCreate without dropping it', () => {
+    // ⚠️ THE DIRECT FALSIFIER for the silent-drop path. If any gate rejected
+    // `type: 'asset'`, `syncOperationDataSchema.parse` would throw inside
+    // `queueCreate` BEFORE `queue.add`, and `onQueueError` would swallow it into a
+    // bare console.error — the row persists locally and never leaves the device,
+    // with no toast, no error state and nothing in the sync UI. Parsing the schema
+    // directly (as `finance-type-gates.test.ts` does) proves the SCHEMA; this
+    // proves the BRIDGE actually hands the row on.
+    syncEntityCreate('balanceTracking', {
+      id: 'asset-1',
+      type: 'asset',
+      name: 'Condo',
+      currentBalance: 40_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+      sortOrder: 0,
+    })
+
+    expect(handle.queueCreate).toHaveBeenCalledWith('balanceTracking', 'asset-1', {
+      type: 'asset',
+      name: 'Condo',
+      currentBalance: 40_000_000,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+      sortOrder: 0,
+      userId: SESSION_USER_ID,
+    })
+  })
+})

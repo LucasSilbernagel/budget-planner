@@ -101,3 +101,92 @@ describe('balanceStore — partial update validation (Story 16-2 review E2)', ()
     expect(updated?.frequency).toBe('weekly')
   })
 })
+
+describe('balanceStore — the asset type persists and leaves existing rows alone (Story 43.4, AC-5)', () => {
+  const row = (id: string, type: string, name: string, sortOrder: number) => ({
+    id,
+    type,
+    name,
+    currentBalance: 100_000,
+    maxContributionLimit: null,
+    monthlyContribution: 0,
+    frequency: 'monthly',
+    sortOrder,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  })
+
+  it('rehydrates an asset row unchanged, alongside investment and debt rows', async () => {
+    // ⚠️ The whole AC-5 argument is that `migrate` is TYPE-BLIND: it touches only
+    // `id`, `frequency` and `sortOrder`, and never reads or writes `type`. That is
+    // a claim about code, so it is pinned here rather than asserted in prose.
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        state: {
+          entries: [
+            row('inv-1', 'investment', 'ISA', 0),
+            row('debt-1', 'debt', 'Mortgage', 1),
+            row('asset-1', 'asset', 'Condo', 2),
+          ],
+        },
+      })
+    )
+
+    await useBalanceStore.persist.rehydrate()
+    const entries = useBalanceStore.getState().entries
+
+    expect(entries).toHaveLength(3)
+    // Every type survives EXACTLY as stored — nothing re-typed, nothing dropped.
+    expect(entries.map((e) => e.type)).toEqual(['investment', 'debt', 'asset'])
+    expect(entries.map((e) => e.id)).toEqual(['inv-1', 'debt-1', 'asset-1'])
+    // ⚠️ And `sortOrder` is untouched: a careless version bump would re-run
+    // `backfillSortOrder`, which re-densifies to 0..n-1 and destroys the gaps
+    // deletes leave on purpose.
+    expect(entries.map((e) => e.sortOrder)).toEqual([0, 1, 2])
+  })
+
+  it('does not re-type a row whose type this build does not recognise', async () => {
+    // The same type-blindness protects FORWARD compatibility: a row written by a
+    // newer build must not be silently coerced into an existing arm on rehydrate.
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        state: { entries: [row('future-1', 'crypto', 'Some Coin', 0)] },
+      })
+    )
+
+    await useBalanceStore.persist.rehydrate()
+    expect(useBalanceStore.getState().entries[0]?.type).toBe('crypto')
+  })
+
+  it('totals an asset row separately from investments and debts', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        state: {
+          entries: [
+            { ...row('inv-1', 'investment', 'ISA', 0), currentBalance: 5_000_000 },
+            { ...row('asset-1', 'asset', 'Condo', 1), currentBalance: 40_000_000 },
+            { ...row('debt-1', 'debt', 'Mortgage', 2), currentBalance: 30_000_000 },
+          ],
+        },
+      })
+    )
+
+    await useBalanceStore.persist.rehydrate()
+    const { entries } = useBalanceStore.getState()
+    const totalFor = (type: string) =>
+      entries.filter((e) => e.type === type).reduce((sum, e) => sum + e.currentBalance, 0)
+
+    // ⚠️ Asserted as COMPONENTS, not via net worth: net worth is invariant under
+    // classifying an asset as an investment, so a net-only check cannot tell a
+    // correct implementation from that exact mistake.
+    expect(totalFor('investment')).toBe(5_000_000)
+    expect(totalFor('asset')).toBe(40_000_000)
+    expect(totalFor('debt')).toBe(30_000_000)
+  })
+})

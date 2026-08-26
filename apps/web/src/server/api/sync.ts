@@ -17,6 +17,7 @@
 
 import { logger } from '@/lib/logger'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
+import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import type { User } from '@budget-planner/db'
@@ -217,7 +218,7 @@ const savingsGoalSchema = z.object({
 })
 
 const balanceTrackingSchema = z.object({
-  type: z.enum(['investment', 'debt']),
+  type: z.enum(FINANCE_TYPES),
   name: z.string().min(1).max(255),
   currentBalance: z.number().int().default(0),
   maxContributionLimit: z.number().int().optional(),

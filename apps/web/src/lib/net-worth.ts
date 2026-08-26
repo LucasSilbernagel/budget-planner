@@ -14,6 +14,9 @@
  * add savings to four formulas; it collapses them into this one, so a fifth
  * surface cannot be added wrong.
  *
+ * Story 43.4 (FR70) added the `asset` term. That it was a one-line change HERE,
+ * rather than a fourth independent edit, is the payoff 32.2 was written for.
+ *
  * ## Why it is pure, and why it lives in `apps/web/src/lib`
  *
  * Pure, because `lib/report/build-financial-summary.ts` is React-free and must
@@ -43,16 +46,29 @@ export interface NetWorthTotals {
   investmentsCents: number
   /** In cents. */
   savingsCents: number
+  /**
+   * Balance rows of type `asset` — something owned outright (a property, a
+   * vehicle, a cash holding). In cents. Story 43.4 / FR70.
+   *
+   * ⚠️ This is a SEPARATE term from `investmentsCents` on purpose, and folding
+   * the two together would be undetectable by any net-worth assertion: net worth
+   * is INVARIANT under misclassifying an asset as an investment, because
+   * `(I + A) + S − D` and `I + S + A − D` are equal for every input. The two are
+   * distinguished only by the component totals, which is why the surfaces assert
+   * those separately (story 43.4, AC-2).
+   */
+  assetsCents: number
   /** In cents, held as a positive magnitude — this function subtracts it. */
   debtsCents: number
 }
 
 /**
- * Net worth = what you own (investments + savings) minus what you owe (debts).
+ * Net worth = what you own (investments + savings + assets) minus what you owe
+ * (debts).
  *
- * @param totals - The three component totals, in integer cents
+ * @param totals - The four component totals, in integer cents
  * @returns Net worth in cents; may be negative
  */
 export function netWorthFromTotals(totals: NetWorthTotals): number {
-  return totals.investmentsCents + totals.savingsCents - totals.debtsCents
+  return totals.investmentsCents + totals.savingsCents + totals.assetsCents - totals.debtsCents
 }

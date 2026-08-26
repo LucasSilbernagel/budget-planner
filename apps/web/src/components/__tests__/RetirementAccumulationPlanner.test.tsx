@@ -993,7 +993,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     // No rows at all → "add some", not "they net to zero".
     const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent(
-      'Add investment accounts on the Balance Tracking page'
+      'Only investment accounts count toward your nest egg'
     )
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
       'Add income and expenses to calculate this.'
@@ -1045,7 +1045,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
     const derived = screen.getByTestId('derived-current-saved')
     expect(derived).toHaveTextContent('Your investment accounts currently hold nothing.')
-    expect(derived).not.toHaveTextContent('Add investment accounts on the Balance Tracking page')
+    expect(derived).not.toHaveTextContent('Only investment accounts count toward your nest egg')
   })
 
   it('survives a corrupt persisted frequency without reaching the ErrorBoundary (AC-6)', () => {
@@ -1438,5 +1438,59 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     // The curve describes the saving phase, so the post-retirement assumption
     // must not appear in it.
     expect(summaryText()).toContain('5.0% return while saving')
+  })
+})
+
+describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Story 43.4, D6)', () => {
+  const balanceRow = (id: string, type: string, currentBalance: number) => ({
+    id,
+    type,
+    name: id,
+    currentBalance,
+    maxContributionLimit: null,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  })
+
+  it('does not count an asset row toward the RENDERED nest-egg base', () => {
+    // ⚠️ This is the ONLY surviving projection in the app fed by balance entries:
+    // `RetirementTimelineChart` compounds this figure at the investment return
+    // rate. If an asset ever reached it, a condo would compound like a portfolio.
+    //
+    // ⚠️ The first version of this test re-implemented the investment filter IN
+    // THE TEST BODY and asserted on its own arithmetic. It never rendered the
+    // component, so widening `useTotalInvestmentBalance` to include assets — the
+    // exact defect D6 exists to prevent — would have left it GREEN. It was a
+    // guard that could not fail. It now reads the DISPLAYED figure.
+    useBalanceStore.setState({
+      entries: [
+        balanceRow('inv-1', 'investment', 5_000_000),
+        balanceRow('asset-1', 'asset', 40_000_000),
+      ],
+    })
+
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    // Hand-computed: the base is the INVESTMENT total alone, $50,000.00.
+    expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('50,000.00')
+    // And explicitly NOT the folded-in figure, $450,000.00, which is what
+    // including the condo would produce.
+    expect(screen.getByTestId('derived-current-saved')).not.toHaveTextContent('450,000.00')
+  })
+
+  it('shows the nest-egg empty state for a user holding ONLY assets', () => {
+    // A user with balance entries but no investments must not be told to "add
+    // accounts on the Balance Tracking page" as if the page were empty — that is
+    // the copy D6 rewrote.
+    useBalanceStore.setState({ entries: [balanceRow('asset-1', 'asset', 40_000_000)] })
+
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(screen.getByTestId('derived-current-saved')).toHaveTextContent(
+      'Only investment accounts count toward your nest egg'
+    )
+    expect(screen.getByTestId('derived-current-saved')).not.toHaveTextContent('400,000.00')
   })
 })

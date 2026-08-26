@@ -1271,3 +1271,59 @@ describe('SavingsPage chart section', () => {
     expect(section.textContent).not.toMatch(/per (week|month|year)|\/mo\b|annually/i)
   })
 })
+
+describe('SavingsPage — an asset never feeds the distributable pool (Story 43.4, D2)', () => {
+  const ISO2 = '2026-01-01T00:00:00.000Z'
+  const assetRow = (monthlyContribution: number, id = 'asset-1') => ({
+    id,
+    type: 'asset' as const,
+    name: 'Condo',
+    currentBalance: 40_000_000,
+    maxContributionLimit: null,
+    monthlyContribution,
+    frequency: 'monthly' as const,
+    createdAt: ISO2,
+    updatedAt: ISO2,
+  })
+
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('excludes an asset row from investmentContributions, with or without a contribution', () => {
+    // ⚠️ This test exists because `SavingsPage.tsx` CLAIMED it existed before it
+    // did. The claim was found by review; the comment pointed at coverage that had
+    // never been written.
+    //
+    // The pool filter is `type === 'investment'`, so an asset is excluded either
+    // way. The anomalous case is the second one: a contribution on an asset is
+    // money being set aside that the pool never deducts. `validateBalanceTracking`
+    // now REJECTS that on every store write path — but `applyServerChanges` writes
+    // pulled rows in without validation, so it stays reachable from sync.
+    useBalanceStore.setState({ entries: [assetRow(0)] })
+    const zeroContribution = useBalanceStore
+      .getState()
+      .entries.filter((e) => e.type === 'investment')
+    expect(zeroContribution).toHaveLength(0)
+
+    useBalanceStore.setState({ entries: [assetRow(50_000)] })
+    const withContribution = useBalanceStore
+      .getState()
+      .entries.filter((e) => e.type === 'investment')
+    expect(withContribution).toHaveLength(0)
+  })
+
+  it('rejects an asset carrying a contribution at the store write path', () => {
+    // The layer that actually closes the hole for user- and API-driven writes.
+    useBalanceStore.setState({ entries: [] })
+    const created = useBalanceStore.getState().addBalanceEntry({
+      type: 'asset',
+      name: 'Condo',
+      currentBalance: 40_000_000,
+      monthlyContribution: 50_000,
+      frequency: 'monthly',
+    })
+    expect(created).toBeNull()
+    expect(useBalanceStore.getState().entries).toHaveLength(0)
+  })
+})

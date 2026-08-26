@@ -1,0 +1,25 @@
+-- Story 43.4 / FR70: add the `asset` balance type (property, vehicle, cash held
+-- outright) so a homeowner can record the property as well as the mortgage.
+--
+-- IF NOT EXISTS makes this enum extension re-runnable (Story 5-14 review P5, the
+-- same hardening applied to 0001). drizzle-kit 0.23 does NOT emit it.
+--
+-- ⚠️ THIS FILE MUST CONTAIN THIS ONE STATEMENT AND NOTHING THAT *USES* 'asset'.
+-- drizzle-orm's migrator wraps ALL pending migration files in a SINGLE
+-- transaction (pg-core/dialect.js), and PostgreSQL refuses to use a new enum
+-- value in the transaction that added it ("unsafe use of new value"). Any
+-- backfill or index referencing 'asset' belongs in a LATER file applied in a
+-- SEPARATE `db:migrate` run.
+--
+-- ⚠️ PRECONDITION: PostgreSQL >= 12. Before 12, `ALTER TYPE ... ADD VALUE` cannot
+-- run inside a transaction block at all, and the whole run would abort. The
+-- target PG major version is not pinned anywhere in this repo yet (story 4-17
+-- still lists "choose PG version" as an open task).
+--
+-- ROLLBACK: do nothing. An unused enum label is inert — `balanceTracking.type`
+-- has no default and no row can hold 'asset' unless the application wrote it, so
+-- reverting the TypeScript is sufficient. PostgreSQL has NO
+-- `ALTER TYPE ... DROP VALUE` in any released version; genuinely removing the
+-- label would require recreating the type and rewriting the table under an
+-- ACCESS EXCLUSIVE lock (the 0003 hand-written swap pattern).
+ALTER TYPE "financeType" ADD VALUE IF NOT EXISTS 'asset';

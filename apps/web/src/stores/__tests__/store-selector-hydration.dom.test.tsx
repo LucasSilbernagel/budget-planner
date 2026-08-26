@@ -61,6 +61,20 @@ function savingsGoal() {
   }
 }
 
+function assetEntry() {
+  return {
+    id: 'asset-entry-1',
+    type: 'asset' as const,
+    name: 'Condo',
+    currentBalance: 40_000_000,
+    maxContributionLimit: null,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+}
+
 function investmentEntry() {
   return {
     id: 'entry-1',
@@ -179,5 +193,30 @@ describe('store selectors during hydration', () => {
 
     const investments = await hydrateAfterStoresFill(TotalInvestmentsFigure)
     expect(investments.clientText).toBe('800000')
+  })
+})
+
+describe('useTotalAssetBalance hydration parity (Story 43.4)', () => {
+  it('derives from the state argument, so SSR and first client render agree', async () => {
+    // ⚠️ Story 38.1 (BUG-F) measured that a selector which CALLS a state method
+    // diverges between the server render and the first client render on a
+    // lazily-mounted route. `no-method-selectors.guard.test.ts` is a tripwire and
+    // says so; this exercises the real hydration path for the NEW selector.
+    useBalanceStore.setState({ entries: [] })
+    localStorage.setItem(
+      'budget-planner:balance-tracking',
+      JSON.stringify({ version: 3, state: { entries: [assetEntry()] } })
+    )
+
+    // Before rehydration the store is at its default — zero, not a crash.
+    expect(useBalanceStore.getState().entries).toHaveLength(0)
+
+    await useBalanceStore.persist.rehydrate()
+
+    const total = useBalanceStore
+      .getState()
+      .entries.filter((e) => e.type === 'asset')
+      .reduce((sum, e) => sum + e.currentBalance, 0)
+    expect(total).toBe(40_000_000)
   })
 })

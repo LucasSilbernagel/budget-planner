@@ -19,6 +19,7 @@ import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { type PremiumAccessStatus, usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
+import { buildBalancesBarData } from '../lib/balances-bar-data'
 import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { lazyWithRetry } from '../lib/lazy-with-retry'
@@ -135,6 +136,10 @@ const EXPENSE_COLOR = '#EF4444'
 const SAVINGS_COLOR = '#8B5CF6'
 const INVESTMENT_COLOR = '#3B82F6'
 const DEBT_COLOR = '#DC2626'
+// Story 43.4 (FR70). Amber, chosen to stay distinguishable from INVESTMENT_COLOR
+// (blue) and SAVINGS_COLOR (violet) under the common red-green and blue-yellow
+// confusions — the three asset-side bars must not read as one block.
+const ASSET_COLOR = '#D97706'
 
 export function HomePage() {
   const incomeSources = useIncomeSources()
@@ -217,7 +222,23 @@ export function HomePage() {
   const totalDebts = balanceEntries
     .filter((entry) => entry.type === 'debt')
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
-  // Story 32.2 (FR59): net worth is investments + savings − debts, read through
+  // ⚠️ Story 43.4: this inline re-derivation is a SECOND copy of the balance
+  // store's own selectors (`balanceStore.ts:340-380`). It exists for the bar
+  // chart, which needs the components rather than the net. When FR70 added the
+  // `asset` type, forgetting this block would have put an asset in the Net Worth
+  // Net Worth tile and left it invisible in the balances chart below — the two
+  // contradicting each other on one screen.
+  // ⚠️ The guard is `lib/__tests__/balances-bar-data.test.ts`, which asserts the
+  // SERIES directly. `overview-reconciliation.test.tsx` does NOT cover this: it
+  // reads the Net Worth tile, which is fed by the shared `useNetWorth()` hook, so
+  // the Assets bar could be deleted outright and it would stay green. An earlier
+  // version of this comment named it as the guard; that was wrong, and review
+  // caught it.
+  const totalAssets = balanceEntries
+    .filter((entry) => entry.type === 'asset')
+    .reduce((sum, entry) => sum + entry.currentBalance, 0)
+  // Story 32.2 (FR59) + 43.4 (FR70): net worth is investments + savings + assets
+  // − debts, read through
   // the one shared hook so this card and the Balance page cannot drift apart.
   // (A third reader, the free Net Worth projection page, was removed by 43.3.)
   // Note the balances bar chart below (`balancesBarData`) has
@@ -444,23 +465,20 @@ export function HomePage() {
 
   // Balances are absolute, point-in-time amounts — no period suffix — with debts
   // shown as a reduction (negative), consistent with the Net Worth definition.
-  const balancesBarData = [
+  const balancesBarData = buildBalancesBarData(
     {
-      category: 'Savings',
-      amount: totalSavings,
-      fill: SAVINGS_COLOR,
+      savingsCents: totalSavings,
+      investmentsCents: totalInvestments,
+      assetsCents: totalAssets,
+      debtsCents: totalDebts,
     },
     {
-      category: 'Investments',
-      amount: totalInvestments,
-      fill: INVESTMENT_COLOR,
-    },
-    {
-      category: 'Debts',
-      amount: -totalDebts,
-      fill: DEBT_COLOR,
-    },
-  ].filter((item) => item.amount !== 0)
+      savings: SAVINGS_COLOR,
+      investment: INVESTMENT_COLOR,
+      asset: ASSET_COLOR,
+      debt: DEBT_COLOR,
+    }
+  )
 
   // Round, evenly-spaced axis ticks (cents) PER chart via the shared
   // `barDomainTicks` helper (each domain clamped to include a 0 baseline for its
@@ -603,7 +621,7 @@ export function HomePage() {
                   Net Worth
                   <InfoTooltip
                     label="More information about net worth"
-                    text="Net worth is what you own minus what you owe: your investments and savings, minus your debts. Investments and debts are tracked on the Balance Tracking page, savings on the Savings page. Income and expenses aren't counted here."
+                    text="Net worth is what you own minus what you owe: your investments, savings, and anything you own outright, minus your debts. Investments, assets and debts are tracked on the Balance Tracking page, savings on the Savings page. Income and expenses aren't counted here."
                   />
                 </p>
                 {/* data-testid rather than an accessible-name matcher: story 32.1

@@ -879,3 +879,39 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
     })
   })
 })
+
+describe('validateBalanceTracking — the asset type (Story 43.4, FR70/D2)', () => {
+  const assetInput = (overrides: Record<string, unknown> = {}) => ({
+    type: 'asset' as const,
+    name: 'Condo',
+    currentBalance: 40_000_000,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+    ...overrides,
+  })
+
+  it('accepts a valid asset entry', () => {
+    const result = validateBalanceTracking(assetInput())
+    expect(result).toEqual([])
+  })
+
+  it('REJECTS an asset carrying a contribution (D2 enforced on every write path)', () => {
+    // ⚠️ Not merely cosmetic. `SavingsPage` sums the `monthlyContribution` of
+    // `type === 'investment'` rows into the distributable pool; an asset carrying
+    // one is money the user is putting aside that the pool never deducts, so the
+    // pool is overstated and every automatic allocation runs too large.
+    const errors = validateBalanceTracking(assetInput({ monthlyContribution: 50_000 }))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.field).toBe('monthlyContribution')
+    expect(errors[0]?.message).toMatch(/asset has no contribution/i)
+  })
+
+  it('still rejects a genuinely unknown type, naming all three valid ones', () => {
+    const errors = validateBalanceTracking(assetInput({ type: 'crypto' }))
+    expect(errors.some((e) => e.field === 'type')).toBe(true)
+    const typeError = errors.find((e) => e.field === 'type')
+    expect(typeError?.message).toContain('asset')
+    expect(typeError?.message).toContain('investment')
+    expect(typeError?.message).toContain('debt')
+  })
+})

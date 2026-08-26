@@ -176,18 +176,49 @@ interface BalanceRow {
 /**
  * Balance — the editable "Your Balance Entries" table only.
  *
- * `type` sorts by the ENUM, investment before debt, matching the order the page
- * itself presents the two groups in. ⚠️ Not by the rendered label: those are
- * `Investment` and `Debt`, and `'Debt'.localeCompare('Investment') < 0` would
- * put debts first — the exact inverse.
+ * `type` sorts by the ENUM in the order the page presents the money in:
+ * investment (0), asset (1), debt (2) — what you own, then what you own
+ * outright, then what you owe, matching the summary-card row. ⚠️ Not by the
+ * rendered label: those are `Investment`, `Asset` and `Debt`, and
+ * `'Asset'.localeCompare('Debt') < 0 < 'Investment'` would order them
+ * Asset, Debt, Investment — assets and debts adjacent, which is the one
+ * grouping the page never shows.
+ *
+ * ⚠️ Story 43.4: this was a BINARY key (`type === 'investment' ? 0 : 1`). Left
+ * alone, a third value would have tied with every debt row rather than erroring
+ * — `BalanceRow.type` is `string`, so the compiler could not see it.
  *
  * `maxContribution` and `remainingRoom` are both investment-only in the
- * rendering (`None` and an em-dash respectively for every debt row), so both
+ * rendering (`None` and an em-dash respectively for every debt AND asset row),
+ * and `contribution` is em-dashed for assets (story 43.4, D2), so all three
  * branch on `type` before reading the value. See rule 2 in the module docblock.
  */
+/**
+ * Display rank per finance type. An unknown value sorts LAST rather than tying
+ * with a real one, so a corrupt or newer-than-this-build row is visibly at the
+ * end instead of silently interleaved.
+ */
+const TYPE_SORT_RANK: Readonly<Record<string, number>> = {
+  investment: 0,
+  asset: 1,
+  debt: 2,
+}
+const TYPE_SORT_RANK_FALLBACK = 3
+
 export function createBalanceSortExtractors(): SortKeyExtractors<BalanceRow, BalanceSortKey> {
   return {
-    type: (row) => (row.type === 'investment' ? 0 : 1),
+    // ⚠️ An OWN-property check, not `?? FALLBACK`: a row whose `type` is 'constructor',
+    // 'toString' or 'valueOf' would otherwise read an INHERITED Object.prototype
+    // member — a function, which is not nullish, so `??` never fires and the
+    // comparator receives a function as a sort key. Unknown types are reachable
+    // (a hand-edited or newer-build row survives rehydrate untouched, pinned in
+    // `balanceStore.dom.test.ts`), which is exactly what the fallback is for.
+    // `hasOwnProperty.call` rather than `Object.hasOwn`: this package's `lib`
+    // target predates ES2022.
+    type: (row) =>
+      Object.prototype.hasOwnProperty.call(TYPE_SORT_RANK, row.type)
+        ? TYPE_SORT_RANK[row.type] ?? TYPE_SORT_RANK_FALLBACK
+        : TYPE_SORT_RANK_FALLBACK,
     name: (row) => textOrNull(row.name),
     currentBalance: (row) => finiteOrNull(row.currentBalance),
     maxContribution: (row) =>
@@ -201,6 +232,9 @@ export function createBalanceSortExtractors(): SortKeyExtractors<BalanceRow, Bal
             })
           )
         : null,
-    contribution: (row) => normalizedOrNull(row.monthlyContribution, row.frequency),
+    // An asset shows an em-dash here, not "$0.00 / Monthly" — rule 2 says sort
+    // by what the CELL SHOWS, so it must null out rather than key at 0.
+    contribution: (row) =>
+      row.type === 'asset' ? null : normalizedOrNull(row.monthlyContribution, row.frequency),
   }
 }

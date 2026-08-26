@@ -16,6 +16,7 @@ import type {
   IncomeSource,
   SavingsGoal,
 } from '@budget-planner/db'
+import type { FinanceType } from '@budget-planner/db'
 import {
   balanceTracking,
   expenses,
@@ -118,7 +119,9 @@ export interface UpdateSavingsGoalInput {
  * For paid tier: profileId is required
  */
 export interface CreateBalanceTrackingInput {
-  type: 'investment' | 'debt'
+  // Story 43.4: was a hand-written `'investment' | 'debt'` union with no link to
+  // `FinanceType`, so widening the enum produced NO error here — a pure silent gap.
+  type: FinanceType
   name: string
   currentBalance: number
   maxContributionLimit?: number | null
@@ -133,7 +136,7 @@ export interface CreateBalanceTrackingInput {
  */
 export interface UpdateBalanceTrackingInput {
   id: string
-  type?: 'investment' | 'debt'
+  type?: FinanceType
   name?: string
   currentBalance?: number
   frequency?: Frequency // Story 16-2: cadence of the contribution

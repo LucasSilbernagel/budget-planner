@@ -38,7 +38,36 @@ export const frequencyEnum = pgEnum('frequency', ['weekly', 'biweekly', 'monthly
 
 // Finance type enum for balance tracking
 // Values use snake_case as per architecture
-export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt'])
+//
+// `asset` (story 43.4 / FR70) is something the user owns outright — a property,
+// a vehicle, or a cash holding. It counts on the ASSET side of net worth, so a
+// homeowner who records a mortgage can also record the property it is against.
+// It deliberately carries NO contribution limit and NO contribution: an owned
+// asset changes value by appreciation, not by deposits (story 43.4, D2).
+export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt', 'asset'])
+
+/**
+ * The single source of truth for the finance-type values, DERIVED from the enum
+ * so it cannot drift from it.
+ *
+ * ⚠️ Every zod schema, validation whitelist and option list that used to restate
+ * `['investment', 'debt']` now derives from this (story 43.4). Restating the
+ * values is what let the two-value assumption spread to ~24 sites, only ONE of
+ * which the compiler could catch.
+ *
+ * ⚠️ Do NOT rewrite this as `[...] as const satisfies readonly FinanceType[]`.
+ * `satisfies` checks assignability, and a SHORT tuple is assignable to
+ * `readonly FinanceType[]` — so a MISSING member compiles clean. It catches
+ * misspellings, never omissions. Deriving from `enumValues` is what makes drift
+ * impossible.
+ *
+ * ⚠️ CLIENT CODE MUST NOT IMPORT THIS FROM THE PACKAGE BARREL. `src/index.ts`
+ * re-exports `./client`, which throws at module scope when `window` is defined.
+ * Import from `@budget-planner/db/src/schema` instead (aliased in
+ * `apps/web/vite.config.ts`); a TYPE-only import of `FinanceType` is safe either
+ * way because it is erased at compile time.
+ */
+export const ALL_FINANCE_TYPES = financeTypeEnum.enumValues
 
 // Allocation mode for savings accounts/goals (Story 26.1): a 'manual' account
 // holds a fixed monthlyAllocation; an 'automatic' account receives an even share
@@ -280,7 +309,7 @@ export const balanceTracking = pgTable(
     profileId: uuid('profileId')
       .references(() => userProfiles.id)
       .notNull(),
-    type: financeTypeEnum('type').notNull(), // investment or debt
+    type: financeTypeEnum('type').notNull(), // investment, debt or asset
     name: varchar('name', { length: 255 }).notNull(),
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
     maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)

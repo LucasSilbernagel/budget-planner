@@ -63,8 +63,10 @@ function clearStores(): void {
 /**
  * ONE fixture, seeded once, read by both surfaces.
  *
- * investments 2,000,000c + savings 300,000c − debts 15,000,000c = −12,700,000c
- * (the pre-32.2 definition gave −13,000,000c on every one of them).
+ * investments 2,000,000c + savings 300,000c + assets 40,000,000c
+ *   − debts 15,000,000c = +27,300,000c
+ * (the pre-32.2 definition gave −13,000,000c on every one of them; before FR70
+ * added the condo the figure was −12,700,000c.)
  */
 function seedSharedFixture(): void {
   useBalanceStore.setState({
@@ -84,6 +86,18 @@ function seedSharedFixture(): void {
         type: 'investment',
         name: 'Pension',
         currentBalance: 1_200_000,
+        monthlyContribution: 0,
+        frequency: 'monthly',
+        createdAt: TS,
+        updatedAt: TS,
+      },
+      {
+        // Story 43.4 / FR70. Distinct from every other total so cross-surface
+        // agreement cannot hold by coincidence.
+        id: 'asset-1',
+        type: 'asset',
+        name: 'Condo',
+        currentBalance: 40_000_000,
         monthlyContribution: 0,
         frequency: 'monthly',
         createdAt: TS,
@@ -161,7 +175,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
     expect(overview).toBe(balance)
     // Pinned to the hand-computed value too, so an agreement on a WRONG shared
     // number (e.g. both reverting together) still fails.
-    expect(overview).toContain('-127,000.00')
+    expect(overview).toContain('273,000.00')
   })
 
   it('AC-6: both agree for a savings-only user, where they used to show zero', () => {
@@ -194,8 +208,8 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
    * blindness-by-construction 31.5 recorded. 32.3 puts a single period control in
    * charge of the whole Overview, which is exactly the change that could sweep
    * net worth up with the flow totals; if it ever did, the card would read
-   * −$29,307.69 at weekly — round(−12,700,000 × 12/52) = −2,930,769c — and
-   * −$1,524,000.00 at annually, while the Balance page held at −$127,000.00.
+   * a period-scaled figure at weekly — round(27,300,000 × 12/52) = 6,300,000c —
+   * and a different one at annually, while the Balance page held at $273,000.00.
    * (The weekly figure read −$29,230.77 until code review 32.3 re-derived it:
    * that value divides −1,520,000 rather than the fixture's −1,524,000. No
    * assertion depended on it, but a hand-computed comment whose only job is to
@@ -244,7 +258,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
       expect(balance).toBe(overview)
       // Pinned as well as compared: two surfaces agreeing on a period-scaled
       // WRONG figure would satisfy the equality on its own.
-      expect(overview).toContain('-127,000.00')
+      expect(overview).toContain('273,000.00')
     }
   })
 })

@@ -1309,7 +1309,15 @@ async function probeScrollability(card: Locator): Promise<number> {
   })
 }
 
-/** Open the tallest modal in the app: the `/balance` Add form, 6 fields. */
+/**
+ * Open the tallest modal in the app: the `/balance` Add form.
+ *
+ * ⚠️ The field count depends on the selected type and is NOT asserted here — this
+ * is a helper comment, not a guard. Investment (the default) shows the most
+ * fields; story 43.4's `asset` type hides three of them (contribution limit,
+ * contribution amount, frequency), so an asset form is the SHORTEST, not the
+ * tallest. Tests that need the tall fixture must leave the type at its default.
+ */
 async function openBalanceAddModal(page: Page): Promise<Locator> {
   const trigger = page.getByTestId('balance-add-button')
   const dialog = page.getByRole('dialog', { name: 'Add Balance Entry' })

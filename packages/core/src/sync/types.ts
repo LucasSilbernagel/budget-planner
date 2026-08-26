@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { FINANCE_TYPES } from '../services/balanceTracking'
 
 // ============================================================================
 // Entity Validation Schemas
@@ -68,7 +69,7 @@ export const savingsGoalSchema = z.object({
 })
 
 export const balanceTrackingSchema = z.object({
-  type: z.enum(['investment', 'debt']),
+  type: z.enum(FINANCE_TYPES),
   name: z.string().min(1).max(255),
   currentBalance: z.number().int().default(0),
   maxContributionLimit: z.number().int().optional(),
@@ -106,7 +107,7 @@ export const syncOperationDataSchema = z.object({
   // or a paid-tier account create/update ZodError-fails at the sync-queue gate.
   targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable().optional(),
   currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX).optional(),
-  type: z.enum(['investment', 'debt']).optional(),
+  type: z.enum(FINANCE_TYPES).optional(),
   maxContributionLimit: z.number().int().positive().max(PG_INT32_MAX).optional(),
   monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX).optional(),
   // Story 26.1: savings monthly allocation (nullable cents, >= 0) + mode. Bounds

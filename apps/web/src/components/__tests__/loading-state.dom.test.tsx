@@ -305,6 +305,7 @@ describe('the remaining gated pages, pending → resolved (AC-5)', () => {
       skeletons: [
         'stat-total-investments-skeleton',
         'stat-total-savings-skeleton',
+        'stat-total-assets-skeleton',
         'stat-total-debts-skeleton',
         'stat-net-worth-skeleton',
         'balance-entries-skeleton',

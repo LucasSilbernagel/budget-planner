@@ -76,6 +76,15 @@ export function SavingsPage() {
   // balance entries mapped to { amount, frequency } (the solver normalizes them).
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
+  // ⚠️ Story 43.4 (FR70) deliberately does NOT add an asset arm here. Assets
+  // carry no contribution at all (D2: the form hides the field and the save path
+  // writes 0), so there is nothing for the distributable pool to double-count.
+  // ⚠️ That argument is FORM-DEEP only: `applyServerChanges.ts` writes pulled
+  // rows into the store with no validation, and `moveBalanceEntry` bypasses it
+  // too, so an asset row carrying a non-zero contribution IS reachable from sync
+  // or hand-edited localStorage. It would be excluded from this filter and the
+  // pool would be overstated by that amount. Pinned by the asset case in
+  // `SavingsPage.test.tsx`.
   const investmentEntries = useInvestmentEntries()
 
   // Recompute only when an input changes. `allocations` maps each AUTOMATIC

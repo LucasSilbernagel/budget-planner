@@ -407,14 +407,20 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
       .filter((r) => r.type === 'investment')
       .reduce((s, r) => s + r.currentBalance, 0)
     const debts = rows.filter((r) => r.type === 'debt').reduce((s, r) => s + r.currentBalance, 0)
+    // Story 43.4: without this term the helper would keep passing while silently
+    // ceasing to cover asset money — it would re-derive a net worth that simply
+    // ignored the new type, and agree with a report that did the same.
+    const assets = rows.filter((r) => r.type === 'asset').reduce((s, r) => s + r.currentBalance, 0)
     const savings = savingsRows.reduce((s, r) => s + r.currentBalance, 0)
     return {
       investments,
       debts,
+      assets,
       savings,
       net: netWorthFromTotals({
         investmentsCents: investments,
         savingsCents: savings,
+        assetsCents: assets,
         debtsCents: debts,
       }),
     }
@@ -430,6 +436,10 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
     { id: 'b1', name: 'ISA', type: 'investment', currentBalance: 800_000 },
     { id: 'b2', name: 'Pension', type: 'investment', currentBalance: 1_200_000 },
     { id: 'b3', name: 'Mortgage', type: 'debt', currentBalance: 15_000_000 },
+    // Story 43.4 / FR70. Non-zero and DISTINCT from every other total here, so a
+    // parity assertion cannot pass by coincidence — and so the asset money is
+    // actually exercised rather than defaulting to 0.
+    { id: 'b4', name: 'Condo', type: 'asset', currentBalance: 40_000_000 },
   ]
 
   it('overall savings progress equals getOverallProgress for clean data', () => {
@@ -452,7 +462,13 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
     const canonical = canonicalNetWorth(cleanBalances)
     expect(model.netWorth.totalInvestmentsCents).toBe(canonical.investments)
     expect(model.netWorth.totalDebtsCents).toBe(canonical.debts)
+    expect(model.netWorth.totalAssetsCents).toBe(canonical.assets)
     expect(model.netWorth.netCents).toBe(canonical.net)
+    // ⚠️ Assert the COMPONENTS, not just the net: net worth is invariant under
+    // classifying an asset as an investment ((I+A)+S−D === I+S+A−D), so a net-only
+    // assertion cannot tell a correct implementation from that mistake.
+    expect(model.netWorth.totalAssetsCents).toBe(40_000_000)
+    expect(model.netWorth.totalInvestmentsCents).toBe(2_000_000)
   })
 
   it('net worth matches the app definition once savings are in play too (story 32.2)', () => {
