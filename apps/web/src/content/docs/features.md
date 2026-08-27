@@ -29,7 +29,8 @@ model, because there is no model. This holds for every visitor on both tiers.
 - **Savings goals** to track progress toward a target.
 - **Balance tracking** for investments, debts, and things you own outright.
   [Where a mortgage belongs](/docs/where-a-mortgage-belongs) covers loans, which
-  are a recurring payment and a debt at the same time.
+  are a recurring payment and a debt at the same time, and where the property
+  itself goes.
 - **Visual breakdowns** of income versus expenses, and of what you own —
   savings, investments and anything owned outright — against what you owe.
 - **Retirement modeling** using a safe-withdrawal projection.

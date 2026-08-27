@@ -692,6 +692,11 @@ describe('documentation content accuracy (story 10-4)', () => {
       // so a stale entry here would let this test bless a doc link to a 404 —
       // the entry must leave with the route, not after it.
       '/retirement',
+      // Story 43.5: the mortgage page sends readers to the Savings page, because
+      // an asset carries no contribution and money put aside toward one belongs
+      // there instead (`BalancePage.tsx`'s asset hint says the same). The route
+      // has existed since epic 1; it was absent here only because no doc linked it.
+      '/savings',
     ])
     const internalLink = /\]\((\/[^)]*)\)/g
     for (const page of DOC_PAGES) {
@@ -713,14 +718,77 @@ describe('documentation content accuracy (story 10-4)', () => {
    */
   const mortgage = () => contentFor('where-a-mortgage-belongs')
 
-  it('the mortgage page states the two-places model and scopes it to debts (36.3, AC-2)', () => {
+  /**
+   * The page's `###` sections, so a guard can prove WHERE a claim lives.
+   *
+   * ⚠️ Added by story 43.5, and it is the single most important guard on this
+   * page. Until now EVERY mortgage assertion matched the whole document, so
+   * moving a claim from one section to another — attributing an effect to the
+   * wrong figure — kept all of them green. "Which figure feeds which
+   * calculation" is the only thing this article exists to say, which made its
+   * central thesis the one property the suite could not see.
+   *
+   * Same shape as `howTotalsSections()` above: each heading must EXIST before
+   * slicing, because `indexOf` returning -1 silently widens a slice to most of
+   * the document and every negative guard inside it then passes vacuously.
+   */
+  const mortgageSections = () => {
+    const content = mortgage()
+    const bounds = [
+      ['intro', '## Where a mortgage belongs'],
+      ['where', '### Where each part goes'],
+      ['payment', '### What the payment changes'],
+      ['owed', '### What the amount still owed changes'],
+      ['property', '### What the property is worth changes'],
+      ['wrong', '### If your net worth looks wrong'],
+    ] as const
+    const starts = bounds.map(([, heading]) => {
+      const index = content.indexOf(heading)
+      if (index === -1) throw new Error(`mortgage page is missing the heading: ${heading}`)
+      return index
+    })
+    // ⚠️ Ordering invariant, `featureSections()`'s precedent: if the file is
+    // reordered, a slice becomes the EMPTY STRING and every negative assertion
+    // below passes against nothing.
+    for (const [i, start] of starts.entries()) {
+      if (i > 0 && start <= starts[i - 1]) {
+        throw new Error(`mortgage page sections are out of order at: ${bounds[i][1]}`)
+      }
+    }
+    const sections = {} as Record<(typeof bounds)[number][0], string>
+    for (const [i, [key]] of bounds.entries()) {
+      sections[key] = content.slice(starts[i], starts[i + 1] ?? content.length)
+    }
+    return sections
+  }
+
+  it('the mortgage page states the three-part model and scopes the debt claims (43.5, AC-1)', () => {
     const page = mortgage()
+    const { where } = mortgageSections()
+    // ⚠️ Story 43.5: all three routing claims are scoped to `### Where each part
+    // goes`. Page-wide, a rewrite could move "goes on the Expenses page" into the
+    // section about what the DEBT changes and stay green — which is the exact
+    // misattribution this article exists to prevent.
     // The payment goes to Expenses, the balance owing goes to Balance Tracking as a Debt.
-    expect(page).toMatch(/recurring\s+\*\*payment\*\*\s+goes\s+on\s+the\s+\[Expenses\]/i)
-    expect(page).toMatch(
+    expect(where).toMatch(/recurring\s+\*\*payment\*\*\s+goes\s+on\s+the\s+\[Expenses\]/i)
+    expect(where).toMatch(
       /\*\*amount\s+still\s+owed\*\*\s+goes\s+on\s+the\s+\[Balance\s+Tracking\]/i
     )
-    expect(page).toMatch(/type\s+\*\*Debt\*\*/)
+    expect(where).toMatch(/type\s+\*\*Debt\*\*/)
+    // ⚠️ FR70's third part. The literal type name is `Asset` (D10) — NOT "Property"
+    // and NOT "owned outright", which is prose in the corpus but not the label the
+    // Type dropdown renders (`BalancePage.tsx` TYPE_OPTIONS).
+    expect(where).toMatch(
+      /\*\*property\s+itself\*\*\s+goes\s+on\s+the\s+same\s+page[^.]*type\s+\*\*Asset\*\*/i
+    )
+    // All three Type choices are named, so the page cannot go stale by listing two.
+    expect(where).toMatch(/\*\*Investment\*\*,\s+\*\*Debt\*\*\s+and\s+\*\*Asset\*\*/)
+    // ⚠️ The intro must announce the third figure. Without this the opening
+    // reverts to a pure two-part framing ("The two figures are read by different
+    // calculations") that contradicts the rest of the page — and the `intro`
+    // slice was previously computed and never asserted against.
+    const { intro } = mortgageSections()
+    expect(intro).toMatch(/there\s+is\s+a\s+third\s+figure/i)
     // Both entry surfaces are linked, not merely named — Task 3's knownRoutes
     // entries are dead weight otherwise, and the mutation table's M7 depends on
     // the `/expenses` link existing.
@@ -741,49 +809,193 @@ describe('documentation content accuracy (story 10-4)', () => {
   })
 
   /**
-   * ⚠️ COUPLING, recorded by story 43.3's code review. The three mortgage-page
-   * guards below pin prose that describes the FREE net-worth projection page as
-   * a live surface. Story 43.3 (FR69) REMOVED that page; story 43.5 rewrites this
-   * article and moves these pins with it. Until 43.5 lands, these pins actively
-   * enforce claims that are no longer true — so if you are here because you
-   * corrected the prose early, the pins are what went red, and 43.5 is the story
-   * that owns moving them. Do not relax them in place.
+   * ⚠️ RESOLVED by story 43.5. The coupling 43.3's code review recorded here is
+   * discharged: this article no longer describes the deleted net-worth projection
+   * page, and the pins below now assert the corrected claims instead of the stale
+   * ones. Nothing was relaxed — each retired pin was replaced by a positive pin on
+   * the sentence that replaced it, plus a negative proving the old claim is gone.
+   *
+   * ⚠️ The projection sentences were DELETED, not re-pointed at Premium
+   * forecasting. Forecasting has no debt term at all (`forecasting.ts` — grep it,
+   * `netWorth = savings + investments`) and its inputs are typed by hand rather
+   * than read from your stores, so "the projection holds your debts flat" has no
+   * truthful home anywhere in the app. Re-pointing it would be a NEW false claim.
    */
-  it('the mortgage page says what each figure does NOT affect (36.3, AC-3)', () => {
+  it('the mortgage page says what each figure does NOT affect (43.5, AC-3/AC-5)', () => {
     const page = mortgage()
-    // The payment is cash flow, never net worth.
-    expect(page).toMatch(
-      /does\s+\*\*not\*\*\s+change\s+your\s+net\s+worth\s+as\s+it\s+stands\s+today/i
-    )
-    // ⚠️ The qualifier IS the claim. An unqualified "does not change your net
-    // worth on any page" contradicts the bullet three lines above it, which
-    // says the payment feeds the net-worth projection — and it does, in the
-    // forward direction. Review 36.3 caught the contradiction; this pins the fix.
-    expect(page).toMatch(/only\s+in\s+the\s+forward\s+direction/i)
+    const { payment, owed, property } = mortgageSections()
+    // The payment is cash flow, never net worth — and scoped to the payment section,
+    // so the claim cannot drift onto the debt or the asset.
+    expect(payment).toMatch(/does\s+\*\*not\*\*\s+change\s+your\s+net\s+worth,\s+on\s+any\s+page/i)
+    // ⚠️ INVERTED by story 43.5, not relaxed. 36.3 needed the qualifier "only in
+    // the forward direction" because the projection page WAS a live surface where
+    // a payment reached a net-worth number. 43.3 deleted that page, so the
+    // unqualified sentence is now the CORRECT one and the qualifier would be a
+    // dangling reference. This proves the hedge is gone rather than merely
+    // dropping the assertion that used to require it.
+    expect(page).not.toMatch(/only\s+in\s+the\s+forward\s+direction/i)
+    // ⚠️ `net[-\s]worth`, not `net-worth`: the unhyphenated "net worth
+    // projection" is how most writers would type it and the hyphen-only form
+    // let the dead surface back in.
+    expect(page).not.toMatch(/net[-\s]worth\s+projection/i)
     // The balance owing is net worth, never cash flow.
-    expect(page).toMatch(/does\s+\*\*not\*\*\s+change\s+your\s+cash\s+flow/i)
+    expect(owed).toMatch(/does\s+\*\*not\*\*\s+change\s+your\s+cash\s+flow/i)
     // The retirement pot deliberately excludes debts.
-    expect(page).toMatch(/left\s+out\s+of\s+the\s+retirement\s+planner/i)
+    expect(owed).toMatch(/left\s+out\s+of\s+the\s+retirement\s+planner/i)
+    // ⚠️ FR70/D6: it excludes ASSETS too, and the recorded rationale is
+    // CONSISTENCY (cash in a savings account is already excluded), NOT "a condo
+    // is not retirement savings" — that phrasing is true for a condo and unargued
+    // for the cash holding FR70 also names. Pin the reason, not just the fact.
+    expect(property).toMatch(/stays\s+out\s+of\s+the\s+retirement\s+planner/i)
+    expect(property).toMatch(/same\s+reason\s+cash\s+in\s+a\s+savings\s+account\s+does/i)
+    // An asset carries no contribution; money toward one goes to the Savings page.
+    expect(property).toMatch(/does\s+not\s+ask\s+you\s+to\s+set\s+a\s+contribution/i)
+    expect(property).toContain('(/savings)')
   })
 
-  it('the mortgage page does not promise the debt shrinks (36.3, AC-3)', () => {
-    const page = mortgage()
-    // The projection holds liabilities flat for the whole horizon and models no
-    // repayment at all, so the page must say so rather than implying progress.
-    expect(page).toMatch(/does\s+not\s+pay\s+the\s+mortgage\s+down/i)
-    expect(page).toMatch(/holds\s+your\s+debts\s+at\s+their\s+current\s+balance/i)
-    // ⚠️ Negative guard: these are the sentences that would be FALSE if written.
-    expect(page).not.toMatch(/payment\s+reduces\s+(the|your)\s+(mortgage\s+)?balance/i)
-    expect(page).not.toMatch(/watch\s+(the|your)\s+mortgage\s+shrink/i)
+  it("each figure's effects are listed under THAT figure (43.5, AC-5)", () => {
+    const { payment, owed, property } = mortgageSections()
+    // ⚠️ ADDED IN CODE REVIEW, and it closes the hole the section-scoping was
+    // introduced to close. The claim pins above scope the "It does **not** ..."
+    // paragraphs, but every POSITIVE effect lives in an "It affects:" bullet and
+    // NONE of those was scoped. The story's own motivating example — moving "how
+    // much is left over to share out on the Savings page" out of the payment
+    // section and into the debt section — ran 43/43 GREEN against the first pass.
+    // A misattributed effect is the defect this page exists to prevent, so the
+    // bullets are pinned to their own section AND denied to the others.
+    const paymentEffects = [
+      /the\s+total\s+on\s+the\s+Expenses\s+page/i,
+      /Total\s+Expenses\s+figure\s+on\s+the\s+home\s+page/i,
+      /left\s+over\s+to\s+share\s+out\s+on\s+the\s+\[Savings\]/i,
+      /retirement\s+planner,\s+which\s+works\s+out\s+what\s+you\s+save/i,
+    ]
+    const owedEffects = [
+      /Total\s+Debts\s+and\s+Net\s+Worth\s+on\s+the\s+Balance\s+Tracking\s+page/i,
+      /debts\s+bar\s+in\s+the\s+balances\s+chart/i,
+    ]
+    const propertyEffects = [
+      /Other\s+Assets\s+and\s+Net\s+Worth\s+on\s+the\s+Balance\s+Tracking\s+page/i,
+      /assets\s+bar\s+in\s+the\s+balances\s+chart/i,
+    ]
+    for (const effect of paymentEffects) {
+      expect(payment).toMatch(effect)
+      expect(owed).not.toMatch(effect)
+      expect(property).not.toMatch(effect)
+    }
+    for (const effect of owedEffects) {
+      expect(owed).toMatch(effect)
+      expect(payment).not.toMatch(effect)
+    }
+    for (const effect of propertyEffects) {
+      expect(property).toMatch(effect)
+      expect(payment).not.toMatch(effect)
+    }
   })
 
-  it('the mortgage page discloses that a house cannot be recorded (36.3, AC-4)', () => {
+  it('the mortgage page does not promise the debt shrinks (43.5, AC-4)', () => {
+    const { owed, property } = mortgageSections()
+    // ⚠️ REPOINTED by story 43.5. 36.3 anchored this on the projection page's
+    // behaviour ("holds your debts at their current balance", "does not pay the
+    // mortgage down"). That page is gone, but the underlying fact survives it and
+    // is the half worth keeping: the FORM asks for six fields and none is a rate,
+    // so no figure in Longhand amortises. Anchored on the form, not a surface.
+    // ⚠️ Reworded in code review: the old sentence said Longhand "does not ask
+    // for your repayment schedule", but a DEBT entry is shown and REQUIRES both
+    // `Contribution *` and `Contribution Frequency *` (the form hides those only
+    // for assets) — an amount plus a cadence is the shape of a repayment
+    // schedule. What is actually true is that no rate is asked for and nothing
+    // amortises, so no figure is ever recalculated.
+    expect(owed).toMatch(/does\s+not\s+ask\s+for\s+your\s+interest\s+rate/i)
+    expect(owed).toMatch(/does\s+not\s+work\s+out\s+how\s+a\s+loan\s+amortises/i)
+    expect(owed).not.toMatch(/does\s+not\s+ask\s+for\s+your\s+repayment\s+schedule/i)
+    expect(owed).toMatch(/stays\s+exactly\s+where\s+you\s+put\s+it\s+until\s+you\s+change\s+it/i)
+    // The same is true in the other direction: an asset does not appreciate on its
+    // own either. Omitting this would leave a reader expecting the house to track
+    // the market while the loan sat still.
+    expect(property).toMatch(/does\s+not\s+track\s+the\s+value\s+for\s+you/i)
+    // ⚠️ STRENGTHENED by story 43.5 and REPAIRED in its code review, following
+    // this file's own stem-x-object lesson. 36.3's pair banned two literal
+    // phrasings and sailed past every other; "Your payment brings down what you
+    // owe over time" is equally false and shipped GREEN under them.
+    //
+    // ⚠️ The first version of this guard had three holes, all found in review:
+    //  1. It split on periods only. Bullets and headings end without one, so an
+    //     "It affects:" list PLUS the "It does **not** ..." sentence after it was
+    //     a single chunk — and one `not` anywhere in that chunk excused a false
+    //     progress claim anywhere else in it. Now split on blank lines and line
+    //     breaks as well, so a bullet is judged on its own.
+    //  2. `pay\w*\s+(down|off)` required the particle adjacent to the verb, so
+    //     the most natural order — "pays the mortgage down" — was invisible.
+    //  3. `isDenial` tested `\bnot\b`, which does not match inside "cannot" and
+    //     never matches "doesn't", so a TRUE denial would have FAILED this test.
+    const progressVerb =
+      /(reduc|lower|shrink|decreas|diminish|dwindl|erod|whittl|chip)\w*|\bpay\w*\b(?:[^.]{0,40}?)\b(down|off)\b|\bbring\w*\b(?:[^.]{0,40}?)\bdown\b|\bgo(?:es)?\s+down\b|\bfall\w*\b/i
+    const debtObject = /(balance|principal|mortgage|loan|what\s+you\s+owe|debt)/i
+    // Denials are legitimate — this page says Longhand does NOT do this three
+    // times. Cover the contracted and prefixed forms too, or the guard forbids
+    // the true sentences it exists to protect.
+    const denial =
+      /\b(not|never|no|cannot|can't|won't|doesn't|does not|isn't|nothing)\b|\bcannot\b/i
+    // One claim per line-or-sentence, so a `not` in a neighbouring sentence
+    // cannot vouch for a bullet three lines away.
+    const chunks = mortgage()
+      .split(/\n\s*\n|\n(?=\s*[-*#])|(?<=\.)\s+/)
+      .map((chunk) => chunk.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+    const offenders = chunks.filter(
+      (chunk) => progressVerb.test(chunk) && debtObject.test(chunk) && !denial.test(chunk)
+    )
+    // Name the offending text: "expected true to be false" is undiagnosable.
+    expect(offenders).toEqual([])
+  })
+
+  it('the mortgage page tells a homeowner how to record the house (43.5, AC-2)', () => {
     const page = mortgage()
-    // The balance type enum is `investment | debt` with no third type, so a
-    // homeowner who follows this page's advice sees net worth fall by the whole
-    // mortgage with no asset opposite it. Ratified decision: say so.
-    expect(page).toMatch(/cannot\s+yet\s+record\s+a\s+house/i)
-    expect(page).toMatch(/negative\s+net\s+worth\s+after\s+adding\s+a\s+mortgage\s+is\s+expected/i)
+    const { property, wrong } = mortgageSections()
+    // ⚠️ REPLACED, not deleted. Until story 43.4 the enum was `investment | debt`
+    // and 36.3 correctly disclosed the gap: "cannot yet record a house", and "a
+    // large negative net worth after adding a mortgage is expected". FR70 shipped
+    // the third type, so BOTH sentences became false and the second became
+    // actively misleading — it tells a user to accept a figure that is now simply
+    // incomplete. These negatives prove the retired claims are gone; the positives
+    // below prove the replacement claim is present, so the pin count never drops.
+    expect(page).not.toMatch(/cannot\s+yet\s+record\s+a\s+house/i)
+    expect(page).not.toMatch(
+      /negative\s+net\s+worth\s+after\s+adding\s+a\s+mortgage\s+is\s+expected/i
+    )
+    expect(page).not.toMatch(/records\s+investments\s+and\s+debts\b/i)
+    // The property's value counts on the asset side, on both surfaces that show it.
+    // ⚠️ The Balance-page card is "Other Assets" (D10), NOT "Total Assets" — the
+    // card deliberately differs from the type name because "Total Assets" beside
+    // "Total Investments"/"Total Savings" invites the objection that those ARE
+    // assets. A doc that says "Total Assets" names a control that does not exist.
+    expect(property).toMatch(
+      /Other\s+Assets\s+and\s+Net\s+Worth\s+on\s+the\s+Balance\s+Tracking\s+page/i
+    )
+    expect(property).toMatch(/assets\s+bar\s+in\s+the\s+balances\s+chart/i)
+    // The reframed closing section: the diagnosis a confused homeowner needs.
+    expect(wrong).toMatch(/property\s+itself\s+has\s+not\s+been\s+entered\s+yet/i)
+    expect(wrong).toMatch(/add\s+it\s+as\s+an\s+\*\*Asset\*\*/i)
+  })
+
+  it('the mortgage page description matches the three-part model (43.5, AC-8)', () => {
+    // ⚠️ The description is NOT in the .md — it lives in `content/docs/index.ts`
+    // and renders as the page subtitle and on the /docs index card. Guarded only
+    // by a `length > 0` check until now, so the article could become a three-part
+    // model while its own subtitle still promised two, with every gate green.
+    const page = DOC_PAGES.find((doc) => doc.slug === 'where-a-mortgage-belongs')
+    if (!page) throw new Error('missing expected doc page: where-a-mortgage-belongs')
+    // ⚠️ Corrected in code review. The first version read "Why a loan is a
+    // recurring payment, a debt and a property all at once" — a loan is NOT a
+    // property. The article is careful that the loan is two things and the
+    // property is a separate, conditional third entry; the subtitle must not
+    // collapse that, and this pin must not enforce the collapsed form.
+    expect(page.description).toMatch(
+      /both\s+a\s+recurring\s+payment\s+and\s+a\s+debt,\s+where\s+the\s+property\s+itself\s+goes/i
+    )
+    expect(page.description).not.toMatch(
+      /a\s+loan\s+is\s+a\s+recurring\s+payment,\s+a\s+debt\s+and\s+a\s+property/i
+    )
   })
 
   it('the mortgage page uses no markdown table (36.3, AC-8)', () => {

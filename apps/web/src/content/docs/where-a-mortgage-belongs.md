@@ -10,6 +10,10 @@ balance — that is the correct way to enter it, and it does not count the same
 money twice. The two figures are read by different calculations, and neither one
 is worked out from the other.
 
+If the loan bought something you still have, there is a third figure: what **the
+thing itself** is worth. Record that too, and your net worth reflects the
+property as well as the loan against it.
+
 ### Where each part goes
 
 - The recurring **payment** goes on the [Expenses](/expenses) page, at whatever
@@ -17,7 +21,10 @@ is worked out from the other.
 - The **amount still owed** goes on the [Balance Tracking](/balance) page, as an
   entry of type **Debt**, in the *Current Balance* field. Enter it as a positive
   number — Longhand subtracts what you owe for you.
+- The **property itself** goes on the same page, as a separate entry of type
+  **Asset**, with what it is worth today in the *Current Balance* field.
 
+The Type list offers three choices: **Investment**, **Debt** and **Asset**.
 There is no separate "mortgage" type to choose. Every kind of borrowing is
 entered the same way, as a **Debt**.
 
@@ -28,18 +35,13 @@ Your payment is part of your cash flow. It affects:
 - the total on the Expenses page
 - the Total Expenses figure on the home page, and the income-versus-expenses
   breakdown
-- how much is left over to share out on the Savings page
+- how much is left over to share out on the [Savings](/savings) page
 - the retirement planner, which works out what you save each month from the gap
   between your income and your expenses
-- the net-worth projection, which builds up your assets from what you have left
-  over each month
 
-It does **not** change your net worth as it stands today, on any page. Net worth
-is what you own minus what you owe; money that passes through your account
-during the month is not part of that sum. The projection is the one place a
-payment reaches a net-worth number, and only in the forward direction: it uses
-what you have left over each month to estimate how your net worth grows from
-here, never what it is right now.
+It does **not** change your net worth, on any page. Net worth is what you own
+minus what you owe; money that passes through your account during the month is
+not part of that sum.
 
 ### What the amount still owed changes
 
@@ -47,30 +49,43 @@ The outstanding balance is part of what you owe. It affects:
 
 - Total Debts and Net Worth on the Balance Tracking page
 - the Net Worth figure on the home page, and the debts bar in the balances chart
-- the starting point the net-worth projection builds on
 
 It does **not** change your cash flow, your Expenses total, or how much you have
 left to save. It is also deliberately left out of the retirement planner's pot:
-what you can retire on is a question about what you have saved, not about
-netting a mortgage off it.
+that pot is what you have built up, and netting a mortgage off it would answer a
+different question.
 
-### What the projection assumes
+Longhand does not ask for your interest rate and does not work out how a loan
+amortises, so nothing recalculates this figure for you — the amount owed stays
+exactly where you put it until you change it. Update it yourself every few
+months to keep your net worth current.
 
-The net-worth projection holds your debts at their current balance for the whole
-period instead of growing them, so a mortgage never compounds against you.
+### What the property is worth changes
 
-It also does not pay the mortgage down. Longhand does not ask for your interest
-rate or your repayment schedule, so the amount owed stays exactly where you put
-it until you change it. If you want the projection to reflect your progress,
-update the balance yourself every few months.
+The value you enter is part of what you own. It affects:
 
-### One thing that is missing on purpose
+- Other Assets and Net Worth on the Balance Tracking page
+- the Net Worth figure on the home page, and the assets bar in the balances
+  chart
 
-The Balance Tracking page records investments and debts. It cannot yet record a
-house, a car, or plain cash as something you own.
+It does **not** change your cash flow, and Longhand does not ask you to set a
+contribution against it — money you put aside toward something you own belongs
+on the [Savings](/savings) page. An asset stays out of the retirement planner's
+pot as well, for the same reason cash in a savings account does: that pot is
+only what you have invested, and nothing else on the Balance Tracking page
+counts toward it.
 
-That matters here more than anywhere else in Longhand. If you enter a mortgage,
-your net worth falls by the full amount you owe, and there is nothing on the
-other side for the property itself. The figure is right for what Longhand knows
-about — it is not the whole picture of your finances. A large negative net worth
-after adding a mortgage is expected, not a mistake you have made.
+Longhand does not track the value for you either. It stays exactly where you put
+it until you change it, so revisit it when the thing is worth meaningfully more
+or less than the figure you entered.
+
+### If your net worth looks wrong
+
+If you have recorded a mortgage and your net worth looks far too low, the likely
+reason is that the property itself has not been entered yet. The loan counts
+against you from the moment you record it; the house only counts for you once
+you add it as an **Asset**.
+
+Enter both and the two sit on opposite sides of the same sum. A house worth
+$400,000 with $300,000 still owing on it leaves $100,000 in your net worth
+rather than a $300,000 hole.

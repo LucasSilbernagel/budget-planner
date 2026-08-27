@@ -50,10 +50,16 @@ export const DOC_PAGES: readonly DocPage[] = [
   },
   // Reference material: a mortgage is the one entry that belongs in two places
   // at once, so it gets its own page rather than a bullet elsewhere (story 36.3).
+  // ⚠️ Story 43.5 (CONTENT-Q): the page is now a THREE-part model — payment,
+  // amount still owed, and the property itself as an `asset` entry (FR70). The
+  // description is rendered as the page subtitle (`docs-layout.tsx`) AND on the
+  // /docs index card, so a two-part description here silently under-describes
+  // the article while every gate stays green. It is pinned in docs-content.test.ts.
   {
     slug: 'where-a-mortgage-belongs',
     title: 'Where a mortgage belongs',
-    description: 'Why a loan is both a recurring payment and a debt, and what each one changes.',
+    description:
+      'Why a loan is both a recurring payment and a debt, where the property itself goes, and what each one changes.',
     content: whereAMortgageBelongs,
   },
   {
