@@ -343,6 +343,78 @@ pnpm --filter web preview
    cd packages/db && pnpm db:migrate
    ```
 
+### A `script-src-elem` CSP error in the browser console (uBlock Origin)
+
+**Problem:** With the dev server running, the browser console shows a blocked inline script.
+
+Firefox:
+
+```
+Content-Security-Policy: The page's settings blocked an inline script (script-src-elem)
+from being executed because it violates the following directive: "script-src 'self'
+'nonce-…' 'sha256-…' 'sha256-…' https://cdn.paddle.com https://cdn.counter.dev".
+Consider using a hash ('sha256-…') or a nonce.        sandbox eval code:19:51
+```
+
+Chrome and other Chromium browsers word the same thing differently:
+
+```
+Refused to execute inline script because it violates the following Content Security
+Policy directive: "script-src 'self' 'nonce-…' …". Either the 'unsafe-inline' keyword,
+a hash ('sha256-…'), or a nonce is required to enable inline execution.
+```
+
+**This is not the app.** It is **uBlock Origin** injecting its scriptlet bundle. Nothing in this
+repository needs fixing.
+
+**Why it is uBlock Origin, specifically.** `vAPI.scriptletsInjector` in `js/vapi-background-ext.js`
+(verified against uBlock Origin **1.73.0**) stringifies an injector function with `.toString()` and
+runs it as a code string — which is why Firefox attributes the error to `sandbox eval code` rather
+than to a file. The relevant part of that function, **abridged** (the real source is the
+authority — see the note on line numbers below):
+
+```js
+const code = [ `self['${sentinel}'] = true;`, details.scriptlets ].join('\n');
+script = doc.createElement('script');
+script.appendChild(doc.createTextNode(code));
+(doc.head || doc.documentElement).appendChild(script);   // <- the blocked statement
+```
+
+An inline `<script>` built from a text node, carrying neither a nonce nor a hash the policy knows —
+so a strict `script-src` blocks it.
+
+Firefox's `19:51` refers to the **assembled injector string**, not to the file and not to the
+excerpt above. Counting in that assembled string (its first line is `(function(details) {`, because
+uBlock joins a leading `'('` to the function source with no separator), the `appendChild` call lands
+on line 19 at column 51. To re-derive it, read the real `vAPI.scriptletsInjector` in the extension's
+XPI — the abridged excerpt above collapses a four-line statement and drops a `try`, so counting its
+lines will not reproduce the number.
+
+**The offered hash changes on every page load — do not chase it.** The injected text begins with
+`self['<sentinel>'] = true;`, and the sentinel is `vAPI.generateSecret(3)`, freshly generated per
+injection. Two observations of this same error will report two different `sha256-…` values, which is
+why hunting for one specific hash never converges. A hash that varies is itself a strong signal that
+the script is not ours: every **inline** script this app emits is either statically hashed (the two
+no-flash bootstraps, hashed from shared constants) or nonce'd. (External scripts loaded from the
+whitelisted CDN hosts are a separate case — those are authorized by origin, not by hash or nonce.)
+
+**Do NOT "fix" this by relaxing the policy.** Adding `'unsafe-inline'`, or the offered hash, or a
+dev-only `script-src` branch, or a `script-src-elem` exception, would weaken the *production* policy
+to accommodate a browser extension. `buildContentSecurityPolicy()`
+(`apps/web/src/server/middleware/security-headers.ts`) deliberately emits the same policy in
+development and production. Two tests in
+`apps/web/src/server/middleware/__tests__/security-headers.test.ts` are there to make such an edit
+fail loudly: one pins the entire `script-src` source list, and one pins the set of directive names
+so a new script directive cannot be introduced alongside it.
+
+**If you want a silent console,** run the dev server in a Firefox profile without uBlock Origin
+(`firefox -P` to manage profiles). Note this has not been measured against the alternatives: when
+the inline injection is blocked, uBlock Origin attempts a `blob:` fallback, and it also injects some
+scriptlets into its own isolated world where the page's CSP does not apply — so which of its
+features remain active on a strict-CSP origin has not been established here, only that the console
+message is uBlock Origin's and not the app's.
+
+
 ## Architecture Overview
 
 ### Project Structure

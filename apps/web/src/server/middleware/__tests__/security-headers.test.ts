@@ -8,8 +8,10 @@ import { NO_FLASH_PLANNER_SCRIPT } from '../../../lib/nav/no-flash-planner-visib
 import { NO_FLASH_THEME_SCRIPT } from '../../../lib/theme/no-flash-theme-script'
 import {
   PERMISSIONS_POLICY,
+  PLANNER_SCRIPT_CSP_HASH,
   REFERRER_POLICY,
   STRICT_TRANSPORT_SECURITY,
+  THEME_SCRIPT_CSP_HASH,
   applyHeadersToNextResult,
   applySecurityHeaders,
   buildContentSecurityPolicy,
@@ -18,18 +20,29 @@ import {
 
 const TEST_NONCE = 'dGVzdC1ub25jZS0xMjM='
 
-/** Parse a CSP header string into a directive-name → source-list map. */
+/**
+ * Parse a CSP header string into a directive-name → source-list map.
+ *
+ * ⚠️ THROWS on a repeated directive name, and that is load-bearing (story 39.2 review).
+ * Browsers enforce the FIRST occurrence of a directive and ignore later duplicates; a
+ * naive last-wins map does the opposite. So a policy like
+ * `script-src <loose>; …; script-src <strict>` would be ENFORCED loose while every
+ * `toBe` assertion in this file read the strict copy and passed. Rather than silently
+ * pick a winner, refuse to parse — a duplicated directive is never intentional here.
+ */
 function parseCsp(csp: string): Record<string, string> {
   const map: Record<string, string> = {}
   for (const part of csp.split(';')) {
     const trimmed = part.trim()
     if (!trimmed) continue
     const spaceIdx = trimmed.indexOf(' ')
-    if (spaceIdx === -1) {
-      map[trimmed] = ''
-    } else {
-      map[trimmed.slice(0, spaceIdx)] = trimmed.slice(spaceIdx + 1)
+    const name = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx)
+    if (Object.hasOwn(map, name)) {
+      throw new Error(
+        `parseCsp: duplicate directive '${name}'. Browsers enforce the FIRST occurrence; every assertion in this file would otherwise read the LAST and pass on a policy that ships loose. Fix the policy, not this helper.`
+      )
     }
+    map[name] = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1)
   }
   return map
 }
@@ -93,6 +106,94 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain('https://cdn.counter.dev')
       expect(d['script-src']).not.toContain('ethicalads')
       expect(d['script-src']).not.toContain(`'unsafe-inline'`)
+    })
+
+    // Story 39.2 review finding (all three review layers, independently). The
+    // `script-src` pin below is necessary and NOT sufficient: `script-src-elem`
+    // OVERRIDES `script-src` for every <script> ELEMENT load, so adding
+    // `script-src-elem 'self' 'unsafe-inline' https://anything` fully reopens inline
+    // element scripts while leaving `script-src` — and therefore that pin — untouched.
+    // Measured: with that directive added, the entire suite passed 26/26, and the e2e
+    // guards missed it too (their regexes need a literal `script-src ` with a trailing
+    // space, which `script-src-elem` does not match).
+    //
+    // `script-src-elem` is also the exact directive named in the dev-console error
+    // story 39.2 investigated, which makes "just add a script-src-elem exception" the
+    // most probable dev-convenience edit anyone will reach for here.
+    //
+    // Pinned as a SET, not an ordered list: CSP attaches no meaning to directive order,
+    // so reordering must not fail, while adding or removing a directive must.
+    it('closes the DIRECTIVE SET, so no new script directive can be added alongside script-src (39.2 review)', () => {
+      const names = Object.keys(parseCsp(csp ?? '')).sort()
+      expect(names).toEqual(
+        [
+          'base-uri',
+          'child-src',
+          'connect-src',
+          'default-src',
+          'font-src',
+          'form-action',
+          'frame-ancestors',
+          'frame-src',
+          'img-src',
+          'manifest-src',
+          'object-src',
+          'script-src',
+          'style-src',
+          'worker-src',
+        ].sort()
+      )
+    })
+
+    // Story 39.2 review finding. `child-src` was the ONE directive with no assertion of
+    // any kind — 14 emitted, 13 pinned, this one mentioned only in a comment. A new
+    // frame/worker host could be added to it unnoticed. The set pin above proves the
+    // NAME is present; only this proves its VALUE.
+    it('pins child-src (39.2 review — it was the one directive asserted nowhere)', () => {
+      const d = parseCsp(csp ?? '')
+      expect(d['child-src']).toBe('https://*.paddle.com')
+    })
+
+    // Story 39.2 review finding. The nonce is format-checked before interpolation
+    // (`security-headers.ts:94`); these two hashes are NOT. Because the pin below is
+    // built from the same exported constants, it is tautological over their CONTENT:
+    // a constant carrying `sha256-<real>' https://evil.example 'sha256-<real>` would
+    // authorize an extra host while the pin passes (same string on both sides) and both
+    // drift guards pass (their `toContain` substring is still present). This is the one
+    // assertion here computed independently of what the constants happen to contain.
+    it('constrains both CSP hash constants to a bare sha256 token (39.2 review)', () => {
+      const bareSha256 = /^sha256-[A-Za-z0-9+/]{43}=$/
+      expect(THEME_SCRIPT_CSP_HASH).toMatch(bareSha256)
+      expect(PLANNER_SCRIPT_CSP_HASH).toMatch(bareSha256)
+    })
+
+    // Story 39.2, AC-5. Before this, `script-src` was asserted only with
+    // `toContain` / `not.toContain`, so ADDING a source could not fail it: appending
+    // `'unsafe-eval'` to the policy leaves the assertions above green (measured — the
+    // arm is recorded in the story). The only loosening they caught was the literal
+    // string `'unsafe-inline'`.
+    //
+    // Built from the two EXPORTED hash constants, never from pasted base64, so it
+    // tracks the bootstraps instead of stranding when one is edited. Division of
+    // labour: the drift guards below own "the hash matches the script"; the format
+    // guard owns "the hash is a bare sha256 and smuggles nothing"; this one owns
+    // "the source LIST is exactly this and nothing else".
+    //
+    // ⚠️ SCOPE: this pins ONE directive. It is the "closes the DIRECTIVE SET" test
+    // above that stops a NEW script directive (`script-src-elem`, which overrides this
+    // one for element loads) being added alongside it. Neither is sufficient alone — the
+    // first version of this test shipped without the set pin and a
+    // `script-src-elem 'unsafe-inline'` addition passed the whole suite.
+    //
+    // Deliberately brittle: it fails when any script source is added or removed. That
+    // is the intent — adding one is a security decision, and this is where it gets
+    // made rather than noticed later. (Note `https://cdn.paddle.com` is ALREADY
+    // present, so story 5-3 turning Paddle billing on does not by itself trip this.)
+    it('pins the ENTIRE production script-src, so no source can be added unnoticed (39.2 AC-5)', () => {
+      const d = parseCsp(csp ?? '')
+      expect(d['script-src']).toBe(
+        `'self' 'nonce-${TEST_NONCE}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`
+      )
     })
 
     it('allows unsafe-inline for STYLES only (React/Recharts attribute styles)', () => {
