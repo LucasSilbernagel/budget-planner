@@ -31,7 +31,7 @@ export function DocsSidebar({ activeSlug }: DocsSidebarProps) {
                 // No semantic token exists for the blue-50 active pill or the
                 // inactive hover, so those two keep hand-rolled `dark:` variants
                 // following the shipped info-panel convention
-                // (`routes/profiles.tsx:101`). The text colours use the tokens.
+                // (`components/profiles/profiles-page.tsx:101`). The text colours use the tokens.
                 className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                   isActive
                     ? 'bg-blue-50 dark:bg-blue-950/40 font-medium text-accent'

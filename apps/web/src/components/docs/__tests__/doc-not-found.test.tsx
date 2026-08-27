@@ -8,14 +8,16 @@
  * reaches it. Reverting any of the three turned nothing red — the mutation pass
  * could not catch that, because a missing guard has no mutation to run against.
  *
- * The component is imported from the route module directly, the same way
- * `routes/__tests__/profiles.test.tsx:43` imports `ProfilesPage` — `createFileRoute`
- * at module scope is fine under jsdom.
+ * The component used to be exported from `routes/docs/$docId.tsx` purely so this
+ * suite could reach it. Story 39-1 moved it into `components/docs/` — a non-route
+ * export in a route file is left un-code-split and warned about at every
+ * `pnpm dev` (BUG-C) — so the import below is now an ordinary component import.
+ * The assertions are unchanged by that move.
  */
 
 import { render } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
-import { DocNotFound } from '../docs/$docId'
+import { DocNotFound } from '../doc-not-found'
 
 describe('DocNotFound theming', () => {
   it('uses the surface + text tokens, not the light-only classes', () => {

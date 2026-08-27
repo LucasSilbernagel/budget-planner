@@ -9,8 +9,8 @@ import { profileColor, profileIcon } from '../profile-appearance'
  * have been uuid STRINGS since story 5-14, so that expression evaluated to `NaN`,
  * the lookup returned `undefined`, and every avatar in the profile switcher
  * rendered with no colour class and no emoji — on a component mounted at
- * `routes/profiles.tsx:81`. Nothing failed, because
- * `routes/__tests__/profiles.test.tsx:40` mocks `SwitchProfileDropdown` out.
+ * `components/profiles/profiles-page.tsx:81`. Nothing failed, because
+ * `components/profiles/__tests__/profiles-page.test.tsx` mocks `SwitchProfileDropdown` out.
  *
  * A DOM test of the switcher would not have caught it either: the broken value
  * was `undefined`, which React simply omits from `className`, so the element

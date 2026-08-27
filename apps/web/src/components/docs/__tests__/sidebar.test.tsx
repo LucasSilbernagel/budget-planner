@@ -38,7 +38,7 @@ describe('DocsSidebar', () => {
  * active branch would leave the likelier regression (the branch every non-current
  * item renders) unguarded. No token exists for the blue-50 active pill or the
  * inactive hover, so those two keep hand-rolled `dark:` variants following the
- * shipped info-panel convention (`routes/profiles.tsx:101`).
+ * shipped info-panel convention (`components/profiles/profiles-page.tsx:101`).
  */
 describe('DocsSidebar theming', () => {
   it('uses the muted token for the section label', () => {

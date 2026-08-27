@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test'
  * The preview runtime cannot mint an active session (no test session + the
  * premium-check Buffer gap makes `checkPremiumAccessServer` fail closed), so the
  * UNLOCKED (active) path — the working `/profiles` management UI — is covered by
- * the mocked unit tests (`routes/__tests__/profiles.test.tsx`). Here we assert
+ * the mocked unit tests (`src/components/profiles/__tests__/profiles-page.test.tsx`). Here we assert
  * the locked path e2e, which is exactly what a free/anonymous visitor sees.
  *
  * Requires browser binaries:

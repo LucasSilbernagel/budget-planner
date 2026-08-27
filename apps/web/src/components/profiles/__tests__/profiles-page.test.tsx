@@ -1,7 +1,9 @@
 /**
- * /profiles route gating tests (Story 13-3, AC-1/AC-2/AC-3).
+ * `ProfilesPage` gating tests — the component `/profiles` renders (Story 13-3,
+ * AC-1/AC-2/AC-3). The route's own wiring is guarded by
+ * `e2e/profiles-premium.spec.ts`; this suite covers the three tiers.
  *
- * Custom profiles is a Premium feature. The route must:
+ * Custom profiles is a Premium feature. The page must:
  *   - loading (SSR + first client paint) → neither the management UI nor the
  *     prompt (fail-closed);
  *   - non-active (free / lapsed / unauthenticated / errored) → a discoverable
@@ -14,17 +16,30 @@
  * the gating decision (mirrors PremiumFeatureGate.test.tsx).
  */
 
+import type { PremiumAccessStatus } from '@/hooks/usePremiumAccess'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 
+// Every specifier below uses the `@/` alias — the SAME form `ProfilesPage`
+// itself imports with. Two of them were relative while this suite lived in
+// `routes/__tests__/`; a `vi.mock` only intercepts when its specifier resolves
+// to the same module id the component under test imports, and from here the old
+// relative paths resolve to nonexistent `components/hooks/...` files.
+//
+// ⚠️ Measured (story 39-1, Finding 2), because the failure mode is not the
+// obvious one: vitest raises NO module error for a mock path that does not
+// resolve. It simply fails to intercept. The real `usePremiumAccess` then runs,
+// returns `isLoading: true`, and the suite goes 2 red / 1 GREEN — and the green
+// one is the fail-closed test below, which passes for entirely the wrong reason
+// (a permanently-loading gate satisfies it trivially). The danger is that
+// vacuous pass, not the two loud failures.
 const usePremiumAccess = vi.fn()
-vi.mock('../../hooks/usePremiumAccess', () => ({
+vi.mock('@/hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
 const premiumPromptProps = vi.fn()
-vi.mock('../../components/auth/premium-prompt', () => ({
+vi.mock('@/components/auth/premium-prompt', () => ({
   PremiumPrompt: (props: Record<string, unknown>) => {
     premiumPromptProps(props)
     return <div data-testid="premium-prompt" />
@@ -40,7 +55,7 @@ vi.mock('@/components/profiles/switch-profile', () => ({
   SwitchProfileDropdown: () => <div data-testid="switch-profile" />,
 }))
 
-import { ProfilesPage } from '../profiles'
+import { ProfilesPage } from '../profiles-page'
 
 function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   const status: PremiumAccessStatus = {

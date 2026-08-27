@@ -24,7 +24,8 @@ import { Link } from '@tanstack/react-router'
  * (story 25-3), so the chosen theme is simply honored — no tier check reverts it.
  *
  * Scope note: the docs section keeps its own contextual not-found (`DocNotFound`
- * in `routes/docs/$docId.tsx`, rendered inside `DocsLayout`) by design. This
+ * in `components/docs/doc-not-found.tsx`, wired as the `notFoundComponent` of
+ * `routes/docs/$docId.tsx` and rendered inside `DocsLayout`) by design. This
  * component is the global fallback for every other unmatched route.
  *
  * A11y: exactly one `<h1>` (the "Page not found" subject); the decorative "404"

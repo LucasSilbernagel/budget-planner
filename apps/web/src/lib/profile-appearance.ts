@@ -8,7 +8,7 @@
  * `profileId % PROFILE_COLORS.length` — and a profile id has been a uuid STRING
  * since story 5-14. `"a1b2…" % 8` is `NaN`, so `PROFILE_COLORS[NaN]` was
  * `undefined`: every avatar in the switcher rendered with no colour class and no
- * icon. Nothing caught it because `routes/__tests__/profiles.test.tsx:40` mocks
+ * icon. Nothing caught it because `components/profiles/__tests__/profiles-page.test.tsx` mocks
  * `SwitchProfileDropdown` out entirely.
  *
  * One implementation, used by both, so the two cannot drift again.

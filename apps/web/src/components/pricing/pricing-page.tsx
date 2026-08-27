@@ -230,7 +230,7 @@ function PlanCard({
         // `--tw-ring-offset-color` defaults to WHITE with no global override, so
         // on a `.surface` (gray-800) card a focused CTA would otherwise paint a
         // white band between the button and its ring. gray-800 matches the CARD
-        // these sit on; `NotFoundPage.tsx:55` and `routes/profiles.tsx:85` use
+        // these sit on; `NotFoundPage.tsx:55` and `components/profiles/profiles-page.tsx:85` use
         // gray-900 because those buttons sit on the page canvas instead.
         className={`mt-6 inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 ${
           ctaPrimary
