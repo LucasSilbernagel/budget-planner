@@ -171,6 +171,9 @@ export function BalancePage() {
   const [maxContributionLimit, setMaxContributionLimit] = useState('')
   const [monthlyContribution, setMonthlyContribution] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
+  // Story 45.1 (FR72): the user's statement that this contribution is already on
+  // the expense list, so the Savings distributable pool must not deduct it twice.
+  const [contributionRecordedAsExpense, setContributionRecordedAsExpense] = useState(false)
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -232,6 +235,7 @@ export function BalancePage() {
         setCurrentBalance('')
         setMaxContributionLimit('')
         setMonthlyContribution('')
+        setContributionRecordedAsExpense(false)
       }
       // Editing: fields are set by openEditModal
     }
@@ -271,6 +275,7 @@ export function BalancePage() {
       | 'maxContributionLimit'
       | 'monthlyContribution'
       | 'frequency'
+      | 'contributionRecordedAsExpense'
     >
   ) => {
     setEditingId(entry.id)
@@ -287,6 +292,8 @@ export function BalancePage() {
     )
     setMonthlyContribution(formatForInputDisplay(entry.monthlyContribution, locale))
     setFrequency(entry.frequency ?? 'monthly')
+    // Story 45.1: absent ⇒ unticked ⇒ deducted, matching the pool's own default.
+    setContributionRecordedAsExpense(entry.contributionRecordedAsExpense === true)
     clearErrors()
     setIsModalOpen(true)
   }
@@ -301,6 +308,7 @@ export function BalancePage() {
     setMaxContributionLimit('')
     setMonthlyContribution('')
     setFrequency('monthly')
+    setContributionRecordedAsExpense(false)
     clearErrors()
   }
 
@@ -357,6 +365,12 @@ export function BalancePage() {
         maxContributionLimit: maxLimitInCents,
         monthlyContribution: isAsset ? 0 : parseFromInput(monthlyContribution, locale),
         frequency: isAsset ? ('monthly' as const) : frequency,
+        // Story 45.1 (D8): only an investment contribution reaches the pool, so
+        // the flag is forced false for every other type. The control is hidden
+        // for them too, but this is the PERSISTENCE gate — a stale `true` left
+        // over from switching investment→debt would otherwise be saved, and
+        // `validateBalanceTracking` would reject the whole write.
+        contributionRecordedAsExpense: type === 'investment' && contributionRecordedAsExpense,
       }
 
       if (editingId !== null) {
@@ -1015,6 +1029,41 @@ export function BalancePage() {
                     ))}
                   </select>
                 </div>
+
+                {/* Story 45.1 (FR72, D8): investment-only. A debt's contribution
+                    never reaches the distributable pool (SavingsPage filters on
+                    `type === 'investment'`), so offering the control there would
+                    advertise an effect that does not exist. Assets never get here
+                    at all — the whole block is hidden for them. */}
+                {type === 'investment' && (
+                  <div>
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        id="contributionRecordedAsExpense"
+                        checked={contributionRecordedAsExpense}
+                        onChange={(e) => setContributionRecordedAsExpense(e.target.checked)}
+                        className="mt-0.5 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-purple-500 w-4 h-4 text-purple-600"
+                        aria-describedby="contribution-recorded-as-expense-help"
+                        data-testid="balance-contribution-recorded-as-expense"
+                      />
+                      <label
+                        htmlFor="contributionRecordedAsExpense"
+                        className="font-medium text-label text-sm"
+                      >
+                        Already recorded as an expense
+                      </label>
+                    </div>
+                    <p
+                      id="contribution-recorded-as-expense-help"
+                      className="mt-1 text-muted text-xs"
+                    >
+                      Tick this if you also list this contribution on your Expenses page. It stops
+                      the amount being subtracted twice from the money left over to share out on the
+                      Savings page.
+                    </p>
+                  </div>
+                )}
               </>
             )}
 

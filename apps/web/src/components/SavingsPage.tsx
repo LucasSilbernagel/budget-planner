@@ -1,4 +1,10 @@
-import { type AllocationMode, solveAutomaticAllocations } from '@budget-planner/core'
+import {
+  type AllocationMode,
+  type ContributionDuplicateCandidate,
+  findContributionDuplicateCandidates,
+  normalizeToMonthly,
+  solveAutomaticAllocations,
+} from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -11,6 +17,7 @@ import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { buildSavingsChartRows, hasPlottableData } from '../lib/savings-chart-data'
 import { type SavingsSortKey, createSavingsSortExtractors } from '../lib/table-sort-keys'
 import {
+  useBalanceActions,
   useExpenses,
   useIncomeSources,
   useInvestmentEntries,
@@ -90,21 +97,110 @@ export function SavingsPage() {
   // Recompute only when an input changes. `allocations` maps each AUTOMATIC
   // account's id to its computed even-share (cents); manual accounts are absent,
   // so membership discriminates the two modes for the per-row display below.
+  const { updateBalanceEntry } = useBalanceActions()
+
+  // Story 45.1: the breakdown is CLOSED by default and its body is not rendered
+  // at all until opened.
+  // ⚠️ Not a micro-optimisation — it is required. A collapsed `<details>` still
+  // puts its children in the DOM, so rendering the contribution list eagerly
+  // published every balance-entry NAME onto /savings as hidden text. That broke
+  // nine `responsive-320` e2e specs whose `getByText(name).first()` began
+  // resolving to the hidden label instead of the visible savings row, and it
+  // would equally have handed screen-reader users a duplicate copy of every
+  // name. Controlled open state (rather than the native toggle) keeps the
+  // behaviour identical in jsdom and the browser.
+  const [breakdownOpen, setBreakdownOpen] = useState(false)
+
+  // Story 45.1 (FR72): one mapping, used by BOTH the solver and the breakdown, so
+  // the explanation can never describe a different set of rows than the one the
+  // pool actually used.
+  const contributionItems = useMemo(
+    () =>
+      investmentEntries.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        amount: entry.monthlyContribution,
+        // Degrade a corrupt persisted cadence to 'monthly' rather than letting the
+        // solver's validating normalizer throw during render (see KNOWN_FREQUENCIES).
+        frequency: KNOWN_FREQUENCIES.has(entry.frequency) ? entry.frequency : 'monthly',
+        // ⚠️ `=== true` mirrors the core rule exactly. A truthy check here would
+        // let a persisted `"false"` string silently cancel a real deduction.
+        recordedAsExpense: entry.contributionRecordedAsExpense === true,
+      })),
+    [investmentEntries]
+  )
+
   const { distributablePool, automaticAccountCount, allocations } = useMemo(
     () =>
       solveAutomaticAllocations({
         incomeSources,
         expenses,
-        investmentContributions: investmentEntries.map((entry) => ({
-          amount: entry.monthlyContribution,
-          // Degrade a corrupt persisted cadence to 'monthly' rather than letting the
-          // solver's validating normalizer throw during render (see KNOWN_FREQUENCIES).
-          frequency: KNOWN_FREQUENCIES.has(entry.frequency) ? entry.frequency : 'monthly',
-        })),
+        investmentContributions: contributionItems,
         savingsAccounts: savingsGoals,
       }),
-    [incomeSources, expenses, investmentEntries, savingsGoals]
+    [incomeSources, expenses, contributionItems, savingsGoals]
   )
+
+  // Story 45.1 (FR72): the derivation shown in the breakdown. Computed from the
+  // SAME inputs the solver received, so the two cannot drift.
+  const breakdown = useMemo(() => {
+    const monthly = (amount: number, frequency: string) =>
+      normalizeToMonthly(amount, KNOWN_FREQUENCIES.has(frequency) ? frequency : 'monthly')
+    const incomeTotal = incomeSources.reduce((sum, i) => sum + monthly(i.amount, i.frequency), 0)
+    const expenseTotal = expenses.reduce((sum, e) => sum + monthly(e.amount, e.frequency), 0)
+    const lines = contributionItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      monthlyCents: Math.max(0, monthly(item.amount, item.frequency)),
+      excluded: item.recordedAsExpense,
+    }))
+    const contributionsCounted = lines
+      .filter((line) => !line.excluded)
+      .reduce((sum, line) => sum + line.monthlyCents, 0)
+    const manualTotal = savingsGoals.reduce((sum, goal) => {
+      if ((goal.allocationMode ?? 'automatic') !== 'manual') {
+        return sum
+      }
+      // ⚠️ `Number.isFinite`, NOT `?? 0`. This must mirror the solver's
+      // `sumManualAllocations` EXACTLY, and `??` does not intercept `NaN` —
+      // `Math.max(0, NaN)` is `NaN`. A corrupt persisted `monthlyAllocation`
+      // would render `formatAmount(NaN)` here while "Left over" stayed correct,
+      // i.e. the breakdown would contradict the very figure it explains.
+      const amount = goal.monthlyAllocation
+      return sum + (Number.isFinite(amount) ? Math.max(0, amount as number) : 0)
+    }, 0)
+    // The arithmetic the four displayed lines actually perform, BEFORE the
+    // solver's floor-at-zero. Rendered explicitly when it differs from the pool
+    // so the breakdown always reconciles — see the clamp row in the render.
+    const rawLeftover = incomeTotal - expenseTotal - contributionsCounted - manualTotal
+    return { incomeTotal, expenseTotal, lines, contributionsCounted, manualTotal, rawLeftover }
+  }, [incomeSources, expenses, contributionItems, savingsGoals])
+
+  // Story 45.1 (D7): DETECTION ONLY. `highlight` gives a breakdown line visual
+  // weight and nothing else — it never reaches `solveAutomaticAllocations`.
+  const duplicateCandidates = useMemo(
+    () =>
+      findContributionDuplicateCandidates({
+        expenses: expenses.map((expense, index) => ({
+          id: `expense-${index}`,
+          name: expense.name ?? '',
+          amount: expense.amount,
+          frequency: KNOWN_FREQUENCIES.has(expense.frequency) ? expense.frequency : 'monthly',
+        })),
+        investmentContributions: contributionItems,
+      }),
+    [expenses, contributionItems]
+  )
+
+  const highlightedByContribution = useMemo(() => {
+    const map = new Map<string, ContributionDuplicateCandidate>()
+    for (const candidate of duplicateCandidates) {
+      if (candidate.highlight && !map.has(candidate.contributionId)) {
+        map.set(candidate.contributionId, candidate)
+      }
+    }
+    return map
+  }, [duplicateCandidates])
 
   // Column sorting (story 34.2, FR61). A VIEW-level projection only: it never
   // writes `sortOrder`, never calls a move action and never enqueues a sync
@@ -451,6 +547,161 @@ export function SavingsPage() {
                   There’s nothing left to distribute right now — automatic accounts receive $0 until
                   your income exceeds your expenses, contributions, and fixed allocations.
                 </p>
+              )}
+
+              {/* Story 45.1 (FR72, D10). THE DERIVATION, and the place the FR72
+                  fix is actually performed.
+                  Before this story the page showed a leftover figure with no way
+                  to audit it: no tooltip, no breakdown, nothing. A user whose
+                  contribution was double-deducted saw a number that felt wrong
+                  and could not find out why — which is the real damage, more than
+                  the money itself. So the toggle lives HERE, on the contribution
+                  line, where a confused user actually arrives.
+                  ⚠️ No banner and no blocking prompt, deliberately (D6): the
+                  detector matches on equal normalized amounts, and round numbers
+                  collide constantly. A prompt firing on coincidences trains
+                  click-through, and the click-through answer STOPS a real
+                  deduction — wrong in the opposite direction, carrying the
+                  user's apparent consent. */}
+              {hydrated && (
+                <div className="mt-3" data-testid="savings-leftover-breakdown">
+                  {/* ⚠️ A real <button>, not <details>/<summary>. The body must be
+                      ABSENT from the DOM when closed (see `breakdownOpen` above),
+                      which means overriding the native disclosure behaviour — and
+                      a <summary> whose activation is intercepted is no longer
+                      keyboard-operable for free. A button gives correct keyboard
+                      and screen-reader semantics without the override. */}
+                  <button
+                    type="button"
+                    className="text-muted hover:text-body text-xs cursor-pointer"
+                    aria-expanded={breakdownOpen}
+                    aria-controls="savings-leftover-breakdown-body"
+                    onClick={() => setBreakdownOpen((open) => !open)}
+                  >
+                    How is this worked out?
+                  </button>
+                  {breakdownOpen && (
+                    <div id="savings-leftover-breakdown-body" className="space-y-1 mt-2 text-xs">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted">Income</span>
+                        <span className="text-body" data-testid="breakdown-income">
+                          {formatAmount(breakdown.incomeTotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted">Less expenses</span>
+                        <span className="text-body" data-testid="breakdown-expenses">
+                          −{formatAmount(breakdown.expenseTotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted">Less contributions counted</span>
+                        <span className="text-body" data-testid="breakdown-contributions">
+                          −{formatAmount(breakdown.contributionsCounted)}
+                        </span>
+                      </div>
+
+                      {/* Itemised, one line per investment row, each with its own
+                        toggle. `excluded` rows stay VISIBLE (struck through)
+                        rather than disappearing — a user needs to see that the
+                        money was accounted for, not that it vanished. */}
+                      {breakdown.lines.length > 0 && (
+                        <ul className="space-y-1 pl-4" data-testid="breakdown-contribution-lines">
+                          {breakdown.lines.map((line) => {
+                            const candidate = highlightedByContribution.get(line.id)
+                            return (
+                              <li
+                                key={line.id}
+                                data-testid={`breakdown-contribution-${line.id}`}
+                                className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${
+                                  candidate && !line.excluded
+                                    ? 'bg-amber-50 dark:bg-amber-900/20 -mx-1 px-1 rounded'
+                                    : ''
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  id={`breakdown-toggle-${line.id}`}
+                                  checked={line.excluded}
+                                  onChange={(e) =>
+                                    updateBalanceEntry(line.id, {
+                                      contributionRecordedAsExpense: e.target.checked,
+                                    })
+                                  }
+                                  className="border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-purple-500 w-3.5 h-3.5 text-purple-600"
+                                  data-testid={`breakdown-toggle-${line.id}`}
+                                />
+                                <label
+                                  htmlFor={`breakdown-toggle-${line.id}`}
+                                  className="text-muted cursor-pointer"
+                                >
+                                  {line.name}
+                                </label>
+                                <span
+                                  className={`ml-auto ${
+                                    line.excluded ? 'text-muted line-through' : 'text-body'
+                                  }`}
+                                  data-testid={`breakdown-contribution-amount-${line.id}`}
+                                >
+                                  {formatAmount(line.monthlyCents)}
+                                </span>
+                                {line.excluded ? (
+                                  <span className="basis-full text-muted text-[11px]">
+                                    Already recorded as an expense — counted once.
+                                  </span>
+                                ) : candidate ? (
+                                  <span
+                                    className="basis-full text-[11px] text-amber-700 dark:text-amber-300"
+                                    data-testid={`breakdown-duplicate-hint-${line.id}`}
+                                  >
+                                    Your expense “{candidate.expenseName}” is the same amount. If
+                                    it’s the same money, tick this to stop counting it twice.
+                                  </span>
+                                ) : null}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted">Less fixed allocations</span>
+                        <span className="text-body" data-testid="breakdown-manual">
+                          −{formatAmount(breakdown.manualTotal)}
+                        </span>
+                      </div>
+                      {/* ⚠️ THE CLAMP, SHOWN. `distributablePool` floors at zero
+                          (`max(0, …)`), but the four lines above are a plain
+                          subtraction that can go negative. Without this row an
+                          over-committed user reads "1,000.00 − 2,000.00" sitting
+                          directly above a "Left over" of "0.00" — four numbers
+                          that visibly do not add up, in the one affordance whose
+                          entire job is to make the figure auditable. */}
+                      {breakdown.rawLeftover !== distributablePool && (
+                        <>
+                          <div className="flex justify-between gap-4 pt-1 border-gray-200 dark:border-gray-700 border-t">
+                            <span className="text-muted">Subtotal</span>
+                            <span className="text-body" data-testid="breakdown-raw">
+                              {formatAmount(breakdown.rawLeftover)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted">Nothing to share out below zero</span>
+                            <span className="text-body" data-testid="breakdown-clamp">
+                              +{formatAmount(distributablePool - breakdown.rawLeftover)}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex justify-between gap-4 pt-1 border-gray-200 dark:border-gray-700 border-t font-semibold">
+                        <span className="text-body">Left over</span>
+                        <span className="text-body" data-testid="breakdown-leftover">
+                          {formatAmount(distributablePool)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </section>

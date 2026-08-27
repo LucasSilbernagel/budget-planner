@@ -77,6 +77,12 @@ export const balanceTrackingSchema = z.object({
   // Story 16-2: cadence of the contribution (defaults to 'monthly'). Mirrors the
   // server gate in apps/web/src/server/api/sync.ts.
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
+  // Story 45.1 (FR72): the user's statement that this contribution is already
+  // recorded as an expense, so the savings distributable pool must not subtract it
+  // twice. Defaults false = today's arithmetic. ⚠️ TRIPLE-GATED: this must be
+  // mirrored in the server gate (apps/web/src/server/api/sync.ts) and the
+  // syncBridge payload whitelist, or the field silently does not round-trip.
+  contributionRecordedAsExpense: z.boolean().default(false),
   userId: z.string().uuid(),
 })
 
@@ -97,6 +103,7 @@ export const userProfileSchema = z.object({
  * - amount / maxContributionLimit: must be > 0
  * - targetAmount: > 0 for a goal, or null for a goal-less savings account (Story 16-1)
  * - monthlyContribution: must be >= 0
+ * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
  * - currentBalance: may be negative (debt balances) but must fit in int32
  */
 export const syncOperationDataSchema = z.object({
@@ -110,6 +117,9 @@ export const syncOperationDataSchema = z.object({
   type: z.enum(FINANCE_TYPES).optional(),
   maxContributionLimit: z.number().int().positive().max(PG_INT32_MAX).optional(),
   monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX).optional(),
+  // Story 45.1 (FR72): see balanceTrackingSchema above. Optional here because an
+  // operation payload is partial; absent leaves the server value untouched.
+  contributionRecordedAsExpense: z.boolean().optional(),
   // Story 26.1: savings monthly allocation (nullable cents, >= 0) + mode. Bounds
   // mirror the DB (allocationMode NOT NULL default 'automatic'; monthlyAllocation
   // nullable). Absent from a payload is fine — both are optional here.

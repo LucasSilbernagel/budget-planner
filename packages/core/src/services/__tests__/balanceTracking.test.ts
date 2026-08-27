@@ -915,3 +915,66 @@ describe('validateBalanceTracking — the asset type (Story 43.4, FR70/D2)', () 
     expect(typeError?.message).toContain('debt')
   })
 })
+
+describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1, FR72/D8)', () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    type: 'investment' as const,
+    name: 'TFSA',
+    currentBalance: 1_000_000,
+    monthlyContribution: 50_000,
+    frequency: 'monthly' as const,
+    ...overrides,
+  })
+
+  // ⚠️ ACCEPTANCE FIRST, and deliberately paired with the rejections below over the
+  // SAME fixture factory. Story 43.4 shipped a rejection assertion that passed only
+  // because its fixture was malformed and every parse threw — a guard that cannot
+  // fail. If the factory ever breaks, these acceptance cases go red and say so.
+  it('ACCEPTS an investment row with the flag true', () => {
+    expect(validateBalanceTracking(row({ contributionRecordedAsExpense: true }))).toEqual([])
+  })
+
+  it('ACCEPTS an investment row with the flag false', () => {
+    expect(validateBalanceTracking(row({ contributionRecordedAsExpense: false }))).toEqual([])
+  })
+
+  it('ACCEPTS an investment row with the flag absent (the default path)', () => {
+    expect(validateBalanceTracking(row())).toEqual([])
+  })
+
+  it('REJECTS a debt row carrying the flag — a debt never reaches the pool', () => {
+    const errors = validateBalanceTracking(
+      row({ type: 'debt', contributionRecordedAsExpense: true })
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.field).toBe('contributionRecordedAsExpense')
+    expect(errors[0]?.message).toMatch(/already recorded as an expense/i)
+  })
+
+  it('REJECTS an asset row carrying the flag, alongside the D2 contribution error', () => {
+    // Two independent rules fire here; assert BOTH so neither can mask the other.
+    const errors = validateBalanceTracking(
+      row({ type: 'asset', contributionRecordedAsExpense: true })
+    )
+    expect(errors.map((e) => e.field).sort()).toEqual([
+      'contributionRecordedAsExpense',
+      'monthlyContribution',
+    ])
+  })
+
+  it('does NOT reject a non-investment row whose flag is false or absent', () => {
+    // The rule keys on `=== true`, so a debt/asset row that merely carries the
+    // field at its default is untouched. This is what keeps the sync contract
+    // uniform across all three finance types (D8).
+    expect(
+      validateBalanceTracking({
+        type: 'debt' as const,
+        name: 'Mortgage',
+        currentBalance: -30_000_000,
+        monthlyContribution: 0,
+        frequency: 'monthly' as const,
+        contributionRecordedAsExpense: false,
+      })
+    ).toEqual([])
+  })
+})

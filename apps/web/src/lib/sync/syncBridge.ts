@@ -180,6 +180,13 @@ function toServerPayload(
         name: entity['name'],
         currentBalance: entity['currentBalance'],
         monthlyContribution: entity['monthlyContribution'] ?? 0,
+        // Story 45.1 (FR72): forward the "already recorded as an expense" flag.
+        // ⚠️ `?? false` is load-bearing, not defensive noise: `JSON.stringify`
+        // DROPS an `undefined`-valued key, and `updateEntity` does a PARTIAL
+        // `.set()`, so an unstamped row would leave the previous server value in
+        // place — the user unticks the box and the change never lands. Coercing
+        // to `false` here means the key is always on the wire.
+        contributionRecordedAsExpense: entity['contributionRecordedAsExpense'] ?? false,
         // Story 16-2: forward the contribution cadence, else paid-tier syncs silently
         // drop it and the server defaults every synced entry to 'monthly'.
         frequency: entity['frequency'] ?? 'monthly',

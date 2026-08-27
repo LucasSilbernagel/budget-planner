@@ -1327,3 +1327,351 @@ describe('SavingsPage — an asset never feeds the distributable pool (Story 43.
     expect(useBalanceStore.getState().entries).toHaveLength(0)
   })
 })
+
+/**
+ * Story 45.1 (FR72) — the leftover breakdown, its inline toggles, and the
+ * detector's decorative highlight.
+ */
+describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () => {
+  const ISO = '2026-01-01T00:00:00.000Z'
+
+  const incomeRow = (amount: number, id = 'inc-1') => ({
+    id,
+    userId: 0,
+    name: 'Salary',
+    amount,
+    frequency: 'monthly' as const,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+  const expenseRow = (amount: number, name: string, id = 'exp-1') => ({
+    id,
+    userId: 0,
+    name,
+    amount,
+    frequency: 'monthly' as const,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+  const investmentRow = (
+    monthlyContribution: number,
+    name = 'TFSA',
+    id = 'inv-1',
+    contributionRecordedAsExpense?: boolean
+  ) => ({
+    id,
+    type: 'investment' as const,
+    name,
+    currentBalance: 0,
+    monthlyContribution,
+    frequency: 'monthly' as const,
+    contributionRecordedAsExpense,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+  const autoGoal = (id: string) => ({
+    id,
+    name: id,
+    targetAmount: null,
+    currentBalance: 0,
+    allocationMode: 'automatic' as const,
+    monthlyAllocation: null,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+
+  const resetStores = () => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+
+  /** The FR72 reproduction: $3,000 income, a $500 TFSA expense AND a $500 TFSA row. */
+  const seedReproduction = (recordedAsExpense?: boolean) => {
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(50_000, 'TFSA contribution')] })
+    useBalanceStore.setState({
+      entries: [investmentRow(50_000, 'TFSA', 'inv-1', recordedAsExpense)],
+    })
+    useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
+  }
+
+  /**
+   * The breakdown is collapsed by default and its body is NOT in the DOM until
+   * opened — deliberately, so /savings does not publish every balance-entry name
+   * as hidden text (it broke nine responsive-320 e2e specs when it did). Every
+   * assertion about breakdown contents must therefore open it first.
+   */
+  const openBreakdown = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'How is this worked out?' }))
+  }
+
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  it('keeps the breakdown body OUT of the DOM until it is opened', () => {
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    // ⚠️ The regression guard for the e2e break: a collapsed <details> still
+    // renders its children, so this must assert ABSENCE, not invisibility.
+    expect(screen.queryByTestId('breakdown-contribution-inv-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('TFSA')).not.toBeInTheDocument()
+    openBreakdown()
+    expect(screen.getByTestId('breakdown-contribution-inv-1')).toBeInTheDocument()
+  })
+
+  it('AC-8(a): the breakdown itemises each contribution with its own toggle', () => {
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    expect(screen.getByTestId('savings-leftover-breakdown')).toBeInTheDocument()
+    expect(screen.getByTestId('breakdown-contribution-inv-1')).toHaveTextContent(/TFSA/)
+    expect(screen.getByTestId('breakdown-contribution-amount-inv-1')).toHaveTextContent(/500\.00/)
+    expect(screen.getByTestId('breakdown-toggle-inv-1')).not.toBeChecked()
+  })
+
+  it('AC-8(c): the breakdown arithmetic matches the pool it explains', () => {
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    // ⚠️ Asserted as a RELATION between rendered values, not against a constant:
+    // a hard-coded total passes when the breakdown and the pool are wrong together.
+    const cents = (testId: string) => {
+      const text = screen.getByTestId(testId).textContent ?? ''
+      const digits = text.replace(/[^0-9.]/g, '')
+      return Math.round(Number.parseFloat(digits) * 100)
+    }
+    const income = cents('breakdown-income')
+    const expenses = cents('breakdown-expenses')
+    const contributions = cents('breakdown-contributions')
+    const manual = cents('breakdown-manual')
+    const leftover = cents('breakdown-leftover')
+
+    expect(income - expenses - contributions - manual).toBe(leftover)
+    // And the stated leftover is the SAME figure the summary sentence shows.
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
+    expect(leftover).toBe(200_000)
+  })
+
+  it('AC-8(c): the breakdown RECONCILES when the pool clamps to zero', () => {
+    // ⚠️ Found by the code-review Blind Hunter, from the diff alone. The four
+    // displayed lines are a plain subtraction; `distributablePool` floors at 0.
+    // Over-committed, the page showed "1,000.00 − 2,000.00" directly above a
+    // "Left over" of "0.00" — numbers that visibly do not add up, in the one
+    // affordance whose whole purpose is to make the figure auditable.
+    // ⚠️ The original AC-8(c) test used only a POSITIVE-pool fixture, so it
+    // could not fail in the clamp case. This is that missing arm.
+    useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(200_000, 'Rent')] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    const cents = (testId: string) => {
+      const text = screen.getByTestId(testId).textContent ?? ''
+      const digits = text.replace(/[^0-9.]/g, '')
+      return Math.round(Number.parseFloat(digits) * 100)
+    }
+
+    // The subtraction the four lines perform is shown explicitly...
+    expect(cents('breakdown-income') - cents('breakdown-expenses')).toBe(-100_000)
+    expect(cents('breakdown-raw')).toBe(100_000) // rendered as −$1,000.00
+    // ...and the floor is shown as its own line rather than happening invisibly.
+    expect(screen.getByTestId('breakdown-clamp')).toHaveTextContent(/1,000\.00/)
+    expect(cents('breakdown-leftover')).toBe(0)
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/0\.00/)
+  })
+
+  it('AC-8(c): no clamp rows appear when the pool is positive', () => {
+    // Acceptance partner: the clamp rows must be ABSENT in the ordinary case,
+    // so the guard above cannot pass by rendering them unconditionally.
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    expect(screen.queryByTestId('breakdown-raw')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('breakdown-clamp')).not.toBeInTheDocument()
+  })
+
+  it('AC-8(c): a corrupt manual allocation does not render NaN in the breakdown', () => {
+    // ⚠️ The solver guards with `Number.isFinite`; the breakdown used `?? 0`,
+    // which does NOT intercept NaN. The two then disagreed and the page printed
+    // a broken figure while "Left over" stayed correct.
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          ...autoGoal('manual-1'),
+          allocationMode: 'manual' as const,
+          monthlyAllocation: Number.NaN,
+        },
+        autoGoal('auto-1'),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    expect(screen.getByTestId('breakdown-manual')).not.toHaveTextContent(/NaN/)
+    expect(screen.getByTestId('breakdown-leftover')).not.toHaveTextContent(/NaN/)
+    // Corrupt manual amount counts as 0 in BOTH paths, so they still reconcile.
+    expect(screen.getByTestId('breakdown-leftover')).toHaveTextContent(/3,000\.00/)
+    expect(screen.queryByTestId('breakdown-raw')).not.toBeInTheDocument()
+  })
+
+  it('AC-1 via the UI: ticking the inline toggle stops the double deduction', async () => {
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    // Before: $500 deducted twice → $2,000 left over.
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('breakdown-toggle-inv-1'))
+    })
+
+    // After: counted once → $2,500. AC-8(b): the summary, the per-account
+    // allocation and the breakdown total all move in the SAME render.
+    await waitFor(() => {
+      expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.00/)
+    })
+    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/2,500\.00/)
+    expect(screen.getByTestId('breakdown-leftover')).toHaveTextContent(/2,500\.00/)
+    expect(screen.getByTestId('breakdown-contributions')).toHaveTextContent(/0\.00/)
+    // The excluded row stays VISIBLE rather than vanishing.
+    expect(screen.getByTestId('breakdown-contribution-inv-1')).toHaveTextContent(/counted once/i)
+  })
+
+  it('AC-8(a): the breakdown toggle and the Balance form reach the SAME number', async () => {
+    // ⚠️⚠️ THIS TEST USED TO SEED THE STORE AND NEVER CLICK THE TOGGLE. It was
+    // named "both paths reach the same number" while exercising exactly ONE path
+    // — rendering from a pre-set store value — so rewiring the toggle to local
+    // component state (mutation arm M15) left it GREEN. Found by the code-review
+    // Acceptance Auditor running M15 exactly as the story's table specified.
+    //
+    // It now drives BOTH paths and compares them:
+    //   path A — the store already flagged, i.e. what the Balance form writes
+    //   path B — the user clicking the breakdown's inline toggle
+    // and asserts they land on the same figure. A toggle wired to anything other
+    // than `updateBalanceEntry` fails path B while path A still passes.
+    seedReproduction(true)
+    const formPath = renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    const viaForm = screen.getByTestId('savings-leftover-summary').textContent
+    expect(viaForm).toMatch(/2,500\.00/)
+    expect(screen.getByTestId('breakdown-toggle-inv-1')).toBeChecked()
+    formPath.unmount()
+
+    // Path B: start UNflagged and reach the same state by clicking the toggle.
+    seedReproduction(false)
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    expect(screen.getByTestId('breakdown-toggle-inv-1')).not.toBeChecked()
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('breakdown-toggle-inv-1'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.00/)
+    })
+
+    // The two entry points agree, and the click reached the STORE — not just
+    // local state. Reading the store is what makes M15 falsifiable here.
+    expect(screen.getByTestId('savings-leftover-summary').textContent).toBe(viaForm)
+    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(true)
+  })
+
+  it('AC-2 via the UI: an unflagged row still deducts twice (the different-money user)', () => {
+    seedReproduction(false)
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    // ⚠️ The regression fence. This "wrong-looking" $2,000 is CORRECT for a user
+    // whose expense and contribution are different money, and epic AC-3 forbids
+    // this story from moving it.
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
+  })
+
+  it('AC-12: a same-amount, similar-name pair is HIGHLIGHTED', () => {
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    expect(screen.getByTestId('breakdown-duplicate-hint-inv-1')).toHaveTextContent(
+      /TFSA contribution/
+    )
+  })
+
+  it('AC-12: a COINCIDENTAL same-amount match is not highlighted and moves no number', () => {
+    // ⚠️ $500 rent and a $500 TFSA contribution match on amount and are unrelated.
+    // Highlighting on amount alone would put weight on noise — story D7.
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(50_000, 'Rent')] })
+    useBalanceStore.setState({ entries: [investmentRow(50_000, 'TFSA')] })
+    useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    expect(screen.queryByTestId('breakdown-duplicate-hint-inv-1')).not.toBeInTheDocument()
+    // ...and the pool is untouched by the detector either way.
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
+  })
+
+  it('AC-12: a highlighted pair the user never acts on leaves the pool alone', () => {
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    expect(screen.getByTestId('breakdown-duplicate-hint-inv-1')).toBeInTheDocument()
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
+  })
+
+  it('AC-8(c): an itemised line shows the NORMALIZED monthly value, not the raw amount', () => {
+    // ⚠️ A non-monthly cadence is mandatory here. Every other fixture in this
+    // describe is monthly, where raw === normalized, so a breakdown that printed
+    // `monthlyContribution` verbatim would pass all of them. 11538c/wk × 52/12
+    // = 49998.0 → 49998, which is visibly NOT 11538.
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({
+      entries: [
+        {
+          ...investmentRow(11_538, 'TFSA', 'inv-1'),
+          frequency: 'weekly' as const,
+        },
+      ],
+    })
+    useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    expect(screen.getByTestId('breakdown-contribution-amount-inv-1')).toHaveTextContent(/499\.98/)
+    expect(screen.getByTestId('breakdown-contribution-amount-inv-1')).not.toHaveTextContent(
+      /115\.38/
+    )
+    // ...and the itemised line agrees with the "contributions counted" total.
+    expect(screen.getByTestId('breakdown-contributions')).toHaveTextContent(/499\.98/)
+    // 300000 − 49998 = 250002
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.02/)
+  })
+
+  it('excludes only the flagged row when several contributions exist', () => {
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(50_000, 'TFSA contribution')] })
+    useBalanceStore.setState({
+      entries: [
+        investmentRow(50_000, 'TFSA', 'inv-1', true),
+        investmentRow(30_000, 'RRSP', 'inv-2', false),
+      ],
+    })
+    useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    // net 250000; skip 50000; deduct 30000 → 220000
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,200\.00/)
+    expect(screen.getByTestId('breakdown-toggle-inv-1')).toBeChecked()
+    expect(screen.getByTestId('breakdown-toggle-inv-2')).not.toBeChecked()
+  })
+})

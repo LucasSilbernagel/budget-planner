@@ -1,0 +1,1 @@
+ALTER TABLE "balanceTracking" ADD COLUMN "contributionRecordedAsExpense" boolean DEFAULT false NOT NULL;

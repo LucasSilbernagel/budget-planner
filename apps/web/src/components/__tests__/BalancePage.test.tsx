@@ -1631,3 +1631,131 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
     expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('150,000.00')
   })
 })
+
+/**
+ * Story 45.1 (FR72, D8) — the "already recorded as an expense" checkbox.
+ *
+ * Investment-only, following the Max Contribution Limit precedent above: a
+ * debt's contribution never reaches the distributable pool (`SavingsPage`
+ * filters on `type === 'investment'`), and an asset has no contribution field at
+ * all, so offering the control there would advertise an effect that does not exist.
+ */
+describe('BalancePage — contributionRecordedAsExpense is investment-only (Story 45.1)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('shows the checkbox for an investment and HIDES it for a debt and an asset', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    // Default type is investment → present.
+    expect(
+      within(dialog).getByTestId('balance-contribution-recorded-as-expense')
+    ).toBeInTheDocument()
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+    expect(
+      within(dialog).queryByTestId('balance-contribution-recorded-as-expense')
+    ).not.toBeInTheDocument()
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'asset')
+    expect(
+      within(dialog).queryByTestId('balance-contribution-recorded-as-expense')
+    ).not.toBeInTheDocument()
+
+    // Back to investment → returns. ⚠️ The positive arms bracket the absence
+    // guards so neither can pass because the dialog itself failed to render.
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'investment')
+    expect(
+      within(dialog).getByTestId('balance-contribution-recorded-as-expense')
+    ).toBeInTheDocument()
+  })
+
+  it('persists the ticked flag on save', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    await user.type(within(dialog).getByLabelText(/name/i), 'TFSA')
+    await user.type(within(dialog).getByTestId('balance-current-balance-input'), '10000')
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '500')
+    await user.click(within(dialog).getByTestId('balance-contribution-recorded-as-expense'))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(true)
+  })
+
+  it('saves false when the box is left unticked (today’s arithmetic, unchanged)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    await user.type(within(dialog).getByLabelText(/name/i), 'RRSP')
+    await user.type(within(dialog).getByTestId('balance-current-balance-input'), '10000')
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '500')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(false)
+  })
+
+  it('FORCES the flag false when an investment is switched to a debt before saving', async () => {
+    // ⚠️ The persistence gate, not just the hidden control. A stale `true` left
+    // over from the investment branch would otherwise reach the store and
+    // `validateBalanceTracking` would reject the entire write — the user would
+    // press Save and silently get nothing.
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    await user.type(within(dialog).getByLabelText(/name/i), 'Reclassified')
+    await user.type(within(dialog).getByTestId('balance-current-balance-input'), '3000')
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '100')
+    await user.click(within(dialog).getByTestId('balance-contribution-recorded-as-expense'))
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const entry = useBalanceStore.getState().entries[0]
+    if (!entry) throw new Error('save failed — the type-switch gate did not clear the flag')
+    expect(entry.type).toBe('debt')
+    expect(entry.contributionRecordedAsExpense).toBe(false)
+  })
+
+  it('re-opens an edit modal with the stored flag reflected', async () => {
+    const user = userEvent.setup()
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment',
+          name: 'TFSA',
+          currentBalance: 100_000,
+          maxContributionLimit: null,
+          monthlyContribution: 50_000,
+          frequency: 'monthly',
+          contributionRecordedAsExpense: true,
+          sortOrder: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getAllByRole('button', { name: /edit/i })[0] as HTMLElement)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByTestId('balance-contribution-recorded-as-expense')).toBeChecked()
+  })
+})

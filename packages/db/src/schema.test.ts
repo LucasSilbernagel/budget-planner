@@ -338,6 +338,19 @@ describe('Categories table (Story 30.4a)', () => {
     expect(balanceTracking.type.hasDefault).toBe(false)
   })
 
+  it('balanceTracking.contributionRecordedAsExpense is NOT NULL and defaults false (Story 45.1)', () => {
+    // FR72. The default is the whole safety property: `false` reproduces today's
+    // arithmetic exactly, so every existing row keeps its current pool behaviour
+    // and only a row the user explicitly ticks stops being deducted.
+    // ⚠️ If this ever gained `.default(true)`, every different-money user's
+    // distributable pool would silently rise. That is epic AC-3's failure.
+    expect(balanceTracking.contributionRecordedAsExpense).toBeDefined()
+    expect(balanceTracking.contributionRecordedAsExpense.getSQLType()).toBe('boolean')
+    expect(balanceTracking.contributionRecordedAsExpense.notNull).toBe(true)
+    expect(balanceTracking.contributionRecordedAsExpense.hasDefault).toBe(true)
+    expect(balanceTracking.contributionRecordedAsExpense.default).toBe(false)
+  })
+
   it('categoryId is NULLABLE on both cashflow tables so uncategorized stays valid', () => {
     // This is the whole reason every pre-existing row survives the migration and
     // no form gains a required field. If either of these ever becomes notNull,

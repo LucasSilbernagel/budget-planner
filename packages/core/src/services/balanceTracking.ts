@@ -88,6 +88,13 @@ export interface ClientBalanceTracking {
   sortOrder?: number
   // Optional UI display fields
   monthsToLimit?: number | null
+  // Story 45.1 (FR72): the user's statement that this row's `monthlyContribution`
+  // is ALREADY recorded as an expense line, so the savings distributable pool must
+  // not subtract it twice. Absent/`false` ⇒ deduct (today's arithmetic, unchanged).
+  // ⚠️ USER-SUPPLIED, never inferred. The same-money and different-money users are
+  // byte-identical in every other field, so no rule computed from row content can
+  // tell them apart — see `finance/savingsAllocation.ts` and FR72.
+  contributionRecordedAsExpense?: boolean
   // Debt-specific fields
   debtSubType?: DebtSubType // Sub-type for debt entries (credit-card, mortgage, loan, other)
   originalBalance?: number // Original loan amount in cents (for mortgage/loan progress calculation)
@@ -103,6 +110,7 @@ export interface ClientNewBalanceTracking {
   maxContributionLimit?: number | null // In cents, optional
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
+  contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
   // Debt-specific fields
   debtSubType?: DebtSubType // Sub-type for debt entries
   originalBalance?: number // Original loan amount in cents (for mortgage/loan)
@@ -138,6 +146,7 @@ export interface CreateBalanceTrackingInput {
   maxContributionLimit?: number // In cents, optional
   monthlyContribution: number // In cents — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
+  contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
   userId?: number // Optional for free tier (null), required for paid tier
 }
 
@@ -153,6 +162,7 @@ export interface UpdateBalanceTrackingInput {
   maxContributionLimit?: number // In cents, optional
   monthlyContribution?: number // In cents — amount at `frequency` cadence (Story 16-2)
   frequency?: Frequency // Cadence of monthlyContribution (Story 16-2)
+  contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
 }
 
 /**
@@ -436,6 +446,31 @@ export function validateBalanceTracking(
         value: input.monthlyContribution,
       })
     }
+  }
+
+  // Story 45.1 (D8): `contributionRecordedAsExpense` is only meaningful on an
+  // `investment` row, because that is the only type the distributable pool reads
+  // (`SavingsPage` filters on `type === 'investment'`). A `debt` or `asset` row
+  // carrying `true` would claim an effect that does not exist, so reject it here —
+  // on every store write path, not just the form, for the same reason the asset
+  // contribution rule above is enforced here.
+  // ⚠️ Same RESIDUAL as above: `applyServerChanges` and `moveBalanceEntry` bypass
+  // this, so a synced or hand-edited non-investment row can still carry the flag.
+  // ⚠️ SCOPE OF "harmless", stated precisely rather than generally: it is inert
+  // for the DISTRIBUTABLE POOL and for the duplicate detector, because both read
+  // `useInvestmentEntries()` and so never see a debt/asset row. That is a claim
+  // about those two consumers as they exist TODAY — it is NOT a claim that the
+  // field is harmless everywhere. Any future consumer that iterates entries by id
+  // rather than through a type-filtered selector would see it. Writing this as
+  // "it is inert" full stop is the same true-for-the-case-it-names-and-false-as-
+  // written mistake that `epics.md:373` / FR72 exists to correct; re-check the
+  // consumer list before reusing this reassurance.
+  if (input.contributionRecordedAsExpense === true && input.type !== 'investment') {
+    errors.push({
+      field: 'contributionRecordedAsExpense',
+      message: 'Only an investment contribution can be marked as already recorded as an expense',
+      value: input.contributionRecordedAsExpense,
+    })
   }
 
   // Frequency validation (Story 16-2): required, must be a valid cadence

@@ -33,6 +33,25 @@ export interface AllocationAccount {
 }
 
 /**
+ * One investment/retirement contribution as the pool needs it (Story 45.1, FR72).
+ *
+ * `recordedAsExpense` is the user's statement that this contribution is ALREADY
+ * present in the expense list, so subtracting it here as well would remove the
+ * same money twice. Absent/`false` ⇒ deduct, which is the behaviour that shipped
+ * before this story and the behaviour every existing caller keeps by default.
+ *
+ * ⚠️ This flag is USER-SUPPLIED and can only be user-supplied. A user whose
+ * expense line and contribution describe the SAME money and a user whose describe
+ * DIFFERENT money produce byte-identical rows — same names, same amounts, same
+ * cadences. No rule computed from row content can separate them, so any heuristic
+ * de-duplication would simply trade one wrong figure for a different wrong figure.
+ * See FR72 and the story's D5.
+ */
+export interface PoolContributionItem extends NormalizableFinancialItem {
+  recordedAsExpense?: boolean
+}
+
+/**
  * Inputs to the leftover-allocation solver.
  * `investmentContributions` are the investment/retirement contributions at their
  * own cadence (i.e. `balanceTracking` entries of type `investment`, shaped as
@@ -42,7 +61,7 @@ export interface AllocationAccount {
 export interface AutomaticAllocationInput {
   incomeSources: NormalizableFinancialItem[]
   expenses: NormalizableFinancialItem[]
-  investmentContributions: NormalizableFinancialItem[]
+  investmentContributions: PoolContributionItem[]
   savingsAccounts: AllocationAccount[]
 }
 
@@ -81,20 +100,36 @@ function sumManualAllocations(savingsAccounts: AllocationAccount[]): number {
  * Each contribution is clamped at 0 so a stray negative amount cannot inflate the
  * pool (mirrors the manual-allocation clamp above). Invalid (NaN/non-finite)
  * amounts still throw via `normalizeToMonthly`'s validation.
+ *
+ * Story 45.1 (FR72): a contribution the user has marked as already recorded on the
+ * expense list is SKIPPED, because `netPeriodIncome` has already subtracted it.
+ *
+ * ⚠️ The skip is strictly `=== true`, never truthy. A persisted `"false"` string
+ * or a `1` reaching the store by a route that does not validate must never
+ * silently disable a real deduction — only a genuine boolean `true` skips.
+ *
+ * ⚠️ The skip happens BEFORE normalization, so a skipped row contributes nothing
+ * at all. That matters because `normalizeToMonthly` rounds PER ITEM and this
+ * reducer sums already-rounded values: excluding a row must remove exactly the
+ * rounded amount that row would have contributed, not an unrounded recomputation.
  */
 function sumMonthlyInvestmentContributions(
-  investmentContributions: NormalizableFinancialItem[]
+  investmentContributions: PoolContributionItem[]
 ): number {
-  return (investmentContributions || []).reduce(
-    (sum, contribution) =>
-      sum + Math.max(0, normalizeToMonthly(contribution.amount, contribution.frequency)),
-    0
-  )
+  return (investmentContributions || []).reduce((sum, contribution) => {
+    if (contribution.recordedAsExpense === true) {
+      return sum
+    }
+    return sum + Math.max(0, normalizeToMonthly(contribution.amount, contribution.frequency))
+  }, 0)
 }
 
 /**
  * Computes the leftover pool available to distribute across automatic accounts:
- *   max(0, netPeriodIncome − Σ(normalized contributions) − Σ(manual allocations))
+ *   max(0, netPeriodIncome − Σ(normalized COUNTED contributions) − Σ(manual allocations))
+ *
+ * A contribution flagged `recordedAsExpense` is not counted: `netPeriodIncome`
+ * already removed that money as an expense (Story 45.1, FR72).
  *
  * @returns The distributable pool in cents, always >= 0 and never NaN. (Invalid
  *   income/expense/contribution amounts throw via the normalization validators;

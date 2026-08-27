@@ -132,6 +132,11 @@ describe('syncBridge — paid tier (handle registered)', () => {
           // Story 16-2: the contribution cadence MUST be forwarded, else the server
           // defaults every synced entry to 'monthly' and non-monthly picks are lost.
           frequency: 'biweekly',
+          // Story 45.1 (FR72): stamped false when the row omits it. The server's
+          // `.default(false)` does NOT reach the stored row — `syncOperationSchema`
+          // validates `data` in a superRefine that DISCARDS its parse result — so
+          // the wire value is whatever the bridge sends and nothing else.
+          contributionRecordedAsExpense: false,
           maxContributionLimit: 20000,
           userId: SESSION_USER_ID,
         },
@@ -319,8 +324,55 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
       currentBalance: 40_000_000,
       monthlyContribution: 0,
       frequency: 'monthly',
+      // Story 45.1 (FR72): stamped false rather than omitted — see below.
+      contributionRecordedAsExpense: false,
       sortOrder: 0,
       userId: SESSION_USER_ID,
     })
+  })
+
+  // --- Story 45.1 (FR72), AC-10 gate 3: the bridge payload ------------------
+  it('forwards contributionRecordedAsExpense: true on an investment row', () => {
+    syncEntityCreate('balanceTracking', {
+      id: 'tfsa-1',
+      type: 'investment',
+      name: 'TFSA',
+      currentBalance: 1_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 50_000,
+      frequency: 'monthly',
+      contributionRecordedAsExpense: true,
+      sortOrder: 0,
+    })
+
+    expect(handle.queueCreate).toHaveBeenCalledWith(
+      'balanceTracking',
+      'tfsa-1',
+      expect.objectContaining({ contributionRecordedAsExpense: true })
+    )
+  })
+
+  it('STAMPS the flag false when the row omits it, so the key is always on the wire', () => {
+    // ⚠️ This is the assertion that makes `?? false` load-bearing rather than
+    // defensive noise. `JSON.stringify` DROPS an `undefined`-valued key and
+    // `updateEntity` does a PARTIAL `.set()`, so an unstamped row would leave the
+    // previous server value in place — a user unticking the box on one device
+    // would see the change never land anywhere else. `toHaveProperty` is the
+    // point here: asserting `toBe(false)` alone passes on an absent key too.
+    syncEntityCreate('balanceTracking', {
+      id: 'tfsa-2',
+      type: 'investment',
+      name: 'TFSA',
+      currentBalance: 1_000_000,
+      maxContributionLimit: null,
+      monthlyContribution: 50_000,
+      frequency: 'monthly',
+      sortOrder: 0,
+    })
+
+    const payload = handle.queueCreate.mock.calls.at(-1)?.[2] as Record<string, unknown>
+    expect(payload).toHaveProperty('contributionRecordedAsExpense')
+    expect(payload.contributionRecordedAsExpense).toBe(false)
+    expect(JSON.parse(JSON.stringify(payload))).toHaveProperty('contributionRecordedAsExpense')
   })
 })

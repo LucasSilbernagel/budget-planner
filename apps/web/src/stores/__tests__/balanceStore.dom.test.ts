@@ -190,3 +190,76 @@ describe('balanceStore — the asset type persists and leaves existing rows alon
     expect(totalFor('debt')).toBe(30_000_000)
   })
 })
+
+describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, FR72)', () => {
+  type NewEntry = Parameters<ReturnType<typeof useBalanceStore.getState>['addBalanceEntry']>[0]
+
+  const investment = (overrides: Partial<NewEntry> = {}): NewEntry => ({
+    type: 'investment',
+    name: 'TFSA',
+    currentBalance: 1_000_000,
+    maxContributionLimit: null,
+    monthlyContribution: 50_000,
+    frequency: 'monthly',
+    ...overrides,
+  })
+
+  // ⚠️ The store carries this field through `...input` in `toClientBalanceTracking`
+  // and `...data` in `updateBalanceEntry` — it needs no code of its own. That is
+  // exactly WHY it needs a test: a passthrough nobody asserts is a passthrough
+  // that a future refactor to an explicit field list silently drops, and the
+  // symptom is a pool that quietly starts double-deducting again.
+  it('persists the flag through addBalanceEntry', () => {
+    const created = useBalanceStore
+      .getState()
+      .addBalanceEntry(investment({ contributionRecordedAsExpense: true }))
+    expect(created?.contributionRecordedAsExpense).toBe(true)
+    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(true)
+  })
+
+  it('defaults to absent (⇒ deducted) when the caller omits it', () => {
+    const created = useBalanceStore.getState().addBalanceEntry(investment())
+    expect(created?.contributionRecordedAsExpense).toBeUndefined()
+  })
+
+  it('round-trips BOTH directions through updateBalanceEntry', () => {
+    const created = useBalanceStore
+      .getState()
+      .addBalanceEntry(investment({ contributionRecordedAsExpense: true }))
+    const id = created?.id as string
+
+    // true → false is the direction that restores a real deduction. A merge that
+    // dropped a `false` (e.g. via a truthy check) would leave it ticked forever.
+    useBalanceStore.getState().updateBalanceEntry(id, { contributionRecordedAsExpense: false })
+    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(false)
+
+    useBalanceStore.getState().updateBalanceEntry(id, { contributionRecordedAsExpense: true })
+    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(true)
+  })
+
+  it('REJECTS the flag on a debt row (D8, enforced on the store write path)', () => {
+    const created = useBalanceStore.getState().addBalanceEntry(
+      investment({
+        type: 'debt',
+        name: 'Mortgage',
+        currentBalance: -30_000_000,
+        monthlyContribution: 0,
+        contributionRecordedAsExpense: true,
+      })
+    )
+    expect(created).toBeNull()
+    expect(useBalanceStore.getState().entries).toHaveLength(0)
+
+    // Acceptance partner over the same shape, so the rejection cannot pass
+    // because the fixture was malformed for some unrelated reason.
+    const ok = useBalanceStore.getState().addBalanceEntry(
+      investment({
+        type: 'debt',
+        name: 'Mortgage',
+        currentBalance: -30_000_000,
+        monthlyContribution: 0,
+      })
+    )
+    expect(ok).not.toBeNull()
+  })
+})

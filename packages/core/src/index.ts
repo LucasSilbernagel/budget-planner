@@ -80,3 +80,28 @@ export { remainingContributionRoom } from './services/balanceTracking'
 // whole module, which would collide on several names — following the
 // `remainingContributionRoom` precedent above.
 export { generateColorMap } from './finance/visualization'
+
+// Story 45.1 (FR72): the duplicate-contribution DETECTOR, re-exported for the
+// Savings page's leftover breakdown.
+//
+// ⚠️⚠️ NOTHING HERE FEEDS A CALCULATION. These are presentation inputs: they earn
+// a row a highlight and nothing more. The distributable pool is computed in
+// `finance/savingsAllocation` from the user-set `recordedAsExpense` flag alone,
+// because a same-money and a different-money user are byte-identical in the data
+// and any heuristic that decided the deduction would be wrong for one of them.
+// `savingsAllocation.ts` must never import this module; the fence is asserted
+// structurally in `finance/__tests__/contributionDuplicates.test.ts`.
+//
+// A single set of NAMED re-exports — NOT `export *` of the whole module, which
+// would put the generic name `nameSimilarity` on the barrel — following the
+// `remainingContributionRoom` / `generateColorMap` precedents above.
+export {
+  NAME_SIMILARITY_HIGHLIGHT_THRESHOLD,
+  findContributionDuplicateCandidates,
+} from './finance/contributionDuplicates'
+export type {
+  ContributionDuplicateCandidate,
+  ContributionDuplicateInput,
+  DuplicateCandidateContribution,
+  DuplicateCandidateExpense,
+} from './finance/contributionDuplicates'

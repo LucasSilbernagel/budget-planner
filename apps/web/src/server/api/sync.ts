@@ -227,6 +227,11 @@ const balanceTrackingSchema = z.object({
   // paid-tier rows round-trip. Server gate — must mirror the client gate in
   // packages/core/src/sync/types.ts (syncOperationDataSchema already carries `frequency`).
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
+  // Story 45.1 (FR72): the user's statement that this contribution is already
+  // recorded as an expense, so the savings distributable pool must not subtract
+  // it twice. Server gate — must mirror the client gate in
+  // packages/core/src/sync/types.ts and the syncBridge payload whitelist.
+  contributionRecordedAsExpense: z.boolean().default(false),
   // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),

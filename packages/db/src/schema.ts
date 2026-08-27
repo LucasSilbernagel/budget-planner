@@ -320,6 +320,15 @@ export const balanceTracking = pgTable(
     // Story 16-2: cadence of `monthlyContribution`, reusing the shared frequency enum.
     // Defaults to 'monthly' so existing rows preserve their current (monthly) behavior.
     frequency: frequencyEnum('frequency').notNull().default('monthly'),
+    // Story 45.1 (FR72): the user's statement that this row's `monthlyContribution`
+    // is ALREADY recorded as an expense line, so the savings distributable pool must
+    // not subtract it a second time. Defaults false = today's arithmetic, unchanged.
+    // ⚠️ This is a USER-SUPPLIED distinguisher, not an inference. A same-money and a
+    // different-money user are byte-identical in every other column, so nothing the
+    // app can compute tells them apart — see `savingsAllocation.ts` and FR72.
+    contributionRecordedAsExpense: boolean('contributionRecordedAsExpense')
+      .notNull()
+      .default(false),
     // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
     // ⚠️ Like savingsGoals, this list was newest-first via `sortByCreationDate` and
     // is normalized to oldest-first here — the backfill reverses it once.
