@@ -9,7 +9,14 @@ import { TERMS_PAGE } from '../content/legal'
  * existing `/terms` link in `login.tsx`. Public + static: no auth, no DB.
  */
 export const Route = createFileRoute('/terms')({
-  head: () => ({ meta: [{ title: `${TERMS_PAGE.title} · Longhand Budget` }] }),
+  // Title and description both come from the page constant, so the tab, the
+  // search result and the page's own header can never drift apart.
+  head: () => ({
+    meta: [
+      { title: `${TERMS_PAGE.title} · Longhand Budget` },
+      { name: 'description', content: TERMS_PAGE.description },
+    ],
+  }),
   component: TermsPage,
 })
 

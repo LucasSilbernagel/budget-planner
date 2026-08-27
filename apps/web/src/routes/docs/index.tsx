@@ -6,6 +6,15 @@ import { DocsLayout } from '../../components/docs/docs-layout'
  * Documentation index route — `/docs` (story 4-10, AC-1).
  */
 export const Route = createFileRoute('/docs/')({
+  head: () => ({
+    meta: [
+      { title: 'Documentation · Longhand Budget' },
+      {
+        name: 'description',
+        content: 'Guides and answers for getting the most out of Longhand Budget.',
+      },
+    ],
+  }),
   component: DocsIndexPage,
 })
 

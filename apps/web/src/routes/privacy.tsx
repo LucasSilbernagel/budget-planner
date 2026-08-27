@@ -9,7 +9,14 @@ import { PRIVACY_PAGE } from '../content/legal'
  * existing `/privacy` link in `login.tsx`. Public + static: no auth, no DB.
  */
 export const Route = createFileRoute('/privacy')({
-  head: () => ({ meta: [{ title: `${PRIVACY_PAGE.title} · Longhand Budget` }] }),
+  // Title and description both come from the page constant, so the tab, the
+  // search result and the page's own header can never drift apart.
+  head: () => ({
+    meta: [
+      { title: `${PRIVACY_PAGE.title} · Longhand Budget` },
+      { name: 'description', content: PRIVACY_PAGE.description },
+    ],
+  }),
   component: PrivacyPage,
 })
 

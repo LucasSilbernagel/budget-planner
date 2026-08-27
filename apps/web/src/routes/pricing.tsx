@@ -10,7 +10,14 @@ import { PRICING_PAGE } from '../content/legal'
  * authoritative billing/legal prose it shows still comes from `PRICING_PAGE`.
  */
 export const Route = createFileRoute('/pricing')({
-  head: () => ({ meta: [{ title: `${PRICING_PAGE.title} · Longhand Budget` }] }),
+  // Title and description both come from the page constant, so the tab, the
+  // search result and the page's own header can never drift apart.
+  head: () => ({
+    meta: [
+      { title: `${PRICING_PAGE.title} · Longhand Budget` },
+      { name: 'description', content: PRICING_PAGE.description },
+    ],
+  }),
   component: PricingPage,
 })
 

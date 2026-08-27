@@ -13,6 +13,14 @@ import { createFileRoute } from '@tanstack/react-router'
  * `/profiles`, so this is reachable without being a nav orphan.
  */
 export const Route = createFileRoute('/categories')({
-  head: () => ({ meta: [{ title: 'Categories · Longhand Budget' }] }),
+  head: () => ({
+    meta: [
+      { title: 'Categories · Longhand Budget' },
+      {
+        name: 'description',
+        content: 'Create your own categories, then assign them to income sources and expenses.',
+      },
+    ],
+  }),
   component: CategoriesPage,
 })

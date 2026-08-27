@@ -1,0 +1,41 @@
+# robots.txt — Longhand Budget (story 40.1, FR65, AC-5)
+#
+# An INDEXING PREFERENCE, not a security control. Nothing here protects
+# anything: the free tier keeps every figure in the visitor's own browser, so a
+# crawler fetching /income sees an empty page regardless of this file. These
+# rules exist so that a search result for "Longhand Budget" is the homepage, the
+# pricing page or a documentation page — the surfaces that actually say
+# something to someone who has not used the app — rather than an empty
+# app screen. Do not describe any line below as a protection.
+#
+# Indexable (covered by the `Allow: /` below, which nothing further restricts):
+# /, /pricing, /contact, /docs and /docs/*, /terms, /privacy, /refund. `/` is
+# here because it is the site root a search result must be able to reach — it
+# doubles as the Overview screen, so it is the one page that is both.
+#
+# Deliberately NOT here: a `Sitemap:` line. A sitemap needs absolute URLs and
+# this app has no production origin yet — see the story's AC-5 record. Add one
+# with the deployment stories (epic 4/5), not before.
+
+User-agent: *
+Allow: /
+
+# App surfaces: each renders a working page, but none says anything useful to a
+# stranger arriving from a search result. (`/api/` is not a page at all — it is
+# here for the same reason, having nothing to index.)
+#
+# These are PREFIX rules, so `Disallow: /report` would also cover a future
+# `/reports`. That is intended for these paths; check it before adding a route
+# whose path extends one of them.
+Disallow: /api/
+Disallow: /balance
+Disallow: /categories
+Disallow: /expenses
+Disallow: /forecasting
+Disallow: /income
+Disallow: /login
+Disallow: /profiles
+Disallow: /report
+Disallow: /retirement
+Disallow: /savings
+Disallow: /settings

@@ -45,8 +45,15 @@ export const Route = createRootRoute({
       // social/search previews. The TITLE above carries the Longhand Budget
       // brand (story brand-1); the description below deliberately carries only
       // the subtitle and no brand token, which is why the brand pin in
-      // root-head.test.ts asserts against the title alone. This default title is
-      // inherited by every route without its own head().
+      // root-head.test.ts asserts against the title alone.
+      //
+      // ⚠️ SINCE STORY 40.1 THIS DEFAULT IS A FALLBACK, NOT THE COMMON CASE.
+      // All 19 page routes now set their own title and description (FR65), so
+      // what inherits this is the 404 / unmatched route and anything added
+      // without a head() of its own — and `route-head-coverage.test.ts` fails
+      // the build if a new page route is the latter. Changing these strings
+      // therefore changes the 404 and the pinned values in root-head.test.ts,
+      // not every page in the app, which is what it used to mean.
       //
       // The subtitle absorbs the list rather than sitting in front of it: the
       // pre-36-1 description opened its second sentence with "Track income…",

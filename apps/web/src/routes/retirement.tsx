@@ -5,6 +5,16 @@ import { RetirementDisabledNotice } from '../components/retirement/RetirementDis
 import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 
 export const Route = createFileRoute('/retirement')({
+  head: () => ({
+    meta: [
+      { title: 'Retirement · Longhand Budget' },
+      {
+        name: 'description',
+        content:
+          'Plan your retirement from figures you have already entered, and see what your savings will support.',
+      },
+    ],
+  }),
   component: RetirementPage,
 })
 

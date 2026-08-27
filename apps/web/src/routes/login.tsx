@@ -25,6 +25,18 @@ export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     error: typeof search['error'] === 'string' ? search['error'] : undefined,
   }),
+  // "Sign in", not the page's <h1> — that <h1> is the brand wordmark, which
+  // would make this tab read "Longhand Budget · Longhand Budget".
+  head: () => ({
+    meta: [
+      { title: 'Sign in · Longhand Budget' },
+      {
+        name: 'description',
+        content:
+          'Sign in with a one-time email link to reach your subscription and synced data on any device.',
+      },
+    ],
+  }),
   component: LoginPage,
 })
 

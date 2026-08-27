@@ -24,6 +24,35 @@ export const Route = createFileRoute('/docs/$docId')({
     }
     return { doc }
   },
+  // Built from the RESOLVED doc, so each documentation page names itself rather
+  // than sharing one title across the whole section (story 40.1, FR65).
+  //
+  // ⚠️ `loaderData` IS OPTIONAL HERE, and the first version of this block
+  // assumed otherwise. `head()` also runs when there is no resolved doc — while
+  // the loader is pending, and for the `notFound()` an unknown slug throws — so
+  // the router types it `| undefined` and `tsc` rejects an unguarded read. The
+  // fallback names the SECTION, which is true in both of those states; naming a
+  // specific document would be a claim about a page that is not there.
+  head: ({ loaderData }) => {
+    const doc = loaderData?.doc
+    if (!doc) {
+      return {
+        meta: [
+          { title: 'Documentation · Longhand Budget' },
+          {
+            name: 'description',
+            content: 'Guides and answers for getting the most out of Longhand Budget.',
+          },
+        ],
+      }
+    }
+    return {
+      meta: [
+        { title: `${doc.title} · Longhand Budget` },
+        { name: 'description', content: doc.description },
+      ],
+    }
+  },
   component: DocPage,
   notFoundComponent: DocNotFound,
 })

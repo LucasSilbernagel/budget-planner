@@ -12,6 +12,14 @@ import { createFileRoute } from '@tanstack/react-router'
  * being a nav orphan.
  */
 export const Route = createFileRoute('/report')({
-  head: () => ({ meta: [{ title: 'Financial summary · Longhand Budget' }] }),
+  head: () => ({
+    meta: [
+      { title: 'Financial summary · Longhand Budget' },
+      {
+        name: 'description',
+        content: 'A printable summary of your income, expenses, savings and net worth.',
+      },
+    ],
+  }),
   component: ReportPage,
 })

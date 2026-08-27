@@ -45,6 +45,16 @@ import type { ForecastingProfileOutput } from '../server/functions/forecastingPr
  * The removed loader never granted or denied anything.
  */
 export const Route = createFileRoute('/forecasting')({
+  head: () => ({
+    meta: [
+      { title: 'Forecasting · Longhand Budget' },
+      {
+        name: 'description',
+        content:
+          'Advanced tools for modeling your financial future with saved, reloadable scenarios.',
+      },
+    ],
+  }),
   component: ForecastingPage,
 })
 
