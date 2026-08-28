@@ -37,6 +37,7 @@ import {
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
+  RESPONSIVE_SCROLL_SHADOW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
   RESPONSIVE_TBODY_CLASS,
@@ -789,7 +790,23 @@ export function SavingsPage() {
                     onClear={sort.clear}
                   />
                 )}
-                <div className={RESPONSIVE_WRAPPER_CLASS}>
+                {/* Story 42.2 (UX-DR46): the wrapper is a scrollable REGION, not just a
+                    scroll container. `tabindex`/`role`/`aria-label` are unconditional —
+                    a region named for its table is meaningful whether or not it happens
+                    to be scrolling right now, and making them conditional would need a
+                    measurement this layer deliberately does not take. */}
+                {/* ⚠️ The suppression below is load-bearing, and its AUTOFIX IS THE HAZARD:
+                    biome would DELETE this tabIndex, silently removing the only keyboard
+                    route to the Actions column when the table overflows. A scrollable
+                    region must be a focus stop (WCAG 2.1.1); the rule does not model
+                    scroll containers. role=region + aria-label is the paired carve-out. */}
+                <div
+                  className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
+                  // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable region needs a focus stop (WCAG 2.1.1) — see the comment above; the autofix would remove keyboard access
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Savings goals and accounts table"
+                >
                   <table className={RESPONSIVE_TABLE_CLASS}>
                     <thead className={RESPONSIVE_THEAD_CLASS}>
                       <tr>

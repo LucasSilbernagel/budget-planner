@@ -8,6 +8,7 @@ import {
   RESPONSIVE_HEADER_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
+  RESPONSIVE_SCROLL_SHADOW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
   RESPONSIVE_TBODY_CLASS,
@@ -57,11 +58,12 @@ describe('ResponsiveTable class layer', () => {
         ['min-w-full', 'divide-y', 'divide-gray-200', 'dark:divide-gray-700'],
       ],
       ['thead', RESPONSIVE_THEAD_CLASS, ['surface-inset']],
-      [
-        'tbody',
-        RESPONSIVE_TBODY_CLASS,
-        ['surface', 'divide-y', 'divide-gray-200', 'dark:divide-gray-700'],
-      ],
+      // ⚠️ `surface` is ABSENT here since story 42.2, and that is the change, not
+      // an omission. An opaque <tbody> spans the table's full SCROLL width and
+      // paints over the wrapper's scroll shadows, making the affordance
+      // invisible in light mode while every assertion in this file stays green.
+      // The colour moved to the wrapper. See the dedicated case below.
+      ['tbody', RESPONSIVE_TBODY_CLASS, ['divide-y', 'divide-gray-200', 'dark:divide-gray-700']],
       ['row', RESPONSIVE_ROW_CLASS, ['hover:bg-gray-50', 'dark:hover:bg-gray-700/40']],
       ['cell', RESPONSIVE_CELL_CLASS, ['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap']],
       [
@@ -218,6 +220,98 @@ describe('ResponsiveTable class layer', () => {
       // one sideways-scrolling table. Containment wins.
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).toEqual(['overflow-x-auto'])
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).not.toContain('max-sm:overflow-x-visible')
+    })
+  })
+
+  describe('scroll affordance (story 42.2, UX-DR46)', () => {
+    // ⚠️ EVERY case here is structural. Whether the shadow is actually PAINTED,
+    // and whether it correctly disappears on a table that fits, are geometry
+    // claims that jsdom cannot make — `e2e/table-scroll-affordance.spec.ts`
+    // samples real pixels for those. Read these as "the declaration the AC
+    // needs is present".
+
+    it('is a separate constant, so the wrapper pin is untouched', () => {
+      // The wrapper is pinned by exact equality above, deliberately (story
+      // 31.2). Merging the affordance into it would force that pin to be
+      // loosened, which deletes the guard rather than satisfying it.
+      expect(tokens(RESPONSIVE_WRAPPER_CLASS)).not.toContain('surface')
+      expect(tokens(RESPONSIVE_SCROLL_SHADOW_CLASS).length).toBeGreaterThan(0)
+      expect(tokens(RESPONSIVE_WRAPPER_CLASS)).toEqual(['overflow-x-auto'])
+    })
+
+    it('declares four background layers pinned local, local, scroll, scroll', () => {
+      // The two covers travel with the content (`local`); the two shadows stay
+      // pinned to the box (`scroll`). That asymmetry IS the self-hiding
+      // mechanism — with all four `local` the shadows travel away and the
+      // affordance never appears; with all four `scroll` it is painted
+      // permanently, including on tables that fit (an AC-6 defect).
+      expect(tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)).toContain(
+        '[background-attachment:local,local,scroll,scroll]'
+      )
+      expect(tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)).toContain('[background-repeat:no-repeat]')
+    })
+
+    it('sets attachment via an arbitrary PROPERTY, never bg-local/bg-scroll', () => {
+      // Tailwind v3.4's `backgroundAttachment` plugin takes no arbitrary value,
+      // so `bg-local` would set ONE value for ALL FOUR layers and silently
+      // break the mechanism while looking correct in a diff.
+      const t = tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)
+      expect(t).not.toContain('bg-local')
+      expect(t).not.toContain('bg-scroll')
+      expect(t).not.toContain('bg-fixed')
+    })
+
+    it('carries the surface colour and a dark cover pair', () => {
+      // The covers must match the surface behind the table or they smear. The
+      // colour lives here rather than on the <tbody> precisely so it does not
+      // occlude the shadows.
+      const t = tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)
+      expect(t).toContain('surface')
+      expect(t.some((c) => c.startsWith('dark:bg-['))).toBe(true)
+      expect(t.some((c) => c.startsWith('bg-[linear-gradient'))).toBe(true)
+    })
+
+    it('the tbody declares no background at any variant, so it cannot occlude the shadows', () => {
+      // Restoring `surface` here is the one edit that reintroduces the original
+      // defect: the affordance stops being visible and nothing else changes.
+      //
+      // ⚠️ VARIANTS COUNT. An earlier version of this case tested only bare
+      // `bg-`/`surface` prefixes, so `dark:bg-gray-800` would have slipped
+      // through and re-occluded the shadow in DARK MODE ONLY — where, before
+      // review, no test asserted the affordance was painted at all. Strip every
+      // variant prefix before judging the utility.
+      const bare = (c: string) => c.slice(c.lastIndexOf(':') + 1)
+      for (const c of tokens(RESPONSIVE_TBODY_CLASS)) {
+        const u = bare(c)
+        expect(
+          u === 'surface' ||
+            u.startsWith('surface-') ||
+            u.startsWith('bg-') ||
+            u.startsWith('[background'),
+          `${c} gives the tbody a background, which paints over the wrapper's scroll shadows`
+        ).toBe(false)
+      }
+    })
+
+    it('reserves no layout width (AC-8)', () => {
+      // The 640-1024px budget has zero slack: the free-tier four-column table
+      // measures 656 against a 656px wrapper on the CI font. Backgrounds do not
+      // affect box size; padding, borders and margins do. A width-reserving
+      // token here would fail on the runner and pass on a dev box.
+      // ⚠️ Strip ANY variant prefix first — `max-lg:px-4` and `dark:p-2` reserve
+      // width just as surely as `px-4`, and an earlier version of this pattern
+      // only anticipated `dark:`. Logical properties (`ps-`/`pe-`/`ms-`/`me-`),
+      // `gap-`, `indent-` and arbitrary `[padding-left:…]` all count too.
+      const bare = (c: string) => c.slice(c.lastIndexOf(':') + 1)
+      const RESERVES_WIDTH =
+        /^(p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|border|w|min-w|max-w|gap|gap-x|indent|basis|size)(-|$)/
+      for (const t of tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)) {
+        const u = bare(t)
+        expect(
+          RESERVES_WIDTH.test(u) || /^\[(padding|margin|border|width|inline-size)/.test(u),
+          `${t} reserves layout width, which this band has none of`
+        ).toBe(false)
+      }
     })
   })
 

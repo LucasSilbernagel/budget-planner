@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 /**
  * Shared responsive-table class layer (story 31.2, UX-DR36).
  *
- * The four finance pages (Income, Expenses, Savings, Balance — five tables in
- * total) render genuine semantic `<table>`s whose every cell carries
+ * The finance pages (Income, Expenses, Savings, Balance) render genuine
+ * semantic `<table>`s whose every cell carries
  * `whitespace-nowrap` and `px-6`. At 320px that is the direct cause of
  * horizontal overflow: the auto-layout table sizes to its longest unbroken run
  * and its `overflow-x-auto` wrapper silently absorbs the excess into a scroll
@@ -84,8 +84,88 @@ import type { ReactNode } from 'react'
  *
  * So `e2e/responsive-320.spec.ts`'s per-wrapper assertion is the primary guard;
  * its document-level assertion is the escape hatch for overflow that bypasses
- * the wrapper entirely. */
+ * the wrapper entirely.
+ *
+ * ⚠️ Story 42.2 (UX-DR46) did NOT change this decision — it is still live, and
+ * this constant is still exactly `overflow-x-auto`. What 42.2 added is a
+ * SIGNPOST for the scrolling this decision allows, in
+ * {@link RESPONSIVE_SCROLL_SHADOW_CLASS}, plus `tabindex="0"` / `role="region"` /
+ * `aria-label` at each call site. Containment without a signpost was the defect:
+ * measured on the CI font at a 768px viewport, `/income` hid 889px of table
+ * behind an overlay scrollbar with nothing on screen saying so, and the Actions
+ * column is the last thing that falls off that edge.
+ *
+ * ⚠️ `role="region"` on THIS element is not a violation of the accessibility
+ * note above. That note forbids re-adding `role="table"`/`row"`/`cell"` INSIDE
+ * the table, where it would re-assert a grid the user can no longer navigate.
+ * The wrapper is outside the table and is a genuine scrollable region: it is a
+ * focus stop that can be scrolled with the arrow keys, which is the only
+ * pointer-free way to reach the Actions column when the table overflows. */
 export const RESPONSIVE_WRAPPER_CLASS = 'overflow-x-auto'
+
+/** Scroll shadows for the wrapper (story 42.2, UX-DR46). Applied ALONGSIDE
+ * {@link RESPONSIVE_WRAPPER_CLASS}, never merged into it — that constant is
+ * pinned by exact equality in `ResponsiveTable.test.tsx`, deliberately.
+ *
+ * ## Why a painted background and not an element
+ *
+ * The width budget below leaves ZERO slack: on the CI font the free-tier
+ * four-column `/income` table measures 656px against a 656px wrapper. A
+ * scroll affordance that occupies width — a rail, a gutter, an inline hint —
+ * flips that table from "fits" to "overflows" on the runner while staying green
+ * on a dev box, which is the exact failure `SortableColumnHeader`'s always-on
+ * chevron already shipped once. Backgrounds do not affect box size, so this
+ * costs a host-independent 0px. Measured: wrapper `scrollWidth` at 768px is
+ * unchanged on all four routes (1545/1536/1908/1994).
+ *
+ * ## How it self-hides — no JS, no measurement, no `ResizeObserver`
+ *
+ * Four background layers. Two COVERS in the surface colour, painted `local` so
+ * they scroll with the content; two SHADOWS, painted `scroll` so they stay
+ * pinned to the box. With nothing to scroll, content width equals box width, so
+ * each cover sits exactly over its shadow and nothing is visible. Scroll right
+ * and the left cover travels out of view, revealing the left shadow. That is
+ * why a table that fits paints no affordance without anything having to ask how
+ * wide it is — which also keeps this off the `useIsNarrowViewport` path the
+ * module rejects above.
+ *
+ * ⚠️ THE COVERS MUST MATCH THE SURFACE BEHIND THE TABLE, so `surface` is on this
+ * constant and the `dark:` gradient pair is not optional — a white-only cover
+ * smears across a gray-800 card.
+ *
+ * ⚠️⚠️ THE DARK SHADOW IS A LIGHT GLOW, NOT A DARKER BLACK, AND THAT IS FORCED BY
+ * ARITHMETIC. A black shadow can only darken what is already there: over
+ * gray-800 (31,41,55), even `rgba(0,0,0,0.55)` reaches 18 — a delta of 13/255,
+ * measured, against 36 for the light theme. It is very nearly invisible. The
+ * dark shadow layers are therefore `rgba(255,255,255,0.3)`, which lifts 31 to
+ * ~98 (delta ~67) and reads as an edge on a dark card. Do not "make the dark
+ * shadow stronger" by raising the black alpha; it has no headroom. Code review
+ * found this — the original dark pair shipped every test green because the only
+ * dark assertion was an ABSENCE check.
+ *
+ * ⚠️ `bg-local` / `bg-scroll` CANNOT EXPRESS THIS. Tailwind v3.4's
+ * `backgroundAttachment` and `backgroundRepeat` are static utility plugins with
+ * no arbitrary-value support, so `bg-local` would set ONE value for ALL FOUR
+ * layers: the shadows would become `local`, travel away with the covers, and
+ * the affordance would be permanently invisible while every class-token test
+ * stayed green. Hence the arbitrary-PROPERTY syntax for those two.
+ *
+ * ⚠️ Tables OUTSIDE this shared layer do not inherit any of this and are
+ * deliberately out of scope for story 42.2: `forecasting/forecast-list.tsx`
+ * (its own hand-rolled `overflow-x-auto`), `categories/CategoryBreakdown.tsx`,
+ * and the three print tables in `reports/FinancialSummaryReport.tsx`. The
+ * forecast list is a real scroll container and carries the same unsignposted
+ * defect; it is premium-gated, so the unauthenticated e2e layer cannot reach it
+ * and nothing here guards it. Recorded so the header's list of pages above is
+ * read as "what this layer covers", never as "every table in the app".
+ *
+ * ⚠️ Known and accepted occlusion: the `<thead>` is `surface-inset` and the
+ * hovered `<tr>` is `bg-gray-50`, both opaque, so the shadow does not paint
+ * behind the header strip or under the row the pointer is on. The shadow reads
+ * over the remaining rows, which is where the eye is. Fixing either would mean
+ * making a header or a hover state transparent, which costs more than it buys. */
+export const RESPONSIVE_SCROLL_SHADOW_CLASS =
+  'surface bg-[linear-gradient(to_right,white,rgba(255,255,255,0)),linear-gradient(to_left,white,rgba(255,255,255,0)),linear-gradient(to_right,rgba(0,0,0,0.25),rgba(0,0,0,0)),linear-gradient(to_left,rgba(0,0,0,0.25),rgba(0,0,0,0))] dark:bg-[linear-gradient(to_right,#1f2937,rgba(31,41,55,0)),linear-gradient(to_left,#1f2937,rgba(31,41,55,0)),linear-gradient(to_right,rgba(255,255,255,0.3),rgba(255,255,255,0)),linear-gradient(to_left,rgba(255,255,255,0.3),rgba(255,255,255,0))] bg-[length:24px_100%,24px_100%,12px_100%,12px_100%] bg-[position:left_center,right_center,left_center,right_center] [background-repeat:no-repeat] [background-attachment:local,local,scroll,scroll]'
 
 /** The `<table>`.
  *
@@ -168,13 +248,23 @@ export const RESPONSIVE_HEADER_CELL_CLASS =
 export const RESPONSIVE_HEADER_CELL_RIGHT_CLASS =
   'px-6 max-lg:px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider'
 
-/** The `<tbody>`. */
+/** The `<tbody>`.
+ *
+ * ⚠️ NO `surface` HERE, AND THAT IS LOAD-BEARING (story 42.2). An opaque
+ * `<tbody>` spans the table's full SCROLL width, so it paints over anything on
+ * the wrapper behind it — with `surface` here the scroll shadows in
+ * {@link RESPONSIVE_SCROLL_SHADOW_CLASS} are invisible in light mode and the
+ * signpost silently does nothing while every class-token test stays green.
+ * Measured: restoring it makes all four routes read pure white at the right
+ * edge with up to 1338px of table hidden. The surface colour moved to the
+ * wrapper, which is also where the cover gradients have to match it. */
 export const RESPONSIVE_TBODY_CLASS =
-  'surface divide-y divide-gray-200 dark:divide-gray-700 max-sm:block max-sm:divide-y-0'
+  'divide-y divide-gray-200 dark:divide-gray-700 max-sm:block max-sm:divide-y-0'
 
-/** A data `<tr>` — the card below `sm`. It sits inside a `.surface` `<tbody>`,
- * so it is already on the gray-800 card colour in dark mode; definition comes
- * from `border-default`, not a second background token. */
+/** A data `<tr>` — the card below `sm`. It sits on the `.surface` WRAPPER (the
+ * colour moved there in 42.2, see {@link RESPONSIVE_TBODY_CLASS}), so it is
+ * already on the gray-800 card colour in dark mode; definition comes from
+ * `border-default`, not a second background token. */
 export const RESPONSIVE_ROW_CLASS =
   'hover:bg-gray-50 dark:hover:bg-gray-700/40 max-sm:block max-sm:mb-3 max-sm:rounded-lg max-sm:border max-sm:border-default max-sm:p-2'
 
