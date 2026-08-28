@@ -1753,6 +1753,13 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
   }) => {
     // The only OTHER tall modal reachable unauthenticated, and the one that
     // covers the transparent-outer-card branch `/balance` cannot.
+    //
+    // Still accurate after story 41.1 made the sync box activatable: sync opens
+    // this SAME `PremiumPrompt`, so the count of tall modal TYPES is unchanged —
+    // there are just five gates that can open this one now instead of four. The
+    // locator below stays on Advanced Forecasting deliberately; measuring the
+    // prompt from any single gate is enough, and `premium-locked.spec.ts` is what
+    // proves every gate reaches it.
     await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
     await page.goto('/')
 

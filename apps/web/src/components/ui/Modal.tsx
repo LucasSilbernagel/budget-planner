@@ -29,10 +29,15 @@ import { type ReactNode, useCallback, useEffect, useRef } from 'react'
  * SSR-safe: renders nothing when closed and touches the DOM only inside effects,
  * so the server and first client render never read `document`.
  *
- * Assumes a single modal is open at a time (the app never stacks modals). The
- * Escape listener and body-scroll-lock are per-instance, so two simultaneously
- * open modals would both close on one Escape and could restore scroll out of
- * order — revisit with a shared modal stack if nested modals are ever needed.
+ * The app does not deliberately stack modals, but two CAN be open at once (focus
+ * can leave a dialog via a browser-chrome round trip and reach a trigger behind
+ * the overlay). That used to close both on one Escape and leave the body
+ * scroll-locked; both are fixed by the shared modal stack below, which owns the
+ * scroll-lock and gives Escape to the topmost dialog only.
+ *
+ * ⚠️ Stacked modals are SAFE, not supported: the background is not inerted, so a
+ * dialog behind another is still keyboard-reachable. `CategoryPicker`'s
+ * no-nested-Modal constraint stands.
  */
 
 export interface ModalProps {
@@ -112,6 +117,62 @@ export interface ModalProps {
  */
 export const MODAL_CARD_CONSTRAINT = 'max-h-full overflow-y-auto overscroll-contain'
 
+/**
+ * Shared modal stack (story 41.1 code review, 2026-08-27).
+ *
+ * `Modal` used to assume one dialog was open at a time and kept the Escape
+ * listener and the body scroll-lock per instance. That assumption was reachable
+ * and MEASURED false: with one dialog open, focus can leave it (the Tab trap
+ * wraps within the dialog, but a browser-chrome round trip returns focus to the
+ * page) and activate a second trigger behind the overlay. Probed in a real
+ * browser on the Overview, whose Premium section carries five gates:
+ *
+ *   2 dialogs open → ONE Escape → 0 dialogs, and `body.style.overflow` left
+ *   `'hidden'` with nothing on screen. The page is scroll-locked until reload.
+ *
+ * Two independent causes, both fixed here:
+ *   1. Every open instance registered its own document-level keydown, and
+ *      `stopPropagation()` does not stop a sibling listener on the SAME node
+ *      (that needs `stopImmediatePropagation`), so one Escape ran every
+ *      instance's `onClose`. Now only the TOP modal responds.
+ *   2. Each instance saved and restored `body.style.overflow` independently, so
+ *      cleanup order decided the final value — the modal that opened SECOND
+ *      restored the `'hidden'` its own effect had observed. The lock is now
+ *      owned by the stack: taken when it becomes non-empty, released when it
+ *      empties, restoring the value from before ANY modal opened.
+ *
+ * ⚠️ This makes stacked modals SAFE, not supported. Nothing here inerts the
+ * background, so a second dialog is still reachable by keyboard behind the first
+ * — an accessibility gap that needs a portal plus `inert`, tracked separately.
+ * `CategoryPicker`'s no-nested-Modal constraint is unchanged and still binding.
+ */
+const modalStack: symbol[] = []
+
+/** `body.style.overflow` as it was before the FIRST modal in the stack opened. */
+let overflowBeforeLock: string | null = null
+
+function pushModal(id: symbol): void {
+  if (modalStack.length === 0) {
+    overflowBeforeLock = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  }
+  modalStack.push(id)
+}
+
+function popModal(id: symbol): void {
+  const index = modalStack.lastIndexOf(id)
+  if (index !== -1) modalStack.splice(index, 1)
+  if (modalStack.length === 0 && overflowBeforeLock !== null) {
+    document.body.style.overflow = overflowBeforeLock
+    overflowBeforeLock = null
+  }
+}
+
+/** Only the topmost open modal reacts to Escape. */
+function isTopModal(id: symbol): boolean {
+  return modalStack.at(-1) === id
+}
+
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
@@ -142,6 +203,13 @@ export function Modal({
   testId,
 }: ModalProps) {
   const contentRef = useRef<HTMLDivElement>(null)
+  // Stable identity for this instance in `modalStack`. Lazily initialised so the
+  // symbol is created once, not on every render.
+  const modalIdRef = useRef<symbol | null>(null)
+  if (modalIdRef.current === null) {
+    modalIdRef.current = Symbol('modal')
+  }
+  const modalId = modalIdRef.current
   // Whether the current press/release gesture began AND ended on the backdrop
   // itself (story 31.3, AC-7). See `handleOverlayPointerDown` below.
   const overlayGestureRef = useRef(false)
@@ -150,14 +218,17 @@ export function Modal({
   useEffect(() => {
     if (!isOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation()
-        onClose()
-      }
+      if (event.key !== 'Escape') return
+      // Only the topmost modal closes. Every open instance has a listener on
+      // `document`, and `stopPropagation()` does not stop siblings on the same
+      // node, so without this one Escape closed every open dialog at once.
+      if (!isTopModal(modalId)) return
+      event.stopPropagation()
+      onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, modalId])
 
   // Focus management: move focus in on open, restore to the trigger on close.
   useEffect(() => {
@@ -184,15 +255,14 @@ export function Modal({
     }
   }, [isOpen, initialFocusRef, finalFocusRef])
 
-  // Lock body scroll while open.
+  // Join the shared modal stack while open. The stack owns the body scroll-lock
+  // (see its docblock): a per-instance save/restore let the second modal to open
+  // restore the `'hidden'` it had itself observed, wedging the page.
   useEffect(() => {
     if (!isOpen) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [isOpen])
+    pushModal(modalId)
+    return () => popModal(modalId)
+  }, [isOpen, modalId])
 
   // Trap Tab focus within the dialog.
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {

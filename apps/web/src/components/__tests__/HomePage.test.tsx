@@ -14,6 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { renderWithRouter } from '@/test/utils'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -31,24 +32,37 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-import { PREMIUM_BENEFIT_IDS } from '../../lib/premium/benefits'
+import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { HomePage, OVERVIEW_BENEFITS } from '../HomePage'
 
 /**
- * How many benefit boxes are route-backed, i.e. render as `PremiumFeatureGate`
- * tiles rather than as the static sync `<div>`.
+ * How many benefit boxes are ROUTE-BACKED, i.e. carry an href and an "Open →"
+ * once unlocked.
+ *
+ * ⚠️ Since story 41.1 this is NOT the number of gates. Every activatable benefit
+ * renders a `PremiumFeatureGate` — sync included — so gate/skeleton counts are
+ * {@link GATED_COUNT}, and only the "Open →" affordance tracks this number. The
+ * two were the same figure until UX-DR45 split activatable from openable, which
+ * is exactly the conflation that made a single boolean insufficient.
  *
  * Derived from the shipped map, never written as a literal. Story 33.2 had to hunt
  * down six separate hard-coded 3s and 2s across four files to expand the set from
  * three benefits to five; deriving means the next amendment cannot leave a stale
  * number behind in this file.
  */
-const OPENABLE_COUNT = PREMIUM_BENEFIT_IDS.filter((id) => OVERVIEW_BENEFITS[id].openable).length
+const ROUTED_COUNT = PREMIUM_BENEFIT_IDS.filter(
+  (id: PremiumBenefitId) => OVERVIEW_BENEFITS[id].activation === 'route'
+).length
 
-/** Every openable benefit's accessible-name matcher paired with its route. */
+/** How many benefit boxes render as a `PremiumFeatureGate` in any tier state. */
+const GATED_COUNT = PREMIUM_BENEFIT_IDS.filter(
+  (id: PremiumBenefitId) => OVERVIEW_BENEFITS[id].activation !== 'none'
+).length
+
+/** Every routed benefit's accessible-name matcher paired with its route. */
 const OPENABLE_ROUTES = PREMIUM_BENEFIT_IDS.flatMap((id) => {
   const benefit = OVERVIEW_BENEFITS[id]
-  if (!benefit.openable) return []
+  if (benefit.activation !== 'route') return []
   // Escaped: this helper's whole promise is that a new openable benefit needs no
   // edit here, and an unescaped `featureName` containing a regex metacharacter
   // ("Reports (beta)", "Sync + Backup") breaks on exactly the additions it claims
@@ -56,6 +70,30 @@ const OPENABLE_ROUTES = PREMIUM_BENEFIT_IDS.flatMap((id) => {
   const name = new RegExp(benefit.featureName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
   return [[name, benefit.href] as const]
 })
+
+/**
+ * The `PREMIUM_BOX_BASE` token list every benefit box must carry (story 30-1, FR51).
+ *
+ * ⚠️ Module-scoped so the LOCKED and ENTITLED tiers assert the SAME list. It used
+ * to live inside the locked-tier chassis test, which iterated `[sync, ...tiles]`.
+ * When story 41.1 made sync a gate, sync dropped out of that free-tier query and
+ * only the background-token half of its coverage was re-homed — leaving the
+ * entitled box's chassis asserted nowhere. Mutation that survived until this was
+ * lifted: strip `PREMIUM_BOX_BASE` from the entitled branch and a paying user's
+ * sync box loses its border, radius and padding with the whole suite green.
+ */
+const CHASSIS = [
+  'flex',
+  'w-full',
+  'items-center',
+  'justify-between',
+  'gap-3',
+  'rounded-md',
+  'border',
+  'border-default',
+  'px-4',
+  'py-3',
+] as const
 
 function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   const status: PremiumAccessStatus = {
@@ -137,68 +175,76 @@ describe('HomePage premium discovery', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('33.1: badges every benefit including sync, but keeps sync unopenable (UX-DR39)', () => {
-    // ⚠️ This REPLACES story 20-2's rule, it does not extend it. 20-2 withheld the
-    // lock badge from Multi-device sync on the grounds that a lock affordance
-    // implies an openable page, and pinned that here as `toHaveLength(2)` — an
-    // assertion a code review then explicitly DISMISSED as correctly encoding
-    // "sync adds no third lock badge". UX-DR39 amends CONTENT-G: sync IS a premium
-    // benefit, so it now carries the same badge as the other two. What survives
-    // from 20-2 is the OTHER half — there is still no /sync route, so sync gains
-    // no arrow, no link and no gate button. Badge on all three; "Open →" on the
-    // two openable ones only.
+  it('41.1: badges AND gates every benefit including sync, with no page affordance (UX-DR45)', () => {
+    // ⚠️ THIS ASSERTION HAS NOW BEEN REVERSED TWICE, and the history is the point.
+    // Story 20-2 withheld the lock badge from Multi-device sync on the grounds
+    // that a lock affordance implies an openable page, pinned here as
+    // `toHaveLength(2)`. UX-DR39 (33.1) amended that: sync IS premium, so it took
+    // the badge — but stayed a static <div>, and THIS TEST asserted it had no
+    // button, no gate and no dialog. UX-DR45 (41.1) reverses that half too: the
+    // box is activatable and opens the shared upgrade dialog.
+    //
+    // What has survived all three: there is still no /sync route, so sync gains no
+    // href, no <a> and no "Open →". That is the ONE claim below that has never
+    // moved, and the reason the others are rewritten rather than deleted — the
+    // behaviours stay pinned, in their new form.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
     const sync = screen.getByTestId('premium-benefit-sync')
     // The benefit is surfaced as text…
     expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
-    // …and now carries the lock badge (the half of 20-2 that UX-DR39 retires).
+    // …carries the lock badge (the half of 20-2 that UX-DR39 retired)…
     expect(within(sync).getByText('Premium')).toBeInTheDocument()
-    // …but is still never an openable page or an interactive control.
+    // …and is now an activatable control with the gate's accessible name (the
+    // half of 33.1 that UX-DR45 retires — this exact query asserted `not` before).
+    const syncButton = screen.getByRole('button', {
+      name: /multi-device sync — premium, locked/i,
+    })
+    expect(sync).toContainElement(syncButton)
+    expect(within(sync).getByTestId('premium-gate-locked')).toBe(syncButton)
+
+    // …but STILL never a page: no link, no href, no "Open →", in this or any state.
     expect(screen.queryByRole('link', { name: /multi-device sync/i })).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: /multi-device sync — premium, locked/i })
-    ).not.toBeInTheDocument()
-    expect(within(sync).queryByRole('button')).toBeNull()
     expect(within(sync).queryByRole('link')).toBeNull()
     expect(within(sync).queryByText('Open →')).toBeNull()
+    expect(syncButton).not.toHaveAttribute('href')
 
-    // EVERY box carries a badge now — this count was 2 before UX-DR39 and 3 before
-    // story 33.2 expanded the canonical set to five (FR56).
+    // EVERY box carries a badge — 2 before UX-DR39, 3 before story 33.2 expanded
+    // the canonical set to five (FR56) — and since UX-DR45 every box is a gate.
     expect(screen.getAllByText('Premium')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
+    expect(screen.getAllByTestId('premium-gate-locked')).toHaveLength(GATED_COUNT)
+    expect(GATED_COUNT).toBe(PREMIUM_BENEFIT_IDS.length)
   })
 
-  it('33.1: shows no badge on sync while the tier is unresolved, but reserves its width', () => {
-    // AC-5. An errored SSR seed resolver yields `isLoading: true` (NOT signed
-    // out — `server/api/auth/session-seed.ts:44-50` returns null on error), so the
-    // loading branch is a real, reachable production state, not just first paint.
-    // Sync must not be the one box showing a lock while the tier is unknown.
+  it('41.1: shows no badge on sync while the tier is unresolved, and no lock button', () => {
+    // AC-5 of story 33.1, re-homed. An errored SSR seed resolver yields
+    // `isLoading: true` (NOT signed out — `server/api/auth/session-seed.ts:44-50`
+    // returns null on error), so the loading branch is a real, reachable
+    // production state, not just first paint. Sync must not be the one box showing
+    // a lock while the tier is unknown.
     //
-    // Scope note: the assertions below cover the SYNC box only. The claim that
-    // the gates also render no badge while loading is `PremiumFeatureGate`'s
-    // behaviour and is owned by `PremiumFeatureGate.test.tsx`, not proven here —
-    // asserted as the gate skeleton count so this test at least fails if the
-    // gates stop rendering skeletons in this state.
+    // ⚠️ REWRITTEN, NOT DELETED. Until story 41.1 sync owned a bespoke pending
+    // placeholder (`premium-benefit-sync-badge-pending`) because it was not a gate.
+    // It is a gate now, so the guarantee is the SAME but it is `SkeletonBlock` that
+    // provides it: aria-hidden, no lock badge announced, no activatable control
+    // while the tier is unknown. What this test still owns is that the guarantee
+    // holds FOR SYNC specifically, which a gate-count assertion alone would not say.
     mockStatus({ hasAccess: false, isLoading: true, subscriptionStatus: null })
     render(<HomePage />)
 
-    expect(screen.getAllByTestId('premium-gate-skeleton')).toHaveLength(OPENABLE_COUNT)
+    expect(screen.getAllByTestId('premium-gate-skeleton')).toHaveLength(GATED_COUNT)
     expect(screen.queryAllByTestId('premium-gate-locked')).toHaveLength(0)
 
     const sync = screen.getByTestId('premium-benefit-sync')
-    const pending = within(sync).getByTestId('premium-benefit-sync-badge-pending')
+    const pending = within(sync).getByTestId('premium-gate-skeleton')
     expect(pending).toHaveAttribute('aria-hidden', 'true')
-    expect(pending.className.split(/\s+/)).toContain('invisible')
 
-    // The placeholder holds the REAL badge so the reserved width tracks the real
-    // glyph rather than a px literal — which means "Premium" is in the DOM here.
-    // What must hold is that it is the ONLY one in the box and that it is the
-    // hidden one: neither visible (`invisible`) nor announced (`aria-hidden`).
-    // Asserting `queryByText(...)` is null would be asserting the wrong thing.
-    const badges = within(sync).getAllByText('Premium')
-    expect(badges).toHaveLength(1)
-    expect(pending).toContainElement(badges[0])
+    // Fail-closed while unknown: nothing to activate, and no badge claiming a tier
+    // the app has not resolved. The skeleton renders the tier-agnostic label only.
+    expect(within(sync).queryByRole('button')).toBeNull()
+    expect(within(sync).queryByText('Premium')).toBeNull()
+    expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
   })
 
   it('33.1: badges sync when the tier check errors — fail-closed (AC-5)', () => {
@@ -216,27 +262,67 @@ describe('HomePage premium discovery', () => {
 
     const sync = screen.getByTestId('premium-benefit-sync')
     expect(within(sync).getByText('Premium')).toBeInTheDocument()
-    expect(within(sync).queryByTestId('premium-benefit-sync-badge-pending')).toBeNull()
+    expect(within(sync).queryByTestId('premium-gate-skeleton')).toBeNull()
+    // An errored check must present as LOCKED — and since story 41.1 that means
+    // activatable, so the user is told how to unlock rather than left at a
+    // dead end by a failure they cannot see.
+    expect(within(sync).getByTestId('premium-gate-locked')).toBeInTheDocument()
   })
 
-  it('33.1: shows a paid user no lock badge on sync either (AC-4)', () => {
+  it('41.1: an entitled user gets the sync box exactly as before — inert, unbadged (AC-5)', () => {
     // The page-wide `queryByText('Premium')` assertion in the paid-tier test at
     // the top of this describe block (`AC-3: … no badge for a paid user`) also
     // fails if the sync badge is unconditional. This one names the box, so the
     // failure message points at sync rather than at "somewhere on the page".
+    //
+    // ⚠️ THE ENTITLED STATE IS THE HALF STORY 41.1 DOES NOT CHANGE. Sync has no
+    // page, so an entitled user gains nothing to activate: no gate button, no
+    // dialog, no badge, no link — the same inert `surface-inset` box it has always
+    // been. Everything UX-DR45 adds lives in the locked and loading branches.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
     const sync = screen.getByTestId('premium-benefit-sync')
     expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
     expect(within(sync).queryByText('Premium')).toBeNull()
-    expect(within(sync).queryByTestId('premium-benefit-sync-badge-pending')).toBeNull()
+    expect(within(sync).queryByTestId('premium-gate-skeleton')).toBeNull()
+    expect(within(sync).queryByTestId('premium-gate-locked')).toBeNull()
+    expect(within(sync).queryByRole('button')).toBeNull()
+    expect(within(sync).queryByRole('link')).toBeNull()
+    expect(within(sync).queryByText('Open →')).toBeNull()
 
-    // AC-4's other half, asserted here rather than assumed: the openable boxes
+    // The chassis an entitled user sees is the inert one, NOT the interactive one
+    // the locked state uses. Both tokens set `background-color` in @layer
+    // components, so exactly one may be present (see PREMIUM_BOX_BASE's docblock).
+    //
+    // ⚠️ Anchored STRUCTURALLY — the wrapper's only child — never by
+    // `closest('div.surface-inset')`. Selecting the element by the class you then
+    // assert cannot fail: `toContain('surface-inset')` is guaranteed by the
+    // selector. Worse, `closest()` walks to the document root rather than stopping
+    // at the wrapper, so giving the real box `PREMIUM_BOX_INTERACTIVE` while any
+    // ANCESTOR carried `surface-inset` would pass all three assertions on the
+    // wrong element. The gate returns bare `{children}` when entitled, so the
+    // wrapper's first child IS the box.
+    const syncBox = sync.firstElementChild
+    expect(syncBox, "the entitled sync box must be the wrapper's only child").not.toBeNull()
+    expect(sync.children).toHaveLength(1)
+    const syncBoxTokens = (syncBox?.className ?? '').split(/\s+/)
+    expect(syncBoxTokens).toContain('surface-inset')
+    expect(syncBoxTokens).not.toContain('surface-interactive')
+    expect(syncBoxTokens).not.toContain('transition-colors')
+
+    // P1: the full chassis, not just the background token. The entitled box has to
+    // read as one set with the four routed boxes exactly as the locked one does.
+    for (const token of CHASSIS) {
+      expect(syncBoxTokens, `the entitled sync box is missing "${token}"`).toContain(token)
+    }
+    expect(syncBoxTokens.filter((t) => t.startsWith('dark:'))).toEqual([])
+
+    // AC-4's other half, asserted here rather than assumed: the routed boxes
     // still link through and still carry their "Open →" for an entitled user.
-    // Iterates the shipped map, so a new openable benefit is covered the moment it
+    // Iterates the shipped map, so a new routed benefit is covered the moment it
     // is added rather than needing this list edited too.
-    expect(OPENABLE_ROUTES).toHaveLength(OPENABLE_COUNT)
+    expect(OPENABLE_ROUTES).toHaveLength(ROUTED_COUNT)
     for (const [name, href] of OPENABLE_ROUTES) {
       const link = screen.getByRole('link', { name })
       expect(link).toHaveAttribute('href', href)
@@ -268,32 +354,23 @@ describe('HomePage premium discovery', () => {
   })
 
   it('30-1: every premium benefit box shares one chassis (AC-1/AC-3)', () => {
-    // FR51: the section must read as ONE set. Every benefit box — the listed sync
-    // benefit and the gated tiles — carries an identical base class string.
-    // Asserted by class-TOKEN membership (never substring), so `sm:p-6` can never
-    // be mistaken for `p-6` (batch-4 lesson, mirrored from the 19-4 test below).
+    // FR51: the section must read as ONE set. Every benefit box carries an
+    // identical base class string. Asserted by class-TOKEN membership (never
+    // substring), so `sm:p-6` can never be mistaken for `p-6` (batch-4 lesson,
+    // mirrored from the 19-4 test below).
+    //
+    // ⚠️ Since story 41.1 every box in the LOCKED state is a gate, sync included,
+    // so `premium-gate-locked` is the whole set here — there is no separate static
+    // box to add. The inert-chassis half of this assertion moved to the entitled
+    // test above, which is the only tier where sync still renders one.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
-    const sync = screen.getByTestId('premium-benefit-sync')
     // Several locked tiles render for a free user, so getBy* would throw here.
     const tiles = screen.getAllByTestId('premium-gate-locked')
-    expect(tiles).toHaveLength(OPENABLE_COUNT)
+    expect(tiles).toHaveLength(GATED_COUNT)
 
-    const CHASSIS = [
-      'flex',
-      'w-full',
-      'items-center',
-      'justify-between',
-      'gap-3',
-      'rounded-md',
-      'border',
-      'border-default',
-      'px-4',
-      'py-3',
-    ]
-
-    for (const box of [sync, ...tiles]) {
+    for (const box of tiles) {
       const tokens = box.className.split(/\s+/)
       for (const token of CHASSIS) {
         expect(tokens, `${box.dataset.testid ?? 'tile'} is missing "${token}"`).toContain(token)
@@ -307,21 +384,24 @@ describe('HomePage premium discovery', () => {
       expect(tokens.filter((t) => RETIRED.includes(t))).toEqual([])
     }
 
-    // AC-4: only the route-backed tiles carry the interactive extras.
+    // AC-4 as amended by UX-DR45: every ACTIVATABLE box carries the interactive
+    // extras, which for a non-entitled user is all of them.
     for (const tile of tiles) {
       const tokens = tile.className.split(/\s+/)
       expect(tokens).toContain('surface-interactive')
       expect(tokens).toContain('focus-visible:ring-2')
       expect(tokens).toContain('focus-visible:ring-blue-500')
-      // Both directions of the collision rule. Asserting only the sync side
-      // leaves the likelier mistake — editing PREMIUM_BOX_INTERACTIVE — green.
+      // Never both background tokens on one element — they collide by source
+      // order. Asserting only one side leaves the likelier mistake — editing
+      // PREMIUM_BOX_INTERACTIVE — green.
       expect(tokens).not.toContain('surface-inset')
     }
-    const syncTokens = sync.className.split(/\s+/)
-    expect(syncTokens).toContain('surface-inset')
-    // Never both background tokens on one element — they collide by source order.
-    expect(syncTokens).not.toContain('surface-interactive')
-    expect(syncTokens).not.toContain('transition-colors')
+
+    // …and sync is genuinely one of them, named rather than counted: a count of
+    // GATED_COUNT would also be satisfied by five gates none of which is sync.
+    expect(screen.getByTestId('premium-benefit-sync')).toContainElement(
+      screen.getByRole('button', { name: /multi-device sync — premium, locked/i })
+    )
   })
 
   it('30-1: the unlocked (paid) tiles carry the chassis and the accent (AC-1/AC-4)', () => {
@@ -333,7 +413,7 @@ describe('HomePage premium discovery', () => {
     render(<HomePage />)
 
     const links = OPENABLE_ROUTES.map(([name]) => screen.getByRole('link', { name }))
-    expect(links).toHaveLength(OPENABLE_COUNT)
+    expect(links).toHaveLength(ROUTED_COUNT)
 
     for (const link of links) {
       const tokens = link.className.split(/\s+/)
@@ -350,15 +430,22 @@ describe('HomePage premium discovery', () => {
     }
   })
 
-  it('30-1: locked tiles carry a persistent chevron; the sync benefit does not (AC-4)', () => {
+  it('41.1: every locked box carries a persistent chevron, sync included (AC-2)', () => {
     // Hover does not exist on touch and the locked state has no "Open →", so
-    // the chevron is the only cue a free visitor on a phone gets that the openable
-    // boxes do something and the sync box does not.
+    // the chevron is the only cue a free visitor on a phone gets that a box does
+    // something at all.
+    //
+    // ⚠️ REVERSED BY UX-DR45, and this is the assertion that carries the reversal.
+    // Story 33.1 pinned sync's chevron as `invisible` because sync did nothing;
+    // 41.1 makes it activatable, so hiding the one affordance a touch user has
+    // would ship the exact defect UX-DR45 was raised to fix. Decision ratified by
+    // Lucas, 2026-08-27. The ENTITLED state keeps the invisible chevron — asserted
+    // separately below, because that is the tier where sync still opens nothing.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
     const tiles = screen.getAllByTestId('premium-gate-locked')
-    expect(tiles).toHaveLength(OPENABLE_COUNT)
+    expect(tiles).toHaveLength(GATED_COUNT)
     for (const tile of tiles) {
       const chevron = within(tile).getByText('›')
       expect(chevron.className.split(/\s+/)).toContain('text-accent')
@@ -366,18 +453,72 @@ describe('HomePage premium discovery', () => {
       expect(chevron).toHaveAttribute('aria-hidden', 'true')
     }
 
-    // 33.1 (AC-2/AC-3): sync now RESERVES the chevron's box so its badge lines up
-    // with the other two badges, but the glyph itself is invisible — the visible
-    // chevron stays the openable tiles' affordance. `invisible` (visibility:hidden)
-    // keeps the layout box; `hidden`/`display:none` would collapse it and put the
-    // badge ~26px out of line. The reserve mirrors the REAL glyph rather than a px
-    // literal because `›` is text and its width varies 5.06–7.20px by font.
+    // Named, not just counted: sync's own chevron must be a painted one.
     const syncChevron = within(screen.getByTestId('premium-benefit-sync')).getByText('›')
-    expect(syncChevron.className.split(/\s+/)).toContain('invisible')
+    expect(syncChevron.className.split(/\s+/)).not.toContain('invisible')
     expect(syncChevron).toHaveAttribute('aria-hidden', 'true')
     for (const tile of tiles) {
       expect(within(tile).getByText('›').className.split(/\s+/)).not.toContain('invisible')
     }
+  })
+
+  it('41.1: activating the sync box opens the SHARED upgrade dialog (AC-1/AC-7)', async () => {
+    // ⚠️ THE WHOLE POINT OF UX-DR45, and it is asserted FROM THE SYNC BOX
+    // specifically rather than from any gate. A test that clicked
+    // `getAllByTestId('premium-gate-locked')[0]` would have passed before this
+    // story — the first gate was already Advanced Forecasting and already opened
+    // this dialog. Naming the box is what makes this test about sync.
+    //
+    // The REAL `PremiumPrompt` renders here, not a stub, so this proves the
+    // shared dialog opens rather than that the right props were passed to
+    // something. `renderWithRouter` is required because the dialog's CTA is a
+    // TanStack <Link>.
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    renderWithRouter(<HomePage />)
+
+    // `renderWithRouter` mounts a RouterProvider, which resolves its route
+    // asynchronously — the first synchronous frame is empty, so the box has to be
+    // awaited rather than queried. (`render` elsewhere in this file is synchronous
+    // because it mounts HomePage directly.)
+    const sync = await screen.findByTestId('premium-benefit-sync')
+    expect(screen.queryByRole('dialog', { name: /go premium/i })).not.toBeInTheDocument()
+
+    fireEvent.click(
+      within(sync).getByRole('button', { name: /multi-device sync — premium, locked/i })
+    )
+
+    const dialog = await screen.findByRole('dialog', { name: /go premium/i })
+    // Same component the other gates open: same accessible name, same benefit
+    // list, same /pricing CTA. `PremiumFeatureGate` overrides PremiumPrompt's own
+    // `/login` default with `/pricing` (story 7-2, DECISION 2) — asserting the
+    // href is what distinguishes "the shared dialog" from "a dialog".
+    expect(within(dialog).getByRole('link', { name: /upgrade to premium/i })).toHaveAttribute(
+      'href',
+      '/pricing'
+    )
+    expect(within(dialog).getAllByRole('listitem')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
+
+    // …and the dialog is a SIBLING of the button inside sync's wrapper, which is
+    // what keeps the non-portalled overlay out of the space-y-3 stack's margin.
+    // The overlay's actual position is an e2e claim — jsdom computes no layout —
+    // so this asserts the STRUCTURE the e2e measurement depends on.
+    expect(sync).toContainElement(dialog)
+  })
+
+  it("41.1: an ENTITLED user still gets sync's reserved, unpainted chevron (AC-2/AC-5)", () => {
+    // The half of story 33.1's chevron rule that survives. An entitled user's sync
+    // box opens nothing, so it must not advertise that it does — but it still has
+    // to RESERVE the glyph's box, or its row sits ~26px out of line with the
+    // "Open →" rows beside it. `invisible` (visibility:hidden) keeps the layout
+    // box; `hidden`/`display:none` would collapse it. The reserve mirrors the REAL
+    // glyph rather than a px literal because `›` is text and its width varies
+    // 5.06–7.20px by font.
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<HomePage />)
+
+    const syncChevron = within(screen.getByTestId('premium-benefit-sync')).getByText('›')
+    expect(syncChevron.className.split(/\s+/)).toContain('invisible')
+    expect(syncChevron).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('20-2: explains Custom Profiles with a concrete example (CONTENT-H)', () => {

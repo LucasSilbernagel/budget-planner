@@ -301,6 +301,156 @@ describe('Modal viewport fit (story 31.3)', () => {
 })
 
 /**
+ * Two simultaneously open modals (story 41.1 code review, 2026-08-27).
+ *
+ * ⚠️ NOT a hypothetical. `Modal` documented "assumes a single modal is open at a
+ * time" as an accepted limitation for two years. It was reachable and measured
+ * false in a real browser on the Overview, whose Premium section carries five
+ * gates, each owning its own `PremiumPrompt`: focus can leave an open dialog (the
+ * Tab trap wraps WITHIN the dialog, but a browser-chrome round trip returns focus
+ * to the page) and activate a second trigger behind the overlay. The probe found
+ * 2 dialogs open, ONE Escape closing BOTH, and `body.style.overflow` left
+ * `'hidden'` with nothing on screen — the page scroll-locked until reload.
+ *
+ * Both halves are asserted here because they had INDEPENDENT causes: a
+ * document-level listener per instance (`stopPropagation` does not stop siblings
+ * on the same node), and a per-instance overflow save/restore whose outcome was
+ * decided by cleanup order.
+ *
+ * These are unit tests, not e2e, deliberately: the whole mechanism is listener
+ * registration and `document.body.style` — no layout, nothing jsdom cannot see.
+ */
+describe('Modal stacking safety (41.1 review)', () => {
+  function Body() {
+    return <h2>Stacked</h2>
+  }
+
+  function twoModals(onCloseA: () => void, onCloseB: () => void) {
+    return (
+      <>
+        <Modal isOpen onClose={onCloseA} ariaLabel="First">
+          <Body />
+        </Modal>
+        <Modal isOpen onClose={onCloseB} ariaLabel="Second">
+          <Body />
+        </Modal>
+      </>
+    )
+  }
+
+  it('gives Escape to the TOP modal only, never to both at once', () => {
+    const onCloseA = vi.fn()
+    const onCloseB = vi.fn()
+    try {
+      renderWithProviders(twoModals(onCloseA, onCloseB))
+      expect(screen.getAllByRole('dialog')).toHaveLength(2)
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+
+      // The second-mounted modal is the top of the stack.
+      expect(onCloseB).toHaveBeenCalledTimes(1)
+      expect(
+        onCloseA,
+        'one Escape must not close the modal underneath as well'
+      ).not.toHaveBeenCalled()
+    } finally {
+      document.body.style.overflow = ''
+    }
+  })
+
+  it('holds the scroll lock until the LAST modal closes, then restores the pre-stack value', () => {
+    document.body.style.overflow = 'scroll'
+    try {
+      const { rerender } = renderWithProviders(twoModals(vi.fn(), vi.fn()))
+      expect(document.body.style.overflow).toBe('hidden')
+
+      // Close the top one. The lock must survive — a dialog is still open.
+      rerender(
+        <>
+          <Modal isOpen onClose={vi.fn()} ariaLabel="First">
+            <Body />
+          </Modal>
+          <Modal isOpen={false} onClose={vi.fn()} ariaLabel="Second">
+            <Body />
+          </Modal>
+        </>
+      )
+      expect(document.body.style.overflow, 'the lock must hold while any modal is still open').toBe(
+        'hidden'
+      )
+
+      // Close the last one. Now it restores what was there BEFORE any modal —
+      // not the `'hidden'` the second modal observed when it opened, which is
+      // exactly the value that used to wedge the page.
+      rerender(
+        <>
+          <Modal isOpen={false} onClose={vi.fn()} ariaLabel="First">
+            <Body />
+          </Modal>
+          <Modal isOpen={false} onClose={vi.fn()} ariaLabel="Second">
+            <Body />
+          </Modal>
+        </>
+      )
+      expect(
+        document.body.style.overflow,
+        'the page must scroll again once every modal has closed'
+      ).toBe('scroll')
+    } finally {
+      document.body.style.overflow = ''
+    }
+  })
+
+  it('leaves no lock behind when modals close out of order', () => {
+    document.body.style.overflow = 'scroll'
+    try {
+      // Close the BOTTOM one first — the stack must not assume LIFO.
+      const { rerender } = renderWithProviders(twoModals(vi.fn(), vi.fn()))
+      rerender(
+        <>
+          <Modal isOpen={false} onClose={vi.fn()} ariaLabel="First">
+            <Body />
+          </Modal>
+          <Modal isOpen onClose={vi.fn()} ariaLabel="Second">
+            <Body />
+          </Modal>
+        </>
+      )
+      expect(document.body.style.overflow).toBe('hidden')
+
+      rerender(
+        <>
+          <Modal isOpen={false} onClose={vi.fn()} ariaLabel="First">
+            <Body />
+          </Modal>
+          <Modal isOpen={false} onClose={vi.fn()} ariaLabel="Second">
+            <Body />
+          </Modal>
+        </>
+      )
+      expect(document.body.style.overflow).toBe('scroll')
+    } finally {
+      document.body.style.overflow = ''
+    }
+  })
+
+  it('still closes a lone modal on Escape — the single-modal path is unchanged', () => {
+    const onClose = vi.fn()
+    try {
+      renderWithProviders(
+        <Modal isOpen onClose={onClose} ariaLabel="Only">
+          <Body />
+        </Modal>
+      )
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      document.body.style.overflow = ''
+    }
+  })
+})
+
+/**
  * Story 31.3 (AC-7) — the drag-dismissal regression this story introduces.
  *
  * Putting a scrollbar flush against the card edge turns a press-drag-release

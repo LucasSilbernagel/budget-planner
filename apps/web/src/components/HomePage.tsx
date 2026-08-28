@@ -17,7 +17,6 @@ import React, { Suspense, useMemo } from 'react'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
-import { type PremiumAccessStatus, usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { buildBalancesBarData } from '../lib/balances-bar-data'
 import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
@@ -36,7 +35,7 @@ import {
   useSetOverviewDuration,
 } from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
-import { PremiumFeatureGate, PremiumLockBadge } from './premium'
+import { PremiumFeatureGate } from './premium'
 import { InfoTooltip } from './ui/InfoTooltip'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
 
@@ -163,19 +162,6 @@ export function HomePage() {
   // Below Tailwind `sm` (≤639px) charts must drop their desktop-width chrome
   // (vertical right legend, wide Y-axis) so the plot area stays usable at 320px.
   const isNarrowViewport = useIsNarrowViewport()
-
-  // The Premium Features section's sync box needs the tier to decide whether to
-  // show its lock badge (story 33.1, UX-DR39).
-  //
-  // ⚠️ This IS a third subscription — the two gated tiles each call
-  // `usePremiumAccess` internally (`PremiumFeatureGate.tsx:70`), and sync needs a
-  // tier signal it previously had none of, so the count goes 2 → 3 wherever the
-  // read is placed. Reading it here rather than inside the box saves nothing on
-  // that count; it keeps the section to ONE read per box instead of inviting a
-  // fourth if the box is later split. Each subscription is an independent,
-  // uncached check when the session seed is null (deferred-work.md:479) — see the
-  // divergence note on `SyncLockBadge`.
-  const { status: premiumStatus } = usePremiumAccess()
 
   // Theme-aware Recharts chrome (axis/grid/tooltip) for the summary bar chart so
   // it stays legible on the dark `.surface` card (story 11-2 / 12-4 AC-2).
@@ -947,15 +933,46 @@ export function HomePage() {
                 only the route-backed tiles add the interactive extras.
 
                 The rule since story 33.1 (UX-DR39) is BADGE ON EVERY BENEFIT,
-                ARROW ON THE OPENABLE ONES ONLY. Multi-device sync is a premium
-                benefit like the rest, so it carries the same lock badge — but
-                there is still no /sync route, so it gains no link, no "Open →" and
-                no visible chevron, and it is never wrapped in a PremiumFeatureGate
-                (that would make it a button that opens an upgrade dialog). This
-                AMENDS story 20-2 / CONTENT-G, which withheld the badge from sync
-                on the grounds that a lock affordance implies an openable page;
-                UX-DR39 splits "is premium" from "is openable" instead. The badge
-                comes from `premiumStatus` above, not from a gate.
+                ARROW ON THE OPENABLE ONES ONLY, and story 41.1 (UX-DR45) AMENDS
+                it: EVERY BENEFIT IS ALSO ACTIVATABLE. Multi-device sync is a
+                premium benefit like the rest, so it carries the same lock badge
+                AND opens the same upgrade dialog — it is wrapped in a
+                PremiumFeatureGate exactly like the route-backed tiles.
+
+                ⚠️ THIS REVERSES STORY 33.1's RATIFIED DECISION, which is why the
+                sentence it used to state here is gone rather than softened: 33.1
+                held that sync must never be gate-wrapped "(that would make it a
+                button that opens an upgrade dialog)". That is now precisely what
+                is wanted. 33.1 §2 listed five blockers against it; four were
+                superseded or are handled here, and the fifth (Modal assumes one
+                open modal at a time) is unchanged and untouched — these gates are
+                siblings, never nested.
+
+                What UX-DR45 does NOT change: there is still no /sync route. Sync
+                gets no href, no <a> and NO "Open →" in any tier state. That
+                affordance stays reserved for boxes that really open a page, which
+                is the half of UX-DR39 this amendment keeps. The DATA carries the
+                distinction: `activation` is 'prompt' for sync and 'route' for the
+                rest, never a boolean, so "is premium", "is activatable" and
+                "opens a page" stay three separate questions.
+
+                The chevron DOES paint on sync now, in the locked and loading
+                states only (Lucas, 2026-08-27). `LockedTileContent` documents the
+                chevron as the touch affordance — hover does not exist on touch and
+                the locked state has no "Open →" — so an activatable box with an
+                invisible chevron would look exactly as inert on a phone as the
+                one UX-DR45 is fixing. In the ENTITLED state sync opens nothing, so
+                it keeps its `chevronHidden` static chassis unchanged.
+
+                This chain AMENDS story 20-2 / CONTENT-G, which withheld the badge
+                from sync on the grounds that a lock affordance implies an openable
+                page. UX-DR39 answered that by splitting "is premium" from "is
+                openable"; UX-DR45 answers it again by splitting "is activatable"
+                out of both. The badge now comes from the gate, like every other
+                box — the standalone `usePremiumAccess()` read 33.1 added for it is
+                gone, which is what keeps this section at FIVE tier subscriptions
+                rather than six (deferred-work.md:593 — each is an independent,
+                uncached check when the session seed is null).
                 Sync leads the section so the canonical benefit set reads first.
 
                 The boxes are RENDERED FROM `OVERVIEW_BENEFITS`, keyed by
@@ -975,14 +992,43 @@ export function HomePage() {
                 is y=0/full-height from all four, and `e2e/premium-locked.spec.ts`
                 now opens the prompt from each one rather than only from the
                 first — until 33.2 it opened gate 0 only, so a missing wrapper on a
-                later box would have shipped undetected. */}
+                later box would have shipped undetected. Story 41.1 re-measured it
+                from all FIVE, sync included.
+
+                Sync's wrapper also carries `data-testid="premium-benefit-sync"`.
+                It has to live there rather than on the box, because after 41.1 no
+                single inner element exists in all three tier states — the box is a
+                SkeletonBlock while loading, a <button> when locked and a <div>
+                when entitled. The wrapper is the one stable handle, so assertions
+                about the BOX's own classes must reach inside it. */}
             <div className="space-y-3">
               {PREMIUM_BENEFIT_IDS.map((id) => {
                 const benefit = OVERVIEW_BENEFITS[id]
                 const Label = benefit.label
 
-                // The listed, unopenable benefit: a static <div>, never a gate.
-                if (!benefit.openable) {
+                // Listed only — nothing to activate. No benefit is in this state
+                // today; the branch exists so that adding one is a decision rather
+                // than a default. See `OverviewBenefit`.
+                //
+                // ⚠️ THIS MARKUP RENDERS NO LOCK BADGE, AND THAT IS AN OPEN
+                // QUESTION, NOT A DECISION. It sits under a comment stating BADGE
+                // ON EVERY BENEFIT, so as written it would violate that rule the
+                // moment it gained a member. Story 33.1 fed sync's badge from a
+                // standalone `usePremiumAccess()` read; story 41.1 deleted that
+                // read along with `SyncLockBadge`, and deliberately did NOT
+                // reintroduce a second tier subscription for a branch with no
+                // members (AC-9 holds this section at five). Whoever adds the
+                // first `'none'` benefit must resolve this: either it takes a
+                // badge — and then this arm needs a tier signal, which means
+                // deciding where it comes from — or UX-DR39's rule is amended
+                // again to exclude non-activatable benefits. Do not add a member
+                // without answering that.
+                //
+                // What will NOT catch this for you: the free-tier badge-count
+                // assertion in HomePage.test.tsx goes red, but it reports a count,
+                // pointing nowhere near this branch. The loading and entitled
+                // renders of a `'none'` member are covered by nothing at all.
+                if (benefit.activation === 'none') {
                   return (
                     <div
                       key={id}
@@ -990,7 +1036,26 @@ export function HomePage() {
                       data-testid={`premium-benefit-${id}`}
                     >
                       <LockedTileContent label={<Label />} chevronHidden />
-                      <SyncLockBadge status={premiumStatus} />
+                    </div>
+                  )
+                }
+
+                // Activatable, no page to open (story 41.1, UX-DR45). Same gate,
+                // same dialog, same badge as the route-backed tiles — the ONLY
+                // differences are that the entitled branch is inert rather than a
+                // link, and that no "Open →" appears in any state.
+                if (benefit.activation === 'prompt') {
+                  return (
+                    <div key={id} data-testid={`premium-benefit-${id}`}>
+                      <PremiumFeatureGate
+                        featureName={benefit.featureName}
+                        className={PREMIUM_BOX_INTERACTIVE}
+                        locked={<LockedTileContent label={<Label />} />}
+                      >
+                        <div className={`${PREMIUM_BOX_BASE} surface-inset`}>
+                          <LockedTileContent label={<Label />} chevronHidden />
+                        </div>
+                      </PremiumFeatureGate>
                     </div>
                   )
                 }
@@ -1207,21 +1272,27 @@ function BreakdownPie({
  * The one box chassis every Premium benefit shares (story 30-1, FR51).
  *
  * Colour-free on purpose: exactly ONE background token is added on top of it —
- * `surface-inset` at the sync call site, and `surface-interactive` baked into
- * {@link PREMIUM_BOX_INTERACTIVE} for the two route-backed tiles. Both tokens
- * set `background-color` and both live in @layer components, where the winner
- * is decided by declaration order in global.css rather than by className order,
- * so putting both on one element would be a silent, hard-to-debug bug.
+ * `surface-inset` on an inert box, and `surface-interactive` baked into
+ * {@link PREMIUM_BOX_INTERACTIVE} on an activatable one. Both tokens set
+ * `background-color` and both live in @layer components, where the winner is
+ * decided by declaration order in global.css rather than by className order, so
+ * putting both on one element would be a silent, hard-to-debug bug.
  *
- * `justify-between` lives here rather than in the interactive variant: the sync
+ * ⚠️ Since story 41.1 the two are split by TIER as well as by box: sync renders
+ * `surface-interactive` while locked (it opens the upgrade dialog) and
+ * `surface-inset` while entitled (it opens nothing). A test asserting one token
+ * on the sync box has to say which tier it means.
+ *
+ * `justify-between` lives here rather than in the interactive variant: an inert
  * box has a single child, so it is a visual no-op there, and keeping it shared
- * means all three boxes carry a genuinely identical base string.
+ * means every box carries a genuinely identical base string.
  */
 const PREMIUM_BOX_BASE =
   'flex w-full items-center justify-between gap-3 rounded-md border border-default px-4 py-3'
 
 /**
- * The chassis plus the affordances that mark a box as openable (story 30-1).
+ * The chassis plus the affordances that mark a box as activatable (story 30-1;
+ * "openable" until story 41.1 split activatable from openable).
  * Applied to BOTH the gate's `className` (which styles the locked <button> and
  * the loading skeleton) and the unlocked <a> — that duplication is the gate's
  * contract, not an oversight: `PremiumFeatureGate` renders bare `{children}`
@@ -1231,22 +1302,27 @@ const PREMIUM_BOX_BASE =
  * for links and buttons, so a mouse click on a large tile does not light a ring.
  * The `forced-colors:` outline is not redundant with it: Tailwind implements
  * `ring-*` as a `box-shadow`, which Windows High Contrast discards entirely —
- * without the outline these two tiles, the only interactive elements in the
- * section, would have no visible focus indicator at all (WCAG 2.4.7).
+ * without the outline the activatable boxes, which since story 41.1 are every
+ * box in the section for a non-entitled user, would have no visible focus
+ * indicator at all (WCAG 2.4.7).
  */
 const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2`
 
 /**
- * Benefit-box body: the feature label plus a chevron (story 30-1). Used by both
- * gated tiles (chevron visible) and, since story 33.1, the sync box (chevron
- * `invisible`, reserving width only).
+ * Benefit-box body: the feature label plus a chevron (story 30-1).
  *
  * The chevron is the touch affordance. Once 30-1 removed the blue fill, hover
- * became the only thing separating a tappable tile from the listed sync
- * benefit — and hover does not exist on touch, while the locked state has no
- * "Open →". Without this a free visitor on a phone sees three identical boxes,
- * two of which do something. The lock badge does not fill that role: sync is a
- * premium benefit too, so a lock reads as "premium", not "tap me".
+ * became the only thing separating a tappable box from a listed one — and hover
+ * does not exist on touch, while the locked state has no "Open →". The lock
+ * badge does not fill that role: every benefit here is premium, so a lock reads
+ * as "premium", not "tap me".
+ *
+ * ⚠️ `chevronHidden` is therefore a claim about ACTIVATION, not about routes.
+ * Story 33.1 passed it for sync because sync did nothing; story 41.1 makes sync
+ * activatable, so it now paints its chevron while locked and loading, and
+ * reserves the width silently only in the entitled state where it opens nothing.
+ * If you pass `chevronHidden` to something a user can activate, you are shipping
+ * the defect UX-DR45 was raised to fix.
  *
  * Layout: `PremiumFeatureGate` renders `{locked}` and then its own
  * `<PremiumLockBadge />`, so the chevron uses `order-last` to sit AFTER the
@@ -1254,23 +1330,24 @@ const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-le
  * and chevron stay packed together on the right.
  *
  * `aria-hidden` on the chevron for two different reasons depending on call site:
- * in a gated tile the `<button>` already carries an accessible name
- * ("<feature> — premium, locked") and the glyph would only add noise; in the sync
- * box (story 33.1) the glyph is `invisible` and exists purely to reserve width,
- * so announcing it would be announcing a spacer.
+ * in an activatable box the `<button>` already carries an accessible name
+ * ("<feature> — premium, locked") and the glyph would only add noise; where
+ * `chevronHidden` is passed the glyph is `invisible` and exists purely to reserve
+ * width, so announcing it would be announcing a spacer.
  *
- * ⚠️ `chevronHidden` is what keeps the three badges ALIGNED (story 33.1,
- * UX-DR39). Whichever item is last in visual order sits flush against the
+ * ⚠️ `chevronHidden` still has to keep the badges ALIGNED (story 33.1,
+ * UX-DR39) wherever it is used. Whichever item is last in visual order sits flush against the
  * content edge, so a badge with no chevron beside it lands ~26px right of one
  * that has a chevron — measured at +25.06…+27.20px depending on font, which is
- * exactly `chevron box width + gap-3`. The sync box therefore renders THIS
- * component with the glyph made `invisible`: same element, same classes, same
- * text, so the reserved width tracks the real glyph. Three things this must not
- * become:
+ * exactly `chevron box width + gap-3`. A box that hides its chevron therefore
+ * renders THIS component with the glyph made `invisible`: same element, same
+ * classes, same text, so the reserved width tracks the real glyph. (Until story
+ * 41.1 that box was sync in every tier; it is now sync in the ENTITLED tier only.)
+ * Three things this must not become:
  *   - `hidden` / `display:none` — collapses the box and reinstates the ~26px gap.
  *   - a `w-[26px]`/`ch`/`em` literal — `›` is TEXT, 5.06–7.20px wide by font, so
  *     a literal drifts (+1.20px under DejaVu Sans).
- *   - a copied span in the sync box — a parity guarantee that re-implements
+ *   - a copied span in the hiding box — a parity guarantee that re-implements
  *     instead of importing guarantees nothing (story 32.2).
  * And the `mr-auto` above is load-bearing for the same reason: without it the
  * sync box has three flex children and no auto margin, so `justify-between`
@@ -1298,68 +1375,6 @@ function LockedTileContent({
       </span>
     </>
   )
-}
-
-/**
- * The Multi-device sync box's lock badge (story 33.1, UX-DR39).
- *
- * Sync has no route, so it must not be a `PremiumFeatureGate` — that would make
- * it a `<button>` owning an upgrade dialog, turn a listed benefit into an
- * apparent link, and add a third non-portalled `Modal` to a page that already
- * has two (deferred-work.md:477). This mirrors `CategoryPicker`, which
- * implements the gate's three-state contract "without USING it" for the same
- * reason: badge rendered directly on inert markup.
- *
- * The three states match `PremiumFeatureGate` exactly, in the same order:
- *   - `isLoading` → an inert, aria-hidden placeholder. Reached when the session
- *     seed is `null`, i.e. the resolver ERRORED (`session-seed.ts:44-50,73-79`
- *     returns null = UNVERIFIED, never "signed out"). With a seed present — the
- *     ordinary case — the tier is already resolved at SSR and at first client
- *     paint, so this branch is NOT the normal server render.
- *   - `hasAccess` → nothing.
- *   - everything else (free / lapsed / unauthenticated / errored check) → the badge.
- *
- * ⚠️ Scope of the `hasAccess` branch: it guarantees THIS box shows no lock when
- * THIS status says the user is entitled. It does not guarantee the section as a
- * whole is lock-free for a paying user, because the two gates each own a separate
- * `usePremiumAccess` subscription. With a seed all three read the same hydrated
- * value and agree by construction; with a null seed all three fire independent,
- * uncached checks (`usePremiumAccess.ts:193-198`, deferred-work.md:479), so they
- * can resolve at different moments and, if one fails while the others succeed,
- * can disagree for the rest of the session. Pre-existing between the two gates;
- * this box joins that set rather than creating it. The real fix is the shared
- * tier context already tracked in deferred-work, not a local workaround here.
- *
- * ⚠️ The placeholder wraps the REAL `<PremiumLockBadge />` in a
- * `visibility:hidden` span so its width is the badge's own rather than a literal.
- * That makes the reserved footprint correct BY CONSTRUCTION — it is not measured
- * anywhere: jsdom computes no layout, and the alignment e2e deliberately waits
- * the pending state out before measuring. Treat "no row shift on resolve" as a
- * structural argument, not a tested claim.
- *
- * Fail-closed WITHOUT reading `status.error`, deliberately: no gate in this repo
- * reads it, and an errored check already resolves to `hasAccess: false`, so it
- * falls through to the badge on its own. An `error` branch here would be a
- * divergence dressed up as caution.
- */
-function SyncLockBadge({ status }: { status: PremiumAccessStatus }): React.ReactElement | null {
-  if (status.isLoading) {
-    return (
-      <span
-        aria-hidden="true"
-        className="invisible"
-        data-testid="premium-benefit-sync-badge-pending"
-      >
-        <PremiumLockBadge />
-      </span>
-    )
-  }
-
-  if (status.hasAccess) {
-    return null
-  }
-
-  return <PremiumLockBadge />
 }
 
 /**
@@ -1399,19 +1414,16 @@ function PremiumFeatureLabel(): React.ReactElement {
 
 /**
  * Label for the Multi-device sync premium benefit (story 20-2, CONTENT-G;
- * amended by story 33.1 / UX-DR39). Unlike Advanced Forecasting / Custom
- * Profiles, sync is an account-wide benefit with no route to open, so it is
- * presented as a static listed benefit — never wrapped in a PremiumFeatureGate
- * and never given a link or an "Open →". Copy is kept consistent with the
- * Features/Pricing "securely stored and synced" wording and claims nothing sync
- * does not do.
+ * amended by stories 33.1 / UX-DR39 and 41.1 / UX-DR45). Sync is an account-wide
+ * benefit with no route to open — it is never given a link or an "Open →" —
+ * but it IS wrapped in a PremiumFeatureGate and does open the upgrade dialog.
+ * Copy is kept consistent with the Features/Pricing "securely stored and synced"
+ * wording and claims nothing sync does not do.
  *
- * Since story 30-1 (FR51) its box shares PREMIUM_BOX_BASE with the two gated
- * tiles, so the section reads as one set. Story 33.1 completed that: sync now
- * carries the same lock badge, because it is a premium benefit and the badge
- * says "premium", not "tap me". The difference that carries meaning is the
- * AFFORDANCE — hover, a visible chevron and "Open →" on the openable tiles only
- * — not the colour and no longer the badge.
+ * Story 30-1 (FR51) gave its box the shared PREMIUM_BOX_BASE so the section
+ * reads as one set; 33.1 gave it the same lock badge; 41.1 gave it the same
+ * behaviour. The only difference left that carries meaning is the DESTINATION —
+ * "Open →" and an href on the boxes that really open a page, and nothing else.
  */
 function MultiDeviceSyncLabel(): React.ReactElement {
   return (
@@ -1501,19 +1513,37 @@ function CategoriesFeatureLabel(): React.ReactElement {
 }
 
 /**
- * One Overview benefit box, discriminated on whether it has a page to open.
+ * One Overview benefit box, discriminated on WHAT ACTIVATING IT DOES.
  *
- * `openable` is a NEW name for something that already existed only as three
- * co-varying JSX facts — gate-wrapped, `PREMIUM_BOX_INTERACTIVE` vs
- * `surface-inset`, and an `<a href>` with "Open →". Story 33.1 split "is premium"
- * from "is openable" behaviourally; story 33.2 needed the distinction as DATA in
- * order to render the section from the canonical set. It is deliberately not a
- * general capability registry — it describes this section's boxes and nothing else.
+ * Story 33.1 split "is premium" from "is openable" behaviourally; story 33.2
+ * needed the distinction as DATA in order to render the section from the
+ * canonical set, and expressed it as a boolean `openable`. Story 41.1 (UX-DR45)
+ * splits it once more, because a boolean cannot hold the case that matters here:
+ * sync is activatable and has no page. Three states, three separate questions:
+ *
+ *   - `'none'`  — listed only. Activating it does nothing.
+ *   - `'prompt'`— opens the shared upgrade dialog. No page exists to open.
+ *   - `'route'` — opens a page, and only these carry the "Open →" affordance.
+ *
+ * ⚠️ `'none'` currently has NO members and is kept deliberately. Collapsing to
+ * two arms would make `activation` a boolean with extra steps and re-create
+ * exactly the conflation UX-DR45 unpicks: "is premium", "is activatable" and
+ * "opens a page" have to stay three legible things, so that the next benefit
+ * added here has to answer all three rather than inheriting an answer.
+ *
+ * It is deliberately not a general capability registry — it describes this
+ * section's boxes and nothing else.
  */
 type OverviewBenefit =
-  | { openable: false; label: () => React.ReactElement }
+  | { activation: 'none'; label: () => React.ReactElement }
   | {
-      openable: true
+      activation: 'prompt'
+      label: () => React.ReactElement
+      /** Drives `PremiumFeatureGate`'s "<featureName> — premium, locked" name. */
+      featureName: string
+    }
+  | {
+      activation: 'route'
       label: () => React.ReactElement
       /** Route the box links to for an entitled user. */
       href: string
@@ -1541,9 +1571,13 @@ type OverviewBenefit =
  * second accessible name.
  */
 export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
-  sync: { openable: false, label: MultiDeviceSyncLabel },
+  // Activatable, but not a route: there is no /sync page to send anyone to, so
+  // it opens the upgrade dialog instead (story 41.1, UX-DR45). `featureName`
+  // matches the box's own visible label so the button a screen reader announces
+  // and the words on screen are the same string.
+  sync: { activation: 'prompt', label: MultiDeviceSyncLabel, featureName: 'Multi-device sync' },
   forecasting: {
-    openable: true,
+    activation: 'route',
     label: PremiumFeatureLabel,
     href: '/forecasting',
     featureName: 'Advanced Forecasting',
@@ -1552,19 +1586,19 @@ export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
   // enforcement stays server-side (the profile server functions' tier guard) plus
   // the /profiles route gate.
   profiles: {
-    openable: true,
+    activation: 'route',
     label: CustomProfilesFeatureLabel,
     href: '/profiles',
     featureName: 'Custom Profiles',
   },
   report: {
-    openable: true,
+    activation: 'route',
     label: ReportFeatureLabel,
     href: '/report',
     featureName: 'Financial Summary Report',
   },
   categories: {
-    openable: true,
+    activation: 'route',
     label: CategoriesFeatureLabel,
     href: '/categories',
     featureName: 'Custom Categories',

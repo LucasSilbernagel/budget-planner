@@ -244,23 +244,42 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // the Overview, `/settings` and its route. Nothing compared those before, so
     // renaming `report.featureName` to "Financial Summary" stayed green while the
     // two surfaces announced different names — the drift class this story removes.
-    const EXPECTED: Record<PremiumBenefitId, { href: string; featureName: string } | null> = {
-      sync: null, // account-wide; there is no /sync page
-      forecasting: { href: '/forecasting', featureName: 'Advanced Forecasting' },
-      profiles: { href: '/profiles', featureName: 'Custom Profiles' },
-      report: { href: '/report', featureName: 'Financial Summary Report' },
-      categories: { href: '/categories', featureName: 'Custom Categories' },
+    const EXPECTED: Record<
+      PremiumBenefitId,
+      | { activation: 'prompt'; featureName: string }
+      | { activation: 'route'; href: string; featureName: string }
+    > = {
+      // Activatable, but there is no /sync page — story 41.1, UX-DR45. Written
+      // out here rather than derived precisely BECAUSE a boolean would have hidden
+      // this case: "not openable" used to mean both "no page" and "does nothing",
+      // and only one of those is still true.
+      sync: { activation: 'prompt', featureName: 'Multi-device sync' },
+      forecasting: {
+        activation: 'route',
+        href: '/forecasting',
+        featureName: 'Advanced Forecasting',
+      },
+      profiles: { activation: 'route', href: '/profiles', featureName: 'Custom Profiles' },
+      report: { activation: 'route', href: '/report', featureName: 'Financial Summary Report' },
+      categories: { activation: 'route', href: '/categories', featureName: 'Custom Categories' },
     }
 
     for (const id of PREMIUM_BENEFIT_IDS) {
       const benefit = OVERVIEW_BENEFITS[id]
       const expected = EXPECTED[id]
-      if (expected === null) {
-        expect(benefit.openable, `"${id}" has no page, so it must not be openable`).toBe(false)
+      expect(benefit.activation, `"${id}" is in the wrong activation state`).toBe(
+        expected.activation
+      )
+      if (expected.activation === 'prompt') {
+        // The negative half, and the one that matters: an activatable benefit with
+        // no page must not acquire an href by drifting into the 'route' arm.
+        expect(benefit, `"${id}" has no page, so it must carry no href`).not.toHaveProperty('href')
+        if (benefit.activation === 'prompt') {
+          expect(benefit.featureName, `"${id}" announces the wrong name`).toBe(expected.featureName)
+        }
         continue
       }
-      expect(benefit.openable, `"${id}" should link to ${expected.href}`).toBe(true)
-      if (benefit.openable) {
+      if (benefit.activation === 'route') {
         expect(benefit.href, `"${id}" links to the wrong page`).toBe(expected.href)
         expect(benefit.featureName, `"${id}" announces the wrong name`).toBe(expected.featureName)
       }
@@ -290,15 +309,26 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // 33.2 from three boxes to the whole canonical set).
     expect(screen.getAllByText('Premium')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
 
-    const openable = PREMIUM_BENEFIT_IDS.filter((id) => OVERVIEW_BENEFITS[id].openable)
-    expect(screen.getAllByTestId('premium-gate-locked')).toHaveLength(openable.length)
+    // …and since story 41.1 every activatable benefit is a gate, which for a free
+    // user is all of them.
+    const activatable = PREMIUM_BENEFIT_IDS.filter(
+      (id) => OVERVIEW_BENEFITS[id].activation !== 'none'
+    )
+    expect(screen.getAllByTestId('premium-gate-locked')).toHaveLength(activatable.length)
 
-    // …and the unopenable ones are present as static boxes, so the badge count
-    // above cannot be satisfied by gates alone.
+    // ⚠️ REWRITTEN, NOT DROPPED. Until 41.1 this loop asserted that the unopenable
+    // benefits render as STATIC boxes, "so the badge count above cannot be
+    // satisfied by gates alone" — a discriminator that dissolves once every box is
+    // a gate. The claim that still discriminates is the one UX-DR45 preserved:
+    // a benefit with no page must carry no page affordance, whatever it activates.
     for (const id of PREMIUM_BENEFIT_IDS) {
-      if (!OVERVIEW_BENEFITS[id].openable) {
-        expect(screen.getByTestId(`premium-benefit-${id}`)).toBeInTheDocument()
-      }
+      if (OVERVIEW_BENEFITS[id].activation === 'route') continue
+      // Only a routeless benefit carries a `premium-benefit-<id>` testid — the
+      // routed ones are addressed through the gate. Reaching this line for a
+      // routed id would throw, which is the intended failure if the arms drift.
+      const box = screen.getByTestId(`premium-benefit-${id}`)
+      expect(within(box).queryByRole('link'), `"${id}" has no page to link to`).toBeNull()
+      expect(within(box).queryByText('Open →'), `"${id}" has no page to open`).toBeNull()
     }
   })
 

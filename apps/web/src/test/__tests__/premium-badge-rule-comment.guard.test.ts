@@ -3,7 +3,8 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * AC-7 guard (story 33.1, UX-DR39; amended by story 33.2, FR56).
+ * AC-7 guard (story 33.1, UX-DR39; amended by story 33.2, FR56, and by story
+ * 41.1, UX-DR45).
  *
  * The rule that governs the Overview's Premium Features section is written into
  * `HomePage.tsx` as a comment, and story 20-2's version of it — "never given a
@@ -27,6 +28,16 @@ import { describe, expect, it } from 'vitest'
  * honest enough to rewrite the sentence. The fix is not a better assertion: it is
  * that the pinned wording must be COUNT-FREE, so that being right does not depend
  * on remembering to update a number. Do not reintroduce a quantity here.
+ *
+ * ⚠️ AND THE TRAP RECURRED IN THE OTHER DIRECTION AT STORY 41.1. This guard's
+ * three original assertions ALL stayed green across a change that reversed the
+ * rule they exist to protect: "BADGE ON EVERY BENEFIT, ARROW ON THE OPENABLE ONES
+ * ONLY" is still true after UX-DR45, "no /sync route" is still true, and the
+ * 20-2 negative assertions were never about gating. A guard pinned to the surviving
+ * half of a rule is silent about the half that changed. The two assertions added
+ * for 41.1 pin the ACTIVATION half, which is the half that moved — and the next
+ * amendment must ask the same question of all five rather than assuming green
+ * means guarded.
  */
 
 const HOME_PAGE = resolve(__dirname, '../../components/HomePage.tsx')
@@ -62,9 +73,32 @@ describe('AC-7 guard: the premium-section rule comment states the shipped rule',
     expect(normalized).not.toMatch(/CONTENT-G[^.]*still binding/i)
   })
 
-  it('still records that sync has no route, which UX-DR39 did NOT change', () => {
-    // Half of story 20-2 survives: sync gains a badge but stays unopenable. A
-    // rewrite that drops this reasoning invites the next author to add a link.
+  it('still records that sync has no route, which neither amendment changed', () => {
+    // The one half of story 20-2 that BOTH amendments leave standing. A rewrite
+    // that drops this reasoning invites the next author to add a link.
     expect(normalized).toContain('no /sync route')
+  })
+
+  it('states the every-benefit-is-activatable rule (story 41.1, UX-DR45)', () => {
+    // ⚠️ THE POINT OF THIS ASSERTION. Story 33.1 ratified the OPPOSITE rule and
+    // wrote it into this file verbatim; story 41.1 reverses it. A comment left
+    // asserting "never wrapped in a PremiumFeatureGate" beside markup that wraps
+    // it in one is how a later story reinstates the old behaviour believing it
+    // was required — which is exactly the risk that created this guard in the
+    // first place, one amendment ago.
+    //
+    // Count-free, per the docblock rule: the sentence says EVERY, not FIVE.
+    expect(normalized).toContain('EVERY BENEFIT IS ALSO ACTIVATABLE')
+  })
+
+  it('no longer claims sync is never gate-wrapped', () => {
+    // Story 33.1's exact reasoning, which is now false. Scoped to the sync rule
+    // rather than banning the words outright, for the same reason as the 20-2
+    // assertion above: an honest historical note ("33.1 held that sync must never
+    // be gate-wrapped") must stay writable, and this file contains one.
+    //
+    // What must never reappear is the claim stated as CURRENT — the shape it had
+    // when it was true: "it is never wrapped in a PremiumFeatureGate".
+    expect(normalized).not.toMatch(/it is never wrapped in a PremiumFeatureGate/i)
   })
 })
