@@ -27,6 +27,7 @@ import { useOverviewDurationStore } from '../../stores/overviewDurationStore'
 import { usePlannerVisibilityStore } from '../../stores/plannerVisibilityStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
+import { useTableSortStore } from '../../stores/tableSortStore'
 import { useThemeStore } from '../../stores/themeStore'
 import { StoreHydration } from '../store-hydration'
 
@@ -45,6 +46,10 @@ const PERSISTED_STORES = [
   // Retirement-visibility preference would persist correctly and never load, so
   // a user who hid the planner would see it return on every reload.
   ['plannerVisibility', usePlannerVisibilityStore],
+  // Story 42.1: a column sort that persists correctly and never loads is worse
+  // than one that was never persisted — the user re-sorts every visit and the
+  // storage slot quietly accumulates a selection nothing reads.
+  ['tableSort', useTableSortStore],
 ] as const
 
 afterEach(() => {

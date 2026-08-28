@@ -219,7 +219,7 @@ export function SavingsPage() {
     () => createSavingsSortExtractors(allocations, getSavingsProgress),
     [allocations, getSavingsProgress]
   )
-  const sort = useTableSort(savingsGoals, sortExtractors)
+  const sort = useTableSort('savings', savingsGoals, sortExtractors)
   const sortedRows = sort.rows
   // ⚠️ Built from `sortedRows`, NOT `savingsGoals`: the chart must show the same
   // entries in the same order as the table beside it, so a column sort re-orders
@@ -771,7 +771,18 @@ export function SavingsPage() {
                 {/* The mobile escape hatch (story 34.2, decision 7): a sort can
                     only be STARTED at >= 640px but survives a narrow, where the
                     `<thead>` is `display: none` and the move arrows are
-                    disabled. Rendered only when a sort exists. */}
+                    disabled. Rendered only when a sort exists.
+
+                    ⚠️ Story 42.1 (FR67) WIDENED what decision 7 has to carry.
+                    The sort is now persisted, so this control is no longer
+                    reached only by narrowing a window mid-session: a phone
+                    opening a table sorted on the same device days earlier gets
+                    it on FIRST LOAD, with no memory of having sorted anything.
+                    That makes it the sole affordance explaining a non-manual
+                    order below `sm` — it must stay, and it must stay legible on
+                    its own. Starting a sort below 640px is still not possible
+                    (`deferred-work.md`, a product decision); this story does not
+                    change that, it only makes arriving in one commonplace. */}
                 {sort.state !== null && (
                   <TableSortNotice
                     columnLabel={SORT_COLUMN_LABELS[sort.state.key]}

@@ -115,7 +115,7 @@ export function IncomePage() {
     () => createFlowSortExtractors(categoryNames, showCategoryColumn),
     [categoryNames, showCategoryColumn]
   )
-  const sort = useTableSort(incomeSources, sortExtractors)
+  const sort = useTableSort('income', incomeSources, sortExtractors)
   const sortedRows = sort.rows
   // Currency preferences drive the input's symbol affordance and locale-aware
   // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
@@ -381,7 +381,18 @@ export function IncomePage() {
                     `<thead>` that started it is `display: none` below `sm`, and
                     the move arrows are disabled while it is active. Rendered
                     only when a sort exists, so an unsorted mobile session sees
-                    no new DOM at all. */}
+                    no new DOM at all.
+
+                    ⚠️ Story 42.1 (FR67) WIDENED what decision 7 has to carry.
+                    The sort is now persisted, so this control is no longer
+                    reached only by narrowing a window mid-session: a phone
+                    opening a table sorted on the same device days earlier gets
+                    it on FIRST LOAD, with no memory of having sorted anything.
+                    That makes it the sole affordance explaining a non-manual
+                    order below `sm` — it must stay, and it must stay legible on
+                    its own. Starting a sort below 640px is still not possible
+                    (`deferred-work.md`, a product decision); this story does not
+                    change that, it only makes arriving in one commonplace. */}
                 {sort.state !== null && (
                   <TableSortNotice
                     columnLabel={SORT_COLUMN_LABELS[sort.state.key]}

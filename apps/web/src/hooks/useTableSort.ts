@@ -1,12 +1,17 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import {
   type AriaSortValue,
   type SortKeyExtractors,
   type SortState,
   ariaSortFor,
-  nextSortState,
   sortRowsBy,
 } from '../lib/table-sort'
+import {
+  type TableSortId,
+  useClearTableSort,
+  useTableSortSelection,
+  useToggleTableSort,
+} from '../stores/tableSortStore'
 
 /**
  * Column-sort state and projection for one financial table (Story 34.2, FR61).
@@ -24,13 +29,26 @@ import {
  * preserves the relative order of whatever it is given — which is precisely how
  * the deleted breakdown would have been corrupted.
  *
- * ## Session-only, per page (ratified decision 4)
+ * ## Persisted per table (story 42.1, FR67 — REVERSES story 34.2 decision 4)
  *
- * Plain component state. Nothing is persisted, so every reload — and every route
- * change, since the state unmounts with the page — opens on the manual order.
- * That makes "manual order is the default" true by construction rather than by
- * rule, and it is why there is no new storage key, `migrate` or hydration path
- * anywhere in this story.
+ * ⚠️ This section USED to say the sort was plain component state, that nothing
+ * was persisted, and that "manual order is the default" was therefore true BY
+ * CONSTRUCTION rather than by rule — and that there was consequently no storage
+ * key, `migrate` or hydration path anywhere. **All of that is now false.** FR67
+ * persists the selection, so the default had to become an explicit RULE: every
+ * table's stored slice defaults to `null`, and `null` means manual order.
+ *
+ * The state lives in `stores/tableSortStore` — one slice per table, keyed by the
+ * {@link TableSortId} passed in here, because the four tables share almost no
+ * columns (34.2's own reasoning for rejecting a single shared selection, which
+ * survives the reversal intact). It follows the app's persisted-store
+ * conventions: `skipHydration`, registration in `lib/store-hydration.tsx`, a
+ * versioned `migrate` and a `merge` that coerces on every rehydrate.
+ *
+ * What did NOT change: this hook still writes no `sortOrder`, calls no `move*`
+ * action and enqueues no sync operation. `lib/ordering.ts` still owns the manual
+ * order and clearing a sort still returns the table to it untouched. The sort is
+ * persisted per device; it is not synced.
  *
  * ## ⚠️ `extractors` is a memo INPUT, and two of them are not pure functions of
  * the row
@@ -73,41 +91,79 @@ export interface TableSort<Row, Key extends string> {
  * accepted by ordinary parameter contravariance.
  */
 export function useTableSort<Row, Key extends string>(
+  tableId: TableSortId,
   rows: readonly Row[],
   extractors: SortKeyExtractors<NoInfer<Row>, Key>
 ): TableSort<Row, Key> {
-  const [state, setState] = useState<SortState<Key> | null>(null)
+  // The persisted selection for THIS table. `SortState<string>`, not
+  // `SortState<Key>`: storage validates shape only and cannot know this table's
+  // columns, so the key is narrowed below by whether an extractor resolves it.
+  // ⚠️ `== null`, loose on purpose: an id not present in the record yields
+  // `undefined`, not `null`, and CI runs no `tsc` — a wrong id string would
+  // otherwise reach `persisted.key` and throw during render.
+  const persisted = useTableSortSelection(tableId)
+  const toggleTableSort = useToggleTableSort()
+  const clearTableSort = useClearTableSort()
 
-  const toggle = useCallback((key: Key) => {
-    setState((current) => nextSortState(current, key))
-  }, [])
+  const toggle = useCallback(
+    (key: Key) => {
+      // The `none -> asc -> desc -> none` cycle lives in the store action so it
+      // reads the persisted current value without this callback depending on it.
+      toggleTableSort(tableId, key)
+    },
+    [toggleTableSort, tableId]
+  )
 
   const clear = useCallback(() => {
-    setState(null)
-  }, [])
+    clearTableSort(tableId)
+  }, [clearTableSort, tableId])
 
   // Resolved OUTSIDE the memo so the dependency is a plain function identity
   // rather than a computed member expression, which is not statically checkable.
-  const extractor = state === null ? undefined : extractors[state.key]
+  //
+  // ⚠️ `hasOwnProperty`, NOT a bare `extractors[key]`. The persisted key is
+  // untrusted user-editable JSON, and a bare bracket lookup walks the PROTOTYPE
+  // CHAIN: `key: "toString"` resolves `Object.prototype.toString` — a function,
+  // not `undefined` — so the degradation below never fires. Measured before this
+  // guard existed: the table kept `state !== null`, every move arrow went
+  // `aria-disabled="true"` with no reset control below `sm`, and `TableSortNotice`
+  // rendered `SORT_COLUMN_LABELS["toString"]`, i.e. a FUNCTION, which React
+  // rejects with "Functions are not valid as a React child". The store applies
+  // exactly this discipline to the sorts RECORD (`coerceSorts`); it has to apply
+  // to the KEY too. Unreachable before story 42.1 — a header can only ever emit a
+  // real column key — and reachable now only because the key is persisted.
+  const extractor =
+    persisted == null || !Object.prototype.hasOwnProperty.call(extractors, persisted.key)
+      ? undefined
+      : extractors[persisted.key as Key]
 
   /**
    * A sort whose column is no longer AVAILABLE degrades to manual order.
    *
    * ⚠️ This is not defensive noise — it is what stops the table reaching a state
    * with no exit. The Category column is Premium-only, so its extractor is absent
-   * for an unentitled user (see `createFlowSortExtractors`). Without this,
-   * `state` could name a column that is not rendered: the rows would stay sorted
+   * for an unentitled user (see `createFlowSortExtractors`). Without this, the
+   * PERSISTED value could name a column that is not rendered: the rows would stay sorted
    * by an invisible key, every header would report `aria-sort="none"`, every move
    * arrow would be disabled because `state !== null`, and the only reset control
    * is `sm:hidden` — so a DESKTOP user would have no affordance to clear it at
    * all. Deriving the effective state means the incoherent combination cannot be
    * represented rather than merely not occurring.
    *
-   * The raw `state` is deliberately left alone rather than cleared through an
-   * effect: this is a pure derivation with no extra render, and if the column
-   * becomes available again the user's sort is still there.
+   * ⚠️ The raw persisted value is deliberately left in STORAGE rather than
+   * cleared through an effect. This is a pure derivation with no extra render,
+   * and it is what lets an entitled user's Category sort come back if their
+   * entitlement comes back. Story 42.1 made this reachable on a FRESH MOUNT for
+   * the first time — before it was persisted, an orphaned key could only arise
+   * from a tier flip within a single mount.
    */
-  const effectiveState = extractor === undefined ? null : state
+  //
+  // The cast is what narrows `SortState<string>` to `SortState<Key>`, and it is
+  // sound precisely BECAUSE the guard above ran: a resolved extractor is proof
+  // that `persisted.key` is one of this table's keys. It also preserves the
+  // store slice's object IDENTITY, which the memo below depends on — rebuilding
+  // an equal object here would recompute the projection on every render.
+  const effectiveState = (extractor === undefined ? null : persisted) as SortState<Key> | null
 
   const sortedRows = useMemo(() => {
     if (effectiveState === null || extractor === undefined) {

@@ -8,6 +8,7 @@ import { useOverviewDurationStore } from '../stores/overviewDurationStore'
 import { usePlannerVisibilityStore } from '../stores/plannerVisibilityStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useSavingsStore } from '../stores/savingsStore'
+import { useTableSortStore } from '../stores/tableSortStore'
 import { useThemeStore } from '../stores/themeStore'
 
 /**
@@ -67,6 +68,7 @@ export function StoreHydration() {
       useThemeStore,
       useOverviewDurationStore,
       usePlannerVisibilityStore,
+      useTableSortStore,
     ]
 
     for (const store of stores) {

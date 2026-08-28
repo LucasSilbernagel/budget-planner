@@ -84,6 +84,21 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
     useBalanceStore.persist.clearStorage()
   })
 
+  // ⚠️ DELIBERATELY NOT PURGED: the persisted table sort
+  // (`stores/tableSortStore`, `budget-planner-table-sort-v1`, story 42.1).
+  //
+  // Raised in review as a possible omission. It is a DISPLAY PREFERENCE — which
+  // column a table is ordered by — and carries no financial value, no user-authored
+  // text and no row identity, so it sits with `overviewDuration`, `theme`,
+  // `currency` and `plannerVisibility`, none of which this function touches.
+  // Categories ARE purged because they are user-authored financial metadata; a
+  // sort key is not. A sort naming a column whose rows are gone degrades to
+  // manual order on its own (`useTableSort`'s `effectiveState`), so leaving it
+  // cannot resurface anything about the erased data.
+  //
+  // Recorded rather than left silent: the next person to read this list should
+  // find the reason here instead of assuming the store was forgotten.
+
   // Durable offline push queue (paid tier): persisted in localStorage under
   // `bp-sync-queue-<userId>` and holding raw financial payloads. Clearing the
   // Zustand stores alone leaves these behind, so erase them too (AC-5). Free /

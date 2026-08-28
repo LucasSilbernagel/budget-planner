@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { SortKeyExtractors } from '../../lib/table-sort'
+import { useTableSortStore } from '../../stores/tableSortStore'
 import { useTableSort } from '../useTableSort'
 
 /**
@@ -9,6 +10,16 @@ import { useTableSort } from '../useTableSort'
  * The pure ordering rules live in `lib/__tests__/table-sort.test.ts`; this file
  * covers what the HOOK adds — the cycle, the one-active-column invariant, the
  * identity case, and the memo dependency that a stale-key defect would hide in.
+ *
+ * ⚠️ Story 42.1 moved the state into a PERSISTED store, so the hook now takes a
+ * table id and the state outlives the component. `useTableSortStore` is a module
+ * singleton shared with every other test file in this process, so a sort would
+ * otherwise leak from one test into the next.
+ *
+ * The reset below is a BELT-AND-BRACES duplicate: `vitest.setup.ts` already
+ * resets this store before every jsdom test. Kept local so this file's tests do
+ * not silently depend on a global they do not name — but do not describe it as
+ * the thing that stops the leak, because it is not the only one.
  */
 
 interface Row {
@@ -32,9 +43,16 @@ const extractors: SortKeyExtractors<Row, Key> = {
 
 const ids = (result: readonly Row[]) => result.map((row) => row.id)
 
+beforeEach(() => {
+  localStorage.clear()
+  useTableSortStore.setState({
+    sorts: { income: null, expenses: null, savings: null, balance: null },
+  })
+})
+
 describe('useTableSort', () => {
   it('starts unsorted and returns the INPUT ARRAY ITSELF', () => {
-    const { result } = renderHook(() => useTableSort(rows, extractors))
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
     expect(result.current.state).toBeNull()
     // Identity, not a copy: the unsorted table must render exactly what it
     // rendered before this story existed, so a defect in the sorted path cannot
@@ -44,7 +62,7 @@ describe('useTableSort', () => {
   })
 
   it('cycles one column none -> ascending -> descending -> none', () => {
-    const { result } = renderHook(() => useTableSort(rows, extractors))
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
 
     act(() => result.current.toggle('amount'))
     expect(result.current.ariaSort('amount')).toBe('ascending')
@@ -62,7 +80,7 @@ describe('useTableSort', () => {
   })
 
   it('keeps at most ONE column active', () => {
-    const { result } = renderHook(() => useTableSort(rows, extractors))
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
     act(() => result.current.toggle('amount'))
     act(() => result.current.toggle('amount'))
     expect(result.current.ariaSort('amount')).toBe('descending')
@@ -75,7 +93,7 @@ describe('useTableSort', () => {
   })
 
   it('clear() drops the sort from any state', () => {
-    const { result } = renderHook(() => useTableSort(rows, extractors))
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
     act(() => result.current.toggle('name'))
     expect(result.current.state).not.toBeNull()
     act(() => result.current.clear())
@@ -85,7 +103,7 @@ describe('useTableSort', () => {
 
   it('re-sorts when the ROWS change under an active sort', () => {
     const { result, rerender } = renderHook(
-      ({ input }: { input: Row[] }) => useTableSort(input, extractors),
+      ({ input }: { input: Row[] }) => useTableSort('income', input, extractors),
       { initialProps: { input: rows } }
     )
     act(() => result.current.toggle('amount'))
@@ -113,7 +131,7 @@ describe('useTableSort', () => {
       name: (row) => row.name,
     }
     const { result, rerender } = renderHook(
-      ({ keys }: { keys: SortKeyExtractors<Row, Key> }) => useTableSort(rows, keys),
+      ({ keys }: { keys: SortKeyExtractors<Row, Key> }) => useTableSort('income', rows, keys),
       { initialProps: { keys: ascending } }
     )
     act(() => result.current.toggle('amount'))
@@ -130,7 +148,7 @@ describe('useTableSort', () => {
     // order, every header `aria-sort="none"`, and `state !== null` keeping every
     // move arrow disabled with no desktop control to clear it.
     const { result, rerender } = renderHook(
-      ({ keys }: { keys: SortKeyExtractors<Row, Key> }) => useTableSort(rows, keys),
+      ({ keys }: { keys: SortKeyExtractors<Row, Key> }) => useTableSort('income', rows, keys),
       { initialProps: { keys: extractors } }
     )
     act(() => result.current.toggle('amount'))
@@ -145,7 +163,7 @@ describe('useTableSort', () => {
 
   it('does not mutate the array it was given', () => {
     const input = [...rows]
-    const { result } = renderHook(() => useTableSort(input, extractors))
+    const { result } = renderHook(() => useTableSort('income', input, extractors))
     act(() => result.current.toggle('amount'))
     expect(ids(input)).toEqual(['a', 'b', 'c'])
   })

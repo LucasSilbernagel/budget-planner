@@ -7,9 +7,14 @@
  * MANUAL order — the persisted `sortOrder` field, its canonical
  * `sortOrder ASC -> createdAt ASC -> id ASC` rule, and the move actions that
  * write it. Nothing in this module writes `sortOrder`, calls a `move*` action or
- * enqueues a sync operation. A column sort is a per-device, per-session view of
- * the same array, and clearing it returns the table to the manual order
- * untouched.
+ * enqueues a sync operation. A column sort is a per-device view of the same
+ * array, and clearing it returns the table to the manual order untouched.
+ *
+ * ⚠️ This paragraph used to say "per-device, per-SESSION". Story 42.1 (FR67)
+ * persists the selection in `stores/tableSortStore`, so a sort now survives a
+ * reload and a navigation. The BOUNDARY is unchanged and is the part that
+ * matters: persisting which projection to apply is not the same as writing the
+ * order, and this module still touches neither `sortOrder` nor sync.
  *
  * ## Three invariants, each of which has its own failure mode
  *
@@ -31,13 +36,19 @@
  * ## Why `localeCompare` here, when `ordering.ts` forbids it
  *
  * `ordering.ts:75-78` compares ids with `<`/`>` rather than `localeCompare`
- * because the manual order is PERSISTED and must be identical on every device
- * that syncs it — a locale-sensitive collation would let two devices disagree
- * about the same stored data. That reasoning does not reach this module: a
- * column sort is computed in one browser, lives in component state, and never
- * leaves it. For a user-facing alphabetical sort, locale-aware collation is the
- * correct behaviour, and it is what the repo's other sortable list already does
- * (`components/forecasting/forecast-list.tsx`).
+ * because the manual order is SYNCED and must be identical on every device that
+ * receives it — a locale-sensitive collation would let two devices disagree
+ * about the same stored data.
+ *
+ * ⚠️ That reason used to be written as "because the manual order is PERSISTED",
+ * with this module contrasted as living "in component state". Story 42.1
+ * persists the column sort too, so stated that way the contrast would now argue
+ * for the opposite conclusion. The distinction was never persistence — it is
+ * **whether the ordering crosses devices**. The manual order does; a column sort
+ * does not (`tableSortStore` is per-device and is not a synced field), and it is
+ * recomputed in the browser that reads it. For a user-facing alphabetical sort,
+ * locale-aware collation is the correct behaviour, and it is what the repo's
+ * other sortable list already does (`components/forecasting/forecast-list.tsx`).
  */
 
 /** Ascending or descending. There is no third direction — "unsorted" is the
