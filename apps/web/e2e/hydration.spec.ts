@@ -237,6 +237,55 @@ test.describe('hydration', () => {
   }
 
   /**
+   * Story 41.3 made the account strip's markup ROUTE-DEPENDENT for the first
+   * time: on `/login` its unauthenticated branch renders nothing. That branch
+   * runs on the server as well as the client, so the two must agree about the
+   * route or the root subtree is discarded — and `/login` is not in
+   * STORE_BACKED_ROUTES, so nothing above covered it.
+   *
+   * The read is `useRouterState`, whose location store is seeded from
+   * `history.location` at router construction, before React's first render
+   * (`GlobalNav.tsx` documents why that makes it as hydration-safe as the
+   * `activeProps` this app already ships). This test is what turns that argument
+   * into evidence on the one route where the two renders could disagree.
+   */
+  test('/login hydrates cleanly now that the account strip is route-dependent', async ({
+    page,
+  }) => {
+    const hydrationErrors = collectHydrationErrors(page)
+
+    await page.addInitScript(seedAllStores)
+    const response = await page.goto('/login')
+
+    expect(response?.status(), '/login did not return 200').toBe(200)
+
+    // Both halves are preconditions. A hydration-clean result means nothing if
+    // the strip never mounted, and it means nothing about story 41.3 unless the
+    // route-dependent branch is the one that rendered.
+    //
+    // ⚠️ The count is asserted AFTER the page settles, deliberately. Raised in
+    // code review as a possible auto-pass — the worry being that `toHaveCount(0)`
+    // could succeed during the loading branch, which has no link either, and so
+    // hold even against a route-blind strip. Checked by mutation rather than
+    // argued: with `!isOnLoginPage` removed, this test fails right here with
+    // `Received: 1`, because the SSR seed resolves the session server-side and
+    // the link is in the server HTML from the first byte. The ordering was never
+    // load-bearing — but a reader should not have to re-run that mutation to
+    // find out, so the assertion now sits where it plainly cannot race.
+    const indicator = page.getByRole('status', { name: /account status/i })
+    await expect(indicator).toBeVisible()
+
+    await page.waitForLoadState('networkidle')
+
+    await expect(indicator.getByRole('link', { name: /sign in/i })).toHaveCount(0)
+
+    expect(
+      hydrationErrors,
+      `hydration errors on /login:\n${hydrationErrors.join('\n---\n')}`
+    ).toEqual([])
+  })
+
+  /**
    * Negative control. With no persisted data the server render and the client
    * render agree trivially, so a clean result here proves the detector is not
    * simply always-green for a reason unrelated to the defect — it is the

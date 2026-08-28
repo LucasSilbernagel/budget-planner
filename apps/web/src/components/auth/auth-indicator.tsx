@@ -8,7 +8,9 @@ import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
  * Mounted once in `routes/__root.tsx`, so every route carries an always-visible
  * signal of session state: a signed-in user sees their email and — only when
  * their subscription is active — a "Premium" marker; a signed-out visitor sees a
- * "Sign in" affordance and nothing account-specific. On desktop (≥640px) it sits
+ * "Sign in" affordance and nothing account-specific, EXCEPT on `/login` itself,
+ * where that affordance would link to the page already on screen (story 41.3,
+ * UX-DR51 — see the note on the unauthenticated branch). On desktop (≥640px) it sits
  * on the SAME row as the primary nav, trailing/right-aligned (story 19-3); below
  * `sm:` it is a full-width top strip above the content (GlobalNav's bottom tab
  * bar carries the nav on mobile). It is kept out of `GlobalNav` so the 320px
@@ -41,6 +43,13 @@ import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
  * reserved min-height, so any state change swaps inner content without shifting
  * layout, and the strip never pushes the document past a 320px viewport.
  */
+
+/**
+ * The one route on which the strip must not offer its "Sign in" link (story
+ * 41.3, UX-DR51). Shared by the route check and the `<Link>` itself so the two
+ * cannot drift apart.
+ */
+const LOGIN_PATH = '/login' as const
 
 interface CurrentUser {
   userId: string
@@ -103,10 +112,38 @@ export function AuthIndicator() {
   // Re-resolve on every navigation so the strip never shows a stale identity
   // after a client-side sign-out (which navigates without remounting the root).
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  // Story 41.3 (UX-DR51). Which URLs count as "the sign-in page", all three
+  // MEASURED against the running app rather than assumed:
+  //
+  //  - `/login?error=invalid_or_expired` — the target `api/auth/login/verify`
+  //    redirects an expired magic link to. `location.pathname` excludes the
+  //    search string, so this matches. The user who just failed to sign in is
+  //    the last one who should be offered a link back here.
+  //  - `/login/` — the router CANONICALISES this (307 → `/login`) before the
+  //    strip ever renders, so `pathname` is never the trailing-slash form.
+  //    Measured, not inferred: probed at runtime, `page.url()` reads `/login`.
+  //  - `/Login`, `/LOGIN` — ⚠️ THE CASE THAT BIT. Route matching is
+  //    case-INSENSITIVE by default, but `location.pathname` preserves whatever
+  //    the user typed, and the router does NOT canonicalise case the way it
+  //    canonicalises the trailing slash. So `/Login` really does serve the
+  //    login page, and a bare `===` renders the self-link on it — the exact
+  //    defect this story removes. Hence `toLowerCase()`.
+  //
+  // ⚠️ `GlobalNav.tsx`'s `item.to === pathname` is the in-repo precedent for
+  // reading the route, and it has this same case hole — but there the failure
+  // mode is benign (a nav link simply is not marked active). Here it is the
+  // regression itself, so the precedent is followed for the READ and
+  // deliberately not for the COMPARISON. `toLowerCase()` (not
+  // `toLocaleLowerCase()`) is locale-independent, so a Turkish-locale client
+  // cannot map `I` to a dotless `ı` and reopen the hole.
+  const isOnLoginPage = pathname.toLowerCase() === LOGIN_PATH
 
-  // `pathname` is an intentional re-run trigger: the effect refetches the session
-  // on every navigation (not a value read in the body), so the strip never shows a
-  // stale identity after a client-side sign-out. Removing it defeats that fix.
+  // `pathname` now does two jobs. It is read in the render body (the route check
+  // above), and it is ALSO an intentional re-run trigger for this effect: the
+  // session is refetched on every navigation, so the strip never shows a stale
+  // identity after a client-side sign-out. The suppression below covers the
+  // SECOND job only — the value is deliberately absent from the effect's own
+  // body, and removing it from the dependency array would defeat that fix.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional re-run-on-navigation dependency
   useEffect(() => {
     let active = true
@@ -148,9 +185,41 @@ export function AuthIndicator() {
         <span aria-hidden="true" className="h-4 w-24" />
       )}
 
-      {authState.status === 'unauthenticated' && (
+      {/*
+        Story 41.3 (UX-DR51): no "Sign in" offer on the sign-in page. Until this
+        story `/login` rendered a link to `/login`, and because it is a TanStack
+        `<Link>` it rendered with `aria-current="page"` and an `active` class — so
+        the chrome did not merely point at the page already on screen, it
+        announced that it did.
+
+        ⚠️ This DIVERGES from UX-DR28 / story 21.1, which is the app's rule for a
+        link to the current page everywhere else: `GlobalNav` and `Footer` keep
+        the link and MARK it with `activeProps` + `aria-current="page"`. That rule
+        is for wayfinding, where "you are here" is a useful answer. This strip is
+        an account-status affordance, not navigation — an invitation to sign in,
+        on the sign-in page, has no destination worth marking. Recorded here so a
+        later story does not "restore consistency" by putting the link back.
+
+        ⚠️ `activeProps` cannot express this. It can restyle an active link but
+        not decline to render one, and story 31.5 measured that misapplying it
+        fails SILENTLY — it just marks nothing. The route read is `useRouterState`,
+        which this component already subscribes to for the refetch effect.
+
+        ⚠️ Only the CHILDREN are route-dependent; the wrapper above is not. Its
+        `min-h-[2rem]` is the sole height reserve, so returning `null` here — or
+        dropping the labelled `role="status"` region on this one route — would
+        trade a dead link for a collapsed strip and a layout shift, which is the
+        exact thing story 13.2 reserved the height to prevent.
+
+        ⚠️ The `loading` and `authenticated` branches are deliberately NOT
+        route-aware. An authenticated user genuinely reaches `/login` — this app
+        carries no route guards anywhere, a stance recorded at
+        `routes/retirement.tsx` — and the strip reporting who they are is the one
+        signal that explains why the page looks wrong to them.
+      */}
+      {authState.status === 'unauthenticated' && !isOnLoginPage && (
         <Link
-          to="/login"
+          to={LOGIN_PATH}
           className="rounded-md px-3 py-1 font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
         >
           Sign in

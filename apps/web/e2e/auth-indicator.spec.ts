@@ -46,8 +46,12 @@ test('login page keeps its card affordances and drops the redundant copyright li
   await page.goto('/login')
   await page.waitForLoadState('networkidle')
 
-  // The sign-in card rendered (scoped to the card's <h2>, not the AuthIndicator
-  // "Sign in" link that also renders on this route via the root layout).
+  // The sign-in card rendered. Scoped to the card's <h2> deliberately: story
+  // 41.3 removed the AuthIndicator's "Sign in" link FROM THIS ROUTE, so an
+  // unscoped /^sign in$/i match would now succeed on the heading alone and stop
+  // distinguishing the card from the strip. Keeping the role scope means this
+  // assertion still says what it always said — the CARD is here — rather than
+  // quietly becoming a weaker claim.
   await expect(page.getByRole('heading', { name: /^sign in$/i })).toBeVisible()
 
   // Terms of Service / Privacy Policy links are preserved INSIDE the card's
@@ -82,3 +86,88 @@ test('adds no horizontal overflow at 320px', async ({ page }) => {
     `home overflows horizontally with the auth indicator: ${scrollWidth} > ${clientWidth}`
   ).toBeLessThanOrEqual(clientWidth)
 })
+
+/**
+ * The sign-in page (story 41.3, UX-DR51).
+ *
+ * ⚠️ Both tests below assert the CONTRAST — the affordance present on `/` and
+ * absent on `/login` — in a single test rather than asserting the absence alone.
+ * A bare "zero sign-in links on /login" is indistinguishable from a strip that
+ * failed to render at all, and every pre-41.3 assertion on this surface runs at
+ * `/`, so none of them can tell the two apart either.
+ */
+test('drops the "Sign in" affordance on /login while the Overview keeps it', async ({ page }) => {
+  // ⚠️ The title says "the Overview", not "everywhere else", because `/` is the
+  // only route this test visits. A mutation that over-suppressed the link — say
+  // `pathname.startsWith('/log')` — would leave this green; what objects to that
+  // is the jsdom `/pricing` contrast test. Titles are what a human reads first,
+  // so this one claims only what it measures.
+  //
+  // Positive control first: the affordance really is there to be removed.
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const onHome = page.getByRole('status', { name: /account status/i })
+  await expect(onHome.getByRole('link', { name: /sign in/i })).toBeVisible()
+
+  await page.goto('/login')
+  await page.waitForLoadState('networkidle')
+
+  const onLogin = page.getByRole('status', { name: /account status/i })
+  // The strip itself survives — removing the region would trade a dead link for
+  // a collapsed strip, which is what the height test below measures.
+  await expect(onLogin).toBeVisible()
+  await expect(onLogin.getByRole('link', { name: /sign in/i })).toHaveCount(0)
+
+  // And the page's own sign-in card is untouched: this story removes the
+  // redundant chrome, not the affordance the user actually came for.
+  await expect(page.getByRole('heading', { name: /^sign in$/i })).toBeVisible()
+})
+
+/**
+ * AC-3: the strip must not collapse when its only child is removed.
+ *
+ * ⚠️ This is the half of the requirement jsdom cannot see — every rect there is
+ * `{0,0,0,0}`, so the unit suite's `min-h-[2rem]` is a class token, not a height.
+ *
+ * ⚠️ Nothing here is compared against a pixel constant. The reading on `/login`
+ * is compared against the reading on `/` at the SAME viewport, so whatever the
+ * host font does it does to both — the comparison cannot drift the way epic 34's
+ * hard-coded 768px budget did.
+ */
+for (const viewport of [
+  { width: 320, height: 720, label: '320px' },
+  { width: 1280, height: 800, label: 'desktop' },
+]) {
+  test(`the account strip is the same height on /login as elsewhere at ${viewport.label}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    const home = page.getByRole('status', { name: /account status/i })
+    // Anti-vacuity: if the link were absent here too, equal heights would prove
+    // nothing about removing it.
+    await expect(home.getByRole('link', { name: /sign in/i })).toBeVisible()
+    const homeBox = await home.boundingBox()
+
+    await page.goto('/login')
+    await page.waitForLoadState('networkidle')
+    const login = page.getByRole('status', { name: /account status/i })
+    await expect(login.getByRole('link', { name: /sign in/i })).toHaveCount(0)
+    const loginBox = await login.boundingBox()
+
+    expect(homeBox, 'the strip has no box on /').not.toBeNull()
+    expect(loginBox, 'the strip has no box on /login').not.toBeNull()
+    // A collapsed strip would measure 0 and would also "equal" a second
+    // collapsed reading, so the floor is asserted as well as the equality.
+    expect(loginBox?.height, `the strip collapsed on /login at ${viewport.label}`).toBeGreaterThan(
+      0
+    )
+    expect(
+      loginBox?.height,
+      `strip height differs between / and /login at ${viewport.label}: ` +
+        `${loginBox?.height} vs ${homeBox?.height}`
+    ).toBe(homeBox?.height)
+  })
+}
