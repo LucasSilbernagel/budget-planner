@@ -7,9 +7,11 @@ import { type Page, expect, test } from '@playwright/test'
  *   1. The `/categories` route gate against the REAL hydration path, not a
  *      mocked hook (project memory 4-11: SSR/curl smoke misses post-hydration
  *      bugs, and a mocked gate tests the mock).
- *   2. That the LOCKED picker inside the Add/Edit modal opens no second dialog
- *      in a real browser (AC-5) — the default experience for every non-premium
- *      visitor, which is what this suite runs as.
+ *   2. That the LOCKED picker inside the Add/Edit modal NAVIGATES to `/pricing`
+ *      in a real browser (story 41.2, FR66) — the default experience for every
+ *      non-premium visitor, which is what this suite runs as — leaving no second
+ *      dialog behind it, no surviving modal, and no body scroll-lock. jsdom can
+ *      prove none of that: it never navigates, and it never scrolls.
  *   3. That a free visitor's income/expense tables carry NO Category column at
  *      all (story 33.3, FR57), against the real hydration path. The
  *      `responsive-320.spec.ts` route sweep runs with EMPTY localStorage, so the
@@ -252,33 +254,102 @@ test('Settings surfaces categories as locked and does not link a free visitor th
   await expect(page.getByRole('link', { name: /custom categories/i })).toHaveCount(0)
 })
 
-test('AC-5: the locked picker inside the Add Expense modal opens no second dialog', async ({
-  page,
-}) => {
-  await page.goto('/expenses')
-  const trigger = page.getByRole('button', { name: '+ Add Expense' })
-  const dialog = page.getByRole('dialog', { name: 'Add Expense' })
+/**
+ * Story 41.2 (FR66) — the locked picker leads to Pricing.
+ *
+ * ⚠️ This test REPLACES the 30.4b assertion that clicking the locked picker did
+ * nothing. That assertion was "no second dialog appears", which an `<a>`
+ * satisfies trivially — it would have stayed GREEN against this change while
+ * documenting the opposite rule. What makes it fail if the fix regresses is the
+ * URL, plus the two things only a browser can check: that the entry modal is
+ * really gone, and that the page really scrolls afterwards.
+ */
+for (const { path, prefix, addButton, dialogName } of [
+  { path: '/expenses', prefix: 'expense', addButton: '+ Add Expense', dialogName: 'Add Expense' },
+  {
+    path: '/income',
+    prefix: 'income',
+    addButton: '+ Add Income Source',
+    dialogName: 'Add Income Source',
+  },
+] as const) {
+  test(`41.2 AC-1/AC-2: the locked picker in the ${dialogName} modal navigates to /pricing and releases the page`, async ({
+    page,
+  }) => {
+    await page.goto(path)
+    const trigger = page.getByRole('button', { name: addButton })
+    const dialog = page.getByRole('dialog', { name: dialogName })
 
-  // Survive a pre-hydration click, as the other modal specs do.
-  await expect(async () => {
-    await trigger.click()
-    await expect(dialog).toBeVisible({ timeout: 1000 })
-  }).toPass({ timeout: 15000 })
+    // Survive a pre-hydration click, as the other modal specs do.
+    await expect(async () => {
+      await trigger.click()
+      await expect(dialog).toBeVisible({ timeout: 1000 })
+    }).toPass({ timeout: 15000 })
 
-  await expect(page.getByRole('dialog')).toHaveCount(1)
+    await expect(page.getByRole('dialog')).toHaveCount(1)
 
-  const locked = page.getByTestId('expense-category-locked')
-  await expect(locked).toBeVisible()
-  await locked.click()
+    const locked = page.getByTestId(`${prefix}-category-locked`)
+    await expect(locked).toBeVisible()
+    const link = locked.getByRole('link')
+    await expect(link).toHaveAttribute('href', '/pricing')
 
-  // `Modal` assumes one open modal at a time; a nested one would break shared
-  // Escape handling and restore the body scroll lock out of order.
-  await expect(page.getByRole('dialog')).toHaveCount(1)
-  await expect(page.getByRole('dialog', { name: /go premium/i })).toHaveCount(0)
-  // And the first dialog must still be dismissible.
-  await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
-})
+    await link.click()
+
+    // Arrived, and the entry modal did not come along.
+    await expect(page).toHaveURL(/\/pricing$/)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // No upgrade dialog either: the fix is a navigation, never a nested modal.
+    await expect(page.getByRole('dialog', { name: /go premium/i })).toHaveCount(0)
+
+    // ⚠️ The locked control is a plain `<a href>`, so this is a REAL document
+    // load. Wait for it to commit before touching the new document: without this,
+    // `page.evaluate` races the swap and the probe reads a document that is not
+    // the one under test — either a `document.body` that is still null (the
+    // evaluate THROWS on `document.body.style`) or a body that has not been laid
+    // out yet (`scrollY` reads 0, which is indistinguishable from the scroll lock
+    // this test exists to catch). Measured while writing this test: the two route
+    // arms disagreed until the wait was added.
+    await page.waitForLoadState('load')
+    await page.setViewportSize({ width: 1280, height: 400 })
+
+    // ⚠️ Assert REAL SCROLLING, not `body.style.overflow`. Story 41.1 measured
+    // that the style property and the observable behaviour can disagree, and a
+    // wedged page is the user-visible failure this guards. The precondition is
+    // asserted separately so a short page can never make this vacuously green.
+    const scroll = await page.evaluate(() => {
+      window.scrollTo(0, 400)
+      return {
+        scrollY: window.scrollY,
+        scrollable: document.documentElement.scrollHeight > window.innerHeight,
+        overflow: document.body.style.overflow,
+      }
+    })
+    expect(scroll.scrollable, '/pricing is not tall enough to prove scrolling works').toBe(true)
+    expect(
+      scroll.scrollY,
+      `page is scroll-locked after leaving the entry modal (body.style.overflow=${scroll.overflow})`
+    ).toBeGreaterThan(0)
+
+    // ⚠️ Focus. The obvious assertion here —
+    // `activeElement === body || activeElement.isConnected` — is a TAUTOLOGY:
+    // `document.activeElement` only ever returns `body` or an in-document
+    // element, so no arm can be false, and in the SPA-refactor regression it
+    // would supposedly guard, focus drops to `body` and satisfies the first arm
+    // anyway. It asserted nothing. What IS falsifiable is that focus did not stay
+    // on a control belonging to the abandoned form: after this navigation nothing
+    // from the entry modal may hold focus.
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement
+      return {
+        tag: el?.tagName ?? null,
+        inLockedPicker: el?.closest('[data-testid$="-category-locked"]') !== null && el !== null,
+        inDialog: el?.closest('[role="dialog"]') !== null && el !== null,
+      }
+    })
+    expect(focus.inLockedPicker, 'focus is still inside the abandoned picker').toBe(false)
+    expect(focus.inDialog, 'focus is still inside a dialog after navigating away').toBe(false)
+  })
+}
 
 for (const { path, prefix, seededRowName, categoryText } of [
   {

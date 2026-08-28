@@ -381,7 +381,7 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
   //
   // What AC-4 still promises is unchanged: their CRUD keeps working
   // uncategorized. The page is NOT byte-identical to the premium one.
-  it('AC-5: clicking the locked picker inside the Add Expense modal opens NO second dialog', async () => {
+  it('41.2 AC-1/AC-3: the locked picker inside the Add Expense modal is a link OUT to /pricing, and opens no second dialog', async () => {
     const user = userEvent.setup()
     free()
     render(<ExpensesPage />)
@@ -390,12 +390,37 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
 
     const locked = screen.getByTestId('expense-category-locked')
-    await user.click(locked)
+    const link = within(locked).getByRole('link')
 
-    // Modal.tsx assumes ONE modal at a time; a nested one breaks Escape handling
-    // and restores the scroll lock out of order.
+    // ⚠️ Story 41.2 reversed 30.4b's AC-5. This test used to assert only that
+    // clicking opened no second dialog — which an `<a>` satisfies trivially, so
+    // it would have stayed GREEN against the very change it existed to forbid.
+    // The destination is what makes it fail if the fix regresses.
+    expect(link).toHaveAttribute('href', '/pricing')
+
+    // ⚠️ NOT clicked: jsdom does not implement navigation, so clicking a real
+    // `<a href>` emits `Not implemented: navigation` to stderr. The anchor has no
+    // `onClick`, so "no second dialog" holds by construction; the navigation is
+    // proved in `e2e/categories-premium.spec.ts`.
+
+    // Still exactly one dialog: `Modal` does not inert the background
+    // (Modal.tsx:38-40), so a nested dialog stays forbidden even though story
+    // 41.1's shared modal stack fixed the Escape and scroll-lock faults that
+    // were the ORIGINAL reason for the ban.
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(screen.queryByRole('dialog', { name: /go premium/i })).not.toBeInTheDocument()
+  })
+
+  it('41.2 AC-2: the income form carries the identical locked link, from the same component', async () => {
+    const user = userEvent.setup()
+    free()
+    render(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+
+    const locked = screen.getByTestId('income-category-locked')
+    expect(within(locked).getByRole('link')).toHaveAttribute('href', '/pricing')
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
   })
 
   it('a free user can still add an expense, uncategorized, with no required field added', async () => {
