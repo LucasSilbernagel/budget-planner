@@ -1111,10 +1111,55 @@ function RetirementAccumulationPlannerInner() {
         </div>
       </div>
 
-      {/* Model toggle */}
-      <fieldset className="p-4 surface-inset rounded-lg">
-        <legend className="text-sm font-medium text-label px-1">Retirement target model</legend>
-        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Model toggle.
+
+          ⚠️ THE <fieldset> IS A TRANSPARENT GROUPING WRAPPER; THE PANEL IS THE
+          <div> BELOW (story 44.2, UX-DR49). Do not move `p-4 surface-inset
+          rounded-lg` back onto the fieldset — that is the defect, and the reason
+          is not the one the epic gives.
+
+          A `<legend>` that is the fieldset's first child is the "rendered
+          legend": the browser lays it out against the fieldset's BORDER edge, so
+          the fieldset's own padding never applies to it. With the panel styling
+          on the fieldset the title sat 0px from the filled panel's top edge while
+          every radio below sat 16px in. MEASURED at 320px and 1280px before the
+          fix: `legend.top - fieldset.top === 0`, and `panel.top - legend.bottom
+          === -20px`.
+
+          ⚠️ It did NOT overflow or straddle the box, which is what `epics.md:445`
+          claims — `legendInsideBox` was already `true`. That matters because the
+          containment guard a reader of the epic would write passes on the broken
+          code. `e2e/retirement-model-group.spec.ts` asserts the label's position
+          RELATIVE TO THE PANEL instead, which genuinely reverses.
+
+          ⚠️ THE PANEL-STYLING MOVE IS THE FIX. `float-left` / `clear-both` are
+          NOT load-bearing here, and an earlier version of this comment claimed
+          they were. MEASURED in Chromium: dropping either one leaves all eleven
+          e2e geometry assertions green and the layout visually identical —
+          because with a transparent, unpadded fieldset the rendered legend's
+          placement is indistinguishable from an ordinary block's.
+
+          They are kept as cross-browser insurance, not decoration: per spec a
+          first-child `<legend>` is the rendered legend unless it is floated or
+          positioned, and Playwright runs Chromium only, so Firefox and Safari
+          are unverified here. The unit suite pins both tokens for that reason.
+
+          Two alternatives WERE measured and rejected: floating the legend while
+          the fieldset kept its padding blew the group's height 154 -> 402
+          (uncontained float), and `position: absolute` collapsed it to 134 with
+          the radios riding under the label.
+
+          The <legend> REMAINS THE FIRST CHILD — that is what gives the radio
+          group its accessible name, and this is the app's only fieldset/legend,
+          so there is no second instance to copy the pattern from. */}
+      <fieldset>
+        <legend className="float-left w-full block text-sm font-medium text-label mb-2">
+          Retirement target model
+        </legend>
+        <div
+          data-testid="retirement-model-panel"
+          className="clear-both p-4 surface-inset rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-3"
+        >
           {(
             Object.entries(MODEL_COPY) as [
               RetirementModel,
