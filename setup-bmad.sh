@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# BMAD Setup Script for Budget Planner Project
+# BMAD Setup Script for Longhand Budget Project
 # This script helps you install and configure BMAD Method
 
 echo "=========================================="
-echo "BMAD Method Setup for Budget Planner"
+echo "BMAD Method Setup for Longhand Budget"
 echo "=========================================="
 echo ""
 

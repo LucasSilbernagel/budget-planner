@@ -1,11 +1,14 @@
 # Development Setup Guide
 
-This guide covers setting up your local development environment for the Budget Planner application.
+This guide covers setting up your local development environment for Longhand Budget.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18 or later recommended)
-- [pnpm](https://pnpm.io/) (package manager)
+- [Node.js](https://nodejs.org/) 20.12 or later.
+  The repository pins Node 20 via `.nvmrc`, and every workspace declares `engines.node: ">=20.12.0"`.
+- [pnpm](https://pnpm.io/) 10.34.3.
+  The version is pinned by the `packageManager` field in the root `package.json`, which is the single source of truth for both local installs and CI.
+  `pnpm-lock.yaml` is `lockfileVersion: 9.0`, so pnpm 8 and older will fail `pnpm install --frozen-lockfile`.
 - [PostgreSQL](https://www.postgresql.org/) 15.x (for server-side features)
 - [Git](https://git-scm.com/)
 
@@ -23,10 +26,10 @@ cd budget-planner
 ```bash
 # Install all dependencies
 pnpm install
-
-# Build all packages
-pnpm build
 ```
+
+There is no separate build step before running the dev server.
+Note that `pnpm build` at the root builds `apps/web` only, not the other packages; the web build resolves `@budget-planner/*` imports to TypeScript source, so the packages do not need to be built first.
 
 ### 3. Set Up PostgreSQL
 
@@ -134,12 +137,15 @@ psql -h localhost -U budget-planner-user -d budget-planner-dev -c "\dt"
 #                    List of relations
 #  Schema |      Name       | Type  |        Owner
 # --------+-----------------+-------+---------------------
-#  public | balanceTracking | table | budget-planner-user
-#  public | expenses        | table | budget-planner-user
-#  public | incomeSources   | table | budget-planner-user
-#  public | rateLimits      | table | budget-planner-user
-#  public | savingsGoals    | table | budget-planner-user
-#  public | userProfiles    | table | budget-planner-user
+#  public | balanceTracking     | table | budget-planner-user
+#  public | categories          | table | budget-planner-user
+#  public | expenses            | table | budget-planner-user
+#  public | forecastingProfiles | table | budget-planner-user
+#  public | incomeSources       | table | budget-planner-user
+#  public | loginTokens         | table | budget-planner-user
+#  public | rateLimits          | table | budget-planner-user
+#  public | savingsGoals        | table | budget-planner-user
+#  public | userProfiles        | table | budget-planner-user
 #  public | users           | table | budget-planner-user
 ```
 
@@ -167,7 +173,7 @@ These features work entirely in the browser without a database connection:
 ### Paid Tier Features (Server-Side)
 
 These features require the PostgreSQL database:
-- User authentication via Paddle
+- User authentication by emailed magic link (app-owned; Paddle handles billing only, per ADR-003)
 - Multi-device data synchronization
 - Server-side persistence
 - Premium forecasting
@@ -220,14 +226,18 @@ pnpm install
 # Add a dependency to a specific package
 pnpm add <package> --filter <package-name>
 
-# Build all packages
+# Build the web app (this does NOT build packages/*)
 pnpm build
 
-# Run tests
+# Run unit tests
+# packages/config has no tests, so this covers three of the four packages
 pnpm test
 
-# Run linting
+# Run linting and tsconfig validation
 pnpm lint
+
+# Type-check every package (not run in CI; run it before opening a pull request)
+pnpm type-check:all
 ```
 
 ### Application
@@ -427,6 +437,7 @@ budget-planner/
 │       ├── public/           # Static assets
 │       └── .env              # Environment variables
 ├── packages/
+│   ├── core/                 # Shared finance, calculation, format, and sync utilities
 │   ├── db/                   # Database schema and ORM (Drizzle)
 │   │   ├── src/              # Database client, schema, migrations
 │   │   └── .env              # Database-specific env vars
@@ -457,9 +468,14 @@ The application uses the following tables:
 - **incomeSources** - Income sources (salary, freelance, etc.)
 - **expenses** - Expense tracking
 - **savingsGoals** - Savings targets and progress
-- **balanceTracking** - Investment and debt tracking
+- **balanceTracking** - Investments, debts, and things owned outright (the `asset` type, added by FR70)
 - **userProfiles** - Custom user profiles (paid tier)
-- **rateLimits** - API rate limiting (added recently)
+- **categories** - Custom income and expense categories (paid tier)
+- **forecastingProfiles** - Saved what-if forecasting scenarios (paid tier)
+- **loginTokens** - Single-use magic-link login tokens
+- **rateLimits** - API rate limiting
+
+The authoritative list is `packages/db/src/schema.ts`; check there rather than against this list if the two disagree.
 
 ### Environment Configuration
 
@@ -475,7 +491,9 @@ The application uses different databases for development and production:
 - Ensures CLOUD Act immunity (NFR1, NFR2)
 - Internal DNS with ~0.4ms latency
 
-The only difference between environments is the `DATABASE_URL` connection string.
+`DATABASE_URL` is not the only difference between environments.
+Production additionally requires `SESSION_SECRET`, `SITE_URL` and `EMAIL_API_KEY`, each of which fails closed when missing.
+See the environment-variable table in the [README](../README.md#environment-variables).
 
 ## Data Sovereignty & Compliance
 

@@ -1,7 +1,7 @@
-# Budget Planner - Product Specification & Architecture Document
+# Longhand Budget - Product Specification & Architecture Document
 
 > **📋 Document Type:** Product Specification & Technical Architecture  
-> **🎯 Purpose:** Single source of truth for Budget Planner implementation  
+> **🎯 Purpose:** Single source of truth for Longhand Budget implementation  
 > **🔒 Compliance:** Strict adherence to technical stack, architectural patterns, and privacy parameters required
 
 ---
@@ -20,7 +20,7 @@
 ## 1. Executive Summary & Sovereignty Architecture
 
 ### 🎯 Product Overview
-Budget Planner is a comprehensive financial management application designed to help users track income, expenses, savings goals, and investment balances with a focus on privacy and data sovereignty.
+Longhand Budget is a comprehensive financial management application designed to help users track income, expenses, savings goals, and investment balances with a focus on privacy and data sovereignty.
 
 ### 💰 Tier Structure
 

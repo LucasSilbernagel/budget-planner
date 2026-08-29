@@ -1,6 +1,6 @@
-# BMAD Method Setup Guide for Budget Planner
+# BMAD Method Setup Guide for Longhand Budget
 
-> **🎯 Your Project:** Budget Planner  
+> **🎯 Your Project:** Longhand Budget  
 > **📁 Location:** `/Users/lucassilbernagel/Documents/development/side-projects/budget-planner/`  
 > **📊 Status:** Ready for BMAD installation
 

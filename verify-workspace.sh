@@ -3,7 +3,7 @@
 # Verify pnpm is installed
 command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm not found. Please install pnpm first."; exit 1; }
 
-echo "=== Budget Planner Monorepo Verification ==="
+echo "=== Longhand Budget Monorepo Verification ==="
 echo ""
 
 echo "1. Checking pnpm workspaces configuration..."

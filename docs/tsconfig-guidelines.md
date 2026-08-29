@@ -1,6 +1,6 @@
 # TypeScript Configuration Guidelines
 
-This document outlines the standards and best practices for `tsconfig.json` files in the Budget Planner monorepo. Following these guidelines ensures consistency, maintainability, and prevents common linter/formatter issues.
+This document outlines the standards and best practices for `tsconfig.json` files in the Longhand Budget monorepo. Following these guidelines ensures consistency, maintainability, and prevents common linter/formatter issues.
 
 ## General Rules
 

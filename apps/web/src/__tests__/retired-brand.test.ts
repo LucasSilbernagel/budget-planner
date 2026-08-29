@@ -49,6 +49,30 @@ const REPO_ROOT = resolve(__dirname, '../../../..')
  */
 const PACKAGES_ROOT = resolve(REPO_ROOT, 'packages')
 
+/**
+ * Contributor-facing documentation at the repository root, swept for BOTH
+ * brands and copy (story 40-3, AC-5).
+ *
+ * WHY THIS EXISTS, and it is the same lesson as the docblock above, one level
+ * up. This file already generalised the brand sweep from N per-collection
+ * negatives to a repo-wide walk — but "repo-wide" meant `apps/web` plus
+ * `packages/`, and `/README.md` sits above both. `.md` has been in
+ * SCANNED_EXTENSIONS the whole time, so the extension was never the gap: the
+ * ROOTS were. The result was that the repository's most-read file carried
+ * `# Budget Planner` and the twice-retired "never sees your money" tagline
+ * while this suite ran fully green.
+ *
+ * Scope is deliberately narrow, and each exclusion is load-bearing:
+ *   - The repo root is walked ONE level deep, not recursively. A recursive walk
+ *     would pull in `_bmad-output/`, where planning artifacts quote the retired
+ *     brands ON PURPOSE to record what was retired - swept, they would either
+ *     fail forever or force an allow-list so broad it would re-blind the sweep.
+ *   - `docs/` IS walked recursively: it is contributor documentation, held to
+ *     the same standard as the README it is linked from.
+ */
+const REPO_DOC_ROOT = REPO_ROOT
+const DOCS_ROOT = resolve(REPO_ROOT, 'docs')
+
 /** Brands that must never appear as a CURRENT product name again. */
 const RETIRED_BRANDS = ['SoluBudget', 'Budget Planner'] as const
 
@@ -128,12 +152,30 @@ function walk(dir: string): string[] {
 }
 
 /**
+ * Top-level files only, no recursion - see REPO_DOC_ROOT for why descending
+ * into `_bmad-output/` would defeat the sweep rather than strengthen it.
+ *
+ * Uses `withFileTypes` rather than `statSync`: `stat` FOLLOWS symlinks, so a
+ * single dangling symlink at the repo root would throw ENOENT here at module
+ * scope and fail the whole file at COLLECTION - which contributes zero tests to
+ * a run whose totals can still look plausible.
+ */
+function walkTopLevel(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && SCANNED_EXTENSIONS.has(extname(entry.name)))
+    .map((entry) => join(dir, entry.name))
+}
+
+/** Contributor docs: the repo root's own files, plus everything under `docs/`. */
+const REPO_DOC_FILES = [...walkTopLevel(REPO_DOC_ROOT), ...walk(DOCS_ROOT)]
+
+/**
  * The raw walk, shared by both sweeps. Deliberately UNFILTERED: each sweep
  * applies its own allow-list, because the two invariants exempt different files
  * for different reasons and fusing them would silently give one sweep the
  * other's blind spots.
  */
-const ALL_FILES = [...walk(WEB_ROOT), ...walk(PUBLIC_ROOT), PWA_CONFIG]
+const ALL_FILES = [...walk(WEB_ROOT), ...walk(PUBLIC_ROOT), PWA_CONFIG, ...REPO_DOC_FILES]
 /** The copy sweep reaches further than the brand sweep — see PACKAGES_ROOT. */
 const ALL_COPY_FILES = [...ALL_FILES, ...walk(PACKAGES_ROOT)]
 
@@ -147,6 +189,22 @@ describe('no retired brand survives on a shipped surface (brand-1 AC-2)', () => 
     // Without this, a broken walk or an over-broad ALLOWED entry would make the
     // sweep below pass by scanning nothing at all.
     expect(files.length).toBeGreaterThan(100)
+  })
+
+  it('reaches the contributor docs outside apps/web (story 40-3, AC-5)', () => {
+    // The count assertion above CANNOT protect these: apps/web alone clears 100,
+    // so a REPO_DOC_FILES walk that silently returned [] would leave this sweep
+    // green with the repository's most-read file unscanned - which is precisely
+    // the state story 40-3 found. Pin the named files, not the count.
+    const swept = new Set(files.map(label))
+
+    // One name per walk would prove only that each walk returns SOMETHING.
+    // `product-document.md` is the third pin on purpose: extending this sweep is
+    // what exposed its retired brand, so a partial top-level regression must not
+    // be able to hide behind the README sentinel.
+    expect(swept).toContain('README.md')
+    expect(swept).toContain('product-document.md')
+    expect(swept).toContain('docs/development.md')
   })
 
   for (const brand of RETIRED_BRANDS) {
@@ -195,6 +253,17 @@ describe('no retired copy survives on a shipped surface (story 36-1 AC-4)', () =
     expect(underRoot(WEB_ROOT)).toBeGreaterThan(100)
     expect(underRoot(PUBLIC_ROOT)).toBeGreaterThan(0)
     expect(underRoot(PACKAGES_ROOT)).toBeGreaterThan(10)
+
+    // The repo-root docs need NAMES, not a per-root count: `REPO_DOC_ROOT` IS
+    // `REPO_ROOT`, so a `startsWith` floor on it is satisfied by every other
+    // root and proves nothing. `ALL_COPY_FILES` derives from `ALL_FILES` today,
+    // but a COPY_ALLOWED entry matching a root path — or a refactor that stops
+    // deriving — would drop these from the COPY sweep alone, with the brand
+    // sweep's own pin still green. That is this story's failure class, one list
+    // over, so it is pinned in both lists rather than inferred from one.
+    const sweptCopy = new Set(copyFiles.map(label))
+    expect(sweptCopy).toContain('README.md')
+    expect(sweptCopy).toContain('docs/development.md')
   })
 
   for (const copy of RETIRED_COPY) {
