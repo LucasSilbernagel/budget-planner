@@ -298,6 +298,107 @@ export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:fle
 export const RESPONSIVE_STACKED_CELL_CLASS =
   'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
+/** A cell holding a VALUE next to a TAG — the Savings "Monthly Allocation"
+ * amount beside its Auto/Fixed pill, and the Savings name beside its
+ * Account/Goal badge (story 42.3, UX-DR47).
+ *
+ * ## The defect these fix, and why the cell is not the place to fix it
+ *
+ * `max-sm:whitespace-normal` and `max-sm:[overflow-wrap:anywhere]` on
+ * {@link RESPONSIVE_CELL_CLASS} INHERIT into both children. `overflow-wrap:
+ * anywhere` (unlike `break-word`) reduces min-content width to about one
+ * character, so the flex items can shrink almost without limit;
+ * `max-sm:justify-between` then serves the field label first and collapses the
+ * pair. Measured at 320px on the CI font, pre-fix: the pair was squeezed to
+ * ~92px inside a 222px cell, the amount broke onto TWO lines, and the
+ * four-letter "Goal" badge rendered at 25px on FOUR lines — one character each.
+ *
+ * ⚠️ The fix belongs HERE, on the pair, and never on the cell. Restoring
+ * `whitespace-nowrap` to the cell would revert the wrapping contract recorded
+ * at the top of this module, which was measured at ~1134px inside a 320px
+ * viewport. Both cell tokens must survive this story byte-identical.
+ *
+ * ## ⚠️ THE VALUE AND THE TAG DO NOT GET THE SAME TREATMENT
+ *
+ * {@link RESPONSIVE_TAG_CLASS} goes on every tag. {@link RESPONSIVE_VALUE_NOWRAP_CLASS}
+ * goes ONLY on a value with a BOUNDED width — a currency figure. The Savings
+ * NAME is user-supplied free text with no `maxLength`, so it must keep
+ * wrapping; `nowrap` there is exactly the ~1134px revert above. Protect the
+ * tag, never the free-text value.
+ *
+ * ## ⚠️ `nowrap` IS NOT FREE — it moves the failure, and the bound is measured
+ *
+ * At 320px on DejaVu Sans the allocation cell holds `$987,654,321.00`
+ * (15 characters, pair 175px) with no overflow, and tips at
+ * `$9,876,543,210.00` (17 characters, pair 189px) — not because the pair
+ * outgrows the 222px cell, but because `max-sm:justify-between` crushes the
+ * "Monthly Allocation" label to ~21px first. The wrapper and the document stay
+ * clean at every tested value, so the failure is contained inside the cell.
+ * ~$987M is far past any plausible monthly saving, so the bound is accepted.
+ * `e2e/value-tag-one-line.spec.ts` pins it; re-measure before widening this
+ * cell rather than deleting the assertion.
+ *
+ * ⚠️ THAT BOUND IS USD-SPECIFIC, AND USD IS THE NARROW CASE. Currency is
+ * user-selectable (`packages/core/src/format/currency.ts`), and CHF renders the
+ * same figure as `CHF 987'654'321.00` — 18 characters, already past the tip —
+ * so a CHF user meets the ceiling around $98M, roughly an order of magnitude
+ * lower; BRL is similar. The e2e seed pins USD, so nothing regression-tests
+ * this. The failure past the tip is the same contained cell overflow. Recorded
+ * by code review rather than left as an absolute-sounding dollar figure.
+ *
+ * ## ⚠️ `max-sm:items-start` — why the alignment is partitioned by breakpoint
+ *
+ * `items-center` is right while both halves are one line, and wrong the moment
+ * the VALUE wraps: measured at 320px against the 138-character seeded name, the
+ * now-intact badge floated **88px** down the block, vertically centred beside
+ * ten lines of text and touching none of them. `max-sm:items-start` anchors it
+ * to the first line (-2px) while desktop keeps computed `center` — verified at
+ * 1280px — and the allocation pair's top delta stays 0 at BOTH widths. This
+ * follows the composition rule at the top of this module: append a `max-sm:`
+ * variant, never neutralise the base class. ⚠️ The misalignment only became
+ * visible once the badge stopped being crushed, so it is a consequence of this
+ * story's own fix, not a pre-existing defect. */
+export const RESPONSIVE_VALUE_TAG_CLASS = 'flex items-center gap-2 max-sm:items-start'
+
+/** The TAG half of a {@link RESPONSIVE_VALUE_TAG_CLASS} pair.
+ *
+ * `whitespace-nowrap` is the whole mechanism, and it works by raising a FLOOR
+ * rather than by forbidding a shrink: a flex item's `min-width: auto` floors it
+ * at min-content, and for non-wrapping text min-content IS the full string. The
+ * inherited `overflow-wrap: anywhere` is what drops that floor to about one
+ * character, which is how a four-letter "Goal" badge ended up 25px wide across
+ * four lines.
+ *
+ * ⚠️ `shrink-0` WAS HERE AND WAS REMOVED, deliberately — do not add it back
+ * without a failing test. Measured both ways:
+ *
+ *   - nowrap alone (no `shrink-0`): every geometry assertion GREEN. `shrink-0`
+ *     is a no-op once the floor is already the full string.
+ *   - `shrink-0` alone (no nowrap): WORSE THAN NEITHER. It pins the tag at
+ *     max-content while the badge text can still break, so the row cannot
+ *     absorb the excess: the wrapper overflowed 242 against 240 at 320px and
+ *     the widest-amount case overflowed its cell.
+ *
+ * So the token that reads like the protective one is the one that causes an
+ * overflow on its own, and the token that actually protects is the other. That
+ * asymmetry is only visible by mutating them SEPARATELY — mutating the pair
+ * together would have shown a red arm and taught the wrong lesson.
+ *
+ * Unprefixed on purpose: at and above `sm` the cell is already
+ * `whitespace-nowrap`, so this is a no-op there and the desktop rendering is
+ * unchanged by inspection. */
+export const RESPONSIVE_TAG_CLASS = 'whitespace-nowrap'
+
+/** The VALUE half — ⚠️ ONLY for a value whose width is BOUNDED, such as a
+ * formatted currency amount. Never put this on free text; see the asymmetry
+ * note on {@link RESPONSIVE_VALUE_TAG_CLASS}.
+ *
+ * Set on the CHILD, not the cell: a child's own `white-space` beats the value
+ * it inherits, so this needs no `max-sm:` variant and cannot be decided by
+ * Tailwind source order the way two same-property utilities on ONE element
+ * would be. */
+export const RESPONSIVE_VALUE_NOWRAP_CLASS = 'whitespace-nowrap'
+
 /** Wraps the row action buttons so the actions cell has exactly two flex
  * children (label + button group) below `sm`. Inert on desktop: an unclassed
  * block `<div>` leaves the inline buttons right-aligned exactly as before.

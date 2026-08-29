@@ -11,8 +11,11 @@ import {
   RESPONSIVE_SCROLL_SHADOW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
+  RESPONSIVE_TAG_CLASS,
   RESPONSIVE_TBODY_CLASS,
   RESPONSIVE_THEAD_CLASS,
+  RESPONSIVE_VALUE_NOWRAP_CLASS,
+  RESPONSIVE_VALUE_TAG_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from '@/components/ui/ResponsiveTable'
 import { render, screen } from '@/test/utils'
@@ -33,6 +36,20 @@ import { describe, expect, it } from 'vitest'
  */
 
 const tokens = (value: string): string[] => value.split(/\s+/).filter(Boolean)
+
+/** Class tokens with every variant prefix removed, so a negative assertion
+ * cannot be evaded by shipping the same utility under `max-sm:` / `sm:` / etc.
+ * ⚠️ Strips variants ONLY — non-greedy and bracket-aware — because a greedy
+ * `replace(/^.*:/, '')` mangles arbitrary-property tokens like
+ * `[padding-left:1rem]` into `1rem]`, which then matches nothing. Code review
+ * found exactly that hole in this file. */
+const bareUtilities = (list: string[]): string[] =>
+  list.map((token) => {
+    const bracket = token.indexOf('[')
+    const head = bracket === -1 ? token : token.slice(0, bracket)
+    const stripped = head.replace(/^(?:[a-z][a-z0-9-]*:)+/, '')
+    return bracket === -1 ? stripped : stripped + token.slice(bracket)
+  })
 
 describe('ResponsiveTable class layer', () => {
   describe('desktop classes are preserved verbatim (AC-2)', () => {
@@ -220,6 +237,87 @@ describe('ResponsiveTable class layer', () => {
       // one sideways-scrolling table. Containment wins.
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).toEqual(['overflow-x-auto'])
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).not.toContain('max-sm:overflow-x-visible')
+    })
+  })
+
+  describe('value/tag pairs (story 42.3, UX-DR47)', () => {
+    // ⚠️ Declaration only. jsdom computes no layout and Tailwind never loads,
+    // so nothing here can prove a line count — `e2e/value-tag-one-line.spec.ts`
+    // is the only layer that can. Read each title as "the class this AC needs
+    // is present".
+
+    it('the pair is a non-wrapping flex row, aligned to the first line below sm', () => {
+      const pairTokens = tokens(RESPONSIVE_VALUE_TAG_CLASS)
+      expect(pairTokens).toContain('flex')
+      expect(pairTokens).toContain('items-center')
+      // ⚠️ Partitioned by breakpoint, per the module's own composition rule:
+      // desktop keeps `items-center` byte-identical, and only below `sm` does
+      // the tag anchor to the name's FIRST line. Measured at 320px with the
+      // 138-character seeded name: `items-center` floated the intact badge 88px
+      // down the block, detached from any line of text; `max-sm:items-start`
+      // puts it at -2px. Measured at 1280px: computed `center`, unchanged, and
+      // the allocation pair's top delta stays 0 at BOTH widths.
+      expect(pairTokens).toContain('max-sm:items-start')
+      // `flex-wrap` would let the tag drop to its own line — the defect wearing
+      // a different shape. Variant-stripped: `max-sm:flex-wrap` is the form that
+      // would actually ship, since max-sm IS the regime where the defect lives.
+      expect(bareUtilities(pairTokens)).not.toContain('flex-wrap')
+    })
+
+    it('the tag resists mid-word breaking, and does NOT carry shrink-0', () => {
+      const tagTokens = tokens(RESPONSIVE_TAG_CLASS)
+      // The cell's inherited `overflow-wrap: anywhere` drops the tag's
+      // min-content width to ~1 character. Measured pre-fix at 320px: the
+      // four-letter "Goal" badge rendered 25px wide across FOUR lines.
+      // `whitespace-nowrap` restores the floor to the full string.
+      expect(tagTokens).toContain('whitespace-nowrap')
+      // ⚠️ NOT an omission. Measured: `shrink-0` is a no-op alongside nowrap,
+      // and ON ITS OWN it overflows the wrapper (242 vs 240 at 320px) by
+      // pinning the tag at max-content while its text can still break. See the
+      // constant's docblock. Re-adding it needs a failing test first.
+      // Variant-stripped: `max-sm:shrink-0` is the only regime where shrink
+      // would matter, so an un-stripped check would miss the real revert.
+      expect(bareUtilities(tagTokens)).not.toContain('shrink-0')
+    })
+
+    it('the bounded-value class carries nowrap and nothing that reserves width', () => {
+      // Applied to a formatted currency figure only. Anything that adds
+      // horizontal box size here would spend width the 640-1024px budget does
+      // not have (see the block above RESPONSIVE_SCROLL_SHADOW_CLASS).
+      const valueTokens = tokens(RESPONSIVE_VALUE_NOWRAP_CLASS)
+      expect(valueTokens).toContain('whitespace-nowrap')
+      for (const utility of bareUtilities(valueTokens)) {
+        expect(utility).not.toMatch(/^(p|px|py|ps|pe|pl|pr|m|mx|ms|me|ml|mr|gap|w|min-w)-/)
+        // ⚠️ A greedy `replace(/^.*:/, '')` would turn `[padding-left:1rem]`
+        // into `1rem]` and sail straight through the check above — the guard
+        // evading itself. `bareUtilities` strips variants only, so an arbitrary
+        // PROPERTY that reserves width is caught here instead.
+        expect(utility).not.toMatch(/^\[(padding|margin|width|min-width|gap|inline-size)/)
+      }
+    })
+
+    // ⚠️ Titled for what it CHECKS. It pins the two load-bearing tokens and the
+    // absence of a nowrap revert — it is NOT a byte-for-byte pin of the whole
+    // constant, and an earlier title claiming "byte-identical" over-promised.
+    // The byte-level guarantee for this story comes from the diff (no hunk
+    // touches these constants), not from this case.
+    it('⚠️ the cell wrapping contract survives this story (AC-2)', () => {
+      // The tempting fix — putting `whitespace-nowrap` back on the CELL —
+      // reverts the 320px card layout. `ResponsiveTable.tsx` records that
+      // swapping out either token was measured at ~1134px inside a 320px
+      // viewport. The fix belongs on the pair, one level in.
+      for (const value of [RESPONSIVE_CELL_CLASS, RESPONSIVE_STACKED_CELL_CLASS]) {
+        const cellTokens = tokens(value)
+        expect(cellTokens).toContain('max-sm:whitespace-normal')
+        expect(cellTokens).toContain('max-sm:[overflow-wrap:anywhere]')
+        // Variant-stripped: catches `whitespace-nowrap`, `max-sm:whitespace-nowrap`
+        // and `sm:whitespace-nowrap` alike. The unprefixed base token is
+        // EXPECTED on these constants (desktop), so exclude it from the check
+        // by looking only at what the max-sm regime would add.
+        expect(
+          cellTokens.filter((t) => t.startsWith('max-sm:')).map((t) => t.replace(/^max-sm:/, ''))
+        ).not.toContain('whitespace-nowrap')
+      }
     })
   })
 

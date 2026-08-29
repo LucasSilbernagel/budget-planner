@@ -40,8 +40,11 @@ import {
   RESPONSIVE_SCROLL_SHADOW_CLASS,
   RESPONSIVE_STACKED_CELL_CLASS,
   RESPONSIVE_TABLE_CLASS,
+  RESPONSIVE_TAG_CLASS,
   RESPONSIVE_TBODY_CLASS,
   RESPONSIVE_THEAD_CLASS,
+  RESPONSIVE_VALUE_NOWRAP_CLASS,
+  RESPONSIVE_VALUE_TAG_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
@@ -864,12 +867,17 @@ export function SavingsPage() {
                           <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Name</FieldLabel>
-                              <div className="flex items-center gap-2">
+                              {/* ⚠️ The NAME deliberately does NOT get
+                                RESPONSIVE_VALUE_NOWRAP_CLASS: it is unbounded
+                                user free text, so it must keep wrapping. Only
+                                the badge is protected. See the asymmetry note
+                                on RESPONSIVE_VALUE_TAG_CLASS. */}
+                              <div className={RESPONSIVE_VALUE_TAG_CLASS}>
                                 <span className="font-medium text-heading text-sm">
                                   {goal.name}
                                 </span>
                                 <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs ${
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs ${RESPONSIVE_TAG_CLASS} ${
                                     isAccountRow
                                       ? 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
                                       : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
@@ -896,15 +904,18 @@ export function SavingsPage() {
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Monthly Allocation</FieldLabel>
-                              <div className="flex items-center gap-2">
+                              <div className={RESPONSIVE_VALUE_TAG_CLASS}>
+                                {/* A formatted currency figure is BOUNDED, so
+                                  it may be nowrap — unlike the name above. The
+                                  measured ceiling is on RESPONSIVE_VALUE_TAG_CLASS. */}
                                 <span
-                                  className="text-muted text-sm"
+                                  className={`text-muted text-sm ${RESPONSIVE_VALUE_NOWRAP_CLASS}`}
                                   data-testid={`savings-allocation-${goal.id}`}
                                 >
                                   {formatAmount(effectiveAllocation)}
                                 </span>
                                 <span
-                                  className="inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs"
+                                  className={`inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs ${RESPONSIVE_TAG_CLASS}`}
                                   data-testid={`savings-allocation-mode-${goal.id}`}
                                 >
                                   {isAutomatic ? 'Auto' : 'Fixed'}
