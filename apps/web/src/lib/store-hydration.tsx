@@ -7,6 +7,7 @@ import { useIncomeStore } from '../stores/incomeStore'
 import { useOverviewDurationStore } from '../stores/overviewDurationStore'
 import { usePlannerVisibilityStore } from '../stores/plannerVisibilityStore'
 import { useProfileStore } from '../stores/profileStore'
+import { useRetirementPlannerStore } from '../stores/retirementPlannerStore'
 import { useSavingsStore } from '../stores/savingsStore'
 import { useTableSortStore } from '../stores/tableSortStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -69,6 +70,7 @@ export function StoreHydration() {
       useOverviewDurationStore,
       usePlannerVisibilityStore,
       useTableSortStore,
+      useRetirementPlannerStore,
     ]
 
     for (const store of stores) {

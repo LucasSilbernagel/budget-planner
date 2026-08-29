@@ -18,13 +18,25 @@ import {
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { parseAge, parseCurrencyToCents, parsePercentageToDecimal } from '../lib/retirement-parsers'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useBalanceEntries, useTotalInvestmentBalance } from '../stores/balanceStore'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { useExpenses } from '../stores/expenseStore'
 import { useIncomeSources } from '../stores/incomeStore'
+import {
+  useMarkDesiredIncomeAuthored,
+  useRetirementPlan,
+  useSetAnnualReturnInput,
+  useSetCurrentAgeInput,
+  useSetDesiredIncomeForLocale,
+  useSetDesiredIncomeInput,
+  useSetIncomeBasis,
+  useSetLifeExpectancyInput,
+  useSetModel,
+  useSetPostRetirementReturn,
+} from '../stores/retirementPlannerStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import RetirementTimelineChart from './RetirementTimelineChart'
 
@@ -506,17 +518,37 @@ function RetirementAccumulationPlannerInner() {
     }
   }, [incomeSources, expenses])
 
-  const [currentAgeInput, setCurrentAgeInput] = useState<string>('')
-  const [lifeExpectancyInput, setLifeExpectancyInput] = useState<string>('')
-  const [desiredIncomeInput, setDesiredIncomeInput] = useState<string>(() =>
-    // Initial basis is 'annual', so the annual figure seeds directly.
-    prefillDesiredIncomeCents === null
-      ? ''
-      : formatForInputDisplay(prefillDesiredIncomeCents, locale)
-  )
-  const [incomeBasis, setIncomeBasis] = useState<IncomeBasis>('annual')
-  const [annualReturnInput, setAnnualReturnInput] = useState<string>('6.0')
-  const [model, setModel] = useState<RetirementModel>('deplete')
+  // ── The plan (story 44.1, FR71) ──────────────────────────────────────────
+  // Held in a PERSISTED store rather than component state. `/retirement`
+  // unmounts on every route change, so `useState` lost the whole plan on a nav
+  // as well as on a reload. Everything below is still the raw input STRING,
+  // exactly as typed — the parse gates further down need to tell "not filled in"
+  // from "entered zero", and that distinction only survives if `''` does.
+  //
+  // The two derived figures above are deliberately NOT in the store: they track
+  // the Balance/Income/Expenses stores on purpose (FR48/FR49), and persisting
+  // them would restore the savings you had when you saved the plan.
+  const {
+    currentAgeInput,
+    lifeExpectancyInput,
+    desiredIncomeInput,
+    desiredIncomeTouched,
+    desiredIncomeLocale,
+    incomeBasis,
+    annualReturnInput,
+    postRetirementReturnInput,
+    postRetirementTouched,
+    model,
+  } = useRetirementPlan()
+  const setCurrentAgeInput = useSetCurrentAgeInput()
+  const setLifeExpectancyInput = useSetLifeExpectancyInput()
+  const setDesiredIncomeInput = useSetDesiredIncomeInput()
+  const markDesiredIncomeAuthored = useMarkDesiredIncomeAuthored()
+  const setDesiredIncomeForLocale = useSetDesiredIncomeForLocale()
+  const setIncomeBasis = useSetIncomeBasis()
+  const setAnnualReturnInput = useSetAnnualReturnInput()
+  const setPostRetirementReturn = useSetPostRetirementReturn()
+  const setModel = useSetModel()
 
   // The post-retirement rate MIRRORS the accumulation rate until the user edits
   // it, after which it is independent. That is what makes an untouched planner
@@ -526,9 +558,10 @@ function RetirementAccumulationPlannerInner() {
   //
   // ⚠️ The stored value starts EMPTY, not '6.0': a literal would end the mirror
   // on the very first render. Everything downstream reads the derived
-  // `effectivePostRetirementReturnInput`, never the raw state.
-  const [postRetirementReturnInput, setPostRetirementReturnInput] = useState<string>('')
-  const [postRetirementTouched, setPostRetirementTouched] = useState<boolean>(false)
+  // `effectivePostRetirementReturnInput`, never the raw state. Since 44.1 that
+  // default lives in `RETIREMENT_PLAN_DEFAULTS`, and `coerceRetirementPlan`
+  // re-establishes the empty-while-untouched pairing on every rehydrate so a
+  // restored plan can never carry an invisible stale rate.
   const effectivePostRetirementReturnInput = postRetirementTouched
     ? postRetirementReturnInput
     : annualReturnInput
@@ -542,27 +575,104 @@ function RetirementAccumulationPlannerInner() {
   // a silent, unflagged overstatement of the required nest egg. So the value is
   // converted to the CURRENT basis as it is written.
   //
-  // The basis is read through a ref rather than a dependency on purpose: it must
-  // influence the value written, but must NOT re-trigger the effect, because
-  // switching monthly/annual has to leave a typed number exactly as entered and
-  // change only its meaning.
-  const incomeBasisRef = useRef(incomeBasis)
-  incomeBasisRef.current = incomeBasis
+  // ⚠️ The basis USED to be read through a ref, so that switching monthly/annual
+  // left a typed number exactly as entered and changed only its meaning. Story
+  // 44.1 replaced the ref with a real dependency, because `desiredIncomeTouched`
+  // now provides that protection directly and more precisely: a value the user
+  // authored is guarded by the early return below, so the only value a basis
+  // switch can rewrite is one the app seeded itself.
+  //
+  // Keeping the ref once the plan persists would have been a correctness bug, not
+  // a style choice — see the effect's comment.
 
-  // NOTE: `incomeBasis` is intentionally absent from the dependency list — it is
-  // read through the ref above. Adding it would rewrite a user-typed value on
-  // every basis switch, exactly the behaviour this field must not have.
+  // ⚠️ THE SEEDED VALUE MUST FOLLOW THE BASIS, OR THE PLAN DOES NOT ROUND-TRIP
+  // (story 44.1 code review). Reachable sequence, measured: an income-seeded user
+  // sees 12,000.00 under Annual, flips the select to Monthly, and the field still
+  // reads 12,000.00 — now solved as a MONTHLY income, i.e. 12x the intended plan.
+  // That trio (`untouched` + `monthly` + an annual figure) then persists, and on
+  // the next load this effect re-fires and re-seeds to 1,000.00. The projection
+  // the user left is not the projection they come back to.
+  //
+  // Before persistence the state evaporated at unmount; persisting it is what
+  // made it observable, so this story owns it. `incomeBasis` is therefore a real
+  // dependency: while the value is UNTOUCHED the seed follows the basis, so what
+  // is on screen and what reloads are the same number. A value the user authored
+  // is untouched by this — the early return below covers it.
+  //
+  // ⚠️⚠️ `desiredIncomeTouched` IS THE PERSISTENCE GUARD, AND IT IS LOAD-BEARING
+  // (story 44.1). `prefillDesiredIncomeCents` derives from the INCOME store,
+  // which rehydrates in the same `StoreHydration` pass as the plan — so on every
+  // visit the prefill goes null -> real, this effect fires, and without the flag
+  // it overwrites the number the user saved. Silent, and only for users who have
+  // income rows: every other restored field still checks out, so the plan looks
+  // like it persisted while this one field quietly resets. `deferred-work.md:643`
+  // records the identical shape on the sibling `RetirementForm`.
+  //
+  // Seeding is therefore a courtesy for a field the user has never authored, and
+  // it stops the moment they do. It is not a "keep this in sync with income"
+  // behaviour and never was — the seed is a starting point, not a derivation.
   useEffect(() => {
-    if (prefillDesiredIncomeCents === null) {
+    if (prefillDesiredIncomeCents === null || desiredIncomeTouched) {
       return
     }
     const seededCents =
-      incomeBasisRef.current === 'annual'
+      incomeBasis === 'annual'
         ? prefillDesiredIncomeCents
         : Math.round(prefillDesiredIncomeCents / 12)
     const next = formatForInputDisplay(seededCents, locale)
-    setDesiredIncomeInput((prev) => (prev === next ? prev : next))
-  }, [prefillDesiredIncomeCents, locale])
+    setDesiredIncomeForLocale(next, locale)
+  }, [
+    prefillDesiredIncomeCents,
+    locale,
+    incomeBasis,
+    desiredIncomeTouched,
+    setDesiredIncomeForLocale,
+  ])
+
+  // ⚠️ A PERSISTED MONEY STRING MUST BE RE-EXPRESSED WHEN THE LOCALE CHANGES, OR
+  // THE PLAN'S CENTRAL FIGURE SILENTLY RESCALES (story 44.1 code review).
+  //
+  // This field persists a DISPLAY string, unlike every other store in the app,
+  // which persists integer cents. The string's meaning depends on the locale it
+  // was written under, and the locale follows the user's currency choice — which
+  // is two clicks away in Settings. MEASURED against the real parser:
+  //
+  //   '55.000,00'  authored de-DE, reparsed en-US -> 5500 cents   ($55, not €55,000)
+  //   '1234,56'    authored de-DE, reparsed en-US -> 12345600      ($123,456)
+  //
+  // No throw, no invalid state: the field goes on showing the old string while
+  // the solver confidently answers a different question. Only an AUTHORED value
+  // is at risk — an untouched seed is rewritten by the effect above, which has
+  // `locale` in its deps — so this targets exactly the number the user chose.
+  //
+  // Re-express rather than reformat blindly: parse under the locale the string
+  // was WRITTEN in, then format under the current one, so the magnitude is
+  // carried across rather than reinterpreted.
+  useEffect(() => {
+    if (!desiredIncomeTouched || desiredIncomeLocale === '' || desiredIncomeLocale === locale) {
+      return
+    }
+    let next: string
+    try {
+      next = formatForInputDisplay(
+        parseCurrencyToCents(desiredIncomeInput, desiredIncomeLocale),
+        locale
+      )
+    } catch {
+      // A partial or malformed entry ('1,2', '') has no magnitude to carry. Leave
+      // the characters exactly as the user left them and just adopt the new
+      // locale, so this does not retry on every render.
+      setDesiredIncomeForLocale(desiredIncomeInput, locale)
+      return
+    }
+    setDesiredIncomeForLocale(next, locale)
+  }, [
+    locale,
+    desiredIncomeLocale,
+    desiredIncomeTouched,
+    desiredIncomeInput,
+    setDesiredIncomeForLocale,
+  ])
 
   // Re-echo a currency field in grouped, locale-aware form on blur. Uses the
   // non-throwing core parser so it can never throw inside the state updater. Both
@@ -690,6 +800,7 @@ function RetirementAccumulationPlannerInner() {
     help,
     value,
     onChange,
+    onUserEdit,
     children,
   }: {
     id: string
@@ -697,6 +808,13 @@ function RetirementAccumulationPlannerInner() {
     help: string
     value: string
     onChange: React.Dispatch<React.SetStateAction<string>>
+    /**
+     * Fired when the USER types, and deliberately not on blur (story 44.1).
+     * Blur runs `reEcho` on its own, and a tab-through with no keystroke must not
+     * count as authoring the value — that would freeze the income prefill for
+     * someone who only moved focus past the field.
+     */
+    onUserEdit?: () => void
     children?: React.ReactNode
   }) => (
     <div>
@@ -714,7 +832,24 @@ function RetirementAccumulationPlannerInner() {
           id={id}
           name={id}
           value={value}
-          onChange={(e) => onChange(sanitizeMoneyChange(e.target, locale))}
+          onChange={(e) => {
+            // ⚠️ Latch AFTER sanitizing, and only if the value actually MOVED
+            // from what was on screen (story 44.1 code review). Latching first
+            // meant one rejected keystroke — a letter in a money field — silently
+            // and permanently ended the income seed for that user, across every
+            // future session, without changing a character on screen.
+            //
+            // ⚠️ Compare against `value`, the CURRENT state, not against
+            // `e.target.value`: the latter is the post-keystroke raw input, so a
+            // normal accepted keystroke leaves the two equal and the comparison
+            // inverts — the latch would then fire on exactly the rejected
+            // keystrokes it exists to ignore. (Caught in review of this fix.)
+            const sanitized = sanitizeMoneyChange(e.target, locale)
+            if (sanitized !== value) {
+              onUserEdit?.()
+            }
+            onChange(sanitized)
+          }}
           onBlur={reEcho(onChange)}
           inputMode="decimal"
           placeholder="0.00"
@@ -874,6 +1009,7 @@ function RetirementAccumulationPlannerInner() {
             help: `The ${incomeBasis} income you want in retirement`,
             value: desiredIncomeInput,
             onChange: setDesiredIncomeInput,
+            onUserEdit: () => markDesiredIncomeAuthored(locale),
             children: (
               <div className="mt-2">
                 <label htmlFor="incomeBasis" className="block text-sm font-medium text-label mb-1">
@@ -945,10 +1081,9 @@ function RetirementAccumulationPlannerInner() {
               id="postRetirementReturn"
               name="postRetirementReturn"
               value={effectivePostRetirementReturnInput}
-              onChange={(e) => {
-                setPostRetirementTouched(true)
-                setPostRetirementReturnInput(e.target.value)
-              }}
+              // One store action writes the rate AND its touched flag, so the
+              // pair can never be persisted out of step (story 44.1, AC-3).
+              onChange={(e) => setPostRetirementReturn(e.target.value)}
               inputMode="decimal"
               min="0"
               step="0.1"
@@ -964,7 +1099,10 @@ function RetirementAccumulationPlannerInner() {
           {/* The "follows the rate above" clause stops being true the moment the
               user edits this field, and nothing ever resets `postRetirementTouched`
               — so it must disappear then rather than keep asserting a behaviour
-              that has permanently ended. */}
+              that has permanently ended. Since 44.1 the flag is PERSISTED with the
+              rate, so "permanently" now outlives the session: a restored plan must
+              show the hint that matches its own state, which is why one store
+              action writes both halves. */}
           <p className="text-sm text-muted mt-1">
             {postRetirementTouched
               ? 'What your savings earn once you retire — lower it to model a safer allocation'

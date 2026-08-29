@@ -21,7 +21,8 @@
  * Functional preference stores are intentionally NOT purged — they are not
  * personal financial data: `budget-planner-currency-prefs-v1` (currencyStore)
  * and `budget-planner-theme-prefs-v1` (themeStore). Display preferences are left
- * intact for both callers.
+ * intact for both callers. The retirement PLAN is on the other side of that line
+ * and IS purged — see the call below for why.
  */
 
 import { useBalanceStore } from '@/stores/balanceStore'
@@ -29,6 +30,7 @@ import { useCategoryStore } from '@/stores/categoryStore'
 import { useExpenseStore } from '@/stores/expenseStore'
 import { useIncomeStore } from '@/stores/incomeStore'
 import { useProfileStore } from '@/stores/profileStore'
+import { useRetirementPlannerStore } from '@/stores/retirementPlannerStore'
 import { useSavingsStore } from '@/stores/savingsStore'
 import { createSyncQueue } from '@budget-planner/core/sync'
 
@@ -73,6 +75,18 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
   safely(() => {
     useCategoryStore.getState().reset()
     useCategoryStore.persist.clearStorage()
+  })
+  // The retirement plan (Story 44.1) IS purged, unlike the table sort below.
+  // The line this function draws is personal financial data vs display
+  // preference, and a plan holds the user's age, their life expectancy and the
+  // income they hope to retire on — the most personal figures in the app, and
+  // the only place two of them are recorded at all. It sits with categories as
+  // user-authored financial data, not with `theme` and `currency`. "Clear local
+  // data" that left someone's retirement income behind would not have cleared
+  // their local data.
+  safely(() => {
+    useRetirementPlannerStore.getState().resetPlan()
+    useRetirementPlannerStore.persist.clearStorage()
   })
   // Profiles and balance expose reset() (back to their seeded/empty defaults).
   safely(() => {

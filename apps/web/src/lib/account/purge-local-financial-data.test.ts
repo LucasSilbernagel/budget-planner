@@ -2,8 +2,14 @@
  * purgeLocalFinancialData tests (Story 10-5, AC-5 — code-review patch)
  *
  * Verifies the on-erasure local cleanup:
- *  - all SIX financial Zustand stores are reset + their persisted storage cleared
- *    (categories joined the set in Story 30.4a);
+ *  - all SEVEN financial Zustand stores are reset + their persisted storage cleared
+ *    (categories joined the set in Story 30.4a; the retirement plan in Story 44.1);
+ *
+ *    ⚠️ EVERY STORE THE UTIL TOUCHES MUST BE MOCKED HERE, and not only for
+ *    isolation: an unmocked import runs the REAL store inside an otherwise fully
+ *    mocked suite, and — worse — nothing then asserts it was purged at all. Story
+ *    44.1 added the retirement plan to the util and this file was not updated, so
+ *    deleting that purge left every suite green (found in code review);
  *  - the durable paid-tier sync queue (`bp-sync-queue-<userId>`) is cleared too —
  *    it holds raw financial SyncOperation payloads that would otherwise survive
  *    erasure (the review's HIGH finding);
@@ -27,8 +33,17 @@ const h = vi.hoisted(() => ({
   balanceClear: vi.fn(),
   categoryReset: vi.fn(),
   categoryClear: vi.fn(),
+  retirementPlanReset: vi.fn(),
+  retirementPlanClear: vi.fn(),
   queueClear: vi.fn().mockResolvedValue(undefined),
   createSyncQueue: vi.fn(),
+}))
+
+vi.mock('@/stores/retirementPlannerStore', () => ({
+  useRetirementPlannerStore: {
+    getState: () => ({ resetPlan: h.retirementPlanReset }),
+    persist: { clearStorage: h.retirementPlanClear },
+  },
 }))
 
 vi.mock('@/stores/incomeStore', () => ({
@@ -71,7 +86,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('purgeLocalFinancialData', () => {
-  it('resets + clears all six financial stores and the user-scoped sync queue', async () => {
+  it('resets + clears all seven financial stores and the user-scoped sync queue', async () => {
     await purgeLocalFinancialData('user-9')
 
     expect(h.incomeSetState).toHaveBeenCalledWith({ incomeSources: [] })
@@ -88,6 +103,13 @@ describe('purgeLocalFinancialData', () => {
     expect(h.categoryClear).toHaveBeenCalledTimes(1)
     expect(h.balanceReset).toHaveBeenCalledTimes(1)
     expect(h.balanceClear).toHaveBeenCalledTimes(1)
+    // Story 44.1: the retirement plan holds the user's age, life expectancy and
+    // the income they hope to retire on — personal financial data, so it is
+    // purged, unlike the table sort (a display preference) which deliberately is
+    // not. "Clear local data" that left someone's retirement income behind would
+    // not have cleared their local data.
+    expect(h.retirementPlanReset).toHaveBeenCalledTimes(1)
+    expect(h.retirementPlanClear).toHaveBeenCalledTimes(1)
 
     // The durable financial queue must be cleared for THIS user (AC-5 gap fix).
     expect(h.createSyncQueue).toHaveBeenCalledWith('user-9')

@@ -55,6 +55,42 @@ function RetirementPage() {
    * reached rarely and deliberately by someone who already knows they turned it
    * off. Covering it too would mean rendering both trees and swapping them in
    * CSS, which doubles the DOM and makes the planner do real work while hidden.
+   *
+   * ⚠️ EXTENDED BY STORY 44.1, and the reason is the same one. The plan itself
+   * is now persisted, so the same skipHydration window applies to the input
+   * VALUES: the server paints `RETIREMENT_PLAN_DEFAULTS` (age 35, life
+   * expectancy 90) and a saved plan replaces them at hydration. MEASURED, not
+   * assumed — `components/__tests__/retirement-plan-first-paint.dom.test.tsx`
+   * pins first paint `35` -> settled `42`, with no recoverable React error, so
+   * it is a value swap and not a hydration mismatch.
+   *
+   * Deliberately NOT gated behind `useStoresHydrated()` + a skeleton, which is
+   * what UX-DR43 asks of a data-bearing surface, for two reasons:
+   *   1. A default is not a false claim. UX-DR43 exists to stop a confident
+   *      `$0.00` standing where real money exists; `35` is the app's published
+   *      starting point, which FR71 put there on purpose. (Contestable: NFR9
+   *      says a pending state must never read as the wrong page, and for one
+   *      paint a returning user's `35` is the wrong figure. A judgement call.)
+   *   2. The cost lands on the wrong user. A nine-field form skeleton would show
+   *      to every FIRST-TIME visitor — who has no saved plan and nothing to wait
+   *      for — to spare returning users one paint. Both UX-DR43 primitives
+   *      skeleton read-only data surfaces; there is no precedent in this repo
+   *      for skeletoning a form.
+   *
+   * ⚠️ A THIRD REASON WAS OFFERED AND IS WITHDRAWN — recorded because the
+   * mistake is easy to repeat. It argued that the visibility swap above is a
+   * LARGER accepted swap on this same route, so a skeleton here would be
+   * incoherent. But that swap was ratified specifically on RARITY ("reached
+   * rarely and deliberately by someone who already knows they turned it off"),
+   * whereas this one hits every returning user with a saved plan on every visit.
+   * The precedent's own reasoning points the other way; it does not cover this.
+   * Reasons 1 and 2 stand on their own and are what this decision rests on.
+   *
+   * ✅ RATIFIED BY LUCAS 2026-08-28, on reasons 1 and 2. This is a product
+   * decision now, not an implementer's judgement call — do not silently reverse
+   * it by adding a skeleton here. If it is ever revisited, the measurement is
+   * already in place (`components/__tests__/retirement-plan-first-paint.dom.test.tsx`
+   * pins first paint `35` -> settled `42`), so the change is contained.
    */
   const showRetirementPlanner = useShowRetirementPlanner()
 

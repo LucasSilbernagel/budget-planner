@@ -127,7 +127,9 @@ function toMoney(text: string | null | undefined): number {
 /** Seed the sources, then type the four fields that are still editable. */
 async function fillReachableCase(user: ReturnType<typeof userEvent.setup>) {
   act(seedReachableStores)
+  await user.clear(screen.getByLabelText('Current Age'))
   await user.type(screen.getByLabelText('Current Age'), '40')
+  await user.clear(screen.getByLabelText('Life Expectancy'))
   await user.type(screen.getByLabelText('Life Expectancy'), '85')
   await user.clear(screen.getByLabelText('Expected Annual Return'))
   await user.type(screen.getByLabelText('Expected Annual Return'), '5')
@@ -198,7 +200,9 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
       useBalanceStore.setState({ entries: [investmentRow(1_000_00)] })
       useIncomeStore.setState({ incomeSources: [incomeRow(5_000)] })
     })
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '60')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '65')
     const desired = screen.getByLabelText('Desired Retirement Income')
     // Seeding income also prefills this field, so it must be cleared first.
@@ -249,7 +253,9 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
       useBalanceStore.setState({ entries: [investmentRow(1_000_00)] })
       useIncomeStore.setState({ incomeSources: [incomeRow(5_000)] })
     })
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '70')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '65')
     const desired = screen.getByLabelText('Desired Retirement Income')
     await user.clear(desired)
@@ -279,7 +285,9 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     // throws. The UI must render the failed-state message, never an empty results
     // area (regression: the memo previously returned null → all gates false → blank).
     act(seedReachableStores)
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '9999999999')
     await user.clear(screen.getByLabelText('Expected Annual Return'))
     await user.type(screen.getByLabelText('Expected Annual Return'), '5')
@@ -409,7 +417,9 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
       useBalanceStore.setState({ entries: [investmentRow(100_000_00)] })
       useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
     })
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '50')
     const desiredIncome = screen.getByLabelText('Desired Retirement Income')
     await user.clear(desiredIncome)
@@ -475,15 +485,43 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     )
   })
 
-  it('shows a placeholder instead of a chart on defaults, never a stale default curve', () => {
-    // With sources seeded, the ordinary "not filled in yet" placeholder shows.
-    act(seedReachableStores)
+  it('shows a placeholder instead of a chart when a field is missing, never a stale default curve', () => {
+    // ⚠️ RETARGETED BY STORY 44.1, and the reason matters. This used to seed the
+    // full `seedReachableStores` fixture and rely on age/life-expectancy being
+    // EMPTY by default to reach the "not filled in yet" state. FR71 gave those
+    // two fields real defaults (35 / 90), so that fixture now solves — see the
+    // test below. The guard this test actually carries is "an incomplete plan
+    // draws no curve", so it now uses a genuinely incomplete plan: no income
+    // rows means no desired-income prefill, and desired income has no default.
+    act(() => {
+      useBalanceStore.setState({ entries: [investmentRow(1_000_000_00)] })
+      useExpenseStore.setState({ expenses: [expenseRow(50_000)] })
+    })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('')
     expect(
       screen.getByText('Fill in the details above to see how your savings grow.')
     ).toBeInTheDocument()
     expect(screen.queryByText('Projection Summary:')).not.toBeInTheDocument()
+  })
+
+  it('opens on a solved plan for a user who already has income (story 44.1, FR71)', () => {
+    // The behaviour change FR71's defaults produce, recorded deliberately rather
+    // than discovered later: age and life expectancy now arrive filled, the
+    // return rate and model already had defaults, and desired income is seeded
+    // from the income store — so a user with data lands on an answer instead of
+    // an empty form. This is "opens on numbers a user can start from"; if it is
+    // ever unwanted, this is the test that says so out loud.
+    act(seedReachableStores)
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(screen.getByLabelText('Current Age')).toHaveValue(35)
+    expect(screen.getByLabelText('Life Expectancy')).toHaveValue(90)
+    expect(screen.getByText('Projection Summary:')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Fill in the details above to see how your savings grow.')
+    ).not.toBeInTheDocument()
   })
 
   it('does not tell the user to fill in details when the solve failed', async () => {
@@ -494,7 +532,9 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     // the details above" beneath a "too large to compute" panel is two
     // contradictory instructions on one screen.
     act(seedReachableStores)
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '9999999999')
     await user.clear(screen.getByLabelText('Expected Annual Return'))
     await user.type(screen.getByLabelText('Expected Annual Return'), '5')
@@ -517,7 +557,9 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     // documents as reachable, and the one the copy map originally omitted, so the
     // detail line never rendered for the exact case it was added to explain.
     act(seedReachableStores)
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '9999999999')
     await user.clear(screen.getByLabelText('Expected Annual Return'))
     await user.type(screen.getByLabelText('Expected Annual Return'), '5')
@@ -650,6 +692,20 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
     const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
     expect(income).toHaveValue('60,000.00')
 
+    // ⚠️ FIXTURE CORRECTED IN STORY 44.1's CODE REVIEW — the assertion is
+    // unchanged and the test is now STRONGER, not weaker. This test is titled
+    // "a TYPED number" and asserted the ratified rule that switching the basis
+    // changes only what a number means. But it never typed: `60,000.00` above is
+    // the income-derived SEED, so the test could not tell a typed value from a
+    // seeded one, and what it actually pinned was "a seeded value is left alone"
+    // — the behaviour review found does not round-trip a reload (a seeded annual
+    // figure left under a monthly basis is silently rewritten on the next load).
+    // Story 44.1 re-seeds UNAUTHORED values on a basis switch and leaves AUTHORED
+    // ones exactly as entered, so the rule this test names is intact; the value
+    // just has to be genuinely typed for the test to be about it.
+    await user.clear(income)
+    await user.type(income, '60000')
+
     // Switching the basis changes only what the number MEANS — the basis-aware
     // seed must not turn into a basis-driven rewrite of the field.
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
@@ -672,6 +728,16 @@ describe('RetirementAccumulationPlanner — income period basis', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     await fillReachableCase(user)
+    // ⚠️ TYPE the desired income rather than inheriting the seed (fixture
+    // corrected in story 44.1's code review — every assertion below is
+    // unchanged). `fillReachableCase` seeds income whose prefill happens to be
+    // 12,000.00, so this test read as "a typed number" while testing a seeded
+    // one. Since 44.1 an unauthored seed follows the basis (so that what is on
+    // screen survives a reload) and only an authored value is held fixed — which
+    // is the rule this test is actually about.
+    const incomeField = screen.getByLabelText('Desired Retirement Income')
+    await user.clear(incomeField)
+    await user.type(incomeField, '12000')
     await user.click(screen.getByRole('radio', { name: /Perpetual safe-withdrawal/ }))
 
     const requiredRow = () =>
@@ -931,7 +997,9 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     user: ReturnType<typeof userEvent.setup>,
     { age = '40', life = '85', income = '12000', rate = '5' } = {}
   ) {
+    await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), age)
+    await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), life)
     const incomeField = screen.getByLabelText('Desired Retirement Income')
     await user.clear(incomeField)

@@ -26,6 +26,7 @@ import { useIncomeStore } from '../../stores/incomeStore'
 import { useOverviewDurationStore } from '../../stores/overviewDurationStore'
 import { usePlannerVisibilityStore } from '../../stores/plannerVisibilityStore'
 import { useProfileStore } from '../../stores/profileStore'
+import { useRetirementPlannerStore } from '../../stores/retirementPlannerStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { useTableSortStore } from '../../stores/tableSortStore'
 import { useThemeStore } from '../../stores/themeStore'
@@ -50,6 +51,12 @@ const PERSISTED_STORES = [
   // than one that was never persisted — the user re-sorts every visit and the
   // storage slot quietly accumulates a selection nothing reads.
   ['tableSort', useTableSortStore],
+  // Story 44.1: the retirement plan is the most expensive thing in the app to
+  // re-enter — nine fields, several of them figures the user had to look up. A
+  // store missing from this list would write the plan on every keystroke and
+  // load it never, so the user retypes it every visit while storage fills with a
+  // plan nothing reads.
+  ['retirementPlanner', useRetirementPlannerStore],
 ] as const
 
 afterEach(() => {

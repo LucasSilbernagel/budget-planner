@@ -14,6 +14,7 @@ import { cleanup } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
 import { server } from './src/mocks/server'
 import { useCurrencyStore } from './src/stores/currencyStore'
+import { useRetirementPlannerStore } from './src/stores/retirementPlannerStore'
 import { useTableSortStore } from './src/stores/tableSortStore'
 
 // Register jest-dom matchers explicitly rather than via the
@@ -73,6 +74,11 @@ beforeEach(() => {
     // jsdom test. Remove it, or a test that enumerates localStorage keys — or
     // asserts the absent-payload path — silently sees a phantom blob.
     localStorage.removeItem('budget-planner-table-sort-v1')
+    // Story 44.1: same reasoning, same ordering trap. The planner's nine fields
+    // are one module singleton now, so without this a test that types an age
+    // leaks it into every later test in the same file.
+    useRetirementPlannerStore.getState().resetPlan()
+    localStorage.removeItem('budget-planner-retirement-planner-v1')
   }
 })
 
