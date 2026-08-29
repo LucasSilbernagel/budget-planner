@@ -35,7 +35,7 @@ export interface RetirementChartChrome {
   tickFontSize: number
   marginLeft: number
   marginRight: number
-  /** Whether to render the "Years from Now" / "Assets" axis titles. */
+  /** Whether to render the "Age" / "Assets" axis titles. */
   showAxisLabels: boolean
 }
 
@@ -91,6 +91,28 @@ export function getRetirementMarkerOffset(
   const offset = Math.round(earliestRetirementAge - currentAge)
 
   return offset >= 0 && offset <= horizonYears ? offset : null
+}
+
+/**
+ * The AGE the "Retirement" reference line is drawn at, or `null` for no marker.
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE X AXIS PLOTS `age` (`dataKey="age"`, story 44.3).
+ * `ReferenceLine`'s `x` has to be a value the axis actually has a category for,
+ * so a years-from-now offset placed there lands on nothing.
+ *
+ * Deliberately a thin converter over `getRetirementMarkerOffset` rather than a
+ * replacement for it: that function's horizon bounds — and the "offset 0 is a
+ * real answer" pin story 29.1 added, without which an already-met plan drew no
+ * marker at the exact moment the plan succeeded — stay untouched and keep their
+ * own tests. Keeping the step named and exported also keeps it in view; the
+ * same arithmetic inline in the JSX is the kind of thing that silently drifts
+ * out of step with `dataKey` the next time the axis is touched.
+ */
+export function getRetirementMarkerAge(
+  markerOffset: number | null,
+  currentAge: number
+): number | null {
+  return markerOffset === null ? null : currentAge + markerOffset
 }
 
 /**
@@ -151,9 +173,15 @@ function formatChartCurrency(
 }
 
 /**
- * Custom Tooltip component for the chart
+ * Custom Tooltip component for the chart.
+ *
+ * Exported for the same reason as `getRetirementChartChrome` and
+ * `getRetirementMarkerOffset`: Recharts renders no SVG under jsdom's zero-size
+ * `ResponsiveContainer`, so the header can only be asserted by rendering this
+ * directly. ⚠️ Its `label` is whatever the X axis's `dataKey` names — since
+ * story 44.3 that is `age`, not `year`, and the header must say so.
  */
-function CustomTooltip({
+export function CustomTooltip({
   active,
   payload,
   label,
@@ -183,7 +211,7 @@ function CustomTooltip({
   ) {
     return (
       <div className="bg-white dark:bg-gray-800 dark:text-gray-100 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-        <p className="font-semibold text-subheading">Year {label}</p>
+        <p className="font-semibold text-subheading">Age {label}</p>
         <p className="text-sm text-muted">Data unavailable</p>
       </div>
     )
@@ -191,7 +219,7 @@ function CustomTooltip({
 
   return (
     <div className="bg-white dark:bg-gray-800 dark:text-gray-100 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-      <p className="font-semibold text-subheading">Year {label}</p>
+      <p className="font-semibold text-subheading">Age {label}</p>
       <p className="text-sm text-body">
         Starting Balance: {formatChartCurrency(data.startingBalance, mode, currency, locale)}
       </p>
@@ -327,6 +355,10 @@ function RetirementTimelineChartInner({
     currentAge,
     finalPoint?.year ?? 0
   )
+  // The axis plots ages, so the marker is placed by age. The offset above is
+  // still the right basis for the summary's end-of-curve comparison below,
+  // which reasons in years from now.
+  const retirementMarkerAge = getRetirementMarkerAge(retirementYearOffset, currentAge)
 
   return (
     <div className="space-y-6">
@@ -347,12 +379,17 @@ function RetirementTimelineChartInner({
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+            {/* Plots the `age` already carried by every point (story 44.3) — the
+                terms the reader thinks in, and never re-derived here. ⚠️ The
+                tooltip header and the "Retirement" reference line both read
+                their meaning from this `dataKey`; all three move together or
+                the chart contradicts itself. */}
             <XAxis
-              dataKey="year"
+              dataKey="age"
               label={
                 chartChrome.showAxisLabels
                   ? {
-                      value: 'Years from Now',
+                      value: 'Age',
                       position: 'insideBottom',
                       offset: -5,
                       fill: chartColors.axis,
@@ -395,9 +432,9 @@ function RetirementTimelineChartInner({
             />
             {/* Reference line at the solver's earliest reachable retirement —
                 never at a separately-entered age the solver disagrees with. */}
-            {retirementYearOffset !== null && (
+            {retirementMarkerAge !== null && (
               <ReferenceLine
-                x={retirementYearOffset}
+                x={retirementMarkerAge}
                 stroke="#10B981"
                 strokeDasharray="5 5"
                 label={{ value: 'Retirement', position: 'top', fill: '#10B981' }}

@@ -3,8 +3,10 @@ import { projectAccumulatedNestEgg } from '@budget-planner/core/finance/retireme
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../stores/currencyStore'
 import {
+  CustomTooltip,
   RetirementTimelineChart,
   getRetirementChartChrome,
+  getRetirementMarkerAge,
   getRetirementMarkerOffset,
 } from '../RetirementTimelineChart'
 
@@ -217,7 +219,7 @@ describe('getRetirementChartChrome — narrow vs wide (story 24.1)', () => {
     const narrow = getRetirementChartChrome(true)
     const wide = getRetirementChartChrome(false)
 
-    // Axis titles ("Years from Now" / "Assets") are desktop-only.
+    // Axis titles ("Age" / "Assets") are desktop-only.
     expect(narrow.showAxisLabels).toBe(false)
     expect(wide.showAxisLabels).toBe(true)
 
@@ -254,5 +256,117 @@ describe('getRetirementChartChrome — narrow vs wide (story 24.1)', () => {
     expect(narrow.marginRight).toBeGreaterThanOrEqual(42)
     // Axis ticks must stay legible.
     expect(narrow.tickFontSize).toBeGreaterThanOrEqual(9)
+  })
+})
+
+/**
+ * The tooltip header agrees with the axis (story 44.3, AC-3).
+ *
+ * ⚠️ WHY THE WORD IS PINNED ALONGSIDE THE VALUE. Since 44.3 the X axis plots
+ * `age`, so Recharts hands this component an AGE as `label`. Measured in a real
+ * Chromium against the half-done change (axis switched, header left alone), the
+ * tooltip rendered "Year 41" for projection year 6 of a 35-year-old — an age
+ * wearing the word "year". An assertion of the form `toContain('41')` passes
+ * against BOTH that broken header and the fixed one, so it would certify
+ * nothing. The word and the value have to be pinned together.
+ *
+ * ⚠️ WHERE THE NON-VACUITY ACTUALLY COMES FROM — an earlier version of this
+ * comment got the mechanism wrong. The header interpolates `label`, which the
+ * test supplies directly; it never reads `payload.age` or `payload.year`. So it
+ * is the LABEL VALUE that has to be the age (41) rather than the year index (6),
+ * and mutation M8 pins exactly that by pointing `label` at 6. The payload's
+ * `age`/`year` fields are set apart only so the fixture reads honestly. The
+ * age-vs-index separation matters for real in the e2e hover test, where the
+ * label is produced by the chart rather than by the test.
+ */
+describe('CustomTooltip — the header agrees with the axis (story 44.3)', () => {
+  const CURRENCY = { mode: 'none', currency: 'NONE', locale: 'en-US' } as const
+
+  /** A payload as Recharts hands it over: `label` is the axis category value. */
+  function renderTooltip(label: number, overrides: Record<string, unknown> = {}) {
+    return renderWithProviders(
+      <CustomTooltip
+        active
+        label={String(label)}
+        payload={[
+          {
+            payload: {
+              year: 6,
+              age: 41,
+              startingBalance: 175_100_00,
+              annualContribution: 27_300_00,
+              endingBalance: 214_000_00,
+              retirementYear: false,
+              ...overrides,
+            },
+          },
+        ]}
+        {...CURRENCY}
+      />
+    )
+  }
+
+  it('heads the tooltip with the AGE, not the word "Year" (AC-3)', () => {
+    const { container } = renderTooltip(41)
+
+    expect(container.textContent).toContain('Age 41')
+    // The exact defect measured before the fix: an age under the word "Year".
+    expect(container.textContent).not.toContain('Year 41')
+  })
+
+  /**
+   * ⚠️ The guard branch taken when a payload arrives without the balance fields
+   * — `RetirementTimelineChart.tsx:214`, one of TWO header sites (the main one
+   * is `:222`). It carries a second copy of the header, and no test rendered it
+   * before this one, so a fix applied only to the main branch left a lying
+   * header on the degraded path with nothing to catch it. (The story cites the
+   * pre-change line `:186`; this same change moved it down ~28 lines. Epic 44
+   * has now produced stale anchors three stories running — re-verify, do not
+   * inherit.)
+   */
+  it('also heads the DEGRADED branch with the age (AC-3, the easily-missed one)', () => {
+    const { container } = renderWithProviders(
+      <CustomTooltip active label="41" payload={[{ payload: { age: 41 } }]} {...CURRENCY} />
+    )
+
+    expect(container.textContent).toContain('Data unavailable')
+    expect(container.textContent).toContain('Age 41')
+    expect(container.textContent).not.toContain('Year 41')
+  })
+
+  it('renders nothing when inactive or empty — unchanged by 44.3', () => {
+    const { container } = renderWithProviders(
+      <CustomTooltip active={false} label="41" payload={[]} {...CURRENCY} />
+    )
+    expect(container.textContent).toBe('')
+  })
+})
+
+/**
+ * The reference line is placed by an AGE since 44.3 (AC-4).
+ *
+ * ⚠️ `getRetirementMarkerOffset` is deliberately UNCHANGED — its five tests
+ * above, including the "already met" regression pin story 29.1 added to close a
+ * real hole, keep testing exactly what they tested. This thin converter exists
+ * so the offset→age step is a named, tested thing rather than arithmetic sitting
+ * in the JSX where nothing would notice it drifting out of step with `dataKey`.
+ */
+describe('getRetirementMarkerAge (story 44.3)', () => {
+  it('converts the years-from-now offset into the age the axis plots', () => {
+    expect(getRetirementMarkerAge(22, 40)).toBe(62)
+  })
+
+  it('maps an already-met plan’s offset 0 onto the current age', () => {
+    // The 29.1 hole this keeps open: offset 0 is a real answer, not "no marker".
+    // ⚠️ SCOPE — this proves the CONVERSION, not that a marker renders. Whether
+    // the chart draws one at offset 0 depends on the series carrying a year-0
+    // point, which nothing here or in 29.1's own tests asserts, and which the
+    // e2e AC-4 test explicitly excludes via its `> currentAge` precondition.
+    // That end-to-end gap is pre-existing and logged in deferred-work.
+    expect(getRetirementMarkerAge(0, 40)).toBe(40)
+  })
+
+  it('draws no marker when there is no offset to convert', () => {
+    expect(getRetirementMarkerAge(null, 40)).toBeNull()
   })
 })
