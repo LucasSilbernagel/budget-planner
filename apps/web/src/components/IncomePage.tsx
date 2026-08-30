@@ -619,10 +619,31 @@ export function IncomePage() {
                   }`}
                   aria-invalid={hasFieldError('amount')}
                   aria-required
-                  aria-describedby={hasFieldError('amount') ? 'income-amount-error' : undefined}
+                  // The hint is described UNCONDITIONALLY and the error id is
+                  // appended, never substituted. `aria-describedby` is an id
+                  // LIST; replacing it when an error appears would silently drop
+                  // the error announcement while the page still looked correct.
+                  aria-describedby={`income-amount-hint${
+                    hasFieldError('amount') ? ' income-amount-error' : ''
+                  }`}
                   data-testid="income-amount-input"
                 />
               </div>
+              {/*
+               * Story 46.1 (UX-DR52): the form never said whether to enter pay
+               * before or after tax. Deliberately avoids the word "net" —
+               * `calculateNetIncomeResult` already uses "net income" for income
+               * MINUS EXPENSES, a meaning that is user-visible on the pricing
+               * page and in the PDF summary report.
+               */}
+              <p
+                id="income-amount-hint"
+                className="mt-1 text-sm text-muted"
+                data-testid="income-amount-hint"
+              >
+                Enter the amount that reaches your bank account — your pay after tax and any other
+                deductions.
+              </p>
               {hasFieldError('amount') && (
                 <p
                   id="income-amount-error"

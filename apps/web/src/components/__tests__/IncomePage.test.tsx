@@ -207,6 +207,150 @@ describe('IncomePage inline validation', () => {
 })
 
 /**
+ * Take-home guidance on the Amount field (story 46.1, UX-DR52).
+ *
+ * The form never said whether to enter pay before or after tax, and every
+ * downstream figure assumes one answer. The guidance states it at the point of
+ * entry.
+ *
+ * ⚠️ Every assertion here anchors on the DISTINGUISHING phrasing. "income",
+ * "amount" and "pay" all appear throughout this page and an assertion on any of
+ * them would have passed against the pre-fix defect — which is the whole reason
+ * the story called the pin out as its own AC.
+ *
+ * ⚠️ The word "net" is deliberately absent from the copy. `netIncome` in
+ * `packages/core/src/finance/netIncome.ts` means income MINUS EXPENSES, and that
+ * meaning is already user-visible on the pricing page and in the PDF summary
+ * report. Using "net" here would give one word two axes. The negative guard
+ * below is scoped to the hint element, never the page: the page legitimately
+ * contains "net" elsewhere and a page-wide negative would be red on arrival.
+ */
+describe('IncomePage take-home guidance (story 46.1)', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  it('states at the point of entry that the amount is take-home pay (AC-1, AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    const hint = within(dialog).getByTestId('income-amount-hint')
+
+    // The concrete test a user can apply, not the jargon. Pinned as ONE ordered
+    // clause, not three loose fragments: separate `/reaches your bank account/`,
+    // `/after tax/` and `/deductions/` assertions all pass against a mangled
+    // string like "After tax, deductions reaches your bank account", and none of
+    // them pins the instruction verb that carries AC-1.
+    expect(hint.textContent).toMatch(
+      /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
+    )
+    expect(hint.textContent).toMatch(/after\s+tax\s+and\s+any\s+other\s+deductions/i)
+  })
+
+  it('shows the same guidance when editing an existing source (AC-3)', async () => {
+    const user = userEvent.setup()
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Salary', amount: 500000, frequency: 'monthly' })
+    renderWithProviders(<IncomePage />)
+
+    // One modal serves add and edit; the hint must not be gated on `editingId`.
+    await user.click(screen.getByRole('button', { name: 'Edit Salary' }))
+    const dialog = screen.getByRole('dialog')
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+
+    // Assert through the ACCESSIBLE DESCRIPTION, which resolves the
+    // `aria-describedby` id list against the real DOM — so edit mode proves the
+    // association too, not merely that the copy is on screen somewhere.
+    expect(amountInput).toHaveAccessibleDescription(
+      /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
+    )
+  })
+
+  it('does not use the word "net" anywhere in the dialog (AC-11)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+
+    // ⚠️ Scoped to the DIALOG, not to the hint element. Scoped to the hint this
+    // assertion was true-by-construction — the copy pins above already fix that
+    // element's exact text, so re-checking it for "net" guarded nothing. The
+    // real collision risk is a SIBLING in the same form ("Net amount" on a
+    // label, placeholder or future field), which only a dialog-wide negative
+    // can see. Still not page-wide: the page legitimately says "Net Worth"
+    // elsewhere and that would be red on arrival.
+    expect(dialog.textContent).not.toMatch(/\bnet\b/i)
+  })
+
+  it('describes the amount input with the hint when there is no error (AC-8)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+
+    // Unconditional: before story 46.1 this attribute was `undefined` until a
+    // validation error existed, so the hint reached no screen reader at all.
+    //
+    // ⚠️ `toHaveAccessibleDescription` is the load-bearing half. Asserting the
+    // attribute STRING alone passes even when the id resolves to nothing —
+    // rename `id="income-amount-hint"` to anything while leaving the
+    // `data-testid` intact and a string-only suite stays green while screen
+    // readers announce nothing. This resolves the id against the real DOM.
+    expect(amountInput).toHaveAccessibleDescription(
+      /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
+    )
+    // And ONLY the hint describes it in this state — asserted as a token list
+    // rather than a string equality so appending a second legitimate describer
+    // later fails loudly here instead of silently widening the description.
+    const described = (amountInput.getAttribute('aria-describedby') ?? '').split(/\s+/)
+    expect(described).toEqual(['income-amount-hint'])
+  })
+
+  it('keeps BOTH the hint and the error described when validation fails (AC-8)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
+
+    const amountInput = within(dialog).getByTestId('income-amount-input')
+    // `aria-describedby` is an ID LIST. Replacing rather than composing is the
+    // silent regression this test exists for: the page still looks right and the
+    // error announcement is simply gone. Assert on the parsed token set so the
+    // order of the two ids is not accidentally pinned.
+    const described = (amountInput.getAttribute('aria-describedby') ?? '').split(/\s+/)
+    expect(described).toContain('income-amount-hint')
+    expect(described).toContain('income-amount-error')
+
+    // Both ids must RESOLVE, not merely be listed. The accessible description
+    // is the concatenation of the referenced nodes, so this fails if either id
+    // points at nothing — the failure a string-only assertion cannot see.
+    expect(amountInput).toHaveAccessibleDescription(
+      /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
+    )
+    expect(amountInput).toHaveAccessibleDescription(
+      /Please\s+enter\s+a\s+valid\s+positive\s+amount/i
+    )
+
+    // And the error itself is still rendered and still says what it said.
+    expect(within(dialog).getByTestId('income-amount-error')).toHaveTextContent(
+      'Please enter a valid positive amount'
+    )
+  })
+})
+
+/**
  * IncomePage currency-input formatting tests (story 14-3).
  *
  * Proves the amount input shows the selected currency's symbol only in symbols

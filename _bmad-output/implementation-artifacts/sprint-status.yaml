@@ -248,7 +248,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-08-29e
+last_updated: 2026-08-29
 baseline_commit: 412c94d  # 2026-08-10 reset to HEAD at epic-30 close (was 46396f0, stale by many commits). Tree is clean and all epic-30 work is committed, so this is a true baseline for epic-31 stories.
 project: budget-planner
 project_key: NOKEY
@@ -613,8 +613,8 @@ development_status:
   # Sequencing: 46 before 47 (47.1's label needs 46.1's definition); 48.1 before
   # 48.2 (the arrows are mobile's ONLY ordering control until 48.1 ships).
   # ---------------------------------------------------------------------------
-  epic-46: backlog  # batch 9 — An Income Figure That Says What It Is (UX-DR52). `apps/web` COPY ONLY: no calculation, store, schema or sync change. ⚠️ VERIFIED 2026-08-29 by grep: "after tax", "after-tax", "net income", "pre-tax" and "gross" appear NOWHERE in `IncomePage.tsx` or `apps/web/src/content/docs/*.md` — a genuine absence, not a weak hint. FOUNDATIONAL for epic 47: take it first.
-  46-1-say-that-income-means-take-home-pay: backlog  # 6 ACs. UX-DR52. State at the point of entry that income is net take-home. ⚠️ Name the concrete test (the amount that lands in the bank), not the word "net" — that word is exactly what a confused user does not understand. ⚠️ Reconcile docs + any existing generic income copy in the same pass; a definition stated once and contradicted elsewhere is worse than none. ⚠️ Copy-pin tests must anchor on DISTINGUISHING phrasing, not on "income", which appears throughout the page and would pass against the current defect (epic 23 lesson). Diff should prove no non-copy files changed.
+  epic-46: done  # batch 9 — An Income Figure That Says What It Is (UX-DR52). `apps/web` COPY ONLY: no calculation, store, schema or sync change. ⚠️ VERIFIED 2026-08-29 by grep: "after tax", "after-tax", "net income", "pre-tax" and "gross" appear NOWHERE in `IncomePage.tsx` or `apps/web/src/content/docs/*.md` — a genuine absence, not a weak hint. FOUNDATIONAL for epic 47: take it first.
+  46-1-say-that-income-means-take-home-pay: done  # 6 ACs. UX-DR52. State at the point of entry that income is net take-home. ⚠️ Name the concrete test (the amount that lands in the bank), not the word "net" — that word is exactly what a confused user does not understand. ⚠️ Reconcile docs + any existing generic income copy in the same pass; a definition stated once and contradicted elsewhere is worse than none. ⚠️ Copy-pin tests must anchor on DISTINGUISHING phrasing, not on "income", which appears throughout the page and would pass against the current defect (epic 23 lesson). Diff should prove no non-copy files changed.
   epic-46-retrospective: optional
 
   epic-47: backlog  # batch 9 — One Honest Account of What You Save (FR73, FR74). DEPENDS ON EPIC 46. `packages/core` under NFR3 ZERO-TOLERANCE MATH + apps/web + packages/db + the sync contract. Two stories, 47.1 first (47.2 reads the same contribution rows 47.1 re-frames). ⚠️ 47.1 puts the just-shipped FR72 guarantee at risk — read story 45.1's record BEFORE starting.

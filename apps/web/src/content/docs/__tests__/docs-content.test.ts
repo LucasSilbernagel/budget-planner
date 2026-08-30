@@ -487,6 +487,98 @@ describe('documentation content accuracy (story 10-4)', () => {
 
   /**
    * ════════════════════════════════════════════════════════════════════════
+   * "Getting started" — income means take-home pay (story 46.1, UX-DR52)
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * ⚠️ Every other getting-started guard in this file matches the WHOLE
+   * DOCUMENT (`contentFor('getting-started')`). That is fine for a positioning
+   * line that may legitimately appear anywhere, and wrong for this story, which
+   * writes to two sections sixteen lines apart: an unscoped assertion cannot
+   * tell whether the definition landed in the step list or in the overview
+   * paragraph, so it would pass with the copy in the wrong place entirely.
+   *
+   * `featureSections()` and `howTotalsSections()` and `mortgageSections()` all
+   * exist for exactly this reason, each added after a whole-document guard was
+   * found passing against the defect it was meant to catch. This is the FOURTH
+   * page to need one; the first three were already written down in this file
+   * and that did not stop the fourth from starting out unscoped.
+   *
+   * The `throw` on a missing heading is load-bearing, not defensive: without it
+   * a renamed or reordered heading silently yields an EMPTY slice and every
+   * assertion below passes vacuously.
+   */
+  const gettingStartedSections = () => {
+    const content = contentFor('getting-started')
+    const bounds = (start: string, end: string): string => {
+      const from = content.indexOf(start)
+      if (from === -1) throw new Error(`Getting started is missing the "${start}" heading`)
+      const to = content.indexOf(end, from)
+      if (to === -1) throw new Error(`Getting started is missing the "${end}" heading`)
+      // ADJACENCY, not merely order. `indexOf(end, from)` already throws on a
+      // fully reordered file, but it cannot see a section INSERTED between the
+      // two headings — that yields a non-empty slice spanning foreign sections,
+      // and every assertion below then passes with the copy in the wrong place.
+      // `featureSections()` guards ordering only and has the same residual hole;
+      // this is the tighter version.
+      const nextHeading = content.indexOf('\n### ', from + start.length)
+      if (nextHeading !== -1 && nextHeading + 1 !== to) {
+        throw new Error(
+          `Getting started: "${end}" is not the section immediately after "${start}" — a section was inserted between them and the slice would span it`
+        )
+      }
+      return content.slice(from, to)
+    }
+    return {
+      addIncome: bounds('### Add your first income source', '### Add your expenses'),
+      overview: bounds('### See your overview', '### Next steps'),
+    }
+  }
+
+  it('tells you in the income steps that the amount is take-home pay (story 46.1)', () => {
+    const { addIncome } = gettingStartedSections()
+
+    // Anchored on the distinguishing clause. "income" and "amount" appear all
+    // over this page — and in this very section — so either would pass against
+    // the pre-46.1 text, which said only "Enter the amount."
+    expect(addIncome).toMatch(/reaches\s+your\s+bank\s+account/i)
+    expect(addIncome).toMatch(/after\s+tax/i)
+    expect(addIncome).toMatch(/deductions/i)
+  })
+
+  it('uses "net" on this page ONLY for net worth (story 46.1)', () => {
+    // `netIncome` in core means income MINUS EXPENSES, and the docs must not
+    // introduce a second meaning for the same word.
+    //
+    // ⚠️ An earlier version of this guard banned three exact collocations
+    // (`net\s+(pay|income|salary)`). That let "net monthly income", "net
+    // earnings" and hyphenated "net-pay" straight through — an intervening
+    // adjective, a synonym, or a hyphen each defeated it, and the test's own
+    // title claimed far more than it checked. Ban the WORD and carve out the
+    // one legitimate term instead of trying to enumerate the illegitimate ones.
+    expect(contentFor('getting-started')).not.toMatch(/\bnet\b(?!\s+worth)/i)
+    // The carve-out is real, not theoretical — the overview names net worth.
+    expect(contentFor('getting-started')).toMatch(/\bnet\s+worth\b/i)
+  })
+
+  it('does not claim the overview shows a figure it no longer renders (story 46.1)', () => {
+    const { overview } = gettingStartedSections()
+
+    // The page said "your net period income" — a second meaning of "net", and
+    // ALSO a claim that has been false since story 12.1 removed that card on
+    // 2026-07-07. `HomePage.tsx:172-178` reads only `.grossIncome` and
+    // `.totalExpenses` from `calculateNetIncomeResult`; `.netIncome` is never
+    // rendered. The overview shows three cards: Total Income, Total Expenses,
+    // Net Worth. Re-pointing the sentence at "the gap between them" would have
+    // kept the falsehood and pinned it; the clause is gone instead.
+    expect(overview).not.toMatch(/net\s+period\s+income/i)
+    expect(overview).not.toMatch(/gap\s+between\s+them/i)
+    // What the overview DOES render must still be named.
+    expect(overview).toMatch(/net\s+worth/i)
+    expect(overview).toMatch(/income\s+and\s+expenses/i)
+  })
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
    * "How totals are calculated" (story 32.3, CONTENT-P)
    * ════════════════════════════════════════════════════════════════════════
    *

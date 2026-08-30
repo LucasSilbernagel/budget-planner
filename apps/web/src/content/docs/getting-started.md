@@ -14,7 +14,8 @@ never connects to your bank.
 1. Open the **Income** page.
 2. Choose **Add income source**.
 3. Enter a name (for example, *Salary* or *Freelance*).
-4. Enter the amount.
+4. Enter the amount that reaches your bank account — your pay after tax and
+   any other deductions.
 5. Pick how often you receive it: weekly, biweekly, monthly, or annually.
 6. Save.
 
@@ -30,8 +31,8 @@ the exact conversion.
 ### See your overview
 
 The home page brings everything together: your income and expenses on a common
-monthly basis, your net period income, and your net worth. Charts break your
-money down by category so you can see where it goes at a glance.
+monthly basis, and your net worth. Charts break your money down by category so
+you can see where it goes at a glance.
 
 ### Next steps
 
