@@ -172,8 +172,10 @@ export function BalancePage() {
   const [maxContributionLimit, setMaxContributionLimit] = useState('')
   const [monthlyContribution, setMonthlyContribution] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
-  // Story 45.1 (FR72): the user's statement that this contribution is already on
-  // the expense list, so the Savings distributable pool must not deduct it twice.
+  // Story 45.1 (FR72), broadened by 47.1 (FR73): the user's statement that this
+  // contribution is already allowed for in their figures — either because it comes out of
+  // their pay before it reaches them, or because they also list it on the Expenses page —
+  // so the Savings distributable pool must not deduct it a second time.
   const [contributionRecordedAsExpense, setContributionRecordedAsExpense] = useState(false)
 
   // Inline field-validation error state (replaces browser alert() popups).
@@ -1065,6 +1067,17 @@ export function BalancePage() {
                     at all — the whole block is hidden for them. */}
                 {type === 'investment' && (
                   <div>
+                    {/* ⚠️ Story 47.1 (FR73, D2): the STORED name below is
+                        `contributionRecordedAsExpense`, which describes only ONE of the two
+                        situations this control now covers. That mismatch is DELIBERATE and must
+                        not be "fixed" by renaming the field. The label asks the broader question
+                        — money that never reached you, OR money you also typed onto Expenses —
+                        because both need the identical treatment: skip the row from the savings
+                        pool. Renaming the field would be a five-gate sync change (core sync
+                        types, the server schema, syncBridge, the db column and its migration,
+                        and the balanceTracking validator) plus hand-written DDL, because
+                        drizzle-kit 0.23 does not track CHECK constraints — all for no
+                        user-visible gain. Pinned by `contribution-flag-naming.guard.test.ts`. */}
                     <div className="flex items-start gap-2">
                       <input
                         type="checkbox"
@@ -1079,16 +1092,18 @@ export function BalancePage() {
                         htmlFor="contributionRecordedAsExpense"
                         className="font-medium text-label text-sm"
                       >
-                        Already recorded as an expense
+                        Not taken from the money left over
                       </label>
                     </div>
                     <p
                       id="contribution-recorded-as-expense-help"
                       className="mt-1 text-muted text-xs"
                     >
-                      Tick this if you also list this contribution on your Expenses page. It stops
-                      the amount being subtracted twice from the money left over to share out on the
-                      Savings page.
+                      Tick this if the contribution comes out of your pay and the income you entered
+                      is the amount that reaches your bank account — or if you also list this
+                      contribution on your Expenses page. Either way your figures already allow for
+                      it, and counting it again would reduce the money left over on the Savings page
+                      twice. If both are true, take the line off your Expenses page as well.
                     </p>
                   </div>
                 )}

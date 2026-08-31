@@ -1759,3 +1759,99 @@ describe('BalancePage — contributionRecordedAsExpense is investment-only (Stor
     expect(within(dialog).getByTestId('balance-contribution-recorded-as-expense')).toBeChecked()
   })
 })
+
+/**
+ * The contribution control asks a question BOTH populations can answer
+ * (Story 47.1, FR73, AC-1, AC-2, AC-3).
+ *
+ * ⚠️ Nothing pinned this copy before 47.1. A grep for "Already recorded as an
+ * expense" across `apps/web/src/**` test files returned zero hits at the previous
+ * baseline — every existing flag test addressed the control by `data-testid`. So
+ * the wording could be changed to anything at all and the suite stayed green. That
+ * is precisely why these pins are load-bearing rather than ceremonial.
+ */
+describe('BalancePage — the contribution control serves both populations (Story 47.1)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  async function openInvestmentForm(): Promise<HTMLElement> {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(screen.getByTestId('balance-add-button'))
+    return screen.getByRole('dialog', { name: 'Add Balance Entry' })
+  }
+
+  it('AC-1: the label states the EFFECT rather than one of the two causes', async () => {
+    const dialog = await openInvestmentForm()
+    // ⚠️ ONE ordered clause, not loose fragments. Separate /Not/, /taken/ and
+    // /money left over/ assertions all pass against a mangled reordering.
+    expect(within(dialog).getByLabelText(/Not\s+taken\s+from\s+the\s+money\s+left\s+over/i)).toBe(
+      within(dialog).getByTestId('balance-contribution-recorded-as-expense')
+    )
+  })
+
+  it('AC-1(a): the payroll arm is CONJUNCTIVE, so a gross-income user answers no', async () => {
+    const dialog = await openInvestmentForm()
+    const help = within(dialog).getByText(/Tick this if the contribution/i)
+
+    // ⚠️⚠️ THE MOST IMPORTANT ASSERTION IN THIS FILE. A user whose contribution
+    // comes out of their pay but who entered GROSS income must NOT tick the box:
+    // ticking OVERSTATES their pool by exactly the contribution. The copy earns
+    // its keep only if it asks about the ENTERED INCOME as well as the deduction.
+    // A disjunctive arm ("tick this if it comes out of your pay") is true for them
+    // and ships a new wrong number — the opposite direction of error from FR72.
+    expect(help.textContent).toMatch(
+      /comes\s+out\s+of\s+your\s+pay\s+and\s+the\s+income\s+you\s+entered\s+is\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
+    )
+
+    // ⚠️ PRESENCE IS NOT EXCLUSIVITY. Code review: the containment pin above cannot
+    // fail against copy that keeps this sentence AND appends a disjunctive escape
+    // ("…or simply if it comes out of your pay"), which is precisely the
+    // gross-income regression it claims to guard. "comes out of your pay" must
+    // appear EXACTLY ONCE — a second occurrence is how such an escape reads.
+    expect(help.textContent?.match(/comes\s+out\s+of\s+your\s+pay/gi)?.length).toBe(1)
+  })
+
+  it('AC-1(b,c): it also names the expense-listing arm and resolves the both-at-once case', async () => {
+    const dialog = await openInvestmentForm()
+    const help = within(dialog).getByText(/Tick this if the contribution/i)
+
+    expect(help.textContent).toMatch(
+      /also\s+list\s+this\s+contribution\s+on\s+your\s+Expenses\s+page/i
+    )
+    // Ticking alone leaves a both-at-once user still wrong by the contribution —
+    // their expense line subtracts money that was never in their take-home income.
+    expect(help.textContent).toMatch(
+      /If\s+both\s+are\s+true,\s+take\s+the\s+line\s+off\s+your\s+Expenses\s+page/i
+    )
+    // The counting claim must name where the counting happens, not "here".
+    expect(help.textContent).toMatch(/money\s+left\s+over\s+on\s+the\s+Savings\s+page/i)
+  })
+
+  it('AC-2: the control never says "net" (story 46.1 removed that word from income copy)', async () => {
+    const dialog = await openInvestmentForm()
+    // ⚠️ The SCOPE is what is load-bearing here; the carve-out is insurance.
+    // A page-wide bare-word ban would be RED ON ARRIVAL — BalancePage legitimately
+    // says "Net Worth" in eight places — but every one of them is OUTSIDE the modal,
+    // so within this scope the carve-out is currently redundant. Kept because it
+    // costs nothing and survives a net-worth string later entering the form. Code
+    // review flagged that this comment previously justified the carve-out with
+    // page-wide reasoning that does not apply at dialog scope.
+    expect(dialog.textContent).not.toMatch(/\bnet\b(?!\s+worth)/i)
+  })
+
+  it('AC-3: the help text is the checkbox’s accessible description', async () => {
+    const dialog = await openInvestmentForm()
+    // ⚠️ `toHaveAccessibleDescription`, not a string comparison on
+    // `aria-describedby`. A string pin passes against an id that resolves to
+    // nothing; only this matcher walks the id list to real nodes. Story 46.1's
+    // review found exactly that hole.
+    expect(
+      within(dialog).getByTestId('balance-contribution-recorded-as-expense')
+    ).toHaveAccessibleDescription(/Tick this if the contribution comes out of your pay/i)
+  })
+})

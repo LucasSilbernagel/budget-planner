@@ -17,7 +17,6 @@ import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { buildSavingsChartRows, hasPlottableData } from '../lib/savings-chart-data'
 import { type SavingsSortKey, createSavingsSortExtractors } from '../lib/table-sort-keys'
 import {
-  useBalanceActions,
   useExpenses,
   useIncomeSources,
   useInvestmentEntries,
@@ -98,11 +97,6 @@ export function SavingsPage() {
   // `SavingsPage.test.tsx`.
   const investmentEntries = useInvestmentEntries()
 
-  // Recompute only when an input changes. `allocations` maps each AUTOMATIC
-  // account's id to its computed even-share (cents); manual accounts are absent,
-  // so membership discriminates the two modes for the per-row display below.
-  const { updateBalanceEntry } = useBalanceActions()
-
   // Story 45.1: the breakdown is CLOSED by default and its body is not rendered
   // at all until opened.
   // ⚠️ Not a micro-optimisation — it is required. A collapsed `<details>` still
@@ -134,6 +128,9 @@ export function SavingsPage() {
     [investmentEntries]
   )
 
+  // Recompute only when an input changes. `allocations` maps each AUTOMATIC
+  // account's id to its computed even-share (cents); manual accounts are absent,
+  // so membership discriminates the two modes for the per-row display below.
   const { distributablePool, automaticAccountCount, allocations } = useMemo(
     () =>
       solveAutomaticAllocations({
@@ -195,6 +192,44 @@ export function SavingsPage() {
       }),
     [expenses, contributionItems]
   )
+
+  /**
+   * ⚠️ Story 47.1 review: the SAME detector, re-run with every row treated as
+   * UNFLAGGED, purely to answer "does this excluded row STILL have a matching
+   * expense line?".
+   *
+   * `findContributionDuplicateCandidates` skips `recordedAsExpense === true` rows
+   * outright (`contributionDuplicates.ts:160-162`) — correct for its own job, since
+   * a flagged row is not a *suspected* duplicate. But it means the excluded arm can
+   * never see a candidate, and the first attempt at the shape-C cue below was
+   * therefore DEAD CODE that every test passed straight through.
+   *
+   * Re-running the detector is deliberate rather than re-deriving the match here:
+   * 45.1's D9 puts this rule in core, and duplicating the amount/name comparison in
+   * a component is how the two drift. This is presentation-only and touches no
+   * calculation — the pool never sees these candidates.
+   */
+  const stillDuplicatedByContribution = useMemo(() => {
+    const candidates = findContributionDuplicateCandidates({
+      expenses: expenses.map((expense, index) => ({
+        id: `expense-${index}`,
+        name: expense.name ?? '',
+        amount: expense.amount,
+        frequency: KNOWN_FREQUENCIES.has(expense.frequency) ? expense.frequency : 'monthly',
+      })),
+      investmentContributions: contributionItems.map((item) => ({
+        ...item,
+        recordedAsExpense: false,
+      })),
+    })
+    const map = new Map<string, ContributionDuplicateCandidate>()
+    for (const candidate of candidates) {
+      if (candidate.highlight && !map.has(candidate.contributionId)) {
+        map.set(candidate.contributionId, candidate)
+      }
+    }
+    return map
+  }, [expenses, contributionItems])
 
   const highlightedByContribution = useMemo(() => {
     const map = new Map<string, ContributionDuplicateCandidate>()
@@ -553,14 +588,18 @@ export function SavingsPage() {
                 </p>
               )}
 
-              {/* Story 45.1 (FR72, D10). THE DERIVATION, and the place the FR72
-                  fix is actually performed.
-                  Before this story the page showed a leftover figure with no way
-                  to audit it: no tooltip, no breakdown, nothing. A user whose
+              {/* Story 45.1 (FR72, D10). THE DERIVATION.
+                  Before 45.1 the page showed a leftover figure with no way to
+                  audit it: no tooltip, no breakdown, nothing. A user whose
                   contribution was double-deducted saw a number that felt wrong
                   and could not find out why — which is the real damage, more than
-                  the money itself. So the toggle lives HERE, on the contribution
-                  line, where a confused user actually arrives.
+                  the money itself. So the derivation is itemised HERE, on the
+                  contribution line, where a confused user actually arrives.
+                  ⚠️ Story 47.1 (FR73) REMOVED the inline toggle that used to sit
+                  on each line. This panel is now an explanation only: nothing on
+                  /savings writes to the balance store, and the setting itself
+                  lives on the Balance Tracking entry. Pinned by
+                  `savings-page-readonly.guard.test.ts`.
                   ⚠️ No banner and no blocking prompt, deliberately (D6): the
                   detector matches on equal normalized amounts, and round numbers
                   collide constantly. A prompt firing on coincidences trains
@@ -605,14 +644,19 @@ export function SavingsPage() {
                         </span>
                       </div>
 
-                      {/* Itemised, one line per investment row, each with its own
-                        toggle. `excluded` rows stay VISIBLE (struck through)
-                        rather than disappearing — a user needs to see that the
-                        money was accounted for, not that it vanished. */}
+                      {/* Itemised, one line per investment row. `excluded` rows stay
+                        VISIBLE (struck through) rather than disappearing — a user
+                        needs to see that the money was accounted for, not that it
+                        vanished. ⚠️ Story 47.1 removed the per-line toggle that used
+                        to sit on each row; the setting lives on the Balance Tracking
+                        entry and each arm below says so. */}
                       {breakdown.lines.length > 0 && (
                         <ul className="space-y-1 pl-4" data-testid="breakdown-contribution-lines">
                           {breakdown.lines.map((line) => {
                             const candidate = highlightedByContribution.get(line.id)
+                            const stillDuplicated = line.excluded
+                              ? stillDuplicatedByContribution.get(line.id)
+                              : undefined
                             return (
                               <li
                                 key={line.id}
@@ -623,24 +667,7 @@ export function SavingsPage() {
                                     : ''
                                 }`}
                               >
-                                <input
-                                  type="checkbox"
-                                  id={`breakdown-toggle-${line.id}`}
-                                  checked={line.excluded}
-                                  onChange={(e) =>
-                                    updateBalanceEntry(line.id, {
-                                      contributionRecordedAsExpense: e.target.checked,
-                                    })
-                                  }
-                                  className="border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-purple-500 w-3.5 h-3.5 text-purple-600"
-                                  data-testid={`breakdown-toggle-${line.id}`}
-                                />
-                                <label
-                                  htmlFor={`breakdown-toggle-${line.id}`}
-                                  className="text-muted cursor-pointer"
-                                >
-                                  {line.name}
-                                </label>
+                                <span className="text-muted">{line.name}</span>
                                 <span
                                   className={`ml-auto ${
                                     line.excluded ? 'text-muted line-through' : 'text-body'
@@ -649,9 +676,28 @@ export function SavingsPage() {
                                 >
                                   {formatAmount(line.monthlyCents)}
                                 </span>
-                                {line.excluded ? (
+                                {stillDuplicated ? (
+                                  /* ⚠️ Story 47.1 review: SHAPE C — the row is flagged
+                                     AND a same-amount expense line still exists. Ticking
+                                     alone leaves this user wrong by exactly the
+                                     contribution (proven in `savingsAllocation.test.ts`,
+                                     "shape C"), because the expense line subtracts money
+                                     that was never in their take-home income. Before this
+                                     branch existed the detector went SILENT the moment a
+                                     row was flagged — muting the only cue precisely for
+                                     the users who still needed it. */
+                                  <span
+                                    className="basis-full text-[11px] text-amber-700 dark:text-amber-300"
+                                    data-testid={`breakdown-still-duplicated-${line.id}`}
+                                  >
+                                    Not counted here — but your expense “
+                                    {stillDuplicated.expenseName}” still subtracts it. If it’s the
+                                    same money, remove that expense line.
+                                  </span>
+                                ) : line.excluded ? (
                                   <span className="basis-full text-muted text-[11px]">
-                                    Already recorded as an expense — counted once.
+                                    Not counted — you marked it as already accounted for. Change
+                                    this on its Balance Tracking entry.
                                   </span>
                                 ) : candidate ? (
                                   <span
@@ -659,7 +705,8 @@ export function SavingsPage() {
                                     data-testid={`breakdown-duplicate-hint-${line.id}`}
                                   >
                                     Your expense “{candidate.expenseName}” is the same amount. If
-                                    it’s the same money, tick this to stop counting it twice.
+                                    it’s the same money, tick “Not taken from the money left over”
+                                    on its Balance Tracking entry.
                                   </span>
                                 ) : null}
                               </li>

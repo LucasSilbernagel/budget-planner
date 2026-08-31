@@ -1421,7 +1421,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.getByTestId('breakdown-contribution-inv-1')).toBeInTheDocument()
   })
 
-  it('AC-8(a): the breakdown itemises each contribution with its own toggle', () => {
+  it('AC-8(a): the breakdown itemises each contribution (story 47.1: no toggle)', () => {
     seedReproduction()
     renderWithProviders(<SavingsPage />)
     openBreakdown()
@@ -1429,7 +1429,13 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.getByTestId('savings-leftover-breakdown')).toBeInTheDocument()
     expect(screen.getByTestId('breakdown-contribution-inv-1')).toHaveTextContent(/TFSA/)
     expect(screen.getByTestId('breakdown-contribution-amount-inv-1')).toHaveTextContent(/500\.00/)
-    expect(screen.getByTestId('breakdown-toggle-inv-1')).not.toBeChecked()
+    // Story 47.1 removed the per-line toggle. An UNFLAGGED row shows no excluded
+    // note. (The strike-through contrast is asserted in the multi-row test below,
+    // which has both a flagged and an unflagged row to compare.)
+    expect(screen.queryByTestId('breakdown-toggle-inv-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('breakdown-contribution-inv-1')).not.toHaveTextContent(
+      /already accounted for/i
+    )
   })
 
   it('AC-8(c): the breakdown arithmetic matches the pool it explains', () => {
@@ -1523,67 +1529,17 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.queryByTestId('breakdown-raw')).not.toBeInTheDocument()
   })
 
-  it('AC-1 via the UI: ticking the inline toggle stops the double deduction', async () => {
-    seedReproduction()
-    renderWithProviders(<SavingsPage />)
-    openBreakdown()
-
-    // Before: $500 deducted twice → $2,000 left over.
-    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
-
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('breakdown-toggle-inv-1'))
-    })
-
-    // After: counted once → $2,500. AC-8(b): the summary, the per-account
-    // allocation and the breakdown total all move in the SAME render.
-    await waitFor(() => {
-      expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.00/)
-    })
-    expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/2,500\.00/)
-    expect(screen.getByTestId('breakdown-leftover')).toHaveTextContent(/2,500\.00/)
-    expect(screen.getByTestId('breakdown-contributions')).toHaveTextContent(/0\.00/)
-    // The excluded row stays VISIBLE rather than vanishing.
-    expect(screen.getByTestId('breakdown-contribution-inv-1')).toHaveTextContent(/counted once/i)
-  })
-
-  it('AC-8(a): the breakdown toggle and the Balance form reach the SAME number', async () => {
-    // ⚠️⚠️ THIS TEST USED TO SEED THE STORE AND NEVER CLICK THE TOGGLE. It was
-    // named "both paths reach the same number" while exercising exactly ONE path
-    // — rendering from a pre-set store value — so rewiring the toggle to local
-    // component state (mutation arm M15) left it GREEN. Found by the code-review
-    // Acceptance Auditor running M15 exactly as the story's table specified.
-    //
-    // It now drives BOTH paths and compares them:
-    //   path A — the store already flagged, i.e. what the Balance form writes
-    //   path B — the user clicking the breakdown's inline toggle
-    // and asserts they land on the same figure. A toggle wired to anything other
-    // than `updateBalanceEntry` fails path B while path A still passes.
-    seedReproduction(true)
-    const formPath = renderWithProviders(<SavingsPage />)
-    openBreakdown()
-    const viaForm = screen.getByTestId('savings-leftover-summary').textContent
-    expect(viaForm).toMatch(/2,500\.00/)
-    expect(screen.getByTestId('breakdown-toggle-inv-1')).toBeChecked()
-    formPath.unmount()
-
-    // Path B: start UNflagged and reach the same state by clicking the toggle.
-    seedReproduction(false)
-    renderWithProviders(<SavingsPage />)
-    openBreakdown()
-    expect(screen.getByTestId('breakdown-toggle-inv-1')).not.toBeChecked()
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('breakdown-toggle-inv-1'))
-    })
-    await waitFor(() => {
-      expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.00/)
-    })
-
-    // The two entry points agree, and the click reached the STORE — not just
-    // local state. Reading the store is what makes M15 falsifiable here.
-    expect(screen.getByTestId('savings-leftover-summary').textContent).toBe(viaForm)
-    expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(true)
-  })
+  // ⚠️ Story 47.1 (FR73) DELETED two tests that lived here:
+  //   - 'AC-1 via the UI: ticking the inline toggle stops the double deduction'
+  //   - 'AC-8(a): the breakdown toggle and the Balance form reach the SAME number'
+  // Both drove the flag through the breakdown's per-line checkbox, which 47.1
+  // removes. They are NOT silently dropped: the flagged-row → $2,500 assertion they
+  // uniquely held now lives in `contribution-flag-cross-page.test.tsx`, which drives
+  // the SAME property through the Balance form instead — a stronger arrow, because
+  // it crosses the two suites rather than staying inside this one.
+  // ⚠️ Note what did NOT need replacing: `'excludes only the flagged row when
+  // several contributions exist'` below is store-seeded and still asserts a flagged
+  // row is skipped ($2,200). FR72's positive guard never left this file.
 
   it('AC-2 via the UI: an unflagged row still deducts twice (the different-money user)', () => {
     seedReproduction(false)
@@ -1602,6 +1558,71 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.getByTestId('breakdown-duplicate-hint-inv-1')).toHaveTextContent(
       /TFSA contribution/
     )
+  })
+
+  it('AC-6/D2 (47.1 review): a flagged row whose expense line SURVIVES is warned, not reassured', () => {
+    // ⚠️⚠️ THE REGRESSION GUARD FOR A FIX THAT WAS DEAD CODE ON FIRST WRITE.
+    // `findContributionDuplicateCandidates` skips `recordedAsExpense === true` rows,
+    // so the excluded arm could never see a candidate and the first version of this
+    // cue never rendered — every test passed straight through it. The component now
+    // re-runs the detector with the flags cleared, purely for this cue.
+    // Shape C: the user is payroll-deducted AND still lists the contribution on
+    // Expenses, so ticking left them wrong by exactly the contribution.
+    seedReproduction(true)
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    const cue = screen.getByTestId('breakdown-still-duplicated-inv-1')
+    expect(cue).toHaveTextContent(/your\s+expense\s+“TFSA contribution”\s+still\s+subtracts\s+it/i)
+    expect(cue).toHaveTextContent(/remove\s+that\s+expense\s+line/i)
+    // It must NOT be the reassuring copy — that is the whole point of the branch.
+    expect(screen.getByTestId('breakdown-contribution-inv-1')).not.toHaveTextContent(
+      /you\s+marked\s+it\s+as\s+already\s+accounted\s+for/i
+    )
+  })
+
+  it('AC-6/D3 (47.1 review): a flagged row with NO surviving expense gets the plain note and an undo pointer', () => {
+    // No matching expense line, so the shape-C warning must NOT fire — this is the
+    // negative fence that stops the cue rendering unconditionally.
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(12_345, 'Groceries')] })
+    useBalanceStore.setState({ entries: [investmentRow(50_000, 'TFSA', 'inv-1', true)] })
+    useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+
+    expect(screen.queryByTestId('breakdown-still-duplicated-inv-1')).not.toBeInTheDocument()
+    const row = screen.getByTestId('breakdown-contribution-inv-1')
+    expect(row).toHaveTextContent(/you\s+marked\s+it\s+as\s+already\s+accounted\s+for/i)
+    // ⚠️ The undo pointer. Without it a user who ticked by mistake — the gross-income
+    // shape-D case — sees the exclusion with nowhere to go.
+    expect(row).toHaveTextContent(/Change\s+this\s+on\s+its\s+Balance\s+Tracking\s+entry/i)
+  })
+
+  it('AC-7 (story 47.1): the duplicate hint points at the control’s real home', () => {
+    // The hint used to say "tick this", meaning the inline toggle. 47.1 deletes
+    // that toggle, so the sentence would otherwise point at nothing.
+    seedReproduction()
+    renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    const hint = screen.getByTestId('breakdown-duplicate-hint-inv-1')
+
+    // ⚠️ Distinguishing: it must NAME the control, not just the page. "Go to the
+    // Balance Tracking page" leaves the user hunting for an unnamed checkbox.
+    expect(hint.textContent).toMatch(
+      /tick\s+“Not\s+taken\s+from\s+the\s+money\s+left\s+over”\s+on\s+its\s+Balance\s+Tracking\s+entry/i
+    )
+    expect(hint.textContent).not.toMatch(/tick\s+this/i)
+  })
+
+  it('AC-2 (story 47.1): /savings never says "net" — a page-wide ban is safe here', () => {
+    // ⚠️ Unlike BalancePage, which needs a `net worth` carve-out for eight
+    // legitimate hits, SavingsPage contains the word nowhere. Verified by grep at
+    // baseline `fe3e574`, so the bare-word form is the honest guard here.
+    seedReproduction()
+    const { container } = renderWithProviders(<SavingsPage />)
+    openBreakdown()
+    expect(container.textContent).not.toMatch(/\bnet\b/i)
   })
 
   it('AC-12: a COINCIDENTAL same-amount match is not highlighted and moves no number', () => {
@@ -1671,7 +1692,29 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 
     // net 250000; skip 50000; deduct 30000 → 220000
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,200\.00/)
-    expect(screen.getByTestId('breakdown-toggle-inv-1')).toBeChecked()
-    expect(screen.getByTestId('breakdown-toggle-inv-2')).not.toBeChecked()
+    // ⚠️ Code review: the deleted 'AC-1 via the UI' block uniquely asserted the
+    // BREAKDOWN'S OWN totals in the flagged state, and the cross-page replacement
+    // never opens the breakdown. Re-homed here so the panel's internal figures stay
+    // pinned under exclusion, not just the page summary.
+    expect(screen.getByTestId('breakdown-contributions')).toHaveTextContent(/300\.00/)
+    expect(screen.getByTestId('breakdown-leftover')).toHaveTextContent(/2,200\.00/)
+    // Story 47.1: the excluded row is marked by COPY and a strike-through, not a
+    // checkbox. ⚠️ inv-1 is flagged AND its $500 matches the "TFSA contribution"
+    // expense, so this is SHAPE C — the row still has a live duplicate and the
+    // review-added warning arm renders instead of the plain excluded note.
+    expect(screen.getByTestId('breakdown-still-duplicated-inv-1')).toHaveTextContent(
+      /still\s+subtracts\s+it/i
+    )
+    expect(screen.getByTestId('breakdown-contribution-inv-2')).not.toHaveTextContent(
+      /already\s+accounted\s+for/i
+    )
+    // AC-4: the strike-through is a class TOKEN, never a substring — a raw
+    // `toContain('line-through')` would false-match a hypothetical `sm:line-through`.
+    expect(
+      screen.getByTestId('breakdown-contribution-amount-inv-1').className.split(/\s+/)
+    ).toContain('line-through')
+    expect(
+      screen.getByTestId('breakdown-contribution-amount-inv-2').className.split(/\s+/)
+    ).not.toContain('line-through')
   })
 })

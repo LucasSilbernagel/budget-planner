@@ -533,6 +533,141 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
 })
 
 /**
+ * Story 47.1 (FR73) — the SAME flag, now asked as a broader question.
+ *
+ * 45.1's suite varies one fixture by the flag. That is right for proving the flag
+ * is the only variable, and wrong for proving the flag serves BOTH populations:
+ * every 45.1 case has an EXPENSE ROW, i.e. it only ever models the user who typed
+ * the contribution onto Expenses. The payroll-deducted user has NO expense row —
+ * their income figure is simply smaller — and no 45.1 fixture has that shape.
+ *
+ * ⚠️ These cases add no behaviour. They exist because 47.1 re-words the control to
+ * recruit a population the arithmetic already served but the suite never described.
+ * If a future change breaks the payroll shape, 45.1's cases would all stay green.
+ */
+describe('calculateDistributablePool — the two populations (Story 47.1, FR73)', () => {
+  // --- Shape A is 45.1's `scenario(true)` above: expense-listed, flagged → 250000.
+
+  // --- Shape B: payroll-deducted. NO expense row; income is already take-home. ---
+  it('shape B — payroll-deducted: take-home income, no expense row, flagged → nothing subtracted', () => {
+    // The $500 never reached the user, so it is absent from the $2,500 income they
+    // entered. Subtracting it here would remove money that was never there.
+    //   net = 250000 − 0 = 250000; flagged contribution skipped; pool = 250000.
+    expect(
+      calculateDistributablePool({
+        incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
+        expenses: [],
+        investmentContributions: [
+          { amount: 50_000, frequency: 'monthly', recordedAsExpense: true },
+        ],
+        savingsAccounts: [automatic('a')],
+      })
+    ).toBe(250_000)
+  })
+
+  it('shape B — the same rows UNFLAGGED are the defect the wording exists to fix', () => {
+    // Identical data, flag off: 250000 − 50000 = 200000, understating by exactly
+    // the contribution. This is the arm that makes shape B worth asserting.
+    expect(
+      calculateDistributablePool({
+        incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
+        expenses: [],
+        investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
+        savingsAccounts: [automatic('a')],
+      })
+    ).toBe(200_000)
+  })
+
+  // --- Shape C: BOTH at once. Ticking HALVES the error; it does not close it. ---
+  it('shape C — payroll-deducted AND also listed on Expenses: ticking is not enough', () => {
+    // Take-home 250000, the same money ALSO typed onto Expenses, contribution flagged.
+    //   net = 250000 − 50000 = 200000; flagged skipped; pool = 200000.
+    // The truthful pool is 250000: the expense line subtracts money that was never
+    // in the take-home figure. ⚠️ This is why the help text tells a both-at-once
+    // user to REMOVE the expense line rather than just tick the box.
+    const ticked = calculateDistributablePool({
+      incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
+      expenses: [{ amount: 50_000, frequency: 'monthly' }],
+      investmentContributions: [{ amount: 50_000, frequency: 'monthly', recordedAsExpense: true }],
+      savingsAccounts: [automatic('a')],
+    })
+    expect(ticked).toBe(200_000)
+
+    const untickedSameRows = calculateDistributablePool({
+      incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
+      expenses: [{ amount: 50_000, frequency: 'monthly' }],
+      investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
+      savingsAccounts: [automatic('a')],
+    })
+    expect(untickedSameRows).toBe(150_000)
+
+    // Ticking recovers exactly half of the 100000 error. The documented fix —
+    // remove the expense line, keep the box ticked — recovers all of it.
+    const expenseLineRemoved = calculateDistributablePool({
+      incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
+      expenses: [],
+      investmentContributions: [{ amount: 50_000, frequency: 'monthly', recordedAsExpense: true }],
+      savingsAccounts: [automatic('a')],
+    })
+    expect(expenseLineRemoved).toBe(250_000)
+    // ⚠️ No "ticking halves the error" assertion: `ticked` and `untickedSameRows`
+    // are already pinned to literals above, so any such line is arithmetic on
+    // constants and can never independently go red. The halving is a fact about
+    // those literals, documented here, not a test.
+  })
+
+  // --- Shape D: the trap. Payroll-deducted, but GROSS income entered. -----------
+  it('shape D — gross income entered: ticking OVERSTATES the pool, so the copy must exclude this user', () => {
+    // ⚠️ Documents a known wrong answer, deliberately. If a user enters $3,000
+    // gross and ticks, the $500 is subtracted NOWHERE and the pool is overstated.
+    // Leaving it unticked is correct for them. This is why the help text's payroll
+    // arm is CONJUNCTIVE — it asks whether the entered income is take-home, not
+    // merely whether the contribution comes out of their pay.
+    const base = {
+      incomeSources: [{ amount: 300_000, frequency: 'monthly' as const }],
+      expenses: [],
+      savingsAccounts: [automatic('a')],
+    }
+    const unticked = calculateDistributablePool({
+      ...base,
+      investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
+    })
+    const ticked = calculateDistributablePool({
+      ...base,
+      investmentContributions: [{ amount: 50_000, frequency: 'monthly', recordedAsExpense: true }],
+    })
+    expect(unticked).toBe(250_000)
+    expect(ticked).toBe(300_000)
+  })
+
+  // --- The rounding path, with an INEXACT flagged row (mutation arm M14) --------
+  it('excludes the flagged row at its ROUNDED value even when that rounding is inexact', () => {
+    // ⚠️ Case 9 above flags 11538c/wk, whose normalization is EXACT
+    // (11538 × 52/12 = 49998.0), so it cannot distinguish "skip then round" from
+    // "round everything, then subtract an unrounded recomputation". This fixture
+    // flags the INEXACT row instead:
+    //   11537c/wk × 52/12 = 49993.666… → Math.round = 49994  (error +0.333)
+    //   11538c/wk × 52/12 = 49998.0    → Math.round = 49998  (error 0)
+    // Real reducer:  300000 − 49998                       = 250002
+    // Unrounded-recompute mutant: 300000 − (99992 − 49993.666…) = 250001.666…
+    const pool = calculateDistributablePool({
+      incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
+      expenses: [],
+      investmentContributions: [
+        { amount: 11_537, frequency: 'weekly', recordedAsExpense: true },
+        { amount: 11_538, frequency: 'weekly' },
+      ],
+      savingsAccounts: [automatic('a')],
+    })
+    // ⚠️ Integrality FIRST, then the exact value. Reversed, `Number.isInteger` is
+    // implied by the `toBe` above it and can never fail on its own. The mutant
+    // returns 250001.666…, so this is the assertion that names WHY it is wrong.
+    expect(Number.isInteger(pool)).toBe(true)
+    expect(pool).toBe(250_002)
+  })
+})
+
+/**
  * Story 45.1 — AC-5: the solver's invariants survive the pool change.
  * ⚠️ Assert Σ allocations against the POOL, never against a hard-coded total: a
  * constant passes when the pool and the split are wrong together.
