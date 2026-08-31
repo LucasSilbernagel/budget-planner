@@ -36,8 +36,6 @@ Your payment is part of your cash flow. It affects:
 - the Total Expenses figure on the home page, and the income-versus-expenses
   breakdown
 - how much is left over to share out on the [Savings](/savings) page
-- the retirement planner, which works out what you save each month from the gap
-  between your income and your expenses
 
 It does **not** change your net worth, on any page. Net worth is what you own
 minus what you owe; money that passes through your account during the month is

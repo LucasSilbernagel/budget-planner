@@ -913,6 +913,48 @@ describe('documentation content accuracy (story 10-4)', () => {
    * than read from your stores, so "the projection holds your debts flat" has no
    * truthful home anywhere in the app. Re-pointing it would be a NEW false claim.
    */
+  /**
+   * Story 47.2 (FR74). "What the payment changes" listed the retirement planner,
+   * "which works out what you save each month from the gap between your income
+   * and your expenses". Once the planner reads investment CONTRIBUTIONS instead,
+   * a mortgage payment stops affecting it by any route — so the bullet was
+   * DELETED rather than re-pointed at the new source.
+   *
+   * ⚠️ Deleting rather than re-pointing is story 46.1's hard-won lesson, and it
+   * cost that story a code-review finding: its AC re-aimed a sentence at a figure
+   * that had not been rendered for seven weeks, and the new test PINNED the
+   * falsehood. A guard that pins a false claim is worse than no guard. Here the
+   * true statement is that the payment changes nothing on the planner, and a
+   * bullet in a list of things it DOES change cannot say that.
+   *
+   * ⚠️ Scoped to the `payment` slice, and the two survivors below are the reason.
+   * The planner's POT is legitimately named twice elsewhere on this page (the
+   * mortgage balance and the property value both stay out of it, FR48 — unchanged
+   * by 47.2). A page-wide ban would be red on arrival and a page-wide absence
+   * check would pass while the bullet sat in the wrong section.
+   */
+  it('the payment section no longer claims to move the retirement planner (47.2, AC-13)', () => {
+    const { payment, owed, property } = mortgageSections()
+
+    // Positive anchors first: the section still lists what the payment DOES
+    // change, so this cannot pass by the section having gone missing.
+    expect(payment).toMatch(/the\s+total\s+on\s+the\s+Expenses\s+page/i)
+    expect(payment).toMatch(
+      /how\s+much\s+is\s+left\s+over\s+to\s+share\s+out\s+on\s+the\s+\[Savings\]/i
+    )
+
+    // The deleted claim, in both the literal and a reworded form.
+    expect(payment).not.toMatch(/retirement/i)
+    expect(payment).not.toMatch(/gap\s+between\s+your\s+income\s+and\s+your\s+expenses/i)
+
+    // ⚠️ And the DELETION WAS NARROW. FR48 is untouched by story 47.2, so both
+    // "stays out of the pot" claims must survive — an over-broad edit that
+    // stripped every mention of the planner from this page would pass the
+    // negatives above and quietly remove two true statements.
+    expect(owed).toMatch(/retirement\s+planner's\s+pot/i)
+    expect(property).toMatch(/retirement\s+planner's/i)
+  })
+
   it('the mortgage page says what each figure does NOT affect (43.5, AC-3/AC-5)', () => {
     const page = mortgage()
     const { payment, owed, property } = mortgageSections()
@@ -955,11 +997,17 @@ describe('documentation content accuracy (story 10-4)', () => {
     // section and into the debt section — ran 43/43 GREEN against the first pass.
     // A misattributed effect is the defect this page exists to prevent, so the
     // bullets are pinned to their own section AND denied to the others.
+    // ⚠️ Story 47.2 REMOVED a fourth entry here:
+    // `/retirement\s+planner,\s+which\s+works\s+out\s+what\s+you\s+save/i`.
+    // The bullet it pinned is gone, because a mortgage payment no longer affects
+    // the planner by any route once that page reads investment contributions
+    // instead of income minus expenses. Its absence is asserted directly by "the
+    // payment section no longer claims to move the retirement planner (47.2,
+    // AC-13)" above — this list only pins what the payment DOES change.
     const paymentEffects = [
       /the\s+total\s+on\s+the\s+Expenses\s+page/i,
       /Total\s+Expenses\s+figure\s+on\s+the\s+home\s+page/i,
       /left\s+over\s+to\s+share\s+out\s+on\s+the\s+\[Savings\]/i,
-      /retirement\s+planner,\s+which\s+works\s+out\s+what\s+you\s+save/i,
     ]
     const owedEffects = [
       /Total\s+Debts\s+and\s+Net\s+Worth\s+on\s+the\s+Balance\s+Tracking\s+page/i,

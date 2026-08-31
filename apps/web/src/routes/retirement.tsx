@@ -32,8 +32,10 @@ export const Route = createFileRoute('/retirement')({
  * collects each detail once, plus the explanations that survived de-duplication.
  *
  * Story 29.2 then stopped asking for two of those details altogether: current
- * amount saved and monthly savings are derived from the user's own accounts and
- * budget, leaving four editable fields.
+ * amount saved and monthly savings are derived from the user's own investment
+ * accounts, leaving four editable fields. (Story 47.2 re-pointed the monthly
+ * figure at those accounts' contributions; before it, that half came from income
+ * minus expenses.)
  */
 function RetirementPage() {
   /**

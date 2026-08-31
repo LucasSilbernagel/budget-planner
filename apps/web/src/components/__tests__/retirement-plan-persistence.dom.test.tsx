@@ -37,12 +37,14 @@ const incomeRow = (amount: number) => ({
   updatedAt: ISO,
 })
 
-const investmentRow = (currentBalance: number) => ({
+// ⚠️ Story 47.2: `monthlyContribution` now IS the derived "Monthly Savings"
+// figure, so it is a real parameter rather than inert padding.
+const investmentRow = (currentBalance: number, monthlyContribution = 0) => ({
   id: 'inv-1',
   type: 'investment' as const,
   name: 'RRSP',
   currentBalance,
-  monthlyContribution: 0,
+  monthlyContribution,
   frequency: 'monthly' as const,
   createdAt: ISO,
   updatedAt: ISO,
@@ -278,11 +280,17 @@ describe('the derived figures still derive (AC-8)', () => {
   it('shows today’s investment total, not the one that was on screen when saved', async () => {
     seedStoredPlan(SAVED_PLAN)
     await rehydrate()
-    useBalanceStore.setState({ entries: [investmentRow(7_777_00)] })
+    useBalanceStore.setState({ entries: [investmentRow(7_777_00, 33_300)] })
 
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('7,777.00')
+    // ⚠️ The describe says "figureS". Before story 47.2 only ONE of them was
+    // checked here, so the monthly figure's derive-don't-persist property was
+    // unguarded in the suite that exists to prove it — and after 47.2 both
+    // figures read the same rows, which is exactly when a persisted-stale bug
+    // would hit both at once.
+    expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('333.00')
   })
 })
 

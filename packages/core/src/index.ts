@@ -67,6 +67,22 @@ export type { AllocationMode } from './services/savingsGoals'
 // module — to avoid barrel name collisions.
 export { remainingContributionRoom } from './services/balanceTracking'
 
+// Story 47.2 (FR74): the canonical monthly-contribution normalizer, re-exported
+// for the Retirement planner's derived "Monthly Savings" figure.
+//
+// ⚠️ `balanceTracking.ts` calls this the SINGLE place a balance-tracking
+// contribution is normalized to a monthly base, and requires every
+// timeline/projection/aggregation consumer to route through it rather than read
+// `monthlyContribution` raw — the stored value sits at the row's own `frequency`
+// cadence, not necessarily monthly. The planner is now such a consumer.
+//
+// Re-exported here rather than imported from the `services/balanceTracking`
+// subpath, which does not resolve under the web app's tsc: every subpath import
+// adds a TS2307 to the type-check baseline. A single NAMED value re-export — NOT
+// `export *` of the whole module — following the `remainingContributionRoom` /
+// `generateColorMap` precedents.
+export { monthlyContributionCents } from './services/balanceTracking'
+
 // Story 30.5: the shared categorical palette generator, re-exported for the
 // category-breakdown bar charts so they draw from the SAME palette as the
 // overview pies rather than copying it. ⚠️ Same palette, NOT the same colour

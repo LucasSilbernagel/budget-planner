@@ -5,7 +5,10 @@ import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
-import { RetirementAccumulationPlanner } from '../RetirementAccumulationPlanner'
+import {
+  RetirementAccumulationPlanner,
+  describeSolverError,
+} from '../RetirementAccumulationPlanner'
 
 /**
  * RetirementAccumulationPlanner tests (stories 26.7 / 28.1 / 29.1).
@@ -58,13 +61,25 @@ const expenseRow = (amount: number, frequency = 'monthly' as const, id = 'exp-1'
   updatedAt: ISO,
 })
 
-const investmentRow = (currentBalance: number, id = 'inv-1') => ({
+/**
+ * ⚠️ Story 47.2: `monthlyContribution` and `frequency` are no longer inert
+ * padding on this fixture — they ARE the "Monthly Savings" figure now. Every
+ * row built here defaulted to `monthlyContribution: 0`, so leaving the default
+ * in place takes the derived figure to $0.00 and collapses every downstream
+ * reachability expectation. Pass a contribution whenever the test cares about
+ * that figure.
+ */
+const investmentRow = (
+  currentBalance: number,
+  id = 'inv-1',
+  contribution: { amount?: number; frequency?: 'weekly' | 'biweekly' | 'monthly' | 'annually' } = {}
+) => ({
   id,
   type: 'investment' as const,
   name: 'RRSP',
   currentBalance,
-  monthlyContribution: 0,
-  frequency: 'monthly' as const,
+  monthlyContribution: contribution.amount ?? 0,
+  frequency: contribution.frequency ?? ('monthly' as const),
   createdAt: ISO,
   updatedAt: ISO,
 })
@@ -87,7 +102,7 @@ const debtRow = (currentBalance: number, id = 'debt-1') => ({
  * downstream expectation below is preserved and no `user.clear()` is needed.
  *
  *   saved                                          = $1,000,000.00
- *   net monthly = $2,000 − $500                    = $1,500.00
+ *   monthly savings (the RRSP contribution)        = $1,500.00
  *   saved per year = $1,500 × 12                   = $18,000.00
  *   desired income prefill = $2,000 × 12 × 0.5     = $12,000.00 / yr
  *   deplete required = (85 − 40) × $12,000         = $540,000.00
@@ -97,7 +112,14 @@ const debtRow = (currentBalance: number, id = 'debt-1') => ({
  * clears both models' required nest egg → reachable immediately (age 40).
  */
 function seedReachableStores() {
-  useBalanceStore.setState({ entries: [investmentRow(1_000_000_00)] })
+  // ⚠️ Story 47.2: the $1,500/mo now comes from the account's own contribution,
+  // not from income − expenses. The income and expense rows STAY: $2,000/mo gross
+  // still drives the desired-income prefill ($12,000/yr), which every expectation
+  // in the docblock above depends on. Dropping them because "income no longer
+  // feeds monthly savings" would break this fixture a second way.
+  useBalanceStore.setState({
+    entries: [investmentRow(1_000_000_00, 'inv-1', { amount: 150_000 })],
+  })
   useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
   useExpenseStore.setState({ expenses: [expenseRow(50_000)] })
 }
@@ -192,12 +214,15 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     // Tiny savings, short window, huge desired income → never reachable.
-    //   age 60, saved $1,000, $50/mo net, 4%, desired $5,000,000/yr, life 65.
+    //   age 60, saved $1,000, $50/mo saved, 4%, desired $5,000,000/yr, life 65.
     //   saved per year = $50 × 12 = $600.00 (still shown when not reachable).
-    // The amounts are unchanged from before 29.2 — only their SOURCE moved from
-    // typed input to seeded store.
+    // The amounts are unchanged from before 29.2 — only their SOURCE moved: to a
+    // seeded store in 29.2, and to the account's own CONTRIBUTION in 47.2. The
+    // income row stays because it prefills the desired-income field below.
     act(() => {
-      useBalanceStore.setState({ entries: [investmentRow(1_000_00)] })
+      useBalanceStore.setState({
+        entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
+      })
       useIncomeStore.setState({ incomeSources: [incomeRow(5_000)] })
     })
     await user.clear(screen.getByLabelText('Current Age'))
@@ -215,11 +240,17 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     expect(
       notReachable.getByText(/Retirement isn.t reachable with these numbers/)
     ).toBeInTheDocument()
-    // ⚠️ Since 29.2 the first lever names OTHER pages: the savings figures are
+    // ⚠️ Since 29.2 the first lever names ANOTHER page: the savings figures are
     // derived, so there is no "save more" control on this screen to act on.
+    // ⚠️ Story 47.2 re-pointed it. The old wording ("Raise your income or cut
+    // expenses on the Income and Expenses pages") named a lever that no longer
+    // moves this outcome at all — income and expenses stopped feeding the
+    // monthly figure — so it was advice that could not work.
     expect(
-      notReachable.getByText('Raise your income or cut expenses on the Income and Expenses pages')
+      notReachable.getByText('Put more into your investment accounts on the Balance Tracking page')
     ).toBeInTheDocument()
+    // The retired wording must be gone, not merely unreachable.
+    expect(notReachable.queryByText(/Raise your income or cut expenses/)).not.toBeInTheDocument()
     // ⚠️ Do NOT assert the retired 'Save more each month' string here: it exists
     // nowhere in the repo, so that assertion could never fail. Pin a CURRENT
     // string that must be absent instead — the no-data heading, which this
@@ -250,7 +281,9 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     // currentAge >= lifeExpectancy → no retirement window; the blocker is the
     // ages, not the savings, so the generic levers must not show.
     act(() => {
-      useBalanceStore.setState({ entries: [investmentRow(1_000_00)] })
+      useBalanceStore.setState({
+        entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
+      })
       useIncomeStore.setState({ incomeSources: [incomeRow(5_000)] })
     })
     await user.clear(screen.getByLabelText('Current Age'))
@@ -272,7 +305,9 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     // "Save more each month" string would pass vacuously now that it is gone.
     expect(notReachable.getByText(/600\.00/)).toBeInTheDocument()
     expect(
-      notReachable.queryByText('Raise your income or cut expenses on the Income and Expenses pages')
+      notReachable.queryByText(
+        'Put more into your investment accounts on the Balance Tracking page'
+      )
     ).not.toBeInTheDocument()
   })
 
@@ -410,11 +445,14 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // age 40 → life 50, $100,000 saved, $1,000/mo net, 6%, desired $12,000/yr.
-    // Amounts unchanged from before 29.2 — only the source moved to the stores,
-    // which is what keeps the cent-exact expectation below valid.
+    // age 40 → life 50, $100,000 saved, $1,000/mo saved, 6%, desired $12,000/yr.
+    // Amounts unchanged from before 29.2 — only the source moved (to the stores
+    // in 29.2, to the account's own contribution in 47.2), which is what keeps
+    // the cent-exact expectation below valid.
     act(() => {
-      useBalanceStore.setState({ entries: [investmentRow(100_000_00)] })
+      useBalanceStore.setState({
+        entries: [investmentRow(100_000_00, 'inv-1', { amount: 100_000 })],
+      })
       useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
     })
     await user.clear(screen.getByLabelText('Current Age'))
@@ -1015,22 +1053,164 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('5,000.00')
   })
 
-  it('derives monthly savings from FREQUENCY-NORMALIZED net income (AC-2)', () => {
-    // $500/week income = $2,166.67/mo normalized (×52/12); $166.67/mo expenses.
-    // Net = 216667 − 16667 = 200000 cents = $2,000.00.
-    // ⚠️ Un-normalized (the derivation the removed Net Worth projection page
-    // used, and the one this page rejects) would read 50000 − 16667 = $333.33 —
-    // a different, wrong number.
-    useIncomeStore.setState({ incomeSources: [incomeRow(50_000, 'weekly')] })
-    useExpenseStore.setState({ expenses: [expenseRow(16_667)] })
+  it('derives monthly savings from investment CONTRIBUTIONS at mixed cadences (47.2 AC-1, AC-5)', () => {
+    // Four accounts, four cadences, normalized PER ROW and then summed:
+    //
+    //   $500.00 weekly    50000 × 52/12 = 216666.666… → round → 216667
+    //   $1,200.00 annually 120000 × 1/12 =  10000.0    → round →  10000
+    //   $250.00 biweekly   25000 × 26/12 =  54166.666… → round →  54167
+    //   $100.00 monthly    10000 × 1     =  10000      → round →  10000
+    //                                                    total = 290834c
+    //
+    // ⚠️ The fixture is chosen so per-item-then-sum and sum-then-round DISAGREE:
+    // summing the unrounded values first gives 290833.333… → 290833, one cent
+    // short. $2,908.34 is the pool's discipline (`savingsAllocation.ts:116-124`);
+    // $2,908.33 is the mutant. A fixture where every row normalized exactly would
+    // have passed against both.
+    useBalanceStore.setState({
+      entries: [
+        investmentRow(0, 'inv-1', { amount: 50_000, frequency: 'weekly' }),
+        investmentRow(0, 'inv-2', { amount: 120_000, frequency: 'annually' }),
+        investmentRow(0, 'inv-3', { amount: 25_000, frequency: 'biweekly' }),
+        investmentRow(0, 'inv-4', { amount: 10_000, frequency: 'monthly' }),
+      ],
+    })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('2,000.00')
-    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('333.33')
+    expect(derivedValueOf('derived-monthly-savings')).toBe('2,908.34')
+    // ⚠️ Un-normalized (raw cents summed) would read $2,050.00 — the distortion
+    // the removed Net Worth projection page shipped and this page rejects.
+    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('2,050.00')
+  })
+
+  it('clamps each ROW at zero, never the total (47.2 AC-1)', () => {
+    // ⚠️⚠️ THE FIXTURE THIS SUITE WAS MISSING, and its absence was found in
+    // review. Every other negative fixture here is a SINGLE negative row, for
+    // which per-row `Math.max(0, …)` and one clamp on the total are
+    // indistinguishable — both yield 0.00. Measured: rewriting the loop as
+    // `total += monthly` with a single `Math.max(0, total)` at the end left the
+    // ENTIRE suite green while a negative row silently ate a real contribution
+    // from another account.
+    //
+    //   +$1,500.00/mo  →  150000
+    //   −$400.00/mo    →  clamped to 0, NOT −40000
+    //                     per-row total = 150000 → $1,500.00
+    //                     total-clamped = 110000 → $1,100.00
+    //
+    // Per-row is the pool's discipline (`savingsAllocation.ts:116-124`), and the
+    // two surfaces reading the same rows must agree on it.
+    useBalanceStore.setState({
+      entries: [
+        investmentRow(0, 'inv-1', { amount: 150_000 }),
+        investmentRow(0, 'inv-2', { amount: -40_000 }),
+      ],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(derivedValueOf('derived-monthly-savings')).toBe('1,500.00')
+    // The total-clamping mutant's answer, which this figure must never return.
+    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('1,100.00')
+  })
+
+  it('discloses a clamped row WITHOUT claiming the figure was zeroed (47.2 AC-8)', async () => {
+    const user = userEvent.setup()
+    // ⚠️ A state the old derivation could not reach: a positive figure that still
+    // hid a clamped row. Keying `flooredFromNegative` off the ROW rather than the
+    // FIGURE fired the results caveat here — copy that says the projection
+    // "treats it as zero" beside a card reading $1,500.00. Both clauses false.
+    //
+    // ⚠️⚠️ THE EDITABLE FIELDS MUST BE FILLED, and the first version of this test
+    // did not fill them. `resultsCaveat` renders only INSIDE a results branch, so
+    // asserting its absence without solving passes vacuously — measured: the
+    // row-keyed mutant came back GREEN. The warning was already written on the
+    // neighbouring test in this same file and it still did not propagate.
+    useBalanceStore.setState({
+      entries: [
+        investmentRow(100_000_00, 'inv-1', { amount: 150_000 }),
+        investmentRow(0, 'inv-2', { amount: -40_000 }),
+      ],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await fillEditableFields(user)
+
+    const card = screen.getByTestId('derived-monthly-savings')
+    expect(derivedValueOf('derived-monthly-savings')).toBe('1,500.00')
+    expect(card).toHaveTextContent(
+      'One or more accounts have a negative monthly contribution, which this plan counts as nothing.'
+    )
+    // A results branch really is on screen, so the absence below is not vacuous.
+    expect(screen.getByTestId('accumulation-outputs')).toBeInTheDocument()
+    // The figure was NOT floored, so the results-level caveat must stay off.
+    expect(screen.queryByTestId('derived-floor-disclosure')).not.toBeInTheDocument()
+  })
+
+  it('tells a negative-only contributor the truth, not "add one" (47.2 AC-7, AC-8)', () => {
+    // ⚠️⚠️ THE TWO ZEROS, collapsed in the first implementation and caught in
+    // review. This user HAS set a contribution; it was clamped up from below
+    // zero. The no-contribution note tells them to do what they already did,
+    // while the results caveat beside it says a figure came out below zero —
+    // two contradictory sentences on one screen.
+    useBalanceStore.setState({
+      entries: [investmentRow(50_000_00, 'inv-1', { amount: -200_000 })],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    const card = screen.getByTestId('derived-monthly-savings')
+    expect(derivedValueOf('derived-monthly-savings')).toBe('0.00')
+    expect(card).toHaveTextContent(
+      'Your investment account contributions currently come to less than nothing'
+    )
+    expect(card).not.toHaveTextContent('have no monthly contribution set yet')
+  })
+
+  it('counts a contribution the user marked as already accounted for (47.2 AC-2)', () => {
+    // ⚠️⚠️ THE ARM THAT MATTERS. `contributionRecordedAsExpense` is a statement
+    // about the SAVINGS POOL — it stops `calculateDistributablePool` subtracting
+    // the same money twice (FR72, stories 45.1/47.1). It says nothing about
+    // whether the money is invested. It is. Filtering on it here — i.e. reusing
+    // `savingsAllocation`'s `sumMonthlyInvestmentContributions` — would silently
+    // import the pool's rule into the retirement plan and under-report every
+    // payroll-deducted saver's actual saving.
+    //
+    //   flagged   $400.00/mo → 40000
+    //   unflagged $600.00/mo → 60000
+    //                  total = 100000c = $1,000.00 (NOT $600.00)
+    useBalanceStore.setState({
+      entries: [
+        { ...investmentRow(0, 'inv-1', { amount: 40_000 }), contributionRecordedAsExpense: true },
+        investmentRow(0, 'inv-2', { amount: 60_000 }),
+      ],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(derivedValueOf('derived-monthly-savings')).toBe('1,000.00')
+    // The pool's answer for the same rows, which this figure must NOT return.
+    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('600.00')
+  })
+
+  it('no longer moves when income or expenses change (47.2 AC-4)', () => {
+    // The decoupling, asserted directly rather than inferred from the new
+    // derivation. Before 47.2 either mutation below moved this figure.
+    useBalanceStore.setState({
+      entries: [investmentRow(0, 'inv-1', { amount: 75_000 })],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    expect(derivedValueOf('derived-monthly-savings')).toBe('750.00')
+
+    act(() => {
+      useIncomeStore.setState({ incomeSources: [incomeRow(900_000)] })
+      useExpenseStore.setState({ expenses: [expenseRow(400_000)] })
+    })
+
+    expect(derivedValueOf('derived-monthly-savings')).toBe('750.00')
+    // The old derivation would now read $5,000.00.
+    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('5,000.00')
   })
 
   it('renders neither derived figure as an editable control (AC-1, AC-2)', () => {
-    useBalanceStore.setState({ entries: [investmentRow(5_000_00)] })
+    useBalanceStore.setState({
+      entries: [investmentRow(5_000_00, 'inv-1', { amount: 300_000 })],
+    })
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1043,65 +1223,85 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     expect(screen.queryByRole('textbox', { name: /Monthly Savings/ })).not.toBeInTheDocument()
   })
 
-  it('updates both figures live when the underlying stores change (AC-3)', () => {
+  it('updates both figures live when the underlying store changes (AC-3)', () => {
+    // ⚠️ Since 47.2 that is ONE store, not three — both figures track the same
+    // balance rows, which is the coherence this change buys.
     renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('0.00')
 
     act(() => {
-      useBalanceStore.setState({ entries: [investmentRow(7_500_00)] })
-      useIncomeStore.setState({ incomeSources: [incomeRow(400_000)] })
-      useExpenseStore.setState({ expenses: [expenseRow(150_000)] })
+      useBalanceStore.setState({
+        entries: [investmentRow(7_500_00, 'inv-1', { amount: 250_000 })],
+      })
     })
 
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('7,500.00')
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('2,500.00')
   })
 
-  it('distinguishes empty sources from non-positive ones (AC-4)', () => {
-    // No rows at all → "add some", not "they net to zero".
+  it('distinguishes no accounts from accounts with nothing going in (47.2 AC-6, AC-7)', () => {
+    // No investment rows at all → "add an account".
     const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByTestId('derived-current-saved')).toHaveTextContent(
-      'Only investment accounts count toward your nest egg'
-    )
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
-      'Add income and expenses to calculate this.'
+      'Add an investment account on the Balance Tracking page, and say what you put in each month.'
     )
     unmount()
 
-    // Rows exist but net non-positive → the other note.
-    useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
-    useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
+    // ⚠️⚠️ The state the OLD source could NOT produce, and the main user-visible
+    // risk in story 47.2: the account exists, it just has no contribution set.
+    // Borrowing the note above would tell this user to do the thing they have
+    // already done, while the plan quietly reports they can never retire.
+    useBalanceStore.setState({ entries: [investmentRow(50_000_00, 'inv-1')] })
     renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
-      'Your expenses currently exceed your income'
-    )
-    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent(
-      'Add income and expenses'
-    )
-  })
-
-  it('tells a user who has only entered expenses to add income, not that they overspend', () => {
-    // The normal onboarding order. Judging emptiness across BOTH lists framed a
-    // missing-data state as a budgeting failure and never gave the useful advice.
-    useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
-    renderWithProviders(<RetirementAccumulationPlanner />)
-
     const derived = screen.getByTestId('derived-monthly-savings')
-    expect(derived).toHaveTextContent('Add your income to calculate this.')
-    expect(derived).not.toHaveTextContent('exceed your income')
+    expect(derived).toHaveTextContent(
+      'Your investment accounts have no monthly contribution set yet — add one on the Balance Tracking page.'
+    )
+    expect(derived).not.toHaveTextContent('Add an investment account')
   })
 
-  it('names the expense list, not the income list, when an expense row is corrupt', () => {
-    // One try/catch across both lists reported every corruption as an income
-    // problem and sent the user to the wrong page.
-    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
-    useExpenseStore.setState({
-      expenses: [{ ...expenseRow(100_000), frequency: 'daily' } as unknown as never],
+  it('reports unreadable CONTRIBUTIONS, and names the page that holds them (47.2 AC-9)', () => {
+    // A non-finite `monthlyContribution` is reachable: the sync applier writes
+    // pulled rows into the store without validating them. Before 47.2 this same
+    // failure was reported as "We couldn't read your income data." and sent the
+    // user to a page that has nothing to do with it.
+    useBalanceStore.setState({
+      entries: [
+        {
+          ...investmentRow(50_000_00, 'inv-1'),
+          monthlyContribution: Number.NaN,
+        } as unknown as never,
+      ],
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
-      "We couldn't read your expense data."
+    const derived = screen.getByTestId('derived-monthly-savings')
+    expect(derived).toHaveTextContent("We couldn't read your investment account contributions.")
+    // Distinct from the BALANCE failure on the other card — the two cards read
+    // different fields of the same rows and must not blame each other's.
+    expect(derived).not.toHaveTextContent('investment account balances')
+    // The planner still rendered — no ErrorBoundary fallback.
+    expect(screen.getByLabelText('Current Age')).toBeInTheDocument()
+  })
+
+  it('COERCES a corrupt contribution cadence to monthly rather than failing (47.2 AC-9)', () => {
+    // ⚠️ Deliberately NOT the unreadable path. `monthlyContributionCents` coerces
+    // an unrecognised cadence to 'monthly' — the same degradation
+    // `SavingsPage`'s KNOWN_FREQUENCIES applies — so the savings pool and this
+    // figure can never disagree about a corrupt row. $300.00 is read as $300/mo.
+    useBalanceStore.setState({
+      entries: [
+        {
+          ...investmentRow(50_000_00, 'inv-1', { amount: 30_000 }),
+          frequency: 'daily',
+        } as unknown as never,
+      ],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(derivedValueOf('derived-monthly-savings')).toBe('300.00')
+    expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent(
+      "We couldn't read your investment account contributions."
     )
   })
 
@@ -1116,24 +1316,31 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     expect(derived).not.toHaveTextContent('Only investment accounts count toward your nest egg')
   })
 
-  it('survives a corrupt persisted frequency without reaching the ErrorBoundary (AC-6)', () => {
-    // `calculateNetIncomeResult` throws on an unrecognised frequency — the same
-    // path that white-screens the HomePage dashboard (deferred-work.md:483).
+  it('survives a corrupt persisted income row without reaching the ErrorBoundary (AC-6)', () => {
+    // ⚠️ Re-pointed by 47.2, not deleted. Income no longer feeds either derived
+    // figure, but it still feeds `prefillDesiredIncomeCents`, which calls
+    // `calculateNetIncomeResult` on the render path — the same throw that
+    // white-screens the HomePage dashboard (deferred-work.md:483). The guard now
+    // proves the PLANNER survives it and the derived figures are untouched by it.
+    useBalanceStore.setState({
+      entries: [investmentRow(0, 'inv-1', { amount: 120_000 })],
+    })
     useIncomeStore.setState({
       incomeSources: [{ ...incomeRow(100_000), frequency: 'daily' } as unknown as never],
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
-      "We couldn't read your income data."
-    )
     // The planner still rendered — no ErrorBoundary fallback.
     expect(screen.getByLabelText('Current Age')).toBeInTheDocument()
+    // And the corrupt income row did not poison the contributions figure.
+    expect(derivedValueOf('derived-monthly-savings')).toBe('1,200.00')
   })
 
   it('shows the FLOORED monthly savings, never a negative figure (AC-5)', async () => {
     const user = userEvent.setup()
-    // Net income is −$2,000/mo.
+    // The contribution is −$2,000/mo. ⚠️ Since story 47.2 the negative comes from
+    // the CONTRIBUTION row; the income and expense rows below feed only the
+    // desired-income prefill and cannot move this figure at all.
     //
     // ⚠️ What this actually guards. Core is NOT the exposure here: the solver
     // clamps `savedPerYearCents` (`retirement.ts:636`) AND
@@ -1144,7 +1351,13 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     // computed from 0. One input, two contradictory numbers, and since 29.2 no
     // field for the user to correct. Mutation-proven: reverting the
     // `Math.max(0, …)` makes the negative-value assertion below fail.
-    useBalanceStore.setState({ entries: [investmentRow(100_000_00)] })
+    // ⚠️ Since 47.2 the negative must come from a CONTRIBUTION row. Seeding
+    // income < expenses no longer touches this figure at all, so the old fixture
+    // left the card at a trivially-zero value and the assertion below passed
+    // without ever exercising the clamp.
+    useBalanceStore.setState({
+      entries: [investmentRow(100_000_00, 'inv-1', { amount: -200_000 })],
+    })
     useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
 
@@ -1218,10 +1431,17 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     const user = userEvent.setup()
     // `unreadable` feeds a FABRICATED zero to the solver. Excluding it from the
     // caveat produced a complete, confident outlook built on invented data.
-    useBalanceStore.setState({ entries: [investmentRow(100_000_00)] })
-    useIncomeStore.setState({
-      incomeSources: [{ ...incomeRow(300_000), frequency: 'daily' } as unknown as never],
+    // ⚠️ Since 47.2 the unreadable source is a corrupt CONTRIBUTION, not a
+    // corrupt income row — income no longer reaches either derived figure.
+    useBalanceStore.setState({
+      entries: [
+        {
+          ...investmentRow(100_000_00, 'inv-1'),
+          monthlyContribution: Number.NaN,
+        } as unknown as never,
+      ],
     })
+    useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
     await fillEditableFields(user)
 
@@ -1239,14 +1459,17 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     // results branch, so asserting its absence without solving passes vacuously —
     // mutation-checked: keying `flooredFromNegative` back off the state name is
     // caught only once a results branch is on screen.
-    useBalanceStore.setState({ entries: [investmentRow(100_000_00)] })
+    // ⚠️ Since 47.2 the honest zero is an account with NO contribution set:
+    // nothing was clamped, so claiming the position is worse than shown would be
+    // a plain lie.
+    useBalanceStore.setState({ entries: [investmentRow(100_000_00, 'inv-1')] })
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
     await fillEditableFields(user)
 
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
-      'Your income and expenses balance exactly'
+      'no monthly contribution set yet'
     )
     expect(screen.getByTestId('accumulation-outputs')).toBeInTheDocument()
     expect(screen.queryByTestId('derived-floor-disclosure')).not.toBeInTheDocument()
@@ -1258,7 +1481,9 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     // 0, but NEITHER source is empty — the user entered everything, it just nets
     // negative. Gating on `cents === 0` (as this branch first did) tells them to
     // add data they already added, while the caveat below contradicts it.
-    useBalanceStore.setState({ entries: [investmentRow(-5_000_00)] })
+    useBalanceStore.setState({
+      entries: [investmentRow(-5_000_00, 'inv-1', { amount: -200_000 })],
+    })
     useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -1283,8 +1508,10 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
     expect(screen.queryByText('Projection Summary:')).not.toBeInTheDocument()
     expect(
-      screen.getByText(/add your accounts, income and expenses to see how your savings grow/i)
+      screen.getByText(/add your investment accounts to see how your savings grow/i)
     ).toBeInTheDocument()
+    // The retired wording named two pages that no longer feed anything here.
+    expect(screen.queryByText(/income and expenses to see how your savings grow/i)).toBeNull()
   })
 
   it('gives a user with no data the add-your-data branch, not "unreachable" (AC-7)', async () => {
@@ -1301,19 +1528,51 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     const notReachable = within(screen.getByTestId('accumulation-not-reachable'))
     expect(notReachable.getByText(/We don.t have your savings data yet/)).toBeInTheDocument()
     expect(
-      notReachable.getByText(/Add your investment accounts on the Balance Tracking page/)
+      notReachable.getByText(/Add your investment accounts on the Balance/)
     ).toBeInTheDocument()
+    expect(notReachable.getByText(/what you put into them each month/)).toBeInTheDocument()
     expect(
       notReachable.queryByText(/Retirement isn.t reachable with these numbers/)
     ).not.toBeInTheDocument()
     expect(
-      notReachable.queryByText('Raise your income or cut expenses on the Income and Expenses pages')
+      notReachable.queryByText(
+        'Put more into your investment accounts on the Balance Tracking page'
+      )
     ).not.toBeInTheDocument()
+  })
+
+  it('does not show a confident all-zero outlook to a user with no data (47.2)', async () => {
+    const user = userEvent.setup()
+    // ⚠️ Story 47.2 WIDENED the population that reaches this. `noSourceData` used
+    // to require BOTH sources empty; now that both figures read the investment
+    // rows it means "no investment accounts", which is the ordinary state of
+    // someone who has filled in income and expenses and nothing else.
+    //
+    // With a desired income of 0 the solve succeeds and reports `reachable`, so
+    // the outputs panel renders a green all-zero outlook — directly above the
+    // chart's "add your investment accounts" placeholder, which is gated on
+    // `noSourceData` and the outputs panel was not.
+    useIncomeStore.setState({ incomeSources: [incomeRow(500_000)] })
+    useExpenseStore.setState({ expenses: [expenseRow(200_000)] })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await fillEditableFields(user, { age: '30', life: '85', income: '0', rate: '6' })
+
+    expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('accumulation-not-reachable')).getByText(
+        /We don.t have your savings data yet/
+      )
+    ).toBeInTheDocument()
   })
 
   it('discloses in the results that a floored figure was assumed to be zero (AC-4)', async () => {
     const user = userEvent.setup()
-    useBalanceStore.setState({ entries: [investmentRow(100_000_00)] })
+    // ⚠️ Since 47.2 the floored figure is a NEGATIVE contribution. The old
+    // fixture (income < expenses) floors nothing here any more, so it would have
+    // asserted the caveat's presence while nothing was actually clamped.
+    useBalanceStore.setState({
+      entries: [investmentRow(100_000_00, 'inv-1', { amount: -200_000 })],
+    })
     useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
 
@@ -1332,6 +1591,106 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
  * which is what keeps an untouched planner numerically identical to its
  * pre-35.3 behaviour at every rate rather than only at the 6.0 default.
  */
+/**
+ * Story 47.2 (FR74) — the copy fence.
+ *
+ * Five surfaces named income or expenses as the source of the monthly figure.
+ * Each was true before this story and false after it, and NOT ONE of them was
+ * covered: the whole set could have shipped unchanged while every test stayed
+ * green, which is precisely what the epic warned would happen.
+ *
+ * ⚠️ The negatives here are scoped to the elements that must not mention income
+ * or expenses, never to the page. The planner legitimately says "Desired
+ * Retirement Income" and "Income period" — a page-wide ban would be red on
+ * arrival, which is a guard that gets deleted rather than fixed.
+ */
+describe('RetirementAccumulationPlanner — the monthly figure stops blaming income (story 47.2)', () => {
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  it('never ties the Monthly Savings card to income or expenses, in any state (AC-10)', () => {
+    const states: [string, () => void][] = [
+      ['no investment accounts', () => undefined],
+      [
+        'accounts with no contribution set',
+        () => useBalanceStore.setState({ entries: [investmentRow(50_000_00, 'inv-1')] }),
+      ],
+      [
+        'a real contribution',
+        () =>
+          useBalanceStore.setState({
+            entries: [investmentRow(50_000_00, 'inv-1', { amount: 120_000 })],
+          }),
+      ],
+      [
+        'an unreadable contribution',
+        () =>
+          useBalanceStore.setState({
+            entries: [
+              {
+                ...investmentRow(50_000_00, 'inv-1'),
+                monthlyContribution: Number.NaN,
+              } as unknown as never,
+            ],
+          }),
+      ],
+    ]
+
+    for (const [label, seed] of states) {
+      resetStores()
+      // ⚠️ Income and expenses are seeded in EVERY case on purpose. A card that
+      // still read them would have something to say about them; without this the
+      // absence below could just be the absence of data.
+      useIncomeStore.setState({ incomeSources: [incomeRow(500_000)] })
+      useExpenseStore.setState({ expenses: [expenseRow(200_000)] })
+      seed()
+
+      const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
+      const card = screen.getByTestId('derived-monthly-savings')
+      // Positive anchor first: the card really did render its own content.
+      expect(card.textContent, label).toContain('Monthly Savings')
+      expect(card.textContent, label).not.toMatch(/income|expense/i)
+      unmount()
+    }
+  })
+
+  it('sends an unreadable monthly figure to the page that holds it (AC-10)', () => {
+    // Defence in depth: the derived figures guard non-finite values before the
+    // solver sees them, so this copy is reachable only if that guard is bypassed.
+    // It was still telling the user to check two pages that no longer feed it.
+    const copy = describeSolverError(new Error('Monthly savings must be a finite number'))
+    expect(copy).toMatch(/monthly\s+contributions\s+on\s+your\s+Balance\s+Tracking\s+page/i)
+    expect(copy).not.toMatch(/income|expenses/i)
+  })
+
+  it('offers a lever that can actually move the outcome (AC-10)', async () => {
+    const user = userEvent.setup()
+    // ⚠️ The most damaging of the five. "Raise your income or cut expenses" was
+    // shown to a user in shortfall and, after this story, could not change their
+    // outlook by a cent.
+    useBalanceStore.setState({
+      entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.clear(screen.getByLabelText('Current Age'))
+    await user.type(screen.getByLabelText('Current Age'), '60')
+    await user.clear(screen.getByLabelText('Life Expectancy'))
+    await user.type(screen.getByLabelText('Life Expectancy'), '65')
+    const desired = screen.getByLabelText('Desired Retirement Income')
+    await user.clear(desired)
+    await user.type(desired, '5000000')
+    await user.clear(screen.getByLabelText('Expected Annual Return'))
+    await user.type(screen.getByLabelText('Expected Annual Return'), '4')
+
+    const levers = within(screen.getByTestId('accumulation-not-reachable')).getByRole('list')
+    expect(levers.textContent).toContain(
+      'Put more into your investment accounts on the Balance Tracking page'
+    )
+    expect(levers.textContent).not.toMatch(/income\s+or\s+cut\s+expenses/i)
+    expect(levers.textContent).not.toMatch(/Income\s+and\s+Expenses\s+pages/i)
+  })
+})
+
 describe('RetirementAccumulationPlanner — post-retirement return rate (story 35.3)', () => {
   beforeEach(resetStores)
   afterEach(resetStores)

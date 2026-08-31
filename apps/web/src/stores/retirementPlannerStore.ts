@@ -18,8 +18,8 @@ import { persist } from 'zustand/middleware'
  *
  * ## What this deliberately does NOT store
  *
- * "Current Amount Saved" (FR48) and "Monthly Savings" (FR49) are `useMemo`
- * derivations over the balance / income / expense stores. Persisting them would
+ * "Current Amount Saved" (FR48) and "Monthly Savings" (FR49, as amended by FR74 /
+ * story 47.2) are `useMemo` derivations over the balance store. Persisting them would
  * freeze a stale figure into the one page whose whole purpose is to track the
  * others: a plan restored six months later would show the savings you had when
  * you saved it. They stay derived.
