@@ -38,7 +38,6 @@ import {
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
-import { RowMoveControls } from './ui/RowMoveControls'
 import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
 import { SortableColumnHeader } from './ui/SortableColumnHeader'
 import { TableSortControl } from './ui/TableSortControl'
@@ -146,12 +145,11 @@ export function BalancePage() {
   // arithmetic, so the contributing figure has to be on screen too.
   const totalSavings = useTotalSavings()
   const netWorth = useNetWorth()
-  const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry, moveBalanceEntry } =
-    useBalanceStore()
+  const { addBalanceEntry, updateBalanceEntry, deleteBalanceEntry } = useBalanceStore()
 
   // Column sorting for the entries table (story 34.2, FR61). A VIEW-level
-  // projection: it never writes `sortOrder`, never calls a move action and never
-  // enqueues a sync operation.
+  // projection: it never writes `sortOrder` and never enqueues a sync operation,
+  // so clearing it returns the table to the default order untouched.
   //
   // ⚠️ Deliberately local to this component, not hoisted to page level. It is a
   // projection over the store's array, so anything else that read a hoisted
@@ -679,7 +677,7 @@ export function BalancePage() {
                       </tr>
                     </thead>
                     <tbody className={RESPONSIVE_TBODY_CLASS}>
-                      {sortedRows.map((entry, index) => {
+                      {sortedRows.map((entry) => {
                         const typeDisplay = getTypeDisplay(entry.type)
                         return (
                           <tr key={entry.id} className={RESPONSIVE_ROW_CLASS}>
@@ -757,13 +755,6 @@ export function BalancePage() {
                             <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                               <FieldLabel>Actions</FieldLabel>
                               <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
-                                <RowMoveControls
-                                  label={entry.name}
-                                  isFirst={index === 0}
-                                  isLast={index === sortedRows.length - 1}
-                                  disabled={sort.state !== null}
-                                  onMove={(direction) => moveBalanceEntry(entry.id, direction)}
-                                />
                                 <button
                                   type="button"
                                   onClick={() => openEditModal(entry)}

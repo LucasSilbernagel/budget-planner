@@ -412,7 +412,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
   it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
     renderWithProviders(<ExpensesPage />)
     const row = rowFor('Rent')
-    for (const label of ['Edit Rent', 'Delete Rent', 'Move Rent up', 'Move Rent down']) {
+    for (const label of ['Edit Rent', 'Delete Rent']) {
       assertHasFocusRing(within(row).getByRole('button', { name: label }), label)
     }
   })
@@ -420,187 +420,35 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
   it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
     renderWithProviders(<ExpensesPage />)
     const row = rowFor('Rent')
-    for (const label of ['Edit Rent', 'Delete Rent', 'Move Rent up', 'Move Rent down']) {
+    for (const label of ['Edit Rent', 'Delete Rent']) {
       assertHasMobileTapTarget(within(row).getByRole('button', { name: label }), label)
     }
+  })
+
+  /**
+   * Story 48.2 (AC-1, AC-15) — the actions cell offers EXACTLY Edit and Delete.
+   *
+   * ⚠️ AN EXACT ARRAY, NOT `queryByRole(/^Move /) -> toBeNull()`. Story 48.2
+   * DELETES `RowMoveControls`, and an absence assertion about a deleted component
+   * is vacuous by construction: it passes for the same reason whether the removal
+   * was done correctly or the render broke entirely. Enumerating what IS offered
+   * fails on a re-added arrow AND on a lost Edit/Delete button, so it is
+   * falsifiable in both directions (mutation arm M1).
+   */
+  it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
+    renderWithProviders(<ExpensesPage />)
+    const cell = rowFor('Rent').querySelector('td:last-child') as HTMLElement
+    expect(
+      within(cell)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label'))
+    ).toEqual(['Edit Rent', 'Delete Rent'])
   })
 
   it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
     const { container } = renderWithProviders(<ExpensesPage />)
     const table = container.querySelector('table') as HTMLElement
     expect(collectRetiredTokenViolations(table)).toEqual([])
-  })
-})
-
-/**
- * Row reordering (Story 34.1b, FR60).
- *
- * ⚠️ Written per page rather than once over a table of four. These are four
- * independent page components with four hand-rolled actions cells; stories 30-4b
- * and 33.3 each shipped a HIGH by testing one surface and assuming its siblings.
- */
-describe('ExpensesPage — reorder rows (34.1b)', () => {
-  const NAMES = ['Alpha', 'Beta', 'Gamma']
-
-  function seedRows() {
-    useExpenseStore.setState({ expenses: [] })
-    // Distinct createdAt per row: rows added inside one millisecond tie on the
-    // secondary sort key, and a tie-preserving stable sort can make an ordering
-    // assertion pass by accident (34.1a's M10).
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
-    for (const name of NAMES) {
-      useExpenseStore.getState().addExpense({ name, amount: 100000, frequency: 'monthly' })
-      vi.advanceTimersByTime(1000)
-    }
-    vi.useRealTimers()
-  }
-
-  /** The rendered row names, top to bottom. */
-  function renderedOrder(): string[] {
-    return screen
-      .getAllByRole('row')
-      .slice(1) // drop the header row
-      .map((row) => NAMES.find((name) => within(row).queryByText(name)))
-      .filter((name): name is string => Boolean(name))
-  }
-
-  beforeEach(() => {
-    localStorage.clear()
-    seedRows()
-  })
-
-  afterEach(() => {
-    useExpenseStore.setState({ expenses: [] })
-    localStorage.clear()
-  })
-
-  it('offers a move-up and move-down control naming each row (AC-1)', () => {
-    renderWithProviders(<ExpensesPage />)
-    for (const name of NAMES) {
-      expect(screen.getByRole('button', { name: `Move ${name} up` })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: `Move ${name} down` })).toBeInTheDocument()
-    }
-  })
-
-  it('moves a row up when its control is activated (AC-2)', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<ExpensesPage />)
-    expect(renderedOrder()).toEqual(NAMES)
-
-    await user.click(screen.getByRole('button', { name: 'Move Beta up' }))
-
-    expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Gamma'])
-  })
-
-  it('moves a row down when its control is activated (AC-2)', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<ExpensesPage />)
-
-    await user.click(screen.getByRole('button', { name: 'Move Beta down' }))
-
-    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
-  })
-
-  /**
-   * ⚠️ `aria-disabled`, NOT the native `disabled` attribute (story decision 2).
-   * `toBeDisabled()` deliberately does NOT pass here: a natively disabled button
-   * cannot hold focus, which would break the focus-retention AC below at exactly
-   * the boundary this assertion is about.
-   */
-  it('marks the boundary controls aria-disabled while keeping them focusable (AC-4)', () => {
-    renderWithProviders(<ExpensesPage />)
-    const firstUp = screen.getByRole('button', { name: 'Move Alpha up' })
-    const lastDown = screen.getByRole('button', { name: 'Move Gamma down' })
-
-    expect(firstUp).toHaveAttribute('aria-disabled', 'true')
-    expect(lastDown).toHaveAttribute('aria-disabled', 'true')
-    // Interior controls are NOT marked — otherwise the assertion above would
-    // pass on a component that marks every control.
-    expect(screen.getByRole('button', { name: 'Move Beta up' })).toHaveAttribute(
-      'aria-disabled',
-      'false'
-    )
-    expect(firstUp).not.toBeDisabled()
-  })
-
-  it('does nothing when a boundary control is activated (AC-4)', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<ExpensesPage />)
-
-    await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
-    await user.click(screen.getByRole('button', { name: 'Move Gamma down' }))
-
-    expect(renderedOrder()).toEqual(NAMES)
-  })
-
-  it('marks BOTH controls aria-disabled on a single-row list (AC-4)', () => {
-    useExpenseStore.setState({ expenses: [] })
-    useExpenseStore.getState().addExpense({ name: 'Solo', amount: 100000, frequency: 'monthly' })
-    renderWithProviders(<ExpensesPage />)
-
-    expect(screen.getByRole('button', { name: 'Move Solo up' })).toHaveAttribute(
-      'aria-disabled',
-      'true'
-    )
-    expect(screen.getByRole('button', { name: 'Move Solo down' })).toHaveAttribute(
-      'aria-disabled',
-      'true'
-    )
-  })
-
-  /**
-   * ⚠️ THE POINT OF THIS TEST IS THAT IT CAN FAIL. It asserts the row actually
-   * moved AND that focus stayed on the control the user pressed — "something is
-   * focused" would prove nothing. Focus survives because all four tables key
-   * rows by `id`, so React moves the existing DOM node instead of remounting it.
-   */
-  it('keeps focus on the activated control after a keyboard move (AC-6)', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<ExpensesPage />)
-    const control = screen.getByRole('button', { name: 'Move Gamma up' })
-
-    control.focus()
-    await user.keyboard('{Enter}')
-
-    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Move Gamma up' })).toHaveFocus()
-    })
-  })
-
-  it('keeps focus on a control that becomes a boundary control (AC-6)', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<ExpensesPage />)
-    const control = screen.getByRole('button', { name: 'Move Beta up' })
-
-    control.focus()
-    await user.keyboard('{Enter}')
-
-    // Beta is now first, so its move-up control is aria-disabled — and must
-    // still hold focus. A native `disabled` here would drop focus to <body>.
-    const after = screen.getByRole('button', { name: 'Move Beta up' })
-    expect(after).toHaveAttribute('aria-disabled', 'true')
-    await waitFor(() => expect(after).toHaveFocus())
-  })
-
-  it('persists the new order across a reload (AC-2)', async () => {
-    const user = userEvent.setup()
-    const { unmount } = renderWithProviders(<ExpensesPage />)
-    await user.click(screen.getByRole('button', { name: 'Move Gamma up' }))
-    unmount()
-
-    // ⚠️ `setState` goes THROUGH the persist middleware, so clearing in-memory
-    // state would overwrite the blob we are about to read back. Snapshot it,
-    // clear, restore, then rehydrate — which is what a reload actually does.
-    const persisted = localStorage.getItem('budget-planner-expenses-v1')
-    expect(persisted).toBeTruthy()
-    useExpenseStore.setState({ expenses: [] })
-    localStorage.setItem('budget-planner-expenses-v1', persisted as string)
-    await useExpenseStore.persist.rehydrate()
-
-    renderWithProviders(<ExpensesPage />)
-    expect(renderedOrder()).toEqual(['Alpha', 'Gamma', 'Beta'])
   })
 })
 
@@ -784,56 +632,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     expect(renderedOrder()).not.toEqual(MANUAL_ORDER)
     expect(within(header('Amount')).getByRole('button', { name: 'Amount' })).toHaveFocus()
   })
-
-  describe('interaction with the manual move controls (AC-7)', () => {
-    it('disables EVERY move control while a sort is active, and the clicks are no-ops', async () => {
-      const user = userEvent.setup()
-      renderWithProviders(<ExpensesPage />)
-      await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
-      const sorted = renderedOrder()
-
-      for (const name of MANUAL_ORDER) {
-        expect(screen.getByRole('button', { name: `Move ${name} up` })).toHaveAttribute(
-          'aria-disabled',
-          'true'
-        )
-        expect(screen.getByRole('button', { name: `Move ${name} down` })).toHaveAttribute(
-          'aria-disabled',
-          'true'
-        )
-      }
-      await user.click(screen.getByRole('button', { name: 'Move Mid up' }))
-      expect(renderedOrder()).toEqual(sorted)
-      // And the underlying manual order is untouched.
-      expect(useExpenseStore.getState().expenses.map((r) => r.name)).toEqual(MANUAL_ORDER)
-    })
-
-    it('restores the 34.1b boundary behaviour when the sort is cleared', async () => {
-      const user = userEvent.setup()
-      renderWithProviders(<ExpensesPage />)
-      const button = () => within(header('Name')).getByRole('button', { name: 'Name' })
-      await user.click(button())
-      await user.click(button())
-      await user.click(button())
-
-      expect(renderedOrder()).toEqual(MANUAL_ORDER)
-      expect(screen.getByRole('button', { name: 'Move Zeta up' })).toHaveAttribute(
-        'aria-disabled',
-        'true'
-      )
-      expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
-        'aria-disabled',
-        'false'
-      )
-      expect(screen.getByRole('button', { name: 'Move Beta down' })).toHaveAttribute(
-        'aria-disabled',
-        'true'
-      )
-      await user.click(screen.getByRole('button', { name: 'Move Alpha up' }))
-      expect(renderedOrder()).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
-    })
-  })
-
   it('places a row added under an active sort in its SORTED position, not at the bottom', async () => {
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
@@ -908,13 +706,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     await user.selectOptions(sortControl(), 'manual')
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
     expect(header('Name')).toHaveAttribute('aria-sort', 'none')
-    // Clearing the sort re-enables the arrows (34.2 AC-11 -> AC-7). Carried over
-    // from the escape-hatch test this block replaces: the assertion is about the
-    // arrows, not about the control that cleared the sort.
-    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
-      'aria-disabled',
-      'false'
-    )
   })
 
   describe('Category is a sort target only for entitled users (AC-5)', () => {
@@ -933,7 +724,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
           .getAllByRole('option')
           .map((option) => option.textContent)
       ).toEqual([
-        'Manual order',
+        'Default order',
         'Name (ascending)',
         'Name (descending)',
         'Amount (ascending)',
@@ -950,7 +741,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
           .getAllByRole('option')
           .map((option) => option.textContent)
       ).toEqual([
-        'Manual order',
+        'Default order',
         'Name (ascending)',
         'Name (descending)',
         'Amount (ascending)',

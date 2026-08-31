@@ -46,7 +46,6 @@ import {
   RESPONSIVE_VALUE_TAG_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
-import { RowMoveControls } from './ui/RowMoveControls'
 import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
 import { SortableColumnHeader } from './ui/SortableColumnHeader'
 import { TableSortControl } from './ui/TableSortControl'
@@ -93,13 +92,8 @@ const SAVINGS_SORT_COLUMNS: readonly { key: SavingsSortKey; label: string }[] = 
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
   const totalSavings = useTotalSavings()
-  const {
-    addSavingsGoal,
-    updateSavingsGoal,
-    deleteSavingsGoal,
-    moveSavingsGoal,
-    getSavingsProgress,
-  } = useSavingsStore()
+  const { addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsProgress } =
+    useSavingsStore()
 
   // Leftover-allocation solver inputs (Story 26.3). Read the three other stores
   // the pool depends on; investment contributions are the `type === 'investment'`
@@ -110,9 +104,10 @@ export function SavingsPage() {
   // carry no contribution at all (D2: the form hides the field and the save path
   // writes 0), so there is nothing for the distributable pool to double-count.
   // ⚠️ That argument is FORM-DEEP only: `applyServerChanges.ts` writes pulled
-  // rows into the store with no validation, and `moveBalanceEntry` bypasses it
-  // too, so an asset row carrying a non-zero contribution IS reachable from sync
-  // or hand-edited localStorage. It would be excluded from this filter and the
+  // rows into the store with no validation, so an asset row carrying a non-zero
+  // contribution IS reachable from sync or hand-edited localStorage.
+  // (Story 48.2 removed `moveBalanceEntry`, which was a third bypass; the two
+  // that remain are why this warning still stands.) It would be excluded from this filter and the
   // pool would be overstated by that amount. Pinned by the asset case in
   // `SavingsPage.test.tsx`.
   const investmentEntries = useInvestmentEntries()
@@ -262,8 +257,8 @@ export function SavingsPage() {
   }, [duplicateCandidates])
 
   // Column sorting (story 34.2, FR61). A VIEW-level projection only: it never
-  // writes `sortOrder`, never calls a move action and never enqueues a sync
-  // operation, so clearing it returns the table to the manual order untouched.
+  // writes `sortOrder` and never enqueues a sync operation, so clearing it returns
+  // the table to the default order untouched.
   //
   // ⚠️ Memoised on `allocations` and `getSavingsProgress` as well as the rows,
   // because two of the five keys read data the row does not carry: the Monthly
@@ -916,7 +911,7 @@ export function SavingsPage() {
                       </tr>
                     </thead>
                     <tbody className={RESPONSIVE_TBODY_CLASS}>
-                      {sortedRows.map((goal, index) => {
+                      {sortedRows.map((goal) => {
                         // Account (Story 16-1): null target ⇒ absent progress (not 0%).
                         const isAccountRow = goal.targetAmount == null
                         const progress = getSavingsProgress(goal.id)
@@ -1020,13 +1015,6 @@ export function SavingsPage() {
                             <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                               <FieldLabel>Actions</FieldLabel>
                               <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
-                                <RowMoveControls
-                                  label={goal.name}
-                                  isFirst={index === 0}
-                                  isLast={index === sortedRows.length - 1}
-                                  disabled={sort.state !== null}
-                                  onMove={(direction) => moveSavingsGoal(goal.id, direction)}
-                                />
                                 <button
                                   type="button"
                                   onClick={() => openEditModal(goal)}

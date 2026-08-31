@@ -410,12 +410,18 @@ export const RESPONSIVE_VALUE_NOWRAP_CLASS = 'whitespace-nowrap'
  * children (label + button group) below `sm`. Inert on desktop: an unclassed
  * block `<div>` leaves the inline buttons right-aligned exactly as before.
  *
- * ⚠️ The group holds FOUR buttons since story 34.1b — move up, move down, Edit,
- * Delete. `max-sm:gap-1` gives them 4px of separation (4 x 44 + 3 x 4 = 188px,
- * inside the ~200px the stacked cell above makes available), and
- * `max-sm:flex-wrap` is graceful degradation rather than the expected layout: at
- * a larger root font size the label or the buttons can grow, and wrapping to a
- * second line is a better failure than overflowing the card. */
+ * ⚠️ The group holds TWO buttons — Edit and Delete. It held FOUR between stories
+ * 34.1b and 48.2, which added and then removed the move-up/move-down chevrons;
+ * the `max-sm:gap-1` arithmetic that sized it for four (4 x 44 + 3 x 4 = 188px,
+ * inside the ~200px the stacked cell above makes available) now has ~100px of
+ * slack (2 x 44 + 1 x 4 = 92px). The gap is KEPT rather than retuned: it is the
+ * separation between Edit and Delete, not a four-button accommodation.
+ *
+ * `max-sm:flex-wrap` is likewise kept, and is graceful degradation rather than
+ * the expected layout: at a larger root font size the label or the buttons can
+ * grow, and wrapping to a second line is a better failure than overflowing the
+ * card. That argument is about root font size, not button count, so removing two
+ * buttons does not retire it. */
 export const RESPONSIVE_ACTIONS_GROUP_CLASS =
   'max-sm:flex max-sm:items-center max-sm:flex-wrap max-sm:justify-center max-sm:gap-1'
 

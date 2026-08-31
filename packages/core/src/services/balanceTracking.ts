@@ -434,10 +434,11 @@ export function validateBalanceTracking(
   // never deducts, overstating the distributable pool and inflating every
   // automatic allocation.
   // ⚠️ RESIDUAL, pre-existing and NOT closed by this rule: `applyServerChanges`
-  // writes pulled rows straight into the store WITHOUT validation, and
-  // `moveBalanceEntry` deliberately bypasses it. A synced or hand-edited asset row
-  // carrying a contribution is therefore still reachable. This narrows the hole to
-  // the pull path; it does not eliminate it.
+  // writes pulled rows straight into the store WITHOUT validation. A synced or
+  // hand-edited asset row carrying a contribution is therefore still reachable.
+  // This narrows the hole to the pull path; it does not eliminate it.
+  // (Story 48.2 removed `moveBalanceEntry`, a SECOND bypass this note used to
+  // name. The pull path is now the only one.)
   if (input.type === 'asset' && typeof input.monthlyContribution === 'number') {
     if (input.monthlyContribution !== 0) {
       errors.push({
@@ -454,8 +455,9 @@ export function validateBalanceTracking(
   // carrying `true` would claim an effect that does not exist, so reject it here —
   // on every store write path, not just the form, for the same reason the asset
   // contribution rule above is enforced here.
-  // ⚠️ Same RESIDUAL as above: `applyServerChanges` and `moveBalanceEntry` bypass
-  // this, so a synced or hand-edited non-investment row can still carry the flag.
+  // ⚠️ Same RESIDUAL as above: `applyServerChanges` bypasses this, so a synced or
+  // hand-edited non-investment row can still carry the flag. (Story 48.2 removed
+  // `moveBalanceEntry`, the other bypass this note used to name.)
   // ⚠️ SCOPE OF "harmless", stated precisely rather than generally: it is inert
   // for the DISTRIBUTABLE POOL and for the duplicate detector, because both read
   // `useInvestmentEntries()` and so never see a debt/asset row. That is a claim

@@ -33,7 +33,6 @@ import {
   RESPONSIVE_THEAD_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
-import { RowMoveControls } from './ui/RowMoveControls'
 import { EmptyStateSkeleton, LoadingStatus } from './ui/Skeleton'
 import { SortableColumnHeader } from './ui/SortableColumnHeader'
 import { TableSortControl } from './ui/TableSortControl'
@@ -107,8 +106,8 @@ export function ExpensesPage() {
   const showCategoryColumn = premiumStatus.hasAccess
 
   // Column sorting (story 34.2, FR61). A VIEW-level projection: it never writes
-  // `sortOrder`, never calls a move action and never enqueues a sync operation —
-  // clearing it returns the table to the manual order untouched.
+  // `sortOrder` and never enqueues a sync operation, so clearing it returns the
+  // table to the default order untouched.
   //
   // ⚠️ The extractors are memoised on `categoryNames` because the Category key
   // resolves a uuid through that map: renaming a category must re-sort this
@@ -169,7 +168,7 @@ export function ExpensesPage() {
     unreadableCount: unreadableExpenseCount,
     conversionApplied,
   } = summarizeReadableRows(expenses)
-  const { addExpense, updateExpense, deleteExpense, moveExpense } = useExpenseStore()
+  const { addExpense, updateExpense, deleteExpense } = useExpenseStore()
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -485,7 +484,7 @@ export function ExpensesPage() {
                       </tr>
                     </thead>
                     <tbody className={RESPONSIVE_TBODY_CLASS}>
-                      {sortedRows.map((expense, index) => (
+                      {sortedRows.map((expense) => (
                         <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Name</FieldLabel>
@@ -517,18 +516,6 @@ export function ExpensesPage() {
                           <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                             <FieldLabel>Actions</FieldLabel>
                             <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
-                              {/* A manual move and a column sort cannot both be
-                                live: `isFirst`/`isLast` come from the RENDERED
-                                index while `planRowMove` derives neighbours from
-                                the manual order, so under a sort they disagree
-                                (story 34.2, decision 2). */}
-                              <RowMoveControls
-                                label={expense.name}
-                                isFirst={index === 0}
-                                isLast={index === sortedRows.length - 1}
-                                disabled={sort.state !== null}
-                                onMove={(direction) => moveExpense(expense.id, direction)}
-                              />
                               <button
                                 type="button"
                                 onClick={() => openEditModal(expense)}

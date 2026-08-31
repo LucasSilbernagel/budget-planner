@@ -3,12 +3,28 @@
  *
  * ## What this is NOT
  *
- * This is a **projection**, not an ordering. `lib/ordering.ts` owns the user's
- * MANUAL order — the persisted `sortOrder` field, its canonical
- * `sortOrder ASC -> createdAt ASC -> id ASC` rule, and the move actions that
- * write it. Nothing in this module writes `sortOrder`, calls a `move*` action or
- * enqueues a sync operation. A column sort is a per-device view of the same
- * array, and clearing it returns the table to the manual order untouched.
+ * This is a **projection**, not an ordering. `lib/ordering.ts` owns the DEFAULT
+ * order — the persisted `sortOrder` field and its canonical
+ * `sortOrder ASC -> createdAt ASC -> id ASC` rule. Nothing in this module writes
+ * `sortOrder` or enqueues a sync operation. A column sort is a per-device view of
+ * the same array, and clearing it returns the table to the default order
+ * untouched.
+ *
+ * ⚠️ VOCABULARY, since the code and the UI now differ on purpose. The unsorted
+ * state is `null` here and `'manual'` in `TableSortControl`'s option VALUE, but
+ * its user-visible LABEL is "Default order". Story 34.1b made the order genuinely
+ * manual — users arranged rows with up/down controls — and story 48.2 removed
+ * those, so `sortOrder` is now insertion order and nothing else. The internal
+ * token was deliberately left alone; only the label changed.
+ *
+ * ⚠️ SCOPE OF THAT DECISION, recorded in 48.2's review because the sweep looked
+ * incomplete without it. The rename covers the USER-VISIBLE label and the identifiers
+ * and test names that read as capability claims. It deliberately does NOT rewrite the
+ * ~30 remaining "manual order" mentions in internal comments and test titles: they
+ * describe the `'manual'` STATE TOKEN, which survives, and mass-renaming prose anchored
+ * to a live token would make the code and its vocabulary disagree in the other
+ * direction. New prose should say "default order"; existing prose about the token is
+ * correct as written and is not a sweep miss.
  *
  * ⚠️ This paragraph used to say "per-device, per-SESSION". Story 42.1 (FR67)
  * persists the selection in `stores/tableSortStore`, so a sort now survives a

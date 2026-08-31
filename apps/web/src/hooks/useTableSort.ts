@@ -45,10 +45,14 @@ import {
  * conventions: `skipHydration`, registration in `lib/store-hydration.tsx`, a
  * versioned `migrate` and a `merge` that coerces on every rehydrate.
  *
- * What did NOT change: this hook still writes no `sortOrder`, calls no `move*`
- * action and enqueues no sync operation. `lib/ordering.ts` still owns the manual
- * order and clearing a sort still returns the table to it untouched. The sort is
- * persisted per device; it is not synced.
+ * What did NOT change: this hook still writes no `sortOrder` and enqueues no
+ * sync operation. `lib/ordering.ts` still owns the default order and clearing a
+ * sort still returns the table to it untouched. The sort is persisted per device;
+ * it is not synced.
+ *
+ * ⚠️ Story 48.2 removed the `move*` store actions this docblock used to name;
+ * see the vocabulary note in `lib/table-sort.ts` for why the `'manual'` token
+ * survives while the label does not.
  *
  * ## ⚠️ `extractors` is a memo INPUT, and two of them are not pure functions of
  * the row

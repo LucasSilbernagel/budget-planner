@@ -69,8 +69,18 @@ import { RESPONSIVE_ACTION_BUTTON_CLASS } from './ResponsiveTable'
 
 /** The value used for "no sort". Not a column key, and not the empty string —
  * an empty `value` makes `select.value` indistinguishable from an option that
- * failed to render. */
+ * failed to render.
+ *
+ * ⚠️ THE VALUE IS `'manual'`; THE LABEL IS NOT. The token is a state name and is
+ * pinned by `e2e/responsive-320.spec.ts` (`selectOption('manual')`), so story
+ * 48.2 deliberately renamed only the user-visible label. Until 48.2 that label
+ * read "Manual order", which was accurate while rows could be arranged by hand
+ * with the move controls; with those gone there is no manual arrangement to
+ * return to, only the order rows were entered in. */
 const MANUAL_VALUE = 'manual'
+
+/** The user-visible name of the unsorted state (story 48.2, UX-DR54). */
+const DEFAULT_ORDER_LABEL = 'Default order'
 
 /**
  * The wrapper. `sm:hidden` is the whole visibility rule — NOT a
@@ -154,7 +164,7 @@ export function TableSortControl<Key extends string>({
    */
   const options = useMemo<readonly SortOption<Key>[]>(
     () => [
-      { value: MANUAL_VALUE, label: 'Manual order', state: null },
+      { value: MANUAL_VALUE, label: DEFAULT_ORDER_LABEL, state: null },
       ...columns.flatMap((column) => [
         {
           value: `${column.key}:asc`,

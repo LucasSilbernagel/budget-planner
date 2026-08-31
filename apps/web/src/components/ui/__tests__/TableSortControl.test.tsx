@@ -66,7 +66,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
     // and this is the assertion AC-7's tier pins lean on.
     renderControl()
     expect(optionLabels(screen.getByRole('combobox', { name: 'Sort income sources' }))).toEqual([
-      'Manual order',
+      'Default order',
       'Name (ascending)',
       'Name (descending)',
       'Amount (ascending)',

@@ -23,8 +23,9 @@ import { type Page, expect, test } from '@playwright/test'
  * other suites' measurements.
  *
  * ⚠️ Not added to `table-sort-persistence.spec.ts` either: that suite is pinned
- * to 1280px and locates its tables through the `Move … up` buttons, which story
- * 48.2 deletes.
+ * to 1280px. It used to locate its tables through the `Move … up` buttons; story
+ * 48.2 deleted those and re-keyed the locator onto the per-row `Edit …` button,
+ * which is the surviving per-row control.
  */
 
 const CONTROL_LABEL = {

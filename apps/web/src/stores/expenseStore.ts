@@ -2,13 +2,7 @@ import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/db'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import {
-  type RowMoveDirection,
-  applyRowMove,
-  backfillSortOrder,
-  nextSortOrder,
-  sortByDisplayOrder,
-} from '../lib/ordering'
+import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
 import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
@@ -54,13 +48,6 @@ interface ExpenseState {
   expenses: ClientExpense[]
   addExpense: (expense: ClientNewExpense) => void
   updateExpense: (id: string, updates: Partial<ClientNewExpense>) => void
-  /**
-   * Move a row one place up or down (Story 34.1b, FR60). Takes a direction, not
-   * a position: `sortOrder` is absent from `ClientNewExpense`, so a reorder
-   * cannot be expressed through `updateExpense`, and the caller has no business
-   * knowing the numbering scheme. A boundary move is a silent no-op.
-   */
-  moveExpense: (id: string, direction: RowMoveDirection) => void
   deleteExpense: (id: string) => void
   getExpenseById: (id: string) => ClientExpense | undefined
   getExpensesByFrequency: (frequency: Frequency) => ClientExpense[]
@@ -158,32 +145,24 @@ export const useExpenseStore = create<ExpenseState>()(
         const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() }
         set((state) => ({
           // Story 34.1a (AC-7): re-sort on update too, so `sortOrder` is the single
-          // ordering authority at every write path. Today an in-place map would
-          // preserve position anyway; keeping the collection canonically sorted is
-          // what lets 34.1b change a row's position through this same path.
+          // ordering authority at every write path. An in-place map would preserve
+          // position anyway — `updates` cannot carry `sortOrder` — so this is about
+          // keeping the collection canonically sorted, not about repositioning.
+          // (It once also served 34.1b's reorder, which story 48.2 removed.)
+          //
+          // ⚠️ DEFENSIVE, AND MEASURED TO BE UNOBSERVABLE. Story 48.2's mutation
+          // arm M6 deleted this `sortByDisplayOrder` wrapper and the whole suite
+          // stayed green. That is correct, not a coverage hole: `updates` is a
+          // `Partial<ClientNew*>`, which has no `sortOrder`, so an update cannot
+          // move a row — and since 48.2 nothing else can either. Kept because a
+          // canonical collection is cheap and the invariant is worth stating;
+          // do not add a contrived test to make it fail.
           expenses: sortByDisplayOrder(
             state.expenses.map((expense) => (expense.id === id ? updated : expense))
           ),
         }))
         // Paid tier: queue the update with the pre-edit row as the baseVersion.
         syncEntityUpdate('expense', updated, previous)
-      },
-
-      // Move a row one place up or down (Story 34.1b)
-      moveExpense: (id, direction) => {
-        const result = applyRowMove(get().expenses, id, direction)
-        if (!result) {
-          // Boundary, unknown id, or empty list: change nothing, queue nothing.
-          return
-        }
-        set(() => ({ expenses: result.rows }))
-        // One update per affected row. Both are queued in the SAME synchronous
-        // turn, which is why SyncQueue.add had to be made re-entrancy safe —
-        // before that fix the second enqueue clobbered the first and half of
-        // every reorder was silently lost on the paid tier.
-        for (const { previous, updated } of result.changes) {
-          syncEntityUpdate('expense', updated, previous)
-        }
       },
 
       // Delete an expense

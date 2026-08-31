@@ -7,11 +7,12 @@ import { type SortState, nextSortState } from '../lib/table-sort'
  *
  * ## What this stores, and what it deliberately does not
  *
- * One `{ key, direction }` per table, or `null` for "manual order". It is a
- * per-device VIEW preference: it never writes `sortOrder`, never calls a `move*`
- * action and never enqueues a sync operation. `lib/ordering.ts` still owns the
- * manual order, and `lib/table-sort.ts`'s module boundary is unchanged — this
- * store persists which projection to apply, not the underlying order.
+ * One `{ key, direction }` per table, or `null` for the default (unsorted) order.
+ * It is a per-device VIEW preference: it never writes `sortOrder` and never
+ * enqueues a sync operation. `lib/ordering.ts` still owns the default order, and
+ * `lib/table-sort.ts`'s module boundary is unchanged — this store persists which
+ * projection to apply, not the underlying order. (Story 48.2 removed the `move*`
+ * actions this note used to name; see `lib/table-sort.ts` for the vocabulary.)
  *
  * ## Shape validation only — the store does not know your columns
  *

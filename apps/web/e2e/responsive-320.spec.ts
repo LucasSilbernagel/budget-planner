@@ -747,57 +747,6 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await expect(confirm).toBeVisible()
       await expect(confirm).toContainText(LONG_UNBROKEN_NAME)
     })
-
-    // Story 34.1b: the same operability guarantee for the two move controls.
-    // `assertRowActionTapTargets` already sizes them (it selects every tbody
-    // button); this proves they can actually be pressed at 320px and that the
-    // press does something.
-    test(`${route} row move controls are operable at 320px`, async ({ page }) => {
-      await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-      await seedFinanceRows(page, 'light')
-
-      await page.goto(route)
-      await page.waitForLoadState('networkidle')
-      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
-
-      const moveUp = page.getByRole('button', { name: `Move ${LONG_UNBROKEN_NAME} up` })
-      const moveDown = page.getByRole('button', { name: `Move ${LONG_UNBROKEN_NAME} down` })
-      await expect(moveUp).toBeVisible()
-      await expect(moveDown).toBeVisible()
-
-      // ⚠️ aria-disabled, NOT the native disabled attribute (story decision 2):
-      // a natively disabled control cannot hold focus, which would break the
-      // keyboard focus-retention requirement at the boundary.
-      await expect(moveUp).toHaveAttribute('aria-disabled', 'true')
-
-      // ⚠️ Read rows from the EDITABLE table only — the one carrying the move
-      // controls. Kept scoped on purpose even though `/balance` now renders a
-      // single table: an unscoped row query would silently start reading a
-      // second table if one were ever added back to any route in this loop.
-      const editableRows = page
-        .locator('div.overflow-x-auto table')
-        .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
-        .locator('tbody tr')
-      const rowNames = () =>
-        editableRows.evaluateAll((rows) => rows.map((r) => r.textContent?.slice(0, 40) ?? ''))
-
-      const before = await rowNames()
-      expect(before.length).toBeGreaterThan(1)
-
-      // ⚠️ Press a control that is NOT at a boundary. The seeded long-named row
-      // is LAST on `/balance`, so its move-down is `aria-disabled` and correctly
-      // does nothing — asserting "the order changed" against it would fail for
-      // the right reason while telling us nothing about operability.
-      const movable = (await moveDown.getAttribute('aria-disabled')) === 'true' ? moveUp : moveDown
-      await expect(movable).toHaveAttribute('aria-disabled', 'false')
-
-      // ⚠️ Assert the press CHANGES SOMETHING, not merely that the button
-      // survives it. The first version asserted only `toBeVisible()` after the
-      // click, so a no-op handler kept it green — precisely the claim this test
-      // exists to make.
-      await movable.click()
-      await expect.poll(async () => (await rowNames()).join('|')).not.toBe(before.join('|'))
-    })
   }
 
   /**
@@ -847,7 +796,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   }
 
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
-    /** The EDITABLE table's `<thead>` — the one carrying the move controls.
+    /** The EDITABLE table's `<thead>` — the one carrying the per-row Edit controls.
      *
      * ⚠️ Scoped on purpose, mirroring the BalancePage unit suite, even though
      * `/balance` now renders a single table. An unscoped
@@ -857,20 +806,28 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     function sortHeader(page: import('@playwright/test').Page, name: string) {
       return page
         .locator('div.overflow-x-auto table')
-        .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+        .filter({ has: page.getByRole('button', { name: /^Edit .+$/ }) })
         .getByRole('columnheader', { name })
     }
 
     /** Row order in the EDITABLE table, by whichever seeded name each row carries.
      *
-     * ⚠️ Scoped to the table holding the move controls. Kept scoped even though
+     * ⚠️⚠️ THE SCOPING IS REAL BUT ITS ENFORCEMENT IS NOT STRICT HERE (48.2 review):
+     * `evaluateAll` does NOT apply Playwright strict mode, so if a second
+     * Edit-carrying table ever appeared this would CONCATENATE both tables' rows
+     * rather than fail. `/^Edit .+$/` is a likelier future collision than the
+     * `/^Move .+ up$/` it replaced. The `sortHeader` helper above IS strict and
+     * would redden first (proven by mutation arm M8: 7 failures), which is what
+     * keeps this acceptable rather than silent.
+     *
+     * ⚠️ Scoped to the table holding the per-row Edit controls. Kept scoped even though
      * `/balance` now renders one table: an unscoped query would concatenate the
      * rows of any table later added to this page, silently corrupting every
      * ordering assertion below rather than failing. */
     function editableOrder(page: import('@playwright/test').Page, names: string[]) {
       return page
         .locator('div.overflow-x-auto table')
-        .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+        .filter({ has: page.getByRole('button', { name: /^Edit .+$/ }) })
         .locator('tbody tr')
         .evaluateAll(
           (rows, seeded) =>
@@ -914,13 +871,6 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await sortButton.click()
       await expect(nameHeader).toHaveAttribute('aria-sort', 'none')
       await expect.poll(() => editableOrder(page, names)).toEqual(manual)
-
-      // While sorted, the manual move controls stand down (story decision 2):
-      // their boundary flags come from the rendered index, which no longer
-      // matches the order a move would actually operate on.
-      await sortButton.click()
-      const anyMoveUp = page.getByRole('button', { name: /^Move .+ up$/ }).first()
-      await expect(anyMoveUp).toHaveAttribute('aria-disabled', 'true')
     })
 
     /** ⚠️ Run in BOTH schemes: the claim is that the control fits 320px in light
@@ -996,10 +946,6 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
         // Manual order restored — compared against the order MEASURED before the
         // sort, not a hand-written literal, so it cannot drift from the seed.
         await expect.poll(() => editableOrder(page, names)).toEqual(manual)
-        await expect(page.getByRole('button', { name: /^Move .+ down$/ }).first()).toHaveAttribute(
-          'aria-disabled',
-          'false'
-        )
 
         await assertNoHorizontalOverflow(
           (fn) => page.evaluate(fn),
@@ -1009,22 +955,25 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     }
   }
 
-  // Story 34.1b / the 33.3 lesson: "an overflow assertion is only as good as the
-  // widths it runs at, and the width that matters is the one just above the
-  // breakpoint". 320 and 1280 both passed while a 768px wrapper overflow went
-  // unseen in 33.3. The actions cell gained two more 44px targets here, so the
-  // just-above-`sm` width gets its own assertion.
+  // The 33.3 lesson: "an overflow assertion is only as good as the widths it runs
+  // at, and the width that matters is the one just above the breakpoint". 320 and
+  // 1280 both passed while a 768px wrapper overflow went unseen in 33.3.
+  //
+  // ⚠️ KEPT, NOT DELETED, BY STORY 48.2. This block arrived with 34.1b because the
+  // actions cell had gained two 44px targets; 48.2 removed them again. The width
+  // coverage is independent of what prompted it — this is the repo's only
+  // just-above-`sm` document-overflow guard, and removing two buttons only makes
+  // the table narrower, so it cannot fail for a new reason. Its move-button
+  // visibility assertion is gone; the DOCUMENT-level overflow claim is not.
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
-    test(`${route} finance tables fit 768px with the move controls`, async ({ page }) => {
+    test(`${route} finance tables fit 768px`, async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 900 })
       await seedFinanceRows(page, 'light')
 
       await page.goto(route)
       await page.waitForLoadState('networkidle')
       await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
-      await expect(
-        page.getByRole('button', { name: `Move ${LONG_UNBROKEN_NAME} down` })
-      ).toBeVisible()
+      await expect(page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` })).toBeVisible()
 
       // ⚠️ The assertion is DOCUMENT-level, not wrapper-level, and the distinction
       // is the whole point. Above `sm` the cards revert to a real table and the

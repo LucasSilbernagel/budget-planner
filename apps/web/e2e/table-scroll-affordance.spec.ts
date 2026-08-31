@@ -356,12 +356,35 @@ for (const route of OVERFLOW_ROUTES) {
 // AC-8 — the affordance costs no layout width.
 // ---------------------------------------------------------------------------
 
-/** Measured at `4f5c935` (pre-affordance), 768px, DejaVu Sans, the shared seed. */
+/**
+ * Measured at 768px, DejaVu Sans (`WIDE_FONT`, injected below), the shared
+ * `seedFinanceRows` fixture, at commit `09f6c7c` + story 48.2's working tree.
+ * Reproduce with: `pnpm exec playwright test table-scroll-affordance.spec.ts`
+ * from `apps/web`. ⚠️ Name the commit — the previous baseline did (`4f5c935`)
+ * and the first version of THIS comment dropped it while telling the next
+ * reader to "say why" (48.2 review).
+ *
+ * ⚠️ RE-BASELINED BY STORY 48.2 (2026-08-31), −48px on every route. The original
+ * figures were measured at `4f5c935` (pre-affordance) and were 1545 / 1536 / 1908
+ * / 1994. Story 48.2 deleted the two per-row move chevrons, and the actions column
+ * gave back exactly what they cost: 2 x 16px icon + 2 x 8px `sm:mr-2` = 48px,
+ * host-independent. All four routes moved by that identical amount, which is what
+ * makes this a re-baseline rather than a regression — a layout defect would not
+ * shift four independently-built tables by the same 48px.
+ *
+ * The arithmetic closes against the epic-34 record: 34.1b ADDED 48px here and
+ * broke `categories-premium.spec.ts`'s 768px budget (658 + 48 = 706 vs a 680
+ * limit) on the CI font while passing on a narrower dev font. 48.2 returns it.
+ *
+ * ⚠️ THIS IS AN EQUALITY AND MUST STAY ONE. The failure message below is right:
+ * do not convert it to a tolerance. Re-measure and update these numbers when a
+ * change legitimately moves the width, and say why — as here.
+ */
 const BASELINE_SCROLL_WIDTH: Record<(typeof OVERFLOW_ROUTES)[number], number> = {
-  '/income': 1545,
-  '/expenses': 1536,
-  '/savings': 1908,
-  '/balance': 1994,
+  '/income': 1497,
+  '/expenses': 1488,
+  '/savings': 1860,
+  '/balance': 1946,
 }
 
 for (const route of OVERFLOW_ROUTES) {

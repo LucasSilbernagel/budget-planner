@@ -77,19 +77,28 @@ async function seedRows(page: Page): Promise<void> {
   })
 }
 
-/** The editable table's header — the one carrying the move controls. */
+/** The editable table's header — the one carrying the per-row Edit controls.
+ *  (Story 48.2 removed the move buttons this locator used to key on.) */
 function sortHeader(page: Page, name: string) {
   return page
     .locator('div.overflow-x-auto table')
-    .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+    .filter({ has: page.getByRole('button', { name: /^Edit .+$/ }) })
     .getByRole('columnheader', { name })
 }
 
-/** Row order in the editable table, reported by whichever seeded name each row carries. */
+/** Row order in the editable table, reported by whichever seeded name each row carries.
+ *
+ * ⚠️⚠️ THE SCOPING IS REAL BUT NOT STRICTLY ENFORCED HERE (48.2 review):
+ * `evaluateAll` does NOT apply Playwright strict mode, so a second Edit-carrying
+ * table on this route would CONCATENATE both tables' rows rather than fail, silently
+ * corrupting every ordering assertion below. `/^Edit .+$/` is a likelier future
+ * collision than the `/^Move .+ up$/` it replaced. `sortHeader` above IS strict and
+ * reddens first (mutation arm M8: 7 failures), which is what makes this acceptable
+ * rather than a silent hole. */
 function editableOrder(page: Page, names: readonly string[]) {
   return page
     .locator('div.overflow-x-auto table')
-    .filter({ has: page.getByRole('button', { name: /^Move .+ up$/ }) })
+    .filter({ has: page.getByRole('button', { name: /^Edit .+$/ }) })
     .locator('tbody tr')
     .evaluateAll(
       (rows, seeded) =>
@@ -259,5 +268,5 @@ test('a corrupt persisted payload opens in manual order instead of breaking the 
     .poll(() => editableOrder(page, ROWS.income))
     .toEqual(['Zebra Dividend', 'Aardvark Salary'])
   // The table is present and operable, not a blank void.
-  await expect(page.getByRole('button', { name: /^Move .+ up$/ }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Edit .+$/ }).first()).toBeVisible()
 })

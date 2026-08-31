@@ -6,13 +6,7 @@ import { withProgress } from '@budget-planner/core/services/savingsGoals'
 import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import {
-  type RowMoveDirection,
-  applyRowMove,
-  backfillSortOrder,
-  nextSortOrder,
-  sortByDisplayOrder,
-} from '../lib/ordering'
+import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
 
@@ -26,13 +20,6 @@ interface SavingsState {
     id: string,
     updates: Partial<ClientNewSavingsGoal>
   ) => ClientSavingsGoal | undefined
-  /**
-   * Move a row one place up or down (Story 34.1b, FR60). Takes a direction, not
-   * a position: `sortOrder` is absent from `ClientNewSavingsGoal`, so a reorder
-   * cannot be expressed through `updateSavingsGoal`, and the caller has no
-   * business knowing the numbering scheme. A boundary move is a silent no-op.
-   */
-  moveSavingsGoal: (id: string, direction: RowMoveDirection) => void
   deleteSavingsGoal: (id: string) => boolean
 
   // Query operations
@@ -151,23 +138,6 @@ export const useSavingsStore = create<SavingsState>()(
         // Paid tier: queue the update with the pre-edit row as the baseVersion.
         syncEntityUpdate('savingsGoal', updatedGoal, previousGoal)
         return updatedGoal
-      },
-
-      // Move a row one place up or down (Story 34.1b)
-      moveSavingsGoal: (id, direction) => {
-        const result = applyRowMove(get().savingsGoals, id, direction)
-        if (!result) {
-          // Boundary, unknown id, or empty list: change nothing, queue nothing.
-          return
-        }
-        set(() => ({ savingsGoals: result.rows }))
-        // One update per affected row. Both are queued in the SAME synchronous
-        // turn, which is why SyncQueue.add had to be made re-entrancy safe —
-        // before that fix the second enqueue clobbered the first and half of
-        // every reorder was silently lost on the paid tier.
-        for (const { previous, updated } of result.changes) {
-          syncEntityUpdate('savingsGoal', updated, previous)
-        }
       },
 
       // Delete a savings goal

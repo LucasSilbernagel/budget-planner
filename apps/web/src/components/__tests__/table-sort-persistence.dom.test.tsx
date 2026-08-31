@@ -507,7 +507,7 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
     )
   })
 
-  it('an UNENTITLED user opens in manual order with the arrows live', async () => {
+  it('an UNENTITLED user opens in manual order with a live way out', async () => {
     // ⚠️ The path story 42.1 created. `IncomePage.test.tsx`'s existing degrade
     // test flips entitlement inside ONE mount and is explicitly annotated as
     // unreachable in production; a persisted key reaches this state on a FRESH
@@ -522,15 +522,12 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
 
     expect(screen.queryByRole('columnheader', { name: 'Category' })).toBeNull()
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
-    // ⚠️ The trap this pins: wire `RowMoveControls` to the RAW stored value
-    // instead of the effective state and these arrows are dead for a free user,
-    // with no way to revive them — the only reset control is `sm:hidden`.
-    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
-      'aria-disabled',
-      'false'
-    )
-    // And the mobile control reports MANUAL ORDER rather than a column this
-    // render does not have.
+    // ⚠️ The trap this pins: drive the UI from the RAW stored value instead of the
+    // EFFECTIVE state and a free user is stranded in a sort they cannot see or
+    // clear. Until story 48.2 this was pinned on the move arrows' `aria-disabled`;
+    // they are gone, and the claim is unchanged — the control reports MANUAL ORDER
+    // rather than a column this render does not have, which is the same
+    // effective-vs-raw distinction on the surface that still exists.
     expect(incomeSortControlValue()).toBe('manual')
   })
 
@@ -588,12 +585,9 @@ describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
     renderWithProviders(<IncomePage />)
 
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
-    // The three symptoms of the no-exit state, each asserted separately.
+    // The symptoms of the no-exit state, each asserted separately. (A third arm
+    // read the move arrows' `aria-disabled`; story 48.2 removed them.)
     expect(incomeSortControlValue()).toBe('manual')
-    expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
-      'aria-disabled',
-      'false'
-    )
     expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'none')
   })
 

@@ -88,7 +88,7 @@ describe('SavingsPage → SavingsChart contract', () => {
     expect(screen.getByText('1,350.00')).toBeInTheDocument()
   })
 
-  it('starts in the table’s manual order', () => {
+  it('starts in the table’s default order', () => {
     renderWithProviders(<SavingsPage />)
     expect(captured.rows?.map((r) => r.label)).toEqual(['Vacation', 'Emergency Fund', 'TFSA'])
   })
