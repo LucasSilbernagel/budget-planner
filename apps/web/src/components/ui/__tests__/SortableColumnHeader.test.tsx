@@ -1,10 +1,16 @@
 import { assertHasFocusRing } from '@/test/responsive-table-tokens'
 import { fireEvent, renderWithProviders, screen } from '@/test/utils'
 import { describe, expect, it, vi } from 'vitest'
-import { SortableColumnHeader, TableSortNotice } from '../SortableColumnHeader'
+import { SortableColumnHeader } from '../SortableColumnHeader'
 
 /**
- * The sortable column header and the mobile escape hatch (story 34.2, FR61).
+ * The sortable column header (story 34.2, FR61).
+ *
+ * ⚠️ `TableSortNotice`'s four tests used to live in this file. Story 48.1
+ * replaced that component with `TableSortControl`, and each of the four has a
+ * direct successor in `TableSortControl.test.tsx` — the sorted-column report,
+ * the `sm:hidden` + 44px pair, the focus ring, and "renders no table markup".
+ * They were MIGRATED, not dropped.
  */
 
 function renderHeader(ariaSort: 'ascending' | 'descending' | 'none') {
@@ -86,53 +92,15 @@ describe('SortableColumnHeader', () => {
   })
 
   it('does NOT carry a mobile tap-target floor', () => {
-    // The <thead> is `display: none` below `sm`, so a `max-sm:min-h-[44px]` here
-    // would be dead CSS on a hidden ancestor and `assertHasMobileTapTarget`
-    // would be asserting nothing. Sorting is a >= 640px affordance.
+    // ⚠️ STILL TRUE AFTER STORY 48.1, and deliberately unchanged. A phone CAN
+    // now sort — but through `TableSortControl`, which sits outside the table.
+    // The `<thead>` is still `display: none` below `sm`, so a
+    // `max-sm:min-h-[44px]` HERE would still be dead CSS on a hidden ancestor
+    // and `assertHasMobileTapTarget` would still be asserting nothing. What
+    // changed is where the mobile affordance lives, not this element.
     renderHeader('none')
     const classes = screen.getByRole('button', { name: 'Amount' }).className
     expect(classes).not.toContain('min-h-[44px]')
     expect(classes).not.toContain('min-w-[44px]')
-  })
-})
-
-describe('TableSortNotice — the mobile escape hatch (decision 7)', () => {
-  it('names the sorted column and offers a way back to manual order', () => {
-    const onClear = vi.fn()
-    renderWithProviders(<TableSortNotice columnLabel="Amount" onClear={onClear} />)
-    expect(screen.getByText('Sorted by Amount')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Show manual order' }))
-    expect(onClear).toHaveBeenCalledOnce()
-  })
-
-  it('is hidden at >= 640px and meets the 44px floor below it', () => {
-    const { container } = renderWithProviders(
-      <TableSortNotice columnLabel="Amount" onClear={vi.fn()} />
-    )
-    // `sm:hidden` on the wrapper — the headers already do this job on desktop.
-    // ⚠️ Visibility is CSS plus the caller's sort-active condition, never a
-    // `useIsNarrowViewport()` branch.
-    expect(container.firstElementChild?.className).toContain('sm:hidden')
-    const button = screen.getByRole('button', { name: 'Show manual order' })
-    expect(button.className).toContain('max-sm:min-h-[44px]')
-    expect(button.className).toContain('max-sm:min-w-[44px]')
-  })
-
-  it('carries the standard focus ring', () => {
-    renderWithProviders(<TableSortNotice columnLabel="Amount" onClear={vi.fn()} />)
-    assertHasFocusRing(
-      screen.getByRole('button', { name: 'Show manual order' }),
-      'Show manual order'
-    )
-  })
-
-  it('renders no table markup', () => {
-    // It sits OUTSIDE the <table>, so it cannot disturb <th>/<td> parity or the
-    // mobile field-label pins.
-    const { container } = renderWithProviders(
-      <TableSortNotice columnLabel="Amount" onClear={vi.fn()} />
-    )
-    expect(container.querySelector('th')).toBeNull()
-    expect(container.querySelector('td')).toBeNull()
   })
 })

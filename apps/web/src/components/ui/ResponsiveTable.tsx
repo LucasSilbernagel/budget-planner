@@ -237,10 +237,17 @@ export const RESPONSIVE_THEAD_CLASS = 'surface-inset max-sm:hidden'
  *
  * ⚠️ The `<thead>` is `display: none` below `sm` ({@link RESPONSIVE_THEAD_CLASS}),
  * so anything placed in a header cell is unreachable on a phone. That is why
- * sorting is a >= 640px affordance and why header controls deliberately do NOT
- * carry {@link RESPONSIVE_ACTION_BUTTON_CLASS}: a 44px floor on a `display: none`
+ * header controls deliberately do NOT carry
+ * {@link RESPONSIVE_ACTION_BUTTON_CLASS}: a 44px floor on a `display: none`
  * ancestor is dead CSS, and `assertHasMobileTapTarget` would be asserting
- * nothing. */
+ * nothing.
+ *
+ * ⚠️ This used to add "that is why sorting is a >= 640px affordance" (story
+ * 34.2, decision 1). Story 48.1 reversed that: a phone sorts through
+ * `TableSortControl`, which renders `sm:hidden` OUTSIDE the table and DOES carry
+ * the 44px pair, precisely because it has no hidden ancestor. The rule that
+ * survives is about this element — a header cell cannot host a mobile
+ * affordance — not about the feature. */
 export const RESPONSIVE_HEADER_CELL_CLASS =
   'px-6 max-lg:px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider'
 

@@ -8,7 +8,7 @@ import {
 } from '../lib/table-sort'
 import {
   type TableSortId,
-  useClearTableSort,
+  useSetTableSort,
   useTableSortSelection,
   useToggleTableSort,
 } from '../stores/tableSortStore'
@@ -76,8 +76,16 @@ export interface TableSort<Row, Key extends string> {
   rows: readonly Row[]
   /** Advance one column through `none -> asc -> desc -> none`. */
   toggle: (key: Key) => void
-  /** Drop the sort entirely and return to manual order. */
-  clear: () => void
+  /**
+   * Set an exact column and direction, or `null` for manual order (story 48.1).
+   *
+   * ⚠️ NOT `toggle`. A picker names the state it wants outright, so selecting
+   * `desc` from `null` must land on `desc` rather than on the cycle's first
+   * step, and re-selecting the same state must sit still rather than advance.
+   * This is what {@link TableSortControl} drives; the desktop headers keep
+   * {@link toggle}, and both write the same store slice.
+   */
+  select: (state: SortState<Key> | null) => void
   /** The `aria-sort` token for one column header. */
   ariaSort: (key: Key) => AriaSortValue
 }
@@ -103,7 +111,6 @@ export function useTableSort<Row, Key extends string>(
   // otherwise reach `persisted.key` and throw during render.
   const persisted = useTableSortSelection(tableId)
   const toggleTableSort = useToggleTableSort()
-  const clearTableSort = useClearTableSort()
 
   const toggle = useCallback(
     (key: Key) => {
@@ -114,9 +121,18 @@ export function useTableSort<Row, Key extends string>(
     [toggleTableSort, tableId]
   )
 
-  const clear = useCallback(() => {
-    clearTableSort(tableId)
-  }, [clearTableSort, tableId])
+  // ⚠️ Story 48.1 gave `setTableSort` its FIRST production caller. It shipped
+  // with story 42.1 and until now was exercised only by
+  // `tableSortStore.dom.test.ts` — it is the seam a picker needs, so there is no
+  // reason to add a second action alongside it.
+  const setTableSort = useSetTableSort()
+
+  const select = useCallback(
+    (next: SortState<Key> | null) => {
+      setTableSort(tableId, next)
+    },
+    [setTableSort, tableId]
+  )
 
   // Resolved OUTSIDE the memo so the dependency is a plain function identity
   // rather than a computed member expression, which is not statically checkable.
@@ -126,9 +142,12 @@ export function useTableSort<Row, Key extends string>(
   // CHAIN: `key: "toString"` resolves `Object.prototype.toString` — a function,
   // not `undefined` — so the degradation below never fires. Measured before this
   // guard existed: the table kept `state !== null`, every move arrow went
-  // `aria-disabled="true"` with no reset control below `sm`, and `TableSortNotice`
-  // rendered `SORT_COLUMN_LABELS["toString"]`, i.e. a FUNCTION, which React
-  // rejects with "Functions are not valid as a React child". The store applies
+  // `aria-disabled="true"` with no reset control below `sm` (story 48.1 has
+  // since added one — `TableSortControl`; this sentence records what was
+  // MEASURED at the time, not today's affordances), and the then-current
+  // `TableSortNotice` rendered `SORT_COLUMN_LABELS["toString"]`, i.e. a
+  // FUNCTION, which React rejects with "Functions are not valid as a React
+  // child". The store applies
   // exactly this discipline to the sorts RECORD (`coerceSorts`); it has to apply
   // to the KEY too. Unreachable before story 42.1 — a header can only ever emit a
   // real column key — and reachable now only because the key is persisted.
@@ -177,5 +196,5 @@ export function useTableSort<Row, Key extends string>(
 
   const ariaSort = useCallback((key: Key) => ariaSortFor(effectiveState, key), [effectiveState])
 
-  return { state: effectiveState, rows: sortedRows, toggle, clear, ariaSort }
+  return { state: effectiveState, rows: sortedRows, toggle, select, ariaSort }
 }

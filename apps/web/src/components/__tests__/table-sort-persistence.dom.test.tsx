@@ -231,6 +231,25 @@ function namedOrder(names: readonly string[]): string[] {
     .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
 }
 
+/**
+ * The INCOME page's mobile sort control value (story 48.1).
+ *
+ * ⚠️ Named for its page. It hardcodes `Sort income sources`, and this file also
+ * covers Savings and Balance — a generic name invites a call from one of those
+ * describes, where it would throw or silently query the wrong control.
+ *
+ * ⚠️ This REPLACES `expect(queryByText(/^Sorted by /)).toBeNull()`, which
+ * became VACUOUS the moment `TableSortNotice` was deleted — an absence
+ * assertion against markup that no longer exists in any state cannot fail.
+ * The positive form still catches the defect the original was aimed at: if
+ * `effectiveState` were bypassed, the select would be handed a value with no
+ * matching `<option>` (the Category options are not rendered for a free user),
+ * and the DOM value would be `''`, not `'manual'`.
+ */
+function incomeSortControlValue(): string {
+  return (screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement).value
+}
+
 describe('Savings and Balance persist their own sorts (AC-8)', () => {
   const NAMES = ['Zeta', 'Alpha', 'Mid']
   const MANUAL = ['Zeta', 'Alpha', 'Mid']
@@ -510,9 +529,9 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
       'aria-disabled',
       'false'
     )
-    // And no "Sorted by undefined" notice: `SORT_COLUMN_LABELS` has no entry for
-    // a column this render does not have.
-    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+    // And the mobile control reports MANUAL ORDER rather than a column this
+    // render does not have.
+    expect(incomeSortControlValue()).toBe('manual')
   })
 
   it('leaves the stored Category sort in place so it returns with entitlement', async () => {
@@ -550,10 +569,11 @@ describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
    * string key — resolving a column is the hook's job. But the hook resolved it
    * with a bare `extractors[key]`, which walks the PROTOTYPE CHAIN: `'toString'`
    * returns `Object.prototype.toString`, a function, not `undefined`. The
-   * degradation therefore did not fire. Measured before the fix: the notice
-   * rendered, every move arrow went `aria-disabled="true"` with no reset control
-   * below `sm`, and React rejected `SORT_COLUMN_LABELS['toString']` with
-   * "Functions are not valid as a React child".
+   * degradation therefore did not fire. Measured before the fix: the then-current
+   * `TableSortNotice` rendered, every move arrow went `aria-disabled="true"` with
+   * no reset control below `sm` (story 48.1 has since added one), and React
+   * rejected `SORT_COLUMN_LABELS['toString']` with "Functions are not valid as a
+   * React child".
    *
    * Unreachable before this story — a header can only emit a real column key.
    * Persisting the key is what made it reachable.
@@ -569,7 +589,7 @@ describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
 
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
     // The three symptoms of the no-exit state, each asserted separately.
-    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+    expect(incomeSortControlValue()).toBe('manual')
     expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
       'aria-disabled',
       'false'

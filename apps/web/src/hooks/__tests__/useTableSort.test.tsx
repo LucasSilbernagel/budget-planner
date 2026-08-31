@@ -92,13 +92,18 @@ describe('useTableSort', () => {
     expect(ids(result.current.rows)).toEqual(['b', 'c', 'a'])
   })
 
-  it('clear() drops the sort from any state', () => {
+  it('the hook exposes NO `clear` — `select(null)` is the one escape path', () => {
+    // ⚠️ Story 48.1 retired `clear`. `TableSortNotice` was its only production
+    // caller and this story deleted it; all four pages now escape through
+    // `select(null)`, which is covered below. Keeping `clear` would have left a
+    // second action for one idea on a public interface — the thing epic 48
+    // exists to remove — advertising an affordance no surface renders.
+    //
+    // Asserted rather than merely deleted: the store's own `clearTableSort`
+    // action survives with its own coverage in `tableSortStore.dom.test.ts`, so
+    // re-adding a hook wrapper is an easy and invisible regression.
     const { result } = renderHook(() => useTableSort('income', rows, extractors))
-    act(() => result.current.toggle('name'))
-    expect(result.current.state).not.toBeNull()
-    act(() => result.current.clear())
-    expect(result.current.state).toBeNull()
-    expect(result.current.rows).toBe(rows)
+    expect('clear' in result.current).toBe(false)
   })
 
   it('re-sorts when the ROWS change under an active sort', () => {
@@ -159,6 +164,95 @@ describe('useTableSort', () => {
     expect(result.current.state).toBeNull()
     expect(result.current.ariaSort('amount')).toBe('none')
     expect(ids(result.current.rows)).toEqual(['a', 'b', 'c'])
+  })
+
+  /**
+   * `select` — the seam story 48.1's mobile control drives (UX-DR53).
+   *
+   * ⚠️ Written against `select`, NOT against the store, deliberately. A control
+   * wired straight to `setTableSort` would satisfy every "the rows reordered"
+   * assertion below while bypassing `effectiveState` — the derivation that keeps
+   * an unavailable column from leaving the table sorted by a key nothing on
+   * screen explains. The last test in this block is the one that can tell the
+   * two apart.
+   */
+  it('select() sets an exact column and direction, without cycling (48.1 AC-2)', () => {
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
+
+    // ⚠️ DESCENDING FROM NULL. A `select` implemented as `toggle` would land on
+    // ASCENDING here, and a test that only selected ascending could not tell the
+    // two apart — `nextSortState(null, key)` returns `{key, direction:'asc'}`.
+    act(() => result.current.select({ key: 'amount', direction: 'desc' }))
+    expect(result.current.state).toEqual({ key: 'amount', direction: 'desc' })
+    expect(result.current.ariaSort('amount')).toBe('descending')
+    expect(ids(result.current.rows)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('select() re-selecting the SAME column and direction is idempotent (48.1 AC-2)', () => {
+    // The other half of the `toggle` distinction: a cycle would advance to
+    // `desc` and then to `null` here. A select must sit still.
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
+    act(() => result.current.select({ key: 'name', direction: 'asc' }))
+    act(() => result.current.select({ key: 'name', direction: 'asc' }))
+    expect(result.current.state).toEqual({ key: 'name', direction: 'asc' })
+    expect(ids(result.current.rows)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('select(null) returns to manual order and the INPUT ARRAY ITSELF (48.1 AC-4)', () => {
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
+    act(() => result.current.select({ key: 'amount', direction: 'asc' }))
+    expect(result.current.state).not.toBeNull()
+
+    act(() => result.current.select(null))
+    expect(result.current.state).toBeNull()
+    expect(result.current.rows).toBe(rows)
+  })
+
+  it('select() persists through the SAME store slice a header click writes (48.1 AC-3)', () => {
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
+    act(() => result.current.select({ key: 'amount', direction: 'desc' }))
+
+    // The raw persisted slice, not the derived state — this is what a reload
+    // reads back. Same key, same shape as `toggle` writes.
+    expect(useTableSortStore.getState().sorts.income).toEqual({ key: 'amount', direction: 'desc' })
+
+    act(() => result.current.select(null))
+    expect(useTableSortStore.getState().sorts.income).toBeNull()
+  })
+
+  it('select() writes ONE table and leaves the others alone (48.1 AC-3)', () => {
+    // ⚠️ The scoping claim lives on the OTHER tables. Asserting only `income`
+    // stays green against a hook that writes every slice.
+    const { result } = renderHook(() => useTableSort('income', rows, extractors))
+    act(() => result.current.select({ key: 'name', direction: 'asc' }))
+
+    const { sorts } = useTableSortStore.getState()
+    expect(sorts.income).toEqual({ key: 'name', direction: 'asc' })
+    expect(sorts.expenses).toBeNull()
+    expect(sorts.savings).toBeNull()
+    expect(sorts.balance).toBeNull()
+  })
+
+  it('a key selected through select() still degrades when its extractor goes (48.1 AC-2)', () => {
+    // ⚠️ THE ARM THAT CATCHES A BYPASS. If the control were wired straight to
+    // `setTableSort`, every assertion above would still pass — but the state
+    // would come from storage rather than from `effectiveState`, and this table
+    // would stay "sorted" by a column that no longer renders.
+    const { result, rerender } = renderHook(
+      ({ keys }: { keys: SortKeyExtractors<Row, Key> }) => useTableSort('income', rows, keys),
+      { initialProps: { keys: extractors } }
+    )
+    act(() => result.current.select({ key: 'amount', direction: 'desc' }))
+    expect(ids(result.current.rows)).toEqual(['a', 'c', 'b'])
+
+    rerender({ keys: { name: extractors.name } })
+
+    expect(result.current.state).toBeNull()
+    expect(result.current.ariaSort('amount')).toBe('none')
+    expect(ids(result.current.rows)).toEqual(['a', 'b', 'c'])
+    // The RAW value is deliberately left in storage so the sort returns if the
+    // column does — same rule `toggle` already follows.
+    expect(useTableSortStore.getState().sorts.income).toEqual({ key: 'amount', direction: 'desc' })
   })
 
   it('does not mutate the array it was given', () => {

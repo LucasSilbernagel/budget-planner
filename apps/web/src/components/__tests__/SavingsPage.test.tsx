@@ -1037,7 +1037,10 @@ describe('SavingsPage — sort by column (34.2)', () => {
     expect(renderedOrder()).toEqual(sorted)
     expect(useSavingsStore.getState().savingsGoals.map((g) => g.name)).toEqual(MANUAL_ORDER)
 
-    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
+    // ⚠️ Cleared through the MOBILE CONTROL (story 48.1), which replaced the
+    // `Show manual order` button this line used to click. The claim under test
+    // is unchanged and is about the ARROWS: a cleared sort re-enables them.
+    await user.selectOptions(sortControl(), 'manual')
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
     expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
       'aria-disabled',
@@ -1047,14 +1050,62 @@ describe('SavingsPage — sort by column (34.2)', () => {
     expect(renderedOrder()).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
   })
 
-  it('shows the mobile escape hatch only while a sort is active', async () => {
+  /**
+   * The mobile sort control (story 48.1, UX-DR53).
+   *
+   * ⚠️ This block REPLACES the old "shows the mobile escape hatch only while a
+   * sort is active" test, and the replacement is the point. `TableSortNotice`
+   * rendered nothing while a table was in manual order, because a sort could
+   * only be STARTED at >= 640px (34.2, ratified decision 1). Manual order is
+   * exactly the state a phone user needs a control in — it is how they start
+   * one — so the control now renders unconditionally and the old assertion
+   * would be asserting the opposite of the requirement.
+   */
+  function sortControl(): HTMLSelectElement {
+    return screen.getByRole('combobox', {
+      name: 'Sort savings goals and accounts',
+    }) as HTMLSelectElement
+  }
+
+  it('offers the mobile sort control whether or not a sort is active (48.1 AC-1)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
-    expect(screen.queryByText(/^Sorted by /)).toBeNull()
-    await user.click(within(header('Target')).getByRole('button', { name: 'Target' }))
-    expect(screen.getByText('Sorted by Target')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
-    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+
+    // Present in MANUAL order — the state the old escape hatch rendered nothing in.
+    expect(sortControl()).toBeInTheDocument()
+    expect(sortControl().value).toBe('manual')
+
+    await user.selectOptions(sortControl(), 'name:asc')
+    // And still present once a sort is active, now reporting it.
+    expect(sortControl().value).toBe('name:asc')
+  })
+
+  it('sorts from the mobile control and drives the SAME state as the headers (48.1 AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    // ⚠️ DESCENDING, chosen directly. Ascending alone cannot tell a `select`
+    // from a `toggle`, and name-descending differs from BOTH the manual order
+    // and the ascending order for this seed — an order assertion that happened
+    // to match one of them could not fail.
+    await user.selectOptions(sortControl(), 'name:desc')
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+
+    // ⚠️ THE SINGLE-SOURCE-OF-TRUTH CLAIM. A control wired to its own state
+    // would reorder the rows and leave this header reporting `none`.
+    expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
+  })
+
+  it('returns to manual order from the mobile control (48.1 AC-4)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.selectOptions(sortControl(), 'name:desc')
+    expect(renderedOrder()).not.toEqual(MANUAL_ORDER)
+
+    await user.selectOptions(sortControl(), 'manual')
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none')
   })
 
   it('adds no retired colour tokens to the header row', () => {

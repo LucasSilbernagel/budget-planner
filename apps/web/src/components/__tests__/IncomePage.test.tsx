@@ -1135,18 +1135,63 @@ describe('IncomePage — sort by column (34.2)', () => {
     ])
   })
 
-  it('shows the mobile escape hatch only while a sort is active', async () => {
+  /**
+   * The mobile sort control (story 48.1, UX-DR53).
+   *
+   * ⚠️ This block REPLACES the old "shows the mobile escape hatch only while a
+   * sort is active" test, and the replacement is the point. `TableSortNotice`
+   * rendered nothing while a table was in manual order, because a sort could
+   * only be STARTED at >= 640px (34.2, ratified decision 1). Manual order is
+   * exactly the state a phone user needs a control in — it is how they start
+   * one — so the control now renders unconditionally and the old assertion
+   * would be asserting the opposite of the requirement.
+   */
+  function sortControl(): HTMLSelectElement {
+    return screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement
+  }
+
+  it('offers the mobile sort control whether or not a sort is active (48.1 AC-1)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
-    expect(screen.queryByText(/^Sorted by /)).toBeNull()
 
-    await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
-    expect(screen.getByText('Sorted by Amount')).toBeInTheDocument()
+    // Present in MANUAL order — the state the old escape hatch rendered nothing in.
+    expect(sortControl()).toBeInTheDocument()
+    expect(sortControl().value).toBe('manual')
 
-    await user.click(screen.getByRole('button', { name: 'Show manual order' }))
-    expect(screen.queryByText(/^Sorted by /)).toBeNull()
+    await user.selectOptions(sortControl(), 'name:asc')
+    // And still present once a sort is active, now reporting it.
+    expect(sortControl().value).toBe('name:asc')
+  })
+
+  it('sorts from the mobile control and drives the SAME state as the headers (48.1 AC-2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    // ⚠️ DESCENDING, chosen directly. Ascending alone cannot tell a `select`
+    // from a `toggle`, and name-descending differs from BOTH the manual order
+    // and the ascending order for this seed — an order assertion that happened
+    // to match one of them could not fail.
+    await user.selectOptions(sortControl(), 'name:desc')
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+
+    // ⚠️ THE SINGLE-SOURCE-OF-TRUTH CLAIM. A control wired to its own state
+    // would reorder the rows and leave this header reporting `none`.
+    expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
+  })
+
+  it('returns to manual order from the mobile control (48.1 AC-4)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.selectOptions(sortControl(), 'name:desc')
+    expect(renderedOrder()).not.toEqual(MANUAL_ORDER)
+
+    await user.selectOptions(sortControl(), 'manual')
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
-    // Clearing the sort re-enables the arrows (AC-11 -> AC-7).
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none')
+    // Clearing the sort re-enables the arrows (34.2 AC-11 -> AC-7). Carried over
+    // from the escape-hatch test this block replaces: the assertion is about the
+    // arrows, not about the control that cleared the sort.
     expect(screen.getByRole('button', { name: 'Move Alpha up' })).toHaveAttribute(
       'aria-disabled',
       'false'
@@ -1154,6 +1199,50 @@ describe('IncomePage — sort by column (34.2)', () => {
   })
 
   describe('Category is a sort target only for entitled users (AC-5)', () => {
+    it('offers Category as a mobile sort option ONLY for an entitled user (48.1 AC-7)', async () => {
+      // ⚠️ EXACT ARRAYS on BOTH tiers. `queryByRole('option', { name: /Category/ })`
+      // returning null is satisfied by an options list that is empty for any
+      // reason at all, and the failure this guards is subtle: the Category
+      // extractor is OMITTED for an unentitled user
+      // (`createFlowSortExtractors`), so a Category option offered to a free
+      // user writes a sort that `effectiveState` immediately degrades — a
+      // control that visibly does nothing, with no error anywhere.
+      free()
+      const { unmount } = renderWithProviders(<IncomePage />)
+      expect(
+        within(screen.getByRole('combobox', { name: 'Sort income sources' }))
+          .getAllByRole('option')
+          .map((option) => option.textContent)
+      ).toEqual([
+        'Manual order',
+        'Name (ascending)',
+        'Name (descending)',
+        'Amount (ascending)',
+        'Amount (descending)',
+        'Frequency (ascending)',
+        'Frequency (descending)',
+      ])
+      unmount()
+
+      premium()
+      renderWithProviders(<IncomePage />)
+      expect(
+        within(screen.getByRole('combobox', { name: 'Sort income sources' }))
+          .getAllByRole('option')
+          .map((option) => option.textContent)
+      ).toEqual([
+        'Manual order',
+        'Name (ascending)',
+        'Name (descending)',
+        'Amount (ascending)',
+        'Amount (descending)',
+        'Frequency (ascending)',
+        'Frequency (descending)',
+        'Category (ascending)',
+        'Category (descending)',
+      ])
+    })
+
     it('offers no Category header at all on the free tier', () => {
       free()
       renderWithProviders(<IncomePage />)
@@ -1302,7 +1391,13 @@ describe('IncomePage — sort by column (34.2)', () => {
         'aria-disabled',
         'false'
       )
-      expect(screen.queryByText(/^Sorted by /)).toBeNull()
+      // ⚠️ The POSITIVE form. The old `queryByText(/^Sorted by /)` absence
+      // assertion went vacuous when `TableSortNotice` was deleted; this fails if
+      // `effectiveState` is bypassed, because `category:asc` has no matching
+      // `<option>` on the free tier and the select's DOM value would be `''`.
+      expect(
+        (screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement).value
+      ).toBe('manual')
     })
   })
 

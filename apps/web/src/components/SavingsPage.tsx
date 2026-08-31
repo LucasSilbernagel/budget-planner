@@ -48,7 +48,8 @@ import {
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
 import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
-import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
+import { SortableColumnHeader } from './ui/SortableColumnHeader'
+import { TableSortControl } from './ui/TableSortControl'
 
 // Valid contribution cadences (mirrors the core Frequency enum). A persisted
 // investment `frequency` can be a corrupt/legacy non-null string — localStorage is
@@ -59,8 +60,9 @@ import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader
 const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
 
 /**
- * Column labels for the sortable header cells and the mobile "Sorted by
- * {Column}" notice, so the two cannot drift apart (story 34.2).
+ * Column labels for the sortable header cells and the mobile sort control's
+ * options, so the two cannot drift apart (story 34.2; the mobile consumer became
+ * `TableSortControl` in story 48.1).
  */
 const SORT_COLUMN_LABELS: Record<SavingsSortKey, string> = {
   name: 'Name',
@@ -69,6 +71,24 @@ const SORT_COLUMN_LABELS: Record<SavingsSortKey, string> = {
   monthlyAllocation: 'Monthly Allocation',
   progress: 'Progress',
 }
+
+/**
+ * The sortable columns, in the order the headers render them (story 48.1).
+ *
+ * ⚠️ Module scope: this table has no tier gate, so the set is fixed and a
+ * per-instance `useMemo` would allocate an identical array on every mount —
+ * and `TableSortControl` memoises its options on this identity.
+ *
+ * Labels are read from `SORT_COLUMN_LABELS` rather than written out a second
+ * time, so a header and its mobile option cannot drift apart.
+ */
+const SAVINGS_SORT_COLUMNS: readonly { key: SavingsSortKey; label: string }[] = [
+  { key: 'name', label: SORT_COLUMN_LABELS.name },
+  { key: 'target', label: SORT_COLUMN_LABELS.target },
+  { key: 'currentBalance', label: SORT_COLUMN_LABELS.currentBalance },
+  { key: 'monthlyAllocation', label: SORT_COLUMN_LABELS.monthlyAllocation },
+  { key: 'progress', label: SORT_COLUMN_LABELS.progress },
+]
 
 export function SavingsPage() {
   const savingsGoals = useSavingsGoals()
@@ -819,27 +839,29 @@ export function SavingsPage() {
               </div>
             ) : (
               <>
-                {/* The mobile escape hatch (story 34.2, decision 7): a sort can
-                    only be STARTED at >= 640px but survives a narrow, where the
-                    `<thead>` is `display: none` and the move arrows are
-                    disabled. Rendered only when a sort exists.
+                {/* The mobile sort control (story 48.1, UX-DR53).
 
-                    ⚠️ Story 42.1 (FR67) WIDENED what decision 7 has to carry.
-                    The sort is now persisted, so this control is no longer
-                    reached only by narrowing a window mid-session: a phone
-                    opening a table sorted on the same device days earlier gets
-                    it on FIRST LOAD, with no memory of having sorted anything.
-                    That makes it the sole affordance explaining a non-manual
-                    order below `sm` — it must stay, and it must stay legible on
-                    its own. Starting a sort below 640px is still not possible
-                    (`deferred-work.md`, a product decision); this story does not
-                    change that, it only makes arriving in one commonplace. */}
-                {sort.state !== null && (
-                  <TableSortNotice
-                    columnLabel={SORT_COLUMN_LABELS[sort.state.key]}
-                    onClear={sort.clear}
-                  />
-                )}
+                    ⚠️ This REPLACES `TableSortNotice`, and it renders
+                    UNCONDITIONALLY where the notice rendered only while a sort
+                    was active. Story 34.2's ratified decision 1 scoped sorting
+                    to >= 640px because the `<thead>` is `display: none` below
+                    `sm`, so the notice could only ever EXPLAIN and ESCAPE a sort
+                    a desktop interaction had already started. This control is
+                    the first affordance that can START one on a phone, and
+                    manual order is precisely the state it has to be reachable
+                    in. `deferred-work.md`'s "Sorting cannot be STARTED below
+                    640px" is closed by this story.
+
+                    It drives `sort.select`, the same store slice the headers
+                    drive through `sort.toggle` — one source of truth, so a sort
+                    chosen on a phone and one chosen on a desktop cannot
+                    disagree, and it persists exactly as a header click does. */}
+                <TableSortControl
+                  label="Sort savings goals and accounts"
+                  columns={SAVINGS_SORT_COLUMNS}
+                  state={sort.state}
+                  onSelect={sort.select}
+                />
                 {/* Story 42.2 (UX-DR46): the wrapper is a scrollable REGION, not just a
                     scroll container. `tabindex`/`role`/`aria-label` are unconditional —
                     a region named for its table is meaningful whether or not it happens

@@ -804,9 +804,13 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
    * Column sorting (story 34.2, FR61).
    *
    * ⚠️ These run at 1280px, not 320px, and that is the point: the `<thead>` is
-   * `max-sm:hidden`, so the sort affordance does not exist below `sm`. Sorting is
-   * a >= 640px feature by ratified decision, and the escape hatch for a sort that
-   * SURVIVES a narrow is covered by the test after this one.
+   * `max-sm:hidden`, so the HEADER affordance does not exist below `sm`.
+   *
+   * ⚠️ It is no longer true that "sorting is a >= 640px feature by ratified
+   * decision" — story 48.1 (UX-DR53) added `TableSortControl`, which starts a
+   * sort below `sm`. The test after this one covers it at 320px in both schemes,
+   * including the case this suite has always cared about: a sort started on
+   * desktop and carried into a narrow viewport.
    *
    * ⚠️ Expected sequences are written out as LITERALS per route. Deriving them
    * from the seed with a comparator would guard nothing — the comparator is the
@@ -814,6 +818,15 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
    * ascending order deliberately EQUALS the manual order ('Longest…' < 'Mortgage'),
    * which is why both directions are pinned rather than just "the order changed".
    */
+  /** Each table's mobile sort control, by its accessible name (story 48.1).
+   * The names mirror the table wrappers' own `aria-label` region names. */
+  const MOBILE_SORT_LABEL: Record<string, string> = {
+    '/income': 'Sort income sources',
+    '/expenses': 'Sort expenses',
+    '/savings': 'Sort savings goals and accounts',
+    '/balance': 'Sort balance entries',
+  }
+
   const SORT_BY_NAME_EXPECTATIONS: Record<string, { asc: string[]; desc: string[] }> = {
     '/income': {
       asc: ['Freelance & Consulting', LONG_UNBROKEN_NAME],
@@ -866,6 +879,12 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
         )
     }
 
+    /** The mobile sort control for this route (story 48.1). Named per table, so
+     * it cannot accidentally match a form select in a modal. */
+    function sortControl(page: Page) {
+      return page.getByRole('combobox', { name: MOBILE_SORT_LABEL[route] })
+    }
+
     test(`${route} sorts by a column header at 1280px (34.2)`, async ({ page }) => {
       const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
       const names = expected.asc
@@ -904,10 +923,15 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await expect(anyMoveUp).toHaveAttribute('aria-disabled', 'true')
     })
 
-    /** ⚠️ Run in BOTH schemes: AC-11 claims the notice fits 320px in light and
-     * dark, and a light-only case proves half of that. */
+    /** ⚠️ Run in BOTH schemes: the claim is that the control fits 320px in light
+     * and dark, and a light-only case proves half of that.
+     *
+     * ⚠️ Story 48.1 rewrote this against `TableSortControl`, which REPLACED
+     * `TableSortNotice`. The scenario is unchanged — start a sort on desktop,
+     * narrow below `sm`, escape it — but the control now also renders while the
+     * table is in manual order, because it is how a phone STARTS a sort. */
     for (const scheme of ['light', 'dark'] as const) {
-      test(`${route} sort started on desktop stays escapable at 320px, ${scheme} (34.2)`, async ({
+      test(`${route} sort started on desktop stays escapable at 320px, ${scheme} (34.2/48.1)`, async ({
         page,
       }) => {
         const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
@@ -919,9 +943,12 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
         await page.waitForLoadState('networkidle')
         await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-        // Nothing new in the DOM while unsorted — a phone session that never
-        // widened sees no notice at all.
-        await expect(page.getByText(/^Sorted by /)).toHaveCount(0)
+        // ⚠️ AT 1280px THE CONTROL IS `sm:hidden`, so this is the DESKTOP half
+        // of the visibility rule. Asserting it here rather than "the control
+        // reports manual order" — that claim needs a narrow viewport and lives
+        // in `mobile-table-sort.spec.ts`, and asserted at this width it passes
+        // for the wrong reason: a role query finds nothing in a hidden subtree.
+        await expect(sortControl(page)).toBeHidden()
 
         // ⚠️ Sort to a state that DIFFERS from manual order on every route. On
         // `/balance` the ascending order deliberately equals manual, so stopping at
@@ -930,26 +957,42 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
         const sortButton = sortHeader(page, 'Name').getByRole('button', { name: 'Name' })
         const manual = await editableOrder(page, names)
         await sortButton.click()
+        // ⚠️ Track WHICH state the header reached, so the narrow-viewport
+        // assertion below can pin the exact value rather than merely
+        // "not manual" — see the comment there.
+        let expectedValue = 'name:asc'
         if ((await editableOrder(page, names)).join('|') === manual.join('|')) {
           await sortButton.click()
+          expectedValue = 'name:desc'
         }
         await expect.poll(() => editableOrder(page, names)).not.toEqual(manual)
 
         // Narrow BELOW `sm`. The header that started this sort is now
-        // `display: none`, so without the notice the sort would be inescapable.
+        // `display: none`, so without the control the sort would be inescapable.
         await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
         await expect(sortHeader(page, 'Name')).toBeHidden()
 
-        const notice = page.getByText('Sorted by Name')
-        await expect(notice).toBeVisible()
-        const reset = page.getByRole('button', { name: 'Show manual order' })
-        const box = await reset.boundingBox()
-        expect(box, 'the reset control has no layout box at 320px').not.toBeNull()
+        // The control reports the sort the DESKTOP header started — the
+        // single-source-of-truth claim, observed across a viewport change.
+        //
+        // ⚠️ The EXACT value, not `not.toHaveValue('manual')`. That weaker form
+        // is satisfied by any wrong non-manual state — a hardcoded value, the
+        // wrong column, the wrong direction, another table's stale slice — and
+        // the test it replaced pinned the column ("Sorted by Name").
+        const control = sortControl(page)
+        await expect(control).toBeVisible()
+        await expect(control).toHaveValue(expectedValue)
+
+        // ⚠️ A RENDERED box, not a class. `assertHasMobileTapTarget` proves the
+        // `max-sm:` tokens are declared; only a real layout can prove they
+        // resolve to 44px on an element that is not `display: none`.
+        const box = await control.boundingBox()
+        expect(box, 'the mobile sort control has no layout box at 320px').not.toBeNull()
         expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
         expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
 
-        await reset.click()
-        await expect(page.getByText(/^Sorted by /)).toHaveCount(0)
+        await control.selectOption('manual')
+        await expect(control).toHaveValue('manual')
         // Manual order restored — compared against the order MEASURED before the
         // sort, not a hand-written literal, so it cannot drift from the seed.
         await expect.poll(() => editableOrder(page, names)).toEqual(manual)
@@ -960,7 +1003,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
 
         await assertNoHorizontalOverflow(
           (fn) => page.evaluate(fn),
-          `${route} with the sort notice at 320px (${scheme})`
+          `${route} with the mobile sort control at 320px (${scheme})`
         )
       })
     }

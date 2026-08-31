@@ -1,5 +1,5 @@
 import type { AriaSortValue } from '../../lib/table-sort'
-import { RESPONSIVE_ACTION_BUTTON_CLASS, RESPONSIVE_HEADER_CELL_CLASS } from './ResponsiveTable'
+import { RESPONSIVE_HEADER_CELL_CLASS } from './ResponsiveTable'
 
 /**
  * A clickable column header that reports its sort state through `aria-sort`
@@ -44,9 +44,17 @@ import { RESPONSIVE_ACTION_BUTTON_CLASS, RESPONSIVE_HEADER_CELL_CLASS } from './
  *
  * The `<thead>` is `display: none` below `sm` (`RESPONSIVE_THEAD_CLASS`), so a
  * `max-sm:min-h-[44px]` on this button would be dead CSS on a hidden ancestor
- * and `assertHasMobileTapTarget` would be asserting nothing. Sorting is a
- * >= 640px affordance by ratified decision; the mobile escape hatch is
- * {@link TableSortNotice}, which lives outside the table.
+ * and `assertHasMobileTapTarget` would be asserting nothing.
+ *
+ * ⚠️ This paragraph USED to end "Sorting is a >= 640px affordance by ratified
+ * decision" (story 34.2, decision 1). **That is no longer true.** Story 48.1
+ * (UX-DR53) closed `deferred-work.md`'s "Sorting cannot be STARTED below 640px"
+ * with `TableSortControl` — a picker that renders `sm:hidden` OUTSIDE the table
+ * and drives the same store slice these headers drive. What survives the
+ * reversal is this element's own rule: a header cell cannot carry the mobile
+ * affordance, because its ancestor is hidden at exactly the widths that
+ * affordance is for. That is why the control is a sibling of the table rather
+ * than a second mode of this component.
  */
 
 /** Matches the row action buttons: `focus:ring-2` with a real colour, and no
@@ -114,47 +122,5 @@ export function SortableColumnHeader({ label, ariaSort, onToggle }: SortableColu
         {ariaSort === 'descending' && <SortDescendingIcon />}
       </button>
     </th>
-  )
-}
-
-/**
- * The mobile escape hatch (Story 34.2, ratified decision 7).
- *
- * A sort can only be STARTED at >= 640px, but it survives a narrow: sort state
- * is component state, there is exactly one `<table>` in the DOM at every width,
- * and the `<thead>` that started the sort is `display: none` below `sm`. Without
- * this control a user who sorts at 800px and then narrows to 320px is stranded —
- * sorted rows, no header to undo them, and every move arrow disabled because a
- * sort is active.
- *
- * ⚠️ Its visibility is `sm:hidden` PLUS the caller rendering it only while a sort
- * is active. It is not a `useIsNarrowViewport()` branch — that hook returns
- * `false` on the server and on the first client render, and `ResponsiveTable.tsx`
- * records why a layout swap must not depend on it. When no sort is active the
- * caller renders nothing at all, so a mobile session that never widened sees no
- * new DOM.
- *
- * It sits OUTSIDE the `<table>`, so it adds no `<th>`, no `<td>` and no
- * `FieldLabel`, and cannot disturb the column-parity or field-label pins.
- */
-export function TableSortNotice({
-  columnLabel,
-  onClear,
-}: {
-  /** The label of the column currently sorted, for "Sorted by Amount". */
-  columnLabel: string
-  onClear: () => void
-}) {
-  return (
-    <div className="sm:hidden mb-3 flex items-center justify-between gap-3 rounded-lg surface-inset px-3 py-2">
-      <span className="text-xs text-muted">Sorted by {columnLabel}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        className={`${RESPONSIVE_ACTION_BUTTON_CLASS} rounded px-2 text-xs font-medium text-blue-600 dark:text-blue-400 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-blue-500`}
-      >
-        Show manual order
-      </button>
-    </div>
   )
 }

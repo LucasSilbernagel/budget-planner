@@ -9,10 +9,14 @@ import { type Page, expect, test } from '@playwright/test'
  * `page.reload()` — a fresh document, fresh JS context, storage the sole carrier
  * — can distinguish persistence from a component that simply was not unmounted.
  *
- * ⚠️ Runs at 1280px. The `<thead>` is `max-sm:hidden`, so there is no sort
- * affordance below `sm` (story 34.2, ratified decision 1) — a sort cannot be
- * STARTED here at 320px, and `deferred-work.md` records that gap as an open
- * product decision this story does not close.
+ * ⚠️ Runs at 1280px, and deliberately exercises the HEADER path only. The
+ * `<thead>` is `max-sm:hidden`, so these clicks are unreachable below `sm`.
+ *
+ * ⚠️ This used to add that a sort "cannot be STARTED at 320px" and that
+ * `deferred-work.md` recorded the gap as open. Story 48.1 (UX-DR53) closed it:
+ * `TableSortControl` starts a sort below `sm`, and its persistence is proved at
+ * a mobile viewport in `mobile-table-sort.spec.ts`. Both surfaces write the same
+ * store slice, so this file still describes the desktop half of one claim.
  *
  * ⚠️ Seeded independently of `responsive-320.spec.ts` rather than by importing
  * its helper: importing a Playwright spec file re-registers every `test()` in it.

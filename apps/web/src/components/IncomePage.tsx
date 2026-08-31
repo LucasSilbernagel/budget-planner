@@ -35,7 +35,8 @@ import {
 } from './ui/ResponsiveTable'
 import { RowMoveControls } from './ui/RowMoveControls'
 import { EmptyStateSkeleton, LoadingStatus } from './ui/Skeleton'
-import { SortableColumnHeader, TableSortNotice } from './ui/SortableColumnHeader'
+import { SortableColumnHeader } from './ui/SortableColumnHeader'
+import { TableSortControl } from './ui/TableSortControl'
 
 // Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
@@ -46,8 +47,9 @@ const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
 ]
 
 /**
- * Column labels for the sortable header cells and for the mobile
- * "Sorted by {Column}" notice, so the two can never drift apart (story 34.2).
+ * Column labels for the sortable header cells and for the mobile sort control's
+ * options, so the two can never drift apart (story 34.2; the mobile consumer
+ * became `TableSortControl` in story 48.1).
  * Module scope, like every other component and constant in this layer.
  */
 const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
@@ -115,6 +117,30 @@ export function IncomePage() {
   const sortExtractors = useMemo(
     () => createFlowSortExtractors(categoryNames, showCategoryColumn),
     [categoryNames, showCategoryColumn]
+  )
+
+  /**
+   * The sortable columns offered by the mobile control (story 48.1), in header
+   * order.
+   *
+   * ⚠️⚠️ GATED ON `showCategoryColumn` — THE SAME EXPRESSION THE `<th>` USES,
+   * and not on `Object.entries(SORT_COLUMN_LABELS)`, which always contains
+   * `category`. `createFlowSortExtractors` OMITS the Category extractor for an
+   * unentitled user, so a Category option offered to a free user would write
+   * `{ key: 'category' }` to storage and `useTableSort`'s `effectiveState`
+   * would immediately degrade it back to manual order: a control that visibly
+   * does nothing, with no error anywhere to say why.
+   */
+  const sortColumns = useMemo<readonly { key: FlowSortKey; label: string }[]>(
+    () => [
+      { key: 'name', label: SORT_COLUMN_LABELS.name },
+      { key: 'amount', label: SORT_COLUMN_LABELS.amount },
+      { key: 'frequency', label: SORT_COLUMN_LABELS.frequency },
+      ...(showCategoryColumn
+        ? [{ key: 'category' as const, label: SORT_COLUMN_LABELS.category }]
+        : []),
+    ],
+    [showCategoryColumn]
   )
   const sort = useTableSort('income', incomeSources, sortExtractors)
   const sortedRows = sort.rows
@@ -377,29 +403,29 @@ export function IncomePage() {
               </div>
             ) : (
               <>
-                {/* The mobile escape hatch (story 34.2, decision 7). A sort can
-                    only be STARTED at >= 640px, but it survives a narrow — the
-                    `<thead>` that started it is `display: none` below `sm`, and
-                    the move arrows are disabled while it is active. Rendered
-                    only when a sort exists, so an unsorted mobile session sees
-                    no new DOM at all.
+                {/* The mobile sort control (story 48.1, UX-DR53).
 
-                    ⚠️ Story 42.1 (FR67) WIDENED what decision 7 has to carry.
-                    The sort is now persisted, so this control is no longer
-                    reached only by narrowing a window mid-session: a phone
-                    opening a table sorted on the same device days earlier gets
-                    it on FIRST LOAD, with no memory of having sorted anything.
-                    That makes it the sole affordance explaining a non-manual
-                    order below `sm` — it must stay, and it must stay legible on
-                    its own. Starting a sort below 640px is still not possible
-                    (`deferred-work.md`, a product decision); this story does not
-                    change that, it only makes arriving in one commonplace. */}
-                {sort.state !== null && (
-                  <TableSortNotice
-                    columnLabel={SORT_COLUMN_LABELS[sort.state.key]}
-                    onClear={sort.clear}
-                  />
-                )}
+                    ⚠️ This REPLACES `TableSortNotice`, and it renders
+                    UNCONDITIONALLY where the notice rendered only while a sort
+                    was active. Story 34.2's ratified decision 1 scoped sorting
+                    to >= 640px because the `<thead>` is `display: none` below
+                    `sm`, so the notice could only ever EXPLAIN and ESCAPE a sort
+                    a desktop interaction had already started. This control is
+                    the first affordance that can START one on a phone, and
+                    manual order is precisely the state it has to be reachable
+                    in. `deferred-work.md`'s "Sorting cannot be STARTED below
+                    640px" is closed by this story.
+
+                    It drives `sort.select`, the same store slice the headers
+                    drive through `sort.toggle` — one source of truth, so a sort
+                    chosen on a phone and one chosen on a desktop cannot
+                    disagree, and it persists exactly as a header click does. */}
+                <TableSortControl
+                  label="Sort income sources"
+                  columns={sortColumns}
+                  state={sort.state}
+                  onSelect={sort.select}
+                />
                 {/* Story 42.2 (UX-DR46): the wrapper is a scrollable REGION, not just a
                     scroll container. `tabindex`/`role`/`aria-label` are unconditional —
                     a region named for its table is meaningful whether or not it happens
