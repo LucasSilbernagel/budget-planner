@@ -621,14 +621,131 @@ export function SavingsPage() {
                       a <summary> whose activation is intercepted is no longer
                       keyboard-operable for free. A button gives correct keyboard
                       and screen-reader semantics without the override. */}
+                  {/* Story 51.2 (UX-DR57). THE AFFORDANCE, and nothing else.
+                      This was `text-muted hover:text-body text-xs cursor-pointer`:
+                      no underline, no border, no glyph, a muted 12px caption
+                      colour. It read as a label, so the derivation above went
+                      unopened. The markup was already correct — only the
+                      appearance was not — so the ELEMENT ITSELF (a real
+                      `<button type="button">`), the ARIA wiring and the
+                      conditional body are untouched. The `className` is
+                      rewritten and a chevron child is added; nothing else.
+
+                      ⚠️ WHY NOT A BORDERED TARGET, which UX-DR57 offers as a
+                      candidate: `.border-default` measures 1.24:1 in light
+                      (gray-200 on white) and 1.42:1 in dark (gray-700 on
+                      gray-800) against this `.surface` card — both far below
+                      WCAG 1.4.11's 3:1 for a graphic. Story 30-1 already
+                      measured that and deferred it as a token-level question
+                      (46 call sites), so a bordered affordance here would need
+                      a border colour no token supplies. An underline and a
+                      `currentColor` glyph inherit the TEXT colour instead, so
+                      they raise no separate non-text contrast case at all.
+
+                      ⚠️ `.text-accent` is not a colour picked for looks — it is
+                      the token global.css defines for "interactive text and
+                      affordance glyphs", with the reason this story is also
+                      making: hover does not exist on touch, so the cue has to
+                      be persistent. Hence `underline`, not `hover:underline`.
+
+                      CONTRAST — computed with the WCAG 2.x relative-luminance
+                      formula, against the `.surface` card this control sits on
+                      (NOT the `.surface-sunken` page canvas). Every row names
+                      its theme: quoting one arm of a two-arm token is how a
+                      reviewer was led to a wrong AA conclusion in story 49.2.
+
+                        text-accent  light  blue-700 #1d4ed8 on white #ffffff
+                                                                       6.70:1
+                                     dark   blue-300 #93c5fd on gray-800
+                                            #1f2937                    8.14:1
+                        hover        light  blue-800 #1e40af on white   8.72:1
+                                     dark   blue-200 #bfdbfe on #1f2937 10.33:1
+                        chevron      both   `currentColor`, so identical to the
+                                            text above; 1.4.11 wants >= 3:1
+
+                      ⚠️ The token this REPLACED, for the record: `text-muted` is
+                      4.83:1 light / 5.78:1 dark — it passed AA and was never the
+                      defect. The neighbour to avoid is `text-faint`, 2.54:1 in
+                      LIGHT ONLY; it is pixel-identical to `text-muted` in dark
+                      (both gray-400), so no dark screenshot can distinguish
+                      them and two `text-faint` hints already sit on this page.
+
+                      ⚠️ No `focus:ring-offset-*`. The default ring-offset colour
+                      is white and global.css has no override, so an offset here
+                      paints a white band across the gray-800 card. The button
+                      previously had no focus style at all and leaned on the UA
+                      outline, so `focus:outline-none` without the ring would
+                      have been a 2.4.7 regression.
+
+                      ⚠️ The 44px floor is `max-sm:`-scoped via the shared
+                      constant; unprefixed would change the desktop rendering.
+
+                      ⚠️ AN EARLIER REVISION OF THIS COMMENT SAID "`inline-flex`
+                      is what makes that min-height paint a real box". THAT IS
+                      FALSE, and `ResponsiveTable.tsx:449-451` — the docblock of
+                      the very constant reused here — already said so: a
+                      `<button>` is `inline-block` by default, so `min-h`/`min-w`
+                      apply without it. `inline-flex` CENTRES the glyph against
+                      the text; it does not create the box.
+
+                      MEASURED at 320px / 1280px by isolating one token at a
+                      time, because the first attempt changed two at once and
+                      published a number for the wrong mutation:
+
+                        as shipped (floor + flex)          44px / 24px
+                        floor only, no `inline-flex`       44px / 28px
+                        `inline-flex` only, no floor       16px / 16px
+
+                      So the floor ALONE produces 44px, and the honest
+                      "without the floor" figure is **16px** — not the 28px an
+                      earlier revision cited, which was the inline-block layout
+                      that also drops the flex. UX-DR57's "small target for a
+                      touch device" is still literally true: 16px.
+
+                      ⚠️ `p-1` IS NOT DECORATION. Above `sm` the shared constant
+                      contributes NOTHING (it is `max-sm:`-only), so the desktop
+                      box is whatever the content makes it — measured at 16px,
+                      under WCAG 2.2 SC 2.5.8's 24x24 floor. The constant's own
+                      docblock says the padding "belongs at the CALL SITE"; this
+                      was the first call site to adopt the constant and omit it.
+                      `p-1` takes the desktop box to 24px.
+
+                      ⚠️ `forced-colors:focus:outline` is not redundant with the
+                      ring. Tailwind implements `ring-*` as a `box-shadow`, which
+                      Windows High Contrast discards entirely — so
+                      `focus:outline-none` plus a ring alone leaves NO focus
+                      indicator there (WCAG 2.4.7). `HomePage.tsx:1301-1309`
+                      records the same reasoning. */}
                   <button
                     type="button"
-                    className="text-muted hover:text-body text-xs cursor-pointer"
+                    className={`inline-flex items-center gap-1 p-1 text-accent underline text-xs cursor-pointer rounded hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2 dark:hover:text-blue-200 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
                     aria-expanded={breakdownOpen}
                     aria-controls="savings-leftover-breakdown-body"
                     onClick={() => setBreakdownOpen((open) => !open)}
                   >
                     How is this worked out?
+                    {/* Geometry copied verbatim from `SortableColumnHeader`'s
+                        chevron so the two disclosure-ish glyphs stay identical.
+                        ⚠️ `aria-hidden` is load-bearing but NOT for the reason
+                        it looks like: this <svg> has no <title> and no text, so
+                        it contributes nothing to the accessible name either way
+                        — deleting the attribute reddens exactly one test (the
+                        attribute pin) and leaves all sixteen name-based
+                        locators green. Keep it because an assistive technology
+                        should not announce a decorative glyph, and know that
+                        the attribute pin is its ONLY guard. */}
+                    <svg
+                      aria-hidden="true"
+                      className={`h-3 w-3 shrink-0 transition-transform${
+                        breakdownOpen ? ' rotate-180' : ''
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
                   </button>
                   {breakdownOpen && (
                     <div id="savings-leftover-breakdown-body" className="space-y-1 mt-2 text-xs">

@@ -1649,3 +1649,106 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
     expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
   })
 })
+
+/**
+ * Story 51.2 (AC-8) — the leftover-breakdown disclosure's tap target as a
+ * RENDERED box.
+ *
+ * ⚠️ AT MODULE SCOPE ON PURPOSE. This lived inside
+ * `test.describe('finance tables fit a 320px viewport with real rows')` while
+ * its own docblock said "this control is not in a table" — so a maintainer
+ * scoping or deleting that describe by its stated subject would have taken the
+ * only rendered-box assertion for this control with it.
+ *
+ * ⚠️ IT IS THE ONLY ASSERTION THAT CAN SEE THIS CONTROL'S BOX.
+ * `assertRowActionTapTargets` selects `div.overflow-x-auto table tbody button`
+ * and this control sits in the stats card's leftover-summary panel.
+ *
+ * ⚠️ ITS VALUE IS NARROWER THAN STORY 51.2 PREDICTED, AND THE HONEST VERSION IS
+ * RECORDED HERE. The prediction was a mutation green in jsdom and red here;
+ * arms M8 and M8b both came back green on BOTH halves, because every token the
+ * jsdom test pins is also one the rendered box depends on, and the
+ * arbitrary-value CSS is emitted from `ResponsiveTable.tsx`'s literal no matter
+ * how the call site spells it. So this is not a wider net for token deletions.
+ * What it proves is that the declared floor PAINTS.
+ *
+ * ⚠️ AND THE NUMBER THE STORY PUBLISHED WAS FOR THE WRONG MUTATION. It cited
+ * "28px without the floor"; that control dropped the floor AND `inline-flex`.
+ * Isolated here at 320px: floor only **44px**, `inline-flex` only **16px**,
+ * neither 28px. The honest un-floored figure is **16px** — still well under 44,
+ * so UX-DR57's "small target for a touch device" holds.
+ *
+ * ⚠️ NO SEEDING, deliberately. The control renders behind `hydrated`
+ * (`useStoresHydrated()`), which is data-independent, so it is present with
+ * empty localStorage. Seeding would imply the affordance depends on data.
+ */
+test('the /savings leftover disclosure is a 44x44 target at 320px (story 51.2, AC-8)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+
+  const response = await page.goto('/savings')
+  expect(response?.ok(), 'expected /savings to load').toBeTruthy()
+  await page.waitForLoadState('networkidle')
+
+  const disclosure = page.getByRole('button', { name: 'How is this worked out?' })
+  await expect(disclosure).toBeVisible()
+
+  const box = await disclosure.boundingBox()
+  expect(box, 'the disclosure has no layout box').not.toBeNull()
+  // BOTH dimensions — SC 2.5.5 is 44x44, and the title said "44px target"
+  // while only height was measured. Width is amply satisfied by the text, but
+  // an icon-only variant would have passed the one-dimensional version at 12px.
+  expect(
+    box?.height ?? 0,
+    `the disclosure is only ${box?.height ?? 0}px tall at ${NARROW_WIDTH}px`
+  ).toBeGreaterThanOrEqual(44)
+  expect(
+    box?.width ?? 0,
+    `the disclosure is only ${box?.width ?? 0}px wide at ${NARROW_WIDTH}px`
+  ).toBeGreaterThanOrEqual(44)
+
+  // ⚠️ THE GLYPH'S OWN BOX. The button clears 44px from `min-h` no matter what
+  // the chevron does, so an `h-0 w-0` icon would leave the affordance invisible
+  // and pass every assertion above. The jsdom suite pins the `h-3 w-3` tokens;
+  // this proves they paint.
+  const glyph = await disclosure.locator('svg').boundingBox()
+  expect(glyph, 'the chevron has no layout box').not.toBeNull()
+  expect(glyph?.height ?? 0, 'the chevron paints no height').toBeGreaterThan(0)
+  expect(glyph?.width ?? 0, 'the chevron paints no width').toBeGreaterThan(0)
+
+  // Anti-vacuous partner: a 44px box that does not operate is worse than a
+  // small one that does. UX-DR9 wants controls reachable AND operable here.
+  await disclosure.click()
+  await expect(page.locator('#savings-leftover-breakdown-body')).toBeVisible()
+})
+
+/**
+ * Story 51.2 review — the DESKTOP half of the same control, with the >= 24x24
+ * floor of WCAG 2.2 SC 2.5.8 (level AA).
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE STORY SHIPPED A 16px DESKTOP TARGET.
+ * `RESPONSIVE_ACTION_BUTTON_CLASS` is `max-sm:`-only and its docblock states
+ * that above `sm` it "contributes NOTHING, so the desktop hit area is whatever
+ * the content makes it" and that the caller's own `p-1` is what clears 24x24.
+ * Story 51.2 was the first call site to adopt the constant and omit the
+ * padding; the code review measured the result at 16px. Nothing in the repo
+ * could see it — the 320px test above passes either way.
+ */
+test('the /savings leftover disclosure clears 24px at desktop (story 51.2 review, SC 2.5.8)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/savings')
+  await page.waitForLoadState('networkidle')
+
+  const disclosure = page.getByRole('button', { name: 'How is this worked out?' })
+  await expect(disclosure).toBeVisible()
+
+  const box = await disclosure.boundingBox()
+  expect(box, 'the disclosure has no layout box at 1280px').not.toBeNull()
+  expect(
+    box?.height ?? 0,
+    `the desktop target is only ${box?.height ?? 0}px tall (SC 2.5.8 wants >= 24)`
+  ).toBeGreaterThanOrEqual(24)
+})

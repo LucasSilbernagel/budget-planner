@@ -1581,3 +1581,224 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     ).not.toContain('line-through')
   })
 })
+
+/**
+ * Story 51.2 (UX-DR57) — the leftover breakdown's disclosure AFFORDANCE.
+ *
+ * ⚠️⚠️ WHY EVERY ASSERTION HERE IS WRITTEN FROM SCRATCH. Before this story the
+ * control's ONLY reference anywhere in the repo was `openBreakdown()` in the
+ * block above, which locates it by accessible name and clicks it. Sixteen
+ * tests route through that helper and not one of them reads a class, a child
+ * or a style; no e2e spec mentioned the control at all. **A restyle that
+ * changed nothing would have shipped green across all 2411 unit and 355 e2e
+ * tests** — measured, not assumed (mutation arm M1). There was nothing to
+ * strengthen here, only something to build.
+ *
+ * ⚠️ `aria-hidden` IS PINNED AS AN ATTRIBUTE BECAUSE NOTHING ELSE CAN SEE IT —
+ * and an earlier draft of this comment got the reason wrong, so the corrected
+ * version is recorded here rather than quietly replaced. The draft claimed an
+ * exposed `<svg>` "would append to the accessible name and break
+ * `openBreakdown()`". **Mutation arm M4 refutes that**: deleting `aria-hidden`
+ * reddens the attribute pin below and NOTHING else — all sixteen
+ * `openBreakdown()` tests stay green, because an `<svg>` with no `<title>` and
+ * no text content contributes nothing to the accessible name whether it is
+ * hidden or not. `assertIsIconOnlyAction`'s docblock states the same mechanism
+ * from the other direction. The consequence is the opposite of reassuring: the
+ * name assertion is NOT a second witness for `aria-hidden`, so the attribute
+ * pin is the only guard there is. Do not "simplify" it away.
+ *
+ * ⚠️ jsdom COMPUTES NO LAYOUT, so the checks below are class-token DECLARATION
+ * checks and nothing more. The rendered floor is measured in
+ * `e2e/responsive-320.spec.ts`. ⚠️ **The story predicted a mutation green here
+ * and red there, and no such mutation exists** — arms M8 and M8b both came back
+ * green on BOTH halves, because every token these tests pin is also one the
+ * rendered box depends on, and the arbitrary-value CSS is emitted from
+ * `ResponsiveTable.tsx`'s literal regardless of how this call site spells it.
+ * What the e2e assertion adds is narrower: it proves the declared floor PAINTS.
+ *
+ * ⚠️ A LATER REVISION CORRECTS THE NUMBER THIS DOCBLOCK ONCE CITED. It said the
+ * control measures "28px without the floor". That measurement dropped the floor
+ * AND `inline-flex` together. Isolated, at 320px: floor only = **44px**,
+ * `inline-flex` only = **16px**, neither = 28px. So the floor alone makes the
+ * box, and the honest un-floored figure is **16px**.
+ *
+ * ⚠️ The retired-token sweep in this file is scoped to
+ * `container.querySelector('table')` and this control is NOT in a table, so it
+ * cannot police these classes (arm M11 is expected green). Widening that sweep
+ * is not the fix: `SavingsPage.tsx:552`, an ancestor of this panel, already
+ * carries `border-gray-200 dark:border-gray-700` — both blocklisted, both
+ * pre-existing and sanctioned. Hence the explicit token pins below.
+ */
+describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)', () => {
+  const disclosure = () => screen.getByRole('button', { name: 'How is this worked out?' })
+  const tokensOf = (el: Element) => [...el.classList]
+
+  const resetAll = () => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+
+  beforeEach(resetAll)
+  afterEach(resetAll)
+
+  // No seeding anywhere in this block, deliberately: the control renders behind
+  // `hydrated` (`useStoresHydrated()`), which is data-independent, so the
+  // affordance is present with empty stores. Seeding would imply the styling
+  // depends on data, which it does not.
+
+  it('reads as a control when closed — accent colour and a PERSISTENT underline (AC-1)', () => {
+    renderWithProviders(<SavingsPage />)
+    const tokens = tokensOf(disclosure())
+    expect(tokens).toContain('text-accent')
+    // PERSISTENT, not `hover:underline`: AC-1 requires the affordance without
+    // hovering, and hover does not exist on touch (`global.css:102-107`).
+    expect(tokens).toContain('underline')
+    expect(tokens).not.toContain('hover:underline')
+    // The caption colours this story exists to replace. ⚠️ `text-faint` is
+    // 2.54:1 on the white `.surface` card and FAILS AA in light — but it is
+    // pixel-identical to `text-muted` in DARK (both resolve to gray-400), so a
+    // dark-mode screenshot review cannot catch a regression to it. Only this
+    // token pin can. (Mutation arm M3.)
+    expect(tokens).not.toContain('text-muted')
+    expect(tokens).not.toContain('text-faint')
+    // ⚠️ BOTH HOVER ARMS, because the pair is load-bearing in opposite themes
+    // and the source docblock publishes 8.72:1 / 10.33:1 as measured fact.
+    // Drop `dark:hover:text-blue-200` and dark hover falls through to
+    // blue-800 `#1e40af` on gray-800 `#1f2937` = 1.68:1 — unreadable, and a
+    // 1.4.3 failure that no other assertion in the repo would notice.
+    expect(tokens).toContain('hover:text-blue-800')
+    expect(tokens).toContain('dark:hover:text-blue-200')
+  })
+
+  it('does not take the weight of a primary action (AC-2)', () => {
+    renderWithProviders(<SavingsPage />)
+    const tokens = tokensOf(disclosure())
+    expect(tokens).toContain('text-xs')
+    // ⚠️ STRIP VARIANTS BEFORE MATCHING. A `^`-anchored test is blind to
+    // exactly the prefixed forms this codebase uses everywhere else in the
+    // same className — `hover:bg-blue-600`, `dark:bg-gray-700`,
+    // `max-sm:bg-accent`, `sm:font-bold` would all sail past `/^bg-/` and
+    // `/^font-/`. `responsive-table-tokens.ts:37-57` does the same stripping
+    // for the same reason.
+    const base = (t: string) => t.split(':').pop() ?? t
+    const bases = tokens.map(base)
+    expect(bases.filter((t) => /^bg-/.test(t))).toEqual([])
+    expect(bases.filter((t) => /^shadow/.test(t))).toEqual([])
+    expect(bases.filter((t) => /^font-(semibold|bold|extrabold|black)$/.test(t))).toEqual([])
+    // AC-2's "no `px-4 py-2`-style button padding" clause, which had no
+    // assertion at all. `p-1` is required by SC 2.5.8 at desktop widths (see
+    // the source comment) and is not button weight; anything on the
+    // px-4/py-2 scale is.
+    expect(bases.filter((t) => /^p[xy]?-([2-9]|1[0-9])$/.test(t))).toEqual([])
+  })
+
+  it('leaves the element, its ARIA wiring and the conditional body untouched (AC-3)', () => {
+    renderWithProviders(<SavingsPage />)
+    const button = disclosure()
+    expect(button.tagName).toBe('BUTTON')
+    expect(button).toHaveAttribute('type', 'button')
+    expect(button).toHaveAttribute('aria-controls', 'savings-leftover-breakdown-body')
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    // ⚠️ ABSENCE, not invisibility. The docblock above the control explains
+    // why it is a <button> and not <details>/<summary>: a collapsed <summary>
+    // still renders its children, and publishing every balance-entry name as
+    // hidden text broke nine responsive-320 specs once already.
+    expect(document.getElementById('savings-leftover-breakdown-body')).toBeNull()
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('savings-leftover-breakdown-body')).not.toBeNull()
+  })
+
+  it('rotates its chevron to match breakdownOpen, asserted in BOTH states (AC-4)', () => {
+    renderWithProviders(<SavingsPage />)
+    const button = disclosure()
+    // ⚠️ `getAttribute`/`classList`, never `.className.split()`. On an
+    // SVGElement `className` is an SVGAnimatedString that stringifies to
+    // "[object SVGAnimatedString]" — the exact blindness that made the retired-
+    // token sweep unable to see any <svg> until story 50.1 exposed it.
+    const chevron = () => button.querySelector('svg') as SVGElement
+    expect(tokensOf(chevron())).not.toContain('rotate-180')
+    fireEvent.click(button)
+    expect(tokensOf(chevron())).toContain('rotate-180')
+    // Closed again — a one-way pin would pass on a chevron hard-coded open.
+    fireEvent.click(button)
+    expect(tokensOf(chevron())).not.toContain('rotate-180')
+  })
+
+  it('hides the chevron from the accessible name and gives it real geometry (AC-5)', () => {
+    renderWithProviders(<SavingsPage />)
+    const button = disclosure()
+    const icons = button.querySelectorAll('svg')
+    expect(icons.length).toBe(1)
+    const icon = icons[0]
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    // `currentColor` is load-bearing twice over: it inherits `.text-accent`, so
+    // the glyph needs no colour of its own (which the table-scoped sweep could
+    // not have policed), and it keeps the glyph's contrast identical to the
+    // text's — 6.70:1 light, 8.14:1 dark, both clearing 1.4.11's 3:1.
+    expect(icon.getAttribute('stroke')).toBe('currentColor')
+    expect(icon.querySelector('path')?.getAttribute('d')).toBeTruthy()
+    // ⚠️ AC-5 says "the button's ONLY non-text child", and `svg count === 1`
+    // does not say that — a wrapper <span> or a second <img> satisfies it.
+    // `assertIsIconOnlyAction`, the helper this block copies the presence half
+    // of, asserts exactly these two.
+    expect(button.children.length).toBe(1)
+    expect(button.firstElementChild).toBe(icon)
+    // ⚠️ SIZE. Neither the assertions above nor the e2e box check can see a
+    // zero-sized glyph: jsdom computes no layout, and the Playwright test
+    // measures the BUTTON, which is 44px from `min-h` no matter what the icon
+    // does. So `h-0 w-0` would ship the affordance invisible with every gate
+    // green. This is the hazard `responsive-320.spec.ts:466-473` records for
+    // the row-action icons; the same pin belongs here.
+    const iconTokens = [...icon.classList]
+    expect(iconTokens).toContain('h-3')
+    expect(iconTokens).toContain('w-3')
+  })
+
+  /**
+   * ⚠️ THIS TEST REPLACES A TAUTOLOGY. The previous version asserted
+   * `expect(button).toHaveAccessibleName('How is this worked out?')` on an
+   * element obtained via `getByRole('button', { name: 'How is this worked
+   * out?' })` — a full-string name match that had already thrown if the name
+   * differed. It restated its own locator and could not fail, while its comment
+   * called it "the pairing that makes the `aria-hidden` pin matter" — the very
+   * claim arm M4 refuted.
+   *
+   * The real content of AC-6 is that the SIXTEEN pre-existing tests reaching
+   * this control through `openBreakdown()` still resolve after a chevron was
+   * added inside it. That is what this asserts, from outside the story's own
+   * describe: locate the button the way the 45.1 block does, and prove the
+   * added child did not change what that query returns.
+   */
+  it('keeps the accessible name the 45.1 block locates it by, chevron and all (AC-6)', () => {
+    renderWithProviders(<SavingsPage />)
+    const byName = screen.getAllByRole('button', { name: 'How is this worked out?' })
+    expect(byName).toHaveLength(1)
+    expect(byName[0].querySelector('svg')).not.toBeNull()
+    // The name is the VISIBLE TEXT — there is no `aria-label` here — so the
+    // glyph must contribute nothing to it. Trailing/leading whitespace from the
+    // JSX child is normalised by the accessible-name computation.
+    expect(byName[0].textContent?.trim()).toBe('How is this worked out?')
+  })
+
+  it('declares a mobile-only 44px target and the flex box that makes it real (AC-8)', () => {
+    renderWithProviders(<SavingsPage />)
+    assertHasMobileTapTarget(disclosure(), 'the leftover breakdown disclosure')
+    // ⚠️ Without a flex display the min-height still applies but the text and
+    // the glyph do not centre in the box. The class-token helper above cannot
+    // see that and neither can jsdom; `e2e/responsive-320.spec.ts` can.
+    expect(tokensOf(disclosure())).toContain('inline-flex')
+  })
+
+  it('restores a focus ring after killing the native outline (AC-9)', () => {
+    renderWithProviders(<SavingsPage />)
+    // Before this story the button had NO focus style at all and relied on the
+    // UA default outline. Adding `focus:outline-none` without a ring would have
+    // removed its only indicator (WCAG 2.4.7) with every gate still green — the
+    // page's focus-ring completeness test at :507 enumerates four modal inputs
+    // by testid and is structurally blind to this control.
+    assertHasFocusRing(disclosure(), 'the leftover breakdown disclosure')
+  })
+})
