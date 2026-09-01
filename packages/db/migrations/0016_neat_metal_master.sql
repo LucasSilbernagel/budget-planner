@@ -1,0 +1,23 @@
+-- Story 49.1 / FR75: drop the balance-tracking contribution limit. The form no
+-- longer asks for it, the "Max Contribution" and "Remaining Room" columns are
+-- gone, and FR41 (which required them) is retired.
+--
+-- ⚠️ THERE IS DELIBERATELY NO `DROP CONSTRAINT` HERE, AND THAT IS NOT AN OMISSION.
+-- `schema.ts` declared `balanceTracking_maxContributionLimit_valid`, and the usual
+-- expectation would be that dropping the column leaves that constraint dangling.
+-- It does not, because the constraint was never in the database to begin with:
+-- drizzle-kit 0.23 does not emit CHECK constraints to migrations, so NONE of the
+-- seven `check()` declarations in `schema.ts` has ever reached SQL. Verified at
+-- story 49.1: `grep -in check migrations/*.sql` matches nothing across 0000-0015.
+--
+-- So the correct migration is this single statement. If you are reading this
+-- because you were about to "fix" the missing DROP CONSTRAINT — don't; it would
+-- fail with "constraint does not exist". The `check()` block itself has been
+-- deleted from `schema.ts`, which is what stops a future `drizzle-kit push` (or a
+-- hand-applied schema) from creating a constraint on a column that is gone.
+--
+-- ⚠️ Pre-launch: no production row carries a limit, so there is nothing to
+-- migrate or back up. Generated and reviewed, NOT applied — migrations are a
+-- manual deploy step in this repo (the 0004/0005/0011/0013 precedent).
+
+ALTER TABLE "balanceTracking" DROP COLUMN IF EXISTS "maxContributionLimit";

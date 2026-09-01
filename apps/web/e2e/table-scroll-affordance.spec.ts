@@ -379,12 +379,27 @@ for (const route of OVERFLOW_ROUTES) {
  * ⚠️ THIS IS AN EQUALITY AND MUST STAY ONE. The failure message below is right:
  * do not convert it to a tolerance. Re-measure and update these numbers when a
  * change legitimately moves the width, and say why — as here.
+ *
+ * ⚠️ SECOND RE-BASELINE, story 49.1 (FR75), and this one moved ONE route only.
+ * Deleting the "Max Contribution" and "Remaining Room" columns took `/balance`
+ * from 1946 to 1660 — **-286px** — while `/income`, `/expenses` and `/savings`
+ * measured byte-identical to their previous baselines. That asymmetry is the
+ * evidence this is a re-baseline and not a regression: 48.2's change touched a
+ * shared actions column and moved all four routes by the same 48px; 49.1 touched
+ * two columns that exist on exactly one route, so exactly one number moves.
+ *
+ * ⚠️ The overflow PRECONDITIONS in AC-1 and AC-5 were the real risk here, not this
+ * equality — `/balance` losing two wide currency columns could in principle have
+ * stopped it overflowing at 768px and made those guards vacuous. Measured: 1660
+ * against a 656px client width, so it still overflows by 1004px and the fixture
+ * needed no widening. Checked rather than assumed.
  */
 const BASELINE_SCROLL_WIDTH: Record<(typeof OVERFLOW_ROUTES)[number], number> = {
   '/income': 1497,
   '/expenses': 1488,
   '/savings': 1860,
-  '/balance': 1946,
+  // Story 49.1: 1946 -> 1660 (-286px), the two deleted contribution-limit columns.
+  '/balance': 1660,
 }
 
 for (const route of OVERFLOW_ROUTES) {

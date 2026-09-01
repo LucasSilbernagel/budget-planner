@@ -19,10 +19,10 @@ property as well as the loan against it.
 - The recurring **payment** goes on the [Expenses](/expenses) page, at whatever
   frequency you actually pay it.
 - The **amount still owed** goes on the [Balance Tracking](/balance) page, as an
-  entry of type **Debt**, in the *Current Balance* field. Enter it as a positive
+  entry of type **Debt**, in the *Current Balance/Value* field. Enter it as a positive
   number — Longhand subtracts what you owe for you.
 - The **property itself** goes on the same page, as a separate entry of type
-  **Asset**, with what it is worth today in the *Current Balance* field.
+  **Asset**, with what it is worth today in the *Current Balance/Value* field.
 
 The Type list offers three choices: **Investment**, **Debt** and **Asset**.
 There is no separate "mortgage" type to choose. Every kind of borrowing is

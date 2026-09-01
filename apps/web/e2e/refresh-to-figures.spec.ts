@@ -94,9 +94,17 @@ const EXPECTED_NET_WORTH = '$49,050.00'
  * Fixed UUIDs and a fixed timestamp — `crypto.randomUUID()` and `new Date()` would
  * make the run unreproducible, which is the one thing a baseline may not be.
  *
- * Every envelope is `version: 3`, matching all four stores at HEAD, so no `migrate`
- * runs. That is deliberate: a returning user's storage is at the current version,
- * and the migration path is not what this story measures.
+ * Every envelope carries its OWN store's current version — 3 for income/expenses/
+ * savings, 4 for balance — so no `migrate` runs. That is deliberate: a returning
+ * user's storage is at the current version, and the migration path is not what
+ * this story measures.
+ *
+ * ⚠️ The versions are NOT uniform and must not be "tidied" back to a single
+ * number. Story 49.1 bumped `balanceStore` to 4 (it strips a retired key); until
+ * this note the balance envelope still said 3, which silently put `/balance`
+ * through `migrate` on every run and made this comment's own claim false while
+ * every assertion stayed green. Check `<store>.ts`'s `persist` options when
+ * adding an envelope.
  *
  * ⚠️ The savings store is seeded on purpose and must stay seeded. Story 38.1's
  * Trap 6: a balance-only seed flips the Overview's net worth with ZERO hydration
@@ -150,7 +158,6 @@ function seedOverview() {
             type: 'investment',
             name: 'ISA',
             currentBalance: 800000,
-            maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
             sortOrder: 0,
@@ -162,7 +169,6 @@ function seedOverview() {
             type: 'investment',
             name: 'Pension',
             currentBalance: 4200000,
-            maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
             sortOrder: 1,
@@ -174,7 +180,6 @@ function seedOverview() {
             type: 'debt',
             name: 'Car loan',
             currentBalance: 350000,
-            maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
             sortOrder: 2,
@@ -186,7 +191,6 @@ function seedOverview() {
             type: 'debt',
             name: 'Credit card',
             currentBalance: 45000,
-            maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
             sortOrder: 3,
@@ -195,7 +199,7 @@ function seedOverview() {
           },
         ],
       },
-      version: 3,
+      version: 4, // balanceStore is at 4 since story 49.1 — see the note above
     })
   )
 

@@ -1134,7 +1134,6 @@ describe('SavingsPage — an asset never feeds the distributable pool (Story 43.
     type: 'asset' as const,
     name: 'Condo',
     currentBalance: 40_000_000,
-    maxContributionLimit: null,
     monthlyContribution,
     frequency: 'monthly' as const,
     createdAt: ISO2,

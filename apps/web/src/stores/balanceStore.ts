@@ -233,7 +233,12 @@ export const useBalanceStore = create<BalanceState>()(
       // ⚠️ This list previously displayed NEWEST-FIRST, so ordering the backfill by
       // createdAt ASC REVERSES it once, on purpose (34.1a decision 1). The app is
       // pre-launch, so no user's data is affected.
-      version: 3,
+      // Story 49.1 (FR75) bumped 3 -> 4: strip the removed `maxContributionLimit`
+      // key. Nothing reads it any more and no zod gate rejects an extra key, so a
+      // lingering value is inert rather than harmful — but a key nothing writes
+      // reads as a live field to the next person, and `syncBridge` no longer
+      // forwards it, so leaving it would be residue with no owner.
+      version: 4,
       migrate: (persisted) => {
         const state = persisted as { entries?: unknown }
         // ⚠️ Sanitize BEFORE anything dereferences a row. This store was missing
@@ -252,10 +257,18 @@ export const useBalanceStore = create<BalanceState>()(
           // the `id` tiebreaker must see the final ids, not the legacy ones it
           // would otherwise sort by and then discard.
           entries: backfillSortOrder(
-            withUuidIds(rows).map((entry) => ({
-              ...entry,
-              frequency: entry.frequency ?? 'monthly',
-            }))
+            withUuidIds(rows).map((entry) => {
+              // Story 49.1: drop the retired contribution-limit key. Destructured
+              // out rather than deleted from the spread result so the discard is
+              // visible at the point it happens.
+              const { maxContributionLimit: _retiredLimit, ...rest } = entry as typeof entry & {
+                maxContributionLimit?: unknown
+              }
+              return {
+                ...rest,
+                frequency: rest.frequency ?? 'monthly',
+              }
+            })
           ),
         }
       },

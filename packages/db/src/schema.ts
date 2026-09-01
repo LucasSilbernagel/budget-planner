@@ -42,8 +42,9 @@ export const frequencyEnum = pgEnum('frequency', ['weekly', 'biweekly', 'monthly
 // `asset` (story 43.4 / FR70) is something the user owns outright — a property,
 // a vehicle, or a cash holding. It counts on the ASSET side of net worth, so a
 // homeowner who records a mortgage can also record the property it is against.
-// It deliberately carries NO contribution limit and NO contribution: an owned
-// asset changes value by appreciation, not by deposits (story 43.4, D2).
+// It deliberately carries NO contribution: an owned asset changes value by
+// appreciation, not by deposits (story 43.4, D2). (It also carried no
+// contribution LIMIT — a field story 49.1 / FR75 removed for every type.)
 export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt', 'asset'])
 
 /**
@@ -249,8 +250,9 @@ export const savingsGoals = pgTable(
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     // Nullable (Story 16-1): null ⇒ savings account (no target), a positive
-    // integer ⇒ goal. Mirrors balanceTracking.maxContributionLimit's optional
-    // shape so "no target" is an absent value, not a sentinel 0.
+    // integer ⇒ goal — so "no target" is an ABSENT value, not a sentinel 0.
+    // (This shape was originally described as mirroring
+    // balanceTracking.maxContributionLimit, dropped by story 49.1 / FR75.)
     targetAmount: integer('targetAmount'), // Target amount in cents (> 0 if provided; null = account)
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
     // Per-account monthly allocation (Story 26.1). Nullable cents (>= 0 if
@@ -312,7 +314,6 @@ export const balanceTracking = pgTable(
     type: financeTypeEnum('type').notNull(), // investment, debt or asset
     name: varchar('name', { length: 255 }).notNull(),
     currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
-    maxContributionLimit: integer('maxContributionLimit'), // Optional: max contribution limit in cents (> 0 if provided)
     // Contribution amount in cents (>= 0 required). Story 16-2: no longer implicitly
     // monthly — `frequency` (below) is its cadence; the monthly-equivalent is derived
     // via the normalization engine. Column name retained for call-site stability.
@@ -343,11 +344,10 @@ export const balanceTracking = pgTable(
       table.userId,
       table.profileId
     ),
-    // CHECK constraints: maxContributionLimit must be positive if provided, monthlyContribution must be non-negative
-    maxContributionLimitValid: check(
-      'balanceTracking_maxContributionLimit_valid',
-      sql`${table.maxContributionLimit} IS NULL OR ${table.maxContributionLimit} > 0`
-    ),
+    // CHECK constraint: monthlyContribution must be non-negative.
+    // ⚠️ Story 49.1 removed `balanceTracking_maxContributionLimit_valid` alongside
+    // the column it guarded. Doc-only, like the sibling checks — drizzle-kit 0.23
+    // never emitted ANY of them to a migration, so nothing had to be dropped in SQL.
     monthlyContributionNonNegative: check(
       'balanceTracking_monthlyContribution_non_negative',
       sql`${table.monthlyContribution} >= 0`

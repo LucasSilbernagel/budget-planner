@@ -1,5 +1,4 @@
 import { getNormalizationMultiplier, normalizeToMonthly } from '@budget-planner/core'
-import { remainingContributionRoom } from '@budget-planner/core'
 import { resolveCategoryName } from '../hooks/useCategoryLabels'
 import { isKnownFrequency, isReadableRow } from './readable-rows'
 import type { SortKeyExtractors } from './table-sort'
@@ -16,10 +15,13 @@ import type { SortKeyExtractors } from './table-sort'
  *      does NOT throw, it returns `undefined`, so an unguarded cadence key
  *      silently yields `NaN`. Every path below is guarded.
  *   2. **Sort by what the CELL SHOWS.** Where a cell suppresses a stored value,
- *      the key suppresses it too. `remainingContributionRoom` never reads
- *      `type`, so a debt row carrying a legacy `maxContributionLimit` would sort
- *      among the numbers while its cell renders an em-dash; the `type` branch
- *      below is what keeps the order and the rendering in agreement.
+ *      the key suppresses it too. An ASSET row is the live example: its
+ *      Contribution cell renders an em-dash (story 43.4, D2) while the row still
+ *      stores a `monthlyContribution` of 0, so the `contribution` extractor
+ *      branches on `type` and returns null rather than keying at 0 — otherwise
+ *      every asset would sort among the genuine zeroes.
+ *      ⚠️ This rule was originally illustrated with `remainingContributionRoom`,
+ *      whose column story 49.1 (FR75) removed. The rule outlived the example.
  *
  * ## What is deliberately NOT normalized
  *
@@ -153,22 +155,12 @@ export function createSavingsSortExtractors(
   }
 }
 
-export type BalanceSortKey =
-  | 'type'
-  | 'name'
-  | 'currentBalance'
-  | 'maxContribution'
-  | 'remainingRoom'
-  | 'contribution'
+export type BalanceSortKey = 'type' | 'name' | 'currentBalance' | 'contribution'
 
 interface BalanceRow {
   type: string
   name: string
   currentBalance: number
-  // `| null` matches `ClientBalanceTracking`: the app persists null for "no limit".
-  // Both readers below already cope — `finiteOrNull` is a `typeof === 'number'`
-  // check and `remainingContributionRoom` guards the same way.
-  maxContributionLimit?: number | null
   monthlyContribution: number
   frequency: string
 }
@@ -188,10 +180,8 @@ interface BalanceRow {
  * alone, a third value would have tied with every debt row rather than erroring
  * — `BalanceRow.type` is `string`, so the compiler could not see it.
  *
- * `maxContribution` and `remainingRoom` are both investment-only in the
- * rendering (`None` and an em-dash respectively for every debt AND asset row),
- * and `contribution` is em-dashed for assets (story 43.4, D2), so all three
- * branch on `type` before reading the value. See rule 2 in the module docblock.
+ * `contribution` is em-dashed for assets (story 43.4, D2), so it branches on
+ * `type` before reading the value. See rule 2 in the module docblock.
  */
 /**
  * Display rank per finance type. An unknown value sorts LAST rather than tying
@@ -221,17 +211,6 @@ export function createBalanceSortExtractors(): SortKeyExtractors<BalanceRow, Bal
         : TYPE_SORT_RANK_FALLBACK,
     name: (row) => textOrNull(row.name),
     currentBalance: (row) => finiteOrNull(row.currentBalance),
-    maxContribution: (row) =>
-      row.type === 'investment' ? finiteOrNull(row.maxContributionLimit) : null,
-    remainingRoom: (row) =>
-      row.type === 'investment'
-        ? finiteOrNull(
-            remainingContributionRoom({
-              maxContributionLimit: row.maxContributionLimit,
-              currentBalance: row.currentBalance,
-            })
-          )
-        : null,
     // An asset shows an em-dash here, not "$0.00 / Monthly" — rule 2 says sort
     // by what the CELL SHOWS, so it must null out rather than key at 0.
     contribution: (row) =>

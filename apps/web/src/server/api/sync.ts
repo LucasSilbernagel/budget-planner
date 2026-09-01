@@ -200,7 +200,8 @@ const categorySchema = z.object({
 const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
   // Optional/nullable (Story 16-1): a positive integer ⇒ goal, null ⇒ account
-  // (no target). Mirrors balanceTracking.maxContributionLimit's optional shape.
+  // (no target) — an ABSENT value, never a sentinel 0. (Originally described as
+  // mirroring balanceTracking.maxContributionLimit, dropped by story 49.1 / FR75.)
   targetAmount: z.number().int().positive().nullable().optional(),
   currentBalance: z.number().int().default(0),
   // Story 26.1: per-account allocation. `monthlyAllocation` nullable cents, bounded
@@ -221,7 +222,6 @@ const balanceTrackingSchema = z.object({
   type: z.enum(FINANCE_TYPES),
   name: z.string().min(1).max(255),
   currentBalance: z.number().int().default(0),
-  maxContributionLimit: z.number().int().optional(),
   monthlyContribution: z.number().int().default(0),
   // Story 16-2: cadence of the contribution. Defaults to 'monthly' so pre-frequency
   // paid-tier rows round-trip. Server gate — must mirror the client gate in

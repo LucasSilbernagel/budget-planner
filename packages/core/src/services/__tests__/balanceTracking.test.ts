@@ -15,7 +15,6 @@ import {
   getTypeDisplayProperties,
   isValidBalanceTracking,
   monthlyContributionCents,
-  remainingContributionRoom,
   resetBalanceTrackingTempId,
   sortByCreationDate,
   toClientBalanceTracking,
@@ -147,21 +146,6 @@ describe('validateBalanceTracking', () => {
     expect(errors.length).toBe(0)
   })
 
-  it('should fail validation for negative maxContributionLimit', () => {
-    const input: Partial<ClientNewBalanceTracking> = {
-      type: 'investment',
-      name: 'Test',
-      currentBalance: 100000,
-      maxContributionLimit: -100,
-      monthlyContribution: 50000,
-    }
-    const errors = validateBalanceTracking(input)
-    expect(errors.length).toBeGreaterThan(0)
-    expect(
-      errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('negative'))
-    ).toBe(true)
-  })
-
   it('should fail validation for negative monthlyContribution', () => {
     const input: Partial<ClientNewBalanceTracking> = {
       type: 'investment',
@@ -176,7 +160,7 @@ describe('validateBalanceTracking', () => {
     ).toBe(true)
   })
 
-  it('should pass validation for optional maxContributionLimit', () => {
+  it('should pass validation for an entry carrying only the required fields', () => {
     const input: ClientNewBalanceTracking = {
       type: 'investment',
       name: 'Test',
@@ -304,106 +288,46 @@ describe('monthlyContributionCents (Story 16-2)', () => {
   })
 })
 
-describe('remainingContributionRoom (Story 26-4)', () => {
-  // room = max(0, maxContributionLimit − currentBalance), in cents.
-  // No limit (null/undefined) ⇒ null (caller shows a placeholder, NOT "0").
-  it('returns limit minus current balance when under the limit', () => {
-    expect(
-      remainingContributionRoom({ maxContributionLimit: 500000, currentBalance: 100000 })
-    ).toBe(400000)
-  })
-
-  it('returns null when the limit is null (no limit set)', () => {
-    // Callers persist an unset limit as null (BalancePage submit coalesces to null).
-    const noLimit = { maxContributionLimit: null, currentBalance: 100000 } as unknown as Pick<
-      ClientBalanceTracking,
-      'maxContributionLimit' | 'currentBalance'
-    >
-    expect(remainingContributionRoom(noLimit)).toBeNull()
-  })
-
-  it('returns null when the limit is undefined (legacy row with the field absent)', () => {
-    // The persist migrate does not backfill maxContributionLimit, so a legacy row
-    // can reach core with the field absent (undefined). The `== null` guard covers it.
-    const legacy = { currentBalance: 100000 } as Pick<
-      ClientBalanceTracking,
-      'maxContributionLimit' | 'currentBalance'
-    >
-    expect(remainingContributionRoom(legacy)).toBeNull()
-  })
-
-  it('returns 0 (never negative) when the balance exceeds the limit', () => {
-    expect(
-      remainingContributionRoom({ maxContributionLimit: 100000, currentBalance: 150000 })
-    ).toBe(0)
-  })
-
-  it('returns 0 when the balance exactly meets the limit', () => {
-    expect(
-      remainingContributionRoom({ maxContributionLimit: 100000, currentBalance: 100000 })
-    ).toBe(0)
-  })
-
-  it('grows the room when the current balance is negative (debt-style row)', () => {
-    // Math.max is a no-op here: 100000 − (−50000) = 150000.
-    expect(
-      remainingContributionRoom({ maxContributionLimit: 100000, currentBalance: -50000 })
-    ).toBe(150000)
-  })
-
-  it('returns null for a corrupt non-number limit (tampered localStorage)', () => {
-    // localStorage is user-editable; a corrupt string must degrade to "no limit"
-    // (null → "—"), NOT slip through to Math.max(0, NaN) = NaN → a misleading "0.00".
-    const corrupt = {
-      maxContributionLimit: 'abc' as unknown as number,
-      currentBalance: 100000,
-    }
-    expect(remainingContributionRoom(corrupt)).toBeNull()
-  })
-
-  it('returns null for a NaN limit', () => {
-    expect(
-      remainingContributionRoom({ maxContributionLimit: Number.NaN, currentBalance: 100000 })
-    ).toBeNull()
-  })
-
-  it('coerces a non-finite currentBalance to 0 instead of returning NaN', () => {
-    // A valid limit with a corrupt balance still yields a finite room (the full
-    // limit), never NaN.
-    expect(
-      remainingContributionRoom({
-        maxContributionLimit: 100000,
-        currentBalance: Number.NaN,
-      })
-    ).toBe(100000)
-  })
-})
-
+/**
+ * `withTimeline` — frequency normalization (Story 16-2), re-anchored by story 49.1.
+ *
+ * ⚠️ These two tests carry STORY 16-2's coverage, not 26.4's, and were NOT deleted
+ * with the contribution limit. They previously read the normalized contribution
+ * back out through `monthsToLimit`; that field is gone, so they now read it through
+ * `debtTimeline`, which is the only surviving output `withTimeline` computes from
+ * `monthlyContributionCents`. The ARITHMETIC is deliberately unchanged — same
+ * cadence, same amounts, same expected 3 and 2 — so a regression in normalization
+ * still reddens exactly as before.
+ *
+ * The entries are debts with a `debtSubType` because that is the only branch that
+ * still consumes the normalized figure (the branch is dormant in `apps/web`, which
+ * is why this suite is the only thing pinning it).
+ */
 describe('withTimeline - frequency normalization (Story 16-2)', () => {
-  it('feeds the monthly-equivalent contribution into months-to-limit', () => {
-    // Weekly 50000 → 216667/month. With a 650000 limit from 0: ceil(650000/216667) = 3.
+  it('feeds the monthly-equivalent contribution into the debt payoff timeline', () => {
+    // Weekly 50000 → 216667/month. Against a 650000 balance: ceil(650000/216667) = 3.
     // A raw (un-normalized) 50000 would wrongly yield ceil(650000/50000) = 13.
     const entry: ClientBalanceTracking = {
       id: 'test-uuid',
-      type: 'investment',
-      name: 'Weekly investor',
-      currentBalance: 0,
-      maxContributionLimit: 650000,
+      type: 'debt',
+      debtSubType: 'loan',
+      name: 'Weekly payer',
+      currentBalance: -650000,
       monthlyContribution: 50000,
       frequency: 'weekly',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     }
-    expect(withTimeline(entry).monthsToLimit).toBe(3)
+    expect(withTimeline(entry).debtTimeline).toBe(3)
   })
 
   it('does not throw when an entry carries a corrupt frequency (review E1)', () => {
     const entry: ClientBalanceTracking = {
       id: 'test-uuid',
-      type: 'investment',
+      type: 'debt',
+      debtSubType: 'loan',
       name: 'Corrupt',
-      currentBalance: 0,
-      maxContributionLimit: 100000,
+      currentBalance: -100000,
       monthlyContribution: 50000,
       frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
       createdAt: '2024-01-01T00:00:00Z',
@@ -411,7 +335,7 @@ describe('withTimeline - frequency normalization (Story 16-2)', () => {
     }
     // Coerced to monthly (50000): ceil(100000 / 50000) = 2.
     expect(() => withTimeline(entry)).not.toThrow()
-    expect(withTimeline(entry).monthsToLimit).toBe(2)
+    expect(withTimeline(entry).debtTimeline).toBe(2)
   })
 })
 
@@ -486,7 +410,6 @@ describe('filterBalanceTracking', () => {
       type: 'investment',
       name: 'Investment 1',
       currentBalance: 100,
-      monthsToLimit: null,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     },
@@ -495,7 +418,6 @@ describe('filterBalanceTracking', () => {
       type: 'debt',
       name: 'Debt 1',
       currentBalance: -100,
-      monthsToLimit: null,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     },
@@ -504,7 +426,6 @@ describe('filterBalanceTracking', () => {
       type: 'investment',
       name: 'Investment 2',
       currentBalance: 200,
-      monthsToLimit: null,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     },
@@ -592,19 +513,6 @@ describe('toClientBalanceTracking', () => {
     expect(result.createdAt).toBeDefined()
     expect(result.updatedAt).toBeDefined()
   })
-
-  it('should handle optional maxContributionLimit', () => {
-    const input: ClientNewBalanceTracking = {
-      type: 'investment',
-      name: 'Test',
-      currentBalance: 100000,
-      maxContributionLimit: 500000,
-      monthlyContribution: 50000,
-    }
-    const result = toClientBalanceTracking(input)
-
-    expect(result.maxContributionLimit).toBe(500000)
-  })
 })
 
 describe('getTypeDisplayProperties', () => {
@@ -628,36 +536,24 @@ describe('getTypeDisplayProperties', () => {
 })
 
 describe('withTimeline', () => {
-  it('should add monthsToLimit from entry data', () => {
+  it('passes the entry through and adds the debt display fields', () => {
     const entry: ClientBalanceTracking = {
       id: 1,
       type: 'investment',
       name: 'Test',
       currentBalance: 100000,
-      maxContributionLimit: 500000,
       monthlyContribution: 50000,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     }
     const result = withTimeline(entry)
 
-    expect(result.monthsToLimit).toBe(8) // (500000 - 100000) / 50000 = 8
     expect(result.name).toBe('Test')
-  })
-
-  it('should return null for monthsToLimit when no limit', () => {
-    const entry: ClientBalanceTracking = {
-      id: 1,
-      type: 'investment',
-      name: 'Test',
-      currentBalance: 100000,
-      monthlyContribution: 50000,
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    }
-    const result = withTimeline(entry)
-
-    expect(result.monthsToLimit).toBeNull()
+    // Story 49.1: `monthsToLimit` is gone with the contribution-limit concept.
+    // A non-debt entry gets the untouched debt defaults.
+    expect(result.debtProgress).toBeNull()
+    expect(result.debtTimeline).toBeNull()
+    expect('monthsToLimit' in result).toBe(false)
   })
 })
 
@@ -698,36 +594,6 @@ describe('Edge Case Handling - Validation', () => {
         true
       )
     })
-
-    it('AC 2 - should reject NaN maxContributionLimit', () => {
-      const input: Partial<ClientNewBalanceTracking> = {
-        type: 'investment',
-        name: 'Test',
-        currentBalance: 100000,
-        maxContributionLimit: NaN,
-        monthlyContribution: 50000,
-      }
-      const errors = validateBalanceTracking(input)
-      expect(errors.length).toBeGreaterThan(0)
-      expect(
-        errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('finite'))
-      ).toBe(true)
-    })
-
-    it('AC 2 - should reject Infinity maxContributionLimit', () => {
-      const input: Partial<ClientNewBalanceTracking> = {
-        type: 'investment',
-        name: 'Test',
-        currentBalance: 100000,
-        maxContributionLimit: Infinity,
-        monthlyContribution: 50000,
-      }
-      const errors = validateBalanceTracking(input)
-      expect(errors.length).toBeGreaterThan(0)
-      expect(
-        errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('finite'))
-      ).toBe(true)
-    })
   })
 
   describe('Bounds validation', () => {
@@ -743,21 +609,6 @@ describe('Edge Case Handling - Validation', () => {
       expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('bounds'))).toBe(
         true
       )
-    })
-
-    it('should reject maxContributionLimit exceeding safe integer bounds', () => {
-      const input: Partial<ClientNewBalanceTracking> = {
-        type: 'investment',
-        name: 'Test',
-        currentBalance: 100000,
-        maxContributionLimit: Number.MAX_SAFE_INTEGER,
-        monthlyContribution: 50000,
-      }
-      const errors = validateBalanceTracking(input)
-      expect(errors.length).toBeGreaterThan(0)
-      expect(
-        errors.some((e) => e.field === 'maxContributionLimit' && e.message.includes('bounds'))
-      ).toBe(true)
     })
   })
 

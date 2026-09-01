@@ -61,7 +61,6 @@ function seedAll(): void {
     type: 'investment',
     name: 'Alpha',
     currentBalance: 300_00,
-    maxContributionLimit: 900_00,
     monthlyContribution: 100_00,
     frequency: 'monthly',
   })

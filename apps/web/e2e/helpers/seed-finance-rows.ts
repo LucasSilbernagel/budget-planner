@@ -173,13 +173,15 @@ export async function seedFinanceRows(page: Page, theme: 'light' | 'dark'): Prom
           state: {
             entries: [
               {
-                // All seven columns non-empty: investment type fills both the
-                // Max Contribution and Remaining Room cells (debts show None/—).
+                // ⚠️ Story 49.1 (FR75) deleted the Max Contribution and Remaining
+                // Room columns, so `/balance` is now FIVE columns, not seven, and
+                // this row no longer carries a `maxContributionLimit`. The seeded
+                // figures below still drive the width fixtures in
+                // `table-scroll-affordance.spec.ts` — do not shrink them casually.
                 id: 'bal-1',
                 type: 'investment',
                 name: longName,
                 currentBalance: 1234567890,
-                maxContributionLimit: 9876543210,
                 monthlyContribution: 45678900,
                 frequency: 'biweekly',
                 createdAt: now,

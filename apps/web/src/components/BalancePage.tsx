@@ -1,4 +1,3 @@
-import { remainingContributionRoom } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -108,9 +107,11 @@ const BALANCE_SORT_EXTRACTORS = createBalanceSortExtractors()
 const SORT_COLUMN_LABELS: Record<BalanceSortKey, string> = {
   type: 'Type',
   name: 'Name',
-  currentBalance: 'Current Balance',
-  maxContribution: 'Max Contribution',
-  remainingRoom: 'Remaining Room',
+  // Story 49.1 (FR75): one label covers all three finance types — an asset has a
+  // VALUE, not a balance. The object KEY, the `BalanceSortKey` member, the DOM id
+  // and every `data-testid` deliberately stay `currentBalance`: renaming the label
+  // is a copy change, renaming the value is a sync/e2e change.
+  currentBalance: 'Current Balance/Value',
   contribution: 'Contribution',
 }
 
@@ -128,8 +129,6 @@ const BALANCE_SORT_COLUMNS: readonly { key: BalanceSortKey; label: string }[] = 
   { key: 'type', label: SORT_COLUMN_LABELS.type },
   { key: 'name', label: SORT_COLUMN_LABELS.name },
   { key: 'currentBalance', label: SORT_COLUMN_LABELS.currentBalance },
-  { key: 'maxContribution', label: SORT_COLUMN_LABELS.maxContribution },
-  { key: 'remainingRoom', label: SORT_COLUMN_LABELS.remainingRoom },
   { key: 'contribution', label: SORT_COLUMN_LABELS.contribution },
 ]
 
@@ -188,7 +187,6 @@ export function BalancePage() {
   const [type, setType] = useState<FinanceType>('investment')
   const [name, setName] = useState('')
   const [currentBalance, setCurrentBalance] = useState('')
-  const [maxContributionLimit, setMaxContributionLimit] = useState('')
   const [monthlyContribution, setMonthlyContribution] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
   // Story 45.1 (FR72), broadened by 47.1 (FR73): the user's statement that this
@@ -201,7 +199,7 @@ export function BalancePage() {
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
   // hasFieldError/getFieldError helpers and re-validate-on-change after the
   // first submit attempt.
-  type FieldName = 'name' | 'currentBalance' | 'maxContributionLimit' | 'monthlyContribution'
+  type FieldName = 'name' | 'currentBalance' | 'monthlyContribution'
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
 
@@ -220,19 +218,8 @@ export function BalancePage() {
     if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
     }
-    // Max contribution limit is optional and investment-only: empty is valid,
-    // only validate a provided value on an investment (the field is hidden for
-    // debts — a debt has no contribution limit — so never block a debt submit on
-    // a stale value).
-    if (type === 'investment' && maxContributionLimit && maxContributionLimit.trim() !== '') {
-      const parsed = parseFromInput(maxContributionLimit, locale)
-      if (parsed < 0) {
-        next.maxContributionLimit = 'Please enter a valid non-negative max contribution limit'
-      }
-    }
     // Story 43.4 (D2): the contribution field is hidden for assets, so never
-    // block an asset submit on a stale value left over from a type switch —
-    // the same reasoning as the investment-only `maxContributionLimit` check.
+    // block an asset submit on a stale value left over from a type switch.
     if (type !== 'asset') {
       const monthlyInCents = parseFromInput(monthlyContribution, locale)
       if (monthlyInCents < 0) {
@@ -240,7 +227,7 @@ export function BalancePage() {
       }
     }
     return next
-  }, [type, name, currentBalance, maxContributionLimit, monthlyContribution, locale])
+  }, [type, name, currentBalance, monthlyContribution, locale])
 
   const clearErrors = () => {
     setErrors({})
@@ -255,7 +242,6 @@ export function BalancePage() {
         setType('investment')
         setName('')
         setCurrentBalance('')
-        setMaxContributionLimit('')
         setMonthlyContribution('')
         setContributionRecordedAsExpense(false)
       }
@@ -283,10 +269,10 @@ export function BalancePage() {
   }
 
   // Open modal for editing existing balance entry
-  // Takes the stored row itself rather than a hand-copied structural echo of it —
-  // the inline type had drifted (`maxContributionLimit` non-optional `number | null`
-  // vs the store's optional `number | null`) and re-stating a shape only invites
-  // that. `Pick` keeps the parameter to the fields this actually reads.
+  // Takes the stored row itself rather than a hand-copied structural echo of it:
+  // a re-stated shape drifts from the store's. (The drift that proved it was on
+  // `maxContributionLimit`, a field story 49.1 / FR75 removed.) `Pick` keeps the
+  // parameter to the fields this actually reads.
   const openEditModal = (
     entry: Pick<
       ClientBalanceTracking,
@@ -294,7 +280,6 @@ export function BalancePage() {
       | 'type'
       | 'name'
       | 'currentBalance'
-      | 'maxContributionLimit'
       | 'monthlyContribution'
       | 'frequency'
       | 'contributionRecordedAsExpense'
@@ -304,14 +289,6 @@ export function BalancePage() {
     setType(entry.type)
     setName(entry.name)
     setCurrentBalance(formatForInputDisplay(entry.currentBalance, locale))
-    setMaxContributionLimit(
-      // `!= null` covers BOTH spellings of "no limit". The old `!== null` let an
-      // `undefined` limit — an older record predating the field — through to
-      // `formatForInputDisplay(undefined)`.
-      entry.maxContributionLimit != null
-        ? formatForInputDisplay(entry.maxContributionLimit, locale)
-        : ''
-    )
     setMonthlyContribution(formatForInputDisplay(entry.monthlyContribution, locale))
     setFrequency(entry.frequency ?? 'monthly')
     // Story 45.1: absent ⇒ unticked ⇒ deducted, matching the pool's own default.
@@ -327,7 +304,6 @@ export function BalancePage() {
     setType('investment')
     setName('')
     setCurrentBalance('')
-    setMaxContributionLimit('')
     setMonthlyContribution('')
     setFrequency('monthly')
     setContributionRecordedAsExpense(false)
@@ -358,19 +334,10 @@ export function BalancePage() {
         return
       }
 
-      // A contribution limit is an investment-only concept — a debt never carries
-      // one. Force null for debts so a new debt, an investment→debt switch, or
-      // saving a legacy debt that already had a limit all persist no limit.
-      const maxLimitInCents =
-        type === 'investment' && maxContributionLimit && maxContributionLimit.trim() !== ''
-          ? parseFromInput(maxContributionLimit, locale)
-          : null
-
       // Story 43.4 (D2): an asset carries NO contribution. An owned thing changes
       // value by appreciation, not by deposits — recurring saving toward one
       // belongs on the Savings page. Both columns are NOT NULL in the schema, so
-      // the FIELDS are hidden but the VALUES are still written, exactly as the
-      // `maxContributionLimit` precedent above does.
+      // the FIELDS are hidden but the VALUES are still written.
       // ⚠️ This is also what keeps `/savings` correct: `SavingsPage` sums the
       // `monthlyContribution` of `type === 'investment'` rows into the
       // distributable pool, so an asset that could carry one would overstate the
@@ -384,7 +351,6 @@ export function BalancePage() {
         type,
         name: name.trim(),
         currentBalance: parseFromInput(currentBalance, locale),
-        maxContributionLimit: maxLimitInCents,
         monthlyContribution: isAsset ? 0 : parseFromInput(monthlyContribution, locale),
         frequency: isAsset ? ('monthly' as const) : frequency,
         // Story 45.1 (D8): only an investment contribution reaches the pool, so
@@ -658,16 +624,6 @@ export function BalancePage() {
                           onToggle={() => sort.toggle('currentBalance')}
                         />
                         <SortableColumnHeader
-                          label={SORT_COLUMN_LABELS.maxContribution}
-                          ariaSort={sort.ariaSort('maxContribution')}
-                          onToggle={() => sort.toggle('maxContribution')}
-                        />
-                        <SortableColumnHeader
-                          label={SORT_COLUMN_LABELS.remainingRoom}
-                          ariaSort={sort.ariaSort('remainingRoom')}
-                          onToggle={() => sort.toggle('remainingRoom')}
-                        />
-                        <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.contribution}
                           ariaSort={sort.ariaSort('contribution')}
                           onToggle={() => sort.toggle('contribution')}
@@ -694,36 +650,9 @@ export function BalancePage() {
                               <div className="font-medium text-heading text-sm">{entry.name}</div>
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
-                              <FieldLabel>Current Balance</FieldLabel>
+                              <FieldLabel>Current Balance/Value</FieldLabel>
                               <div className="text-muted text-sm">
                                 {formatAmount(entry.currentBalance)}
-                              </div>
-                            </td>
-                            <td className={RESPONSIVE_CELL_CLASS}>
-                              <FieldLabel>Max Contribution</FieldLabel>
-                              <div className="text-muted text-sm">
-                                {/* Contribution limit is investment-only (FR41);
-                                  debts show None, and a legacy null/undefined
-                                  limit also reads None (loose != null). */}
-                                {entry.type === 'investment' && entry.maxContributionLimit != null
-                                  ? formatAmount(entry.maxContributionLimit)
-                                  : 'None'}
-                              </div>
-                            </td>
-                            <td className={RESPONSIVE_CELL_CLASS}>
-                              <FieldLabel>Remaining Room</FieldLabel>
-                              <div
-                                className="text-muted text-sm"
-                                data-testid={`balance-remaining-room-${entry.id}`}
-                              >
-                                {/* Remaining contribution room is investment-only
-                                  (FR41) — debts show the em-dash placeholder. */}
-                                {entry.type === 'investment'
-                                  ? (() => {
-                                      const room = remainingContributionRoom(entry)
-                                      return room === null ? '—' : formatAmount(room)
-                                    })()
-                                  : '—'}
                               </div>
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
@@ -734,11 +663,12 @@ export function BalancePage() {
                                 otherwise `justify-between` would fling the cadence
                                 to the far edge as a third column. */}
                               {/* Story 43.4 (D2): an asset carries no contribution,
-                                  so show the same em-dash the Remaining Room cell
-                                  uses rather than a literal "$0.00 / Monthly",
-                                  which would contradict a form that never asked.
-                                  `table-sort-keys.ts` nulls the matching sort key
-                                  so the column sorts by what the CELL SHOWS. */}
+                                  so show an em-dash rather than a literal
+                                  "$0.00 / Monthly", which would contradict a form
+                                  that never asked. `table-sort-keys.ts` nulls the
+                                  matching sort key so the column sorts by what the
+                                  CELL SHOWS. (The em-dash convention was shared with
+                                  the Remaining Room cell, removed by story 49.1.) */}
                               {entry.type === 'asset' ? (
                                 <div className="text-muted text-sm">—</div>
                               ) : (
@@ -873,7 +803,7 @@ export function BalancePage() {
 
             <div>
               <label htmlFor="currentBalance" className="block mb-1 font-medium text-label text-sm">
-                Current Balance *
+                Current Balance/Value *
               </label>
               <div className="relative shadow-sm rounded-md">
                 {mode === 'symbol' && (
@@ -941,63 +871,9 @@ export function BalancePage() {
               )}
             </div>
 
-            {/* A contribution limit applies only to investment/retirement
-                accounts — a debt has none (FR41), so hide the field for debts. */}
-            {type === 'investment' && (
-              <div>
-                <label
-                  htmlFor="maxContributionLimit"
-                  className="block mb-1 font-medium text-label text-sm"
-                >
-                  Max Contribution Limit (Optional)
-                </label>
-                <div className="relative shadow-sm rounded-md">
-                  {mode === 'symbol' && (
-                    <div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
-                      <span className="text-muted text-sm">{currencySymbol(currency)}</span>
-                    </div>
-                  )}
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    id="maxContributionLimit"
-                    value={maxContributionLimit}
-                    onChange={(e) => setMaxContributionLimit(sanitizeMoneyChange(e.target, locale))}
-                    onBlur={(e) => reformatAmountOnBlur(e.target.value, setMaxContributionLimit)}
-                    placeholder="0.00"
-                    className={`shadow-sm px-3 py-2 ${
-                      mode === 'symbol' ? 'pl-7' : ''
-                    } border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
-                      hasFieldError('maxContributionLimit')
-                        ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                        : 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
-                    }`}
-                    aria-invalid={hasFieldError('maxContributionLimit')}
-                    aria-describedby={
-                      hasFieldError('maxContributionLimit')
-                        ? 'balance-max-contribution-error'
-                        : undefined
-                    }
-                    data-testid="balance-max-contribution-input"
-                  />
-                </div>
-                {hasFieldError('maxContributionLimit') && (
-                  <p
-                    id="balance-max-contribution-error"
-                    className="mt-1 text-sm text-red-600 dark:text-red-400"
-                    role="alert"
-                    data-testid="balance-max-contribution-error"
-                  >
-                    {getFieldError('maxContributionLimit')}
-                  </p>
-                )}
-              </div>
-            )}
-
             {/* Story 43.4 (D2): an asset has no contribution concept, so the
-                Contribution amount and its Frequency are both hidden for it —
-                following the Max Contribution Limit precedent above, which has
-                been investment-only since 26.4. The persistence gate writes
+                Contribution amount and its Frequency are both hidden for it. The
+                persistence gate writes
                 `monthlyContribution: 0` / `frequency: 'monthly'` (both columns
                 are NOT NULL), so hiding the field never omits the value. */}
             {type !== 'asset' && (

@@ -75,7 +75,7 @@ export type SortDirection = 'asc' | 'desc'
  * A sort key's value for one row.
  *
  * `null` means **absent, unreadable, or not applicable to this row** — a savings
- * goal with no target, a debt row's contribution room, a persisted row whose
+ * goal with no target, an asset row's contribution, a persisted row whose
  * `frequency` is not one of the four known cadences. All three collapse to the
  * same rendering (`No target`, `—`, `None`) and to the same ordering: last.
  */

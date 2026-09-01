@@ -85,7 +85,6 @@ describe('BalancePage add balance entry button', () => {
       type: 'investment',
       name: 'Existing 401k',
       currentBalance: 100000,
-      maxContributionLimit: null,
       monthlyContribution: 50000,
       frequency: 'monthly',
     })
@@ -181,11 +180,9 @@ describe('BalancePage inline validation', () => {
     expect(nameInput).toHaveAttribute('aria-invalid', 'true')
     expect(nameInput).toHaveAttribute('aria-describedby', 'balance-name-error')
 
-    // Empty current balance / monthly contribution default to 0 → valid, and the
-    // optional max-contribution limit is valid when blank.
+    // Empty current balance / monthly contribution default to 0 → valid.
     expect(screen.queryByTestId('balance-current-balance-error')).not.toBeInTheDocument()
     expect(screen.queryByTestId('balance-monthly-contribution-error')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('balance-max-contribution-error')).not.toBeInTheDocument()
 
     expect(useBalanceStore.getState().entries).toHaveLength(0)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -231,162 +228,6 @@ describe('BalancePage inline validation', () => {
       currentBalance: 150000,
       monthlyContribution: 25000,
     })
-  })
-})
-
-/**
- * BalancePage "Remaining Room" column tests (Story 26.4, FR41).
- *
- * Each investment/balance account shows remaining contribution room =
- * max(0, maxContributionLimit − currentBalance). An account with no limit shows
- * a placeholder ("—"), NEVER "0"/"$0.00". The derivation lives in the pure core
- * `remainingContributionRoom` (unit-tested separately); these tests prove the
- * cell renders the right value per row.
- */
-describe('BalancePage remaining contribution room column (Story 26.4)', () => {
-  beforeEach(() => {
-    useBalanceStore.setState({ entries: [] })
-  })
-
-  afterEach(() => {
-    useBalanceStore.setState({ entries: [] })
-  })
-
-  it('shows max(0, limit − balance) for an account with a limit, and "—" for one without', async () => {
-    // Under-limit account: room = 500000 − 100000 = 400000 cents ($4,000.00).
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'investment',
-      name: 'TFSA',
-      currentBalance: 100000,
-      maxContributionLimit: 500000,
-      monthlyContribution: 50000,
-      frequency: 'monthly',
-    })
-    // No-limit account: cell shows the placeholder, not a formatted zero.
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'investment',
-      name: 'Brokerage',
-      currentBalance: 200000,
-      maxContributionLimit: null,
-      monthlyContribution: 30000,
-      frequency: 'monthly',
-    })
-
-    const entries = useBalanceStore.getState().entries
-    const withLimit = entries.find((e) => e.name === 'TFSA')
-    const noLimit = entries.find((e) => e.name === 'Brokerage')
-    if (!withLimit || !noLimit) throw new Error('seed failed')
-
-    renderWithProviders(<BalancePage />)
-
-    // Under-limit row shows the formatted room (4,000.00 in the default
-    // currency-less mode), never negative/zero.
-    expect(await screen.findByTestId(`balance-remaining-room-${withLimit.id}`)).toHaveTextContent(
-      '4,000.00'
-    )
-    // No-limit row shows the placeholder, NOT a formatted zero.
-    const noLimitCell = screen.getByTestId(`balance-remaining-room-${noLimit.id}`)
-    expect(noLimitCell).toHaveTextContent('—')
-    expect(noLimitCell).not.toHaveTextContent('0')
-  })
-
-  it('shows a formatted 0 (never negative) when the balance meets or exceeds the limit', async () => {
-    // Over-limit: balance 150000 ≥ limit 100000 ⇒ room floors to 0 (distinct from "no limit").
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'investment',
-      name: 'Maxed RRSP',
-      currentBalance: 150000,
-      maxContributionLimit: 100000,
-      monthlyContribution: 0,
-      frequency: 'monthly',
-    })
-
-    const entry = useBalanceStore.getState().entries[0]
-    if (!entry) throw new Error('seed failed')
-
-    renderWithProviders(<BalancePage />)
-
-    // room floors to 0 — a real formatted zero, distinct from the "—" no-limit case.
-    expect(await screen.findByTestId(`balance-remaining-room-${entry.id}`)).toHaveTextContent(
-      '0.00'
-    )
-  })
-
-  it('shows "—" remaining room AND "None" max contribution for a DEBT, even if a limit is set (FR41)', async () => {
-    // A contribution limit is an investment-only concept — a debt should never
-    // display remaining room, even a legacy debt that somehow carries a limit.
-    useBalanceStore.getState().addBalanceEntry({
-      type: 'debt',
-      name: 'Legacy Card',
-      currentBalance: 300000,
-      maxContributionLimit: 1000000,
-      monthlyContribution: 20000,
-      frequency: 'monthly',
-    })
-
-    const entry = useBalanceStore.getState().entries[0]
-    if (!entry) throw new Error('seed failed')
-
-    const { container } = renderWithProviders(<BalancePage />)
-
-    // Remaining Room cell shows the placeholder, not max(0, 1000000 − 300000).
-    const roomCell = await screen.findByTestId(`balance-remaining-room-${entry.id}`)
-    expect(roomCell).toHaveTextContent('—')
-    expect(roomCell).not.toHaveTextContent('7,000')
-    // The pre-existing Max Contribution column also reads "None" for the debt
-    // (the stale limit is never surfaced), so the row is internally consistent.
-    expect(container).not.toHaveTextContent('10,000.00')
-  })
-})
-
-describe('BalancePage max-contribution-limit field is investment-only (Story 26.4)', () => {
-  beforeEach(() => {
-    useBalanceStore.setState({ entries: [] })
-  })
-  afterEach(() => {
-    useBalanceStore.setState({ entries: [] })
-  })
-
-  it('hides the Max Contribution Limit field for debts and shows it for investments', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<BalancePage />)
-
-    await user.click(screen.getByTestId('balance-add-button'))
-    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
-
-    // Default type is investment → the limit field is present.
-    expect(within(dialog).getByTestId('balance-max-contribution-input')).toBeInTheDocument()
-
-    // Switch to debt → the field disappears (a debt has no contribution limit).
-    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
-    expect(within(dialog).queryByTestId('balance-max-contribution-input')).not.toBeInTheDocument()
-
-    // Switch back to investment → the field returns.
-    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'investment')
-    expect(within(dialog).getByTestId('balance-max-contribution-input')).toBeInTheDocument()
-  })
-
-  it('clears any prior limit when an investment is switched to a debt on save', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<BalancePage />)
-
-    await user.click(screen.getByTestId('balance-add-button'))
-    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
-
-    // Fill an investment with a limit, then switch the type to debt before saving.
-    await user.type(within(dialog).getByLabelText(/name/i), 'Reclassified')
-    await user.type(within(dialog).getByTestId('balance-current-balance-input'), '3000')
-    await user.type(within(dialog).getByTestId('balance-max-contribution-input'), '9999')
-    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '100')
-    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
-    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    const entry = useBalanceStore.getState().entries[0]
-    if (!entry) throw new Error('save failed')
-    expect(entry.type).toBe('debt')
-    // The debt persists NO limit despite the value typed while it was an investment.
-    expect(entry.maxContributionLimit).toBeNull()
   })
 })
 
@@ -544,7 +385,6 @@ describe('BalancePage form controls have a visible focus ring', () => {
     const controls = [
       screen.getByTestId('balance-name-input'),
       screen.getByTestId('balance-current-balance-input'),
-      screen.getByTestId('balance-max-contribution-input'),
       screen.getByTestId('balance-monthly-contribution-input'),
     ]
 
@@ -578,7 +418,6 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
           type: 'investment',
           name: 'Brokerage',
           currentBalance: 250000,
-          maxContributionLimit: 700000,
           monthlyContribution: 50000,
           frequency: 'biweekly',
           createdAt: ISO_31_2,
@@ -621,31 +460,30 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 
     expect(within(row).getByText('Debt')).toBeInTheDocument()
     expect(within(row).getByText('-4,000.00')).toBeInTheDocument()
-    // Contribution limit and remaining room are investment-only (FR41).
-    expect(within(row).getByText('None')).toBeInTheDocument()
-    expect(within(row).getByTestId('balance-remaining-room-debt-1')).toHaveTextContent('—')
     expect(within(row).getByText('300.00')).toBeInTheDocument()
     expect(within(row).getByText('Monthly')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Edit Car Loan' })).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Delete Car Loan' })).toBeInTheDocument()
   })
 
-  it('labels all seven Balance Entries fields on the card (AC-4)', () => {
+  /**
+   * ⚠️ Story 49.1 (FR75): seven labels → five. 'Max Contribution' and 'Remaining
+   * Room' are gone and 'Current Balance' is now 'Current Balance/Value'.
+   *
+   * ⚠️⚠️ THIS ASSERTS THE EXACT ORDERED ARRAY, NOT "each of these five exists".
+   * The loop form it replaced was a per-label existence check, and mutation arm
+   * M1 proved it GREEN against a re-added `<FieldLabel>Max Contribution</...>`
+   * cell — every one of the five still existed, so the extra sixth sailed
+   * through. A per-item loop cannot see an ADDITION, which is the whole defect
+   * this story needs guarded. The `sm:hidden` check is kept per label because it
+   * is what makes these mobile-card labels rather than visible chrome.
+   */
+  it('labels exactly the five Balance Entries fields on the card (AC-4)', () => {
     const { container } = renderWithProviders(<BalancePage />)
     const row = rowIn(tables(container).entries, 'Car Loan')
 
-    for (const label of [
-      'Type',
-      'Name',
-      'Current Balance',
-      'Max Contribution',
-      'Remaining Room',
-      'Contribution',
-      'Actions',
-    ]) {
-      expect(within(row).getByText(label)).toBeInTheDocument()
-      expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
-    }
+    const labels = [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent?.trim())
+    expect(labels).toEqual(['Type', 'Name', 'Current Balance/Value', 'Contribution', 'Actions'])
   })
 
   it('keeps the contribution amount and its cadence as ONE field', () => {
@@ -758,7 +596,6 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
       type: 'investment',
       name: 'ISA',
       currentBalance: 800_000,
-      maxContributionLimit: null,
       monthlyContribution: 0,
       frequency: 'monthly',
     })
@@ -766,7 +603,6 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
       type: 'investment',
       name: 'Pension',
       currentBalance: 1_200_000,
-      maxContributionLimit: null,
       monthlyContribution: 0,
       frequency: 'monthly',
     })
@@ -774,7 +610,6 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
       type: 'debt',
       name: 'Mortgage',
       currentBalance: 15_000_000,
-      maxContributionLimit: null,
       monthlyContribution: 0,
       frequency: 'monthly',
     })
@@ -844,7 +679,6 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
       type: 'debt',
       name: 'Mortgage',
       currentBalance: 15_000_000,
-      maxContributionLimit: null,
       monthlyContribution: 0,
       frequency: 'monthly',
     })
@@ -884,7 +718,6 @@ describe('BalancePage — sort by column (34.2)', () => {
       type: 'investment' as const,
       name: 'Zeta',
       currentBalance: 300_00,
-      maxContributionLimit: 900_00,
       monthlyContribution: 100_00,
       frequency: 'weekly' as const,
     },
@@ -899,7 +732,6 @@ describe('BalancePage — sort by column (34.2)', () => {
       type: 'investment' as const,
       name: 'Mid',
       currentBalance: 300_00,
-      maxContributionLimit: 400_00,
       monthlyContribution: 50_00,
       frequency: 'annually' as const,
     },
@@ -968,23 +800,8 @@ describe('BalancePage — sort by column (34.2)', () => {
       within(entries)
         .getAllByRole('columnheader')
         .map((th) => th.textContent?.trim())
-    ).toEqual([
-      'Type',
-      'Name',
-      'Current Balance',
-      'Max Contribution',
-      'Remaining Room',
-      'Contribution',
-      'Actions',
-    ])
-    for (const name of [
-      'Type',
-      'Name',
-      'Current Balance',
-      'Max Contribution',
-      'Remaining Room',
-      'Contribution',
-    ]) {
+    ).toEqual(['Type', 'Name', 'Current Balance/Value', 'Contribution', 'Actions'])
+    for (const name of ['Type', 'Name', 'Current Balance/Value', 'Contribution']) {
       expect(within(header(name)).getByRole('button', { name })).toBeInTheDocument()
       expect(header(name)).toHaveAttribute('aria-sort', 'none')
     }
@@ -1029,24 +846,10 @@ describe('BalancePage — sort by column (34.2)', () => {
   it('sorts Current Balance RAW, with a negative debt first and ties on manual order', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
-    await user.click(sortBy('Current Balance'))
+    await user.click(sortBy('Current Balance/Value'))
     expect(orderIn(entriesTable())).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
-    await user.click(sortBy('Current Balance'))
+    await user.click(sortBy('Current Balance/Value'))
     expect(orderIn(entriesTable())).toEqual(['Beta', 'Zeta', 'Mid', 'Alpha'])
-  })
-
-  it('treats a debt row as having no limit or room, in both directions', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<BalancePage />)
-    await user.click(sortBy('Max Contribution'))
-    // The two debts-or-limitless rows (Alpha, Beta) render 'None' and sort last,
-    // in their manual relative order.
-    expect(orderIn(entriesTable())).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
-    await user.click(sortBy('Max Contribution'))
-    expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
-
-    await user.click(sortBy('Remaining Room'))
-    expect(orderIn(entriesTable())).toEqual(['Mid', 'Zeta', 'Alpha', 'Beta'])
   })
 
   it('keeps at most one column active', async () => {
@@ -1244,14 +1047,7 @@ describe('BalancePage — sort by column (34.2)', () => {
   it('gives every sortable header the standard focus ring', () => {
     renderWithProviders(<BalancePage />)
     // ⚠️ ENUMERATED, not grepped.
-    for (const name of [
-      'Type',
-      'Name',
-      'Current Balance',
-      'Max Contribution',
-      'Remaining Room',
-      'Contribution',
-    ]) {
+    for (const name of ['Type', 'Name', 'Current Balance/Value', 'Contribution']) {
       assertHasFocusRing(sortBy(name), name)
     }
   })
@@ -1363,24 +1159,26 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
     expect((select as HTMLSelectElement).value).toBe('asset')
   })
 
-  it('asks an asset for NO contribution limit, contribution or frequency (D2)', async () => {
+  it('asks an asset for NO contribution or frequency (D2)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
 
     await user.click(screen.getByTestId('balance-add-button'))
     const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
 
-    // Default type is investment → all three are present.
-    expect(within(dialog).getByTestId('balance-max-contribution-input')).toBeInTheDocument()
+    // ⚠️ Story 49.1 (FR75) dropped the third field, the contribution LIMIT, for
+    // every type. Its absence is no longer asserted here: a `queryBy` on a control
+    // that exists for no type can never fail again, and a vacuous assertion is
+    // worse than none. The exact modal field list is pinned separately below.
+    // Default type is investment → both conditional fields are present.
     expect(within(dialog).getByTestId('balance-monthly-contribution-input')).toBeInTheDocument()
     expect(within(dialog).getByTestId('balance-frequency-select')).toBeInTheDocument()
 
     await user.selectOptions(within(dialog).getByLabelText(/type/i), 'asset')
 
-    // ⚠️ All three go, not just the limit. An owned asset changes value by
-    // appreciation, not by deposits — and a contribution on an asset would be
-    // excluded from `/savings`'s investment-only pool filter, overstating it.
-    expect(within(dialog).queryByTestId('balance-max-contribution-input')).not.toBeInTheDocument()
+    // An owned asset changes value by appreciation, not by deposits — and a
+    // contribution on an asset would be excluded from `/savings`'s
+    // investment-only pool filter, overstating it.
     expect(
       within(dialog).queryByTestId('balance-monthly-contribution-input')
     ).not.toBeInTheDocument()
@@ -1411,7 +1209,8 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
     // write values — never leave them undefined.
     expect(entries[0]?.monthlyContribution).toBe(0)
     expect(entries[0]?.frequency).toBe('monthly')
-    expect(entries[0]?.maxContributionLimit).toBeNull()
+    // Story 49.1 removed `maxContributionLimit`; the saved row must not carry it.
+    expect('maxContributionLimit' in (entries[0] ?? {})).toBe(false)
   })
 
   it('counts an asset on the ASSET side, in its own card, not folded into investments', async () => {
@@ -1425,7 +1224,6 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
           type: 'investment',
           name: 'ISA',
           currentBalance: 5_000_000,
-          maxContributionLimit: null,
           monthlyContribution: 0,
           frequency: 'monthly',
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -1436,7 +1234,6 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
           type: 'asset',
           name: 'Condo',
           currentBalance: 40_000_000,
-          maxContributionLimit: null,
           monthlyContribution: 0,
           frequency: 'monthly',
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -1447,7 +1244,6 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
           type: 'debt',
           name: 'Mortgage',
           currentBalance: 30_000_000,
-          maxContributionLimit: null,
           monthlyContribution: 0,
           frequency: 'monthly',
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -1468,8 +1264,8 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
 /**
  * Story 45.1 (FR72, D8) — the "already recorded as an expense" checkbox.
  *
- * Investment-only, following the Max Contribution Limit precedent above: a
- * debt's contribution never reaches the distributable pool (`SavingsPage`
+ * Investment-only: a debt's contribution never reaches the distributable pool
+ * (`SavingsPage`
  * filters on `type === 'investment'`), and an asset has no contribution field at
  * all, so offering the control there would advertise an effect that does not exist.
  */
@@ -1575,7 +1371,6 @@ describe('BalancePage — contributionRecordedAsExpense is investment-only (Stor
           type: 'investment',
           name: 'TFSA',
           currentBalance: 100_000,
-          maxContributionLimit: null,
           monthlyContribution: 50_000,
           frequency: 'monthly',
           contributionRecordedAsExpense: true,
@@ -1687,4 +1482,103 @@ describe('BalancePage — the contribution control serves both populations (Stor
       within(dialog).getByTestId('balance-contribution-recorded-as-expense')
     ).toHaveAccessibleDescription(/Tick this if the contribution comes out of your pay/i)
   })
+})
+
+/**
+ * The Add/Edit modal's field list per finance type (story 49.1, FR75).
+ *
+ * ⚠️ WHY THIS IS A POSITIVE, EXACT-SET ASSERTION. Story 49.1 removed the
+ * "Max Contribution Limit (Optional)" field for every type. Two assertions in this
+ * file previously proved it was hidden for debts and assets with
+ * `queryByTestId(...).not.toBeInTheDocument()`. Those would now pass TRIVIALLY and
+ * FOREVER — the control exists for no type at all — which is exactly the vacuity
+ * trap stories 48.1 and 48.2 both hit ("deleting a component makes every absence
+ * assertion about it vacuous, not red").
+ *
+ * Asserting the EXACT set of rendered controls keeps the same defect caught (a
+ * limit field reappearing on any arm) while ALSO catching the opposite defect a
+ * bare absence check never could: a field silently disappearing from an arm that
+ * still needs it.
+ *
+ * MUTATIONS KILLED: re-add the limit field to the investment arm (M2); drop the
+ * frequency select from the debt arm; render the contribution checkbox for a debt.
+ */
+describe('BalancePage — the modal asks exactly the right fields per type (story 49.1)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  const controlsIn = (dialog: HTMLElement): string[] =>
+    [...dialog.querySelectorAll('[data-testid]')]
+      .map((el) => el.getAttribute('data-testid') ?? '')
+      .filter((id) => /-(input|select|checkbox)$|recorded-as-expense$/.test(id))
+      .sort()
+
+  it.each([
+    [
+      'investment',
+      [
+        'balance-name-input',
+        'balance-current-balance-input',
+        'balance-monthly-contribution-input',
+        'balance-frequency-select',
+        'balance-contribution-recorded-as-expense',
+      ],
+    ],
+    [
+      'debt',
+      [
+        'balance-name-input',
+        'balance-current-balance-input',
+        'balance-monthly-contribution-input',
+        'balance-frequency-select',
+      ],
+    ],
+    ['asset', ['balance-name-input', 'balance-current-balance-input']],
+  ])('a %s asks for exactly its own fields', async (type, expected) => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    if (type !== 'investment') {
+      await user.selectOptions(within(dialog).getByLabelText(/type/i), type)
+    }
+
+    expect(controlsIn(dialog)).toEqual([...expected].sort())
+  })
+
+  /**
+   * ⚠️ This test ACTUALLY SWITCHES TYPE, and that is the point of it. Code review
+   * caught the first version rendering only the default (investment) arm while
+   * its name promised "all three types at once" — the name claimed more than the
+   * assertion delivered, which in this repo is the shape of a bug report.
+   *
+   * The claim being pinned is that ONE label now covers all three finance types
+   * (an asset has a VALUE, not a balance), so it has to be observed on all three.
+   */
+  it.each(['investment', 'debt', 'asset'])(
+    'labels the balance field the same way for a %s (AC-12)',
+    async (type) => {
+      const user = userEvent.setup()
+      renderWithProviders(<BalancePage />)
+
+      await user.click(screen.getByTestId('balance-add-button'))
+      const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+      if (type !== 'investment') {
+        await user.selectOptions(within(dialog).getByLabelText(/type/i), type)
+      }
+
+      // ⚠️ The DOM id stays `currentBalance`: 49.1 renames the LABEL, not the KEY.
+      const label = within(dialog).getByText('Current Balance/Value *')
+      expect(label).toHaveAttribute('for', 'currentBalance')
+      expect(within(dialog).getByTestId('balance-current-balance-input')).toHaveAttribute(
+        'id',
+        'currentBalance'
+      )
+    }
+  )
 })

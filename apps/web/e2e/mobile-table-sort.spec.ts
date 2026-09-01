@@ -158,7 +158,6 @@ async function seedRows(page: Page): Promise<void> {
               type: 'investment',
               name: 'Zebra Dividend',
               currentBalance: 700000,
-              maxContributionLimit: 5000000,
               monthlyContribution: 10000,
               frequency: 'monthly',
               createdAt: now(1),
@@ -169,7 +168,6 @@ async function seedRows(page: Page): Promise<void> {
               type: 'investment',
               name: 'Aardvark Salary',
               currentBalance: 500000,
-              maxContributionLimit: 4000000,
               monthlyContribution: 20000,
               frequency: 'monthly',
               createdAt: now(2),
@@ -180,7 +178,6 @@ async function seedRows(page: Page): Promise<void> {
               type: 'investment',
               name: 'Mango Bonus',
               currentBalance: 900000,
-              maxContributionLimit: 6000000,
               monthlyContribution: 30000,
               frequency: 'monthly',
               createdAt: now(3),
@@ -372,8 +369,19 @@ test('the control is sized by its container, not by its longest option (AC-8)', 
    *   route      constrained   unconstrained
    *   /income        240            215
    *   /expenses      240            215
-   *   /balance       240            263
+   *   /balance       240            263   ← see the 49.1 note below
    *   /savings       240            272   ← equals the card interior exactly
+   *
+   * ⚠️ Story 49.1 (FR75) changed `/balance`'s OPTION SET: it lost
+   * "Max Contribution" and "Remaining Room" and its balance option grew to
+   * "Current Balance/Value", so the longest option went from
+   * "Max Contribution (descending)" (29 chars) to
+   * "Current Balance/Value (descending)" (34). Re-measured at 320px under the CI
+   * font: the control is still 240px in a 240px container, i.e. the constraint
+   * absorbed the longer label exactly as this test claims it should. The
+   * UNCONSTRAINED 263px figure above was NOT re-measured and is therefore stale
+   * for `/balance` — it is left as the historical figure that motivated the
+   * guard rather than silently updated to a number nobody checked.
    *
    * So the guard is real but FORWARD-LOOKING: `/savings` already sits on the
    * boundary with zero headroom, and one more character in any option label

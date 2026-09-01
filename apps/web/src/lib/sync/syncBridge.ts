@@ -149,9 +149,8 @@ function toServerPayload(
         // Story 26.1: forward the allocation mode (default 'automatic'), else a
         // paid-tier sync silently drops it and the server defaults every account.
         allocationMode: entity['allocationMode'] ?? 'automatic',
-        // Forward the manual amount ALWAYS, including null — unlike the
-        // omit-when-null `maxContributionLimit` (whose server gate rejects null),
-        // this field's gates are both `.nullable()`, and null is a reachable state:
+        // Forward the manual amount ALWAYS, including null. This field's gates are
+        // both `.nullable()`, and null is a reachable state:
         // switching an account manual→automatic must RESET the stored amount to null
         // on the server + other devices. `updateEntity` does a partial `.set()`, so
         // an omitted key would leave a stale prior amount (review 26-1 P1). Mirrors
@@ -206,11 +205,6 @@ function toServerPayload(
         // position on arrival, and the persist migrations backfill the rest.
         sortOrder: entity['sortOrder'],
         userId,
-      }
-      // Optional column — only forward when present (the schema rejects null but
-      // allows it to be absent).
-      if (entity['maxContributionLimit'] != null) {
-        payload['maxContributionLimit'] = entity['maxContributionLimit']
       }
       return payload
     }

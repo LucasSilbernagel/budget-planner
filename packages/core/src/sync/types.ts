@@ -72,7 +72,6 @@ export const balanceTrackingSchema = z.object({
   type: z.enum(FINANCE_TYPES),
   name: z.string().min(1).max(255),
   currentBalance: z.number().int().default(0),
-  maxContributionLimit: z.number().int().optional(),
   monthlyContribution: z.number().int().default(0),
   // Story 16-2: cadence of the contribution (defaults to 'monthly'). Mirrors the
   // server gate in apps/web/src/server/api/sync.ts.
@@ -98,9 +97,17 @@ export const userProfileSchema = z.object({
  * Schema for sync operation data validation
  * Validates data structure based on entityType
  *
- * Numeric bounds mirror the database CHECK constraints (see packages/db/schema.ts)
- * so invalid amounts are rejected client-side instead of failing the INSERT/UPDATE:
- * - amount / maxContributionLimit: must be > 0
+ * Numeric bounds mirror the `check()` declarations in packages/db/schema.ts so
+ * invalid amounts are rejected client-side instead of failing the INSERT/UPDATE.
+ *
+ * ⚠️ "mirror the DATABASE CHECK constraints" is what this said until story 49.1,
+ * and it was false. drizzle-kit 0.23 does not emit CHECK constraints to
+ * migrations, so NONE of the seven `check()` blocks in `schema.ts` has ever
+ * reached a real database — verified across all sixteen migrations. These zod
+ * bounds are therefore the ONLY enforcement in practice, not a second line of
+ * defence behind one. Logged in `deferred-work.md`; do not weaken them on the
+ * assumption the database will catch it.
+ * - amount: must be > 0
  * - targetAmount: > 0 for a goal, or null for a goal-less savings account (Story 16-1)
  * - monthlyContribution: must be >= 0
  * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
@@ -115,7 +122,6 @@ export const syncOperationDataSchema = z.object({
   targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable().optional(),
   currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX).optional(),
   type: z.enum(FINANCE_TYPES).optional(),
-  maxContributionLimit: z.number().int().positive().max(PG_INT32_MAX).optional(),
   monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX).optional(),
   // Story 45.1 (FR72): see balanceTrackingSchema above. Optional here because an
   // operation payload is partial; absent leaves the server value untouched.

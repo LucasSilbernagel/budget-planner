@@ -1874,7 +1874,6 @@ describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Sto
     type,
     name: id,
     currentBalance,
-    maxContributionLimit: null,
     monthlyContribution: 0,
     frequency: 'monthly' as const,
     createdAt: '2026-01-01T00:00:00.000Z',

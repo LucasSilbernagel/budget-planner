@@ -74,7 +74,8 @@ function collectHydrationErrors(page: Page): string[] {
 /**
  * Seeds all four financial stores.
  *
- * ⚠️ `version: 2` against a `version: 3` store forces zustand's `migrate` to run
+ * ⚠️ `version: 2` against a store at 3 (income/expenses/savings) or 4 (balance,
+ * since story 49.1) forces zustand's `migrate` to run
  * (it fires on any MISMATCH), which backfills `sortOrder`. That matters for
  * ordering-dependent specs. It does NOT matter for hydration — measured: savings
  * at `version: 2` and at `version: 3` both produce exactly one hydration error.
@@ -128,7 +129,6 @@ function seedAllStores() {
             type: 'investment',
             name: 'ISA',
             currentBalance: 800000,
-            maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
             createdAt: now,
@@ -139,7 +139,6 @@ function seedAllStores() {
             type: 'debt',
             name: 'Mortgage',
             currentBalance: 15000000,
-            maxContributionLimit: null,
             monthlyContribution: 0,
             frequency: 'monthly',
             createdAt: now,

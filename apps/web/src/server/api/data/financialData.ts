@@ -124,7 +124,6 @@ export interface CreateBalanceTrackingInput {
   type: FinanceType
   name: string
   currentBalance: number
-  maxContributionLimit?: number | null
   monthlyContribution: number
   frequency?: Frequency // Story 16-2: cadence of the contribution; defaults to 'monthly'
   profileId: string
@@ -140,7 +139,6 @@ export interface UpdateBalanceTrackingInput {
   name?: string
   currentBalance?: number
   frequency?: Frequency // Story 16-2: cadence of the contribution
-  maxContributionLimit?: number | null
   monthlyContribution?: number
   profileId: string
 }
@@ -772,13 +770,6 @@ export async function createBalanceTracking(
     if (data.monthlyContribution !== undefined && data.monthlyContribution < 0) {
       return { success: false, error: 'Monthly contribution cannot be negative' }
     }
-    if (
-      data.maxContributionLimit !== undefined &&
-      data.maxContributionLimit !== null &&
-      data.maxContributionLimit < 0
-    ) {
-      return { success: false, error: 'Max contribution limit cannot be negative' }
-    }
     const [newEntry] = await db
       .insert(balanceTracking)
       .values({
@@ -787,7 +778,6 @@ export async function createBalanceTracking(
         type: data.type,
         name: data.name,
         currentBalance: data.currentBalance,
-        maxContributionLimit: data.maxContributionLimit ?? null,
         monthlyContribution: data.monthlyContribution ?? 0,
         frequency: data.frequency ?? 'monthly', // Story 16-2: cadence of the contribution
         createdAt: new Date(),
@@ -824,13 +814,6 @@ export async function updateBalanceTracking(
     }
     if (data.monthlyContribution !== undefined && data.monthlyContribution < 0) {
       return { success: false, error: 'Monthly contribution cannot be negative' }
-    }
-    if (
-      data.maxContributionLimit !== undefined &&
-      data.maxContributionLimit !== null &&
-      data.maxContributionLimit < 0
-    ) {
-      return { success: false, error: 'Max contribution limit cannot be negative' }
     }
 
     const [existing] = await db

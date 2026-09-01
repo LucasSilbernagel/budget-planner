@@ -506,3 +506,61 @@ describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
     expect(table.sortOrder.isUnique).toBeFalsy()
   })
 })
+
+/**
+ * `balanceTracking` after story 49.1 (FR75) — the contribution limit is gone.
+ *
+ * ⚠️ WHY THIS BLOCK EXISTS: dropping the column and its CHECK constraint reddened
+ * NOTHING in this file. Verified during 49.1 — the suite asserts individually
+ * NAMED columns (`id`, `type`, `isDeleted`, `sortOrder`,
+ * `contributionRecordedAsExpense`) and reads `.foreignKeys`, `.indexes` and
+ * `.uniqueConstraints`, but it never enumerates a table's full column list and
+ * never touches `.checks`. So every CHECK constraint in this schema, and every
+ * column not individually named above, was unguarded.
+ *
+ * Both assertions below are POSITIVE (exact sets), not bare absence checks: an
+ * absence check on a column that is already gone can never fail again, which is
+ * the vacuity trap stories 48.1 and 48.2 both hit. The exact-set form still
+ * reddens if `maxContributionLimit` comes back AND if a real column is lost.
+ *
+ * MUTATIONS KILLED: re-add `maxContributionLimit: integer(...)` to the table
+ * (M7-adjacent); re-add the `balanceTracking_maxContributionLimit_valid` check
+ * block (M6); delete the surviving `monthlyContribution` check.
+ */
+describe('balanceTracking — the contribution limit is removed (story 49.1, FR75)', () => {
+  it('has exactly the expected columns, and maxContributionLimit is not among them', () => {
+    const columns = getTableConfig(balanceTracking)
+      .columns.map((column) => column.name)
+      .sort()
+
+    expect(columns).toEqual(
+      [
+        'contributionRecordedAsExpense',
+        'createdAt',
+        'currentBalance',
+        'frequency',
+        'id',
+        'isDeleted',
+        'monthlyContribution',
+        'name',
+        'profileId',
+        'sortOrder',
+        'type',
+        'updatedAt',
+        'userId',
+      ].sort()
+    )
+  })
+
+  it('declares exactly one CHECK constraint, the monthlyContribution bound', () => {
+    // ⚠️ These are declarations in `schema.ts` ONLY. drizzle-kit 0.23 does not emit
+    // CHECK constraints to migrations, so none of them exists in any database —
+    // which is precisely why 49.1's migration carries no DROP CONSTRAINT. See
+    // `migrations/0016_neat_metal_master.sql` and `deferred-work.md`.
+    const checkNames = getTableConfig(balanceTracking)
+      .checks.map((check) => check.name)
+      .sort()
+
+    expect(checkNames).toEqual(['balanceTracking_monthlyContribution_non_negative'])
+  })
+})

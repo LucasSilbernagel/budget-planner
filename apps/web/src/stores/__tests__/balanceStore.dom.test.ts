@@ -108,7 +108,6 @@ describe('balanceStore — the asset type persists and leaves existing rows alon
     type,
     name,
     currentBalance: 100_000,
-    maxContributionLimit: null,
     monthlyContribution: 0,
     frequency: 'monthly',
     sortOrder,
@@ -198,7 +197,6 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
     type: 'investment',
     name: 'TFSA',
     currentBalance: 1_000_000,
-    maxContributionLimit: null,
     monthlyContribution: 50_000,
     frequency: 'monthly',
     ...overrides,
@@ -261,5 +259,62 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
       })
     )
     expect(ok).not.toBeNull()
+  })
+})
+
+/**
+ * Story 49.1 (FR75, D2) — the retired `maxContributionLimit` key is stripped on
+ * rehydration, and the persist version moves 3 → 4 to make that run.
+ *
+ * ⚠️ WHY THIS EXISTS: `migrate` spreads `...entry`, so before the version bump a
+ * persisted limit survived rehydration forever as an unknown key. It was inert —
+ * nothing reads it, no zod gate in the repo uses `.strict()`, and `syncBridge` no
+ * longer forwards it — but a key nothing writes reads as a live field to the next
+ * person. Mutation arm M8 (drop the destructuring, keep the version bump) came
+ * back GREEN against the rest of the suite, which is what proved this test was
+ * missing rather than merely nice to have.
+ *
+ * ⚠️ The version bump alone is NOT enough and is asserted separately: `migrate`
+ * only runs when the persisted version differs, so a v4 payload that somehow
+ * carried the key would keep it. That is fine — v4 is only ever written by this
+ * build, which never stores it — but the two halves are distinct claims.
+ */
+describe('balanceStore — the retired contribution limit is stripped (story 49.1)', () => {
+  it('drops maxContributionLimit from a legacy row on rehydration', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        state: {
+          entries: [
+            {
+              id: 'legacy-uuid-limit',
+              type: 'investment',
+              name: 'Old TFSA',
+              currentBalance: 10000,
+              maxContributionLimit: 500000,
+              monthlyContribution: 500,
+              frequency: 'monthly',
+              sortOrder: 0,
+              createdAt: '2024-01-01T00:00:00Z',
+              updatedAt: '2024-01-01T00:00:00Z',
+            },
+          ],
+        },
+      })
+    )
+
+    await useBalanceStore.persist.rehydrate()
+
+    const [entry] = useBalanceStore.getState().entries
+    expect(entry).toBeDefined()
+    // The retired key is GONE from the rehydrated row...
+    expect('maxContributionLimit' in (entry as object)).toBe(false)
+    // ...and nothing else about the row moved.
+    expect(entry.name).toBe('Old TFSA')
+    expect(entry.currentBalance).toBe(10000)
+    expect(entry.monthlyContribution).toBe(500)
+    expect(entry.frequency).toBe('monthly')
+    expect(entry.sortOrder).toBe(0)
   })
 })

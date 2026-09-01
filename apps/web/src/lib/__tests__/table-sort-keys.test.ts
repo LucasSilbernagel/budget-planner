@@ -192,16 +192,15 @@ describe('balance sort keys', () => {
     name: string,
     type: string,
     currentBalance: number,
-    maxContributionLimit: number | undefined,
     monthlyContribution = 0,
     frequency = 'monthly'
-  ) => ({ name, type, currentBalance, maxContributionLimit, monthlyContribution, frequency })
+  ) => ({ name, type, currentBalance, monthlyContribution, frequency })
 
   it('sorts Type by the ENUM: investment, then asset, then debt', () => {
     const rows = [
-      entry('loan', 'debt', 0, undefined),
-      entry('condo', 'asset', 0, undefined),
-      entry('tfsa', 'investment', 0, undefined),
+      entry('loan', 'debt', 0),
+      entry('condo', 'asset', 0),
+      entry('tfsa', 'investment', 0),
     ]
     // ⚠️ Story 43.4: this key was BINARY (`type === 'investment' ? 0 : 1`), which
     // would have tied every asset with every debt. `BalanceRow.type` is `string`,
@@ -227,9 +226,9 @@ describe('balance sort keys', () => {
     // reachable — `balanceStore.dom.test.ts` pins that a hand-edited or
     // newer-build row survives rehydrate untouched.
     const rows = [
-      entry('weird', 'constructor', 0, undefined),
-      entry('tfsa', 'investment', 0, undefined),
-      entry('loan', 'debt', 0, undefined),
+      entry('weird', 'constructor', 0),
+      entry('tfsa', 'investment', 0),
+      entry('loan', 'debt', 0),
     ]
     expect(keyOf(extractors, 'type')(rows[0] as never)).toBe(3)
     expect(sortRowsBy(rows, keyOf(extractors, 'type'), 'asc').map((r) => r.name)).toEqual([
@@ -242,14 +241,12 @@ describe('balance sort keys', () => {
   it('gives an asset row NO contribution sort key, matching its em-dash cell', () => {
     // Rule 2: sort by what the CELL SHOWS. The Contribution cell is an em-dash for
     // an asset, so keying it at 0 would sort it among real zero-contribution rows.
-    const asset = entry('condo', 'asset', 40_000_000, undefined, 50_000, 'monthly')
+    const asset = entry('condo', 'asset', 40_000_000, 50_000, 'monthly')
     expect(keyOf(extractors, 'contribution')(asset)).toBeNull()
-    expect(keyOf(extractors, 'maxContribution')(asset)).toBeNull()
-    expect(keyOf(extractors, 'remainingRoom')(asset)).toBeNull()
   })
 
   it('legacy two-type ordering still holds on its own', () => {
-    const rows = [entry('loan', 'debt', 0, undefined), entry('tfsa', 'investment', 0, undefined)]
+    const rows = [entry('loan', 'debt', 0), entry('tfsa', 'investment', 0)]
     // ⚠️ Sorting by the DISPLAYED label would invert this: the labels are
     // 'Investment' and 'Debt', and 'Debt'.localeCompare('Investment') < 0.
     expect(sortRowsBy(rows, keyOf(extractors, 'type'), 'asc').map((r) => r.name)).toEqual([
@@ -262,24 +259,26 @@ describe('balance sort keys', () => {
     ])
   })
 
-  it('treats a debt row as having NO contribution limit or room, even when one is stored', () => {
-    // ⚠️ `remainingContributionRoom` never reads `type` — it returns a number for
-    // ANY row carrying a finite limit. A legacy or server-pulled debt row with a
-    // limit would therefore sort among the numbers while its cells render
-    // 'None' and an em-dash. The type branch is what keeps sort and display in
-    // agreement.
-    const debtWithLimit = entry('loan', 'debt', 100_00, 500_00)
-    expect(extractors.maxContribution(debtWithLimit)).toBeNull()
-    expect(extractors.remainingRoom(debtWithLimit)).toBeNull()
-
-    const investment = entry('tfsa', 'investment', 100_00, 500_00)
-    expect(extractors.maxContribution(investment)).toBe(500_00)
-    expect(extractors.remainingRoom(investment)).toBe(400_00)
+  /**
+   * Story 49.1 (FR75). This replaces 'treats a debt row as having NO contribution
+   * limit or room', which proved the `maxContribution` / `remainingRoom`
+   * extractors branched on `type`. Both extractors are gone with their columns.
+   *
+   * ⚠️ Asserted as an EXACT SET rather than two `toBeUndefined()` absence checks.
+   * An absence check on an extractor that is already gone can never fail again
+   * (48.1's vacuity trap); the exact set still reddens if either extractor is
+   * re-added AND if a surviving one is dropped — which is what keeps the
+   * `BalanceSortKey` union and the rendered header list in agreement.
+   */
+  it('exposes exactly one extractor per rendered column, and no retired ones', () => {
+    expect(Object.keys(extractors).sort()).toEqual(
+      ['type', 'name', 'currentBalance', 'contribution'].sort()
+    )
   })
 
   it('normalizes Contribution by its cadence', () => {
-    const weekly = entry('w', 'investment', 0, undefined, 100_00, 'weekly')
-    const monthly = entry('m', 'investment', 0, undefined, 300_00, 'monthly')
+    const weekly = entry('w', 'investment', 0, 100_00, 'weekly')
+    const monthly = entry('m', 'investment', 0, 300_00, 'monthly')
     // Raw ascending would be weekly (100_00) then monthly (300_00); normalized,
     // the weekly contribution is worth 433_33/month and outranks it.
     expect(extractors.contribution(weekly)).toBe(433_33)
@@ -289,16 +288,13 @@ describe('balance sort keys', () => {
   })
 
   it('places a contribution with an unreadable cadence last, without throwing', () => {
-    const corrupt = entry('bad', 'investment', 0, undefined, 100_00, 'fortnightly')
+    const corrupt = entry('bad', 'investment', 0, 100_00, 'fortnightly')
     expect(() => extractors.contribution(corrupt)).not.toThrow()
     expect(extractors.contribution(corrupt)).toBeNull()
   })
 
   it('sorts a negative debt balance below every positive one', () => {
-    const rows = [
-      entry('tfsa', 'investment', 100_00, undefined),
-      entry('loan', 'debt', -500_00, undefined),
-    ]
+    const rows = [entry('tfsa', 'investment', 100_00), entry('loan', 'debt', -500_00)]
     expect(sortRowsBy(rows, keyOf(extractors, 'currentBalance'), 'asc').map((r) => r.name)).toEqual(
       ['loan', 'tfsa']
     )

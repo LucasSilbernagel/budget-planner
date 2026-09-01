@@ -17,7 +17,6 @@ import {
   DebtCalculationResult,
   DebtSubType,
   calculateDebtMetrics,
-  calculateMonthsToLimit,
 } from '../utils/balanceCalculations'
 import { generateUuid } from '../utils/uuid'
 
@@ -72,12 +71,6 @@ export interface ClientBalanceTracking {
   type: FinanceType
   name: string
   currentBalance: number // In cents (can be negative for debts)
-  // ⚠️ `| null` is not cosmetic. `BalancePage` deliberately persists `null` for "no
-  // limit" — it is how a new debt, an investment->debt switch, or saving a legacy
-  // debt that had a limit all clear it (`BalancePage.tsx:301-304`). The type said
-  // `?: number` and was simply lying about what this field has held in
-  // localStorage since story 16-2.
-  maxContributionLimit?: number | null // In cents, optional
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2); normalize before aggregating
   createdAt: string // ISO string for localStorage serialization
@@ -86,8 +79,6 @@ export interface ClientBalanceTracking {
   // ./savingsGoals.ts for why this is optional rather than required (the
   // `toClient*` factory has no list access and so cannot compute a position).
   sortOrder?: number
-  // Optional UI display fields
-  monthsToLimit?: number | null
   // Story 45.1 (FR72): the user's statement that this row's `monthlyContribution`
   // is ALREADY recorded as an expense line, so the savings distributable pool must
   // not subtract it twice. Absent/`false` ⇒ deduct (today's arithmetic, unchanged).
@@ -107,7 +98,6 @@ export interface ClientNewBalanceTracking {
   type: FinanceType
   name: string
   currentBalance: number // In cents
-  maxContributionLimit?: number | null // In cents, optional
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
@@ -121,7 +111,6 @@ export interface ClientNewBalanceTracking {
  * Used for display purposes
  */
 export interface BalanceTrackingWithTimeline extends ClientBalanceTracking {
-  monthsToLimit: number | null
   // Debt-specific display fields
   debtProgress?: number | null
   debtProgressLabel?: string
@@ -143,7 +132,6 @@ export interface CreateBalanceTrackingInput {
   type: FinanceType
   name: string
   currentBalance: number // In cents
-  maxContributionLimit?: number // In cents, optional
   monthlyContribution: number // In cents — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
@@ -159,7 +147,6 @@ export interface UpdateBalanceTrackingInput {
   type?: FinanceType
   name?: string
   currentBalance?: number // In cents
-  maxContributionLimit?: number // In cents, optional
   monthlyContribution?: number // In cents — amount at `frequency` cadence (Story 16-2)
   frequency?: Frequency // Cadence of monthlyContribution (Story 16-2)
   contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
@@ -185,12 +172,6 @@ export interface BalanceTrackingFilter {
 // ============================================================================
 // Timeline Calculation
 // ============================================================================
-
-/**
- * Calculate months to max contribution limit
- * Re-exports from balanceCalculations for convenience
- */
-export { calculateMonthsToLimit } from '../utils/balanceCalculations'
 
 /**
  * The valid contribution cadences (Story 16-2), mirroring the DB `frequencyEnum`.
@@ -220,39 +201,6 @@ export function monthlyContributionCents(
 ): number {
   const frequency = VALID_FREQUENCIES.includes(entry.frequency) ? entry.frequency : 'monthly'
   return normalizeToMonthly(entry.monthlyContribution, frequency)
-}
-
-/**
- * Remaining contribution room for a balance-tracking account, in cents (Story 26-4).
- *
- * Returns `null` when no *usable* contribution limit is set — the caller shows a
- * placeholder (e.g. "—"), NOT "0" (FR41: "Accounts with no limit show no room
- * figure (not '0')"). "No usable limit" covers a persisted `null`, a legacy row
- * where the field is absent (`undefined` — the type declares
- * `maxContributionLimit?: number` and the persist migrate never backfills it),
- * AND a corrupt non-number/non-finite value (localStorage is user-editable): a
- * corrupt limit must degrade to "—", not slip through to `Math.max(0, NaN)` = NaN
- * which the display formatter would coerce to a misleading "0.00". Mirrors the
- * finite/type guard `monthlyContributionCents` applies at this same data boundary.
- *
- * Otherwise `max(0, maxContributionLimit − currentBalance)`, so an at-/over-limit
- * account reads 0, never negative. A non-finite `currentBalance` (also possible
- * from corrupt storage) is coerced to 0 so a valid limit still yields a finite
- * room rather than NaN. Frequency-free — never touches the `normalizeToMonthly`
- * throw path.
- *
- * @param entry - Object carrying the contribution limit and current balance (cents)
- * @returns Remaining room in cents, or `null` when no usable limit is set
- */
-export function remainingContributionRoom(
-  entry: Pick<ClientBalanceTracking, 'maxContributionLimit' | 'currentBalance'>
-): number | null {
-  const { maxContributionLimit, currentBalance } = entry
-  if (typeof maxContributionLimit !== 'number' || !Number.isFinite(maxContributionLimit)) {
-    return null
-  }
-  const balance = Number.isFinite(currentBalance) ? currentBalance : 0
-  return Math.max(0, maxContributionLimit - balance)
 }
 
 /**
@@ -317,8 +265,13 @@ export function getTypeDisplayProperties(type: FinanceType):
 }
 
 /**
- * Calculate months to limit and create display object
- * For debts, also calculates debt-specific metrics based on debtSubType
+ * Attach the debt-specific display fields to a balance-tracking entry.
+ *
+ * ⚠️ Story 49.1 (FR75) removed the contribution-limit concept, so this no longer
+ * computes a `monthsToLimit`. What survives is the debt branch, which is reached
+ * only when `debtSubType` is set — and nothing in `apps/web` sets it, so this is
+ * dormant today (see `deferred-work.md`). Kept because the debt sub-type question
+ * is still open, not because the path runs.
  *
  * @param entry - Balance tracking entry
  * @returns BalanceTrackingWithTimeline with calculated fields
@@ -327,12 +280,6 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
   // Story 16-2: normalize the contribution to its monthly equivalent before feeding
   // the monthly-math timeline/debt calculators (they stay purely "per month").
   const monthlyContribution = monthlyContributionCents(entry)
-
-  const monthsToLimit = calculateMonthsToLimit(
-    entry.currentBalance,
-    entry.maxContributionLimit,
-    monthlyContribution
-  )
 
   // Calculate debt-specific metrics if this is a debt
   let debtProgress: number | null = null
@@ -343,7 +290,6 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
   if (entry.type === 'debt' && entry.debtSubType) {
     const result = calculateDebtMetrics(
       entry.currentBalance,
-      entry.maxContributionLimit,
       monthlyContribution,
       entry.debtSubType,
       entry.originalBalance
@@ -356,7 +302,6 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
 
   return {
     ...entry,
-    monthsToLimit,
     debtProgress,
     debtProgressLabel,
     debtTimeline,
@@ -385,9 +330,8 @@ export interface ValidationError {
  *
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
- * - type: Required, must be 'investment' or 'debt'
+ * - type: Required, must be 'investment', 'debt' or 'asset'
  * - currentBalance: Required, integer (in cents, can be negative)
- * - maxContributionLimit: Optional, non-negative integer (in cents)
  * - monthlyContribution: Optional, non-negative integer (in cents)
  */
 export function validateBalanceTracking(
@@ -509,38 +453,6 @@ export function validateBalanceTracking(
       message: 'Current balance must be an integer (in cents, not a float)',
       value: input.currentBalance,
     })
-  }
-
-  // Max contribution limit validation (optional)
-  if (input.maxContributionLimit !== undefined && input.maxContributionLimit !== null) {
-    if (
-      typeof input.maxContributionLimit !== 'number' ||
-      !Number.isFinite(input.maxContributionLimit)
-    ) {
-      errors.push({
-        field: 'maxContributionLimit',
-        message: 'Max contribution limit must be a finite number (in cents)',
-        value: input.maxContributionLimit,
-      })
-    } else if (!Number.isInteger(input.maxContributionLimit)) {
-      errors.push({
-        field: 'maxContributionLimit',
-        message: 'Max contribution limit must be an integer (in cents, not a float)',
-        value: input.maxContributionLimit,
-      })
-    } else if (input.maxContributionLimit < 0) {
-      errors.push({
-        field: 'maxContributionLimit',
-        message: 'Max contribution limit cannot be negative',
-        value: input.maxContributionLimit,
-      })
-    } else if (Math.abs(input.maxContributionLimit) > Number.MAX_SAFE_INTEGER / 100) {
-      errors.push({
-        field: 'maxContributionLimit',
-        message: 'Max contribution limit exceeds safe integer bounds',
-        value: input.maxContributionLimit,
-      })
-    }
   }
 
   // Monthly contribution validation
@@ -713,8 +625,4 @@ export function toClientBalanceTracking(input: ClientNewBalanceTracking): Client
 export type { DebtSubType, DebtCalculationResult }
 export { calculateDebtMetrics }
 
-export {
-  calculateMonthsToLimit as calculateBalanceTimeline,
-  calculateMonthsToLimit as calculateBalanceMonthsToLimit,
-  withTimeline as withBalanceTrackingTimeline,
-}
+export { withTimeline as withBalanceTrackingTimeline }

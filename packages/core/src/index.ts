@@ -60,13 +60,6 @@ export * from './analytics/service'
 // NOT `export *` of the whole module — to avoid barrel name collisions.
 export type { AllocationMode } from './services/savingsGoals'
 
-// Story 26.4: the remaining-contribution-room derivation, re-exported for app
-// consumers (BalancePage) so they import from the resolvable root barrel rather
-// than the `services/balanceTracking` subpath (which does not resolve under the
-// web app's tsc). A single NAMED value re-export — NOT `export *` of the whole
-// module — to avoid barrel name collisions.
-export { remainingContributionRoom } from './services/balanceTracking'
-
 // Story 47.2 (FR74): the canonical monthly-contribution normalizer, re-exported
 // for the Retirement planner's derived "Monthly Savings" figure.
 //
@@ -79,8 +72,9 @@ export { remainingContributionRoom } from './services/balanceTracking'
 // Re-exported here rather than imported from the `services/balanceTracking`
 // subpath, which does not resolve under the web app's tsc: every subpath import
 // adds a TS2307 to the type-check baseline. A single NAMED value re-export — NOT
-// `export *` of the whole module — following the `remainingContributionRoom` /
-// `generateColorMap` precedents.
+// `export *` of the whole module — following the `generateColorMap` precedent
+// below. (This rule was originally set by `remainingContributionRoom`, removed by
+// story 49.1 / FR75; the rule outlived the export that established it.)
 export { monthlyContributionCents } from './services/balanceTracking'
 
 // Story 30.5: the shared categorical palette generator, re-exported for the
@@ -93,8 +87,8 @@ export { monthlyContributionCents } from './services/balanceTracking'
 // `CategoryBreakdown.tsx`. `visualization` is not on this
 // barrel (and the `finance/visualization` subpath does not resolve under the
 // web app's tsc), so a single NAMED value re-export — NOT `export *` of the
-// whole module, which would collide on several names — following the
-// `remainingContributionRoom` precedent above.
+// whole module, which would collide on several names — the same named-re-export
+// rule the exports above follow.
 export { generateColorMap } from './finance/visualization'
 
 // Story 45.1 (FR72): the duplicate-contribution DETECTOR, re-exported for the
@@ -110,7 +104,7 @@ export { generateColorMap } from './finance/visualization'
 //
 // A single set of NAMED re-exports — NOT `export *` of the whole module, which
 // would put the generic name `nameSimilarity` on the barrel — following the
-// `remainingContributionRoom` / `generateColorMap` precedents above.
+// `generateColorMap` precedent above.
 export {
   NAME_SIMILARITY_HIGHLIGHT_THRESHOLD,
   findContributionDuplicateCandidates,

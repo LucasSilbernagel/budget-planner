@@ -1114,9 +1114,21 @@ async function probeScrollability(card: Locator): Promise<number> {
  *
  * ⚠️ The field count depends on the selected type and is NOT asserted here — this
  * is a helper comment, not a guard. Investment (the default) shows the most
- * fields; story 43.4's `asset` type hides three of them (contribution limit,
- * contribution amount, frequency), so an asset form is the SHORTEST, not the
- * tallest. Tests that need the tall fixture must leave the type at its default.
+ * fields; story 43.4's `asset` type hides two of them (contribution amount and
+ * frequency), so an asset form is the SHORTEST, not the tallest. Tests that need
+ * the tall fixture must leave the type at its default.
+ *
+ * ⚠️ Story 49.1 (FR75) removed a THIRD conditional field, the contribution limit,
+ * from the investment arm. MEASURED before and after, not estimated:
+ *
+ *   viewport        available   scrollHeight before -> after   over-tall by
+ *   320x480             448            892 -> 810              444 -> 362
+ *   568x320 (landscape) 288            786 -> 704              498 -> 416
+ *
+ * So the card lost 82px and is still over-tall by 362px at the tighter viewport —
+ * this remains comfortably the tallest modal in the app and the anti-vacuous
+ * precondition below is nowhere near flipping. Checked rather than assumed,
+ * because a deletion story with no height AC can still have a height regression.
  */
 async function openBalanceAddModal(page: Page): Promise<Locator> {
   const trigger = page.getByTestId('balance-add-button')
@@ -1264,9 +1276,9 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
     page,
   }) => {
     await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    // Deliberately UNSEEDED: the Add form renders all 6 fields on an empty
-    // /balance because the type defaults to `investment`, which is what makes
-    // the conditional "Max Contribution Limit" field present.
+    // Deliberately UNSEEDED: the Add form renders its full field set on an empty
+    // /balance because the type defaults to `investment`, the only arm that shows
+    // the contribution amount, the frequency AND the recorded-as-expense checkbox.
     await page.goto('/balance')
     await page.waitForLoadState('networkidle')
 
@@ -1311,11 +1323,13 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
    * Story 36.3 (UX-DR40 / AC-7) — the debt guidance at the narrow floor.
    *
    * ⚠️ A NEW case, deliberately not a change to the two above. Those are
-   * UNSEEDED so the type defaults to `investment`, which is what keeps the
-   * conditional "Max Contribution Limit" field present and makes that fixture
-   * the tallest modal in the app. Selecting Debt REMOVES that field, so
-   * converting either case would have traded a real over-tall fixture for a
-   * shorter one and quietly weakened the guard it exists to be.
+   * UNSEEDED so the type defaults to `investment`, the arm with the most fields
+   * and therefore the tallest modal in the app. Selecting Debt REMOVES the
+   * recorded-as-expense checkbox, so converting either case would have traded a
+   * taller fixture for a shorter one and quietly weakened the guard it exists to
+   * be. (Before story 49.1 the field Debt removed was the contribution limit;
+   * that field is gone for every type now, but the investment arm is still the
+   * tallest — re-measured in 49.1, see `openBalanceAddModal`.)
    *
    * The debt hint is the longer of the story's two strings and wraps to several
    * lines in a ~272px content box, so it is measured rather than reasoned about.
@@ -1369,14 +1383,15 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
     // (3) The full house assertion — over-tall precondition, both ends inside the
     //     viewport, internal scroll, and the submit control reachable.
     //
-    // ⚠️ MEASURED, and it overturned this story's own written assumption. The
+    // ⚠️ MEASURED, and it overturned story 36.3's own written assumption. That
     // spec predicted the helper's over-tall precondition would REJECT the debt
-    // form (Debt hides the "Max Contribution Limit" field, so the card is one
-    // field shorter) and told the implementer to substitute a hand-rolled
-    // reachability check. Probed in review 36.3: the helper PASSES — the debt
-    // form plus this hint is still over-tall at 320x480. So the real assertion
-    // is used rather than the weaker substitute, and the prediction is recorded
-    // as wrong rather than quietly inherited.
+    // form (Debt rendered one field fewer than investment) and told the
+    // implementer to substitute a hand-rolled reachability check. Probed in
+    // review 36.3: the helper PASSES — the debt form plus this hint is still
+    // over-tall at 320x480. So the real assertion is used rather than the weaker
+    // substitute, and the prediction is recorded as wrong rather than quietly
+    // inherited. (Still true after story 49.1 removed the contribution-limit
+    // field from every arm — re-measured; see `openBalanceAddModal`'s table.)
     const submit = card.getByRole('button', { name: 'Add Balance Entry' })
     await assertTallModalFitsAndScrolls(
       card,

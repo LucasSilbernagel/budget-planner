@@ -121,7 +121,6 @@ describe('syncBridge — paid tier (handle registered)', () => {
           name: 'Brokerage',
           currentBalance: 10000,
           monthlyContribution: 500,
-          maxContributionLimit: 20000,
           frequency: 'biweekly',
         },
         expected: {
@@ -137,7 +136,6 @@ describe('syncBridge — paid tier (handle registered)', () => {
           // validates `data` in a superRefine that DISCARDS its parse result — so
           // the wire value is whatever the bridge sends and nothing else.
           contributionRecordedAsExpense: false,
-          maxContributionLimit: 20000,
           userId: SESSION_USER_ID,
         },
       },
@@ -214,7 +212,19 @@ describe('syncBridge — paid tier (handle registered)', () => {
     expect(payload.monthlyAllocation).toBeNull()
   })
 
-  it('omits an absent optional maxContributionLimit', () => {
+  /**
+   * Story 49.1 (FR75). Replaces 'omits an absent optional maxContributionLimit',
+   * which proved the bridge's one conditional forwarding rule. The field is gone
+   * from all five gates, so that rule is gone with it and the branch it guarded
+   * no longer exists.
+   *
+   * ⚠️ Asserted as the EXACT key set, not as `'maxContributionLimit' in payload
+   * === false`. That absence check would now pass against ANY payload forever —
+   * including one that silently stopped forwarding `frequency` or `sortOrder`.
+   * The exact set reddens on a re-added key AND on a dropped one, which is the
+   * property the partial-`.set()` hazard in `syncBridge.ts` actually needs.
+   */
+  it('puts exactly the balanceTracking columns on the wire, and no retired ones', () => {
     syncEntityCreate('balanceTracking', {
       id: 'b2',
       type: 'debt',
@@ -223,7 +233,18 @@ describe('syncBridge — paid tier (handle registered)', () => {
       monthlyContribution: 100,
     })
     const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
-    expect('maxContributionLimit' in payload).toBe(false)
+    expect(Object.keys(payload).sort()).toEqual(
+      [
+        'type',
+        'name',
+        'currentBalance',
+        'monthlyContribution',
+        'contributionRecordedAsExpense',
+        'frequency',
+        'sortOrder',
+        'userId',
+      ].sort()
+    )
   })
 
   it('defaults a missing frequency to monthly in the payload (Story 16-2)', () => {
@@ -312,7 +333,6 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
       type: 'asset',
       name: 'Condo',
       currentBalance: 40_000_000,
-      maxContributionLimit: null,
       monthlyContribution: 0,
       frequency: 'monthly',
       sortOrder: 0,
@@ -338,7 +358,6 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
       type: 'investment',
       name: 'TFSA',
       currentBalance: 1_000_000,
-      maxContributionLimit: null,
       monthlyContribution: 50_000,
       frequency: 'monthly',
       contributionRecordedAsExpense: true,
@@ -364,7 +383,6 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
       type: 'investment',
       name: 'TFSA',
       currentBalance: 1_000_000,
-      maxContributionLimit: null,
       monthlyContribution: 50_000,
       frequency: 'monthly',
       sortOrder: 0,

@@ -35,6 +35,8 @@ const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 const STORES = [
   {
     label: 'incomeStore',
+    /** The store's CURRENT persist `version` (see its `persist` options). */
+    persistVersion: 3,
     key: 'budget-planner-income-v1',
     collection: 'incomeSources',
     reset: () => useIncomeStore.setState({ incomeSources: [] }),
@@ -60,6 +62,8 @@ const STORES = [
   },
   {
     label: 'expenseStore',
+    /** The store's CURRENT persist `version` (see its `persist` options). */
+    persistVersion: 3,
     key: 'budget-planner-expenses-v1',
     collection: 'expenses',
     reset: () => useExpenseStore.setState({ expenses: [] }),
@@ -85,6 +89,8 @@ const STORES = [
   },
   {
     label: 'savingsStore',
+    /** The store's CURRENT persist `version` (see its `persist` options). */
+    persistVersion: 3,
     key: 'budget-planner:savings-goals',
     collection: 'savingsGoals',
     reset: () => useSavingsStore.setState({ savingsGoals: [] }),
@@ -110,6 +116,8 @@ const STORES = [
   },
   {
     label: 'balanceStore',
+    /** The store's CURRENT persist `version` (see its `persist` options). */
+    persistVersion: 4,
     key: 'budget-planner:balance-tracking',
     collection: 'entries',
     reset: () => useBalanceStore.setState({ entries: [] }),
@@ -247,7 +255,7 @@ describe.each(STORES)('$label — new rows land at the BOTTOM (AC-3)', (store) =
   })
 })
 
-describe.each(STORES)('$label — v2 -> v3 backfill (AC-2)', (store) => {
+describe.each(STORES)('$label — legacy -> current backfill (AC-2)', (store) => {
   /**
    * MUTATION KILLED (M8): backfill by array index instead of createdAt ASC.
    *
@@ -373,11 +381,26 @@ describe.each(STORES)('$label — v2 -> v3 backfill (AC-2)', (store) => {
     expect(rows.map((r) => r.sortOrder)).toEqual([0, 1])
   })
 
-  it('a v3 payload is left alone (migrate does not re-run on a matching version)', async () => {
+  /**
+   * ⚠️ Story 49.1 bumped `balanceStore` to version 4 (it strips the retired
+   * `maxContributionLimit` key), so this test can no longer hard-code 3 — a stale
+   * number here makes `migrate` RE-RUN and renumber, which is the very thing the
+   * test exists to rule out.
+   *
+   * ⚠️ "Renumber" means the stored VALUES compact (7 -> 0 here), not that the
+   * user's ORDER changes: `backfillSortOrder` sorts by the existing `sortOrder`
+   * first, so a re-run is order-preserving and `withUuidIds` is a strict no-op on
+   * rows that already have string ids. Spelled out because a code reviewer read
+   * the bare word "renumber" as "custom order is destroyed" — a fair reading of
+   * the sentence, and wrong about the code. Reading the number from the table keeps the claim
+   * ("a payload already at the CURRENT version is left alone") true for every
+   * store as each one's version moves independently.
+   */
+  it('a payload at the current version is left alone (migrate does not re-run)', async () => {
     localStorage.setItem(
       store.key,
       JSON.stringify({
-        version: 3,
+        version: store.persistVersion,
         state: {
           [store.collection]: [
             {

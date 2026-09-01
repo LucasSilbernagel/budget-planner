@@ -41,7 +41,6 @@ function seedWideFigures(): void {
     type,
     name,
     currentBalance,
-    maxContributionLimit: null,
     monthlyContribution: 0,
     frequency: 'monthly',
     sortOrder: 0,

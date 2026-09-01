@@ -179,13 +179,22 @@ All TypeScript types are properly inferred from the Drizzle schema:
 - [x] updatedAt re-added to users table
 - [x] **isDeleted field added for soft-delete functionality**
 - [x] **All CASCADE delete constraints removed and replaced with RESTRICT**
-- [x] **CHECK constraints re-added for data integrity:**
+- [x] **CHECK constraints re-added for data integrity** (⚠️ re-added to `schema.ts`
+  ONLY — see the note under this list):
   - [x] incomeSources.amount > 0
   - [x] expenses.amount > 0
   - [x] savingsGoals.targetAmount > 0
   - [x] savingsGoals.currentBalance >= 0
-  - [x] balanceTracking.maxContributionLimit > 0 (if provided)
   - [x] balanceTracking.monthlyContribution >= 0
+
+  ⚠️ `balanceTracking.maxContributionLimit > 0 (if provided)` was struck from this
+  list by story 49.1 / FR75, which dropped the column (migration `0016`).
+
+  ⚠️ The remaining ticks describe `schema.ts`, NOT the database. drizzle-kit 0.23
+  does not emit CHECK constraints to migrations, so none of these constraints has
+  ever reached a `.sql` file — `grep -in check migrations/*.sql` matches nothing.
+  Logged in `deferred-work.md`; deliberately not fixed by 49.1, which is a removal
+  story and not a records audit.
 - [x] Biome linting passes
 - [x] Schema validation tests created
 - [ ] Migrations generated (requires DATABASE_URL)
