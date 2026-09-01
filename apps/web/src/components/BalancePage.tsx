@@ -82,6 +82,82 @@ type _AllTypesHaveAnOption = Exclude<
 const _optionCoverage: _AllTypesHaveAnOption = true
 void _optionCoverage
 
+/**
+ * Name-field examples, one set per finance type (Story 52.1, UX-DR58).
+ *
+ * The form asked for a type and then showed ONE fixed list that mixed all three —
+ * it offered a debt example and a credit-card example to someone who had just
+ * chosen Investment, and it led with a US-only retirement account.
+ *
+ * ⚠️ Every noun here is a descriptive common noun, never a statutory scheme or a
+ * single-country product: 401k / IRA / Roth / HSA / 529 (US), TFSA / RRSP (CA),
+ * ISA / Premium Bonds (UK) and Superannuation (AU/NZ) are all out. So are
+ * "Brokerage" and "Mutual Fund", which are US/CA idiom for what the UK calls an
+ * investment account and a unit trust.
+ *
+ * ⚠️ NO CASH EXAMPLE ON THIS ARM, deliberately, and this is a REVERSAL. The story
+ * first shipped "Cash Holding" — reasoning that it avoided "Cash Savings" because a
+ * savings-shaped example would contradict the asset hint below. Review showed that
+ * fixed the WORD and not the concept: the hint (`balance-asset-hint`) defines an
+ * asset as something whose "value here changes as it appreciates, not as you
+ * contribute", and a cash holding changes precisely as you contribute. The two
+ * strings shipped in the same render disagreed.
+ *
+ * It was also a double-count invitation. A goal-less account balance already lives
+ * on the Savings page, and `net-worth.ts` adds `savingsCents` and `assetsCents` as
+ * SEPARATE addends — so a cash balance recorded in both places is counted twice,
+ * with nothing on either form to disambiguate.
+ *
+ * "Artwork" is owned outright, appreciates (so it matches the hint rather than
+ * contradicting it), is jurisdiction-neutral, has no US/UK spelling split, and has
+ * no competing home anywhere else in the app. ⚠️ The epic sanctioned "cash savings"
+ * for this arm; that is amended by addition at UX-DR58, not silently ignored.
+ */
+const NAME_PLACEHOLDERS = {
+  investment: 'e.g., Investment Account, Pension, Index Fund',
+  debt: 'e.g., Mortgage, Car Loan, Credit Card',
+  asset: 'e.g., Property, Vehicle, Artwork',
+} as const satisfies Record<FinanceType, string>
+
+/**
+ * Compile-time proof that every `FinanceType` has a placeholder above.
+ *
+ * ⚠️ This is NOT the same case as `_AllTypesHaveAnOption`, and the difference was
+ * measured rather than assumed (tsc 5.9.3, `--strict`). The rule is
+ * assignability-vs-required-keys, not `satisfies`-vs-`Exclude`:
+ *
+ *   ['investment', 'debt'] as const satisfies readonly FinanceType[]        -> NO ERROR
+ *   { investment, debt }   as const satisfies Record<FinanceType, string>   -> TS1360
+ *
+ * A short TUPLE is assignable, so `satisfies` cannot see the omission — that is
+ * the array case above, and story 43.4's "exactly one compiler error monorepo-wide"
+ * lesson is about it. A `Record` REQUIRES every key, so the `satisfies` on this map
+ * already rejects a missing type on its own.
+ *
+ * The alias is kept for ONE honest reason: it matches the pattern this file documents
+ * directly above. Two narrower claims made in review were MEASURED AND REFUTED, and are
+ * recorded here rather than quietly dropped:
+ *
+ *   - It does NOT survive an ANNOTATION.
+ *     `const M: Partial<Record<FinanceType, string>> = { investment, debt }` makes
+ *     `keyof typeof M` equal `FinanceType`, so `Exclude` collapses to `never` and the
+ *     alias resolves to `true` — SILENTLY. It does still fire under
+ *     `as const satisfies Partial<Record<...>>`, which keeps the literal keys.
+ *   - It is COMPILE-TIME ONLY. It cannot see a `type` that is outside `FinanceType` at
+ *     runtime, which is reachable: neither the persist `migrate` nor the sync-pull path
+ *     validates `type`. That hole is closed by the `??` fallback at the call site, not
+ *     by this alias.
+ *
+ * ⚠️ THIS COMMENT DELIBERATELY NAMES THE BANNED TOKENS ABOVE. Scope any jurisdiction
+ * guard to the three STRINGS — a file-level absence sweep over `BalancePage.tsx` will
+ * fail on the comment that documents the ban.
+ */
+type _AllTypesHaveAPlaceholder = Exclude<FinanceType, keyof typeof NAME_PLACEHOLDERS> extends never
+  ? true
+  : never
+const _placeholderCoverage: _AllTypesHaveAPlaceholder = true
+void _placeholderCoverage
+
 // Contribution-frequency options for the select dropdown (Story 16-2).
 // Reuses the shared frequency enum; the normalization engine converts to a monthly
 // base for all timeline/projection math.
@@ -781,7 +857,13 @@ export function BalancePage() {
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., 401k, Student Loan, Credit Card"
+                // ⚠️ The `??` is NOT dead code. `type` is typed `FinanceType`, but nothing
+                // validates it on the way IN: the persist `migrate` (balanceStore) and the
+                // sync-pull path both write stored rows verbatim, so a legacy or newer-peer
+                // value reaches this index and yields `undefined` — which React drops, leaving
+                // the field with no example at all. Before story 52.1 it always showed one.
+                // Mirrors `getTypeDisplay`'s unknown-type fallback in this same file.
+                placeholder={NAME_PLACEHOLDERS[type] ?? NAME_PLACEHOLDERS.investment}
                 className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
                   hasFieldError('name')
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500'

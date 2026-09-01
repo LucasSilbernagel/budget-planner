@@ -13,9 +13,11 @@ import {
   waitFor,
   within,
 } from '@/test/utils'
+import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDocPage } from '../../content/docs'
 import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
+import type { FinanceType } from '../../stores/balanceStore'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { BalancePage } from '../BalancePage'
@@ -1731,6 +1733,233 @@ describe('BalancePage — the modal asks exactly the right fields per type (stor
         'id',
         'currentBalance'
       )
+    }
+  )
+})
+
+/**
+ * The Name field's example follows the Type dropdown (story 52.1, UX-DR58).
+ *
+ * ⚠️ NOTHING in the repo pinned this before. `grep "e.g., 401k, Student Loan, Credit Card"`
+ * returned exactly ONE hit (`BalancePage.tsx:784`) and no test read the attribute at all, so
+ * every assertion below is written from scratch and every one was proven capable of failing
+ * (mutation arms M1-M8).
+ *
+ * ⚠️ These assert the RENDERED `placeholder` attribute, never the `NAME_PLACEHOLDERS` map.
+ * The map is module-private on purpose: importing it and asserting its values would stay
+ * green if the JSX ignored `type` entirely (arm M5) — which is the exact defect this story
+ * exists to fix.
+ *
+ * ⚠️ The jurisdiction ban is asserted on the THREE STRINGS, never on a file. `401k`, `RRSP`,
+ * `TFSA` and `ISA` are legitimate FIXTURE names in 20 test files, seven of the hits in THIS
+ * one (`Existing 401k` at :88, `My 401k` at :218), so a file-level absence sweep fails on the
+ * file it lives in (arm M7).
+ */
+describe('BalancePage — the Name placeholder follows the Type dropdown (story 52.1)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  /**
+   * Statutory schemes and single-country products. Each is a real jurisdiction's product
+   * name, which is precisely what makes it useless as an example to a reader anywhere else.
+   */
+  const JURISDICTION_SPECIFIC =
+    /\b(401\s*\(?k\)?s?|IRAs?|Roth|HSAs?|529s?|TFSAs?|RRSPs?|ISAs?|Premium Bonds?|Super(annuation| Fund)?|SIPPs?|KiwiSaver|Brokerage|Mutual Funds?|Unit Trusts?)\b/i
+
+  /**
+   * One DISTINGUISHING phrase per type (epic 23's rule: anchor a copy pin on the phrasing
+   * that tells the arms apart, not on the whole string, which a wording tweak would break
+   * for no behavioural reason). Each arm must match its own and NEITHER of the other two —
+   * that pair is what makes "matches THAT type" a real assertion rather than a presence check.
+   */
+  const DISTINGUISHING = {
+    investment: /investment account/i,
+    debt: /mortgage/i,
+    asset: /property/i,
+  } as const satisfies Record<FinanceType, RegExp>
+
+  /**
+   * EVERY example noun each arm owns — not just its lead one.
+   *
+   * ⚠️ Review caught the first version comparing lead nouns only, which made the
+   * "no other type's example leaks in" half far weaker than its own comment claimed:
+   * `investment: 'e.g., Investment Account, Credit Card, Student Loan'` — the exact
+   * "one list mixing all three types" defect this story exists to remove — passed every
+   * assertion, because `Credit Card` was in no arm's pattern. Cross-leak is checked
+   * against these instead.
+   */
+  const OWNED_NOUNS = {
+    investment: [/investment account/i, /pension/i, /index fund/i],
+    debt: [/mortgage/i, /car loan/i, /credit card/i],
+    asset: [/property/i, /vehicle/i, /artwork/i],
+  } as const satisfies Record<FinanceType, readonly RegExp[]>
+
+  const placeholderIn = (dialog: HTMLElement): string =>
+    within(dialog).getByTestId('balance-name-input').getAttribute('placeholder') ?? ''
+
+  const openAddDialog = async () => {
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('balance-add-button'))
+    return { user, dialog: screen.getByRole('dialog', { name: 'Add Balance Entry' }) }
+  }
+
+  const selectType = async (
+    user: ReturnType<typeof userEvent.setup>,
+    dialog: HTMLElement,
+    type: FinanceType
+  ) => {
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), type)
+  }
+
+  // ⚠️ Driven off core's FINANCE_TYPES, not a hard-coded list. Review: with
+  // `['investment','debt','asset']` inline, adding a fourth FinanceType would force a
+  // NAME_PLACEHOLDERS entry (via `satisfies`) but leave this file green with the new arm
+  // never exercised — no distinguishing phrase, no leak check, no jurisdiction sweep.
+  it.each(FINANCE_TYPES)(
+    'offers examples of a %s once that type is chosen (AC-1, AC-2)',
+    async (type) => {
+      renderWithProviders(<BalancePage />)
+      const { user, dialog } = await openAddDialog()
+      // ⚠️ Selected UNCONDITIONALLY, including for the default type. Review: skipping it
+      // for `investment` meant no test anywhere issued selectOptions(..., 'investment'),
+      // so that arm was only ever read from the form's default state and a wrong `value`
+      // on the investment <option> would not have been caught.
+      await selectType(user, dialog, type)
+
+      const placeholder = placeholderIn(dialog)
+
+      // Presence: the arm's own example is there, in the shape the sibling pages use.
+      expect(placeholder).toMatch(/^e\.g\., \S/)
+      expect(placeholder).toMatch(DISTINGUISHING[type])
+
+      // Absence, with the presence partner above: no OTHER type's example leaks in.
+      // ⚠️ This is NOT the half that failed on the pre-52.1 string. Review measured it:
+      // 'e.g., 401k, Student Loan, Credit Card' matches none of the three arms' nouns, so
+      // the absence half PASSED on all three arms and the PRESENCE assertion above is what
+      // reddened. This half guards the forward direction — a future edit remixing the arms.
+      for (const [other, patterns] of Object.entries(OWNED_NOUNS)) {
+        if (other === type) continue
+        for (const pattern of patterns) {
+          expect(placeholder, `a ${type} must not show a ${other} example`).not.toMatch(pattern)
+        }
+      }
+    }
+  )
+
+  it('changes the example as the type changes, within one render (AC-1)', async () => {
+    renderWithProviders(<BalancePage />)
+    const { user, dialog } = await openAddDialog()
+
+    // ⚠️ Asserted as a SEQUENCE from one mounted form, not three separate renders: the
+    // claim is that the placeholder tracks the CURRENT `type` state, and three fresh
+    // mounts would pass even if it were derived once and frozen.
+    const investment = placeholderIn(dialog)
+    await selectType(user, dialog, 'debt')
+    const debt = placeholderIn(dialog)
+    await selectType(user, dialog, 'asset')
+    const asset = placeholderIn(dialog)
+
+    expect(investment).toMatch(DISTINGUISHING.investment)
+    expect(debt).toMatch(DISTINGUISHING.debt)
+    expect(asset).toMatch(DISTINGUISHING.asset)
+    expect(new Set([investment, debt, asset]).size).toBe(3)
+  })
+
+  it('follows a type change made inside the edit dialog (AC-4)', async () => {
+    const user = userEvent.setup()
+    // Seeded as an ASSET so the initial assertion is not the form's default type —
+    // an edit dialog that ignored the loaded entry would still open on `investment`.
+    useBalanceStore.getState().addBalanceEntry({
+      type: 'asset',
+      name: 'Family Home',
+      currentBalance: 45000000,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Family Home' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+
+    // ⚠️ Both values are asserted. The post-switch value alone does not prove a CHANGE.
+    const before = placeholderIn(dialog)
+    expect(before).toMatch(DISTINGUISHING.asset)
+
+    await selectType(user, dialog, 'debt')
+    const after = placeholderIn(dialog)
+    expect(after).toMatch(DISTINGUISHING.debt)
+    expect(after).not.toBe(before)
+  })
+
+  it('offers no cash or savings example on the asset arm (52.1 review reversal)', async () => {
+    renderWithProviders(<BalancePage />)
+    const { user, dialog } = await openAddDialog()
+    await selectType(user, dialog, 'asset')
+
+    const placeholder = placeholderIn(dialog)
+
+    // Presence partner first — an unrendered field must not satisfy the ban below.
+    expect(placeholder).toMatch(/^e\.g\., \S/)
+    expect(placeholder).toMatch(OWNED_NOUNS.asset[0])
+
+    // ⚠️ The asset hint on this same form defines an asset as something whose value
+    // "changes as it appreciates, not as you contribute". Cash changes as you
+    // contribute, so a cash example contradicts the hint beside it — and a goal-less
+    // account balance already has a home on the Savings page, which `net-worth.ts`
+    // adds as a SEPARATE addend from assets. A cash example here invites a double
+    // count. The story shipped "Cash Holding" and review reversed it; this is the
+    // guard that keeps it reversed.
+    expect(placeholder).not.toMatch(/cash|savings|deposit/i)
+  })
+
+  it('still shows an example when the stored type is outside FinanceType', async () => {
+    const user = userEvent.setup()
+    // ⚠️ Reachable, not hypothetical: neither the persist `migrate` nor the sync-pull
+    // path validates `type`, so a legacy row or a newer peer's finance type arrives
+    // verbatim. Before the `??` fallback the index returned `undefined`, React dropped
+    // the attribute, and the field showed NO example at all — a regression against the
+    // single fixed string this story replaced. The cast is the point of the test.
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'legacy-1',
+          type: 'savings' as unknown as FinanceType,
+          name: 'Legacy Row',
+          currentBalance: 100000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ] as never,
+    })
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Legacy Row' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+
+    expect(placeholderIn(dialog)).toMatch(/^e\.g\., \S/)
+  })
+
+  it.each(FINANCE_TYPES)(
+    'names no single-country product in the %s example (AC-6, AC-7)',
+    async (type) => {
+      renderWithProviders(<BalancePage />)
+      const { user, dialog } = await openAddDialog()
+      await selectType(user, dialog, type)
+
+      const placeholder = placeholderIn(dialog)
+
+      // ⚠️ The presence partner is not optional. Review corrected the reason given here:
+      // `getByTestId` THROWS when the input never rendered, so that case cannot reach
+      // `not.toMatch`. The real hole is this block's own `?? ''` helper, which turns a
+      // MISSING placeholder attribute into a silently assertable empty string.
+      expect(placeholder).toMatch(/^e\.g\., \S/)
+      expect(placeholder).not.toMatch(JURISDICTION_SPECIFIC)
     }
   )
 })
