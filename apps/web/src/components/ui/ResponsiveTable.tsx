@@ -411,26 +411,57 @@ export const RESPONSIVE_VALUE_NOWRAP_CLASS = 'whitespace-nowrap'
  * block `<div>` leaves the inline buttons right-aligned exactly as before.
  *
  * ⚠️ The group holds TWO buttons — Edit and Delete. It held FOUR between stories
- * 34.1b and 48.2, which added and then removed the move-up/move-down chevrons;
- * the `max-sm:gap-1` arithmetic that sized it for four (4 x 44 + 3 x 4 = 188px,
- * inside the ~200px the stacked cell above makes available) now has ~100px of
- * slack (2 x 44 + 1 x 4 = 92px). The gap is KEPT rather than retuned: it is the
- * separation between Edit and Delete, not a four-button accommodation.
+ * 34.1b and 48.2, which added and then removed the move-up/move-down chevrons.
+ * The four-button arithmetic was 4 x 44 + 3 x 4 = 188px, inside the ~200px the
+ * stacked cell above makes available. The gap is KEPT rather than retuned: it is
+ * the separation between Edit and Delete, not a four-button accommodation.
+ *
+ * ⚠️ THE TWO-BUTTON FIGURE IS 108px, NOT THE 92px THIS COMMENT CLAIMED FROM 48.2
+ * UNTIL STORY 50.1. `2 x 44 + 1 x 4 = 92` counts the tap floors and the flex gap
+ * and forgets that the Edit button also carries an UNPREFIXED `mr-4`, which
+ * therefore applies below `sm` too. Measured at 320px on `/income`: buttons 44
+ * and 44, `margin-right` 16px, `column-gap` 4px, group width **108px** — leaving
+ * ~92px of slack, which is probably how the wrong number got written down. Still
+ * comfortably inside the budget, so nothing has ever been broken by it.
+ *
+ * ⚠️ This figure is measured from the `max-sm:` floor plus that margin, NOT from
+ * label width, so story 50.1's icons do not move it. An earlier revision said so
+ * while defending the wrong total and told the next reader not to correct it —
+ * a review layer caught both halves.
  *
  * `max-sm:flex-wrap` is likewise kept, and is graceful degradation rather than
- * the expected layout: at a larger root font size the label or the buttons can
- * grow, and wrapping to a second line is a better failure than overflowing the
- * card. That argument is about root font size, not button count, so removing two
- * buttons does not retire it. */
+ * the expected layout: at a larger root font size the `<FieldLabel>Actions` above
+ * the group, or the rem-sized icons inside it, can grow, and wrapping to a second
+ * line is a better failure than overflowing the card. That argument is about root
+ * font size, not button count, so neither removing two BUTTONS (48.2) nor removing
+ * two LABELS (50.1) retires it.
+ *
+ * ⚠️ Before story 50.1 that sentence read "the label or the buttons can grow",
+ * where "the label" was ambiguous between the `<FieldLabel>` sibling OUTSIDE this
+ * group and the buttons' own text INSIDE it. Only the sibling reading survives —
+ * the buttons have no text now. */
 export const RESPONSIVE_ACTIONS_GROUP_CLASS =
   'max-sm:flex max-sm:items-center max-sm:flex-wrap max-sm:justify-center max-sm:gap-1'
 
 /** Mobile tap-target sizing for a row action button (>= 44px both dimensions).
  * Breakpoint-scoped on purpose — an unprefixed `min-h-[44px]` would change the
- * desktop rendering. `inline-flex` centres the label inside the enlarged box;
- * it is not what makes the box 44px (a `<button>` is `inline-block` by default,
- * so `min-h`/`min-w` already apply — measured: dropping `inline-flex` keeps the
- * 44px rect and only shifts the label). */
+ * desktop rendering, and `ResponsiveTable.test.tsx` asserts EVERY token here
+ * starts with `max-sm:`. `inline-flex` centres the button's content inside the
+ * enlarged box; it is not what makes the box 44px (a `<button>` is
+ * `inline-block` by default, so `min-h`/`min-w` already apply).
+ *
+ * ⚠️ THAT PARENTHESISED MEASUREMENT WAS TAKEN WITH A TEXT CHILD, AND STORY 50.1
+ * REPLACED THE TEXT WITH AN SVG. The 44px rect still comes from `min-h`/`min-w`,
+ * but with an SVG-only child the centring tokens do real work they did not do
+ * before, and nobody has re-measured the drop-`inline-flex` case since. Treat the
+ * centring as load-bearing rather than incidental.
+ *
+ * ⚠️ ABOVE `sm` THIS CONSTANT CONTRIBUTES NOTHING, SO THE DESKTOP HIT AREA IS
+ * WHATEVER THE CONTENT MAKES IT. That used to be a text box; since 50.1 it is a
+ * glyph, and the callers add their own `p-1` to clear WCAG 2.2 SC 2.5.8's 24x24
+ * floor. That padding belongs at the CALL SITE, never here — an unprefixed token
+ * in this string reddens the `max-sm:`-only guard, and this constant is shared
+ * with `TableSortControl`, which is not a row action. */
 export const RESPONSIVE_ACTION_BUTTON_CLASS =
   'max-sm:inline-flex max-sm:items-center max-sm:justify-center max-sm:min-h-[44px] max-sm:min-w-[44px]'
 

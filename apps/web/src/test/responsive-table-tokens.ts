@@ -115,7 +115,15 @@ export function collectRetiredTokenViolations(
   const violations: string[] = []
   for (const el of [root, ...root.querySelectorAll('*')]) {
     if (allow(el)) continue
-    const tokens = el.className.toString().split(/\s+/).filter(Boolean)
+    // ⚠️ `getAttribute('class')`, NOT `el.className`. On an SVGElement `className` is an
+    // `SVGAnimatedString`, which stringifies to "[object SVGAnimatedString]" — it splits into
+    // two tokens that match nothing, so this sweep was STRUCTURALLY BLIND to every `<svg>` and
+    // `<path>` it walked. Latent until story 50.1 put eight class-carrying icons inside the
+    // swept region; found because 50.1's mutation arm M11 (`text-gray-500` on a row icon) came
+    // back green and the recorded REASON — "gray-500 is not on the list" — was false. It is on
+    // the list, at the top of this file. A green arm with a plausible wrong reason is worse
+    // than a red one.
+    const tokens = (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean)
     for (const token of tokens) {
       const normalized = stripResponsiveVariants(token)
       if (retired.includes(token) || retired.includes(normalized)) {
@@ -167,4 +175,69 @@ export function assertHasMobileTapTarget(button: HTMLElement, label: string): vo
   // Unprefixed would change the desktop rendering (AC-2).
   expect(tokens, `${label} leaks a 44px floor onto desktop`).not.toContain('min-h-[44px]')
   expect(tokens, `${label} leaks a 44px floor onto desktop`).not.toContain('min-w-[44px]')
+}
+
+/**
+ * Story 50.1 (AC-1, AC-3, AC-9) — assert a row action button shows an ICON and
+ * carries no visible label beside it.
+ *
+ * ⚠️ THIS EXISTS BECAUSE NOTHING ELSE IN THE REPO COULD SEE THE CHANGE IT
+ * GUARDS. The eight row action buttons carry `aria-label={`Edit ${name}`}`, and
+ * `aria-label` overrides element content in accessible-name computation. So the
+ * visible words "Edit"/"Delete" contributed NOTHING to any
+ * `getByRole('button', { name })` query even BEFORE 50.1 removed them. Swept the
+ * whole `apps/web` test surface — `getByText` / `queryByText` / `findByText` /
+ * `getAllByText` / `toHaveTextContent` / `toContainText` / `.textContent` /
+ * `.innerHTML` / `getByTitle` / `toHaveAccessibleName` / `toMatchSnapshot` /
+ * `toMatchInlineSnapshot` / Playwright `text=` / `hasText` / `:has-text()`. Every
+ * hit intersected with /edit|delete/i is a false positive (a seeded row NAMED
+ * `DeleteMe`, three unrelated copy pins), and the repo contains no `.snap` file
+ * at all. ⚠️ The first version of this list named only five patterns; a review
+ * layer correctly pointed out that an absence claim is only as good as its
+ * vocabulary, so the wider sweep was re-run before this wording was trusted. The four sibling tests literally titled "offers exactly
+ * Edit and Delete in a row action cell" read `getAttribute('aria-label')` and
+ * stay green against a button rendering nothing at all.
+ *
+ * ⚠️ BOTH HALVES SHIP TOGETHER OR NEITHER DOES. The absence half alone is
+ * vacuous by construction: a button whose child failed to render satisfies "no
+ * visible text" for the wrong reason. That is 48.1's HIGH and 47.2's repeat of
+ * it. The presence half is the one no pre-existing assertion could make.
+ *
+ * ⚠️ `aria-hidden` IS PINNED AS AN ATTRIBUTE, NEVER VIA THE ACCESSIBLE NAME.
+ * Because `aria-label` overrides content unconditionally, an un-hidden `<svg>` —
+ * even one carrying a `<title>` — still yields the name `Edit Salary`. A name
+ * assertion therefore proves nothing about `aria-hidden` in EITHER direction, so
+ * do not "strengthen" this by adding one. `SortableColumnHeader.tsx` documents
+ * the same mechanism for the sort chevron.
+ *
+ * ⚠️ jsdom COMPUTES NO LAYOUT, so this cannot prove the icon has a box. An
+ * `h-0 w-0` glyph passes here. The rendered-box floors (>= 24px desktop for WCAG
+ * 2.2 SC 2.5.8, >= 44px below `sm`) are asserted in Playwright —
+ * `e2e/responsive-320.spec.ts`. Read a pass here as "an aria-hidden SVG with real
+ * path geometry is this button's only content", never as "the icon is visible" —
+ * an `h-0 w-0` glyph passes everything here.
+ */
+export function assertIsIconOnlyAction(button: HTMLElement, label: string): string {
+  // ABSENCE — no text label survives beside the glyph.
+  expect(button.textContent?.trim(), `${label} still renders a visible text label`).toBe('')
+  // PRESENCE — ...and something IS rendered, so the absence above is not vacuous.
+  const icons = button.querySelectorAll('svg')
+  expect(icons.length, `${label} renders no icon`).toBe(1)
+  const icon = icons[0]
+  // The docblock says "the button's ONLY content", so assert exactly that rather
+  // than the weaker "contains an svg somewhere" — an empty `<span>`, an `<img>`,
+  // or a wrapper `<div>` all satisfy the three checks above.
+  expect(button.children.length, `${label} renders more than the icon`).toBe(1)
+  expect(button.firstElementChild, `${label}'s icon is not the button's own child`).toBe(icon)
+  expect(
+    icon.getAttribute('aria-hidden'),
+    `${label}'s icon is not hidden from the accessible name`
+  ).toBe('true')
+  // A glyph that paints nothing still passes every check above. `currentColor` is
+  // also what carries the caller's text-blue-600/text-red-600 into the stroke.
+  expect(icon.getAttribute('stroke'), `${label}'s icon paints no stroke`).toBe('currentColor')
+  const d = icon.querySelector('path')?.getAttribute('d')
+  expect(d, `${label}'s icon has no path geometry`).toBeTruthy()
+  // Returned so the caller can prove Edit and Delete are DIFFERENT glyphs.
+  return d as string
 }

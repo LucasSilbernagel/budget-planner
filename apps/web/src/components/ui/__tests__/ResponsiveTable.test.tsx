@@ -209,9 +209,16 @@ describe('ResponsiveTable class layer', () => {
       expect(tokens(RESPONSIVE_ACTIONS_CELL_CLASS)).toContain('max-sm:flex-col')
     })
 
-    it('the actions group separates and wraps its four buttons below sm (34.1b)', () => {
+    it('the actions group separates and wraps its two buttons below sm (34.1b, 48.2)', () => {
       const groupTokens = tokens(RESPONSIVE_ACTIONS_GROUP_CLASS)
-      // 4 x 44px + 3 x 4px gap = 188px, inside the ~200px available.
+      // ⚠️ STALE FROM 48.2 UNTIL 50.1: this said "four buttons" and
+      // "4 x 44px + 3 x 4px gap = 188px". Story 48.2 deleted the two move
+      // chevrons and left the count behind in the title and the arithmetic.
+      // ⚠️ THE REAL TWO-BUTTON TOTAL IS 108px, NOT 92px. `2 x 44 + 1 x 4` forgets
+      // the Edit button's UNPREFIXED `mr-4`, which applies below `sm` as well.
+      // Measured at 320px on /income: 44 + 16 + 4 + 44 = 108px, inside the ~200px
+      // available. Computed from the `max-sm:` floor and that margin, not from
+      // label width, so story 50.1's icons do not move it either.
       expect(groupTokens).toContain('max-sm:gap-1')
       // Wrapping is graceful degradation at a larger root font size, not the
       // expected layout — story 31.5's lesson that a reserve computed at the
@@ -418,9 +425,15 @@ describe('ResponsiveTable class layer', () => {
       const buttonTokens = tokens(RESPONSIVE_ACTION_BUTTON_CLASS)
       expect(buttonTokens).toContain('max-sm:min-h-[44px]')
       expect(buttonTokens).toContain('max-sm:min-w-[44px]')
-      // Centres the label inside the enlarged box. It is NOT what produces the
-      // 44px rect — a <button> is inline-block by default, so min-h/min-w
-      // already apply (measured: dropping this keeps the 44px hit area).
+      // Centres the button's CONTENT inside the enlarged box. It is NOT what
+      // produces the 44px rect — a <button> is inline-block by default, so
+      // min-h/min-w already apply.
+      // ⚠️ The parenthesised "measured: dropping this keeps the 44px hit area"
+      // that used to close this comment was taken with a TEXT child. Story 50.1
+      // made the child an SVG, which makes the centring load-bearing in a way it
+      // was not, and nobody has re-measured the drop-`inline-flex` case since.
+      // The source docblock carries the same correction; this was its fourth
+      // copy and AC-14 had named only three.
       expect(buttonTokens).toContain('max-sm:inline-flex')
     })
 

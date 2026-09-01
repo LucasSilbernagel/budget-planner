@@ -450,6 +450,46 @@ async function assertRowActionTapTargets(page: Page, label: string): Promise<voi
   }
 }
 
+/**
+ * Story 50.1 (AC-7, AC-10) — the DESKTOP hit area of a row action, as a rendered
+ * box, with a >= 24px floor (WCAG 2.2 SC 2.5.8 Target Size (Minimum), level AA).
+ *
+ * ⚠️ THE 44px SIBLING ABOVE CANNOT COVER THIS AND NEVER COULD.
+ * `RESPONSIVE_ACTION_BUTTON_CLASS`'s floor is `max-sm:`-scoped BY DESIGN, so
+ * above `sm` it contributes nothing and the button is sized purely by its
+ * content. While that content was the words "Edit"/"Delete" the target was
+ * incidentally ~27x20 and ~46x20; story 50.1 replaced them with a glyph, and a
+ * bare 16px icon would have been a REGRESSION against what shipped. The callers
+ * add `p-1` around a 20px icon for a 28px box.
+ *
+ * ⚠️ THIS IS THE ONLY ASSERTION THAT CAN SEE A ZERO-SIZED ICON — and that is a
+ * narrower claim than an earlier revision of this comment made. Splitting it
+ * honestly, because the difference decides whether a future reader may delete
+ * either guard:
+ *   - a MISSING icon reddens in jsdom first (`assertIsIconOnlyAction` asserts
+ *     exactly one `<svg>`), so this is not the only witness for that;
+ *   - a ZERO-SIZED icon (`h-0 w-0`, a dropped sizing class) is invisible to
+ *     jsdom, which computes no layout, and to `assertRowActionTapTargets` above,
+ *     which runs only at 320px where the `max-sm:` 44px floor gives even an
+ *     empty button a box. Only THIS sees it. Mutation arm M8 is the proof.
+ * Every other row-action locator — roughly sixty of them — resolves through
+ * `getByRole('button', { name })`, whose name comes from an `aria-label` that
+ * 50.1 left byte-identical, so none of them can see any of this.
+ *
+ * ⚠️ STILL UNGUARDED, DELIBERATELY NOT FIXED HERE: an icon that renders at full
+ * size and paints NOTHING — `opacity-0`, `visibility:hidden`, or a `<path>` with
+ * no fill and no stroke. The button keeps its 28px box, so this passes. The
+ * jsdom helper now pins `stroke="currentColor"` and a non-empty `d`, which
+ * closes the source-level half; a genuinely invisible paint needs a screenshot
+ * assertion the repo has no harness for.
+ */
+async function assertDesktopActionTarget(button: Locator, label: string): Promise<void> {
+  const box = await button.boundingBox()
+  expect(box, `${label}: the row action has no layout box`).not.toBeNull()
+  expect(box?.height ?? 0, `${label}: only ${box?.height ?? 0}px tall`).toBeGreaterThanOrEqual(24)
+  expect(box?.width ?? 0, `${label}: only ${box?.width ?? 0}px wide`).toBeGreaterThanOrEqual(24)
+}
+
 test.describe('finance tables fit a 320px viewport with real rows (story 31.2)', () => {
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
     for (const theme of ['light', 'dark'] as const) {
@@ -973,7 +1013,9 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await page.goto(route)
       await page.waitForLoadState('networkidle')
       await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
-      await expect(page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` })).toBeVisible()
+      const deleteAction = page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` })
+      await expect(deleteAction).toBeVisible()
+      await assertDesktopActionTarget(deleteAction, `Delete at 768px on ${route}`)
 
       // ⚠️ The assertion is DOCUMENT-level, not wrapper-level, and the distinction
       // is the whole point. Above `sm` the cards revert to a real table and the
@@ -986,7 +1028,9 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       await assertNoHorizontalOverflow((fn) => page.evaluate(fn), `${route} at 768px`)
 
       // ...and the row's other action controls stay reachable at this width.
-      await expect(page.getByRole('button', { name: `Edit ${LONG_UNBROKEN_NAME}` })).toBeVisible()
+      const editAction = page.getByRole('button', { name: `Edit ${LONG_UNBROKEN_NAME}` })
+      await expect(editAction).toBeVisible()
+      await assertDesktopActionTarget(editAction, `Edit at 768px on ${route}`)
     })
   }
 })

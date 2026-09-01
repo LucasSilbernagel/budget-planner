@@ -46,6 +46,7 @@ import {
   RESPONSIVE_VALUE_TAG_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
+import { PencilIcon, TrashIcon } from './ui/RowActionIcons'
 import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
 import { SortableColumnHeader } from './ui/SortableColumnHeader'
 import { TableSortControl } from './ui/TableSortControl'
@@ -1014,22 +1015,24 @@ export function SavingsPage() {
                             </td>
                             <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                               <FieldLabel>Actions</FieldLabel>
+                              {/* `p-1` is the DESKTOP tap target — see RESPONSIVE_ACTION_BUTTON_CLASS,
+                                  which owns the full rationale (story 50.1). */}
                               <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
                                 <button
                                   type="button"
                                   onClick={() => openEditModal(goal)}
                                   aria-label={`Edit ${goal.name}`}
-                                  className={`mr-4 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                                  className={`mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
                                 >
-                                  Edit
+                                  <PencilIcon className="h-5 w-5" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDelete(goal.id)}
                                   aria-label={`Delete ${goal.name}`}
-                                  className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+                                  className={`p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
                                 >
-                                  Delete
+                                  <TrashIcon className="h-5 w-5" />
                                 </button>
                               </div>
                             </td>

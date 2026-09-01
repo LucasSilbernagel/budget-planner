@@ -1,6 +1,7 @@
 import {
   assertHasFocusRing,
   assertHasMobileTapTarget,
+  assertIsIconOnlyAction,
   collectRetiredTokenViolations,
 } from '@/test/responsive-table-tokens'
 import {
@@ -686,6 +687,35 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
         .getAllByRole('button')
         .map((b) => b.getAttribute('aria-label'))
     ).toEqual(['Edit Vacation', 'Delete Vacation'])
+  })
+
+  /**
+   * Story 50.1 (AC-1, AC-3, AC-9) — the row actions are ICONS now.
+   *
+   * ⚠️ THE TEST DIRECTLY ABOVE CANNOT TELL. It reads `aria-label`, which 50.1
+   * leaves byte-identical, so it stays green against a button that renders no
+   * child at all — despite being titled "offers exactly Edit and Delete". It is
+   * the right guard for the accessibility contract and the wrong one for what
+   * the row SHOWS. This is the assertion that goes red.
+   *
+   * See `assertIsIconOnlyAction` for why both halves ship together and why
+   * `aria-hidden` is pinned as an attribute rather than through the name.
+   */
+  it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
+    renderWithProviders(<SavingsPage />)
+    const cell = rowFor('Vacation').querySelector('td:last-child') as HTMLElement
+    const geometry = ['Edit Vacation', 'Delete Vacation'].map((label) =>
+      assertIsIconOnlyAction(within(cell).getByRole('button', { name: label }), label)
+    )
+    // ⚠️ EDIT AND DELETE MUST BE DIFFERENT GLYPHS, AND NOTHING ELSE CHECKS THAT.
+    // Both icons are `h-5 w-5` `aria-hidden` SVGs from the same module, so pasting
+    // `<TrashIcon>` into the Edit slot — the likeliest slip across four copy-pasted
+    // call sites — leaves the accessible names, the empty textContent, the icon
+    // count, the rendered box and every width baseline untouched. Copied from
+    // `SortableColumnHeader.test.tsx`, which pins asc vs desc the same way and says
+    // why: "the two states would be visually identical and only a screen reader
+    // could tell them apart".
+    expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
   })
 
   it('introduces no retired surface/text tokens in the table region (AC-7)', () => {

@@ -388,18 +388,60 @@ for (const route of OVERFLOW_ROUTES) {
  * shared actions column and moved all four routes by the same 48px; 49.1 touched
  * two columns that exist on exactly one route, so exactly one number moves.
  *
+ * ⚠️ THIRD RE-BASELINE, story 50.1 (UX-DR56), measured at `8d8a372` + 50.1's working
+ * tree. The row Edit/Delete TEXT labels became inline SVG icon buttons, and every route
+ * moved by an identical **-17px**: 1497 -> 1480, 1488 -> 1471, 1860 -> 1843, 1660 -> 1643.
+ * That identical shift across four independently-built tables is the evidence it is a
+ * re-baseline and not a regression — the same argument 48.2 made for its -48px, and the
+ * mirror of 49.1's single-route -286px. A layout defect does not move four tables equally.
+ *
+ * ⚠️ WHY ONLY 17px, WHEN TWO WORDS WENT AWAY. Measured at 768px under DejaVu, and the
+ * arithmetic closes exactly:
+ *
+ *   text labels   Edit 27 + `mr-4` 16 + Delete 46 = 89 + 32 padding = 121px
+ *   icons (now)   28      + `mr-4` 16 + 28        = 72 + 32 padding = 104px   -> -17px
+ *
+ * The buttons kept a hit area, which is what caps the saving. The 44px floor in
+ * `RESPONSIVE_ACTION_BUTTON_CLASS` is `max-sm:`-only by design, so above `sm` the desktop
+ * target is whatever the content makes it; a bare glyph would be 16px, below WCAG 2.2
+ * SC 2.5.8's 24x24 and a REGRESSION against the ~27x20 / ~46x20 the text labels incidentally
+ * gave. So each caller wraps a 20px icon in `p-1` for a 28px box.
+ *
+ * ⚠️ THE `<th>Actions</th>` HEADER *IS* A FLOOR ON THIS COLUMN, IT SIMPLY DOES NOT BIND
+ * TODAY — AND THE FIRST TWO ATTEMPTS TO STATE THIS WERE BOTH WRONG. Measured with a
+ * `Range` over the header's own text node, in situ, under DejaVu: "ACTIONS" renders at
+ * **57.5px**, so the floor is 57.5 + 32 = **89.5px**. The cell asks for 104px, which is more,
+ * so the column is cell-bound and the header is irrelevant to the -17px above.
+ *
+ * ⚠️ BUT IT BINDS THE MOMENT THE BUTTONS GET SMALLER, AND THAT IS MEASURED, NOT INFERRED.
+ * Mutation arm M9 (drop `p-1`) leaves a 56px cell + 32 = 88px, below the floor — and the
+ * column measured **89.5px exactly**, the floor value, not 88. That coincidence is the
+ * proof. `/income` went to 1465 rather than the 1464 a purely cell-bound model predicts.
+ *
+ * ⚠️ THE HISTORY IS RECORDED ON PURPOSE, because both wrong answers looked convincing.
+ * (1) The story estimated the header at ~59px from glyph arithmetic and called it a binding
+ * floor. (2) A probe then measured 75.25px and "refuted" the floor entirely — that probe
+ * copied the header's `font` shorthand onto a detached `<span>`, which silently fell back to
+ * the 16px body size instead of `text-xs`'s 12px (75.25 / 57.5 = 1.31 ~ 16/12). So a correct
+ * claim was overturned by a faulty measurement, and the refutation was briefly written into
+ * this file. **Measure rendered text with a `Range` over the real node; never re-render it
+ * into a detached probe.**
+ *
  * ⚠️ The overflow PRECONDITIONS in AC-1 and AC-5 were the real risk here, not this
  * equality — `/balance` losing two wide currency columns could in principle have
- * stopped it overflowing at 768px and made those guards vacuous. Measured: 1660
- * against a 656px client width, so it still overflows by 1004px and the fixture
- * needed no widening. Checked rather than assumed.
+ * stopped it overflowing at 768px and made those guards vacuous. Measured at the time: 1660
+ * against a 656px client width, so it still overflowed by 1004px and the fixture needed no
+ * widening. Checked rather than assumed. (Story 50.1 moved `/balance` again, to 1643; the
+ * margin is now 987px and the conclusion is unchanged.)
  */
 const BASELINE_SCROLL_WIDTH: Record<(typeof OVERFLOW_ROUTES)[number], number> = {
-  '/income': 1497,
-  '/expenses': 1488,
-  '/savings': 1860,
+  // Story 50.1: all four -17px, the row action text labels replaced by icons.
+  '/income': 1480,
+  '/expenses': 1471,
+  '/savings': 1843,
   // Story 49.1: 1946 -> 1660 (-286px), the two deleted contribution-limit columns.
-  '/balance': 1660,
+  // Story 50.1: 1660 -> 1643 (-17px), in step with the other three.
+  '/balance': 1643,
 }
 
 for (const route of OVERFLOW_ROUTES) {
