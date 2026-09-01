@@ -513,39 +513,6 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
         await assertFinanceTablesFit(page, `${route} (${theme}, seeded)`)
         await assertRowsStackAsCards(page, `${route} (${theme}, seeded)`)
         await assertRowActionTapTargets(page, `${route} (${theme}, seeded)`)
-
-        // Story 37.1 — /savings now carries a chart above its table, seeded here
-        // with the same 138-character unbroken name. ⚠️ The document-level sweep
-        // cannot see a chart that overflows only inside its OWN container, so
-        // assert the wrapper directly.
-        if (route === '/savings') {
-          await expect(page.getByTestId('savings-chart')).toBeVisible()
-          // ⚠️ WITNESS FIRST. The wrapper div is visible the instant React mounts
-          // it, SVG or not, and the geometry read below is a ONE-SHOT evaluate
-          // with no retry — so without this wait the measurement can snapshot an
-          // empty box where scrollWidth === clientWidth trivially.
-          //
-          // ⚠️ MEASURED LIMIT — do not over-trust the assertion below. Adding
-          // this witness does NOT make the scrollWidth check able to see a
-          // chart label painting out of its gutter. Two-arm control (review
-          // 37.1): with the Y-axis truncation removed so a 138-character label
-          // overflows, this case passed **both** with and without the witness.
-          // SVG text painted outside its box does not contribute to an HTML
-          // ancestor's scrollWidth. What actually catches that defect is the
-          // tick-length assertion in `savings-chart.spec.ts` (verified RED,
-          // "Received: 138"). This check guards HTML-box overflow only.
-          await expect(
-            page.locator('[data-testid="savings-chart"] path.recharts-rectangle')
-          ).not.toHaveCount(0)
-          const chart = await page.locator('[data-testid="savings-chart"]').evaluate((element) => ({
-            scrollWidth: element.scrollWidth,
-            clientWidth: element.clientWidth,
-          }))
-          expect(
-            chart.scrollWidth,
-            `${route} (${theme}, seeded): chart overflows its wrapper, ${chart.scrollWidth} > ${chart.clientWidth}`
-          ).toBeLessThanOrEqual(chart.clientWidth + 1)
-        }
       })
     }
   }

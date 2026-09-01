@@ -43,8 +43,9 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * mounted the bottom bar: a measured 133px vertical jump at 320px (the header
  * wrapper 165px -> 32px, the page `<h1>` from y=181 to y=48). That is the reflow
  * logged in `deferred-work.md:500` on day one, which prescribed exactly this
- * fix. The hook itself is KEPT and unchanged — four Recharts call sites take
- * numeric/enum props CSS cannot drive — this component simply stopped being one
+ * fix. The hook itself is KEPT and unchanged — three Recharts call sites take
+ * numeric/enum props CSS cannot drive (it was four until story 51.1 deleted
+ * `SavingsChart.tsx`) — this component simply stopped being one
  * of its consumers. It must not come back here: the sheet's open/closed state
  * below is USER-initiated, never viewport-derived, which is what keeps the
  * server render and the first client render in agreement.

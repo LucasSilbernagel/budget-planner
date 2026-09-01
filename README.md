@@ -24,7 +24,7 @@ There are no ads, no third-party trackers, and no AI features on either tier.
 - **A common monthly basis** so totals are comparable.
   The conversion uses an average of about 4.33 weeks a month, so the monthly figure is an estimate.
 - **Net period income and savings capacity** calculations, including maximum dynamically allocable savings.
-- **Savings goals** with progress tracking and a savings chart.
+- **Savings goals** with progress tracking.
 - **Balance tracking** for investments, debts, and things you own outright.
 - **Visual breakdowns** on the overview of income versus expenses, and of what you own against what you owe.
 - **Retirement modeling** using a safe-withdrawal projection, with a separate post-retirement return rate.
@@ -68,7 +68,7 @@ The app has 19 pages.
 | `/` | Overview dashboard with the category and breakdown charts | Free |
 | `/income` | Income sources | Free |
 | `/expenses` | Expenses | Free |
-| `/savings` | Savings goals and savings chart | Free |
+| `/savings` | Savings goals | Free |
 | `/balance` | Balance Tracking - investments, debts, and things owned outright | Free |
 | `/retirement` | Retirement planner | Free |
 | `/settings` | Currency, theme, planner visibility, local data, account | Free |

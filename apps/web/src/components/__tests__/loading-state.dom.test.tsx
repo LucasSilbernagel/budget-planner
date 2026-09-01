@@ -294,7 +294,6 @@ describe('the remaining gated pages, pending → resolved (AC-5)', () => {
       skeletons: [
         'savings-total-skeleton',
         'savings-leftover-summary-skeleton',
-        'savings-chart-skeleton',
         'savings-list-skeleton',
       ],
       emptyCopy: 'No savings goals recorded yet',
@@ -338,37 +337,4 @@ describe('the remaining gated pages, pending → resolved (AC-5)', () => {
       expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
     })
   }
-})
-
-/**
- * The two chart sections a code reviewer found still serving a confident empty
- * sentence, on routes the acceptance audit had just rated clean.
- *
- * ⚠️ These phrases are the point. The story's `absent` fences listed `$0.00` and
- * the LIST sections' empty copy, so a value-shaped sweep AND a testid-shaped
- * sweep both missed them — they are neither a zero nor a known testid, just a
- * sentence telling a returning user to add data they already have.
- */
-describe('the savings chart must not preach the empty state while pending', () => {
-  beforeEach(() => {
-    __resetStoresHydratedForTests()
-    resolvedFreeTier()
-    clearStores()
-  })
-
-  it('/savings does not serve "Add a savings goal to see it charted here" while pending', () => {
-    seedSavings()
-
-    const html = renderToString(<SavingsPage />)
-
-    expect(html).toContain('savings-chart-skeleton')
-    expect(html).not.toContain('Add a savings goal to see it charted here')
-    expect(html).not.toContain('savings-chart-empty')
-  })
-
-  it('the savings chart resolves to its genuine empty state', () => {
-    render(<SavingsPage />)
-    expect(screen.getByTestId('savings-chart-empty')).toBeInTheDocument()
-    expect(screen.queryByTestId('savings-chart-skeleton')).not.toBeInTheDocument()
-  })
 })

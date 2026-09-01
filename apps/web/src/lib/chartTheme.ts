@@ -5,7 +5,7 @@ import { useTheme } from '../stores/themeStore'
  * 11-2, AC-1). Recharts renders SVG with hardcoded default strokes/fills that
  * are only legible on a light canvas, so charts on the dark `.surface` cards
  * need explicit colors. Centralized here so every chart (the Overview bars and
- * pies, SavingsChart, RetirementTimeline, CategoryBreakdown, and the Premium
+ * pies, RetirementTimeline, CategoryBreakdown, and the Premium
  * forecasting projection) darkens identically instead of each re-deriving the
  * palette.
  *

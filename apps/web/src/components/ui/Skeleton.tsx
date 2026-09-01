@@ -212,8 +212,16 @@ export interface EmptyStateSkeletonProps {
   testId: string
   /**
    * How many text lines the resolved empty card has. The four CRUD list sections
-   * render two (a base-size line and a `text-sm` line); the two chart sections
-   * render one. Defaults to 2.
+   * render two (a base-size line and a `text-sm` line). Defaults to 2.
+   *
+   * ⚠️ NO CALLER PASSES THIS ANY MORE. The only sites that ever set `lines={1}`
+   * were the two chart sections, and both are gone — FR68 / story 43.1 took the
+   * Balance one (2026-08-25), FR76 / story 51.1 the Savings one (2026-09-01). The
+   * `lines === 1` branches below are therefore dead, and the earlier version of
+   * this comment ("the two chart sections render one") described zero sections.
+   * Removal is deliberately NOT done here: it is a shared component with four live
+   * callers and no test file of its own, so it is out of a deletion story's scope.
+   * Logged in `deferred-work.md`.
    */
   lines?: 1 | 2
 }

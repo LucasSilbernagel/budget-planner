@@ -14,7 +14,9 @@
  * ⚠️ It was also, at that point, guarded by nothing. Every test that appeared to
  * cover it actually read the Net Worth TILE, so deleting the Assets bar outright
  * left the whole suite green. A pure function can be asserted directly, which is
- * the same reasoning that produced `lib/savings-chart-data.ts` in story 37.1.
+ * the same reasoning that produced the Savings page's own chart-data module in
+ * story 37.1 — since deleted with that chart in story 51.1, so the rule outlives
+ * its original example.
  *
  * Debts are plotted NEGATIVE, matching the net-worth definition: this chart shows
  * what each bucket contributes to net worth, not its absolute magnitude.

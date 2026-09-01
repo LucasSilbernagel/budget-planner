@@ -126,18 +126,16 @@ const GATED_ROUTES = [
     skeletons: [
       'savings-total-skeleton',
       'savings-leftover-summary-skeleton',
-      'savings-chart-skeleton',
       'savings-list-skeleton',
     ],
-    absent: [
-      '$0.00',
-      'No savings goals recorded yet',
-      // ⚠️ Added in code review. The chart section was outside every gate and
-      // served this sentence to a returning user; neither the value sweep
-      // (`$0.00`) nor the testid sweep could see it, because it is neither.
-      'Add a savings goal to see it charted here',
-      'savings-chart-empty',
-    ],
+    // ⚠️ METHODOLOGY, KEPT AFTER ITS INSTANCE WENT (story 51.1). The chart section
+    // that used to be fenced here was found by a CODE REVIEW, not by this list: it sat
+    // outside every gate and served "Add a savings goal to see it charted here" to a
+    // returning user, and *neither* a value-shaped sweep (`$0.00`) *nor* a
+    // testid-shaped sweep could see it, because the phrase is neither. When you add a
+    // section to a gated page, fence its EMPTY SENTENCE here as well as its testid —
+    // the two sweeps that feel exhaustive both miss prose.
+    absent: ['$0.00', 'No savings goals recorded yet'],
   },
   {
     path: '/balance',
@@ -253,14 +251,7 @@ test.describe("positive controls — the absent strings really are the app's cop
     { path: '/', phrases: ["Let's set up your budget", '+ Add income', '$0.00'] },
     { path: '/income', phrases: ['No income sources yet', '$0.00'] },
     { path: '/expenses', phrases: ['No expenses recorded yet', '$0.00'] },
-    {
-      path: '/savings',
-      phrases: [
-        'No savings goals recorded yet',
-        'Add a savings goal to see it charted here',
-        '$0.00',
-      ],
-    },
+    { path: '/savings', phrases: ['No savings goals recorded yet', '$0.00'] },
     { path: '/balance', phrases: ['No balance entries recorded yet', '$0.00'] },
   ] as const
 
@@ -296,7 +287,16 @@ test.describe('every gated page resolves', () => {
     { path: '/', marker: 'overview-net-worth', skeleton: 'overview-net-worth-skeleton' },
     { path: '/income', marker: 'period-total-amount', skeleton: 'period-total-amount-skeleton' },
     { path: '/expenses', marker: 'period-total-amount', skeleton: 'period-total-amount-skeleton' },
-    { path: '/savings', marker: 'savings-leftover-summary', skeleton: 'savings-chart-skeleton' },
+    // ⚠️ Repointed by story 51.1: this row's original probe was
+    // `savings-chart-skeleton`, deleted with the Savings at a Glance section — the
+    // same failure 43.1 fixed below. A probe naming an absent testid passes
+    // `toHaveCount(0)` instantly. Repointed to the skeleton of this row's OWN
+    // marker, which is the pairing every other row here uses.
+    {
+      path: '/savings',
+      marker: 'savings-leftover-summary',
+      skeleton: 'savings-leftover-summary-skeleton',
+    },
     // ⚠️ Repointed by story 43.1: this row's original probe was
     // `balance-investments-skeleton`, deleted with the Investment Accounts
     // section. A probe naming an absent testid passes `toHaveCount(0)`
@@ -313,8 +313,18 @@ test.describe('every gated page resolves', () => {
       expect(response?.status(), `${path} did not return 200`).toBe(200)
 
       await expect(page.getByTestId(marker)).toBeVisible()
-      await expect(page.getByTestId(skeleton)).toHaveCount(0)
+      // ⚠️ ORDER IS LOAD-BEARING, and it was wrong until story 51.1 measured it.
+      // The per-row `skeleton` probe used to run BEFORE the `page-loading-status`
+      // check. `toHaveCount(0)` auto-retries only until it PASSES, so on a page whose
+      // gate is inverted — skeleton shown AFTER hydration — it sampled the pre-hydration
+      // DOM, found nothing, and passed. The defect then appeared, and only the wildcard
+      // below caught it. Proven by mutation (51.1 arm M4): with the `/savings`
+      // leftover-summary gate inverted, this probe was GREEN and the wildcard RED, and a
+      // probe dumped the survivor as exactly `savings-leftover-summary-skeleton`.
+      // Clearing `page-loading-status` FIRST is the hydration barrier; every skeleton
+      // assertion belongs after it.
       await expect(page.getByTestId('page-loading-status')).toHaveCount(0)
+      await expect(page.getByTestId(skeleton)).toHaveCount(0)
       await expect(page.locator('[data-testid$="-skeleton"]')).toHaveCount(0)
 
       await page.waitForLoadState('networkidle')
