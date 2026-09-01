@@ -28,6 +28,26 @@ The Type list offers three choices: **Investment**, **Debt** and **Asset**.
 There is no separate "mortgage" type to choose. Every kind of borrowing is
 entered the same way, as a **Debt**.
 
+### A worked example
+
+A condo worth $400,000, with $300,000 still owing on it and a payment of $1,800
+a month, is three entries:
+
+```
+Page               Entry            Type    Field                     Value
+Balance Tracking   Condo            Asset   Current Balance/Value   $400,000
+Balance Tracking   Condo mortgage   Debt    Current Balance/Value   $300,000
+Expenses           Condo mortgage   —       Amount (Monthly)          $1,800
+```
+
+Net worth weighs the first two against each other: $400,000 owned less $300,000
+owed leaves $100,000. Your cash flow counts only the third.
+
+Your down payment is not entered anywhere. It is already reflected in the gap
+between what the property is worth and what is still owed — the money you put
+down is part of that $100,000. Adding it as a fourth entry would count the same
+money twice.
+
 ### What the payment changes
 
 Your payment is part of your cash flow. It affects:

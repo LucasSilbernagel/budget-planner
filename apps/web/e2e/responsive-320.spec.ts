@@ -1331,111 +1331,121 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
    * that field is gone for every type now, but the investment arm is still the
    * tallest — re-measured in 49.1, see `openBalanceAddModal`.)
    *
-   * The debt hint is the longer of the story's two strings and wraps to several
-   * lines in a ~272px content box, so it is measured rather than reasoned about.
+   * Both hints wrap to several lines in a ~272px content box, so they are
+   * measured rather than reasoned about.
+   *
+   * ⚠️ THIS TEST USED TO MEASURE ONLY THE DEBT ARM, justified by "the debt hint is
+   * the longer of the story's two strings". Story 49.2 extended both hints and
+   * FLIPPED that: the asset hint is now 320 characters to the debt hint's 304, so
+   * the comment's selection criterion had stopped selecting its own subject and the
+   * unmeasured arm was the wider one. Rather than re-point the sentence at the other
+   * arm — which would decay again the next time either string moves — both arms are
+   * now measured and the criterion is retired. (Review 49.2, Edge Case Hunter.)
    */
-  test(`the debt guidance fits at ${NARROW_WIDTH}x${SHORT_HEIGHT} in both themes (36.3)`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    await page.goto('/balance')
-    await page.waitForLoadState('networkidle')
+  for (const arm of ['debt', 'asset'] as const) {
+    test(`the ${arm} guidance fits at ${NARROW_WIDTH}x${SHORT_HEIGHT} in both themes (36.3, 49.2)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+      await page.goto('/balance')
+      await page.waitForLoadState('networkidle')
 
-    const card = await openBalanceAddModal(page)
-    await card.getByLabel(/type/i).selectOption('debt')
+      const card = await openBalanceAddModal(page)
+      await card.getByLabel(/type/i).selectOption(arm)
 
-    const hint = card.getByTestId('balance-debt-hint')
-    await expect(hint).toBeVisible()
+      const hint = card.getByTestId(`balance-${arm}-hint`)
+      await expect(hint).toBeVisible()
 
-    // (1) The hint wraps INSIDE its own box rather than widening it, and the
-    //     box stays within the card. `scrollWidth > clientWidth` here would mean
-    //     an unbreakable run of text pushing the card wider than the viewport.
-    const box = await hint.evaluate((el) => ({
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
-      right: el.getBoundingClientRect().right,
-      left: el.getBoundingClientRect().left,
-    }))
-    // ⚠️ `+ 1`, matching every sibling comparison in this file (`:1363`, `:1587`).
-    // `scrollWidth` and `clientWidth` round independently under subpixel layout,
-    // so a paragraph whose content box lands on a fraction can report one pixel
-    // of phantom overflow. A CI font change is exactly what moves a wrap point
-    // onto such a boundary.
-    expect(box.scrollWidth, 'debt hint overflows its own box').toBeLessThanOrEqual(
-      box.clientWidth + 1
-    )
-    expect(box.left, 'debt hint starts left of the viewport').toBeGreaterThanOrEqual(0)
-    expect(box.right, 'debt hint extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
+      // (1) The hint wraps INSIDE its own box rather than widening it, and the
+      //     box stays within the card. `scrollWidth > clientWidth` here would mean
+      //     an unbreakable run of text pushing the card wider than the viewport.
+      const box = await hint.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        right: el.getBoundingClientRect().right,
+        left: el.getBoundingClientRect().left,
+      }))
+      // ⚠️ `+ 1`, matching every sibling comparison in this file (`:1363`, `:1587`).
+      // `scrollWidth` and `clientWidth` round independently under subpixel layout,
+      // so a paragraph whose content box lands on a fraction can report one pixel
+      // of phantom overflow. A CI font change is exactly what moves a wrap point
+      // onto such a boundary.
+      expect(box.scrollWidth, `${arm} hint overflows its own box`).toBeLessThanOrEqual(
+        box.clientWidth + 1
+      )
+      expect(box.left, `${arm} hint starts left of the viewport`).toBeGreaterThanOrEqual(0)
+      expect(box.right, `${arm} hint extends past 320px`).toBeLessThanOrEqual(NARROW_WIDTH)
 
-    // (2) The CARD must not be pushed past the viewport by the taller content.
-    //
-    // ⚠️ This deliberately does NOT use `assertNoHorizontalOverflow`. A
-    // document-level overflow claim is UNFALSIFIABLE inside a modal — the same
-    // fact the sibling test records above: `overflow-y-auto` computes
-    // `overflow-x` to `auto`, so the card absorbs its own horizontal overflow,
-    // and the body lock hides it from `documentElement`. The first draft of this
-    // test asserted it anyway and would have passed against any defect.
-    // (Review 36.3.)
-    const cardMetrics = await readCardMetrics(card)
-    expect(cardMetrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
-    expect(cardMetrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
+      // (2) The CARD must not be pushed past the viewport by the taller content.
+      //
+      // ⚠️ This deliberately does NOT use `assertNoHorizontalOverflow`. A
+      // document-level overflow claim is UNFALSIFIABLE inside a modal — the same
+      // fact the sibling test records above: `overflow-y-auto` computes
+      // `overflow-x` to `auto`, so the card absorbs its own horizontal overflow,
+      // and the body lock hides it from `documentElement`. The first draft of this
+      // test asserted it anyway and would have passed against any defect.
+      // (Review 36.3.)
+      const cardMetrics = await readCardMetrics(card)
+      expect(cardMetrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
+      expect(cardMetrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
 
-    // (3) The full house assertion — over-tall precondition, both ends inside the
-    //     viewport, internal scroll, and the submit control reachable.
-    //
-    // ⚠️ MEASURED, and it overturned story 36.3's own written assumption. That
-    // spec predicted the helper's over-tall precondition would REJECT the debt
-    // form (Debt rendered one field fewer than investment) and told the
-    // implementer to substitute a hand-rolled reachability check. Probed in
-    // review 36.3: the helper PASSES — the debt form plus this hint is still
-    // over-tall at 320x480. So the real assertion is used rather than the weaker
-    // substitute, and the prediction is recorded as wrong rather than quietly
-    // inherited. (Still true after story 49.1 removed the contribution-limit
-    // field from every arm — re-measured; see `openBalanceAddModal`'s table.)
-    const submit = card.getByRole('button', { name: 'Add Balance Entry' })
-    await assertTallModalFitsAndScrolls(
-      card,
-      submit,
-      `/balance add debt (${NARROW_WIDTH}x${SHORT_HEIGHT})`
-    )
+      // (3) The full house assertion — over-tall precondition, both ends inside the
+      //     viewport, internal scroll, and the submit control reachable.
+      //
+      // ⚠️ MEASURED, and it overturned story 36.3's own written assumption. That
+      // spec predicted the helper's over-tall precondition would REJECT the debt
+      // form (Debt rendered one field fewer than investment) and told the
+      // implementer to substitute a hand-rolled reachability check. Probed in
+      // review 36.3: the helper PASSES — the debt form plus this hint is still
+      // over-tall at 320x480. So the real assertion is used rather than the weaker
+      // substitute, and the prediction is recorded as wrong rather than quietly
+      // inherited. (Still true after story 49.1 removed the contribution-limit
+      // field from every arm — re-measured; see `openBalanceAddModal`'s table.)
+      const submit = card.getByRole('button', { name: 'Add Balance Entry' })
+      await assertTallModalFitsAndScrolls(
+        card,
+        submit,
+        `/balance add ${arm} (${NARROW_WIDTH}x${SHORT_HEIGHT})`
+      )
 
-    // (4) Dark mode.
-    //
-    // ⚠️ The assertion must be something a THEME can change. A first draft
-    // re-measured `scrollWidth` here, which is font geometry — no `.dark` token
-    // touches it, so that arm could not fail independently of step (1) and the
-    // "both themes" in this test's name was unearned (review 36.3). The colour
-    // is what dark mode alters, so the colour is what gets asserted: it must
-    // actually differ from the light value, and it must not be transparent.
-    const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
+      // (4) Dark mode.
+      //
+      // ⚠️ The assertion must be something a THEME can change. A first draft
+      // re-measured `scrollWidth` here, which is font geometry — no `.dark` token
+      // touches it, so that arm could not fail independently of step (1) and the
+      // "both themes" in this test's name was unearned (review 36.3). The colour
+      // is what dark mode alters, so the colour is what gets asserted: it must
+      // actually differ from the light value, and it must not be transparent.
+      const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
 
-    // Apply the class and confirm it STUCK — ThemeProvider applies the store's
-    // 'light' default once on mount and could otherwise strip it. Hydration is
-    // long finished by this point (we have already driven a <select>), so a
-    // poll on the class is enough and keeps the colour check below as the thing
-    // that reports a failure.
-    //
-    // ⚠️ Deliberately NOT `waitForFunction(colour !== light)`: that form makes a
-    // theme-invariant colour fail as a 30s TIMEOUT instead of naming the defect.
-    // Verified — it did exactly that before this was split (review 36.3).
-    await page.evaluate(() => document.documentElement.classList.add('dark'))
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-      .toBe(true)
+      // Apply the class and confirm it STUCK — ThemeProvider applies the store's
+      // 'light' default once on mount and could otherwise strip it. Hydration is
+      // long finished by this point (we have already driven a <select>), so a
+      // poll on the class is enough and keeps the colour check below as the thing
+      // that reports a failure.
+      //
+      // ⚠️ Deliberately NOT `waitForFunction(colour !== light)`: that form makes a
+      // theme-invariant colour fail as a 30s TIMEOUT instead of naming the defect.
+      // Verified — it did exactly that before this was split (review 36.3).
+      await page.evaluate(() => document.documentElement.classList.add('dark'))
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
+        .toBe(true)
 
-    await expect(hint).toBeVisible()
-    const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
-    expect(darkColor, 'debt hint colour is unchanged in dark mode').not.toBe(lightColor)
-    expect(darkColor, 'debt hint is transparent in dark mode').not.toMatch(/rgba\(.*,\s*0\)$/)
+      await expect(hint).toBeVisible()
+      const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
+      expect(darkColor, `${arm} hint colour is unchanged in dark mode`).not.toBe(lightColor)
+      expect(darkColor, `${arm} hint is transparent in dark mode`).not.toMatch(/rgba\(.*,\s*0\)$/)
 
-    const darkBox = await hint.evaluate((el) => ({
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
-    }))
-    expect(darkBox.scrollWidth, 'debt hint overflows its box in dark').toBeLessThanOrEqual(
-      darkBox.clientWidth + 1
-    )
-  })
+      const darkBox = await hint.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }))
+      expect(darkBox.scrollWidth, `${arm} hint overflows its box in dark`).toBeLessThanOrEqual(
+        darkBox.clientWidth + 1
+      )
+    })
+  }
 
   /**
    * Story 36.3 (AC-7) — the OTHER hint. AC-7 says "both hints survive 320px in

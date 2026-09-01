@@ -829,6 +829,11 @@ describe('documentation content accuracy (story 10-4)', () => {
     const bounds = [
       ['intro', '## Where a mortgage belongs'],
       ['where', '### Where each part goes'],
+      // ⚠️ Story 49.2 inserted this heading BETWEEN `where` and `payment`, which
+      // shortens the `where` slice. The 43.5 AC-1 guard below reads `where` and
+      // still passes because every claim it pins sits above the new heading —
+      // verified by running it, not assumed.
+      ['example', '### A worked example'],
       ['payment', '### What the payment changes'],
       ['owed', '### What the amount still owed changes'],
       ['property', '### What the property is worth changes'],
@@ -1138,6 +1143,99 @@ describe('documentation content accuracy (story 10-4)', () => {
     )
   })
 
+  /**
+   * Story 49.2 (UX-DR40 / CONTENT-O, both amended by addition): the article
+   * gains a concrete three-entry example and the down-payment answer.
+   *
+   * ⚠️ Section-scoped to `example` on purpose. Every figure below ALREADY
+   * appears in `### If your net worth looks wrong` ($400,000 / $300,000 /
+   * $100,000, shipped by 43.5), so a page-wide guard on them would have been
+   * green before this story wrote a single line. Only the slice proves the
+   * worked example exists.
+   *
+   * ⚠️ CORRECTED in review 49.2: this docblock used to claim the scoping was
+   * "M10's target". M10 moved the whole SECTION, heading included, which trips
+   * `mortgageSections()`'s ordering invariant — it threw before the scoping was
+   * ever exercised, so the arm was red for the wrong reason and proved nothing
+   * about these assertions. **M13 is the real arm**: it moves the example's BODY
+   * into the closing section and leaves the heading in place, so the invariant
+   * stays silent and only the slice can fail. A red arm can be as misleading as
+   * a green one when it fires on a different mechanism than the one you meant
+   * to test.
+   *
+   * ⚠️ The figures are pinned as LITERALS, deliberately breaking from
+   * `howTotalsSections()`'s worked-example guard, which derives its numbers from
+   * `packages/core`. That one pins what the app actually renders for stated
+   * inputs, so recomputing is what makes it honest. These are an illustrative
+   * scenario that no function produces; deriving 400000 - 300000 through a core
+   * call would dress arithmetic up as verification.
+   */
+  it('the worked example lays out three entries with their pages and fields (49.2, AC-7)', () => {
+    const { example } = mortgageSections()
+
+    // Each row names the PAGE, the Type and the figure. The Type names are the
+    // literal dropdown labels (`Asset`, `Debt`) — `docs-content` already warns
+    // that "Property" and "owned outright" are corpus prose, not labels.
+    expect(example).toMatch(
+      /Balance\s+Tracking\s+Condo\s+Asset\s+Current\s+Balance\/Value\s+\$400,000/
+    )
+    expect(example).toMatch(
+      /Balance\s+Tracking\s+Condo\s+mortgage\s+Debt\s+Current\s+Balance\/Value\s+\$300,000/
+    )
+    // ⚠️ The PAYMENT row is the entry the article never put a number on before
+    // this story — the other two figures were already in the closing section.
+    expect(example).toMatch(/Expenses\s+Condo\s+mortgage\s+—\s+Amount\s+\(Monthly\)\s+\$1,800/)
+
+    // ⚠️ The header row, added in review 49.2. Five whitespace-aligned columns in
+    // a <pre> announce as one undifferentiated blob to a screen reader and give a
+    // sighted reader nothing to read them against. Naming the columns also caught
+    // a real inconsistency: the fourth column had held a FIELD name on two rows
+    // and a FREQUENCY ("Monthly") on the third, so the expense row now reads
+    // "Amount (Monthly)" and the column is homogeneous.
+    expect(example).toMatch(/Page\s+Entry\s+Type\s+Field\s+Value/)
+
+    // ⚠️ `Current Balance/Value`, not `Current Balance`. Story 49.1 renamed the
+    // label and updated this doc's two other quotations of it; a new quotation
+    // written from memory is exactly how the third one goes stale.
+    //
+    // ⚠️ Case-INSENSITIVE and token-bounded, both tightened in review 49.2. `/i`
+    // catches a lowercase prose quotation ("enter it as the current balance"),
+    // which the capitalised form sailed past; `\b` after `value` stops the
+    // lookahead being satisfied by any six characters that merely START with
+    // `/Value` — "Current Balance/Valued" was a false green. The lookahead is
+    // safe across the ~76-column hard wrap: wraps only ever fall at spaces, which
+    // `\s+` absorbs, and `Balance/Value` has no space to break at.
+    expect(example).not.toMatch(/current\s+balance(?!\/value\b)/i)
+
+    // The two-sided sum, which is the whole reason three entries are correct.
+    expect(example).toMatch(/\$400,000\s+owned\s+less\s+\$300,000\s+owed\s+leaves\s+\$100,000/)
+    expect(example).toMatch(/cash\s+flow\s+counts\s+only\s+the\s+third/i)
+  })
+
+  it('the worked example answers the down payment, and answers it there (49.2, AC-9)', () => {
+    const { example } = mortgageSections()
+    const page = mortgage()
+
+    // ⚠️ THE distinguishing sentence. Before story 49.2 the phrase "down
+    // payment" appeared nowhere in the app or its docs, so a guard on the word
+    // "payment" alone would have passed against the pre-49.2 article — the
+    // article has an entire section called "What the payment changes".
+    expect(example).toMatch(/down\s+payment\s+is\s+not\s+entered\s+anywhere/i)
+    expect(example).toMatch(
+      /already\s+reflected\s+in\s+the\s+gap\s+between\s+what\s+the\s+property\s+is\s+worth\s+and\s+what\s+is\s+still\s+owed/i
+    )
+
+    // ⚠️ The article must not acquire a second, unscoped down-payment claim
+    // elsewhere that could contradict this one. One mention, in one place.
+    //
+    // ⚠️ `[-\s]?`, widened in review 49.2. The original `\s+` matched neither
+    // "down-payment" nor "downpayment" — and the comment directly above this one
+    // spells it hyphenated, so the guard could not see the very spelling its own
+    // prose uses. A contradicting second claim written either way was invisible.
+    // The null path fails safe: `toHaveLength` on a null match throws.
+    expect(page.match(/down[-\s]?payment/gi)).toHaveLength(1)
+  })
+
   it('the mortgage page uses no markdown table (36.3, AC-8)', () => {
     // Same rationale as the how-totals guard above: `MarkdownRenderer` emits a
     // bare <table> inside `prose` with no overflow-x wrapper, which would fail
@@ -1155,9 +1253,17 @@ describe('documentation content accuracy (story 10-4)', () => {
     expect(page).not.toMatch(/^\s*:?-+:?\s*\|/m)
   })
 
-  it('two existing surfaces link to the mortgage page (36.3, AC-8)', () => {
+  it('both doc surfaces still link to the mortgage page (36.3, AC-8)', () => {
     // The internal-link guard above proves a link RESOLVES; only this proves
     // the links EXIST — deleting both would leave that guard perfectly green.
+    //
+    // ⚠️ Renamed by story 49.2, which added a THIRD link from the Balance
+    // Tracking form (`BalancePage.tsx`, both loan-shaped arms). This guard was
+    // called "two existing surfaces" and only ever asserted these two DOC
+    // surfaces; the count in its name is now wrong for the page as a whole
+    // while its assertions are unchanged and still correct. The component link
+    // is pinned in `BalancePage.test.tsx`, not here — this file reads the
+    // markdown corpus and cannot see a `.tsx` anchor.
     const link = '(/docs/where-a-mortgage-belongs)'
     expect(contentFor('getting-started')).toContain(link)
     expect(contentFor('features')).toContain(link)

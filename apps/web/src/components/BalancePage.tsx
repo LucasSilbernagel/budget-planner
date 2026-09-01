@@ -853,20 +853,86 @@ export function BalancePage() {
                   telling anyone to leave Contribution blank, since that field
                   is still shown and still labelled required. `text-muted` (not
                   the `text-faint` used elsewhere) because gray-400 on the white
-                  modal card measures 2.54:1, below WCAG AA. */}
+                  modal card measures 2.54:1, below WCAG AA.
+
+                  Story 49.2 (UX-DR40, amended) adds the RECIPROCAL half. 36.3
+                  and 43.4 each told one arm where its counterpart goes, but
+                  neither arm named the OTHER kind of entry, so a homeowner who
+                  recorded a mortgage had no way to learn the property is a
+                  second entry — the discoverability defect this story exists
+                  to close. Deliberately debt/asset-scoped: it must never read
+                  as "entering the same money twice is fine" in general, which
+                  is TRUE for a mortgage and FALSE as a generalisation (FR72,
+                  fixed by story 45.1 — see deferred-work.md).
+
+                  ⚠️ Plain `<a>`, not `<Link>`. 36.3's Expenses hint used prose
+                  precisely because `<Link>` needs a router this file never
+                  imports and `BalancePage.test.tsx` never provides
+                  (`renderWithProviders`). The anchor at :465-470 is the
+                  in-file precedent that satisfies "link to the guidance"
+                  without either. Classes are that anchor's, minus its `text-xs`
+                  — redundant inside an already-`text-xs` paragraph.
+
+                  Contrast measured for story 49.2, BOTH THEMES, all AA-passing
+                  for small text. ⚠️ Every row below names its theme: quoting only
+                  the light figure led a reviewer to conclude, reasonably, that the
+                  dark card fails — `.text-muted` is `text-gray-500 dark:text-gray-400`
+                  (global.css), so the light number alone does not describe it.
+
+                    the new LINK   blue-600 #2563eb on white #ffffff      5.17:1
+                                   blue-400 #60a5fa on gray-800 #1f2937   5.77:1
+                    link hover     blue-800 on white / blue-300 on gray-800
+                                                              8.72:1 / 8.14:1
+                    the HINT text  text-muted = gray-500 on white         4.83:1
+                                   text-muted = gray-400 on gray-800      5.78:1
+
+                  ⚠️ `text-faint` is IDENTICAL to `text-muted` in dark (both resolve
+                  to gray-400), so it fails in LIGHT ONLY, at 2.54:1 — 36.3's figure,
+                  reproduced here by an independent routine. The token choice is
+                  therefore load-bearing in exactly one theme, which is why it is
+                  pinned rather than left to style review. */}
               {type === 'debt' && (
                 <p className="mt-1 text-xs text-muted" data-testid="balance-debt-hint">
                   Enter what you still owe today. Record the recurring payment on the Expenses page
-                  — that's where it counts against your cash flow.
+                  — that's where it counts against your cash flow. If the loan bought something you
+                  still have, record that as an Asset entry too, so your net worth reflects both
+                  sides.{' '}
+                  <a
+                    href="/docs/where-a-mortgage-belongs"
+                    className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Where a mortgage belongs
+                  </a>{' '}
+                  works through a full example.
                 </p>
               )}
               {/* Story 43.4 (Q3): the asset arm gets a hint for the same reason
                   the debt arm does — the form hides a field the user may expect,
-                  so it must say where that money goes instead. */}
+                  so it must say where that money goes instead.
+
+                  Story 49.2 adds the loan pointer and the DOWN PAYMENT clause.
+                  The down payment is the step the reported user actually got
+                  stuck on, and before this story the phrase appeared nowhere in
+                  the app or its docs (verified at 6e2bd59; the one hit repo-wide
+                  is a savings-goal fixture name in a core test). It is not an
+                  entry anywhere: it is already reflected in the gap between what
+                  the property is worth and what is still owed, and the doc
+                  explains why. The clause lives HERE as well as in the doc
+                  because the confused user is looking at this form, not at
+                  /docs. */}
               {type === 'asset' && (
                 <p className="mt-1 text-xs text-muted" data-testid="balance-asset-hint">
                   Enter what it's worth today. Money you put aside toward it belongs on the Savings
-                  page — an asset's value here changes as it appreciates, not as you contribute.
+                  page — an asset's value here changes as it appreciates, not as you contribute. A
+                  loan against it is recorded separately as a Debt entry, and your down payment is
+                  not entered anywhere.{' '}
+                  <a
+                    href="/docs/where-a-mortgage-belongs"
+                    className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Where a mortgage belongs
+                  </a>{' '}
+                  works through a full example.
                 </p>
               )}
             </div>

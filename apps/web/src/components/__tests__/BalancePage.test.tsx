@@ -13,6 +13,7 @@ import {
   within,
 } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getDocPage } from '../../content/docs'
 import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useSavingsStore } from '../../stores/savingsStore'
@@ -1054,6 +1055,55 @@ describe('BalancePage — sort by column (34.2)', () => {
 })
 
 /**
+ * Whitespace-normalized text of a hint element. `textContent` is normalized
+ * because JSX joins the source lines with newlines and `{' '}` separators.
+ *
+ * ⚠️ Story 49.2 lifted this out of the 36.3 `describe` so the debt, asset and
+ * cross-arm blocks share ONE helper rather than growing three copies that can
+ * drift apart.
+ */
+const hintText = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+/**
+ * The ratified Balance-form hint strings, pinned WHOLE.
+ *
+ * ⚠️ WHOLE, not by distinguishing substring — see the matching note in
+ * `ExpensesPage.test.tsx`. Two substrings proved the hint was the right hint but
+ * left its entire middle clause unpinned, so a reword or a truncation there
+ * would have passed. Review 36.3 caught it.
+ *
+ * The dashes are literal em dashes (U+2014) and every apostrophe is ASCII
+ * (U+0027); both are part of what "verbatim" means here, and M12 proves the
+ * dash is load-bearing.
+ *
+ * ⚠️ Story 49.2 REPLACED 36.3's `'…\u2019…'.replace('\u2019', "'")` idiom with
+ * plain ASCII literals. `String.prototype.replace` with a STRING pattern
+ * replaces only the FIRST occurrence — harmless for the debt hint, which has
+ * one apostrophe, but `ASSET_HINT` has two ("it's", "asset's"), so copying the
+ * idiom forward would have left the second one curly and pinned a string the
+ * component can never produce. The pin would have gone red for a reason that
+ * has nothing to do with the copy.
+ */
+const DEBT_HINT =
+  "Enter what you still owe today. Record the recurring payment on the Expenses page — that's where it counts against your cash flow. If the loan bought something you still have, record that as an Asset entry too, so your net worth reflects both sides. Where a mortgage belongs works through a full example."
+
+const ASSET_HINT =
+  "Enter what it's worth today. Money you put aside toward it belongs on the Savings page — an asset's value here changes as it appreciates, not as you contribute. A loan against it is recorded separately as a Debt entry, and your down payment is not entered anywhere. Where a mortgage belongs works through a full example."
+
+/**
+ * The one doc the two hints point at (story 49.2, UX-DR40 as amended).
+ *
+ * ⚠️ DERIVED from the doc registry, not typed twice. Review 49.2: a hard-coded
+ * href string is a pin on a literal, not on a route — renaming the slug in
+ * `DOC_PAGES` would leave every test in this file green while both form links
+ * 404 through the `$docId` not-found path. Building the href from the slug and
+ * asserting the slug RESOLVES makes the rename fail here instead.
+ */
+const MORTGAGE_DOC_SLUG = 'where-a-mortgage-belongs'
+const MORTGAGE_DOC_HREF = `/docs/${MORTGAGE_DOC_SLUG}`
+const MORTGAGE_DOC_LINK_NAME = 'Where a mortgage belongs'
+
+/**
  * Story 36.3 (UX-DR40): debt guidance on the balance entry form.
  *
  * ⚠️ The present-for-debt and absent-for-investment claims live in SEPARATE
@@ -1063,24 +1113,6 @@ describe('BalancePage — sort by column (34.2)', () => {
  * whole point of having both.
  */
 describe('BalancePage — debt guidance (36.3)', () => {
-  /**
-   * ⚠️ The RATIFIED string, pinned WHOLE — see the matching note in
-   * `ExpensesPage.test.tsx`. Two distinguishing substrings proved the hint was
-   * the right hint but left its entire middle clause unpinned, so a reword or a
-   * truncation there would have passed. Review 36.3 caught it.
-   *
-   * The dash is a literal em dash (U+2014) and the apostrophe is ASCII; both are
-   * part of what "verbatim" means here. `textContent` is whitespace-normalized
-   * because JSX joins the source lines with newlines.
-   */
-  const DEBT_HINT =
-    'Enter what you still owe today. Record the recurring payment on the Expenses page — that\u2019s where it counts against your cash flow.'.replace(
-      '\u2019',
-      "'"
-    )
-
-  const hintText = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
-
   beforeEach(() => {
     useBalanceStore.setState({ entries: [] })
   })
@@ -1186,7 +1218,25 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
 
     // The asset arm gets a hint saying where recurring saving DOES belong, the
     // same way the debt arm points at the Expenses page.
+    // ⚠️ Story 49.2: this is a PRESENCE assertion and nothing more. It was the
+    // asset arm's only guard for five stories, and it stays green against any
+    // rewrite of the copy — which is why 49.2 added the whole-string pin below
+    // rather than trusting this one. Kept because it is the assertion that
+    // belongs to THIS test's subject (the hidden-fields gate), not to the copy.
     expect(within(dialog).getByTestId('balance-asset-hint')).toBeInTheDocument()
+  })
+
+  it('states the asset hint verbatim, including the loan pointer and the down payment (49.2, AC-3/AC-14)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'asset')
+
+    const hint = within(dialog).getByTestId('balance-asset-hint')
+    expect(hintText(hint)).toBe(ASSET_HINT)
   })
 
   it('saves an asset with a zero contribution and a monthly frequency', async () => {
@@ -1259,6 +1309,76 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
     expect(screen.getByTestId('stat-total-debts')).toHaveTextContent('300,000.00')
     expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('150,000.00')
   })
+})
+
+/**
+ * Story 49.2 (UX-DR40, amended): both loan-shaped arms point at the SAME guidance
+ * doc, and both keep the accessible token.
+ *
+ * ⚠️ These claims are deliberately NOT folded into the whole-string pins above.
+ * `textContent` flattens an anchor into its text, so a pin that reads
+ * "Where a mortgage belongs works through a full example" stays perfectly green
+ * when the `<a>` is deleted, when its `href` points at the wrong doc, or when it
+ * is not a link at all. The whole-string pin proves the SENTENCE; only these
+ * prove the LINK.
+ *
+ * ⚠️ Class assertions are TOKEN membership, never substring: `text-muted` is a
+ * substring of nothing here today, but `classList` is what makes that guarantee
+ * hold for a future class like `text-muted-foreground`.
+ */
+describe('BalancePage — mortgage guidance link and contrast token (49.2)', () => {
+  beforeEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+  afterEach(() => {
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  const openArm = async (type: 'debt' | 'asset'): Promise<HTMLElement> => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), type)
+    return within(dialog).getByTestId(`balance-${type}-hint`)
+  }
+
+  it('the pinned href resolves to a real doc page, not just a matching string (AC-1)', () => {
+    // ⚠️ The one assertion in this file that would survive a slug rename is this
+    // one. Everything else compares the anchor against `MORTGAGE_DOC_HREF`, so
+    // renaming the slug moves BOTH sides together and stays green.
+    expect(getDocPage(MORTGAGE_DOC_SLUG)?.title).toBe(MORTGAGE_DOC_LINK_NAME)
+  })
+
+  for (const type of ['debt', 'asset'] as const) {
+    it(`links the ${type} hint to the mortgage guidance doc (AC-1/AC-2)`, async () => {
+      const hint = await openArm(type)
+
+      const link = within(hint).getByRole('link', { name: MORTGAGE_DOC_LINK_NAME })
+      // ⚠️ The TARGET, not just the text. M5 repoints the href at another doc
+      // and every text-based assertion in this file stays green.
+      expect(link.getAttribute('href')).toBe(MORTGAGE_DOC_HREF)
+    })
+
+    it(`keeps the ${type} hint on the token that passes AA in both themes (AC-5)`, async () => {
+      const hint = await openArm(type)
+
+      // `.text-muted` is `text-gray-500 dark:text-gray-400`: 4.83:1 on the white
+      // modal card and 5.78:1 on `dark:bg-gray-800`. Both pass AA for small text.
+      // ⚠️ `text-faint` resolves to gray-400 in BOTH themes, so it is identical to
+      // `text-muted` in dark and fails in LIGHT ONLY, at 2.54:1 (36.3's figure,
+      // reproduced independently by 49.2). Swapping the token is therefore a
+      // regression in one theme and a no-op in the other — which is exactly the
+      // kind of half-visible change a class pin catches and a style review does not.
+      //
+      // ⚠️ HONESTY NOTE: this pair was GREEN before story 49.2 — both hints already
+      // carried `text-muted`. It proves nothing about 49.2's change and is purely a
+      // forward regression pin, the same admission the presence assertion above
+      // carries. A green run here is not evidence that this story did anything.
+      expect([...hint.classList]).toContain('text-muted')
+      expect([...hint.classList]).not.toContain('text-faint')
+    })
+  }
 })
 
 /**
