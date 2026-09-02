@@ -699,7 +699,7 @@ action_items:
   - epic: 6
     action: "Stop citing stale tsc baselines in story drafts — capture the baseline via git stash at HEAD during create-story instead of copying a prior story's number."
     owner: "Amelia"
-    status: open
+    status: done  # CLOSED 2026-09-01. The BEHAVIOUR was already standard (51.1/51.2/52.1 each carry a `baseline_commit` and a "Baseline — MEASURED at <sha> on a CLEAN tree" section captured via stash), but it lived only in agent habit and recurred as a defect in batch 10 (52.1 invented a baseline discrepancy by comparing against 51.2's IMPLEMENTATION-TIME table instead of its post-review close). Now made DURABLE in `_bmad-output/project-context.md` -> "Testing Strategy": verified gate-command table, the dead-`tsc:*`-script trap, and a four-rule "Baseline discipline" block (measure at HEAD on a clean tree; never copy a prior story number; a code-reviewed story has TWO sets of numbers and only the post-review one is its close; a "workaround no longer works" claim is a measurement that decays). All figures in that table re-measured at HEAD `24d3eba` on a clean tree, not copied: web 2429/2429 (179 files), core 863, db 53/7, tsc web+core+db all 0, Biome 0 (505). Verified in the same pass that `pnpm tsc:web` exits 1 via ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT with ZERO `error TS` lines — a grep-based count reads that as a confident "0 errors".
   - epic: 6
     action: "Carry the dark-mode reconciliation explicitly into 7-3 scope — 6-4 left routes/404/docs with inconsistent dark: coverage; 7-3 must reconcile it, not just add a toggle."
     owner: "Sally"
