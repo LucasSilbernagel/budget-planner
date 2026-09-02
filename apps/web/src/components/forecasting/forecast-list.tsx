@@ -389,6 +389,7 @@ export function ForecastList({
                             handleLoad(forecast)
                           }}
                           className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors"
+                          aria-label={`Load ${forecast.name}`}
                           title="Load"
                         >
                           <LoadIcon className="w-4 h-4" />
@@ -398,6 +399,7 @@ export function ForecastList({
                         type="button"
                         onClick={(e) => handleDelete(forecast.id, e)}
                         className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                        aria-label={`Delete ${forecast.name}`}
                         title="Delete"
                       >
                         <DeleteIcon className="w-4 h-4" />
