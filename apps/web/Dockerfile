@@ -28,6 +28,17 @@ FROM base AS build
 # used (Story 5-2, AC-1 — a dev-runtime bundle throws `jsxDEV is not a function`).
 COPY . .
 RUN NODE_ENV=development pnpm install --frozen-lockfile
+
+# Build-time public vars (Story 5-4, AC-2). `vite build` inlines VITE_-prefixed
+# values into the CLIENT bundle, so they must be present HERE — setting them on
+# the running container has no effect. VITE_COUNTERDEV_ID is a public site
+# identifier, not a secret (apps/web/.env.example, ADR-005); passing a secret as
+# a build arg would bake it into an image layer, so only public values belong
+# here. Unset is valid: analytics is simply not loaded.
+# `__APP_VERSION__` needs no arg — vite.config.ts inlines it from package.json.
+ARG VITE_COUNTERDEV_ID=""
+ENV VITE_COUNTERDEV_ID=$VITE_COUNTERDEV_ID
+
 RUN pnpm --filter @budget-planner/web build
 
 # --- Runtime stage ----------------------------------------------------------

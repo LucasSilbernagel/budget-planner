@@ -1,0 +1,447 @@
+name: Deploy (production)
+
+# Production deploy pipeline (Story 5-4).
+#
+# THE SINGLE deploy workflow for this repo. Story 4-16 was originally assigned
+# `deploy.yml`'s authorship but had not created it (sprint-change-proposal
+# 2026-06-26 §4.1); 5-4 owns it now. Do NOT add a second deploy workflow —
+# 4-16 should harden this file instead.
+#
+# Division of labour:
+#   - ci.yml (4-15) ...... the three quality gates. Invoked here, never rebuilt.
+#   - 5-2 ................ the runtime: server-entry.mjs, Dockerfile, rapids-service.yaml.
+#   - 4-17 ............... the managed PostgreSQL instance itself.
+#   - THIS FILE .......... gating, build, migration, deploy, rollback, smoke.
+#
+# TRIGGER (AC-1) — push to `main`, plus manual dispatch.
+#   `main` is the release branch: every merge into it is a candidate release.
+#   (Branch protection is documented in .github/BRANCH_PROTECTION.md but is
+#   admin-applied, so whether it is actually ON is not knowable from the repo —
+#   which is exactly why this workflow re-runs the gates itself rather than
+#   trusting that a PR already ran them.) A tag/release trigger was considered and NOT
+#   chosen: it adds a manual ceremony step for a single-maintainer pre-launch
+#   project without adding a safety property that the `production` Environment
+#   (AC-5) does not already provide. `workflow_dispatch` covers the cases a push
+#   trigger cannot: re-deploying without a code change, and ROLLBACK (dispatch
+#   with `image_tag` set to a previous known-good SHA — see DEPLOY_RUNBOOK.md).
+#
+# ⚠️ BLOCKED-ON-ACCOUNT. The steps that talk to DanubeData cannot be written
+# blind: the registry path, the deploy CLI/API and the revision model are not
+# public (ADR-001 flags Rapids as thinly documented). They are gated behind the
+# `DEPLOY_ENABLED` repository variable and are deliberately built to FAIL LOUDLY
+# rather than no-op: a pipeline that reports success without deploying is worse
+# than one that is honestly switched off. Everything before them — the gates,
+# the type-check, the image build — runs for real on every push today.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy. Defaults to this run''s commit SHA. Set to an earlier SHA to ROLL BACK.'
+        required: false
+        type: string
+
+# One production deploy at a time, and NEVER cancel one in flight: a cancelled
+# run between the migrate and deploy jobs is exactly how a database ends up
+# ahead of the code that serves it.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+  IMAGE_NAME: budget-planner-web
+
+jobs:
+  # --- Gate 1: the existing quality checks (AC-1) ----------------------------
+  # Calls ci.yml as a reusable workflow, so lint + unit + e2e must ALL pass
+  # before anything downstream starts. Expressed as a `needs:` dependency rather
+  # than `workflow_run` on purpose: `workflow_run` fires on failure too and only
+  # blocks if you remember to test `conclusion == 'success'`, which makes "a red
+  # build never deploys" a convention. Here it is structural.
+  #
+  # Tradeoff, accepted knowingly: on a push to `main` these gates also run via
+  # ci.yml's own push trigger, so they execute twice. Removing ci.yml's push
+  # trigger would deduplicate them, but that edits 4-15's contract and its
+  # required-check names. The repo is public (free Actions minutes) and
+  # pre-launch, so the duplicate costs wall-clock, not money.
+  #
+  # Why the duplicate cannot dedupe itself: ci.yml's concurrency group is
+  # `ci-${{ github.workflow }}-${{ github.ref }}`, and under `workflow_call`
+  # `github.workflow` resolves to the CALLING workflow. So the nested run sits in
+  # `ci-Deploy (production)-<ref>` while the standalone run sits in `ci-CI-<ref>`
+  # — different groups, so neither supersedes the other. That also means the
+  # nested gates cannot be cancelled out from under an in-flight deploy: this
+  # workflow's own `deploy-production` group queues later runs rather than
+  # running them concurrently. Stated explicitly because it was previously left
+  # as an assumption (code review 2026-09-03).
+  quality-gates:
+    name: Quality gates
+    uses: ./.github/workflows/ci.yml
+
+  # --- Gate 2: the full type-check (AC-1) ------------------------------------
+  # NEW in 5-4. The old "tsc is deliberately not a gate" rationale died with the
+  # strict-TS sweep (closed 2026-08-24; every package reports 0 errors).
+  #
+  # ⚠️ Uses `pnpm --filter <pkg> type-check`, NEVER the root `tsc:web` /
+  # `tsc:core` / `tsc:db` / `tsc:config` scripts. Those are dead: they exit 1
+  # with ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT *without running a compiler*, so a
+  # grep for "error TS" over their output returns a confident, meaningless 0.
+  type-check:
+    name: Type-check (tsc, all packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        # Version comes from `packageManager` in package.json (pnpm@10.34.3).
+        # Do NOT also pass `version:` — action-setup errors on a conflict.
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # One step per package so a failure names the package in the job log.
+      # `config` is included beyond AC-1's web/core/db list because it is a real
+      # workspace package that already type-checks clean; leaving it unchecked on
+      # the deploy path would be an arbitrary hole.
+      - name: Type-check web
+        run: pnpm --filter web type-check
+
+      - name: Type-check core
+        run: pnpm --filter @budget-planner/core type-check
+
+      - name: Type-check db
+        run: pnpm --filter @budget-planner/db type-check
+
+      - name: Type-check config
+        run: pnpm --filter @budget-planner/config type-check
+
+  # --- Build + package the Start app for Rapids (AC-2) -----------------------
+  # Runs on EVERY push, gated or not: building the image needs no DanubeData
+  # account, and a Dockerfile that stopped building is something we want to learn
+  # about now rather than on cutover day. Only the registry PUSH is blocked.
+  build-image:
+    name: Build container image
+    runs-on: ubuntu-latest
+    needs: [quality-gates, type-check]
+    timeout-minutes: 30
+    # DANUBEDATA_REGISTRY_USERNAME/_PASSWORD are `production` ENVIRONMENT secrets
+    # (DEPLOY_RUNBOOK.md §1). GitHub does NOT expose environment-scoped secrets to
+    # a job that does not declare the environment — without this key they resolve
+    # to EMPTY STRINGS and `docker login` silently runs with blank credentials.
+    # Found in code review 2026-09-03; the workflow and the runbook had disagreed.
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Build-time public vars (AC-2). These are baked into the client bundle by
+      # `vite build` inside the image, so they MUST be build args, not runtime
+      # env — setting VITE_COUNTERDEV_ID on the running container does nothing.
+      # It is a public site identifier, not a secret (see apps/web/.env.example
+      # and ADR-005), but it is passed from repo *variables* so it is configured
+      # in one place. `__APP_VERSION__` needs no wiring: vite.config.ts inlines it
+      # from package.json at build time.
+      #
+      # Build context is the monorepo root — the Dockerfile installs the whole
+      # pnpm workspace (apps/web/Dockerfile documents this).
+      - name: Build production image
+        env:
+          VITE_COUNTERDEV_ID: ${{ vars.VITE_COUNTERDEV_ID }}
+        run: |
+          set -euo pipefail
+          docker build \
+            -f apps/web/Dockerfile \
+            --build-arg "VITE_COUNTERDEV_ID=${VITE_COUNTERDEV_ID}" \
+            -t "${IMAGE_NAME}:${GITHUB_SHA}" \
+            .
+
+      # Prove the image actually boots and serves before it is a deploy
+      # candidate. This is the same three-way check 5-2 documented, run against
+      # the container rather than a local build. No database is required:
+      # /api/health is a process-up probe and the db client connects lazily.
+      - name: Verify the image boots and serves
+        run: |
+          set -euo pipefail
+          docker run -d --name bp-verify -p 8080:8080 \
+            -e NODE_ENV=production \
+            -e SESSION_SECRET="$(openssl rand -hex 32)" \
+            -e SITE_URL="https://example.invalid" \
+            "${IMAGE_NAME}:${GITHUB_SHA}"
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+              echo "container is serving after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::Image never became healthy within 30s"
+              docker logs bp-verify
+              exit 1
+            fi
+            sleep 1
+          done
+
+          curl -fsS -o /dev/null -w 'health: %{http_code}\n' http://127.0.0.1:8080/api/health
+          curl -fsS -o /dev/null -w 'SSR /:   %{http_code}\n' http://127.0.0.1:8080/
+
+      - name: Container logs (always)
+        if: ${{ !cancelled() }}
+        run: docker logs bp-verify || true
+
+      - name: Stop verification container
+        if: ${{ !cancelled() }}
+        run: docker rm -f bp-verify || true
+
+      # [OPS] blocked-on-account: push the built image to the DanubeData
+      # registry. Fails loudly if deploys are enabled without a registry
+      # configured, rather than letting a later job deploy a stale image.
+      - name: Push image to the DanubeData registry
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        env:
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.DANUBEDATA_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DANUBEDATA_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REGISTRY:-}" ]; then
+            echo "::error::DEPLOY_ENABLED is true but the DANUBEDATA_REGISTRY variable is unset."
+            echo "Set it to the registry path from provisioning (Story 4-16/5-2) before enabling deploys."
+            exit 1
+          fi
+          # Reject malformed values up front. A trailing slash or a scheme would
+          # otherwise build a broken image reference (`host//name`, `https://...`)
+          # and fail later with an opaque Docker error instead of this message.
+          case "${REGISTRY}" in
+            */)      echo "::error::DANUBEDATA_REGISTRY must not end with '/': '${REGISTRY}'"; exit 1 ;;
+            *://*)   echo "::error::DANUBEDATA_REGISTRY must not include a scheme: '${REGISTRY}'"; exit 1 ;;
+            *\ *)    echo "::error::DANUBEDATA_REGISTRY must not contain spaces: '${REGISTRY}'"; exit 1 ;;
+          esac
+          # DANUBEDATA_REGISTRY is the full image PREFIX (host + namespace), e.g.
+          # cr.danubedata.ro/budgetplanner795. `docker login` takes the HOST ONLY —
+          # passing it a path fails — so strip everything from the first slash.
+          REGISTRY_HOST="${REGISTRY%%/*}"
+          echo "Logging in to ${REGISTRY_HOST}"
+          echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" --password-stdin
+          docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
+
+  # --- Database migration (AC-4) — closes 5-8 AC-11 -------------------------
+  # Ordered BEFORE the deploy so the schema is never behind the code that serves
+  # it, and any failure here aborts the run before the new revision goes live.
+  #
+  # This job is the first to name the `production` Environment, so an Environment
+  # approval rule (AC-5) pauses the run HERE — before the first irreversible
+  # action against production, which is the migration, not the deploy.
+  migrate:
+    name: Migrate production database
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    environment: production
+    # Tight on purpose. The preflight and the migration both talk to production
+    # PostgreSQL; a query blocked on a lock would otherwise run to GitHub's
+    # 6-hour default, and because this workflow serialises on a NON-cancelling
+    # concurrency group, that one stuck run queues every later deploy behind it.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only
+      # safe against a database drizzle owns the history of; the existing
+      # DanubeData dev DBs were built with `drizzle-kit push` and have NO journal
+      # rows, so replaying the chain there re-mints userProfiles ids and orphans
+      # profileId / forecastingProfiles references (deferred-work.md:643).
+      # Fails closed on anything it cannot classify. Never `continue-on-error`.
+      - name: Preflight — refuse an unsafe migration target
+        env:
+          NODE_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+        run: pnpm --filter @budget-planner/db db:migrate:preflight
+
+      # Aborts the deploy on failure: no `continue-on-error`, and every
+      # downstream job `needs:` this one, so a half-migrated database can never
+      # be followed by a release.
+      - name: Apply migrations
+        env:
+          NODE_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+        run: pnpm --filter @budget-planner/db db:migrate
+
+  # --- Deploy to Rapids (AC-2/AC-5) ------------------------------------------
+  deploy:
+    name: Deploy to DanubeData Rapids
+    runs-on: ubuntu-latest
+    needs: migrate
+    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # A manual dispatch may name an older SHA — that is the rollback path.
+      - name: Resolve image tag
+        id: resolve
+        env:
+          REQUESTED: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          TAG="${REQUESTED:-$GITHUB_SHA}"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image tag: ${TAG}"
+
+      # ⚠️ [OPS] blocked-on-account. The real command goes here once the account
+      # exists and the Rapids deploy interface is known (`kubectl apply` against
+      # the Knative service in apps/web/rapids-service.yaml, or the Rapids CLI
+      # equivalent — reconcile at provisioning, per 5-2 §2).
+      #
+      # It exits 1 by design. Turning DEPLOY_ENABLED on before wiring this step
+      # must FAIL, not quietly report a successful deploy that never happened.
+      # Whoever wires it: replace the `exit 1` block, keep `set -euo pipefail`,
+      # and make sure a non-zero exit from the deploy tool propagates.
+      - name: Deploy revision to Rapids
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+          RAPIDS_API_TOKEN: ${{ secrets.RAPIDS_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::error::Rapids deploy step is not wired yet (blocked on the DanubeData account)."
+          echo "Intended action: roll out ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} to the Knative"
+          echo "service defined in apps/web/rapids-service.yaml (Falkenstein, DE)."
+          echo "See .github/DEPLOY_RUNBOOK.md §'Wiring the deploy step'."
+          exit 1
+
+  # --- Post-deploy smoke check (AC-5) ----------------------------------------
+  # A deploy is not done because the deploy tool exited 0 — it is done when the
+  # live URL actually serves. A failure here reds the run and is the signal to
+  # roll back (DEPLOY_RUNBOOK.md); it does not auto-roll-back, because an
+  # automatic rollback on an unproven pipeline is its own hazard.
+  smoke:
+    name: Post-deploy smoke check
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    timeout-minutes: 10
+    steps:
+      - name: Smoke-check the live site
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_URL:-}" ]; then
+            echo "::error::SITE_URL repository variable is unset; cannot smoke-check the deploy."
+            exit 1
+          fi
+
+          echo "Smoke-checking ${SITE_URL}"
+
+          # 1. The SSR document renders.
+          code=$(curl -fsS -o /tmp/home.html -w '%{http_code}' --max-time 30 "${SITE_URL}/")
+          echo "GET /            -> ${code}"
+          grep -qi '<html' /tmp/home.html \
+            || { echo "::error::/ returned ${code} but the body is not an HTML document"; exit 1; }
+
+          # 2. A server route executes (proves it is the SSR server, not a CDN
+          #    serving a stale static shell).
+          health=$(curl -fsS --max-time 30 "${SITE_URL}/api/health")
+          echo "GET /api/health  -> ${health}"
+          echo "${health}" | grep -q '"status"' \
+            || { echo "::error::/api/health did not return a status payload"; exit 1; }
+
+          echo "Smoke check passed."
+
+  # --- Honest run summary ----------------------------------------------------
+  # Without this, a run where every deploy job was SKIPPED still shows a green
+  # tick, which reads as "deployed". This states plainly what did and did not
+  # happen, on every single run.
+  summary:
+    name: Pipeline summary
+    runs-on: ubuntu-latest
+    needs: [quality-gates, type-check, build-image, migrate, deploy, smoke]
+    if: ${{ always() }}
+    timeout-minutes: 5
+    steps:
+      - name: Write summary
+        env:
+          ENABLED: ${{ vars.DEPLOY_ENABLED }}
+          GATES: ${{ needs.quality-gates.result }}
+          TYPES: ${{ needs.type-check.result }}
+          BUILD: ${{ needs.build-image.result }}
+          MIGRATE: ${{ needs.migrate.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          SMOKE: ${{ needs.smoke.result }}
+        run: |
+          {
+            echo "## Production pipeline"
+            echo ""
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| Quality gates (lint/unit/e2e) | ${GATES} |"
+            echo "| Type-check (all packages) | ${TYPES} |"
+            echo "| Build + verify image | ${BUILD} |"
+            echo "| Migrate database | ${MIGRATE} |"
+            echo "| Deploy to Rapids | ${DEPLOY} |"
+            echo "| Post-deploy smoke | ${SMOKE} |"
+            echo ""
+            # Order matters. A BROKEN BUILD is the headline even when deploys are
+            # switched off — the original version branched only on ENABLED, so a run
+            # whose gates had actually FAILED still printed the reassuring
+            # "expected pre-launch state" banner. The one job written to keep this
+            # pipeline honest was reassuring on a red build (code review 2026-09-03).
+            if [ "${GATES}" = "failure" ] || [ "${TYPES}" = "failure" ] || [ "${BUILD}" = "failure" ]; then
+              echo "> ❌ **THE BUILD IS BROKEN.** A pre-deploy stage failed above, so nothing"
+              echo "> could have been deployed regardless of the \`DEPLOY_ENABLED\` setting."
+              echo "> Fix the failing stage first — do not read this run as a quiet no-op."
+            elif [ "${ENABLED}" = "true" ]; then
+              if [ "${SMOKE}" = "success" ]; then
+                echo "> ✅ Deployed and smoke-checked."
+              else
+                echo "> ❌ **Deploy did not complete cleanly.** Check the failed stage above and"
+                echo "> follow the rollback procedure in \`.github/DEPLOY_RUNBOOK.md\`."
+              fi
+            elif [ -n "${ENABLED}" ] && [ "${ENABLED}" != "false" ]; then
+              # Set, but not to a value that enables anything. Without this branch a
+              # typo ("True", "1", "yes") is indistinguishable from a deliberate off.
+              echo "> ⚠️ **\`DEPLOY_ENABLED\` is set to \`${ENABLED}\`, which is NOT the exact string"
+              echo "> \`true\`, so nothing was deployed.** If you meant to enable deploys, set it to"
+              echo "> lowercase \`true\`. If you meant to keep them off, unset it or use \`false\`."
+            else
+              echo "> ⏸️ **NOTHING WAS DEPLOYED.** The \`DEPLOY_ENABLED\` repository variable is not"
+              echo "> \`true\`, so the migrate/deploy/smoke jobs were skipped. This is the expected"
+              echo "> pre-launch state: the DanubeData account does not exist yet."
+              echo "> See \`.github/DEPLOY_RUNBOOK.md\` for the enablement checklist."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

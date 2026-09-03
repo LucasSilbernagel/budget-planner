@@ -9,9 +9,15 @@ name: CI
 #   - unit-tests  → pnpm test:unit (Vitest, all workspaces)
 #   - e2e-tests   → pnpm test:e2e  (headless Playwright / Chromium)
 #
-# Deliberately NOT a gate: full `tsc` type-check — the repo carries a large,
-# tracked backlog of pre-existing type errors (build-infra debt) that would red
-# the pipeline. `validate:tsconfig` (config-file sanity only) is safe and runs.
+# `validate:tsconfig` (config-file sanity only) runs inside the lint job.
+#
+# The full `tsc` type-check is NOT run here — it is a *deploy* gate, owned by
+# `deploy.yml` (Story 5-4, AC-1). The original reason for excluding it (a tracked
+# backlog of pre-existing type errors) is dead: the strict-TS sweep closed
+# 2026-08-24 and every package now reports 0 errors. It sits on the deploy path
+# rather than here so this workflow's three job names stay exactly the three
+# required status checks documented in .github/BRANCH_PROTECTION.md.
+#
 # Deployment is intentionally out of scope here; it is owned by the Epic 5
 # production stories (5-4 configure CI/CD for production, 4-16/4-17 deploy).
 
@@ -20,6 +26,11 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Story 5-4: lets `deploy.yml` invoke these exact gates as a `needs:`
+  # dependency, so the deploy job structurally cannot start unless lint, unit
+  # and e2e all pass. Additive only — the triggers above are unchanged, so the
+  # required status checks in BRANCH_PROTECTION.md keep their names.
+  workflow_call:
 
 # Supersede in-flight runs for the same ref so pushes don't pile up CI minutes.
 concurrency:
@@ -40,6 +51,7 @@ jobs:
   lint:
     name: Lint (Biome + tsconfig)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,6 +80,7 @@ jobs:
   unit-tests:
     name: Unit tests (Vitest)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,6 +110,7 @@ jobs:
   e2e-tests:
     name: E2E tests (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4

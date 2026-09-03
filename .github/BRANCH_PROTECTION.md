@@ -52,3 +52,31 @@ gh api repos/LucasSilbernagel/budget-planner/branches/main/protection \
 
 Then open a PR with a deliberately failing check (e.g. a Biome violation) and
 confirm the **Merge** button is blocked until the check passes.
+
+---
+
+## ⚠️ These three job names are load-bearing (Story 5-4)
+
+`ci.yml` is now also invoked as a **reusable workflow** by
+[`deploy.yml`](workflows/deploy.yml), which gates the production deploy on it.
+That change was additive — the `pull_request` / `push` triggers and the three
+job `name:` values above are untouched, so the required checks configured here
+still resolve.
+
+Renaming any of those three jobs therefore breaks **two** things at once: the
+required status checks listed above silently stop matching (a rule that requires
+a check which no longer exists blocks merges), and the deploy gate's job graph
+changes. If you rename one, update this file *and* re-select the check in the
+branch protection rule.
+
+Note that when `ci.yml` runs *inside* `deploy.yml` its checks report under a
+different context string from the standalone run — GitHub prefixes a called
+workflow's jobs with the **calling job's** name, so the nested contexts read as
+`Quality gates / Lint (Biome + tsconfig)` rather than the bare
+`Lint (Biome + tsconfig)` the rule below matches. **Confirm the exact strings
+against a real run before relying on them** — the nesting format is easy to get
+wrong by a level, and nothing in this repo can verify it offline.
+
+Either way the instruction is the same: branch protection should keep using the
+standalone `ci.yml` PR contexts listed above. The deploy-nested run happens after
+merge and is not a merge gate.
