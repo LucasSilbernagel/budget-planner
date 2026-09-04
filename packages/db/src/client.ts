@@ -42,6 +42,32 @@ if (typeof window !== 'undefined') {
 const EU_DB_HOST_SUFFIXES = ['.danubedata.com'] as const
 
 /**
+ * Internal-DNS hostnames permitted for the production database (Story 4.17, AC-2).
+ *
+ * DanubeData managed PostgreSQL is reachable ONLY from inside the DanubeData
+ * network: both endpoints shown in the dashboard are internal, the
+ * "writer"/"reader" pair being the CloudNativePG rw/ro split rather than a
+ * public-vs-private split. There is no public endpoint to point at instead, and
+ * ADR-001 forbids external paths ("no external connections, no SSH tunnels in
+ * production"), so the suffix list above cannot cover the production host.
+ *
+ * These are matched EXACTLY — never as a suffix, never as a substring. A bare
+ * name has no dots to anchor against, so `endsWith` on it would admit
+ * `budget-planner-prod-rw.attacker.com`. Exact match is what keeps this
+ * addition from widening the allowlist.
+ *
+ * Only the WRITER endpoint is listed: the app and the migration both write, so
+ * an accidental `-ro` URL should fail rather than half-work. If a read replica
+ * is ever wired up deliberately, add its name here with its own test.
+ *
+ * CONFIRMED 2026-09-03 against the provisioned instance (database `pgdb`,
+ * Falkenstein DE): the dashboard reports this exact writer name. If it is ever
+ * re-provisioned under a different name, update this constant and its test in
+ * `client.test.ts` — those two places are the whole change.
+ */
+const EU_DB_INTERNAL_HOSTS = ['budget-planner-prod-rw'] as const
+
+/**
  * True only for the explicit local environments that may relax SSL + host
  * validation. Everything else — production, staging, preview, an unset or
  * unknown NODE_ENV — is treated as production-grade and fails closed.
@@ -55,12 +81,16 @@ export function isRelaxedDbEnv(nodeEnv: string | undefined): boolean {
  *
  * Substring matching is unsafe — `host.includes('.danubedata.com')` would let
  * `evil.danubedata.com.attacker.com` through — so we require an exact host or a
- * dot-anchored suffix.
+ * dot-anchored suffix. Internal-DNS names (which have no suffix to anchor on)
+ * are admitted by exact match only.
  */
 export function isEuSovereignDbHost(host: string): boolean {
   // Strip a single trailing dot: `pg-01.fra.danubedata.com.` is a valid
   // absolute-FQDN form and must match the same as the dotless host.
   const h = host.toLowerCase().replace(/\.$/, '')
+  if ((EU_DB_INTERNAL_HOSTS as readonly string[]).includes(h)) {
+    return true
+  }
   return EU_DB_HOST_SUFFIXES.some((suffix) => h === suffix.slice(1) || h.endsWith(suffix))
 }
 

@@ -66,3 +66,36 @@ describe('buildDbSsl (production CA support)', () => {
     })
   })
 })
+
+// Story 4.17 — AC-2: the production database is reached over DanubeData internal
+// DNS, a BARE hostname with no `.danubedata.com` suffix. It is allowed by EXACT
+// match only, so the anchoring that protects the suffix list is not weakened.
+
+describe('isEuSovereignDbHost (internal-DNS exact allowlist)', () => {
+  it('accepts the verified internal writer endpoint', () => {
+    expect(isEuSovereignDbHost('budget-planner-prod-rw')).toBe(true)
+  })
+
+  it('accepts it case-insensitively and in absolute-FQDN form', () => {
+    expect(isEuSovereignDbHost('BUDGET-PLANNER-PROD-RW')).toBe(true)
+    expect(isEuSovereignDbHost('budget-planner-prod-rw.')).toBe(true)
+  })
+
+  it('rejects a lookalike built by extending the internal name', () => {
+    // The whole point of exact match: none of these are the internal service.
+    expect(isEuSovereignDbHost('budget-planner-prod-rw.attacker.com')).toBe(false)
+    expect(isEuSovereignDbHost('budget-planner-prod-rw.evil.io')).toBe(false)
+    expect(isEuSovereignDbHost('evil-budget-planner-prod-rw')).toBe(false)
+    expect(isEuSovereignDbHost('budget-planner-prod-rw-evil')).toBe(false)
+  })
+
+  it('does not allowlist the read-only endpoint (writes must fail loudly, not silently)', () => {
+    expect(isEuSovereignDbHost('budget-planner-prod-ro')).toBe(false)
+  })
+
+  it('does not turn every bare hostname into a sovereign host', () => {
+    expect(isEuSovereignDbHost('postgres')).toBe(false)
+    expect(isEuSovereignDbHost('db')).toBe(false)
+    expect(isEuSovereignDbHost('budget-planner-dev-rw')).toBe(false)
+  })
+})

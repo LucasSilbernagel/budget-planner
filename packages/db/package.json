@@ -16,6 +16,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:preflight": "tsx src/migrate-preflight-cli.ts",
     "db:migrate": "drizzle-kit migrate",
+    "db:smoke": "tsx src/db-smoke-cli.ts",
     "db:studio": "drizzle-kit studio"
   },
   "main": "dist/index.js",
