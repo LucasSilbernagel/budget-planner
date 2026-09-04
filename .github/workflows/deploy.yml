@@ -56,6 +56,11 @@ permissions:
 env:
   NODE_VERSION: '20'
   IMAGE_NAME: budget-planner-web
+  # DanubeData managed PostgreSQL instance name, as `danube db ls` reports it.
+  DB_INSTANCE: budget-planner-prod
+  # Pinned deliberately: the `migrate` job's safety depends on `db dns disable`
+  # behaving exactly as expected, so the CLI does not float.
+  DANUBE_CLI_VERSION: '1.1.0'
 
 jobs:
   # --- Gate 1: the existing quality checks (AC-1) ----------------------------
@@ -244,9 +249,23 @@ jobs:
   # Ordered BEFORE the deploy so the schema is never behind the code that serves
   # it, and any failure here aborts the run before the new revision goes live.
   #
-  # This job is the first to name the `production` Environment, so an Environment
-  # approval rule (AC-5) pauses the run HERE — before the first irreversible
-  # action against production, which is the migration, not the deploy.
+  # `build-image` also names the `production` Environment (see its `environment:`
+  # key) and runs first, so an Environment approval rule pauses the run THERE, not
+  # here. Three jobs name it in total — build-image, migrate, deploy — and GitHub
+  # prompts once per job. DEPLOY_RUNBOOK.md §3 has the authoritative account.
+  #
+  # ⏳ TIME-BOXED ADR-001 EXCEPTION (Story 5.17, 2026-09-03).
+  # The database is reachable only over Kubernetes in-cluster DNS
+  # (budget-planner-prod-rw.budgetplanner795.svc.cluster.local), which a
+  # GitHub-hosted runner cannot resolve. DanubeData Rapids offers no
+  # run-to-completion primitive and no container command override, so there is no
+  # in-cluster job to run this from. For the INITIAL, pre-launch migration only,
+  # this job opens the database's public DNS for the duration of the migration and
+  # closes it immediately afterwards.
+  #
+  # This expires the moment the database holds real user data. Before the first
+  # real user it is replaced by an in-cluster migration container (ADR-001 exit
+  # criteria, Story 5.6). Do not copy this pattern for routine migrations.
   migrate:
     name: Migrate production database
     runs-on: ubuntu-latest
@@ -274,6 +293,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Pinned: an unpinned CLI could change `db dns` semantics under us, and this
+      # job's safety rests on `dns disable` behaving exactly as expected.
+      - name: Install the DanubeData CLI
+        run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
+
+      # DANUBE_TOKEN is read from the environment by `danube` itself — the CLI's
+      # own help recommends this over `--token` to keep it out of shell history.
+      - name: Authenticate the DanubeData CLI
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+        run: danube whoami
+
+      # ⏳ WINDOW OPENS. Everything between here and "close the window" runs with
+      # the database publicly reachable, so only the preflight and the migration
+      # belong in between — no build, no push, no deploy.
+      - name: Open the migration window
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+        run: |
+          set -euo pipefail
+          danube db dns enable "${DB_INSTANCE}"
+          echo "::notice::Public DNS OPEN for ${DB_INSTANCE} — closes at the end of this job."
+
       # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only
       # safe against a database drizzle owns the history of; the existing
       # DanubeData dev DBs were built with `drizzle-kit push` and have NO journal
@@ -290,12 +332,45 @@ jobs:
       # Aborts the deploy on failure: no `continue-on-error`, and every
       # downstream job `needs:` this one, so a half-migrated database can never
       # be followed by a release.
+      #
+      # DATABASE_CA_CERT is REQUIRED here, not optional: the DanubeData chain is
+      # self-signed, so without it the connection fails SELF_SIGNED_CERT_IN_CHAIN
+      # (verified 2026-09-03). Since Story 5.17 AC-4 the migrating connection
+      # enforces the same CA-validated TLS and EU host allowlist as the app pool.
       - name: Apply migrations
         env:
           NODE_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
         run: pnpm --filter @budget-planner/db db:migrate
+
+      # ⏳ WINDOW CLOSES. `always()` is load-bearing: this MUST run when the
+      # migration fails, when the preflight refuses, when a step times out, and
+      # when the job is cancelled. A window left open is a worse outcome than a
+      # failed migration, so the step also FAILS THE JOB if the close does not
+      # take — never `continue-on-error`, never a bare `|| true`.
+      - name: Close the migration window
+        if: ${{ always() }}
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+        run: |
+          set -uo pipefail
+          # `always()` means this also runs when the job failed BEFORE the window
+          # opened, where `dns disable` on an already-closed instance may return
+          # non-zero. So the exit code is advisory and the STATE CHECK below is
+          # what decides — otherwise a safe, already-closed database would fail
+          # the job and train everyone to ignore this step.
+          danube db dns disable "${DB_INSTANCE}" \
+            || echo "dns disable returned non-zero; verifying actual state instead"
+
+          # The public endpoint has a distinctive shape
+          # (postgresql-<instance>.<ns>.danubedata.ro); the closed one is
+          # *.svc.cluster.local. Match the former to detect a still-open window.
+          if danube db ls | grep -Eq "postgresql-.*\.danubedata\.ro"; then
+            echo "::error::Public DNS still OPEN for ${DB_INSTANCE}. Close it by hand: danube db dns disable ${DB_INSTANCE}"
+            exit 1
+          fi
+          echo "::notice::Public DNS closed for ${DB_INSTANCE}."
 
   # --- Deploy to Rapids (AC-2/AC-5) ------------------------------------------
   deploy:

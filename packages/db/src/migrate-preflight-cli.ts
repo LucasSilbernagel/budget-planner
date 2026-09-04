@@ -92,7 +92,7 @@ async function main(): Promise<number> {
   // development/test NODE_ENV may point at a non-DanubeData host.
   if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
     console.error(
-      `[migrate-preflight] Refusing to migrate: "${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected e.g. *.danubedata.com.`
+      `[migrate-preflight] Refusing to migrate: "${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected e.g. *.danubedata.ro.`
     )
     return 1
   }

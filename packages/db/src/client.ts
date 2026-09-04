@@ -38,18 +38,29 @@ if (typeof window !== 'undefined') {
  * EU-only data sovereignty (NFR1, NFR2): the production database MUST be
  * DanubeData (Germany, EU) for full CLOUD Act immunity. US-reachable infra
  * (ElephantSQL, Supabase) is intentionally NOT permitted.
+ *
+ * ⚠️ CORRECTED 2026-09-03. This list held `.danubedata.com` from the architecture
+ * documents until the first real endpoint was inspected. DanubeData's actual
+ * domain is **`danubedata.ro`** — `danube db ls` reports
+ * `postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:5445`, and the
+ * container registry is `cr.danubedata.ro/<ns>`. No real DanubeData host has ever
+ * matched `.danubedata.com`; nothing had connected, so nothing exposed it.
+ *
+ * `.danubedata.com` was REMOVED rather than kept alongside: a domain this provider
+ * does not own may belong to someone else, and allowlisting it would admit a wholly
+ * foreign host — the precise failure this guard exists to prevent.
  */
-const EU_DB_HOST_SUFFIXES = ['.danubedata.com'] as const
+const EU_DB_HOST_SUFFIXES = ['.danubedata.ro'] as const
 
 /**
  * Internal-DNS hostnames permitted for the production database (Story 4.17, AC-2).
  *
- * DanubeData managed PostgreSQL is reachable ONLY from inside the DanubeData
- * network: both endpoints shown in the dashboard are internal, the
- * "writer"/"reader" pair being the CloudNativePG rw/ro split rather than a
- * public-vs-private split. There is no public endpoint to point at instead, and
- * ADR-001 forbids external paths ("no external connections, no SSH tunnels in
- * production"), so the suffix list above cannot cover the production host.
+ * DanubeData managed PostgreSQL is reachable over Kubernetes in-cluster DNS as
+ * provisioned: the two endpoints shown in the dashboard are the CloudNativePG
+ * rw/ro split, not a public-vs-private split. A public endpoint can be exposed
+ * (`danube db dns enable`, which yields a `.danubedata.ro` host covered by the
+ * suffix list above), but ADR-001 forbids that as a standing configuration — so
+ * the in-cluster names below are what the application actually connects on.
  *
  * These are matched EXACTLY — never as a suffix, never as a substring. A bare
  * name has no dots to anchor against, so `endsWith` on it would admit
@@ -60,12 +71,25 @@ const EU_DB_HOST_SUFFIXES = ['.danubedata.com'] as const
  * an accidental `-ro` URL should fail rather than half-work. If a read replica
  * is ever wired up deliberately, add its name here with its own test.
  *
- * CONFIRMED 2026-09-03 against the provisioned instance (database `pgdb`,
- * Falkenstein DE): the dashboard reports this exact writer name. If it is ever
- * re-provisioned under a different name, update this constant and its test in
+ * CONFIRMED 2026-09-03 against the provisioned instance (`budget-planner-prod`,
+ * database `pgdb`, Falkenstein DE). `danube db ls` reports the endpoint as
+ * `budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432` — Kubernetes
+ * in-cluster DNS, reachable only from inside that cluster and namespace.
+ *
+ * Listed as EXACT names rather than a `.svc.cluster.local` suffix rule on
+ * purpose: a suffix would admit every service in every namespace of any cluster,
+ * which is not a sovereignty guarantee at all.
+ *
+ * If the instance is ever re-provisioned, update this constant and its test in
  * `client.test.ts` — those two places are the whole change.
  */
-const EU_DB_INTERNAL_HOSTS = ['budget-planner-prod-rw'] as const
+const EU_DB_INTERNAL_HOSTS = [
+  // Short form: resolvable from a pod in the same namespace via its DNS search
+  // domain. The FQDN is what `danube db ls` reports and what therefore ends up
+  // pasted into DATABASE_URL, so both forms have to be admitted.
+  'budget-planner-prod-rw',
+  'budget-planner-prod-rw.budgetplanner795.svc.cluster.local',
+] as const
 
 /**
  * True only for the explicit local environments that may relax SSL + host
@@ -79,13 +103,13 @@ export function isRelaxedDbEnv(nodeEnv: string | undefined): boolean {
 /**
  * Anchored EU-sovereignty host check.
  *
- * Substring matching is unsafe — `host.includes('.danubedata.com')` would let
- * `evil.danubedata.com.attacker.com` through — so we require an exact host or a
+ * Substring matching is unsafe — `host.includes('.danubedata.ro')` would let
+ * `evil.danubedata.ro.attacker.com` through — so we require an exact host or a
  * dot-anchored suffix. Internal-DNS names (which have no suffix to anchor on)
  * are admitted by exact match only.
  */
 export function isEuSovereignDbHost(host: string): boolean {
-  // Strip a single trailing dot: `pg-01.fra.danubedata.com.` is a valid
+  // Strip a single trailing dot: `pg-01.fra.danubedata.ro.` is a valid
   // absolute-FQDN form and must match the same as the dotless host.
   const h = host.toLowerCase().replace(/\.$/, '')
   if ((EU_DB_INTERNAL_HOSTS as readonly string[]).includes(h)) {
@@ -136,7 +160,7 @@ function getPool(): Pool {
     // must use a DanubeData EU host for data sovereignty (NFR1, NFR2).
     if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
       throw new Error(
-        `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity (NFR1, NFR2). Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.com).`
+        `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity (NFR1, NFR2). Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.ro).`
       )
     }
 
