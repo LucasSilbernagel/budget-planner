@@ -119,6 +119,37 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # --- Prerequisites. Do NOT reorder or drop these. ---------------------
+      # `tsc` reads the workspace packages through PROJECT REFERENCES, i.e. their
+      # built `packages/*/dist/*.d.ts`, and `apps/web/src/router.tsx` imports the
+      # generated `./routeTree.gen.ts`. Both are gitignored build artifacts, so a
+      # fresh CI checkout has NEITHER — while a dev box has both lying around from
+      # the last `pnpm dev`. That is why this job passed locally and failed here
+      # with ~190 errors: 150-odd TS6305 "output file has not been built from
+      # source file", 38 route errors cascading from the missing route tree, and a
+      # tail of implicit-`any`s that were only downstream noise. None of them said
+      # anything about the code under review.
+      #
+      # `tsc -b` (build mode), NOT `pnpm -r build`. What tsc actually consumes is
+      # the `references` graph in the tsconfigs, and build mode walks that graph
+      # itself — so the order is correct by construction and cannot drift out of
+      # sync with pnpm's separate package-dependency graph. (Those two graphs HAD
+      # drifted: `packages/core` imported types from `@budget-planner/db` without
+      # declaring it, so pnpm saw no edge, built core and db CONCURRENTLY, and
+      # core lost the race with the same TS6305. The dependency is declared now,
+      # but the reason to prefer build mode here does not depend on that.)
+      - name: Build workspace packages (project references)
+        run: pnpm build:packages
+
+      # Vite aliases `@budget-planner/*` to `src`, so this does not depend on the
+      # step above; it is here for the SIDE EFFECT of the TanStack Start plugin
+      # regenerating `src/routeTree.gen.ts`. There is no standalone generator CLI
+      # (`@tanstack/router-generator` ships no bin), so a real build is the only
+      # supported way to produce it. It also means a broken web build reds this
+      # job rather than waiting for the Docker build.
+      - name: Build the web app (generates src/routeTree.gen.ts)
+        run: pnpm --filter web build
+
       # One step per package so a failure names the package in the job log.
       # `config` is included beyond AC-1's web/core/db list because it is a real
       # workspace package that already type-checks clean; leaving it unchecked on

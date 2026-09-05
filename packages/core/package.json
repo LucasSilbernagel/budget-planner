@@ -19,6 +19,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@budget-planner/db": "workspace:*",
     "@vitest/coverage-v8": "^1.6.1",
     "typescript": "^5.3.3",
     "@biomejs/biome": "1.5.3",

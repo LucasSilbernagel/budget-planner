@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
+    "build:packages": "tsc -b packages/core packages/db packages/config",
     "lint": "biome check . && pnpm validate:tsconfig",
     "lint:fix": "biome check --apply .",
     "format": "biome format --write .",
