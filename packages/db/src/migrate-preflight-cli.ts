@@ -18,8 +18,14 @@
 
 import process from 'node:process'
 import { Pool } from 'pg'
-import { buildDbSsl, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
+import { isEuSovereignDbHost, isRelaxedDbEnv } from './client'
 import { type DbShape, assessMigrateSafety } from './migrate-preflight'
+// The preflight runs inside the same DNS window, against the same public endpoint,
+// as the migration it gates — so it needs the same TLS posture. If it kept the
+// app's verify-full policy it would fail ERR_TLS_CERT_ALTNAME_INVALID and abort
+// every migration before the guard could reach the database. `migrate-preflight.ts`
+// and its classification logic are untouched; only the connection option changes.
+import { buildMigrationDbSsl, hostnameMismatchAllowedFromEnv } from './migrate-tls'
 
 /** Postgres journal written by drizzle-kit: schema `drizzle`, table `__drizzle_migrations`. */
 const JOURNAL = 'drizzle.__drizzle_migrations'
@@ -99,7 +105,11 @@ async function main(): Promise<number> {
 
   const pool = new Pool({
     connectionString: databaseUrl,
-    ssl: buildDbSsl(nodeEnv, process.env['DATABASE_CA_CERT']),
+    ssl: buildMigrationDbSsl(
+      nodeEnv,
+      process.env['DATABASE_CA_CERT'],
+      hostnameMismatchAllowedFromEnv(process.env)
+    ),
     max: 1,
     connectionTimeoutMillis: 10_000,
     // Connecting is not the only way this can hang: a probe query blocked on a

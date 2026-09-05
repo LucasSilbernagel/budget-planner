@@ -276,6 +276,8 @@ jobs:
     # PostgreSQL; a query blocked on a lock would otherwise run to GitHub's
     # 6-hour default, and because this workflow serialises on a NON-cancelling
     # concurrency group, that one stuck run queues every later deploy behind it.
+    # Budget: ~2min setup + up to 5min waiting for the endpoint to come up +
+    # preflight + a 17-migration clean-slate apply. 15 leaves comfortable slack.
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -316,6 +318,26 @@ jobs:
           danube db dns enable "${DB_INSTANCE}"
           echo "::notice::Public DNS OPEN for ${DB_INSTANCE} — closes at the end of this job."
 
+      # `dns enable` returns long before the endpoint actually accepts connections.
+      # Measured 2026-09-04: ~160 SECONDS from enable to first successful TCP
+      # connect. Without this wait the preflight runs straight into ECONNREFUSED
+      # and aborts the deploy for a reason that has nothing to do with the database.
+      # The name resolves throughout, so this polls the PORT, not DNS.
+      - name: Wait for the public endpoint to accept connections
+        env:
+          DB_HOST: ${{ secrets.DATABASE_PUBLIC_HOST }}
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 30); do
+            if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/5445" 2>/dev/null; then
+              echo "::notice::Endpoint reachable after ~$(( i * 10 ))s."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::${DB_HOST}:5445 never became reachable within 300s of opening the window."
+          exit 1
+
       # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only
       # safe against a database drizzle owns the history of; the existing
       # DanubeData dev DBs were built with `drizzle-kit push` and have NO journal
@@ -327,6 +349,12 @@ jobs:
           NODE_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          # verify-ca, not verify-full: DanubeData issues the DB certificate for
+          # in-cluster SANs only, so the public endpoint used inside this window is
+          # absent from it. Chain validation against the cluster CA is KEPT; only
+          # the hostname check is waived, and only here. See packages/db/src/
+          # migrate-tls.ts. Goes away with the ADR-001 exception.
+          DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH: 'true'
         run: pnpm --filter @budget-planner/db db:migrate:preflight
 
       # Aborts the deploy on failure: no `continue-on-error`, and every
@@ -342,6 +370,12 @@ jobs:
           NODE_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          # verify-ca, not verify-full: DanubeData issues the DB certificate for
+          # in-cluster SANs only, so the public endpoint used inside this window is
+          # absent from it. Chain validation against the cluster CA is KEPT; only
+          # the hostname check is waived, and only here. See packages/db/src/
+          # migrate-tls.ts. Goes away with the ADR-001 exception.
+          DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH: 'true'
         run: pnpm --filter @budget-planner/db db:migrate
 
       # ⏳ WINDOW CLOSES. `always()` is load-bearing: this MUST run when the

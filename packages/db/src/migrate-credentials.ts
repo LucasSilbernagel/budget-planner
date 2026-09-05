@@ -17,7 +17,8 @@
  * shape: a refusal must stop the migration, not be swallowed by a config file.
  */
 
-import { buildDbSsl, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
+import { isEuSovereignDbHost, isRelaxedDbEnv } from './client'
+import { type MigrationDbSsl, buildMigrationDbSsl } from './migrate-tls'
 
 export interface MigrationCredentials {
   host: string
@@ -25,13 +26,19 @@ export interface MigrationCredentials {
   user: string
   password: string
   database: string
-  ssl: ReturnType<typeof buildDbSsl>
+  ssl: MigrationDbSsl
 }
 
+/**
+ * @param allowHostnameMismatch Opt-in verify-ca downgrade for the windowed
+ * migration, where the public endpoint is absent from the certificate's SANs.
+ * See `migrate-tls.ts` for exactly what it gives up. Defaults off.
+ */
 export function buildMigrationCredentials(
   nodeEnv: string | undefined,
   databaseUrl: string | undefined,
-  caCert: string | undefined
+  caCert: string | undefined,
+  allowHostnameMismatch = false
 ): MigrationCredentials {
   if (!databaseUrl) {
     throw new Error(
@@ -65,6 +72,6 @@ export function buildMigrationCredentials(
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: decodeURIComponent(url.pathname.replace(/^\//, '')),
-    ssl: buildDbSsl(nodeEnv, caCert),
+    ssl: buildMigrationDbSsl(nodeEnv, caCert, allowHostnameMismatch),
   }
 }

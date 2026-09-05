@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import * as dotenv from 'dotenv'
 import type { Config } from 'drizzle-kit'
 import { buildMigrationCredentials } from './src/migrate-credentials'
+import { hostnameMismatchAllowedFromEnv } from './src/migrate-tls'
 
 // Load environment variables from project root .env for LOCAL runs. In
 // production nothing reads a .env file — every value is injected as a platform
@@ -22,7 +23,12 @@ const databaseUrl = process.env.DATABASE_URL
 // case worth stopping. The migrate path is separately gated by
 // `db:migrate:preflight`, which refuses a missing DATABASE_URL outright.
 const dbCredentials = databaseUrl
-  ? buildMigrationCredentials(process.env.NODE_ENV, databaseUrl, process.env.DATABASE_CA_CERT)
+  ? buildMigrationCredentials(
+      process.env.NODE_ENV,
+      databaseUrl,
+      process.env.DATABASE_CA_CERT,
+      hostnameMismatchAllowedFromEnv(process.env)
+    )
   : { host: '', port: 5432, user: '', password: '', database: '', ssl: false }
 
 export default {

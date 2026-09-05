@@ -26,10 +26,24 @@ repo-side work it depends on is already merged.
 
 ### 1.1 Two database roles, not one
 
-Executed 2026-09-03 against database `pgdb` on instance `budget-planner-prod`
-(micro, 1 GB / 10 GB, €12.99/mo, Falkenstein) via **SQL Studio** in the DanubeData
-dashboard, connected as the admin role `postgres`. Every statement below
-succeeded as written, including the `ALTER SCHEMA` — no fallback was needed.
+Executed against database `pgdb` on instance `budget-planner-prod` (micro,
+1 GB / 10 GB, €12.99/mo, PostgreSQL 16, Falkenstein) via **SQL Studio** in the
+DanubeData dashboard, connected as the admin role `postgres`. Run twice — first on
+2026-09-03, then again on 2026-09-04 after the instance was re-provisioned. Every
+statement below succeeded as written both times, including the `ALTER SCHEMA` — no
+fallback was needed.
+
+> **Re-provisioning is cheap; keep the instance name.** The endpoints derive from
+> it, and both are pinned in `EU_DB_INTERNAL_HOSTS` (`packages/db/src/client.ts`)
+> and `DB_INSTANCE` (`.github/workflows/deploy.yml`). Recreating as
+> `budget-planner-prod` with `--database-name pgdb` reproduced identical hostnames
+> and required **no code change**. A different name costs one constant plus its
+> test, and one workflow line.
+>
+> ⚠️ **`danube db create` has a flag collision: do not pass `--version`.** It is
+> shadowed by the CLI's global `-V, --version`, so the command prints the CLI
+> version, **exits zero, and creates nothing.** Omit it (the default is PostgreSQL
+> 16) or run `danube db create` with no flags and use the interactive prompts.
 
 The instance accepts connections only from inside the DanubeData network, so
 this cannot be run from a laptop; the dashboard's SQL console is the way in.
@@ -144,6 +158,25 @@ reads no `.env` file.
 | `NODE_ENV` | Yes — `production` | literal | Arms every fail-closed path: EU host allowlist, TLS verification, `SESSION_SECRET` floor, https `SITE_URL` check |
 | `SESSION_SECRET` | Yes | `openssl rand -hex 32` (≥32 chars, ≥8 distinct) | `getSessionSecret()` (`packages/config/src/schema.ts`); rotating it logs everyone out |
 | `DANUBE_TOKEN` | Yes (CI only) | DanubeData API token | The `migrate` job's `danube db dns enable/disable` calls |
+| `DATABASE_PUBLIC_HOST` | Yes (CI only) | `postgresql-budget-planner-prod.budgetplanner795.danubedata.ro` | The `migrate` job's endpoint-readiness poll |
+
+> ⚠️ **The migration runs at `verify-ca`, not `verify-full` — and this is deliberate.**
+> DanubeData issues the database certificate for **in-cluster SANs only**
+> (`budget-planner-prod-rw[.budgetplanner795[.svc[.cluster.local]]]`, plus `-r`/`-ro`).
+> The public endpoint is a TCP passthrough with no certificate of its own, so full
+> verification **cannot** succeed over it — you get `ERR_TLS_CERT_ALTNAME_INVALID`.
+> The `migrate` job therefore sets `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH=true`,
+> which waives **only** the hostname check and keeps chain validation against the
+> cluster CA. See `packages/db/src/migrate-tls.ts`; it refuses to engage at all
+> without `DATABASE_CA_CERT`. **The application never gets this** — it connects
+> in-cluster, where the hostname matches.
+
+> ⏱️ **`danube db dns enable` returns long before the endpoint accepts traffic.**
+> Measured 2026-09-04: **~160 seconds** from enable to first successful TCP
+> connect. The name resolves the whole time and the port refuses, so this reads as
+> "connection refused", not a DNS failure. The `migrate` job polls the port for up
+> to 300s before running the preflight. If you open a window by hand, wait — do not
+> conclude something is broken.
 
 > ⚠️ **`DATABASE_CA_CERT` is REQUIRED.** An earlier version of this table called it
 > optional, "only if the DanubeData CA is not in the runner's trust store". That is
@@ -152,17 +185,17 @@ reads no `.env` file.
 > against the live endpoint. It is also read straight from `process.env` and is
 > *not* in the Zod schema, so nothing warns you when it is absent.
 
-> ⚠️ **Known accepted risk — the `pguser` admin password is exposed.**
-> `danube db get` prints a full connection string including the instance admin
-> password; it was run on 2026-09-03 and the value landed in a session transcript.
-> DanubeData exposes **no rotation control** (neither `danube db update` nor the
-> dashboard), so it stands. Accepted because: the database holds no data, `pguser`
-> is used by neither the app (`bp_app`) nor migrations (`bp_migrator`), and the
-> instance is unreachable from the internet except during a migration window.
-> **It becomes briefly exploitable whenever that window is open.** Re-provisioning
-> the instance is the clean fix and is cheap only while the database is empty —
-> revisit before launch. Avoid `danube db get`; use `danube db ls`, which does not
-> print credentials.
+> ✅ **RESOLVED 2026-09-04 — the exposed `pguser` password is gone.** On 2026-09-03
+> `danube db get` printed a full connection string including the instance admin
+> password, and DanubeData exposes **no rotation control** (neither
+> `danube db update` nor the dashboard). Because the database was still empty, the
+> instance was **deleted and re-provisioned** rather than lived with — the only
+> clean fix available, and one that stops being cheap the moment real data exists.
+> The current instance (`01a06f32-eaf3-7210-ae1b-671277cdcf24`) has never had its
+> admin credential printed.
+>
+> ⚠️ **Do not run `danube db get`** — that is what leaked it. Use `danube db ls`,
+> which shows the same instance details without credentials.
 
 > ⚠️ **`DATABASE_CA_CERT` does not reach `drizzle-kit`.** `packages/db/drizzle.config.ts`
 > passes `dbCredentials: { url }` and no `ssl` option, so the connection that
