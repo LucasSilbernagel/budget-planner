@@ -27,11 +27,23 @@ repo-side work it depends on is already merged.
 ### 1.1 Two database roles, not one
 
 Executed against database `pgdb` on instance `budget-planner-prod` (micro,
-1 GB / 10 GB, €12.99/mo, PostgreSQL 16, Falkenstein) via **SQL Studio** in the
-DanubeData dashboard, connected as the admin role `postgres`. Run twice — first on
-2026-09-03, then again on 2026-09-04 after the instance was re-provisioned. Every
-statement below succeeded as written both times, including the `ALTER SCHEMA` — no
-fallback was needed.
+1 GB / 10 GB, €12.99/mo, **PostgreSQL 18**, Falkenstein `fsn1`) via **SQL Studio**
+in the DanubeData dashboard, connected as the admin role `postgres`. Run **three
+times** — 2026-09-03, 2026-09-04, and 2026-09-05, each after a re-provision. On
+the first two runs every statement succeeded as written, including the
+`ALTER SCHEMA`; no fallback was needed. *(The third run's result is not yet
+recorded here — see the verification query below.)*
+
+> ⚠️ **The engine version was recorded as PostgreSQL 16 and is actually 18**
+> (corrected here and in §1 step 2 on 2026-09-05, verified against the live
+> instance). Verify with `danube db ls` rather than trusting a recorded number.
+
+> ℹ️ **`danube db ls` reports `database_name: null` on an instance created
+> through the interactive prompts** — the field is present in the payload and
+> genuinely empty, unlike `monthly_cost` (absent from `ls`; read
+> `monthly_cost_cents`). It is unpopulated metadata, **not** a missing database:
+> confirmed 2026-09-05 by `SELECT current_database()` returning `pgdb`. Do not
+> re-provision over this.
 
 > **Re-provisioning is cheap; keep the instance name.** The endpoints derive from
 > it, and both are pinned in `EU_DB_INTERNAL_HOSTS` (`packages/db/src/client.ts`)
@@ -42,8 +54,12 @@ fallback was needed.
 >
 > ⚠️ **`danube db create` has a flag collision: do not pass `--version`.** It is
 > shadowed by the CLI's global `-V, --version`, so the command prints the CLI
-> version, **exits zero, and creates nothing.** Omit it (the default is PostgreSQL
-> 16) or run `danube db create` with no flags and use the interactive prompts.
+> version, **exits zero, and creates nothing.** Omit it, or run `danube db create`
+> with no flags and use the interactive prompts. ⚠️ **Do not assume the default
+> engine version.** The 2026-09-05 provision came back **PostgreSQL 18**, not the
+> 16 this runbook previously claimed; the default tracks DanubeData's current
+> release and will move again. Read the actual version off `danube db ls` after
+> creating, and treat it as an input to migration testing.
 
 The instance accepts connections only from inside the DanubeData network, so
 this cannot be run from a laptop; the dashboard's SQL console is the way in.
@@ -185,6 +201,24 @@ reads no `.env` file.
 > against the live endpoint. It is also read straight from `process.env` and is
 > *not* in the Zod schema, so nothing warns you when it is absent.
 
+> ⛔ **RE-LEAKED 2026-09-05 — the `pguser` password is exposed again and this
+> instance must be re-provisioned.** An AI agent ran `danube db get` (and
+> `danube --json db get`) while gathering provisioning facts, before reading this
+> runbook, printing the admin connection string a second time. The warning below
+> was already present and did not prevent it. **A `PreToolUse` hook now blocks
+> the credential-printing `danube` subcommands outright** — see
+> `.claude/hooks/block-credential-printing.sh` and `.claude/settings.json`. The
+> instance still holds no application schema (the `migrate` job has never run:
+> `vars.DEPLOY_ENABLED` is unset), so delete-and-re-provision is still free.
+>
+> ✅ **DONE 2026-09-05.** Instance `01a06f32-eaf3-7210-ae1b-671277cdcf24` was
+> deleted and replaced by `01a0739f-dccd-73ca-a10d-a15b68bd8ee5` (created
+> 22:10 UTC, `running`, `fsn1`, PostgreSQL 18, public DNS off). Both hostnames
+> came back **byte-identical**, so `EU_DB_INTERNAL_HOSTS` and `DB_INSTANCE`
+> needed no change — the "keep the instance name" rule above held for a second
+> time. The leaked `pguser` credential belongs to a database that no longer
+> exists.
+>
 > ✅ **RESOLVED 2026-09-04 — the exposed `pguser` password is gone.** On 2026-09-03
 > `danube db get` printed a full connection string including the instance admin
 > password, and DanubeData exposes **no rotation control** (neither
