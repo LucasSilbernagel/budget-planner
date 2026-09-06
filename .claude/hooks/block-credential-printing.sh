@@ -1,48 +1,51 @@
 #!/usr/bin/env bash
-# PreToolUse/Bash guard: refuse `danube` subcommands that print live secrets.
+# PreToolUse/Bash guard: allow only known-safe read-only `danube` subcommands.
 #
 # Why this exists: on 2026-09-03 and again on 2026-09-05, `danube db get`
 # printed the production PostgreSQL admin password into a session transcript.
 # DanubeData exposes no credential rotation, so the only remedy is deleting and
-# re-provisioning the instance. A prose warning in the runbook did not prevent
-# the second occurrence; this does.
+# re-provisioning the instance.
 #
-# Safe alternatives that stay allowed: `danube db ls`, `danube <res> ls`,
-# `danube db events`, `danube db metrics`, `danube whoami`.
+# WHY DEFAULT-DENY (changed 2026-09-05 by code review): the original denied a
+# hand-written list of credential-printing subcommands. That requires predicting
+# which subcommands leak - and nobody predicted `db get` until it did. The review
+# also found `db connection-info` unblocked while `cache` and `queue` blocked
+# their equivalent. An allow-list of read-only verbs removes the need to predict
+# and covers subcommands DanubeData adds later.
+#
+# This file is a thin wrapper; the decision lives in danube_guard.py. That split
+# is deliberate: the first rewrite embedded the logic in a $(...) block and a
+# backtick inside a regex character class made the script a bash syntax error.
+# Bash exits 2 on a parse error, which is ALSO the hook's "block" code, so the
+# crashed guard looked exactly like a working one and scored 18 passing denials
+# without ever running. Keeping the logic in a .py file removes that whole class
+# of quoting hazard, and the wrapper below is small enough to eyeball.
+#
+# ⚠️ WHAT THIS CANNOT DO - read before trusting it.
+# This inspects the COMMAND TEXT of a Bash tool call. It therefore cannot see:
+#   * indirection - `bash provision.sh`, where the script contains the call
+#   * assembly    - `D=danube; $D db get`, or a command built from variables
+#   * any session that does not load this project's .claude/settings.json
+#     (another checkout, a different cwd, the globally-installed CLI)
+# Those bypasses are real and were verified. This guard is defense-in-depth over
+# a porous surface, NOT a solution. The actual problem is that the vendor prints
+# secrets and offers no rotation. Do not let this file's existence justify
+# relaxing the habit of never asking a CLI to print a credential.
 
 set -uo pipefail
 
 payload=$(cat)
-cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)
-[[ -z $cmd ]] && exit 0
+guard="$(dirname "${BASH_SOURCE[0]}")/danube_guard.py"
 
-# Drop global flags so `danube --json db get` normalizes to `danube db get`.
-norm=$(printf '%s' "$cmd" \
-  | sed -E 's/--json//g; s/--(project|team)[[:space:]]+[^[:space:]]+//g; s/[[:space:]]+/ /g')
-
-# resource -> credential-printing subcommands. `get`/`show` are included because
-# `db get` demonstrably emits `connection_info` with the password inline.
-patterns=(
-  '(db|database) (get|show|credentials)'
-  'cache (get|show|connection-info)'
-  '(queue|queues) (get|show|connection-info)'
-  'vps (get|show|password)'
-  '(apps|app) (get|show|credentials)'
-  'rapids (get|show)'
-)
-
-for p in "${patterns[@]}"; do
-  if printf '%s' "$norm" | grep -qE "(^|[^[:alnum:]_-])danube ${p}([[:space:]]|$)"; then
-    match=$(printf '%s' "$norm" | grep -oE "danube ${p}" | head -1)
-    jq -n --arg m "$match" '{
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: ("BLOCKED: `" + $m + "` prints live credentials into the transcript. DanubeData offers no credential rotation, so a leak forces deleting and re-provisioning the instance. Use `danube <resource> ls` for instance details without secrets, or ask the user to run the command themselves with `!` if a secret is genuinely required. See docs/production-database-runbook.md.")
-      }
-    }'
-    exit 0
+if [[ ! -f $guard ]] || ! command -v python3 >/dev/null 2>&1; then
+  # Fail closed on the risky case only: no decider available, but the payload
+  # mentions danube. Anything else proceeds, so a missing python3 cannot brick
+  # every Bash call in the session.
+  if printf '%s' "$payload" | grep -q 'danube'; then
+    printf 'BLOCKED: the danube credential guard cannot run (missing python3 or danube_guard.py) and this command mentions `danube`.\n' >&2
+    exit 2
   fi
-done
+  exit 0
+fi
 
-exit 0
+printf '%s' "$payload" | python3 "$guard"

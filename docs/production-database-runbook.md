@@ -29,7 +29,8 @@ repo-side work it depends on is already merged.
 Executed against database `pgdb` on instance `budget-planner-prod` (micro,
 1 GB / 10 GB, €12.99/mo, **PostgreSQL 18**, Falkenstein `fsn1`) via **SQL Studio**
 in the DanubeData dashboard, connected as the admin role `postgres`. Run **three
-times** — 2026-09-03, 2026-09-04, and 2026-09-05, each after a re-provision. On
+times** — 2026-09-03 on the original provision, then 2026-09-04 and 2026-09-05,
+each of those after a re-provision. On
 the first two runs every statement succeeded as written, including the
 `ALTER SCHEMA`; no fallback was needed. *(The third run's result is not yet
 recorded here — see the verification query below.)*
@@ -205,9 +206,18 @@ reads no `.env` file.
 > instance must be re-provisioned.** An AI agent ran `danube db get` (and
 > `danube --json db get`) while gathering provisioning facts, before reading this
 > runbook, printing the admin connection string a second time. The warning below
-> was already present and did not prevent it. **A `PreToolUse` hook now blocks
-> the credential-printing `danube` subcommands outright** — see
-> `.claude/hooks/block-credential-printing.sh` and `.claude/settings.json`. The
+> was already present and did not prevent it. **A `PreToolUse` hook now denies `danube`
+> subcommands that are not on a read-only allow-list** — see
+> `.claude/hooks/block-credential-printing.sh`, `.claude/hooks/danube_guard.py`
+> and `.claude/settings.json`.
+> ⚠️ **It is not a solution, and the word "outright" used to appear here wrongly.**
+> The guard reads the COMMAND TEXT of a Bash tool call, so it cannot see
+> indirection (`bash provision.sh`), a command assembled from variables, or any
+> session that does not load this project's `.claude/settings.json` — another
+> checkout, a different cwd, or the globally-installed CLI. All three bypasses
+> are verified. The real defect is that the vendor prints secrets and offers no
+> rotation; treat the hook as a backstop for mechanical slips, not as permission
+> to relax the habit of never asking a CLI to print a credential. The
 > instance still holds no application schema (the `migrate` job has never run:
 > `vars.DEPLOY_ENABLED` is unset), so delete-and-re-provision is still free.
 >

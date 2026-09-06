@@ -14,8 +14,10 @@
  * the live-DB tests it can run everywhere, which is the point.
  *
  * What this does NOT prove: the managed instance's minor version, its
- * extensions, its roles/grants, or TLS. Those are AC-1/AC-3/AC-5 and stay live
- * verifications. This proves the SQL chain replays and lands on `schema.ts`.
+ * extensions, its roles/grants, or TLS. Nor does it exercise `drizzle-kit`
+ * itself — the journal bookkeeping and the migrator's own SSL/config path are
+ * unexercised here, because this replays the SQL directly. Those are
+ * AC-1/AC-3/AC-5 and stay live verifications.
  *
  * Complements `migration-chain.test.ts`, which proves journal↔file integrity
  * statically. That one asks whether the chain is well-formed; this one runs it.
@@ -35,7 +37,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'
 import { getTableColumns, getTableName, is } from 'drizzle-orm'
-import { PgEnumColumn, PgTable } from 'drizzle-orm/pg-core'
+import { PgTable, getTableConfig, isPgEnum } from 'drizzle-orm/pg-core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as schema from './schema'
 
@@ -59,27 +61,87 @@ function migrationStatements(tag: string): string[] {
     .filter((s) => s.length > 0)
 }
 
-/** Expected shape, derived from schema.ts itself so it cannot drift from the code. */
-const expectedTables = new Map<string, Set<string>>()
-const expectedEnums = new Map<string, Set<string>>()
-for (const value of Object.values(schema)) {
-  if (is(value, PgTable)) {
-    const columns = Object.values(getTableColumns(value))
-    expectedTables.set(getTableName(value), new Set(columns.map((c) => c.name)))
-    for (const column of columns) {
-      if (is(column, PgEnumColumn)) {
-        expectedEnums.set(column.enumValues ? column.enum.enumName : '', new Set(column.enumValues))
-      }
-    }
-  }
+/**
+ * Reduce a PostgreSQL and a Drizzle type name to a common spelling.
+ * `format_type()` returns the canonical form (`character varying(255)`) while
+ * Drizzle emits the alias (`varchar(255)`); `serial` is a pseudo-type that IS
+ * `integer` once created. Without this the comparison is 36 false diffs.
+ */
+function normalizeType(raw: string): string {
+  return raw
+    .trim()
+    .replace(/"/g, '')
+    .replace(/\bcharacter varying\b/g, 'varchar')
+    .replace(/\btimestamp without time zone\b/g, 'timestamp')
+    .replace(/\btimestamp with time zone\b/g, 'timestamptz')
+    .replace(/^bigserial$/, 'bigint')
+    .replace(/^serial$/, 'integer')
+    .replace(/^smallserial$/, 'smallint')
 }
-expectedEnums.delete('')
+
+interface ExpectedColumn {
+  type: string
+  notNull: boolean
+}
+
+/** Expected shape, derived from schema.ts itself so it cannot drift from the code. */
+const expectedTables = new Map<string, Map<string, ExpectedColumn>>()
+const expectedPrimaryKeys = new Map<string, string[]>()
+const expectedForeignKeys = new Map<string, Set<string>>()
+
+for (const value of Object.values(schema)) {
+  if (!is(value, PgTable)) continue
+  const table = getTableName(value)
+  const columns = Object.values(getTableColumns(value))
+
+  expectedTables.set(
+    table,
+    new Map(
+      columns.map((c) => [c.name, { type: normalizeType(c.getSQLType()), notNull: c.notNull }])
+    )
+  )
+
+  const config = getTableConfig(value)
+  const composite = config.primaryKeys.flatMap((pk) => pk.columns.map((c) => c.name))
+  const single = columns.filter((c) => c.primary).map((c) => c.name)
+  expectedPrimaryKeys.set(table, [...new Set([...single, ...composite])].sort())
+
+  expectedForeignKeys.set(
+    table,
+    new Set(
+      config.foreignKeys.map((fk) => {
+        const ref = fk.reference()
+        const from = ref.columns.map((c) => c.name).join(',')
+        const to = ref.foreignColumns.map((c) => c.name).join(',')
+        return `${from}->${getTableName(ref.foreignTable)}.${to}`
+      })
+    )
+  )
+}
+
+/**
+ * Enums are collected from the schema module's own exports, NOT from the columns
+ * that happen to use them. Collecting via columns under-reports an enum attached
+ * to no column, and — worse — `it.each` over an empty map generates ZERO tests
+ * and stays green, so a detection failure would silently stop asserting enums
+ * altogether. The non-empty guard below exists for exactly that.
+ */
+const expectedEnums = new Map<string, string[]>()
+for (const value of Object.values(schema)) {
+  if (isPgEnum(value)) expectedEnums.set(value.enumName, [...value.enumValues])
+}
 
 let db: PGlite
 let appliedStatements = 0
 
 beforeAll(async () => {
   db = await PGlite.create()
+  // One transaction for the WHOLE chain, mirroring drizzle's migrator
+  // (drizzle-orm pg-core/dialect.js wraps its migration loop in
+  // `session.transaction`). Applying statements in autocommit instead would
+  // green a migration that adds an enum value and uses it in the same
+  // transaction — legal here, rejected by PostgreSQL there.
+  await db.exec('BEGIN')
   for (const entry of journal.entries) {
     for (const statement of migrationStatements(entry.tag)) {
       try {
@@ -92,27 +154,19 @@ beforeAll(async () => {
       appliedStatements += 1
     }
   }
+  await db.exec('COMMIT')
 }, 120_000)
 
 afterAll(async () => {
   await db?.close()
 })
 
-async function columnsOf(table: string): Promise<Set<string>> {
-  const result = await db.query<{ column_name: string }>(
-    `SELECT column_name FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = $1`,
-    [table]
-  )
-  return new Set(result.rows.map((r) => r.column_name))
-}
-
 describe('clean-slate migration replay', () => {
-  it('applies every journal migration onto an empty database', () => {
+  it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
     expect(journal.entries.length).toBe(17)
-    expect(appliedStatements).toBeGreaterThan(100)
+    expect(appliedStatements).toBe(135)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {
@@ -125,39 +179,121 @@ describe('clean-slate migration replay', () => {
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
     )
-    const actual = result.rows
-      .map((r) => r.table_name)
-      .filter((t) => t !== '__drizzle_migrations')
-      .sort()
+    const actual = result.rows.map((r) => r.table_name).sort()
     expect(actual).toEqual([...expectedTables.keys()].sort())
   })
 
   it.each([...expectedTables.keys()].sort())(
-    'lands %s with exactly the columns schema.ts declares',
+    'lands %s with the columns, types and nullability schema.ts declares',
     async (table) => {
-      const actual = await columnsOf(table)
-      const expected = expectedTables.get(table) as Set<string>
-      expect([...actual].sort()).toEqual([...expected].sort())
+      const result = await db.query<{ column_name: string; pgtype: string; nn: boolean }>(
+        `SELECT c.column_name, format_type(a.atttypid, a.atttypmod) AS pgtype, a.attnotnull AS nn
+           FROM information_schema.columns c
+           JOIN pg_class cl ON cl.relname = c.table_name
+           JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attname = c.column_name
+          WHERE c.table_schema = 'public' AND c.table_name = $1`,
+        [table]
+      )
+      const actual = Object.fromEntries(
+        result.rows.map((r) => [r.column_name, { type: normalizeType(r.pgtype), notNull: r.nn }])
+      )
+      // Comparing the whole map at once, rather than names then types, so a
+      // wrong TYPE on a correctly-named column cannot pass. A migration landing
+      // `sessionsRevokedAt` as integer where schema.ts says bigint overflows on
+      // epoch-millis in production; a name-only check greens it.
+      expect(actual).toEqual(
+        Object.fromEntries(expectedTables.get(table) as Map<string, ExpectedColumn>)
+      )
     }
   )
 
-  it('creates users.sessionsRevokedAt, closing the 5-8 AC-11 deferral', async () => {
-    // Called out explicitly by AC-4: without this column the logout-revocation
-    // path 500s and fails open, so a silent absence is a security regression.
-    expect(await columnsOf('users')).toContain('sessionsRevokedAt')
+  it.each([...expectedTables.keys()].sort())(
+    'lands %s with the primary key schema.ts declares',
+    async (table) => {
+      const result = await db.query<{ column_name: string }>(
+        `SELECT a.attname AS column_name
+           FROM pg_constraint con
+           JOIN pg_class cl ON cl.oid = con.conrelid
+           JOIN pg_attribute a ON a.attrelid = cl.oid AND a.attnum = ANY(con.conkey)
+          WHERE con.contype = 'p' AND cl.relname = $1`,
+        [table]
+      )
+      expect(result.rows.map((r) => r.column_name).sort()).toEqual(expectedPrimaryKeys.get(table))
+    }
+  )
+
+  it.each([...expectedTables.keys()].sort())(
+    'lands %s with the foreign keys schema.ts declares',
+    async (table) => {
+      const result = await db.query<{ def: string; conname: string }>(
+        `SELECT pg_get_constraintdef(con.oid) AS def, con.conname
+           FROM pg_constraint con
+           JOIN pg_class cl ON cl.oid = con.conrelid
+          WHERE con.contype = 'f' AND cl.relname = $1`,
+        [table]
+      )
+      // FOREIGN KEY ("userId") REFERENCES "public"."users"("id") ... -> userId->users.id
+      const actual = new Set(
+        result.rows.map((r) => {
+          const m = r.def.match(
+            /FOREIGN KEY \(([^)]+)\) REFERENCES "?(?:public"?\.)?"?([^"(]+)"?\(([^)]+)\)/
+          )
+          if (!m) return `UNPARSED:${r.def}`
+          const strip = (s: string) =>
+            s
+              .split(',')
+              .map((x) => x.trim().replace(/"/g, ''))
+              .join(',')
+          return `${strip(m[1])}->${m[2].replace(/"/g, '')}.${strip(m[3])}`
+        })
+      )
+      expect([...actual].sort()).toEqual(
+        [...(expectedForeignKeys.get(table) as Set<string>)].sort()
+      )
+    }
+  )
+
+  it('creates users.sessionsRevokedAt as declared (the column 5-8 AC-11 needs)', async () => {
+    // AC-4 calls this out explicitly. Note this proves the COLUMN exists on a
+    // clean replay — it does NOT close 5-8's AC-11, which is about applying 0004
+    // to the LIVE instance. That remains Story 5.17's.
+    const users = expectedTables.get('users') as Map<string, ExpectedColumn>
+    expect(users.has('sessionsRevokedAt')).toBe(true)
+    const result = await db.query<{ pgtype: string }>(
+      `SELECT format_type(a.atttypid, a.atttypmod) AS pgtype
+         FROM pg_attribute a JOIN pg_class cl ON cl.oid = a.attrelid
+        WHERE cl.relname = 'users' AND a.attname = 'sessionsRevokedAt'`
+    )
+    expect(result.rows).toHaveLength(1)
+    expect(normalizeType(result.rows[0].pgtype)).toBe('bigint')
+  })
+
+  it('detected the enums declared in schema.ts (guards against asserting nothing)', () => {
+    // Without this, a change that breaks enum detection turns the it.each below
+    // into zero tests and the suite stays green while enums drift freely.
+    expect(expectedEnums.size).toBe(6)
+  })
+
+  it('creates exactly the enum types schema.ts declares', async () => {
+    const result = await db.query<{ typname: string }>(
+      `SELECT DISTINCT t.typname FROM pg_type t
+         JOIN pg_enum e ON e.enumtypid = t.oid`
+    )
+    expect(result.rows.map((r) => r.typname).sort()).toEqual([...expectedEnums.keys()].sort())
   })
 
   it.each([...expectedEnums.keys()].sort())(
-    'lands the %s enum with schema.ts values',
+    'lands the %s enum with schema.ts values, in order',
     async (name) => {
       const result = await db.query<{ label: string }>(
         `SELECT e.enumlabel AS label FROM pg_enum e
-       JOIN pg_type t ON t.oid = e.enumtypid
-       WHERE t.typname = $1`,
+           JOIN pg_type t ON t.oid = e.enumtypid
+          WHERE t.typname = $1
+          ORDER BY e.enumsortorder`,
         [name]
       )
-      const actual = new Set(result.rows.map((r) => r.label))
-      expect([...actual].sort()).toEqual([...(expectedEnums.get(name) as Set<string>)].sort())
+      // Order matters: enum sort order drives ORDER BY and range comparisons.
+      expect(result.rows.map((r) => r.label)).toEqual(expectedEnums.get(name))
     }
   )
 })
