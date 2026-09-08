@@ -394,15 +394,49 @@ jobs:
               exit 1
               ;;
           esac
+          # ⚠️ Rewritten 2026-09-08 after this step failed a real run by timing out
+          # at 300s with NO evidence of why — it discarded the connection error
+          # and never said which address it dialled. Three things changed:
+          #
+          # 1. Dial an explicit IPv4 address, RE-RESOLVED every attempt. The name
+          #    carries both an A and a AAAA record, and `/dev/tcp` follows the
+          #    resolver's ordering, which differs between hosts — measured this
+          #    session picking IPv6 on one machine and IPv4 on another. A runner
+          #    with no IPv6 route that dials the AAAA fails instantly and looks
+          #    exactly like a database that never came up. Re-resolving matters
+          #    because the A record ROTATES (91.98.15.85 -> 136.243.9.122 within
+          #    minutes, observed).
+          # 2. IPv6 is still tried as a fallback, so this cannot regress if the
+          #    endpoint ever becomes v6-only.
+          # 3. The ceiling is 600s, not 300s. Enable-to-accepting was measured at
+          #    ~160s once; that was one sample, and it is not a budget.
+          #
+          # If this still fails, the diagnostics below say which addresses were
+          # tried and what the last error was — the previous version could only
+          # say "never became reachable", which is a symptom, not a finding.
           echo "::notice::Polling ${DB_HOST}:${DB_PORT} for readiness."
-          for i in $(seq 1 30); do
-            if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null; then
-              echo "::notice::Endpoint reachable after ~$(( i * 10 ))s."
-              exit 0
-            fi
+          last_error="(no attempt completed)"
+          v4=""; v6=""
+          for i in $(seq 1 60); do
+            v4=$(getent ahostsv4 "${DB_HOST}" 2>/dev/null | awk 'NR==1{print $1}')
+            v6=$(getent ahostsv6 "${DB_HOST}" 2>/dev/null | awk 'NR==1{print $1}')
+            for addr in "${v4}" "${v6}"; do
+              [ -n "${addr}" ] || continue
+              if err=$(timeout 5 bash -c "cat < /dev/null > /dev/tcp/${addr}/${DB_PORT}" 2>&1); then
+                echo "::notice::Endpoint accepted a connection at ${addr} after ~$(( i * 10 ))s."
+                exit 0
+              fi
+              last_error="${addr} -> ${err:-connection failed}"
+            done
             sleep 10
           done
-          echo "::error::${DB_HOST}:${DB_PORT} never became reachable within 300s of opening the window."
+          echo "::error::${DB_HOST}:${DB_PORT} never accepted a connection within 600s of opening the window."
+          echo "Resolved IPv4: ${v4:-none}"
+          echo "Resolved IPv6: ${v6:-none}"
+          echo "Last connection error: ${last_error}"
+          echo "If both addresses resolved and both refused, the endpoint is not listening on"
+          echo "${DB_PORT} — re-read the port from \`danube db ls\` with public DNS enabled, since"
+          echo "DanubeData reassigns it on re-provisioning."
           exit 1
 
       # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only
