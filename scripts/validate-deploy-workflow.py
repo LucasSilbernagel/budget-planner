@@ -200,6 +200,26 @@ def main() -> int:
     check(not [k for k in annotation_keys if "danubedata.com" in k],
           "rapids-service.yaml pins no annotation key on the wrong vendor domain")
 
+    print("\n== every job brings its own toolchain ==")
+    # Each job gets a fresh runner. A job that invokes a tool must set that tool
+    # up itself; nothing carries over from a job that ran earlier.
+    #
+    # Found live on 2026-09-08: the `deploy` job ran `pnpm add -g` with no pnpm
+    # setup and failed with `pnpm: command not found` — AFTER the migration had
+    # already been applied to production, which is the expensive half of the run
+    # to have to repeat.
+    for name, job in jobs.items():
+        if "uses" in job:
+            continue
+        steps = job.get("steps", []) or []
+        runs = "\n".join((step.get("run", "") or "") for step in steps)
+        actions = [str(step.get("uses", "")) for step in steps]
+        if re.search(r"(^|[\s|&;(])pnpm\s", runs):
+            check(any(a.startswith("pnpm/action-setup") for a in actions),
+                  f"{name} runs pnpm and sets pnpm up")
+            check(any(a.startswith("actions/setup-node") for a in actions),
+                  f"{name} runs pnpm and sets Node up")
+
     print("\n== configuration is readable from where the workflow reads it ==")
     # GitHub resolves environment-scoped secrets/variables ONLY for jobs that
     # declare `environment:`, and a job-level `if:` is evaluated BEFORE the

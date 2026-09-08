@@ -532,6 +532,23 @@ jobs:
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Deploying image tag: ${TAG}"
 
+      # ⚠️ pnpm and Node are prerequisites of the CLI install below, not
+      # decoration. This job originally jumped straight to `pnpm add -g` — copied
+      # from the migrate job without the setup steps that precede it there — and
+      # died with `pnpm: command not found` AFTER the migration had already been
+      # applied to production. Every job is its own runner with its own empty
+      # toolchain; nothing is inherited from an earlier job.
+      #
+      # No `pnpm install` here on purpose: this job runs no workspace script, so
+      # the lockfile install would be ~90 seconds of nothing.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       # The CLI is pinned for the same reason the migrate job pins it: this
       # rollout's safety depends on `rapids apply --wait` meaning exactly what it
       # means today, so the tool does not float underneath the pipeline.
