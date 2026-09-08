@@ -96,14 +96,26 @@ and is for monitoring, not the scale-up gate.
 **Auto-TLS** is enabled at the Knative cluster/domain level, not a per-service
 field — configure the domain mapping at provisioning.
 
+> ⚠️⚠️ **Corrected by story 4-16: this manifest is never applied.** The
+> DanubeData CLI drives Rapids through a REST API with flag-based commands
+> (`rapids apply --name/--image/--tag/--port/--health-check-path/--profile/
+> --min-scale/--max-scale`) and has **no manifest (`-f`) option**. There is no
+> `kubectl` path. The file remains the reviewable statement of intended runtime
+> shape, and several of its fields have no CLI equivalent at all — see its header
+> and `DEPLOY_RUNBOOK.md` §5.
+
 **[OPS] blocked-on-account:**
 1. Create the DanubeData account + project in **Falkenstein, Germany** (shared
-   gate with 4-16, 4-17).
-2. Push the image to the DanubeData registry; set `spec...image` in
-   `rapids-service.yaml` to the real registry path.
-3. Apply the service (`kubectl apply -f apps/web/rapids-service.yaml` or the
-   Rapids CLI equivalent) and confirm the region annotation key.
-   *(The release/deploy automation itself is Story 4-16 — coordinate one workflow.)*
+   gate with 4-16, 4-17). ✅ Done 2026-09-03; 4-17 verified the project is in
+   `fsn1` (Falkenstein).
+2. Push the image to the DanubeData registry. The prefix is
+   `cr.danubedata.ro/budgetplanner795` — set as the `DANUBEDATA_REGISTRY`
+   repository variable; the pipeline appends `/budget-planner-web:<sha>`.
+3. Create the container and set the settings the CLI cannot express (env vars /
+   secrets per §3, resource profile, request timeout, concurrency target,
+   domain mapping + auto-TLS). After that, every code rollout is automatic —
+   the `deploy` job in `.github/workflows/deploy.yml` converges the container
+   with `rapids apply --wait` on each merge to `main`.
 
 ---
 

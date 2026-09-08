@@ -43,6 +43,11 @@ def check(condition: object, label: str) -> None:
         failures.append(label)
 
 
+def read(path: str) -> str:
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def load(path: str) -> dict:
     with open(path, encoding="utf-8") as handle:
         return yaml.safe_load(handle)
@@ -110,7 +115,7 @@ def main() -> int:
     # ran with blank credentials. Found in code review 2026-09-03.
     for name, job in jobs.items():
         block = yaml.safe_dump(job)
-        if re.search(r"secrets\.DANUBEDATA_REGISTRY|secrets\.DATABASE_URL|secrets\.RAPIDS_API_TOKEN", block):
+        if re.search(r"secrets\.DANUBEDATA_REGISTRY|secrets\.DATABASE_URL|secrets\.DANUBE_TOKEN", block):
             check(job.get("environment") is not None,
                   f"{name} declares an environment for its scoped secrets")
 
@@ -132,8 +137,68 @@ def main() -> int:
     body = jobs["summary"]["steps"][0]["run"]
     check("THE BUILD IS BROKEN" in body, "a failed gate outranks the 'deploys are off' banner")
     check("which is NOT" in body, "a DEPLOY_ENABLED typo is reported, not treated as 'off'")
-    deploy_step = next(s for s in jobs["deploy"]["steps"] if s["name"] == "Deploy revision to Rapids")
-    check("exit 1" in deploy_step["run"], "the unwired deploy step fails loudly rather than no-opping")
+    print("\n== the Rapids rollout is real, authenticated, and cannot be raced ==")
+    # Story 4-16 replaced the `exit 1` placeholder with the actual rollout. These
+    # pin the properties that placeholder's own comment demanded, plus the ones
+    # discovered by reading the CLI's source (@danubedata/cli 1.1.0) rather than
+    # guessing at its interface.
+    deploy_steps = jobs["deploy"]["steps"]
+    deploy_step = next(s for s in deploy_steps if s["name"] == "Deploy revision to Rapids")
+    rollout = deploy_step["run"]
+
+    check("danube rapids apply" in rollout, "the deploy step performs a real Rapids rollout")
+    check("exit 1" not in rollout, "the deploy step is no longer the unwired placeholder")
+    check("set -euo pipefail" in rollout, "the rollout keeps strict bash")
+
+    # `apply` returns as soon as the API accepts the desired state. Without
+    # --wait the step exits 0 while the revision is still rolling out, and the
+    # smoke job then measures the OLD revision: a green deploy of nothing.
+    # ⚠️ `"--wait" in rollout` was the first spelling of this and it is VACUOUS:
+    # `--wait-timeout` contains it as a substring, so the check passed even with
+    # the standalone flag deleted. Caught by its own positive control. The
+    # lookahead requires --wait to end as its own flag.
+    check(re.search(r"--wait(?![\w-])", rollout),
+          "the rollout blocks until the revision is terminal")
+    check("--wait-timeout" in rollout, "the wait has an explicit ceiling")
+
+    # The CLI reads DANUBE_TOKEN (dist/lib/config.js: getToken). RAPIDS_API_TOKEN
+    # was the placeholder's invented name, which the CLI never reads, so a step
+    # passing only that authenticates as nobody.
+    for step in deploy_steps:
+        run = step.get("run", "") or ""
+        if "danube " in run:
+            label = step.get("name")
+            env = step.get("env", {}) or {}
+            check("DANUBE_TOKEN" in env, f"'{label}' passes DANUBE_TOKEN to the CLI")
+            check("RAPIDS_API_TOKEN" not in env,
+                  f"'{label}' does not pass RAPIDS_API_TOKEN, which the CLI never reads")
+
+    # The same discipline the migrate job already follows: pin the CLI, and prove
+    # authentication works before mutating anything.
+    joined = "\n".join((s.get("run", "") or "") for s in deploy_steps)
+    check("DANUBE_CLI_VERSION" in yaml.safe_dump(jobs["deploy"]),
+          "the deploy job pins the CLI version rather than floating")
+    check("danube whoami" in joined, "the deploy job proves authentication before rolling out")
+    check("danube rapids preflight" in joined,
+          "the image is preflighted before the rollout is attempted")
+
+    # The manifest is documentation rather than this CLI's deploy input, but a
+    # leftover placeholder would still be copied into a console by hand.
+    manifest_text = read("apps/web/rapids-service.yaml")
+    check("REPLACE_WITH_DANUBEDATA_REGISTRY" not in manifest_text,
+          "rapids-service.yaml carries no unresolved registry placeholder")
+
+    # Asserted against the PARSED annotations rather than the file text: the file
+    # explains in prose why the old `danubedata.com/region` key was removed, and
+    # a raw substring check cannot tell an explanation from a live setting. The
+    # thing that must not exist is a KEY on the wrong vendor domain.
+    manifest = yaml.safe_load(manifest_text)
+    annotation_keys = []
+    for holder in (manifest.get("metadata", {}),
+                   manifest.get("spec", {}).get("template", {}).get("metadata", {})):
+        annotation_keys.extend((holder or {}).get("annotations", {}) or {})
+    check(not [k for k in annotation_keys if "danubedata.com" in k],
+          "rapids-service.yaml pins no annotation key on the wrong vendor domain")
 
     print(f"\n{checked - len(failures)}/{checked} invariants hold.")
     if failures:

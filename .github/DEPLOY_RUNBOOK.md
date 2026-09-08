@@ -49,6 +49,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `DEPLOY_ENABLED` | Master switch. Set to exactly `true` to enable migrate/deploy/smoke. Anything else = build-and-verify only. |
 | `DANUBEDATA_REGISTRY` | Full image **prefix**: host + namespace, e.g. `cr.danubedata.ro/budgetplanner795` (no trailing slash, no repository name). The workflow strips to the host for `docker login` and appends `/budget-planner-web:<sha>` for the tag. |
 | `SITE_URL` | Public https origin. Used as the Environment URL and by the smoke check. |
+| `DANUBE_TEAM_ID` | Optional. The CLI needs an explicit project/team id in non-interactive mode **when the account has more than one team**; unset is correct for a single-team account. Passed to every CLI step so a later second team does not silently break deploys. |
 | `VITE_COUNTERDEV_ID` | counter.dev site id — a **public** identifier baked into the client bundle at build time (ADR-005). A variable, not a secret, by design. |
 
 ### Environment secrets (`production`)
@@ -58,7 +59,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `DATABASE_URL` | `migrate` job | Applying migrations from CI. **See the note below.** |
 | `DATABASE_CA_CERT` | `migrate` job | Optional. Only if the DanubeData CA is not in the runner's trust store. |
 | `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `build-image` | Registry login for the image push. **`build-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
-| `RAPIDS_API_TOKEN` | `deploy` | Credential for the Rapids deploy call. Exact form TBD at provisioning. |
+| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
 
 > **The one deliberate duplication.** `DATABASE_URL` is configured in *two*
 > places: as a Rapids runtime secret (so the app can query) and as a GitHub
@@ -87,11 +88,14 @@ ticked — that is the whole point of the switch.
       database. The preflight enforces this, but knowing the answer first saves a
       failed run — see §4.
 - [ ] Image registry created; `DANUBEDATA_REGISTRY` + registry credentials set.
-- [ ] **[5-2]** Rapids service applied from `apps/web/rapids-service.yaml`; runtime
-      secrets injected per `DEPLOY-RAPIDS.md` §3; domain mapping + auto-TLS configured.
+- [ ] **[5-2/4-16]** Rapids container created and its **non-deployable** settings
+      configured by hand in the console: runtime env/secrets (`DEPLOY-RAPIDS.md` §3),
+      resource profile, request timeout, concurrency target, domain mapping + auto-TLS.
+      ⚠️ **`apps/web/rapids-service.yaml` is NOT applied** — nothing consumes it. The
+      Rapids CLI is flag-driven with no manifest option; see §5.
 - [ ] **[5-3]** Paddle production configured.
 - [ ] GitHub `production` Environment created (§3).
-- [ ] Deploy step wired (§5) — with a real command, not the `exit 1` placeholder.
+- [x] Deploy step wired (§5) — done by **4-16**; it is a real rollout, not the `exit 1` placeholder.
 - [ ] `SITE_URL` variable set to the live https origin.
 - [ ] **Only now:** set `DEPLOY_ENABLED=true`.
 - [ ] **[5-6]** Run the cutover.
@@ -155,19 +159,53 @@ answer is a baseline/squash strategy decided in **Story 4-17**, not a bypass.
 
 ## 5. Wiring the deploy step
 
-Replace the `exit 1` block in the **“Deploy revision to Rapids”** step of
-`deploy.yml` with the real rollout. It must:
+**Done — wired by story 4-16.** This section now records how it works and what
+it deliberately does not do.
 
-- roll out `${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}` to the Knative service in
-  `apps/web/rapids-service.yaml` (`kubectl apply` / `kn service update` / the
-  Rapids CLI — confirm at provisioning, per `DEPLOY-RAPIDS.md` §2);
-- keep `set -euo pipefail`, and **propagate a non-zero exit** from the deploy
-  tool. A tool that logs an error and exits 0 must be checked explicitly;
-- wait for the new revision to become Ready before the step finishes, so the
-  smoke check does not race the rollout and pass against the *old* revision.
+The deploy job installs the pinned CLI, proves auth with `danube whoami`,
+preflights the image, then converges the container:
 
-Then record the registry image path back into `rapids-service.yaml` (it still
-carries the `REPLACE_WITH_DANUBEDATA_REGISTRY` placeholder).
+```bash
+danube rapids apply \
+  --name budget-planner-web \
+  --image cr.danubedata.ro/budgetplanner795/budget-planner-web \
+  --tag "<commit-sha>" \
+  --port 8080 --health-check-path /api/health \
+  --min-scale 0 --max-scale 5 \
+  --wait --wait-timeout 10m
+```
+
+**`--wait` is load-bearing.** `apply` returns as soon as the API accepts the
+desired state. Without it the step exits 0 while the revision is still rolling
+out, and the smoke job then measures the **old** revision — a green deploy of
+nothing.
+
+**Note the two calling conventions.** `rapids preflight --image` takes ONE full
+reference *including* the tag; `rapids apply` splits them across `--image` and
+`--tag`. Verified against `@danubedata/cli` 1.1.0.
+
+**`apply` is create-or-update**, so the first deploy and every later one take the
+same path, and re-running an unchanged SHA is a reported no-op rather than a
+spurious revision.
+
+### ⚠️ What the pipeline does NOT configure
+
+The Rapids CLI is **flag-driven and has no manifest (`-f`) option**, so
+`apps/web/rapids-service.yaml` is documentation — nothing applies it. These have
+no `apply` flag and are set **once, by hand, in the console**, then drift
+silently if anyone changes them:
+
+| Setting | Why not in the pipeline |
+|---|---|
+| Runtime env vars / secrets | Only `rapids update --env` sets them, and that would put every secret into a CI process argument list. Inject in the console — `DEPLOY-RAPIDS.md` §3. |
+| CPU / memory | The CLI exposes only `--profile <name>`; valid names are undocumented, and a wrong guess fails the whole rollout. |
+| Request timeout, concurrency target | `rapids update` flags only; absent from `apply`. |
+| Liveness probe | The CLI sets the **readiness** path only. |
+| Region | Not a flag anywhere. It follows from where the project lives — 4-17 confirmed `fsn1` (Falkenstein, DE). |
+
+**This step rolls out CODE, not full service configuration.** Treat a config
+change as a manual console action plus a matching edit to `rapids-service.yaml`,
+which stays the reviewable record of intent.
 
 ---
 
@@ -198,6 +236,42 @@ gh run list --workflow "Deploy (production)" --branch main --limit 10
 
 **After any rollback:** re-run the smoke check against the live URL, and confirm
 the run summary reports success rather than a skipped deploy.
+
+---
+
+## 6b. Data residency of the deploy path (NFR1/NFR2) — audited by 4-16
+
+Audited 2026-09-05 across the wired pipeline. The distinction that matters here
+is **user data** versus **credentials**, and they do not have the same answer.
+
+**User data: EU-only, unchanged.** Nothing in this pipeline moves user data. The
+only external hosts the deploy path contacts are DanubeData's own
+(`cr.danubedata.ro` for the image push, the Rapids API for the rollout). The
+runtime — SSR server on Rapids, PostgreSQL — is Falkenstein, DE, confirmed by
+4-17 (`fsn1`). Third-party actions are limited to `actions/checkout`,
+`actions/setup-node`, `actions/upload-artifact` and `pnpm/action-setup`; no
+analytics, no external data processor, no US-hosted service handles a row of user
+data. **NFR1/NFR2 hold.**
+
+**Credentials: NOT EU-only, and this is a real exposure to state plainly.** Every
+job runs on `ubuntu-latest` — a GitHub-hosted runner, US-controlled
+infrastructure and therefore in CLOUD Act scope. What passes through it today:
+
+| Job | Reaches a US-controlled runner | Weight |
+|---|---|---|
+| `build-image` | registry username + password | Push-only credentials to an EU registry. |
+| `migrate` | **production `DATABASE_URL` and `DATABASE_CA_CERT`**, and it opens a live connection to the production database from that runner | **The serious one.** |
+| `deploy` | `DANUBE_TOKEN` | Platform API token; can redeploy and reconfigure containers. |
+
+This is not a new regression — it is the shape `migrate` has had since 5-4 — and
+it is precisely what **Story 5.17** removes by moving migrations to an in-network
+one-shot Job, at which point `DATABASE_URL` stops crossing the runner at all.
+
+**It does not block launch, and it should not be quietly filed as "compliant".**
+No user data is at risk; credentials to EU systems are. Revisit here if the
+sovereignty posture is ever asserted publicly in a stronger form than "all user
+data is stored and processed in the EU" — because "our CI has no US touchpoints"
+is a claim this pipeline cannot currently support.
 
 ---
 

@@ -462,27 +462,74 @@ jobs:
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Deploying image tag: ${TAG}"
 
-      # ⚠️ [OPS] blocked-on-account. The real command goes here once the account
-      # exists and the Rapids deploy interface is known (`kubectl apply` against
-      # the Knative service in apps/web/rapids-service.yaml, or the Rapids CLI
-      # equivalent — reconcile at provisioning, per 5-2 §2).
-      #
-      # It exits 1 by design. Turning DEPLOY_ENABLED on before wiring this step
-      # must FAIL, not quietly report a successful deploy that never happened.
-      # Whoever wires it: replace the `exit 1` block, keep `set -euo pipefail`,
-      # and make sure a non-zero exit from the deploy tool propagates.
-      - name: Deploy revision to Rapids
+      # The CLI is pinned for the same reason the migrate job pins it: this
+      # rollout's safety depends on `rapids apply --wait` meaning exactly what it
+      # means today, so the tool does not float underneath the pipeline.
+      - name: Install DanubeData CLI
+        run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
+
+      # Fail on a bad/expired token HERE, before anything is mutated, rather than
+      # halfway through a rollout. Mirrors the migrate job.
+      - name: Verify CLI authentication
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
-          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
-          RAPIDS_API_TOKEN: ${{ secrets.RAPIDS_API_TOKEN }}
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
         run: |
           set -euo pipefail
-          echo "::error::Rapids deploy step is not wired yet (blocked on the DanubeData account)."
-          echo "Intended action: roll out ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} to the Knative"
-          echo "service defined in apps/web/rapids-service.yaml (Falkenstein, DE)."
-          echo "See .github/DEPLOY_RUNBOOK.md §'Wiring the deploy step'."
-          exit 1
+          danube whoami
+
+      # Catches a missing/misnamed/unreadable image before the rollout starts.
+      # NOTE the calling convention differs from `apply` below: preflight takes
+      # ONE full reference including the tag, while apply splits repository and
+      # tag across --image/--tag. Verified against @danubedata/cli 1.1.0.
+      - name: Preflight the image
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+        run: |
+          set -euo pipefail
+          danube rapids preflight --image "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+      # `apply` is create-or-update against the desired state, so the first
+      # deploy and every later one take the same path — no "does it exist yet"
+      # branch to get wrong, and re-running an unchanged SHA is a no-op rather
+      # than a spurious revision.
+      #
+      # ⚠️ --wait is load-bearing, not cosmetic. Without it the step exits 0 as
+      # soon as the API accepts the desired state, while the revision is still
+      # rolling out, and the smoke job then measures the OLD revision — a green
+      # deploy of nothing. --wait-timeout bounds it so a stuck rollout fails the
+      # run instead of hanging until the job timeout.
+      #
+      # ⚠️ What this CANNOT set, because the CLI has no flag for it: environment
+      # variables (only `rapids update --env` does), request timeout, concurrency
+      # target, and CPU/memory (only via --profile, whose valid names are not
+      # documented). Those are configured once at provisioning and are NOT
+      # reasserted here — see apps/web/rapids-service.yaml and DEPLOY-RAPIDS.md §2.
+      # This step therefore rolls out CODE, not full service configuration.
+      - name: Deploy revision to Rapids
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+          IDEMPOTENCY_KEY: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          echo "Rolling out ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} to Rapids (Falkenstein, DE)"
+          danube rapids apply \
+            --name "${IMAGE_NAME}" \
+            --image "${REGISTRY}/${IMAGE_NAME}" \
+            --tag "${IMAGE_TAG}" \
+            --port 8080 \
+            --health-check-path /api/health \
+            --min-scale 0 \
+            --max-scale 5 \
+            --idempotency-key "${IDEMPOTENCY_KEY}" \
+            --wait \
+            --wait-timeout 10m
 
   # --- Post-deploy smoke check (AC-5) ----------------------------------------
   # A deploy is not done because the deploy tool exited 0 — it is done when the

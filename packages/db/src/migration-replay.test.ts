@@ -13,6 +13,16 @@
  * with no server, no Docker and no credentials, so it is NOT env-gated: unlike
  * the live-DB tests it can run everywhere, which is the point.
  *
+ * Compared against `schema.ts`, all derived from the Drizzle metadata rather
+ * than a hardcoded list: table names, column names, normalised column types,
+ * nullability, primary keys, foreign keys, column DEFAULTS, unique constraints,
+ * unique indexes (name, columns and partial predicate), and ordered enum labels.
+ *
+ * Still NOT compared: non-unique indexes (performance-only, and pre-launch there
+ * are no users) and CHECK constraints — drizzle-kit 0.23.2 never emits CHECK, so
+ * the migrations contain none and asserting them would compare empty to empty
+ * and pass forever. See `deferred-work.md`.
+ *
  * What this does NOT prove: the managed instance's minor version, its
  * extensions, its roles/grants, or TLS. Nor does it exercise `drizzle-kit`
  * itself — the journal bookkeeping and the migrator's own SSL/config path are
@@ -36,8 +46,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'
-import { getTableColumns, getTableName, is } from 'drizzle-orm'
-import { PgTable, getTableConfig, isPgEnum } from 'drizzle-orm/pg-core'
+import { SQL, getTableColumns, getTableName, is } from 'drizzle-orm'
+import { PgDialect, PgTable, getTableConfig, isPgEnum } from 'drizzle-orm/pg-core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as schema from './schema'
 
@@ -79,6 +89,77 @@ function normalizeType(raw: string): string {
     .replace(/^smallserial$/, 'smallint')
 }
 
+const dialect = new PgDialect()
+
+/**
+ * Render a Drizzle `sql` fragment to the text PostgreSQL would have been given.
+ * Used for SQL-valued column defaults and for index expressions/predicates.
+ */
+function renderSql(node: SQL): string {
+  return dialect.sqlToQuery(node).sql
+}
+
+/**
+ * Reduce a default/index expression to a spelling both sides can agree on.
+ * Drizzle emits `lower("categories"."name")`; PostgreSQL echoes the same thing
+ * back as `lower((name)::text)` — the same expression with three cosmetic
+ * differences (quoting, table qualifier, an implicit cast it makes explicit).
+ * This strips exactly those. It is fitted to the spellings PostgreSQL actually
+ * produced for this schema, not to a general SQL grammar, so a genuinely new
+ * expression shape may need it extended — which surfaces as a test failure, not
+ * as a silent pass.
+ */
+function normalizeExpr(raw: string): string {
+  let s = raw.replace(/"/g, '')
+  // Casts: '::text', '::subscriptionStatus', '::character varying'.
+  s = s.replace(/::\s*[A-Za-z_][A-Za-z0-9_ ]*(\[\])?/g, '')
+  // Table qualifiers: `categories.name` -> `name`.
+  s = s.replace(/\b[A-Za-z_][A-Za-z0-9_]*\.(?=[A-Za-z_])/g, '')
+  // Parens PostgreSQL adds around a bare column inside a call: `lower((name))`.
+  // The lookbehind is load-bearing: without it this also strips a FUNCTION's
+  // own parens and `lower(name)` collapses to `lowername`.
+  s = s.replace(/(?<![A-Za-z0-9_])\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, '$1')
+  s = s.replace(/\s+/g, ' ').trim()
+  // A whole-expression wrapper: `(isDeleted = false)`.
+  const wrapped = s.match(/^\((.*)\)$/)
+  return (wrapped ? wrapped[1] : s).trim()
+}
+
+/**
+ * The DB-level default schema.ts declares for a column, or undefined if it
+ * declares none.
+ *
+ * Three cases that reading `hasDefault` alone would get wrong:
+ * - `$defaultFn()` is generated in JS on insert and emits NO database default,
+ *   so it must not be expected in the DDL;
+ * - `serial`/`bigserial` set `hasDefault` with no `.default` value — the default
+ *   is a `nextval()` over a generated sequence whose name is not worth pinning;
+ * - a SQL-valued default (`defaultRandom()`, `defaultNow()`) is a fragment, not
+ *   a literal, and has to be rendered rather than stringified.
+ */
+function expectedDefaultFor(column: {
+  hasDefault?: boolean
+  default?: unknown
+  defaultFn?: unknown
+}): string | undefined {
+  if (!column.hasDefault) return undefined
+  if (column.defaultFn !== undefined) return undefined
+  const value = column.default
+  if (value === undefined) return 'nextval'
+  if (is(value, SQL)) return normalizeExpr(renderSql(value))
+  if (typeof value === 'string') return normalizeExpr(`'${value}'`)
+  return normalizeExpr(String(value))
+}
+
+/** PostgreSQL's own rendering of a stored default, reduced the same way. */
+function normalizeDefault(raw: string): string {
+  const s = raw.trim()
+  // `nextval('"rateLimits_id_seq"'::regclass)` — the sequence name is an
+  // implementation detail of `serial`; that it IS a nextval is the assertion.
+  if (s.startsWith('nextval(')) return 'nextval'
+  return normalizeExpr(s)
+}
+
 interface ExpectedColumn {
   type: string
   notNull: boolean
@@ -88,6 +169,9 @@ interface ExpectedColumn {
 const expectedTables = new Map<string, Map<string, ExpectedColumn>>()
 const expectedPrimaryKeys = new Map<string, string[]>()
 const expectedForeignKeys = new Map<string, Set<string>>()
+const expectedDefaults = new Map<string, Record<string, string>>()
+const expectedUniqueConstraints = new Map<string, string[]>()
+const expectedUniqueIndexes = new Map<string, string[]>()
 
 for (const value of Object.values(schema)) {
   if (!is(value, PgTable)) continue
@@ -116,6 +200,46 @@ for (const value of Object.values(schema)) {
         return `${from}->${getTableName(ref.foreignTable)}.${to}`
       })
     )
+  )
+
+  const defaults: Record<string, string> = {}
+  for (const c of columns) {
+    const value = expectedDefaultFor(c)
+    if (value !== undefined) defaults[c.name] = value
+  }
+  expectedDefaults.set(table, defaults)
+
+  // Uniqueness is declared two ways in this schema and both are enforcement,
+  // not decoration: `.unique()` / `unique()` become UNIQUE CONSTRAINTS, while
+  // `uniqueIndex()` becomes a unique INDEX — the only form that can be partial
+  // or over an expression, which is why `categories` needs it. They land in
+  // different catalogs, so they are asserted separately.
+  //
+  // ⚠️ `column.uniqueName` is populated on EVERY column whether or not it is
+  // unique, so reading it without gating on `isUnique` would claim a unique
+  // constraint on every column in the schema.
+  expectedUniqueConstraints.set(
+    table,
+    [
+      ...columns.filter((c) => c.isUnique).map((c) => c.name),
+      ...config.uniqueConstraints.map((u) => u.columns.map((c) => c.name).join(',')),
+    ].sort()
+  )
+
+  expectedUniqueIndexes.set(
+    table,
+    config.indexes
+      .filter((index) => index.config.unique)
+      .map((index) => {
+        const cols = index.config.columns
+          .map((c) => (is(c, SQL) ? normalizeExpr(renderSql(c)) : normalizeExpr(c.name)))
+          .join(', ')
+        const where = index.config.where
+          ? ` WHERE ${normalizeExpr(renderSql(index.config.where))}`
+          : ''
+        return `${index.config.name}(${cols})${where}`
+      })
+      .sort()
   )
 }
 
@@ -250,6 +374,113 @@ describe('clean-slate migration replay', () => {
       expect([...actual].sort()).toEqual(
         [...(expectedForeignKeys.get(table) as Set<string>)].sort()
       )
+    }
+  )
+
+  it('derived a non-zero set of defaults and unique rules (guards against asserting nothing)', () => {
+    // The failure shape the enum guard exists for, repeated here: if the
+    // metadata walk above silently stopped finding defaults or uniques, the
+    // per-table assertions below would compare {} to {} on every table that has
+    // none, and the suite would stay green while the interesting tables drifted.
+    // Verified 2026-09-05 by deleting the unique derivation: this test fails
+    // alongside the three per-table ones rather than leaving them to notice.
+    const totalDefaults = [...expectedDefaults.values()].reduce(
+      (n, d) => n + Object.keys(d).length,
+      0
+    )
+    const totalUniques = [...expectedUniqueConstraints.values()].reduce((n, u) => n + u.length, 0)
+    const totalUniqueIndexes = [...expectedUniqueIndexes.values()].reduce((n, u) => n + u.length, 0)
+    expect(totalDefaults).toBeGreaterThan(0)
+    expect(totalUniques).toBeGreaterThan(0)
+    expect(totalUniqueIndexes).toBeGreaterThan(0)
+  })
+
+  it.each([...expectedTables.keys()].sort())(
+    'lands %s with the column defaults schema.ts declares',
+    async (table) => {
+      const result = await db.query<{ column_name: string; def: string }>(
+        `SELECT a.attname AS column_name, pg_get_expr(d.adbin, d.adrelid) AS def
+           FROM pg_attribute a
+           JOIN pg_class cl ON cl.oid = a.attrelid
+           JOIN pg_namespace n ON n.oid = cl.relnamespace
+           JOIN pg_attrdef d ON d.adrelid = cl.oid AND d.adnum = a.attnum
+          WHERE n.nspname = 'public' AND cl.relname = $1
+            AND a.attnum > 0 AND NOT a.attisdropped`,
+        [table]
+      )
+      const actual = Object.fromEntries(
+        result.rows.map((r) => [r.column_name, normalizeDefault(r.def)])
+      )
+      // Compared as whole maps, so this catches all three directions at once: a
+      // default the migration forgot, one it invented, and one whose expression
+      // drifted. The `gen_random_uuid()` defaults are more than tidiness — the
+      // client-generated-uuid contract from 5-14 leaves the database default as
+      // the path for server-originated rows.
+      expect(actual).toEqual(expectedDefaults.get(table))
+    }
+  )
+
+  it.each([...expectedTables.keys()].sort())(
+    'lands %s with the unique constraints schema.ts declares',
+    async (table) => {
+      const result = await db.query<{ def: string }>(
+        `SELECT pg_get_constraintdef(con.oid) AS def
+           FROM pg_constraint con
+           JOIN pg_class cl ON cl.oid = con.conrelid
+          WHERE con.contype = 'u' AND cl.relname = $1`,
+        [table]
+      )
+      const actual = result.rows
+        .map((r) => {
+          const m = r.def.match(/^UNIQUE(?: NULLS NOT DISTINCT)? \(([^)]+)\)/)
+          if (!m) return `UNPARSED:${r.def}`
+          return m[1]
+            .split(',')
+            .map((c) => c.trim().replace(/"/g, ''))
+            .join(',')
+        })
+        .sort()
+      expect(actual).toEqual(expectedUniqueConstraints.get(table))
+    }
+  )
+
+  it.each([...expectedTables.keys()].sort())(
+    'lands %s with the unique indexes schema.ts declares',
+    async (table) => {
+      const result = await db.query<{ name: string; def: string }>(
+        // Indexes that BACK a unique constraint are excluded: they are the same
+        // rule the assertion above already covers, and counting them here would
+        // report every `.unique()` column as a unique index this schema never
+        // declares.
+        `SELECT i.relname AS name, pg_get_indexdef(idx.indexrelid) AS def
+           FROM pg_index idx
+           JOIN pg_class i ON i.oid = idx.indexrelid
+           JOIN pg_class t ON t.oid = idx.indrelid
+          WHERE idx.indisunique AND NOT idx.indisprimary AND t.relname = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_constraint con WHERE con.conindid = idx.indexrelid
+            )`,
+        [table]
+      )
+      const actual = result.rows
+        .map((r) => {
+          // CREATE UNIQUE INDEX name ON public.t USING btree (a, lower(b)) WHERE (p)
+          const m = r.def.match(/USING \w+ \((.*?)\)(?: WHERE \((.*)\))?$/)
+          if (!m) return `UNPARSED:${r.def}`
+          const cols = m[1]
+            .split(/,\s*(?![^(]*\))/)
+            .map((c) => normalizeExpr(c))
+            .join(', ')
+          const where = m[2] ? ` WHERE ${normalizeExpr(m[2])}` : ''
+          return `${r.name}(${cols})${where}`
+        })
+        .sort()
+      // Name, columns AND the partial predicate. The predicate is the whole
+      // point of the `categories` index: without `WHERE isDeleted = false` it
+      // would constrain soft-deleted rows too, so a name-and-columns check would
+      // green a uniqueness rule that silently blocks legitimate re-use of a
+      // deleted category's name.
+      expect(actual).toEqual(expectedUniqueIndexes.get(table))
     }
   )
 

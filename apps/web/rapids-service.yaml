@@ -3,23 +3,45 @@
 # full CLOUD Act immunity. Serves SSR + /api/* + dist/client/ from one
 # self-listening container (apps/web/server-entry.mjs, AC-1).
 #
-# ⚠️ Rapids is Knative-based but newer, with limited public docs (ADR-001).
-# This standard Knative Service is the reproducible source of truth; the exact
-# DanubeData-specific bits — image registry path, the region-pin annotation key,
-# and the auto-TLS domain mapping (TLS is enabled at the cluster/domain level,
-# not a per-service field here) — MUST be reconciled during provisioning
-# (blocked-on-account). Region is ultimately enforced by creating the
-# account/project in Falkenstein, not by a free-text value below.
+# ⚠️⚠️ THIS FILE IS DOCUMENTATION, NOT THE DEPLOY INPUT. Story 4-16 read the
+# DanubeData CLI's own source (@danubedata/cli 1.1.0) and found that Rapids is
+# driven by a REST API through flag-based commands — `danube rapids apply` takes
+# --name/--image/--tag/--port/--health-check-path/--profile/--min-scale/
+# --max-scale and has NO manifest (`-f`) option at all. Nothing applies this
+# YAML. It survives as the reviewable statement of intended runtime shape, and
+# because several of its fields have no CLI equivalent and must be set by hand.
+#
+# What the pipeline DOES assert on every deploy (.github/workflows/deploy.yml):
+#   image + tag, port 8080, health-check path /api/health, min-scale, max-scale.
+#
+# What has NO CLI flag and is therefore set ONCE at provisioning, by hand, and
+# silently drifts from this file if anyone changes it in the console:
+#   - env vars / runtime secrets (only `rapids update --env` sets these, and it
+#     would put every secret in a CI process argument list — inject them in the
+#     console instead; see DEPLOY-RAPIDS.md §3)
+#   - containerConcurrency, timeoutSeconds, the autoscaling target
+#   - CPU/memory requests+limits (the CLI exposes only --profile, whose valid
+#     names are undocumented — passing a guess would fail the whole rollout)
+#   - livenessProbe (the CLI sets the READINESS path only)
+#   - auto-TLS domain mapping (cluster/domain level, not a per-service field)
+#
+# Region is enforced by creating the account/project in Falkenstein, not by any
+# value in this file. 4-17 confirmed the live database sits in `fsn1`
+# (Falkenstein, DE) via `danube db ls`.
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
   name: budget-planner-web
   labels:
     app: budget-planner
-  annotations:
-    # EU-only region intent. Confirm the exact DanubeData annotation key at
-    # provisioning; the project itself must live in Falkenstein, DE.
-    danubedata.com/region: falkenstein-de
+  # ⚠️ A `danubedata.com/region: falkenstein-de` annotation used to sit here. It
+  # was REMOVED by 4-16, not corrected: the key was an unverified guess AND it
+  # named the wrong vendor domain — DanubeData's real domain is `danubedata.ro`
+  # (the CLI's own image example is `cr.danubedata.ro/<ns>/api`, and the DB host
+  # allowlist in packages/db/src/client.ts records that no real host has ever
+  # matched `.danubedata.com`). Swapping .com for .ro would only have replaced
+  # one guess with another, on a file nothing applies. Region comes from where
+  # the project lives, and that is already verified.
 spec:
   template:
     metadata:
@@ -31,7 +53,13 @@ spec:
       containerConcurrency: 100 # hard per-instance ceiling
       timeoutSeconds: 60 # max request duration
       containers:
-        - image: REPLACE_WITH_DANUBEDATA_REGISTRY/budget-planner-web:latest
+        # Host + namespace corroborated three ways: the CLI's own example
+        # (`cr.danubedata.ro/<ns>/api`), DEPLOY_RUNBOOK.md §1's DANUBEDATA_REGISTRY
+        # row, and the namespace in the live DB FQDN 4-17 verified
+        # (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local`).
+        # The pipeline always deploys an immutable :<commit-sha> tag; `latest`
+        # here is illustrative only.
+        - image: cr.danubedata.ro/budgetplanner795/budget-planner-web:latest
           ports:
             - name: http1
               containerPort: 8080 # must equal $PORT (server-entry.mjs default)

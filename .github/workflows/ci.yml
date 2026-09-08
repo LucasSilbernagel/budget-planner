@@ -77,6 +77,15 @@ jobs:
       - name: Validate tsconfig files
         run: pnpm validate:tsconfig
 
+      # 5-4 wrote these invariants; nothing ran them. A deploy-pipeline guard
+      # that only executes when someone remembers to type it is not a guard, and
+      # every property it protects (branch confinement, DEPLOY_ENABLED gating,
+      # least privilege, "no step echoes a secret") is one careless edit from
+      # gone. Wired into the lint gate by 4-16 so an edit to deploy.yml is
+      # checked on every PR.
+      - name: Validate deploy-workflow invariants
+        run: python3 scripts/validate-deploy-workflow.py
+
   unit-tests:
     name: Unit tests (Vitest)
     runs-on: ubuntu-latest
