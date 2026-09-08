@@ -200,6 +200,61 @@ def main() -> int:
     check(not [k for k in annotation_keys if "danubedata.com" in k],
           "rapids-service.yaml pins no annotation key on the wrong vendor domain")
 
+    print("\n== configuration is readable from where the workflow reads it ==")
+    # GitHub resolves environment-scoped secrets/variables ONLY for jobs that
+    # declare `environment:`, and a job-level `if:` is evaluated BEFORE the
+    # environment is attached at all. So an environment-scoped value read from
+    # the wrong place does not error — it resolves to an EMPTY STRING.
+    #
+    # Found live on 2026-09-08: DEPLOY_ENABLED had been created as an
+    # environment variable. Every deploy job silently skipped and the run went
+    # GREEN, which is precisely the "success that deployed nothing" the summary
+    # job exists to prevent. The summary caught it; nothing else would have.
+    #
+    # Names that MUST live at repository scope, with the reason each one cannot
+    # be environment-scoped. Neither is sensitive: one is the word "true", the
+    # other a public URL. Nothing secret is pushed out of the environment.
+    REPOSITORY_SCOPED = {
+        "DEPLOY_ENABLED": "read in job-level if:, which cannot see environment scope",
+        "SITE_URL": "read by `smoke`, which declares no environment",
+    }
+
+    for name, job in jobs.items():
+        if "uses" in job:  # reusable-workflow call; it has no env of its own
+            continue
+        has_env = job.get("environment") is not None
+        blob = yaml.safe_dump(job)
+        job_if = str(job.get("if", ""))
+
+        # 1. A job-level `if:` can never see environment scope, environment
+        #    declared or not.
+        for var in sorted(set(re.findall(r"vars\.([A-Z_]+)", job_if))):
+            check(var in REPOSITORY_SCOPED,
+                  f"{name}: vars.{var} in a job-level if: is repository-scoped")
+
+        if has_env:
+            continue
+
+        # 2. A job with no environment can only read repository scope.
+        for var in sorted(set(re.findall(r"vars\.([A-Z_]+)", blob))):
+            check(var in REPOSITORY_SCOPED,
+                  f"{name} (no environment): vars.{var} is repository-scoped")
+
+        # 3. A job with no environment must not read secrets at all. Rather than
+        #    move a secret to repository scope to make it reachable, give the job
+        #    an `environment:` — the protection is the point.
+        leaked = sorted(set(re.findall(r"secrets\.([A-Z_]+)", blob)))
+        check(not leaked,
+              f"{name} (no environment) reads no secrets"
+              + (f" — found {', '.join(leaked)}" if leaked else ""))
+
+    # 4. The runbook must not tell an operator to create these anywhere else.
+    runbook = read(".github/DEPLOY_RUNBOOK.md")
+    for var in REPOSITORY_SCOPED:
+        check(f"`{var}`" in runbook, f"DEPLOY_RUNBOOK documents {var}")
+    check("Repository variables (not secret, repository scope" in runbook,
+          "DEPLOY_RUNBOOK states the repository-vs-environment distinction")
+
     print(f"\n{checked - len(failures)}/{checked} invariants hold.")
     if failures:
         print("\nVIOLATIONS:")

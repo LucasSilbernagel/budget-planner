@@ -42,7 +42,19 @@ These live in **GitHub → Settings → Secrets and variables → Actions**, on 
 secrets the *running app* needs are injected by Rapids and are listed once, in
 [`apps/web/DEPLOY-RAPIDS.md` §3](../apps/web/DEPLOY-RAPIDS.md).
 
-### Repository variables (not secret)
+### Repository variables (not secret, repository scope — NOT the environment)
+
+> ⚠️⚠️ **`DEPLOY_ENABLED` and `SITE_URL` must be created at REPOSITORY level, not
+> on the `production` environment.** GitHub resolves environment-scoped values
+> only for jobs that declare `environment:`, and a job-level `if:` is evaluated
+> *before* the environment is attached. An environment-scoped `DEPLOY_ENABLED`
+> does not error — it reads as an empty string, every deploy job skips, and the
+> run goes **green having deployed nothing**. Observed live on 2026-09-08.
+> `SITE_URL` has the same problem via `smoke`, which declares no environment.
+> Neither is sensitive. `scripts/validate-deploy-workflow.py` now enforces this.
+>
+> Everything else below, and **every secret**, stays on the `production`
+> environment — those jobs all declare it, and the protection is the point.
 
 | Variable | Purpose |
 |---|---|
