@@ -64,3 +64,28 @@ describe('buildMigrationCredentials', () => {
     expect(result.port).toBe(5432)
   })
 })
+
+describe('sslmode in the URL cannot reach the driver (2026-09-08 production failure)', () => {
+  // A real deploy failed with "self-signed certificate in certificate chain"
+  // while DATABASE_CA_CERT was set correctly: the preflight passed the raw URL
+  // as `connectionString`, and pg-connection-string maps `sslmode=require` to
+  // verify-full, which overrode the explicit ssl object and dropped the CA.
+  // Decomposition is the fix — these assert the query parameter is discarded.
+  const CA = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n'
+
+  it.each(['require', 'verify-full', 'disable', 'no-verify'])(
+    'drops ?sslmode=%s and keeps the CA-bearing ssl option',
+    (mode) => {
+      const creds = buildMigrationCredentials(
+        'production',
+        `postgresql://u:p@postgresql-x.budgetplanner795.danubedata.ro:5446/pgdb?sslmode=${mode}`,
+        CA,
+        true
+      )
+      expect(creds.ssl).toMatchObject({ rejectUnauthorized: true, ca: CA })
+      expect(JSON.stringify(creds)).not.toContain('sslmode')
+      expect(creds.database).toBe('pgdb')
+      expect(creds.port).toBe(5446)
+    }
+  )
+})

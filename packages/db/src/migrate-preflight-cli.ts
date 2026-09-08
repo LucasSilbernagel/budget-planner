@@ -19,13 +19,14 @@
 import process from 'node:process'
 import { Pool } from 'pg'
 import { isEuSovereignDbHost, isRelaxedDbEnv } from './client'
-import { type DbShape, assessMigrateSafety } from './migrate-preflight'
 // The preflight runs inside the same DNS window, against the same public endpoint,
 // as the migration it gates — so it needs the same TLS posture. If it kept the
 // app's verify-full policy it would fail ERR_TLS_CERT_ALTNAME_INVALID and abort
 // every migration before the guard could reach the database. `migrate-preflight.ts`
 // and its classification logic are untouched; only the connection option changes.
-import { buildMigrationDbSsl, hostnameMismatchAllowedFromEnv } from './migrate-tls'
+import { buildMigrationCredentials } from './migrate-credentials'
+import { type DbShape, assessMigrateSafety } from './migrate-preflight'
+import { hostnameMismatchAllowedFromEnv } from './migrate-tls'
 
 /** Postgres journal written by drizzle-kit: schema `drizzle`, table `__drizzle_migrations`. */
 const JOURNAL = 'drizzle.__drizzle_migrations'
@@ -103,10 +104,24 @@ async function main(): Promise<number> {
     return 1
   }
 
+  // ⚠️⚠️ DECOMPOSED credentials, never `connectionString`. Passing the raw URL
+  // here let a `?sslmode=` parameter in it OVERRIDE the `ssl` option built
+  // below — silently discarding the CA and the hostname waiver. Observed in a
+  // real run on 2026-09-08: a `?sslmode=require` URL failed with "self-signed
+  // certificate in certificate chain" while DATABASE_CA_CERT was correctly set,
+  // because `pg-connection-string` now maps 'require' to VERIFY-FULL and that
+  // parsed value wins over the explicit object.
+  //
+  // `buildMigrationCredentials` splits the URL into discrete fields and attaches
+  // exactly one `ssl`, so no query parameter can reach the driver's TLS
+  // decision. It is the same function `drizzle.config.ts` uses (5.17 AC-4), so
+  // the preflight and the migration it guards now share one TLS posture rather
+  // than two that can disagree — the previous arrangement could pass the
+  // preflight and migrate on different terms.
   const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: buildMigrationDbSsl(
+    ...buildMigrationCredentials(
       nodeEnv,
+      databaseUrl,
       process.env['DATABASE_CA_CERT'],
       hostnameMismatchAllowedFromEnv(process.env)
     ),
