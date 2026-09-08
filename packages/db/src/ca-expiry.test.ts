@@ -1,37 +1,45 @@
 /**
  * Tests for the CA-expiry early warning (Story 4.16 follow-up, 2026-09-08).
  *
- * Certificates are generated in-process rather than checked in as fixtures: a
- * fixture with a fixed expiry date is itself a thing that expires, and a test
- * whose whole subject is expiry must not rot the way the certificate it guards
- * would.
+ * ⚠️ These originally minted a certificate per scenario with OpenSSL's
+ * `-not_before`/`-not_after`, to place each window relative to today. Those
+ * flags are **OpenSSL 3.5+**; GitHub's ubuntu-latest runners ship 3.0.x, so
+ * every one of those tests passed locally and failed in CI with a bare
+ * `req: Use -help for summary.` The lesson generalises past this file: a test
+ * that shells out to a system tool is pinned to the OLDEST toolchain it must
+ * run on, not the newest one available while writing it.
+ *
+ * The rewrite needs no version-specific flags, because it moves the CLOCK
+ * instead of the certificate. `assessCaExpiry` takes `now` as a parameter
+ * precisely so it can be examined at any point in a certificate's life — one
+ * long-lived certificate plus a chosen `now` covers every case, and `-days` has
+ * been supported forever.
+ *
+ * The certificate is still minted at runtime rather than checked in: a fixture
+ * with a fixed expiry is itself a thing that expires, and a test whose whole
+ * subject is expiry must not rot the way the certificate it guards would.
  */
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { assessCaExpiry, formatCaExpiry } from './ca-expiry'
 
+const MS_PER_DAY = 86_400_000
 const workdir = mkdtempSync(join(tmpdir(), 'ca-expiry-'))
 afterAll(() => rmSync(workdir, { recursive: true, force: true }))
 
-/**
- * Mint a self-signed certificate whose validity window is offset from now, so a
- * test can ask for "expires in 5 days" or "expired 2 days ago" directly.
- *
- * `-days` cannot express the past, so an already-expired certificate is made by
- * back-dating the whole window with `-not_before`/`-not_after` (OpenSSL 3.5).
- */
-function mintCert(startOffsetDays: number, endOffsetDays: number): string {
-  const stamp = (offset: number): string => {
-    const d = new Date(Date.now() + offset * 86_400_000)
-    return `${d.toISOString().slice(0, 19).replace(/[-:T]/g, '')}Z`
-  }
-  const key = join(workdir, `k${startOffsetDays}_${endOffsetDays}.pem`)
-  const crt = join(workdir, `c${startOffsetDays}_${endOffsetDays}.pem`)
+let pem: string
+/** The certificate's own notAfter — every `now` below is derived from it. */
+let notAfter: Date
+
+beforeAll(() => {
+  const key = join(workdir, 'key.pem')
+  const crt = join(workdir, 'cert.pem')
   execFileSync('openssl', ['ecparam', '-genkey', '-name', 'prime256v1', '-out', key])
+  // Only `-days` and `-subj`: both ancient, both present on every runner.
   execFileSync('openssl', [
     'req',
     '-new',
@@ -40,19 +48,23 @@ function mintCert(startOffsetDays: number, endOffsetDays: number): string {
     key,
     '-out',
     crt,
+    '-days',
+    '3650',
     '-subj',
     '/CN=test-ca',
-    '-not_before',
-    stamp(startOffsetDays),
-    '-not_after',
-    stamp(endOffsetDays),
   ])
-  return execFileSync('cat', [crt]).toString()
-}
+  pem = readFileSync(crt, 'utf8')
+  const parsed = assessCaExpiry(pem, new Date(), 21)
+  if (!parsed.notAfter) throw new Error('fixture certificate did not parse')
+  notAfter = new Date(parsed.notAfter)
+})
+
+/** A clock positioned `days` before the certificate expires (negative = after). */
+const daysBeforeExpiry = (days: number): Date => new Date(notAfter.getTime() - days * MS_PER_DAY)
 
 describe('assessCaExpiry', () => {
   it('reports ok for a certificate comfortably in date', () => {
-    const result = assessCaExpiry(mintCert(-1, 90), new Date(), 21)
+    const result = assessCaExpiry(pem, daysBeforeExpiry(365), 21)
     expect(result.status).toBe('ok')
     expect(result.daysRemaining).toBeGreaterThan(21)
   })
@@ -60,16 +72,20 @@ describe('assessCaExpiry', () => {
   it('warns inside the threshold, while the certificate is still VALID', () => {
     // The whole point: this fires while everything still works, which is the
     // only time the warning is useful.
-    const result = assessCaExpiry(mintCert(-1, 5), new Date(), 21)
+    const result = assessCaExpiry(pem, daysBeforeExpiry(5), 21)
     expect(result.status).toBe('warn')
     expect(result.daysRemaining).toBeLessThanOrEqual(21)
     expect(result.daysRemaining).toBeGreaterThan(0)
   })
 
   it('reports expired once the window has passed', () => {
-    const result = assessCaExpiry(mintCert(-10, -2), new Date(), 21)
+    const result = assessCaExpiry(pem, daysBeforeExpiry(-2), 21)
     expect(result.status).toBe('expired')
     expect(result.daysRemaining).toBeLessThan(0)
+  })
+
+  it('treats the exact boundary as expired rather than as one last valid day', () => {
+    expect(assessCaExpiry(pem, notAfter, 21).status).toBe('expired')
   })
 
   it('treats a missing certificate as invalid, never as ok', () => {
@@ -83,24 +99,20 @@ describe('assessCaExpiry', () => {
     expect(assessCaExpiry('not a certificate', new Date(), 21).status).toBe('invalid')
     // Truncated PEM: the delimiters are right, the body is not. This is the
     // realistic paste error — a copy that missed the last line.
-    const truncated = `${mintCert(-1, 90)
-      .split('\n')
-      .slice(0, 3)
-      .join('\n')}\n-----END CERTIFICATE-----\n`
+    const truncated = `${pem.split('\n').slice(0, 3).join('\n')}\n-----END CERTIFICATE-----\n`
     expect(assessCaExpiry(truncated, new Date(), 21).status).toBe('invalid')
   })
 
   it('is driven by the threshold it is given, not a hardcoded one', () => {
-    const pem = mintCert(-1, 30)
-    expect(assessCaExpiry(pem, new Date(), 21).status).toBe('ok')
-    expect(assessCaExpiry(pem, new Date(), 45).status).toBe('warn')
+    const now = daysBeforeExpiry(30)
+    expect(assessCaExpiry(pem, now, 21).status).toBe('ok')
+    expect(assessCaExpiry(pem, now, 45).status).toBe('warn')
   })
 })
 
 describe('formatCaExpiry', () => {
   it('names the date and the day count so the message is actionable alone', () => {
-    const result = assessCaExpiry(mintCert(-1, 5), new Date(), 21)
-    const text = formatCaExpiry(result)
+    const text = formatCaExpiry(assessCaExpiry(pem, daysBeforeExpiry(5), 21))
     expect(text).toMatch(/\d{4}-\d{2}-\d{2}/)
     expect(text).toContain('DATABASE_CA_CERT')
   })
@@ -108,8 +120,13 @@ describe('formatCaExpiry', () => {
   it('tells the reader how to fix it, not merely that it is broken', () => {
     // A warning that does not carry the remedy sends whoever reads it hunting
     // through three runbooks at exactly the wrong moment.
-    const text = formatCaExpiry(assessCaExpiry(mintCert(-1, 5), new Date(), 21))
+    const text = formatCaExpiry(assessCaExpiry(pem, daysBeforeExpiry(5), 21))
     expect(text).toMatch(/openssl s_client/)
     expect(text).toMatch(/public DNS/i)
+  })
+
+  it('carries the remedy on the missing-certificate path too', () => {
+    const text = formatCaExpiry(assessCaExpiry(undefined, new Date(), 21))
+    expect(text).toMatch(/openssl s_client/)
   })
 })
