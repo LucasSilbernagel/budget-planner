@@ -1,0 +1,57 @@
+# Weekly early warning for the database CA certificate.
+#
+# The DanubeData PostgreSQL chain is self-signed with a 90-day window, and the
+# copy pinned in DATABASE_CA_CERT does not renew when the cluster's does. When
+# it lapses the app stops reaching its database — no deploy, no code change, and
+# a failure that reads as a database outage rather than an expired certificate.
+#
+# This runs offline: it reads the stored secret and checks its date. It never
+# contacts the database and never opens public DNS, which is why it can run
+# unattended every week.
+#
+# It fires while everything still works. A red run here is not an incident; it
+# is the reminder, and DEPLOY_RUNBOOK.md carries the renewal steps (the failure
+# output repeats them, so no lookup is needed).
+name: CA certificate expiry
+
+on:
+  schedule:
+    # Mondays 08:00 UTC — a working morning, so a warning is seen the same day
+    # rather than sitting over a weekend.
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check DATABASE_CA_CERT expiry
+    runs-on: ubuntu-latest
+    # Environment-scoped secret: without naming the environment, DATABASE_CA_CERT
+    # resolves to an empty string and this check would report "missing" every
+    # week, training everyone to ignore it. Same trap 5-4's review found in
+    # build-image.
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check certificate expiry
+        env:
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          CA_EXPIRY_WARN_DAYS: '21'
+        run: pnpm --filter @budget-planner/db db:ca-expiry

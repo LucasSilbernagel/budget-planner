@@ -338,6 +338,22 @@ jobs:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
         run: danube whoami
 
+      # Offline, and BEFORE the window opens: an expired or missing CA makes the
+      # migration impossible, so failing here costs nothing, whereas failing
+      # after `dns enable` leaves the database publicly reachable while the job
+      # unwinds.
+      #
+      # ⚠️ Threshold is deliberately 0, NOT the 21 days the weekly job uses. This
+      # gate blocks only on a certificate that is actually broken — expired or
+      # unparseable. A deploy is not the place to refuse work over a certificate
+      # that still has three weeks left; that is what the scheduled warning is
+      # for. Two different questions, two different thresholds.
+      - name: Verify the database CA certificate is usable
+        env:
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          CA_EXPIRY_WARN_DAYS: '0'
+        run: pnpm --filter @budget-planner/db db:ca-expiry
+
       # ⏳ WINDOW OPENS. Everything between here and "close the window" runs with
       # the database publicly reachable, so only the preflight and the migration
       # belong in between — no build, no push, no deploy.
@@ -354,19 +370,39 @@ jobs:
       # connect. Without this wait the preflight runs straight into ECONNREFUSED
       # and aborts the deploy for a reason that has nothing to do with the database.
       # The name resolves throughout, so this polls the PORT, not DNS.
+      # ⚠️ The port is DERIVED from DATABASE_URL, never hardcoded. It was pinned
+      # to 5445 until 2026-09-08, when the live endpoint was measured at 5446 —
+      # DanubeData reassigns the public port on re-provisioning, and this
+      # instance has been rebuilt twice. A hardcoded port polls a closed door for
+      # 300s and then blames the database. Deriving it from the URL the migration
+      # actually uses means the two cannot disagree.
+      #
+      # The URL is a secret, so it is never echoed; only the numeric port (which
+      # is not secret) and the separately-configured host appear in logs.
       - name: Wait for the public endpoint to accept connections
         env:
           DB_HOST: ${{ secrets.DATABASE_PUBLIC_HOST }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -uo pipefail
+          DB_PORT=$(printf '%s' "${DATABASE_URL}" | sed -nE 's#^[^@]+@[^:/]+:([0-9]+)/.*$#\1#p')
+          case "${DB_PORT}" in
+            ''|*[!0-9]*)
+              echo "::error::Could not read a port from DATABASE_URL. It must be of the form"
+              echo "postgresql://USER:PASSWORD@HOST:PORT/DATABASE — the port is not optional here,"
+              echo "because the public endpoint does not use the default 5432."
+              exit 1
+              ;;
+          esac
+          echo "::notice::Polling ${DB_HOST}:${DB_PORT} for readiness."
           for i in $(seq 1 30); do
-            if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/5445" 2>/dev/null; then
+            if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null; then
               echo "::notice::Endpoint reachable after ~$(( i * 10 ))s."
               exit 0
             fi
             sleep 10
           done
-          echo "::error::${DB_HOST}:5445 never became reachable within 300s of opening the window."
+          echo "::error::${DB_HOST}:${DB_PORT} never became reachable within 300s of opening the window."
           exit 1
 
       # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only

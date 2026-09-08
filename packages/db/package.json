@@ -17,7 +17,8 @@
     "db:migrate:preflight": "tsx src/migrate-preflight-cli.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:smoke": "tsx src/db-smoke-cli.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:ca-expiry": "tsx src/ca-expiry-cli.ts"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

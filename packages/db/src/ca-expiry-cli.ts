@@ -1,0 +1,43 @@
+/**
+ * CA-expiry check runner (Story 4.16 follow-up, 2026-09-08).
+ *
+ *   DATABASE_CA_CERT="$(cat ca.pem)" pnpm --filter @budget-planner/db db:ca-expiry
+ *
+ * Exit codes: 0 valid and outside the warning window, 1 expiring soon / expired
+ * / missing. Non-zero is deliberate — a warning that does not fail a job is a
+ * warning nobody reads.
+ *
+ * Threshold is `CA_EXPIRY_WARN_DAYS` (default 21): long enough to cover a
+ * holiday or a busy fortnight, short enough not to nag for a whole quarter.
+ *
+ * Does NO network I/O and needs no database, which is what makes it safe to run
+ * on every deploy and on a schedule without opening the database's public DNS.
+ */
+
+import process from 'node:process'
+import { assessCaExpiry, formatCaExpiry } from './ca-expiry'
+
+const DEFAULT_WARN_DAYS = 21
+
+function main(): number {
+  const raw = process.env['CA_EXPIRY_WARN_DAYS']
+  const parsed = raw === undefined ? DEFAULT_WARN_DAYS : Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    console.error(
+      `[ca-expiry] CA_EXPIRY_WARN_DAYS must be a non-negative integer; got "${raw}". Refusing to guess.`
+    )
+    return 1
+  }
+
+  const result = assessCaExpiry(process.env['DATABASE_CA_CERT'], new Date(), parsed)
+  const message = formatCaExpiry(result)
+
+  if (result.status === 'ok') {
+    console.log(`[ca-expiry] ${message}`)
+    return 0
+  }
+  console.error(`[ca-expiry] ${message}`)
+  return 1
+}
+
+process.exit(main())

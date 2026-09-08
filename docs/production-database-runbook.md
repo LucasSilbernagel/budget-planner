@@ -170,7 +170,7 @@ reads no `.env` file.
 | Variable | Required | How to obtain / generate | Consumed by |
 |---|---|---|---|
 | `DATABASE_URL` (app) | Yes | `postgresql://bp_app:PASSWORD@budget-planner-prod-rw:5432/pgdb` — in-cluster, port **5432** | `getPool()` (`packages/db/src/client.ts`) on the Rapids service |
-| `DATABASE_URL` (migration) | Yes | `postgresql://bp_migrator:PASSWORD@postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:5445/pgdb` — public endpoint, port **5445** | The `migrate` job: preflight + `drizzle.config.ts` |
+| `DATABASE_URL` (migration) | Yes | `postgresql://bp_migrator:PASSWORD@postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:PORT/pgdb` — public endpoint. ⚠️ **Read the port off `danube db ls` with public DNS enabled; do NOT copy one from this table.** It was 5445, measured 5446 on 2026-09-08 — DanubeData reassigns it on re-provisioning, and this instance has been rebuilt twice. The readiness poll derives its port from this URL, so the two cannot disagree. | The `migrate` job: preflight + `drizzle.config.ts` |
 | `DATABASE_CA_CERT` | **YES — mandatory, not optional** | PEM from the DanubeData console (or extracted from the server, §3.1) | `client.ts:170`, `migrate-preflight-cli.ts:102`, and `migrate-credentials.ts` since Story 5.17 AC-4 |
 | `NODE_ENV` | Yes — `production` | literal | Arms every fail-closed path: EU host allowlist, TLS verification, `SESSION_SECRET` floor, https `SITE_URL` check |
 | `SESSION_SECRET` | Yes | `openssl rand -hex 32` (≥32 chars, ≥8 distinct) | `getSessionSecret()` (`packages/config/src/schema.ts`); rotating it logs everyone out |
