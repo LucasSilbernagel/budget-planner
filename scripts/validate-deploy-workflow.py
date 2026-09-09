@@ -200,6 +200,30 @@ def main() -> int:
     check(not [k for k in annotation_keys if "danubedata.com" in k],
           "rapids-service.yaml pins no annotation key on the wrong vendor domain")
 
+    print("\n== registry retention cannot eat its own rollback targets ==")
+    # A 500 MB registry filled after six SHA-tagged pushes and the seventh died
+    # with `denied: Storage quota exceeded`. Pruning fixes that, but rollback
+    # (DEPLOY_RUNBOOK §6) redeploys an EARLIER tag, so an over-eager prune
+    # deletes the thing you would roll back to. These pin the safety properties.
+    build_steps = jobs["build-image"]["steps"]
+    names = [str(step.get("name", "")) for step in build_steps]
+    assert "Prune old image tags" in names, "prune step missing"
+    push_at = names.index("Push image to the DanubeData registry")
+    prune_at = names.index("Prune old image tags")
+    prune = build_steps[prune_at]["run"]
+
+    check(prune_at > push_at, "tags are pruned only after the push succeeded")
+    check("GITHUB_SHA" in prune, "the prune protects the tag this run just pushed")
+    check("--force" in prune,
+          "rm-tag is forced (an interactive prompt would hang the runner)")
+    check(build_steps[prune_at].get("continue-on-error") is True,
+          "a prune failure warns rather than failing an otherwise-valid deploy")
+    check("KEEP_TAGS" in prune and ":-5}" in prune,
+          "retention is configurable and defaults to 5 rollback targets")
+    # Deleting is the irreversible half; it must never run while deploys are off.
+    check("DEPLOY_ENABLED" in str(build_steps[prune_at].get("if", "")),
+          "the prune is gated on DEPLOY_ENABLED like every other mutating step")
+
     print("\n== every job brings its own toolchain ==")
     # Each job gets a fresh runner. A job that invokes a tool must set that tool
     # up itself; nothing carries over from a job that ran earlier.

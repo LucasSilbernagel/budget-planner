@@ -276,6 +276,82 @@ jobs:
           docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
+      # pnpm/Node for the CLI install below. Same reason as the deploy job: a
+      # fresh runner inherits no toolchain. Enforced by validate-deploy-workflow.
+      - name: Set up pnpm
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install DanubeData CLI
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
+
+      # Every run pushes a new SHA-tagged image and nothing removed the old ones.
+      # Six runs filled a 500 MB plan and the seventh died with
+      # `denied: Storage quota exceeded (638 MB used of 500 MB)` — after a full
+      # build, and it would have recurred every few deploys forever.
+      #
+      # ⚠️ Retention is NOT just housekeeping: rollback redeploys an earlier tag
+      # (DEPLOY_RUNBOOK §6), so pruning too hard deletes the thing you would roll
+      # back TO. REGISTRY_KEEP_TAGS defaults to 5 — five rollback targets.
+      #
+      # Runs only after a successful push (a failed push fails the step and the
+      # job stops), and it can never delete the tag this run just pushed.
+      #
+      # A prune failure WARNS rather than failing the job: the image is already
+      # pushed and the deploy that follows is valid. The quota filling up is not
+      # silent either way — it hard-fails the next push, loudly, as it just did.
+      - name: Prune old image tags
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+          KEEP_TAGS: ${{ vars.REGISTRY_KEEP_TAGS }}
+        run: |
+          set -euo pipefail
+          # REGISTRY is host + namespace; the repository path drops the host.
+          REPO="${REGISTRY#*/}/${IMAGE_NAME}"
+          KEEP="${KEEP_TAGS:-5}"
+          echo "Keeping the ${KEEP} newest tags in ${REPO}"
+
+          danube --json registry repos tags "${REPO}" > /tmp/tags.json
+
+          # Newest-first by pushed_at, skip the newest KEEP, and never the tag
+          # this run just pushed even if the sort or the clock disagrees.
+          doomed=$(KEEP="${KEEP}" KEEPSHA="${GITHUB_SHA}" python3 - <<'PY'
+          import json, os
+          keep = int(os.environ["KEEP"])
+          keepsha = os.environ["KEEPSHA"]
+          rows = json.load(open("/tmp/tags.json")).get("data") or []
+          rows.sort(key=lambda r: r.get("pushed_at") or "", reverse=True)
+          for r in rows[keep:]:
+              tag = r.get("tag")
+              if tag and tag != keepsha:
+                  print(tag)
+          PY
+          )
+
+          if [ -z "${doomed}" ]; then
+            echo "Nothing to prune."
+            exit 0
+          fi
+
+          echo "${doomed}" | while read -r tag; do
+            [ -n "${tag}" ] || continue
+            echo "Deleting ${REPO}:${tag}"
+            danube registry repos rm-tag "${REPO}" "${tag}" --force
+          done
+
+          danube registry usage || true
+
   # --- Database migration (AC-4) — closes 5-8 AC-11 -------------------------
   # Ordered BEFORE the deploy so the schema is never behind the code that serves
   # it, and any failure here aborts the run before the new revision goes live.
