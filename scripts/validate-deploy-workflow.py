@@ -161,6 +161,13 @@ def main() -> int:
           "the rollout blocks until the revision is terminal")
     check("--wait-timeout" in rollout, "the wait has an explicit ceiling")
 
+    # Creating a container REQUIRES a resource profile; without it the API
+    # returns 422 and the rollout dies after the migration has already run.
+    check("--profile" in rollout, "the rollout names a resource profile")
+    profile_env = str(deploy_step.get("env", {}).get("RESOURCE_PROFILE", ""))
+    check("free" not in profile_env,
+          "the profile is not the free tier, whose 128MB and max-scale-3 the rollout would exceed")
+
     # The CLI reads DANUBE_TOKEN (dist/lib/config.js: getToken). RAPIDS_API_TOKEN
     # was the placeholder's invented name, which the CLI never reads, so a step
     # passing only that authenticates as nobody.

@@ -679,6 +679,18 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
           IDEMPOTENCY_KEY: ${{ github.run_id }}
+          # Valid values are free | small | medium | large (read from the CLI's
+          # own interactive picker, @danubedata/cli 1.1.0 create.js). Creating a
+          # container REQUIRES one: omitting it fails with
+          # `422 resource_profile: Please select a resource profile`, which this
+          # step hit on 2026-09-09.
+          #
+          # `small` (0.5-1 vCPU, 256-512MB) is Lucas' decision, and it matches
+          # what apps/web/rapids-service.yaml has specified since story 5-2.
+          # ⚠️ NOT `free`: 64-128MB is marginal for a TanStack Start SSR Node
+          # process, and the free tier also caps max-scale at 3 while this step
+          # asks for 5. Scale-to-zero means idle cost stays ~EUR 0 either way.
+          RESOURCE_PROFILE: ${{ vars.RAPIDS_RESOURCE_PROFILE || 'small' }}
         run: |
           set -euo pipefail
           echo "Rolling out ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} to Rapids (Falkenstein, DE)"
@@ -688,6 +700,7 @@ jobs:
             --tag "${IMAGE_TAG}" \
             --port 8080 \
             --health-check-path /api/health \
+            --profile "${RESOURCE_PROFILE}" \
             --min-scale 0 \
             --max-scale 5 \
             --idempotency-key "${IDEMPOTENCY_KEY}" \
