@@ -729,6 +729,14 @@ jobs:
             exit 1
           fi
 
+          # Strip a trailing slash before composing paths. With `SITE_URL` set to
+          # "https://host/", the requests below became "https://host//" and
+          # "https://host//api/health" — and `//` is a protocol-relative target
+          # the server returned 500 for (fixed in node-adapter.mjs the same day).
+          # The server no longer breaks on it; this stops the smoke check
+          # fabricating the shape in the first place, so a stray slash in a
+          # GitHub variable cannot fail a good deploy.
+          SITE_URL="${SITE_URL%/}"
           echo "Smoke-checking ${SITE_URL}"
 
           # 1. The SSR document renders.

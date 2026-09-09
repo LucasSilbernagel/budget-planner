@@ -267,3 +267,56 @@ describe('createRequestListener (loopback integration)', () => {
     expect(body).not.toContain('kaboom') // the thrown error detail must not leak
   })
 })
+
+describe('malformed request targets (production 500, 2026-09-09)', () => {
+  // A trailing slash on SITE_URL made the smoke check request `//`. The static
+  // matcher did `new URL('//', 'http://localhost')`, which parses `//` as a
+  // PROTOCOL-RELATIVE url — the segment after it becomes the AUTHORITY, and an
+  // empty one throws ERR_INVALID_URL. Every request to `https://site//` was a
+  // 500, reachable by anyone, and the trailing slash only revealed it.
+  let baseUrl: string
+  let server: ReturnType<typeof createServer>
+  let seenPaths: string[]
+
+  beforeAll(async () => {
+    seenPaths = []
+    const fetchHandler = async (request: Request): Promise<Response> => {
+      seenPaths.push(new URL(request.url).pathname)
+      return new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } })
+    }
+    server = createServer(createRequestListener({ fetchHandler, clientDir }))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  })
+
+  beforeEach(() => {
+    seenPaths = []
+    // Loopback requests must reach the real server; without this MSW answers
+    // them and the assertions measure the mock, not the adapter.
+    mswServer.use(http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough()))
+  })
+
+  it('serves `//` instead of throwing ERR_INVALID_URL', async () => {
+    const response = await fetch(`${baseUrl}//`)
+    expect(response.status).toBe(200)
+  })
+
+  it('treats `//host/path` as a PATH, never as an authority', async () => {
+    // Without collapsing, `new URL('//evil.example/x', base)` yields host
+    // evil.example and pathname '/x' — the static matcher would then match on a
+    // path the client never asked for.
+    const response = await fetch(`${baseUrl}//evil.example/x`)
+    expect(response.status).toBe(200)
+    expect(seenPaths.at(-1)).toBe('//evil.example/x')
+  })
+
+  it('still serves ordinary paths and static assets', async () => {
+    expect((await fetch(`${baseUrl}/`)).status).toBe(200)
+    const asset = await fetch(`${baseUrl}/assets/app-abc123.js`)
+    expect(asset.status).toBe(200)
+  })
+})

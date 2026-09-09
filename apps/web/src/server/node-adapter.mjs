@@ -298,7 +298,22 @@ export function createRequestListener({ fetchHandler, clientDir }) {
       if (method === 'GET' || method === 'HEAD') {
         // `URL` resolves any `..` segments, so static matching uses the
         // normalized pathname (query string excluded).
-        const { pathname } = new URL(nodeReq.url ?? '/', 'http://localhost')
+        //
+        // ⚠️ The request target is collapsed first. A target beginning with `//`
+        // is parsed as PROTOCOL-RELATIVE: whatever follows becomes the
+        // AUTHORITY, not the path. `//` alone has an empty authority and throws
+        // ERR_INVALID_URL, and `//evil.example/x` would silently resolve to
+        // pathname `/x` — matching a static file the client never requested.
+        // Collapsing leading slashes keeps it a path in both cases.
+        //
+        // Found in production 2026-09-09: a trailing slash on SITE_URL made the
+        // smoke check request `//`, and EVERY such request was a 500. The
+        // trailing slash only revealed it — the 500 was reachable by anyone.
+        const rawTarget = nodeReq.url ?? '/'
+        const requestTarget = rawTarget.startsWith('//')
+          ? `/${rawTarget.replace(/^\/+/, '')}`
+          : rawTarget
+        const { pathname } = new URL(requestTarget, 'http://localhost')
         const asset = await resolveStaticAsset(pathname, clientDir)
         if (asset) {
           serveStaticFile(nodeRes, asset, method === 'HEAD')
