@@ -132,7 +132,7 @@ so each value is set a single time.
 |---|---|---|
 | `NODE_ENV` | **yes** | Set explicitly to `production`. **Unset → schema default `development` → session secret fails OPEN.** Only `development`/`production`/`test` are valid; `staging`/`preview` are rejected by the enum. |
 | `DATABASE_URL` | yes (paid tier) | DanubeData PostgreSQL host. Must satisfy the allowlist in `client.ts` — see §4. |
-| `DATABASE_CA_CERT` | optional | Read directly from `process.env` in `client.ts` (not in the Zod schema — easy to miss). Needed only if the DanubeData CA is not in the system trust store. |
+| `DATABASE_CA_CERT` | **yes (paid tier)** | Read directly from `process.env` in `client.ts` (not in the Zod schema — easy to miss). The DanubeData chain is **self-signed**, so without it `getPool()` fails `SELF_SIGNED_CERT_IN_CHAIN` and no query runs (Story 5.17). On Rapids, **base64-encode the PEM** (`base64 -w0 ca.pem`) before pasting — `normalizeCaCert()` decodes it at every read site. |
 | `SESSION_SECRET` | **yes** | HMAC key for signed sessions. **≥32 chars and ≥8 distinct chars** or auth fails closed (outside dev). Generate: `openssl rand -hex 32`. Rotating it invalidates all sessions. |
 | `SITE_URL` | **yes** | Public **https** origin (default is `http://localhost:5173`). Magic-link emails build absolute URLs from it; a non-https/localhost value throws in production. |
 | `PADDLE_ENVIRONMENT` | 5-3 | `sandbox` \| `production`. |

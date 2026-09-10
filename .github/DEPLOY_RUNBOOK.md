@@ -70,19 +70,22 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 
 | Secret | Used by | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `migrate` job | Applying migrations from CI. **See the note below.** |
-| `DATABASE_CA_CERT` | `migrate` job | Optional. Only if the DanubeData CA is not in the runner's trust store. |
+| `DATABASE_URL` | `migrate` job | Applying migrations from CI, as **`bp_migrator`** (the DDL role), against the **public** endpoint. **See the note below.** |
+| `DATABASE_CA_CERT` | `migrate` job | **Mandatory, not optional.** The DanubeData chain is self-signed, so without it every connection fails `SELF_SIGNED_CERT_IN_CHAIN` before a statement runs (verified 2026-09-03). The `migrate` job connects at **`verify-ca`** — chain validation against this CA is kept; only the hostname check is waived, because the public endpoint is absent from the in-cluster-only certificate (`packages/db/src/migrate-tls.ts`). |
+| `DATABASE_PUBLIC_HOST` | `migrate` job | Hostname of the public endpoint (`postgresql-budget-planner-prod.budgetplanner795.danubedata.ro`), used by the endpoint-readiness poll. The port is **read from `DATABASE_URL`**, never from here — DanubeData reassigns it on re-provisioning. |
 | `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `build-image` | Registry login for the image push. **`build-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
-| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
+| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives `danube db dns enable/disable` (the migration window, §4). **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
 
 > **The one deliberate duplication.** `DATABASE_URL` is configured in *two*
-> places: as a Rapids runtime secret (so the app can query) and as a GitHub
-> Environment secret (so CI can migrate). That is not a bookkeeping slip — the
-> migration runs from a GitHub runner, which is outside the Rapids network, so it
-> cannot borrow the runtime injection. Every other secret is defined exactly
-> once. If 4-17 chooses an internal-DNS host that is only resolvable from inside
-> Rapids, this stops working and the migration has to move into the container or
-> a job on the platform — **decide that in 4-17, and update this row.**
+> places, with **two different values**: the Rapids runtime secret is the
+> `bp_app` string against the in-cluster host (`…-rw:5432`); the GitHub
+> Environment secret is the `bp_migrator` string against the **public** endpoint
+> (`postgresql-…​.danubedata.ro:<port>`). That is not a bookkeeping slip — the
+> migration runs from a GitHub runner, outside the Rapids network, and 4-17's
+> database is reachable only over Kubernetes in-cluster DNS. Story 5.17 resolved
+> this with a **time-boxed public-DNS window** the `migrate` job opens and closes
+> around the migration (§4), under an audited **ADR-001 exception** that expires
+> before the first real user. Every other secret is defined exactly once.
 
 Nothing here is ever echoed. Secrets reach steps as `env:` only, GitHub masks
 them in logs, and no step prints one. The workflow keeps the repository default
@@ -132,8 +135,12 @@ Like branch protection (4-15), this cannot be done in code. In
   load-bearing one is `migrate`: it is the first irreversible action against
   production, and it is gated before a single migration statement runs.
   (`build-image` names the environment because that is the only way GitHub will
-  hand it the registry secrets — see §1.)
-- **Environment secrets:** add the four from §1.
+  hand it the registry secrets — see §1.) The `migrate` prompt is where the
+  migration window (§4) opens, so that approval also gates the only moment the
+  production database is publicly reachable.
+- **Environment secrets:** add every secret from §1 — `DATABASE_URL`,
+  `DATABASE_CA_CERT`, `DATABASE_PUBLIC_HOST`, the two `DANUBEDATA_REGISTRY_*`
+  values, and `DANUBE_TOKEN`.
 
 Equivalent `gh` calls exist but the branch policy is fiddly over the API; the UI
 is the documented path here, matching `.github/BRANCH_PROTECTION.md`.
@@ -169,6 +176,46 @@ carry the schema with no journal rows. Replaying `0000 → …` there re-mints
 `userProfiles` ids and orphans `profileId` / `forecastingProfiles` references, or
 fails half-way. The guard has no override flag on purpose — if it fires, the
 answer is a baseline/squash strategy decided in **Story 4-17**, not a bypass.
+
+### The migration window (Story 5.17 — ⏳ time-boxed ADR-001 exception)
+
+The production database is reachable only over Kubernetes in-cluster DNS, and
+DanubeData Rapids has no run-to-completion primitive or container-command
+override, so there is no in-cluster job to migrate from. Until the database holds
+real user data, the `migrate` job bridges the gap: it opens the database's public
+DNS (`danube db dns enable`) immediately before the preflight and closes it
+(`danube db dns disable`) immediately after.
+
+- The close step is `if: always()` — it fires on migration failure, preflight
+  refusal, step timeout and job cancellation. It decides by a `danube db ls`
+  **state check**, not the disable's exit code, and **fails the job** if the
+  window is still open. A window left open is worse than a failed migration.
+- The window brackets **only** preflight + migrate — no build, push or deploy.
+- `danube db dns enable` returns ~160s before the endpoint accepts connections,
+  so a readiness poll sits between opening the window and the preflight.
+- The migrating connection runs at **`verify-ca`** (chain validated against
+  `DATABASE_CA_CERT`, hostname check waived) because the public endpoint is
+  absent from the in-cluster-only certificate. The app is never affected.
+- The `migrate` job's `timeout-minutes: 15` bounds how long the window can stay
+  open even if a migration hangs.
+
+**This is an exception with an expiry, not the design.** It is valid only while
+the database is empty; before the first real user it is replaced by an in-cluster
+migration container (ADR-001 exit criteria, Story 5.6), and the ADR-001 exception
+section is deleted. Do not reuse this pattern for routine post-launch migrations.
+
+See [`docs/production-database-runbook.md` §4](../docs/production-database-runbook.md)
+for the operator-side detail and
+[ADR-001 → "Time-boxed exception"](../_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md)
+for the exception's terms and exit criteria.
+
+**If a window is ever left open** — a runner dies mid-job, the close step is
+skipped — close it by hand and confirm it took:
+
+```bash
+danube db dns disable budget-planner-prod
+danube db ls        # the endpoint must show only the *.svc.cluster.local form
+```
 
 ---
 
@@ -275,12 +322,16 @@ infrastructure and therefore in CLOUD Act scope. What passes through it today:
 | Job | Reaches a US-controlled runner | Weight |
 |---|---|---|
 | `build-image` | registry username + password | Push-only credentials to an EU registry. |
-| `migrate` | **production `DATABASE_URL` and `DATABASE_CA_CERT`**, and it opens a live connection to the production database from that runner | **The serious one.** |
+| `migrate` | **production `DATABASE_URL`, `DATABASE_CA_CERT`, `DATABASE_PUBLIC_HOST`, `DANUBE_TOKEN`**, and it opens a live connection to the production database from that runner — through a public-DNS window it also opens | **The serious one.** |
 | `deploy` | `DANUBE_TOKEN` | Platform API token; can redeploy and reconfigure containers. |
 
-This is not a new regression — it is the shape `migrate` has had since 5-4 — and
-it is precisely what **Story 5.17** removes by moving migrations to an in-network
-one-shot Job, at which point `DATABASE_URL` stops crossing the runner at all.
+This is not a new regression — it is the shape `migrate` has had since 5-4.
+**Story 5.17** did *not* remove it: the runner still holds `DATABASE_URL` and
+still connects to production, now inside a time-boxed public-DNS window (§4). What
+5.17 added is that the window is audited, always closes, and is bounded by the
+ADR-001 exception. The runner stops touching `DATABASE_URL` only when the
+in-cluster migration container replaces this path (ADR-001 exit criteria, Story
+5.6).
 
 **It does not block launch, and it should not be quietly filed as "compliant".**
 No user data is at risk; credentials to EU systems are. Revisit here if the
