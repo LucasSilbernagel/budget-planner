@@ -143,7 +143,14 @@ def main() -> int:
     # discovered by reading the CLI's source (@danubedata/cli 1.1.0) rather than
     # guessing at its interface.
     deploy_steps = jobs["deploy"]["steps"]
-    deploy_step = next(s for s in deploy_steps if s["name"] == "Deploy revision to Rapids")
+    deploy_step = next(
+        (s for s in deploy_steps if s.get("name") == "Deploy revision to Rapids"), None
+    )
+    check(deploy_step is not None, "the deploy job has a 'Deploy revision to Rapids' step")
+    if deploy_step is None:
+        # Nothing below can run without the step; skip its invariants rather than
+        # crash the whole validator on a rename.
+        deploy_step = {"run": "", "env": {}}
     rollout = deploy_step["run"]
 
     check("danube rapids apply" in rollout, "the deploy step performs a real Rapids rollout")
@@ -214,22 +221,39 @@ def main() -> int:
     # deletes the thing you would roll back to. These pin the safety properties.
     build_steps = jobs["build-image"]["steps"]
     names = [str(step.get("name", "")) for step in build_steps]
-    assert "Prune old image tags" in names, "prune step missing"
-    push_at = names.index("Push image to the DanubeData registry")
-    prune_at = names.index("Prune old image tags")
-    prune = build_steps[prune_at]["run"]
+    check("Prune old image tags" in names, "build-image has a 'Prune old image tags' step")
+    check(
+        "Push image to the DanubeData registry" in names,
+        "build-image has a 'Push image to the DanubeData registry' step",
+    )
+    # A rename fails the two checks above with a clean report; the position and
+    # body invariants below simply can't run, so guard rather than IndexError.
+    if "Prune old image tags" in names and "Push image to the DanubeData registry" in names:
+        push_at = names.index("Push image to the DanubeData registry")
+        prune_at = names.index("Prune old image tags")
+        prune = build_steps[prune_at]["run"]
 
-    check(prune_at > push_at, "tags are pruned only after the push succeeded")
-    check("GITHUB_SHA" in prune, "the prune protects the tag this run just pushed")
-    check("--force" in prune,
-          "rm-tag is forced (an interactive prompt would hang the runner)")
-    check(build_steps[prune_at].get("continue-on-error") is True,
-          "a prune failure warns rather than failing an otherwise-valid deploy")
-    check("KEEP_TAGS" in prune and ":-5}" in prune,
-          "retention is configurable and defaults to 5 rollback targets")
-    # Deleting is the irreversible half; it must never run while deploys are off.
-    check("DEPLOY_ENABLED" in str(build_steps[prune_at].get("if", "")),
-          "the prune is gated on DEPLOY_ENABLED like every other mutating step")
+        check(prune_at > push_at, "tags are pruned only after the push succeeded")
+        check("GITHUB_SHA" in prune, "the prune protects the tag this run just pushed")
+        check("--force" in prune,
+              "rm-tag is forced (an interactive prompt would hang the runner)")
+        check(build_steps[prune_at].get("continue-on-error") is True,
+              "a prune failure warns rather than failing an otherwise-valid deploy")
+        check("KEEP_TAGS" in prune and ":-5}" in prune,
+              "retention is configurable and defaults to 5 rollback targets")
+        # A non-numeric or too-low REGISTRY_KEEP_TAGS must not silently wipe
+        # every rollback target (KEEP=0 → delete all) or fail-open under
+        # continue-on-error. The prune script clamps to >=1 and rejects
+        # non-integers loudly. (Review 2026-09-10.)
+        check("[!0-9]" in prune or "isdigit" in prune or "ValueError" in prune,
+              "the prune rejects a non-numeric REGISTRY_KEEP_TAGS instead of no-op'ing")
+        check("-lt 1" in prune or "max(1," in prune,
+              "the prune clamps retention to at least one rollback target")
+        check("<<<" in prune or "/dev/null" in prune,
+              "the rm-tag loop is not fed by a bare pipe (a CLI stdin read would drain it)")
+        # Deleting is the irreversible half; it must never run while deploys are off.
+        check("DEPLOY_ENABLED" in str(build_steps[prune_at].get("if", "")),
+              "the prune is gated on DEPLOY_ENABLED like every other mutating step")
 
     print("\n== every job brings its own toolchain ==")
     # Each job gets a fresh runner. A job that invokes a tool must set that tool

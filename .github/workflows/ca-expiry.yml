@@ -24,6 +24,11 @@ on:
 permissions:
   contents: read
 
+# Kept in lockstep with deploy.yml's NODE_VERSION so a repo-wide Node bump does
+# not silently leave this weekly job on an older runtime.
+env:
+  NODE_VERSION: '20'
+
 jobs:
   check:
     name: Check DATABASE_CA_CERT expiry
@@ -44,7 +49,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies

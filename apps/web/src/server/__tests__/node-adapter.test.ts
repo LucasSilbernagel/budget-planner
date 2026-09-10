@@ -10,6 +10,7 @@
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { connect } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -268,6 +269,35 @@ describe('createRequestListener (loopback integration)', () => {
   })
 })
 
+/**
+ * Send a request target verbatim over a raw socket. `fetch()` / `new URL()`
+ * normalize `\` → `/` and collapse `//` on the CLIENT before anything is sent,
+ * so they cannot exercise a target that reaches Node's http server as `/\…`.
+ * A raw client (an attacker's socket, `curl --path-as-is`, or an edge proxy
+ * that forwards the target unmodified) can. Returns the numeric status.
+ */
+function rawRequestStatus(host: string, port: number, target: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, host, () => {
+      socket.write(`GET ${target} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`)
+    })
+    let buf = ''
+    socket.setEncoding('utf8')
+    socket.on('data', (chunk) => {
+      buf += chunk
+    })
+    socket.on('end', () => {
+      const match = buf.match(/^HTTP\/1\.\d (\d{3})/)
+      if (!match) {
+        reject(new Error(`no status line in response: ${JSON.stringify(buf.slice(0, 200))}`))
+        return
+      }
+      resolve(Number(match[1]))
+    })
+    socket.on('error', reject)
+  })
+}
+
 describe('malformed request targets (production 500, 2026-09-09)', () => {
   // A trailing slash on SITE_URL made the smoke check request `//`. The static
   // matcher did `new URL('//', 'http://localhost')`, which parses `//` as a
@@ -275,6 +305,8 @@ describe('malformed request targets (production 500, 2026-09-09)', () => {
   // empty one throws ERR_INVALID_URL. Every request to `https://site//` was a
   // 500, reachable by anyone, and the trailing slash only revealed it.
   let baseUrl: string
+  let host: string
+  let port: number
   let server: ReturnType<typeof createServer>
   let seenPaths: string[]
 
@@ -286,7 +318,9 @@ describe('malformed request targets (production 500, 2026-09-09)', () => {
     }
     server = createServer(createRequestListener({ fetchHandler, clientDir }))
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    host = '127.0.0.1'
+    port = (server.address() as AddressInfo).port
+    baseUrl = `http://${host}:${port}`
   })
 
   afterAll(async () => {
@@ -301,22 +335,57 @@ describe('malformed request targets (production 500, 2026-09-09)', () => {
   })
 
   it('serves `//` instead of throwing ERR_INVALID_URL', async () => {
-    const response = await fetch(`${baseUrl}//`)
-    expect(response.status).toBe(200)
+    expect(await rawRequestStatus(host, port, '//')).toBe(200)
   })
+
+  // WHATWG `URL` treats `\` as `/` for special schemes, so the first fix (a
+  // `startsWith('//')` guard that stripped only `/`) left `/\` and `//\…`
+  // reaching `new URL(target, base)` unchanged: `/\` threw ERR_INVALID_URL (the
+  // same anyone-reachable 500) and `/\host/x` resolved to pathname `/x`. Caught
+  // in the 2026-09-10 review; the guard is now an unconditional
+  // `replace(/^[/\\]+/, '/')`. `fetch()`/`new URL()` normalize these on the
+  // client, so this must go over a raw socket to reach the server. (A target
+  // that does not start with `/` — e.g. `\\x` — is rejected by Node's HTTP
+  // parser with a 400 before the listener runs, so it is not covered here.)
+  it.each(['/\\', '/\\evil.example/x', '//\\evil.example/x', '/\\\\double'])(
+    'does not 500 on a backslash-prefixed target (%j)',
+    async (target) => {
+      expect(await rawRequestStatus(host, port, target)).toBe(200)
+    }
+  )
 
   it('treats `//host/path` as a PATH, never as an authority', async () => {
     // Without collapsing, `new URL('//evil.example/x', base)` yields host
     // evil.example and pathname '/x' — the static matcher would then match on a
-    // path the client never asked for.
-    const response = await fetch(`${baseUrl}//evil.example/x`)
-    expect(response.status).toBe(200)
+    // path the client never asked for. The fetch-handler path is unaffected
+    // (its base already carries a host), so it still sees the raw target.
+    const slashRes = await fetch(`${baseUrl}//evil.example/x`)
+    expect(slashRes.status).toBe(200)
     expect(seenPaths.at(-1)).toBe('//evil.example/x')
   })
 
-  it('still serves ordinary paths and static assets', async () => {
-    expect((await fetch(`${baseUrl}/`)).status).toBe(200)
+  it('a `\\host/asset` target is not served as that static asset (no authority confusion)', async () => {
+    // Pre-fix: `new URL('/\\evil.example/favicon.svg', base)` → host
+    // evil.example, pathname `/favicon.svg` → the static matcher serves the real
+    // favicon for a request the client never made. Post-fix the leading `/\`
+    // collapses to `/`, so the pathname keeps `evil.example` as a segment, no
+    // file matches, and the request falls through to the SSR handler (the stub
+    // answers 200 with no cache-control — a served file would set it).
+    seenPaths.length = 0
+    expect(await rawRequestStatus(host, port, '/\\evil.example/favicon.svg')).toBe(200)
+    expect(seenPaths).toHaveLength(1) // reached the handler, not served from disk
+  })
+
+  it('still serves an ordinary static asset from disk (not a handler fall-through)', async () => {
+    seenPaths.length = 0
     const asset = await fetch(`${baseUrl}/assets/app-abc123.js`)
     expect(asset.status).toBe(200)
+    // Distinguishes a real static serve from the always-200 stub: only
+    // serveStaticFile sets immutable cache-control and the file's actual body.
+    expect(asset.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    expect(await asset.text()).toBe('console.log(1)')
+    expect(seenPaths).toHaveLength(0)
+
+    expect((await fetch(`${baseUrl}/`)).status).toBe(200)
   })
 })

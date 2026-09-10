@@ -319,7 +319,25 @@ jobs:
           set -euo pipefail
           # REGISTRY is host + namespace; the repository path drops the host.
           REPO="${REGISTRY#*/}/${IMAGE_NAME}"
+
+          # ⚠️ REGISTRY_KEEP_TAGS is operator-set and its degenerate values are
+          # dangerous: `0` would delete EVERY rollback target, and a non-integer
+          # (`five`, a stray space) would crash `int()` below — which, under
+          # `continue-on-error: true`, fails the step silently and prunes NOTHING
+          # forever (the exact "silently never prunes" mode this step already
+          # regressed into once). Validate loudly and clamp to >= 1. (Review
+          # 2026-09-10.)
           KEEP="${KEEP_TAGS:-5}"
+          case "${KEEP}" in
+            ''|*[!0-9]*)
+              echo "::error::REGISTRY_KEEP_TAGS must be a non-negative integer, got '${KEEP}'."
+              exit 1
+              ;;
+          esac
+          if [ "${KEEP}" -lt 1 ]; then
+            echo "::warning::REGISTRY_KEEP_TAGS=${KEEP} would leave no rollback target; clamping to 1."
+            KEEP=1
+          fi
           echo "Keeping the ${KEEP} newest tags in ${REPO}"
 
           danube --json registry repos tags "${REPO}" > /tmp/tags.json
@@ -358,6 +376,18 @@ jobs:
                   f"data.data to be a list, got {type(rows).__name__}): "
                   f"{json.dumps(envelope)[:500]}"
               )
+          # If the listing is paginated we only ever see the first page, so the
+          # oldest tags (the ones most worth pruning) may not be in `rows` at
+          # all and the quota keeps climbing. The CLI 1.1.0 response has no
+          # pagination envelope; warn if a future version adds a cursor or the
+          # page looks capped, rather than silently under-pruning.
+          page_meta = inner if isinstance(inner, dict) else {}
+          if any(k in page_meta for k in ("next", "next_cursor", "cursor", "page", "total")):
+              print(
+                  "::warning::registry tag listing looks paginated; prune may only "
+                  "cover the first page — verify the CLI response shape",
+                  file=sys.stderr,
+              )
           rows.sort(key=lambda r: r.get("pushed_at") or "", reverse=True)
           for r in rows[keep:]:
               tag = r.get("tag")
@@ -371,11 +401,16 @@ jobs:
             exit 0
           fi
 
-          echo "${doomed}" | while read -r tag; do
+          # `done <<< "${doomed}"`, NOT `echo … | while read`: a pipe puts the
+          # loop in a subshell AND leaves the tag list on stdin, so if `danube
+          # rm-tag` ever reads stdin it consumes the rest and only the first tag
+          # is deleted (the classic ssh-in-a-loop bug). A here-string keeps the
+          # loop in this shell and gives the child a clean stdin.
+          while read -r tag; do
             [ -n "${tag}" ] || continue
             echo "Deleting ${REPO}:${tag}"
-            danube registry repos rm-tag "${REPO}" "${tag}" --force
-          done
+            danube registry repos rm-tag "${REPO}" "${tag}" --force < /dev/null
+          done <<< "${doomed}"
 
           danube registry usage || true
 
@@ -705,7 +740,11 @@ jobs:
           DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
           IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
-          IDEMPOTENCY_KEY: ${{ github.run_id }}
+          # run_id alone is STABLE across "Re-run failed jobs" (only run_attempt
+          # changes), so a re-run after a rollout that was accepted-then-failed
+          # would replay the cached outcome instead of driving the revision to
+          # completion. Include run_attempt. (Review 2026-09-10.)
+          IDEMPOTENCY_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
           # Valid values are free | small | medium | large (read from the CLI's
           # own interactive picker, @danubedata/cli 1.1.0 create.js). Creating a
           # container REQUIRES one: omitting it fails with
