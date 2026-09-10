@@ -53,15 +53,34 @@ export function assessCaExpiry(
     return { status: 'invalid' }
   }
 
-  let cert: X509Certificate
-  try {
-    cert = new X509Certificate(pem)
-  } catch {
-    return { status: 'invalid' }
+  // `new X509Certificate(pem)` parses only the FIRST block. If an operator pastes
+  // a full chain (leaf + intermediate + CA) into DATABASE_CA_CERT, checking only
+  // block #1 would report on the auto-renewing CloudNativePG leaf while the
+  // pinned CA quietly lapses — the exact outage this module exists to prevent.
+  // Assess every certificate and report on the one that expires SOONEST.
+  const blocks = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g)
+  const pemBlocks = blocks && blocks.length > 0 ? blocks : [pem]
+
+  let cert: X509Certificate | undefined
+  let notAfter: Date | undefined
+  for (const block of pemBlocks) {
+    let parsed: X509Certificate
+    try {
+      parsed = new X509Certificate(block)
+    } catch {
+      return { status: 'invalid' }
+    }
+    const blockNotAfter = new Date(parsed.validTo)
+    if (Number.isNaN(blockNotAfter.getTime())) {
+      return { status: 'invalid' }
+    }
+    if (!notAfter || blockNotAfter.getTime() < notAfter.getTime()) {
+      cert = parsed
+      notAfter = blockNotAfter
+    }
   }
 
-  const notAfter = new Date(cert.validTo)
-  if (Number.isNaN(notAfter.getTime())) {
+  if (!cert || !notAfter) {
     return { status: 'invalid' }
   }
 

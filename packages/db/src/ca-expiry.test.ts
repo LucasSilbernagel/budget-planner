@@ -32,12 +32,14 @@ const workdir = mkdtempSync(join(tmpdir(), 'ca-expiry-'))
 afterAll(() => rmSync(workdir, { recursive: true, force: true }))
 
 let pem: string
+/** A second, short-lived cert (10 days) for the multi-cert-chain case. */
+let shortPem: string
 /** The certificate's own notAfter — every `now` below is derived from it. */
 let notAfter: Date
 
-beforeAll(() => {
-  const key = join(workdir, 'key.pem')
-  const crt = join(workdir, 'cert.pem')
+const mintCert = (name: string, days: number): string => {
+  const key = join(workdir, `${name}.key`)
+  const crt = join(workdir, `${name}.crt`)
   execFileSync('openssl', ['ecparam', '-genkey', '-name', 'prime256v1', '-out', key])
   // Only `-days` and `-subj`: both ancient, both present on every runner.
   execFileSync('openssl', [
@@ -49,11 +51,16 @@ beforeAll(() => {
     '-out',
     crt,
     '-days',
-    '3650',
+    String(days),
     '-subj',
-    '/CN=test-ca',
+    `/CN=${name}`,
   ])
-  pem = readFileSync(crt, 'utf8')
+  return readFileSync(crt, 'utf8')
+}
+
+beforeAll(() => {
+  pem = mintCert('test-ca', 3650)
+  shortPem = mintCert('leaf', 10)
   const parsed = assessCaExpiry(pem, new Date(), 21)
   if (!parsed.notAfter) throw new Error('fixture certificate did not parse')
   notAfter = new Date(parsed.notAfter)
@@ -101,6 +108,25 @@ describe('assessCaExpiry', () => {
     // realistic paste error — a copy that missed the last line.
     const truncated = `${pem.split('\n').slice(0, 3).join('\n')}\n-----END CERTIFICATE-----\n`
     expect(assessCaExpiry(truncated, new Date(), 21).status).toBe('invalid')
+  })
+
+  it('reports on the SOONEST-expiring cert when handed a multi-cert chain', () => {
+    // Operator pastes leaf + CA into DATABASE_CA_CERT. The long-lived CA is
+    // block #1; checking only #1 (the old behaviour) would miss the 10-day leaf.
+    const chain = `${pem}${shortPem}`
+    const result = assessCaExpiry(chain, new Date(), 21)
+    expect(result.status).toBe('warn')
+    expect(result.daysRemaining).toBeLessThanOrEqual(10)
+  })
+
+  it('is invalid if ANY block of a chain fails to parse', () => {
+    expect(
+      assessCaExpiry(
+        `${pem}\n-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----`,
+        new Date(),
+        21
+      ).status
+    ).toBe('invalid')
   })
 
   it('is driven by the threshold it is given, not a hardcoded one', () => {

@@ -17,7 +17,7 @@
  * shape: a refusal must stop the migration, not be swallowed by a config file.
  */
 
-import { isEuSovereignDbHost, isRelaxedDbEnv } from './client'
+import { decodeUrlField, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
 import { type MigrationDbSsl, buildMigrationDbSsl } from './migrate-tls'
 
 export interface MigrationCredentials {
@@ -66,12 +66,12 @@ export function buildMigrationCredentials(
   return {
     host,
     // `URL.port` is '' when the URL omits it; Postgres' default is 5432.
-    port: url.port ? Number(url.port) : 5432,
+    port: url.port === '' ? 5432 : Number(url.port),
     // Credentials arrive percent-encoded in a URL and must be decoded before
     // they are handed to the driver as discrete fields.
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+    user: decodeUrlField(url.username, 'username'),
+    password: decodeUrlField(url.password, 'password'),
+    database: decodeUrlField(url.pathname.replace(/^\//, ''), 'database'),
     ssl: buildMigrationDbSsl(nodeEnv, caCert, allowHostnameMismatch),
   }
 }

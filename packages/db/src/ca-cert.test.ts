@@ -66,4 +66,23 @@ describe('normalizeCaCert', () => {
   it('hands back the original value when it is neither PEM nor base64-of-PEM', () => {
     expect(normalizeCaCert('not-a-cert')).toBe('not-a-cert')
   })
+
+  it('reconstructs a PEM whose newlines the single-line field collapsed to spaces', () => {
+    // The most direct paste error: a raw PEM dropped into the Rapids one-line
+    // input. It still contains `-----BEGIN`, so the old fast-path returned it
+    // verbatim and every consumer failed with an opaque "PEM routines" error.
+    const collapsed = PEM.replace(/\n/g, ' ')
+    expect(collapsed).not.toContain('\n')
+    expect(normalizeCaCert(collapsed)).toBe(PEM)
+  })
+
+  it('reconstructs a PEM whose markers were jammed against the body', () => {
+    const jammed = PEM.replace(/\n/g, '')
+    expect(normalizeCaCert(jammed)).toBe(PEM)
+  })
+
+  it('preserves and re-wraps every block of a multi-cert chain', () => {
+    const chain = `${PEM}\n${PEM}`
+    expect(normalizeCaCert(chain.replace(/\n/g, ' '))).toBe(`${PEM}\n${PEM}`)
+  })
 })

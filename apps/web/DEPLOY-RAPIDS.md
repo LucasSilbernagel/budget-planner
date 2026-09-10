@@ -151,18 +151,18 @@ openssl rand -hex 32   # 64 hex chars → satisfies the ≥32 / ≥8-distinct fl
 
 ## 4. Internal-DNS connectivity to PostgreSQL (AC-4) — owned by **Story 4-17 AC-2**
 
-Rapids reaches PostgreSQL over DanubeData **internal DNS**
-(`budget-planner-dev-rw:5432`) — a **bare hostname** that `isEuSovereignDbHost()`
-in `packages/db/src/client.ts` currently **rejects** under
-`NODE_ENV=production` (only `.danubedata.com` is allowed).
+Rapids reaches PostgreSQL over DanubeData **internal DNS** — a **bare hostname**
+that `isEuSovereignDbHost()` in `packages/db/src/client.ts` would reject as a
+suffix, so it is admitted by **exact match** instead.
 
-**This is the same decision as Story 4-17 AC-2 — resolve it there, once.** Do
-**not** make a second, conflicting allowlist edit here. 4-17 chooses between (a)
-the external `*.danubedata.com` endpoint or (b) extending the allowlist to the
-verified internal-DNS name **without** weakening the dot-anchored,
-anti-substring matching. Whatever 4-17 decides, set `DATABASE_URL`'s host to a
-value that check accepts. TLS is enforced (`rejectUnauthorized: true`,
-CA-validated via optional `DATABASE_CA_CERT`).
+**RESOLVED by Story 4-17 AC-2 (option b):** there is no external endpoint to
+choose — both dashboard endpoints are the CloudNativePG rw/ro split, and ADR-001
+forbids external paths — so `EU_DB_INTERNAL_HOSTS` lists the verified internal
+writer name (`budget-planner-prod-rw` + its `.svc.cluster.local` FQDN), each by
+exact match, alongside the dot-anchored `.danubedata.ro` suffix list. The
+anti-substring anchoring and trailing-dot handling are unchanged. Set
+`DATABASE_URL`'s host to one of those names. TLS is enforced
+(`rejectUnauthorized: true`, CA-validated via `DATABASE_CA_CERT`).
 
 **[VERIFY] blocked-on-service:** from inside the deployed runtime, confirm
 `testDbConnection()` returns `true` over internal DNS with CA-validated TLS.

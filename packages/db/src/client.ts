@@ -169,12 +169,43 @@ export interface AppDbCredentials {
  * reach the driver's TLS decision, because no query parameter reaches the
  * driver at all.
  */
+/**
+ * Redact the userinfo (and any `password=` query value) from a string that may
+ * contain a connection URL, so it is safe to put in a log line. Exported for the
+ * migration builder and for tests.
+ */
+export function redactDbUrl(value: string): string {
+  return value
+    .replace(/\/\/[^/@\s]*@/g, '//[redacted]@')
+    .replace(/(\b(?:password|pwd)=)[^\s&]*/gi, '$1[redacted]')
+}
+
+/**
+ * `decodeURIComponent` throws a raw `URIError` on a literal `%` or a bad `%xx`
+ * sequence (a generated password can contain one). Wrap it so the failure names
+ * the offending field instead of surfacing an opaque decode error.
+ */
+export function decodeUrlField(raw: string, field: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    throw new Error(
+      `DATABASE_URL ${field} is not valid percent-encoding. Percent-encode literal "%" as "%25".`
+    )
+  }
+}
+
 export function buildAppDbCredentials(
   nodeEnv: string | undefined,
   databaseUrl: string,
   caCert: string | undefined
 ): AppDbCredentials {
-  const url = new URL(databaseUrl)
+  let url: URL
+  try {
+    url = new URL(databaseUrl)
+  } catch {
+    throw new Error('DATABASE_URL is not a parseable URL.')
+  }
   const host = url.hostname.toLowerCase()
 
   // Fail closed: only an explicit development/test NODE_ENV relaxes SSL + host
@@ -189,12 +220,12 @@ export function buildAppDbCredentials(
   return {
     host,
     // `URL.port` is '' when the URL omits it; Postgres' default is 5432.
-    port: url.port ? Number(url.port) : 5432,
+    port: url.port === '' ? 5432 : Number(url.port),
     // Credentials arrive percent-encoded in a URL and must be decoded before
     // they are handed to the driver as discrete fields.
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+    user: decodeUrlField(url.username, 'username'),
+    password: decodeUrlField(url.password, 'password'),
+    database: decodeUrlField(url.pathname.replace(/^\//, ''), 'database'),
     ssl: buildDbSsl(nodeEnv, caCert),
   }
 }
@@ -312,13 +343,32 @@ export async function testDbConnection(): Promise<boolean> {
     // Deliberately narrow: name/code/message only, never the Error object
     // itself or DATABASE_URL. Standard pg/node connection errors (ECONNREFUSED,
     // ENOTFOUND, a self-signed-certificate rejection, 28P01 invalid_password)
-    // do not embed the password in these fields; forwarding the raw error
-    // object risked some future error type carrying more than these do.
-    const err = error as { name?: string; code?: string; message?: string }
+    // do not embed the password in these fields, but `message` is scrubbed of
+    // any connection-URL userinfo before logging so a future error type that
+    // carries more cannot leak a credential into the log stream.
+    //
+    // A dual-stack connection failure (Node `autoSelectFamily`: a host resolving
+    // to both A and AAAA, both refused) arrives as an `AggregateError` whose own
+    // `message`/`code` are empty and whose real causes sit in `.errors` — unwrap
+    // those so the log is actually diagnostic.
+    const err = error as {
+      name?: string
+      code?: string
+      message?: string
+      errors?: Array<{ code?: string; message?: string }>
+    }
     console.error('[db] connectivity check failed:', {
       name: err?.name,
       code: err?.code,
-      message: err?.message,
+      message: err?.message ? redactDbUrl(err.message) : err?.message,
+      ...(Array.isArray(err?.errors)
+        ? {
+            causes: err.errors.map((e) => ({
+              code: e?.code,
+              message: e?.message ? redactDbUrl(e.message) : e?.message,
+            })),
+          }
+        : {}),
     })
     return false
   }

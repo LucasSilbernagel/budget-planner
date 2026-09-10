@@ -30,6 +30,13 @@ const sqlFiles = readdirSync(migrationsDir)
   .sort()
 
 describe('migration chain', () => {
+  it('is non-empty (guards against a wiped journal / migrations dir)', () => {
+    // Without this, every assertion below is `expect([]).toEqual([])` and a
+    // deleted _journal.json or migrations dir passes the whole suite green.
+    expect(journal.entries.length).toBeGreaterThan(0)
+    expect(sqlFiles.length).toBeGreaterThan(0)
+  })
+
   it('has a .sql file for every journal entry', () => {
     const missing = journal.entries.filter((e) => !sqlFiles.includes(`${e.tag}.sql`))
     expect(missing.map((e) => e.tag)).toEqual([])

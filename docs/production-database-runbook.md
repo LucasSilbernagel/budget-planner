@@ -15,9 +15,10 @@ repo-side work it depends on is already merged.
    stories 4.16 and 5.2 — do this once.)*
 2. Create a **managed PostgreSQL** instance in **Falkenstein, DE**. Pick a
    PostgreSQL version supported by `pg@^8.11` and Drizzle ORM 0.32.
-3. **Choose the smallest tier** (≈€9.99/mo class). Pre-launch there are no users
-   and no load, and this is the project's only fixed infrastructure cost. Scale
-   when real traffic demands it, not before.
+3. **Choose the smallest tier** (the live instance is the `micro` class,
+   €12.99/mo — 1 GB / 10 GB). Pre-launch there are no users and no load, and this
+   is the project's only fixed infrastructure cost. Scale when real traffic
+   demands it, not before.
 4. Create the application database and its two roles (§1.1 below).
 5. From the console, capture:
    - the **internal** connection host (see §2),
@@ -126,8 +127,10 @@ connections, no SSH tunnels in production"), which is a decision, not a wall.
 Treat enabling it as an ADR amendment, not a workaround.
 
 `packages/db/src/client.ts` therefore admits the internal **writer** name by
-**exact match** (`EU_DB_INTERNAL_HOSTS`), alongside the unchanged dot-anchored
-`.danubedata.com` suffix list. Currently listed:
+**exact match** (`EU_DB_INTERNAL_HOSTS`), alongside the dot-anchored
+`.danubedata.ro` suffix list (`EU_DB_HOST_SUFFIXES` — corrected from
+`.danubedata.com`, which no real DanubeData host has ever matched). Currently
+listed:
 
 ```
 budget-planner-prod-rw                                          (short form)
@@ -254,10 +257,15 @@ reads no `.env` file.
 > ⚠️ **Do not run `danube db get`** — that is what leaked it. Use `danube db ls`,
 > which shows the same instance details without credentials.
 
-> ⚠️ **`DATABASE_CA_CERT` does not reach `drizzle-kit`.** `packages/db/drizzle.config.ts`
-> passes `dbCredentials: { url }` and no `ssl` option, so the connection that
-> actually applies the schema uses neither the CA nor the sovereignty check —
-> only the app and the preflight do. Closing that gap is **Story 5.17 AC-4**.
+> ✅ **`DATABASE_CA_CERT` reaches `drizzle-kit`** (closed 2026-09, was Story 5.17 AC-4).
+> `packages/db/drizzle.config.ts` now decomposes `DATABASE_URL` via
+> `buildMigrationCredentials(NODE_ENV, url, normalizeCaCert(DATABASE_CA_CERT), …)`,
+> so the connection that actually applies the schema carries the same CA
+> verification and EU-sovereignty host check as the application pool and the
+> preflight. drizzle-kit's postgres config accepts EITHER `{ url }` OR the
+> decomposed form with `ssl` — never both — so the bare-url form this file used
+> to pass silently gave up CA verification on the one connection that can rewrite
+> the schema.
 
 Consumer cross-check (all verified in-repo):
 

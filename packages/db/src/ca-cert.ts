@@ -25,6 +25,7 @@
  */
 
 const PEM_MARKER = '-----BEGIN'
+const PEM_BLOCK = /-----BEGIN ([A-Z0-9 ]+?)-----([\s\S]*?)-----END \1-----/g
 
 /**
  * @param raw the verbatim `process.env['DATABASE_CA_CERT']` value
@@ -40,9 +41,14 @@ export function normalizeCaCert(raw: string | undefined): string | undefined {
     return undefined
   }
 
-  // Already PEM (possibly with literal `\n` escapes from a hand-edited value).
+  // Already contains PEM markers (possibly with literal `\n` escapes, or with the
+  // newlines collapsed to spaces by the Rapids single-line field). `rewrapPem`
+  // reconstructs a parser-valid block from whatever whitespace survived — a raw
+  // PEM whose newlines were stripped is exactly the mangling this module exists
+  // to fix, and passing it through unchanged (the old behaviour) left every
+  // consumer failing with an opaque "PEM routines" error.
   if (trimmed.includes(PEM_MARKER)) {
-    return unescapeNewlines(trimmed)
+    return rewrapPem(unescapeNewlines(trimmed))
   }
 
   // Otherwise assume base64-encoded PEM. `Buffer.from(_, 'base64')` tolerates
@@ -50,7 +56,7 @@ export function normalizeCaCert(raw: string | undefined): string | undefined {
   // one line still decodes.
   const decoded = Buffer.from(trimmed, 'base64').toString('utf8')
   if (decoded.includes(PEM_MARKER)) {
-    return unescapeNewlines(decoded.trim())
+    return rewrapPem(unescapeNewlines(decoded.trim()))
   }
 
   // Neither form recognised: hand back the original so the downstream PEM
@@ -61,4 +67,25 @@ export function normalizeCaCert(raw: string | undefined): string | undefined {
 
 function unescapeNewlines(value: string): string {
   return value.includes('\\n') ? value.replace(/\\r\\n|\\n/g, '\n') : value
+}
+
+/**
+ * Rebuild each `-----BEGIN X----- … -----END X-----` block so the markers sit on
+ * their own lines and the body is wrapped at 64 chars — the form OpenSSL/Node's
+ * PEM parser requires. Idempotent: an already-valid PEM re-wraps to itself.
+ * Falls back to the input unchanged if no complete block is found.
+ */
+function rewrapPem(value: string): string {
+  const blocks: string[] = []
+  PEM_BLOCK.lastIndex = 0
+  let match: RegExpExecArray | null
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard exec-loop form
+  while ((match = PEM_BLOCK.exec(value)) !== null) {
+    // Both capture groups are guaranteed by the pattern when it matches.
+    const label = (match[1] ?? '').trim()
+    const body = (match[2] ?? '').replace(/\s+/g, '')
+    const wrapped = body.match(/.{1,64}/g)?.join('\n') ?? ''
+    blocks.push(`-----BEGIN ${label}-----\n${wrapped}\n-----END ${label}-----`)
+  }
+  return blocks.length > 0 ? blocks.join('\n') : value
 }

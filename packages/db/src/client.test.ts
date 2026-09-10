@@ -1,9 +1,13 @@
+import { Pool } from 'pg'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAppDbCredentials,
   buildDbSsl,
+  closeDb,
+  decodeUrlField,
   isEuSovereignDbHost,
   isRelaxedDbEnv,
+  redactDbUrl,
   testDbConnection,
 } from './client'
 
@@ -203,12 +207,13 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
   const originalUrl = process.env['DATABASE_URL']
   const originalEnv = process.env['NODE_ENV']
 
-  afterEach(() => {
+  afterEach(async () => {
     // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
     if (originalUrl === undefined) delete process.env['DATABASE_URL']
     else process.env['DATABASE_URL'] = originalUrl
     process.env['NODE_ENV'] = originalEnv
     vi.restoreAllMocks()
+    await closeDb() // reset the memoized pool so the next test rebuilds it
   })
 
   it('logs a structured, safe summary of the failure server-side', async () => {
@@ -229,17 +234,69 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
     expect(String(detail.message)).toMatch(/DATABASE_URL is not configured/)
   })
 
-  it('never logs a password or connection string, however the failure is shaped', async () => {
-    // A synthetic error carrying a full connection string, as some driver-level
-    // errors do in the wild. The logger must not forward it whole.
-    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
-    delete process.env['DATABASE_URL']
+  it('redacts a connection string embedded in the failure message', async () => {
+    // A driver-level error whose `.message` carries the full URL, user:pass and
+    // all -- some pg/node errors do this. `getPool()` succeeds (valid EU host),
+    // then the connect attempt rejects with the leaky error.
+    process.env['DATABASE_URL'] = 'postgresql://bp_app:s3cr3tpw@budget-planner-prod-rw:5432/pgdb'
     process.env['NODE_ENV'] = 'production'
+    const leak = new Error(
+      'connection to postgresql://bp_app:s3cr3tpw@budget-planner-prod-rw:5432/pgdb refused'
+    )
+    vi.spyOn(Pool.prototype, 'connect').mockRejectedValue(leak)
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const result = await testDbConnection()
+
+    expect(result).toBe(false)
+    const logged = JSON.stringify(spy.mock.calls)
+    expect(logged).not.toContain('s3cr3tpw') // the password never reaches the log
+    expect(logged).not.toContain('bp_app:') // nor the user:pass@ shape
+    expect(logged).toContain('postgresql://[redacted]@budget-planner-prod-rw') // logged, scrubbed
+  })
+
+  it('unwraps an AggregateError so the log is actually diagnostic', async () => {
+    process.env['DATABASE_URL'] = 'postgresql://bp_app:s3cr3tpw@budget-planner-prod-rw:5432/pgdb'
+    process.env['NODE_ENV'] = 'production'
+    const agg = new AggregateError(
+      [
+        Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:5432'), { code: 'ECONNREFUSED' }),
+        Object.assign(new Error('connect ECONNREFUSED [fe80::1]:5432'), { code: 'ECONNREFUSED' }),
+      ],
+      ''
+    )
+    vi.spyOn(Pool.prototype, 'connect').mockRejectedValue(agg)
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
     await testDbConnection()
 
-    const logged = JSON.stringify(spy.mock.calls)
-    expect(logged).not.toMatch(/postgresql:\/\/[^@]+@/) // no user:pass@ shape
+    const [, detail] = spy.mock.calls[0] as [string, Record<string, unknown>]
+    expect(detail['causes']).toEqual([
+      { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED 10.0.0.1:5432' },
+      { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED [fe80::1]:5432' },
+    ])
+  })
+})
+
+describe('redactDbUrl', () => {
+  it('strips userinfo and password query values, leaves clean text alone', () => {
+    expect(redactDbUrl('fail at postgresql://u:p@host:5432/db now')).toBe(
+      'fail at postgresql://[redacted]@host:5432/db now'
+    )
+    expect(redactDbUrl('dsn host=h password=hunter2 dbname=d')).toBe(
+      'dsn host=h password=[redacted] dbname=d'
+    )
+    expect(redactDbUrl('connect ECONNREFUSED 10.0.0.1:5432')).toBe(
+      'connect ECONNREFUSED 10.0.0.1:5432'
+    )
+  })
+})
+
+describe('decodeUrlField', () => {
+  it('decodes valid percent-encoding and names the field on a bad sequence', () => {
+    expect(decodeUrlField('s3cr%40t', 'password')).toBe('s3cr@t')
+    expect(() => decodeUrlField('100%off', 'password')).toThrow(
+      /password is not valid percent-encoding/
+    )
   })
 })

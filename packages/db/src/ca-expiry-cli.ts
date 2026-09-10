@@ -22,8 +22,10 @@ const DEFAULT_WARN_DAYS = 21
 
 function main(): number {
   const raw = process.env['CA_EXPIRY_WARN_DAYS']
-  const parsed = raw === undefined ? DEFAULT_WARN_DAYS : Number.parseInt(raw, 10)
-  if (!Number.isFinite(parsed) || parsed < 0) {
+  // Strict: `Number.parseInt('21days', 10)` is 21, which is exactly the silent
+  // guess the error message below promises not to make. Require a pure integer.
+  const parsed = raw === undefined ? DEFAULT_WARN_DAYS : Number(raw.trim())
+  if (raw !== undefined && (raw.trim() === '' || !Number.isInteger(parsed) || parsed < 0)) {
     console.error(
       `[ca-expiry] CA_EXPIRY_WARN_DAYS must be a non-negative integer; got "${raw}". Refusing to guess.`
     )

@@ -96,8 +96,9 @@ Work top to bottom. Do **not** set `DEPLOY_ENABLED` until every earlier box is
 ticked — that is the whole point of the switch.
 
 - [ ] **[4-16/4-17/5-2]** DanubeData account + project created in **Falkenstein, DE**.
-- [ ] **[4-17]** Managed PostgreSQL provisioned; the DB-host allowlist decision made
-      (external `*.danubedata.com` vs. extending the allowlist to internal DNS).
+- [x] **[4-17]** Managed PostgreSQL provisioned; DB-host allowlist decision made —
+      internal DNS admitted by exact match (`EU_DB_INTERNAL_HOSTS`) alongside the
+      `.danubedata.ro` suffix list. There is no external endpoint.
 - [ ] **[4-17]** Confirm the target is a **clean slate**, not a `drizzle-kit push`-built
       database. The preflight enforces this, but knowing the answer first saves a
       failed run — see §4.
