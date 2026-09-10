@@ -327,10 +327,37 @@ jobs:
           # Newest-first by pushed_at, skip the newest KEEP, and never the tag
           # this run just pushed even if the sort or the clock disagrees.
           doomed=$(KEEP="${KEEP}" KEEPSHA="${GITHUB_SHA}" python3 - <<'PY'
-          import json, os
+          import json, os, sys
+
+          # ⚠️⚠️ The CLI's `--json` mode DOUBLE-WRAPS the response. `jsonOutput(res)`
+          # (dist/lib/json-mode.js) puts whatever it is given under ANOTHER "data"
+          # key, and `res` here is the server's OWN `{ data: [...tags] }` payload
+          # (confirmed against dist/commands/registry/repositories.js, where human
+          # mode reads `res.data`). So the tag array is at .data.data, not .data:
+          #
+          #   {"success":true,"data":{"data":[{tag,digest,bytes_size,pushed_at},...]}}
+          #
+          # First shipped reading .data directly, which is the INNER dict, not the
+          # list -- crashed a real run with `AttributeError: 'dict' object has no
+          # attribute 'sort'`. `continue-on-error: true` kept that deploy green, so
+          # NO tag was ever actually pruned and the quota filled again days later.
+          # A prune that silently never prunes is the same failure mode this
+          # comment is now guarding against a second time. The fallback below
+          # accepts EITHER the confirmed nested shape or a bare list directly
+          # under "data" (in case a future CLI version flattens it) -- anything
+          # else raises with the actual payload attached, rather than quietly
+          # reporting "0 pruned", which looks identical to "already caught up".
           keep = int(os.environ["KEEP"])
           keepsha = os.environ["KEEPSHA"]
-          rows = json.load(open("/tmp/tags.json")).get("data") or []
+          envelope = json.load(open("/tmp/tags.json"))
+          inner = envelope.get("data")
+          rows = inner.get("data") if isinstance(inner, dict) else inner
+          if not isinstance(rows, list):
+              sys.exit(
+                  "registry repos tags returned an unexpected shape (expected "
+                  f"data.data to be a list, got {type(rows).__name__}): "
+                  f"{json.dumps(envelope)[:500]}"
+              )
           rows.sort(key=lambda r: r.get("pushed_at") or "", reverse=True)
           for r in rows[keep:]:
               tag = r.get("tag")
