@@ -275,7 +275,11 @@ jobs:
       #
       # ⚠️ Retention is NOT just housekeeping: rollback redeploys an earlier tag
       # (DEPLOY_RUNBOOK §6), so pruning too hard deletes the thing you would roll
-      # back TO. REGISTRY_KEEP_TAGS defaults to 5 — five rollback targets. The
+      # back TO. REGISTRY_KEEP_TAGS defaults to 2 — two rollback targets. It was
+      # 5 until run 34528527480 (2026-09-10) died with `denied: Storage quota
+      # exceeded (638 MB used of 500 MB)`: this is a fat image (the runtime stage
+      # ships the whole workspace, apps/web/Dockerfile), and five of them do not
+      # fit the 500 MB registry plan, so keep-5 could never self-heal. The
       # tag this run is about to push does not exist in the registry yet, so it
       # is structurally impossible for this step to delete it; the GITHUB_SHA
       # guard below is a belt-and-braces check for a re-run that re-pushes an
@@ -305,7 +309,7 @@ jobs:
           # forever (the exact "silently never prunes" mode this step already
           # regressed into once). Validate loudly and clamp to >= 1. (Review
           # 2026-09-10.)
-          KEEP="${KEEP_TAGS:-5}"
+          KEEP="${KEEP_TAGS:-2}"
           case "${KEEP}" in
             ''|*[!0-9]*)
               echo "::error::REGISTRY_KEEP_TAGS must be a non-negative integer, got '${KEEP}'."

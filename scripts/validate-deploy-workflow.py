@@ -244,8 +244,9 @@ def main() -> int:
               "rm-tag is forced (an interactive prompt would hang the runner)")
         check(build_steps[prune_at].get("continue-on-error") is True,
               "a prune failure warns rather than failing an otherwise-valid deploy")
-        check("KEEP_TAGS" in prune and ":-5}" in prune,
-              "retention is configurable and defaults to 5 rollback targets")
+        check("KEEP_TAGS" in prune and ":-2}" in prune,
+              "retention is configurable and defaults to 2 rollback targets "
+              "(was 5 until fat images blew the 500 MB plan, run 34528527480)")
         # A non-numeric or too-low REGISTRY_KEEP_TAGS must not silently wipe
         # every rollback target (KEEP=0 → delete all) or fail-open under
         # continue-on-error. The prune script clamps to >=1 and rejects
