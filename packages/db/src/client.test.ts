@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDbSsl, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
+import { buildAppDbCredentials, buildDbSsl, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
 
 // Story 5.8 — AC group A: database connection & data sovereignty hardening.
 
@@ -130,5 +130,58 @@ describe('isEuSovereignDbHost (internal-DNS exact allowlist)', () => {
     expect(isEuSovereignDbHost('postgres')).toBe(false)
     expect(isEuSovereignDbHost('db')).toBe(false)
     expect(isEuSovereignDbHost('budget-planner-dev-rw')).toBe(false)
+  })
+})
+
+// Production incident, 2026-09-09: `/api/ready` failed in ~25ms (a fast TLS
+// rejection, not the 2s readiness timeout) with DATABASE_CA_CERT set correctly
+// and never consulted. `getPool()` passed `connectionString` alongside an
+// explicit `ssl` option, so a `?sslmode=` on the URL silently won and dropped
+// the CA — the exact defect fixed in migrate-preflight-cli.ts the day before,
+// never propagated to the pool the LIVE APP actually uses.
+describe('buildAppDbCredentials (the 2026-09-09 production incident)', () => {
+  const CA = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n'
+
+  it.each(['require', 'verify-full', 'disable', 'no-verify'])(
+    'drops ?sslmode=%s and keeps the CA-bearing ssl option',
+    (mode) => {
+      const creds = buildAppDbCredentials(
+        'production',
+        `postgresql://bp_app:p@budget-planner-prod-rw:5432/pgdb?sslmode=${mode}`,
+        CA
+      )
+      expect(creds.ssl).toMatchObject({ rejectUnauthorized: true, ca: CA })
+      expect(JSON.stringify(creds)).not.toContain('sslmode')
+    }
+  )
+
+  it('decomposes the internal-DNS URL into discrete pg.Pool fields', () => {
+    const creds = buildAppDbCredentials(
+      'production',
+      'postgresql://bp_app:s3cr%40t@budget-planner-prod-rw:5432/pgdb',
+      CA
+    )
+    expect(creds).toMatchObject({
+      host: 'budget-planner-prod-rw',
+      port: 5432,
+      user: 'bp_app',
+      password: 's3cr@t', // percent-decoded
+      database: 'pgdb',
+    })
+  })
+
+  it('still fails closed on a non-sovereign host', () => {
+    expect(() =>
+      buildAppDbCredentials('production', 'postgresql://u:p@evil.example:5432/pgdb', CA)
+    ).toThrow(/DanubeData/)
+  })
+
+  it('relaxes SSL in development without needing a CA', () => {
+    const creds = buildAppDbCredentials(
+      'development',
+      'postgresql://u:p@localhost:5432/pgdb',
+      undefined
+    )
+    expect(creds.ssl).toBe(false)
   })
 })

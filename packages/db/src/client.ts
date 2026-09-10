@@ -140,6 +140,64 @@ export function buildDbSsl(
  * Get database connection pool
  * Creates pool on first call, reuses thereafter
  */
+export interface AppDbCredentials {
+  host: string
+  port: number
+  user: string
+  password: string
+  database: string
+  ssl: ReturnType<typeof buildDbSsl>
+}
+
+/**
+ * Decompose `DATABASE_URL` into the discrete fields `pg.Pool` accepts.
+ *
+ * ⚠️⚠️ NEVER pass `connectionString` to `Pool` alongside an explicit `ssl`
+ * option. `pg-connection-string` parses a `?sslmode=` query parameter into ITS
+ * OWN ssl config, and that parsed value wins over `ssl` — silently discarding
+ * the CA and re-enabling full certificate-chain verification against the
+ * system trust store. Reproduced live in production on 2026-09-09: the app
+ * pool failed `/api/ready` in ~25ms (a fast TLS rejection, not the 2s readiness
+ * timeout) after `DATABASE_URL` picked up a `?sslmode=` parameter, with
+ * `DATABASE_CA_CERT` set correctly and never consulted.
+ *
+ * This is the exact defect `migrate-preflight-cli.ts` was fixed for on
+ * 2026-09-08 (`buildMigrationCredentials`) — that fix was never propagated to
+ * the pool the LIVE APP actually uses, which is the more consequential of the
+ * two. Decomposition here closes that gap: no query parameter on the URL can
+ * reach the driver's TLS decision, because no query parameter reaches the
+ * driver at all.
+ */
+export function buildAppDbCredentials(
+  nodeEnv: string | undefined,
+  databaseUrl: string,
+  caCert: string | undefined
+): AppDbCredentials {
+  const url = new URL(databaseUrl)
+  const host = url.hostname.toLowerCase()
+
+  // Fail closed: only an explicit development/test NODE_ENV relaxes SSL + host
+  // validation. Any other value (production, staging, preview, unset/unknown)
+  // must use a DanubeData EU host for data sovereignty (NFR1, NFR2).
+  if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
+    throw new Error(
+      `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity (NFR1, NFR2). Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.ro).`
+    )
+  }
+
+  return {
+    host,
+    // `URL.port` is '' when the URL omits it; Postgres' default is 5432.
+    port: url.port ? Number(url.port) : 5432,
+    // Credentials arrive percent-encoded in a URL and must be decoded before
+    // they are handed to the driver as discrete fields.
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+    ssl: buildDbSsl(nodeEnv, caCert),
+  }
+}
+
 function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env['DATABASE_URL']
@@ -151,23 +209,12 @@ function getPool(): Pool {
       )
     }
 
-    const url = new URL(databaseUrl)
-    const host = url.hostname.toLowerCase()
-    const nodeEnv = process.env['NODE_ENV']
-
-    // Fail closed: only an explicit development/test NODE_ENV relaxes SSL + host
-    // validation. Any other value (production, staging, preview, unset/unknown)
-    // must use a DanubeData EU host for data sovereignty (NFR1, NFR2).
-    if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
-      throw new Error(
-        `Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity (NFR1, NFR2). Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.ro).`
-      )
-    }
-
     pool = new Pool({
-      connectionString: databaseUrl,
-      // SSL enforced (with optional managed-provider CA) outside local dev/test
-      ssl: buildDbSsl(nodeEnv, process.env['DATABASE_CA_CERT']),
+      ...buildAppDbCredentials(
+        process.env['NODE_ENV'],
+        databaseUrl,
+        process.env['DATABASE_CA_CERT']
+      ),
       // Connection pooling tuned for development (AC-4); pg defaults to max 10
       max: 10,
       connectionTimeoutMillis: 5000,
