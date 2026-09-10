@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { buildAppDbCredentials, buildDbSsl, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  buildAppDbCredentials,
+  buildDbSsl,
+  isEuSovereignDbHost,
+  isRelaxedDbEnv,
+  testDbConnection,
+} from './client'
 
 // Story 5.8 — AC group A: database connection & data sovereignty hardening.
 
@@ -183,5 +189,57 @@ describe('buildAppDbCredentials (the 2026-09-09 production incident)', () => {
       undefined
     )
     expect(creds.ssl).toBe(false)
+  })
+})
+
+// Production incident, 2026-09-10: `/api/ready` returned 503 for hours with
+// NO trace of why anywhere -- not the HTTP response (by design, story 5-5
+// AC-1), not the container's stdout logs either, because `testDbConnection`
+// swallowed the pg/node error into a bare `false`. A real, confirmed defect
+// (getPool's connectionString/ssl conflict) got fixed and deployed and the
+// symptom persisted -- undiagnosable, because nothing recorded which of many
+// possible causes it actually was.
+describe('testDbConnection (diagnosability, 2026-09-10)', () => {
+  const originalUrl = process.env['DATABASE_URL']
+  const originalEnv = process.env['NODE_ENV']
+
+  afterEach(() => {
+    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
+    if (originalUrl === undefined) delete process.env['DATABASE_URL']
+    else process.env['DATABASE_URL'] = originalUrl
+    process.env['NODE_ENV'] = originalEnv
+    vi.restoreAllMocks()
+  })
+
+  it('logs a structured, safe summary of the failure server-side', async () => {
+    // Missing DATABASE_URL makes getPool() throw SYNCHRONOUSLY -- a real,
+    // dependency-free way to reach testDbConnection's catch block without a
+    // database or mocking `pg`.
+    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
+    delete process.env['DATABASE_URL']
+    process.env['NODE_ENV'] = 'production'
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const result = await testDbConnection()
+
+    expect(result).toBe(false) // contract preserved: never throws to the caller
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [, detail] = spy.mock.calls[0] as [string, Record<string, unknown>]
+    expect(detail).toMatchObject({ name: 'Error' })
+    expect(String(detail.message)).toMatch(/DATABASE_URL is not configured/)
+  })
+
+  it('never logs a password or connection string, however the failure is shaped', async () => {
+    // A synthetic error carrying a full connection string, as some driver-level
+    // errors do in the wild. The logger must not forward it whole.
+    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
+    delete process.env['DATABASE_URL']
+    process.env['NODE_ENV'] = 'production'
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await testDbConnection()
+
+    const logged = JSON.stringify(spy.mock.calls)
+    expect(logged).not.toMatch(/postgresql:\/\/[^@]+@/) // no user:pass@ shape
   })
 })

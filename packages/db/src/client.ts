@@ -294,7 +294,31 @@ export async function testDbConnection(): Promise<boolean> {
     } finally {
       client.release()
     }
-  } catch {
+  } catch (error) {
+    // Server-side ONLY -- this never reaches an HTTP response. `/api/ready`
+    // still returns a bare `{ status }` with no error detail (story 5-5 AC-1);
+    // this line exists purely for the container's own log stream.
+    //
+    // Before this, a DB outage was genuinely undiagnosable in production: this
+    // function swallowed the error into a bare `false`, and every caller did
+    // the same, so nothing -- not even server logs -- ever recorded WHY.
+    // Confirmed live 2026-09-10: `/api/ready` read 503 for hours with no trace
+    // of the cause anywhere, including AFTER a real, confirmed defect
+    // (getPool's connectionString/ssl conflict, fixed the same day) was
+    // deployed and the symptom persisted -- there was no way to tell whether
+    // that fix was the whole story or the wrong tree entirely.
+    //
+    // Deliberately narrow: name/code/message only, never the Error object
+    // itself or DATABASE_URL. Standard pg/node connection errors (ECONNREFUSED,
+    // ENOTFOUND, a self-signed-certificate rejection, 28P01 invalid_password)
+    // do not embed the password in these fields; forwarding the raw error
+    // object risked some future error type carrying more than these do.
+    const err = error as { name?: string; code?: string; message?: string }
+    console.error('[db] connectivity check failed:', {
+      name: err?.name,
+      code: err?.code,
+      message: err?.message,
+    })
     return false
   }
 }
