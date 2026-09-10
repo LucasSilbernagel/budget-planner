@@ -121,11 +121,11 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
  * only when a usable Paddle credential is configured; otherwise it logs an
  * actionable warning and returns.
  *
- * ⚠️ LAUNCH CHECKLIST: the Paddle production environment and a wired
- * cancel-subscription API call are Story 5-3 (still `ready-for-dev`). Until 5-3
- * lands there is no cancel endpoint to call, so this remains a documented
- * best-effort: it records intent and warns. Re-verify the real cancel path once
- * 5-3 is done. (Resolved decision #3, 2026-07-04.)
+ * ⚠️ LAUNCH CHECKLIST: Story 5-3 reconciled the webhook to Paddle Billing but
+ * did NOT wire an outbound cancel-subscription call (deferred to 5-3 Task 4/5,
+ * which need the live Billing API). Until then this remains a documented
+ * best-effort: it records intent and warns. Re-verify once that lands.
+ * (Resolved decision #3, 2026-07-04.)
  */
 async function cancelPaddleSubscriptionBestEffort(paddleId: string): Promise<void> {
   try {

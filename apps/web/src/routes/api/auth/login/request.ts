@@ -17,8 +17,8 @@
 
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
-import { clientIpForRateLimit } from '@/routes/api/auth/paddle/callback'
 import { requestMagicLink } from '@/server/api/auth/magic-link'
+import { clientIpForRateLimit } from '@/server/rate-limit/client-ip'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { getSiteUrl } from '@budget-planner/config'
 import { createFileRoute } from '@tanstack/react-router'

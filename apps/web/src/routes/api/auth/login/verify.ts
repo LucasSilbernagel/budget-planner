@@ -27,13 +27,13 @@
 import crypto from 'crypto'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
-import { clientIpForRateLimit } from '@/routes/api/auth/paddle/callback'
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
 import { signSession } from '@/server/api/auth/session'
+import { clientIpForRateLimit } from '@/server/rate-limit/client-ip'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { createFileRoute } from '@tanstack/react-router'
 
-/** 7-day session lifetime, matching the Paddle callback. */
+/** 7-day session lifetime (matches the signed-session TTL in `session.ts`). */
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60
 /** CSRF cookie lifetime — aligned with the 15-min token TTL. */
 const CSRF_MAX_AGE = 15 * 60

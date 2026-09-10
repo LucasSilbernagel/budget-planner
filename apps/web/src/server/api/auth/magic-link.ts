@@ -20,28 +20,19 @@ import { sendMagicLinkEmail } from '@/server/email/mailer'
 import { db } from '@budget-planner/db'
 import { users } from '@budget-planner/db/src/schema'
 import { and, eq, sql } from 'drizzle-orm'
+// Email canonicalization is shared with the Paddle Billing checkout webhook
+// (account creation) so the stored form and every lookup key are produced by the
+// same code (Story 5-3).
+import { isValidEmail, normalizeEmail } from './email'
 import { consumeLoginToken, createLoginToken, peekLoginToken } from './login-token'
+
+export { isValidEmail, normalizeEmail }
 
 /** Identity claims required to mint a signed session (matches SessionPayload). */
 export interface VerifiedLoginUser {
   userId: string
   paddleId: string
   email: string
-}
-
-/** RFC 5321 maximum email length. */
-const EMAIL_MAX_LENGTH = 254
-/** Same shape check used by the Paddle user creation path. */
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-/** Normalize an email for lookup + as a rate-limit key (trim + lowercase). */
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase()
-}
-
-/** Cheap shape/length validation before any DB work. */
-export function isValidEmail(email: string): boolean {
-  return email.length > 0 && email.length <= EMAIL_MAX_LENGTH && EMAIL_REGEX.test(email)
 }
 
 /**
@@ -67,8 +58,15 @@ export async function requestMagicLink(rawEmail: string, baseUrl: string): Promi
     return
   }
 
-  // Case-insensitive match (the stored address may differ in case) and exclude
-  // soft-deleted users (they cannot log in — consistent with validateSessionToken).
+  // `email` is already `normalizeEmail`d and the webhook stores addresses in the
+  // same normalized form (Story 5-3). The `lower()` wrapper is a partial belt for
+  // rows that might predate normalized storage — it only helps for ASCII: an
+  // address with a character whose JS `toLowerCase()` and Postgres `lower()`
+  // disagree (Turkish dotted/dotless I, etc.) would still miss the lookup and the
+  // user could not sign in. That residual is accepted under the ASCII-only
+  // assumption documented in `email.ts` (and no users exist pre-launch).
+  // Soft-deleted users are excluded (they cannot log in — consistent with
+  // validateSessionToken).
   const matches = await db
     .select()
     .from(users)

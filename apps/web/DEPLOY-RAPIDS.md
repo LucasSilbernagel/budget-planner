@@ -135,10 +135,15 @@ so each value is set a single time.
 | `DATABASE_CA_CERT` | **yes (paid tier)** | Read directly from `process.env` in `client.ts` (not in the Zod schema — easy to miss). The DanubeData chain is **self-signed**, so without it `getPool()` fails `SELF_SIGNED_CERT_IN_CHAIN` and no query runs (Story 5.17). On Rapids, **base64-encode the PEM** (`base64 -w0 ca.pem`) before pasting — `normalizeCaCert()` decodes it at every read site. |
 | `SESSION_SECRET` | **yes** | HMAC key for signed sessions. **≥32 chars and ≥8 distinct chars** or auth fails closed (outside dev). Generate: `openssl rand -hex 32`. Rotating it invalidates all sessions. |
 | `SITE_URL` | **yes** | Public **https** origin (default is `http://localhost:5173`). Magic-link emails build absolute URLs from it; a non-https/localhost value throws in production. |
-| `PADDLE_ENVIRONMENT` | 5-3 | `sandbox` \| `production`. |
-| `PADDLE_VENDOR_ID` / `PADDLE_API_KEY` / `PADDLE_PUBLIC_KEY` / `PADDLE_WEBHOOK_SECRET` | 5-3 | Billing. Coordinate with Story 5-3. |
+| `PADDLE_ENVIRONMENT` | 5-3 | `sandbox` \| `production`. Selects `api.paddle.com` vs `sandbox-api.paddle.com` and gates `assertPaddleProductionConfig()`. |
+| `PADDLE_API_KEY` | 5-3 | Server-side Billing REST API key (`pdl_live_…`). Runtime secret. |
+| `PADDLE_CLIENT_TOKEN` | 5-3 | Browser token for Paddle.js checkout (`live_…`). Safe to expose to the client. |
+| `PADDLE_WEBHOOK_SECRET` | 5-3 | `pdl_ntfset_…` — HMAC key for the `Paddle-Signature` header. Runtime secret. |
+| `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | 5-3 | Live Paddle price IDs for the €39/yr and €99 lifetime plans. **Must differ** (`assertPaddleProductionConfig` throws if equal). |
+| `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | optional | Webhook timestamp-freshness window. Default `300`. |
+| ~~`PADDLE_VENDOR_ID` / `PADDLE_PUBLIC_KEY`~~ | — | **Removed in Story 5-3** — Paddle Classic vars, unused by Billing. Do not set. |
 | `EMAIL_API_KEY` | 5-16 | Magic-link email (EU provider). Runtime secret. |
-| `EMAIL_FROM` | optional | Defaults to `no-reply@budgetplanner.eu`. |
+| `EMAIL_FROM` | **5-3** | ⚠️ default is the retired `no-reply@budgetplanner.eu` — set a real verified Longhand-owned EU sender. |
 | `PORT` / `HOST` | platform | `PORT` injected by Knative (entry defaults 8080 / `0.0.0.0`). |
 
 Generate the session secret:

@@ -16,12 +16,25 @@ export const envSchema = z.object({
   // Application
   PORT: z.coerce.number().default(3000),
 
-  // Paddle Configuration (UK-based - CLOUD Act compliant)
+  // Paddle Billing Configuration (UK Merchant of Record - CLOUD Act compliant).
+  // Story 5-3 reconciled this from the deprecated Paddle Classic model (vendor
+  // id + RSA public key + `v1,{ts},{hmac}` webhooks) to Paddle Billing
+  // (server API key + browser client token + `Paddle-Signature` webhooks).
   PADDLE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
-  PADDLE_VENDOR_ID: z.string().optional(),
+  // Server-side API key (`pdl_sdbx_...` / `pdl_live_...`) — used for the
+  // Billing REST API (e.g. resolving a customer's email on a webhook).
   PADDLE_API_KEY: z.string().optional(),
-  PADDLE_PUBLIC_KEY: z.string().optional(),
+  // Client-side token (`live_...` / `test_...`) passed to Paddle.js in the
+  // browser to open a Billing checkout. Distinct from the API key and safe to
+  // ship to the client. (Checkout UI wiring is Story 5-3 Task 2a.)
+  PADDLE_CLIENT_TOKEN: z.string().optional(),
+  // Notification-destination secret (`pdl_ntfset_...`) — HMAC key for the
+  // `Paddle-Signature` header on incoming webhooks.
   PADDLE_WEBHOOK_SECRET: z.string().optional(),
+  // Max age (seconds) of a webhook's signed timestamp before it is rejected as a
+  // replay. Paddle's SDKs default to 5s; a self-hosted receiver behind clock
+  // skew needs a wider window. 300s (5 min) is the default.
+  PADDLE_WEBHOOK_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(300),
   // Paddle price IDs for the two Premium plans (story 25-2): the recurring
   // €39/yr annual plan and the one-time €99 lifetime license. Kept out of source
   // (never hardcoded) so the same build points at sandbox or production prices.
@@ -41,6 +54,9 @@ export const envSchema = z.object({
   // reports `isConfigured`, and the mailer fails closed outside development.
   EMAIL_API_KEY: z.string().optional(),
   // Verified sender address for the EU provider (the "from" on the magic link).
+  // ⚠️ Story 5-3/5-6: the default is a placeholder on a RETIRED brand domain.
+  // Production MUST set this to a real Longhand-owned address on an EU domain
+  // that is verified with the email provider (Brevo). Dev-only cosmetic default.
   EMAIL_FROM: z.string().default('no-reply@budgetplanner.eu'),
 
   // Session signing secret (HMAC-SHA256 key for signed session cookies).
@@ -82,36 +98,104 @@ export function resetConfig(): void {
   config = null
 }
 
-// Paddle-specific configuration
+// Paddle Billing configuration
 export interface PaddleConfig {
   environment: 'sandbox' | 'production'
-  vendorId: string | undefined
+  /** Server-side Billing REST API key. */
   apiKey: string | undefined
-  publicKey: string | undefined
+  /** Browser token for Paddle.js checkout. */
+  clientToken: string | undefined
+  /** HMAC key for the `Paddle-Signature` webhook header. */
   webhookSecret: string | undefined
+  /** Rejection age (seconds) for a webhook's signed timestamp. */
+  webhookMaxAgeSeconds: number
+  /** Billing REST API base URL, derived from `environment`. */
+  apiBaseUrl: string
   /** Paddle price ID for the recurring €39/yr annual plan (story 25-2). */
   annualPriceId: string | undefined
   /** Paddle price ID for the one-time €99 lifetime license (story 25-2). */
   lifetimePriceId: string | undefined
+  /** True only when the full Billing credential set is present. */
   isConfigured: boolean
 }
 
+/** Billing REST API base URL for each environment. */
+export const PADDLE_API_BASE_URL = {
+  sandbox: 'https://sandbox-api.paddle.com',
+  production: 'https://api.paddle.com',
+} as const
+
 /**
- * Get Paddle configuration
+ * Get Paddle Billing configuration.
+ *
+ * `isConfigured` requires the API key, the client token, and the webhook secret
+ * — the three secrets every part of the Billing integration needs. Price IDs are
+ * checked separately by `assertPaddleProductionConfig()` because a build can be
+ * "configured" for sandbox smoke tests before the live prices exist.
  */
 export function getPaddleConfig(): PaddleConfig {
   const env = getConfig()
-  const isConfigured = !!env.PADDLE_VENDOR_ID && !!env.PADDLE_API_KEY && !!env.PADDLE_PUBLIC_KEY
+  const isConfigured =
+    !!env.PADDLE_API_KEY && !!env.PADDLE_CLIENT_TOKEN && !!env.PADDLE_WEBHOOK_SECRET
 
   return {
     environment: env.PADDLE_ENVIRONMENT,
-    vendorId: env.PADDLE_VENDOR_ID,
     apiKey: env.PADDLE_API_KEY,
-    publicKey: env.PADDLE_PUBLIC_KEY,
+    clientToken: env.PADDLE_CLIENT_TOKEN,
     webhookSecret: env.PADDLE_WEBHOOK_SECRET,
+    webhookMaxAgeSeconds: env.PADDLE_WEBHOOK_MAX_AGE_SECONDS,
+    apiBaseUrl: PADDLE_API_BASE_URL[env.PADDLE_ENVIRONMENT],
     annualPriceId: env.PADDLE_ANNUAL_PRICE_ID,
     lifetimePriceId: env.PADDLE_LIFETIME_PRICE_ID,
     isConfigured,
+  }
+}
+
+/**
+ * Fail-closed production assertion for Paddle Billing (mirrors getSessionSecret /
+ * getSiteUrl). Every `PADDLE_*` var is `.optional()` in the schema so a
+ * dev/test/sandbox build loads without them — but a production build with a
+ * missing secret or price ID would silently degrade to "billing disabled" (no
+ * checkout, no webhook processing, no revenue) with only a log line. Call this on
+ * the revenue-critical paths (the webhook handler; the checkout route) so a
+ * misdeployed production build crashes loudly instead.
+ *
+ * Throws in production/test when the full Billing set is absent, or when the two
+ * price IDs are equal (which would make every annual renewal invoice match the
+ * lifetime price and be mis-granted as a permanent entitlement).
+ *
+ * Runs the strict checks whenever `NODE_ENV` is non-development OR
+ * `PADDLE_ENVIRONMENT === 'production'`. The `PADDLE_ENVIRONMENT` clause closes
+ * the known "NODE_ENV split-brain" gap: the env schema defaults an UNSET
+ * `NODE_ENV` to `development`, so a container that forgets `NODE_ENV=production`
+ * but sets `PADDLE_ENVIRONMENT=production` (as any real deploy does) is still
+ * validated. Local dev (`PADDLE_ENVIRONMENT=sandbox`) stays exempt so it needs
+ * no Paddle account.
+ */
+export function assertPaddleProductionConfig(): void {
+  const env = getConfig()
+  if (env.NODE_ENV === 'development' && env.PADDLE_ENVIRONMENT !== 'production') {
+    return
+  }
+
+  const missing: string[] = []
+  if (!env.PADDLE_API_KEY) missing.push('PADDLE_API_KEY')
+  if (!env.PADDLE_CLIENT_TOKEN) missing.push('PADDLE_CLIENT_TOKEN')
+  if (!env.PADDLE_WEBHOOK_SECRET) missing.push('PADDLE_WEBHOOK_SECRET')
+  if (!env.PADDLE_ANNUAL_PRICE_ID) missing.push('PADDLE_ANNUAL_PRICE_ID')
+  if (!env.PADDLE_LIFETIME_PRICE_ID) missing.push('PADDLE_LIFETIME_PRICE_ID')
+  if (missing.length > 0) {
+    throw new Error(
+      `Paddle Billing is not fully configured for production — missing: ${missing.join(
+        ', '
+      )}. A production build must have the full Billing credential set or it silently earns no revenue.`
+    )
+  }
+
+  if (env.PADDLE_ANNUAL_PRICE_ID?.trim() === env.PADDLE_LIFETIME_PRICE_ID?.trim()) {
+    throw new Error(
+      'PADDLE_ANNUAL_PRICE_ID and PADDLE_LIFETIME_PRICE_ID must differ — an equal value makes every annual renewal invoice match the lifetime price and grant a permanent entitlement.'
+    )
   }
 }
 

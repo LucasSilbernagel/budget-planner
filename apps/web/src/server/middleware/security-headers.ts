@@ -82,8 +82,10 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  *                  framed; it does NOT affect us framing Paddle (that's `frame-src`).
  * - `base-uri`/`form-action`/`object-src`  lock the base tag, form posts, and plugins.
  *
- * Server-side-only Paddle hosts (`api.paddle.com`, `vendors.paddle.com`) are
- * called from server routes, never the browser — intentionally NOT listed.
+ * Server-side-only Paddle Billing hosts (`api.paddle.com` /
+ * `sandbox-api.paddle.com`) are called from server routes, never the browser —
+ * intentionally NOT listed. (`cdn.paddle.com`, for the Paddle.js checkout
+ * script, is already allow-listed in `script-src`.)
  */
 export function buildContentSecurityPolicy(nonce: string): string {
   // Defensive: the nonce is interpolated raw into the header, so a value

@@ -24,7 +24,7 @@ export interface CreateProfileInput {
   description?: string
   // ⚠️ The `userProfiles.currency` column is `currencyEnum`
   // (`packages/db/src/schema.ts:333`), so a bare `string` let any value reach a
-  // `.set()` on it. Same fix as `api/auth/paddle.ts`'s `PaddleUser.currency`.
+  // `.set()` on it — must be the `Currency` union.
   currency?: Currency
 }
 

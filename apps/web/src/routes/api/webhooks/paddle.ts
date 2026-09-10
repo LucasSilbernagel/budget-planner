@@ -1,35 +1,58 @@
 /**
- * Paddle Webhooks
+ * Paddle Billing Webhooks
  *
  * TanStack Start server route (file-route `server.handlers`)
- * Handles Paddle webhook events for subscription updates
- *
  * Endpoint: POST /api/webhooks/paddle
  *
- * Data Sovereignty: Processes webhooks and updates DanubeData PostgreSQL (Germany - EU)
- * Security: Verifies webhook signatures to prevent spoofing
+ * Handles Paddle Billing subscription + transaction events and updates the
+ * DB-authoritative `users.subscriptionStatus`. This is the ONLY account-creation
+ * path for the paid tier (ADR-003): a first-seen `customer_id` is inserted here
+ * (and given a default profile); the magic-link login (Story 5-16) only
+ * re-authenticates existing users.
+ *
+ * Data Sovereignty: processes webhooks and updates DanubeData PostgreSQL (Germany - EU).
+ * Security: verifies the `Paddle-Signature` header (HMAC-SHA256 over `ts:rawBody`)
+ * and enforces a timestamp-freshness window to reject replays.
  */
 
 import crypto from 'crypto'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
-import { getPaddleConfig } from '@budget-planner/config'
+import { normalizeEmail } from '@/server/api/auth/email'
+import { createDefaultProfileForUser } from '@/server/functions/profiles'
+import { fetchPaddleCustomerEmail } from '@/server/paddle/customer-api'
+import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import { type Currency, type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+
+/** RFC 5321 max email length. */
+const EMAIL_MAX_LENGTH = 254
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /**
- * Map Paddle webhook subscription status to our enum
+ * Outcome of a webhook DB write.
+ *  - `ok: false` → nothing was persisted; the caller must return HTTP 500 so
+ *    Paddle retries rather than silently losing a paid entitlement.
+ *  - `createdUserId` → a NEW `users` row was inserted; the caller creates its
+ *    default profile AFTER the transaction commits (a first-seen buyer would
+ *    otherwise hit "Profile ID required" on every paid-tier read).
+ */
+interface WriteResult {
+  ok: boolean
+  createdUserId?: string
+}
+
+/**
+ * Map a Paddle Billing subscription status to our enum.
  *
- * @param status - Paddle subscription status string
- * @returns Mapped subscription status
+ * Billing statuses: `active`, `trialing`, `past_due`, `paused`, `canceled`.
+ * Anything unrecognized (or a `paused` subscription) drops to `free` — no access.
  */
 function mapWebhookSubscriptionStatus(status: string): SubscriptionStatus {
-  const normalizedStatus = status?.toLowerCase()
-
-  switch (normalizedStatus) {
+  switch (status?.toLowerCase()) {
     case 'active':
     case 'trialing':
       return 'active'
@@ -39,63 +62,77 @@ function mapWebhookSubscriptionStatus(status: string): SubscriptionStatus {
     case 'cancelled':
       return 'canceled'
     default:
-      // Unknown status - default to free
       return 'free'
   }
 }
 
-/**
- * Validate email format
- *
- * @param email - Email address to validate
- * @returns True if email is valid
- */
+/** Validate email format (shape + RFC 5321 length). Run on the NORMALIZED value. */
 function isValidEmail(email?: string): boolean {
   if (!email || typeof email !== 'string') return false
-
-  // RFC 5321: max 254 characters
-  if (email.length > 254) return false
-
-  // Basic email format validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
+  if (email.length > EMAIL_MAX_LENGTH) return false
+  return EMAIL_REGEX.test(email)
 }
 
 /**
- * Verify Paddle webhook signature
- * Prevents unauthorized webhook requests
+ * Verify the Paddle Billing webhook signature.
  *
- * Paddle webhook signature format: v1,{timestamp},{hmac}
- * The HMAC is computed as: hmac_sha256(timestamp + '.' + payload)
+ * Header: `Paddle-Signature: ts=<unix>;h1=<hex>` — during a secret rotation
+ * Paddle sends MULTIPLE `h1` values (`ts=…;h1=<old>;h1=<new>`), so we collect
+ * every `h1` and accept if ANY of them matches.
+ * Signed payload: `` `${ts}:${rawBody}` `` — the raw body MUST be unmodified
+ * (no re-serialization / whitespace changes) or the HMAC won't match.
+ * Algorithm: HMAC-SHA256 with the notification-destination secret.
+ * Replay protection: reject when `ts` is older than `maxAgeSeconds` (or set in
+ * the future beyond the same tolerance — clock skew both ways).
+ *
+ * [Source: https://developer.paddle.com/webhooks/signature-verification]
  */
 function verifyWebhookSignature(
-  payload: string,
-  signature: string | null,
-  secret: string
+  rawBody: string,
+  signatureHeader: string | null,
+  secret: string,
+  maxAgeSeconds: number
 ): boolean {
-  if (!signature || !secret) {
+  if (!signatureHeader || !secret) {
     return false
   }
 
   try {
-    // Parse signature: v1,{timestamp},{hmac}
-    const [version, timestamp, receivedHmac] = signature.split(',')
+    // Parse `ts=...;h1=...;h1=...` (order-independent, tolerant of extra parts).
+    let ts: string | undefined
+    const h1s: string[] = []
+    for (const part of signatureHeader.split(';')) {
+      const [key, value] = part.split('=')
+      const k = key?.trim()
+      const v = value?.trim()
+      if (k === 'ts') ts = v
+      else if (k === 'h1' && v) h1s.push(v)
+    }
 
-    if (version !== 'v1' || !timestamp || !receivedHmac) {
+    if (!ts || h1s.length === 0 || !/^\d+$/.test(ts) || !h1s.every((h) => /^[0-9a-f]+$/i.test(h))) {
       return false
     }
 
-    // Compute expected HMAC: hmac_sha256(timestamp + '.' + payload)
-    const expectedHmac = crypto
-      .createHmac('sha256', secret)
-      .update(`${timestamp}.${payload}`)
-      .digest('hex')
+    // Freshness: reject a stale (replayed) or wildly future timestamp. Logged at
+    // DEBUG, not WARN — this check runs BEFORE the HMAC, so an unauthenticated
+    // flood of `ts=0` requests must not become a log/alert amplification vector
+    // (matches the posture in `server/rate-limit/client-ip.ts`).
+    const ageSeconds = Math.abs(Date.now() / 1000 - Number(ts))
+    if (ageSeconds > maxAgeSeconds) {
+      logger.debug('Webhook: signature timestamp outside freshness window', {
+        ageSeconds: Math.round(ageSeconds),
+        maxAgeSeconds,
+      })
+      return false
+    }
 
-    // Use timing-safe comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-      Buffer.from(receivedHmac, 'hex'),
-      Buffer.from(expectedHmac, 'hex')
-    )
+    const expected = crypto.createHmac('sha256', secret).update(`${ts}:${rawBody}`).digest('hex')
+    const computed = Buffer.from(expected, 'hex')
+
+    return h1s.some((h1) => {
+      const received = Buffer.from(h1, 'hex')
+      return received.length === computed.length && crypto.timingSafeEqual(received, computed)
+    })
   } catch {
     return false
   }
@@ -106,8 +143,7 @@ function verifyWebhookSignature(
  *
  * Returning undefined (rather than defaulting to 'NONE') lets callers OMIT the
  * currency column on writes so an existing user's saved currency is preserved
- * when a payload carries no currency (transaction events often omit it) — code
- * review 2026-07-20.
+ * when a payload carries no currency (transaction events often omit it).
  */
 function mapProvidedCurrency(currency?: string): Currency | undefined {
   if (!currency) return undefined
@@ -117,57 +153,51 @@ function mapProvidedCurrency(currency?: string): Currency | undefined {
 }
 
 /**
- * Handle subscription status update from Paddle webhook
- * Updates or creates user subscription status in DanubeData PostgreSQL
- * Uses transaction to prevent race conditions
- *
- * For subscription_created events, this may be the first time we see this user
- * if the OAuth flow didn't complete properly, so we create the user record.
+ * Handle a subscription status update from a Paddle Billing `subscription.*`
+ * event. Updates or creates the user keyed by `customer_id` (stored in
+ * `users.paddleId`). Uses a transaction to prevent race conditions.
  *
  * NEVER downgrades a `'lifetime'` buyer (story 25-2): a subscription-lifecycle
  * event (e.g. cancelling a redundant annual sub after buying lifetime) must not
  * touch a permanent lifetime entitlement.
  */
 async function handleSubscriptionStatusUpdate(
-  paddleUserId: string,
+  customerId: string,
   subscriptionStatus: string,
   email?: string,
   currency?: string
-): Promise<boolean> {
-  // Validate inputs
-  if (!paddleUserId || typeof paddleUserId !== 'string') {
-    logger.error('Webhook: invalid paddleUserId', { paddleUserId })
-    return false
+): Promise<WriteResult> {
+  if (!customerId || typeof customerId !== 'string') {
+    logger.error('Webhook: invalid customer_id', { customerId })
+    return { ok: false }
   }
 
-  // Map subscription status to our enum
   const mappedStatus = mapWebhookSubscriptionStatus(subscriptionStatus)
 
-  // Validate email if provided
-  if (email && !isValidEmail(email)) {
-    logger.warn('Webhook: invalid email for user', { paddleUserId, email })
-    return false
+  // Normalize BEFORE validating (email.ts contract) so a whitespace-padded or
+  // 255–256-char address that is valid once trimmed is not spuriously rejected.
+  const normalizedEmail = email ? normalizeEmail(email) : undefined
+  if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+    logger.warn('Webhook: invalid email for customer', { customerId })
+    return { ok: false }
   }
 
-  // Only overwrite currency when the payload actually carries one (preserve otherwise).
   const mappedCurrency = mapProvidedCurrency(currency)
 
   try {
     return await db.transaction(async (tx) => {
-      // Look up the current status first so we can (a) protect a lifetime buyer
-      // from downgrade and (b) return an honest success/failure to the caller.
       const existing = await tx
         .select({ status: users.subscriptionStatus })
         .from(users)
-        .where(eq(users.paddleId, paddleUserId))
+        .where(eq(users.paddleId, customerId))
         .limit(1)
 
       if (existing.length > 0) {
         if (existing[0]?.status === 'lifetime') {
           logger.info('Webhook: ignoring subscription event for a lifetime buyer (no downgrade)', {
-            paddleUserId,
+            customerId,
           })
-          return true
+          return { ok: true }
         }
         await tx
           .update(users)
@@ -175,46 +205,62 @@ async function handleSubscriptionStatusUpdate(
             subscriptionStatus: mappedStatus,
             ...(mappedCurrency ? { currency: mappedCurrency } : {}),
           })
-          .where(eq(users.paddleId, paddleUserId))
-        return true
+          .where(eq(users.paddleId, customerId))
+        return { ok: true }
       }
 
       // No existing user. Create one only if we have an email to key on;
-      // otherwise nothing is written — report failure (do NOT log success).
-      if (!email) {
+      // otherwise nothing is written — report failure so the caller returns 500.
+      if (!normalizedEmail) {
         logger.error(
-          'Webhook: subscription event for unknown user with no email — nothing written',
-          {
-            paddleUserId,
-          }
+          'Webhook: subscription event for unknown customer with no resolvable email — nothing written',
+          { customerId }
         )
-        return false
+        return { ok: false }
       }
-      await tx.insert(users).values({
-        paddleId: paddleUserId,
-        email,
-        subscriptionStatus: mappedStatus,
-        ...(mappedCurrency ? { currency: mappedCurrency } : {}),
-      })
-      logger.info('Webhook: created new user from subscription', { paddleUserId })
-      return true
+
+      // ON CONFLICT closes the race where a concurrent `transaction.completed`
+      // for the same new customer inserts the row between our SELECT and INSERT.
+      // The `setWhere` keeps a just-created 'lifetime' row from being downgraded.
+      const inserted = await tx
+        .insert(users)
+        .values({
+          paddleId: customerId,
+          email: normalizedEmail,
+          subscriptionStatus: mappedStatus,
+          ...(mappedCurrency ? { currency: mappedCurrency } : {}),
+        })
+        .onConflictDoUpdate({
+          target: users.paddleId,
+          set: {
+            subscriptionStatus: mappedStatus,
+            ...(mappedCurrency ? { currency: mappedCurrency } : {}),
+          },
+          setWhere: sql`${users.subscriptionStatus} <> 'lifetime'`,
+        })
+        .returning({ id: users.id })
+
+      const newId = inserted[0]?.id
+      logger.info('Webhook: created/updated user from subscription', { customerId })
+      // `newId` is present whether we inserted or updated-on-conflict; only the
+      // insert case needs a default profile, but createDefaultProfileForUser is
+      // idempotent so calling it on the conflict case is harmless.
+      return { ok: true, createdUserId: newId }
     })
   } catch (error) {
-    logger.error('Webhook: failed to update subscription status', { paddleUserId, error })
-    return false
+    logger.error('Webhook: failed to update subscription status', { customerId, error })
+    return { ok: false }
   }
 }
 
 /**
  * Collect every purchased Paddle price ID from a transaction-event payload.
  *
- * Paddle transaction payloads carry the price either directly (`price_id`) or on
- * line items (`items[].price_id` / `items[].price.id`). We read defensively across
- * those shapes because the integration models a stubbed payload today (story 5-3
- * will finalise the real Paddle Billing shape). Returns ALL candidate ids (not
- * just the first) so the caller can check whether ANY line item is the lifetime
- * price — a lifetime item is not necessarily first when a transaction bundles
- * other lines (code review 2026-07-20).
+ * Paddle Billing transaction payloads carry prices on line items as
+ * `items[].price.id`; a direct `price_id` is also read defensively.
+ * Returns ALL candidate ids so the caller can check whether ANY line item is
+ * the lifetime price — a lifetime item is not necessarily first when a
+ * transaction bundles other lines.
  */
 function collectPurchasedPriceIds(payload?: {
   price_id?: string
@@ -234,117 +280,172 @@ function collectPurchasedPriceIds(payload?: {
 /**
  * Handle a one-time lifetime purchase (story 25-2).
  *
- * A lifetime license arrives as a transaction event (not a `subscription_*`
- * event). We persist `subscriptionStatus = 'lifetime'` — a first-class, permanent
- * entitlement that all premium gates (`forecasting.ts`, `usePremiumAccess.ts`,
- * `auth-indicator.tsx`, `useFinancialCalculations.ts`) treat as access-granting.
- * Because it is a DISTINCT status, no subscription-lifecycle event can ever
- * downgrade a lifetime buyer (see the guard in `handleSubscriptionStatusUpdate`),
- * so the entitlement is truly permanent — even for a user who also once held a
- * cancellable subscription.
+ * A lifetime license arrives as a `transaction.completed` event (not a
+ * `subscription.*` event). We persist `subscriptionStatus = 'lifetime'` — a
+ * first-class, permanent entitlement that all premium gates treat as
+ * access-granting. Because it is a DISTINCT status, no subscription-lifecycle
+ * event can ever downgrade a lifetime buyer.
  *
- * Returns false when nothing was written (unknown user with no email, or a DB
- * error) so the caller can signal Paddle to retry rather than silently losing a
- * paid entitlement.
+ * `ok: false` when nothing was written (unknown customer with no email, or a DB
+ * error) so the caller returns HTTP 500 and Paddle retries.
  */
 async function handleLifetimePurchase(
-  paddleUserId: string,
+  customerId: string,
   email?: string,
   currency?: string
-): Promise<boolean> {
-  if (!paddleUserId || typeof paddleUserId !== 'string') {
-    logger.error('Webhook: invalid paddleUserId for lifetime purchase', { paddleUserId })
-    return false
+): Promise<WriteResult> {
+  if (!customerId || typeof customerId !== 'string') {
+    logger.error('Webhook: invalid customer_id for lifetime purchase', { customerId })
+    return { ok: false }
   }
-  if (email && !isValidEmail(email)) {
-    logger.warn('Webhook: invalid email for lifetime buyer', { paddleUserId })
-    return false
+
+  const normalizedEmail = email ? normalizeEmail(email) : undefined
+  if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+    logger.warn('Webhook: invalid email for lifetime buyer', { customerId })
+    return { ok: false }
   }
 
   const mappedCurrency = mapProvidedCurrency(currency)
 
   try {
     return await db.transaction(async (tx) => {
-      // Update-first: a lifetime purchase upgrades ANY prior status (free / active
-      // / canceled) to the terminal 'lifetime' — there is nothing to guard against.
       const result = await tx
         .update(users)
         .set({
           subscriptionStatus: 'lifetime',
           ...(mappedCurrency ? { currency: mappedCurrency } : {}),
         })
-        .where(eq(users.paddleId, paddleUserId))
+        .where(eq(users.paddleId, customerId))
 
-      if (result.rowCount === 0) {
-        if (!email) {
-          logger.error('Webhook: lifetime purchase for unknown user with no email — cannot grant', {
-            paddleUserId,
-          })
-          return false
-        }
-        await tx.insert(users).values({
-          paddleId: paddleUserId,
-          email,
+      if (result.rowCount !== 0) {
+        return { ok: true }
+      }
+
+      if (!normalizedEmail) {
+        logger.error(
+          'Webhook: lifetime purchase for unknown customer with no resolvable email — cannot grant',
+          { customerId }
+        )
+        return { ok: false }
+      }
+
+      // ON CONFLICT: a concurrent subscription event may have inserted the row
+      // after our UPDATE missed. A lifetime grant upgrades ANY prior status.
+      const inserted = await tx
+        .insert(users)
+        .values({
+          paddleId: customerId,
+          email: normalizedEmail,
           subscriptionStatus: 'lifetime',
           ...(mappedCurrency ? { currency: mappedCurrency } : {}),
         })
-        logger.info('Webhook: created new lifetime user', { paddleUserId })
-      }
-      return true
+        .onConflictDoUpdate({
+          target: users.paddleId,
+          set: {
+            subscriptionStatus: 'lifetime',
+            ...(mappedCurrency ? { currency: mappedCurrency } : {}),
+          },
+        })
+        .returning({ id: users.id })
+
+      logger.info('Webhook: created/upgraded lifetime user', { customerId })
+      return { ok: true, createdUserId: inserted[0]?.id }
     })
   } catch (error) {
-    logger.error('Webhook: failed to grant lifetime entitlement', { paddleUserId, error })
-    return false
+    logger.error('Webhook: failed to grant lifetime entitlement', { customerId, error })
+    return { ok: false }
+  }
+}
+
+/** The `data` object of a Paddle Billing webhook event (the fields we read). */
+interface PaddleEventData {
+  id?: string
+  customer_id?: string
+  status?: string
+  currency_code?: string
+  price_id?: string
+  items?: Array<{ price_id?: string; price?: { id?: string } }>
+  // Present only when the notification destination includes the customer entity,
+  // or on some legacy shapes — used as a fast-path so we can skip the API call.
+  email?: string
+  customer_email?: string
+  customer?: { email?: string }
+}
+
+/** Prefer an email already in the payload; otherwise resolve it via the API. */
+async function resolveBuyerEmail(data: PaddleEventData): Promise<string | undefined> {
+  const inline = data.email ?? data.customer_email ?? data.customer?.email
+  if (inline && isValidEmail(normalizeEmail(inline))) {
+    return inline
+  }
+  if (data.customer_id) {
+    return fetchPaddleCustomerEmail(data.customer_id)
+  }
+  return undefined
+}
+
+/**
+ * Create the default profile for a newly-inserted user, AFTER its transaction
+ * has committed. Non-fatal: a paid user with no profile still authenticates,
+ * they just can't use profile-scoped reads until one exists — logging the
+ * failure lets it be reconciled without failing the webhook.
+ */
+async function ensureDefaultProfile(userId: string | undefined): Promise<void> {
+  if (!userId) return
+  try {
+    const res = await createDefaultProfileForUser(userId)
+    if (!res.success) {
+      logger.error('Webhook: failed to create default profile for new user', {
+        userId,
+        error: res.error,
+      })
+    }
+  } catch (error) {
+    logger.error('Webhook: default-profile creation threw for new user', { userId, error })
   }
 }
 
 /**
  * POST /api/webhooks/paddle
  *
- * Exported standalone (mirroring the callback route) so it is unit-testable
- * without a running server — the Route below simply wires it in.
+ * Exported standalone so it is unit-testable without a running server — the
+ * Route below simply wires it in.
  */
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   try {
+    // Fail loudly in production if Billing isn't fully configured — a silent
+    // no-op webhook means paying customers get nothing.
+    assertPaddleProductionConfig()
+
     const paddleConfig = getPaddleConfig()
 
     if (!paddleConfig.webhookSecret) {
       return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
     }
 
-    // Get signature from header
     const signature = request.headers.get('paddle-signature')
-
-    // Read raw body
     const payload = await request.text()
 
-    // Verify signature
-    if (!verifyWebhookSignature(payload, signature, paddleConfig.webhookSecret)) {
+    if (
+      !verifyWebhookSignature(
+        payload,
+        signature,
+        paddleConfig.webhookSecret,
+        paddleConfig.webhookMaxAgeSeconds
+      )
+    ) {
       return json({ success: false, error: 'Invalid webhook signature' }, { status: 401 })
     }
 
-    // Parse webhook data
-    let data: {
-      event_type?: string
-      data?: {
-        user_id?: string
-        customer_id?: string
-        status?: string
-        email?: string
-        currency_code?: string
-        currency?: string
-        price_id?: string
-        items?: Array<{ price_id?: string; price?: { id?: string } }>
-      }
-    }
+    let event: { event_type?: string; data?: PaddleEventData }
     try {
-      data = JSON.parse(payload)
+      event = JSON.parse(payload)
     } catch {
       return json({ success: false, error: 'Invalid JSON payload' }, { status: 400 })
     }
 
-    // Handle different webhook event types
-    const eventType = data?.event_type
+    const eventType = event?.event_type
+    const data = event?.data ?? {}
 
     if (!eventType) {
       logger.error('Webhook: missing event_type')
@@ -354,102 +455,85 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       )
     }
 
-    switch (eventType) {
-      case 'subscription_created':
-      case 'subscription_updated':
-      case 'subscription_cancelled':
-        {
-          const userId = data?.data?.user_id
-          const subscriptionStatus = data?.data?.status
-          const email = data?.data?.email
-          const currency = data?.data?.currency_code || data?.data?.currency
+    // --- Subscription lifecycle -------------------------------------------------
+    if (eventType.startsWith('subscription.')) {
+      const customerId = data.customer_id
+      const status = data.status
+      const currency = data.currency_code
 
-          if (!userId) {
-            logger.error('Webhook: missing user_id', { eventType })
-            break
-          }
+      if (!customerId) {
+        logger.error('Webhook: missing customer_id on subscription event', { eventType })
+        return json({ success: true })
+      }
+      if (!status) {
+        logger.error('Webhook: missing status on subscription event', { eventType, customerId })
+        return json({ success: true })
+      }
 
-          if (!subscriptionStatus) {
-            logger.error('Webhook: missing status', { eventType, userId })
-            break
-          }
-
-          await handleSubscriptionStatusUpdate(userId, subscriptionStatus, email, currency)
-        }
-        break
-
-      case 'transaction.completed':
-      case 'transaction_completed':
-        {
-          // One-time purchases (the €99 lifetime license, story 25-2) arrive
-          // as a transaction event, NOT a subscription_* event, so they carry
-          // a price ID rather than a subscription status. Grant permanent
-          // Premium ONLY when one of the purchased line items matches the
-          // configured lifetime price — fail closed otherwise so an annual
-          // subscription's renewal invoice (also a transaction.completed) is
-          // never mistaken for a lifetime grant.
-          const userId = data?.data?.user_id || data?.data?.customer_id
-          const email = data?.data?.email
-          const currency = data?.data?.currency_code || data?.data?.currency
-          // Trim so stray whitespace on the configured value (common from secret
-          // managers) can't silently block every lifetime grant.
-          const lifetimePriceId = paddleConfig.lifetimePriceId?.trim()
-
-          if (!userId) {
-            logger.error('Webhook: missing user_id/customer_id on transaction', { eventType })
-            break
-          }
-
-          if (!lifetimePriceId) {
-            logger.warn(
-              'Webhook: transaction.completed but PADDLE_LIFETIME_PRICE_ID is not configured; ignoring',
-              { eventType }
-            )
-            break
-          }
-
-          // Match ANY purchased line item against the lifetime price (the lifetime
-          // item is not necessarily first when a transaction bundles other lines).
-          const matchesLifetime = collectPurchasedPriceIds(data?.data).some(
-            (id) => id.trim() === lifetimePriceId
-          )
-          if (!matchesLifetime) {
-            logger.info('Webhook: transaction.completed for a non-lifetime price; ignoring', {
-              eventType,
-            })
-            break
-          }
-
-          const granted = await handleLifetimePurchase(userId, email, currency)
-          if (!granted) {
-            // Nothing was persisted (unknown user w/o email, or a DB error). Return
-            // 500 so Paddle retries instead of silently losing a paid entitlement.
-            logger.error('Webhook: lifetime grant failed to persist; returning 500 for retry', {
-              paddleUserId: userId,
-            })
-            return json(
-              { success: false, error: 'Failed to persist lifetime entitlement' },
-              { status: 500 }
-            )
-          }
-          logger.info('Webhook: granted permanent Premium for lifetime purchase', {
-            paddleUserId: userId,
-          })
-        }
-        break
-
-      case 'subscription_payment_succeeded':
-        // Handle successful payment
-        break
-
-      case 'subscription_payment_failed':
-        // Handle failed payment
-        break
-
-      default:
-        logger.info('Webhook: unhandled event', { eventType })
+      const email = await resolveBuyerEmail(data)
+      const result = await handleSubscriptionStatusUpdate(customerId, status, email, currency)
+      if (!result.ok) {
+        // Nothing persisted (email unresolvable for a first-seen buyer, or a DB
+        // error). Return 500 so Paddle retries rather than silently dropping a
+        // paid subscriber / a lapse that should have removed access.
+        logger.error('Webhook: subscription update failed to persist; returning 500 for retry', {
+          customerId,
+          eventType,
+        })
+        return json(
+          { success: false, error: 'Failed to persist subscription status' },
+          { status: 500 }
+        )
+      }
+      await ensureDefaultProfile(result.createdUserId)
+      return json({ success: true })
     }
 
+    // --- One-time transaction (the €99 lifetime license, story 25-2) ----------
+    if (eventType === 'transaction.completed' || eventType === 'transaction.paid') {
+      const customerId = data.customer_id
+      const currency = data.currency_code
+      // Trim so stray whitespace on the configured value can't silently block
+      // every lifetime grant.
+      const lifetimePriceId = paddleConfig.lifetimePriceId?.trim()
+
+      if (!customerId) {
+        logger.error('Webhook: missing customer_id on transaction', { eventType })
+        return json({ success: true })
+      }
+      if (!lifetimePriceId) {
+        logger.warn(
+          'Webhook: transaction event but PADDLE_LIFETIME_PRICE_ID is not configured; ignoring',
+          { eventType }
+        )
+        return json({ success: true })
+      }
+
+      const matchesLifetime = collectPurchasedPriceIds(data).some(
+        (id) => id.trim() === lifetimePriceId
+      )
+      if (!matchesLifetime) {
+        logger.info('Webhook: transaction for a non-lifetime price; ignoring', { eventType })
+        return json({ success: true })
+      }
+
+      const email = await resolveBuyerEmail(data)
+      const result = await handleLifetimePurchase(customerId, email, currency)
+      if (!result.ok) {
+        logger.error('Webhook: lifetime grant failed to persist; returning 500 for retry', {
+          customerId,
+        })
+        return json(
+          { success: false, error: 'Failed to persist lifetime entitlement' },
+          { status: 500 }
+        )
+      }
+      await ensureDefaultProfile(result.createdUserId)
+      logger.info('Webhook: granted permanent Premium for lifetime purchase', { customerId })
+      return json({ success: true })
+    }
+
+    logger.info('Webhook: unhandled event', { eventType })
     return json({ success: true })
   } catch (error) {
     logger.error('Webhook: unhandled error', { error })

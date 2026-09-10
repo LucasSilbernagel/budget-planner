@@ -7,7 +7,7 @@
  *   - Formspark (contact-form submissions) — Ireland/EU (AWS-US subprocessor, ADR-004)
  *   - counter.dev (cookieless analytics script + beacons) — ADR-005
  *   - Brevo (transactional magic-link email) — EU/France
- *   - Paddle (billing / checkout / subscription APIs) — UK
+ *   - Paddle Billing (checkout / subscription / customer APIs) — UK
  *
  * Handlers use RegExp matchers so both production and sandbox hosts are
  * covered without enumerating every path.
