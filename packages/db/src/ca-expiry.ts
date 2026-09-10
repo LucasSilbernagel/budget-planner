@@ -98,8 +98,10 @@ export function formatCaExpiry(result: CaExpiryResult): string {
     '       -connect postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:<port>',
     '     (read <port> from `danube db ls`; it changes on re-provisioning)',
     '  3. Take the SECOND certificate in the chain — the self-signed one whose',
-    '     subject equals its issuer — and store the whole PEM block as the',
-    '     DATABASE_CA_CERT secret in GitHub and as the container env var in Rapids.',
+    '     subject equals its issuer — and store it as the DATABASE_CA_CERT secret',
+    '     in GitHub and as the container env var in Rapids. Rapids env inputs are',
+    '     single-line: base64-encode the PEM first (`base64 -w0 ca.pem`) and paste',
+    '     that; normalizeCaCert() decodes it back at read time.',
     '  4. Turn public DNS back OFF.',
     'Background: .github/DEPLOY_RUNBOOK.md and docs/production-database-runbook.md.',
   ].join('\n')

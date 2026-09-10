@@ -15,6 +15,7 @@
  */
 
 import process from 'node:process'
+import { normalizeCaCert } from './ca-cert'
 import { assessCaExpiry, formatCaExpiry } from './ca-expiry'
 
 const DEFAULT_WARN_DAYS = 21
@@ -29,7 +30,11 @@ function main(): number {
     return 1
   }
 
-  const result = assessCaExpiry(process.env['DATABASE_CA_CERT'], new Date(), parsed)
+  const result = assessCaExpiry(
+    normalizeCaCert(process.env['DATABASE_CA_CERT']),
+    new Date(),
+    parsed
+  )
   const message = formatCaExpiry(result)
 
   if (result.status === 'ok') {

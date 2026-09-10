@@ -12,6 +12,7 @@
 
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
+import { normalizeCaCert } from './ca-cert'
 import * as schema from './schema'
 
 // Database connection pool singleton
@@ -213,7 +214,7 @@ function getPool(): Pool {
       ...buildAppDbCredentials(
         process.env['NODE_ENV'],
         databaseUrl,
-        process.env['DATABASE_CA_CERT']
+        normalizeCaCert(process.env['DATABASE_CA_CERT'])
       ),
       // Connection pooling tuned for development (AC-4); pg defaults to max 10
       max: 10,

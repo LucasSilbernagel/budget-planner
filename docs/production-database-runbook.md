@@ -171,7 +171,7 @@ reads no `.env` file.
 |---|---|---|---|
 | `DATABASE_URL` (app) | Yes | `postgresql://bp_app:PASSWORD@budget-planner-prod-rw:5432/pgdb` — in-cluster, port **5432** | `getPool()` (`packages/db/src/client.ts`) on the Rapids service |
 | `DATABASE_URL` (migration) | Yes | `postgresql://bp_migrator:PASSWORD@postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:PORT/pgdb` — public endpoint. ⚠️ **Read the port off `danube db ls` with public DNS enabled; do NOT copy one from this table.** It was 5445, measured 5446 on 2026-09-08 — DanubeData reassigns it on re-provisioning, and this instance has been rebuilt twice. The readiness poll derives its port from this URL, so the two cannot disagree. | The `migrate` job: preflight + `drizzle.config.ts` |
-| `DATABASE_CA_CERT` | **YES — mandatory, not optional** | PEM from the DanubeData console (or extracted from the server, §3.1) | `client.ts:170`, `migrate-preflight-cli.ts:102`, and `migrate-credentials.ts` since Story 5.17 AC-4 |
+| `DATABASE_CA_CERT` | **YES — mandatory, not optional** | PEM from the DanubeData console (or extracted from the server, §3.1). **On Rapids, base64-encode it** (`base64 -w0 ca.pem`) — see the callout below | `client.ts` (`getPool`), `migrate-preflight-cli.ts`, `ca-expiry-cli.ts`, `db-smoke-cli.ts`, and `drizzle.config.ts`, each via `normalizeCaCert()` (`packages/db/src/ca-cert.ts`) |
 | `NODE_ENV` | Yes — `production` | literal | Arms every fail-closed path: EU host allowlist, TLS verification, `SESSION_SECRET` floor, https `SITE_URL` check |
 | `SESSION_SECRET` | Yes | `openssl rand -hex 32` (≥32 chars, ≥8 distinct) | `getSessionSecret()` (`packages/config/src/schema.ts`); rotating it logs everyone out |
 | `DANUBE_TOKEN` | Yes (CI only) | DanubeData API token | The `migrate` job's `danube db dns enable/disable` calls |
@@ -194,6 +194,19 @@ reads no `.env` file.
 > "connection refused", not a DNS failure. The `migrate` job polls the port for up
 > to 300s before running the preflight. If you open a window by hand, wait — do not
 > conclude something is broken.
+
+> ⚠️ **Rapids env-var inputs are single-line — encode the CA before pasting it.**
+> A CA certificate is a multi-line PEM whose `-----BEGIN/END CERTIFICATE-----`
+> delimiters must sit on their own lines. Pasting the raw block into the
+> one-line Rapids field collapses the newlines and every consumer then fails
+> with an opaque `PEM routines` / `SELF_SIGNED_CERT_IN_CHAIN` error while the
+> secret *looks* set. Fix: **base64-encode the whole PEM onto one line** —
+> `base64 -w0 ca.pem` (macOS: `base64 -i ca.pem | tr -d '\n'`) — and paste that.
+> `normalizeCaCert()` (`packages/db/src/ca-cert.ts`) decodes it back to a real
+> PEM at every read site; it also accepts a value with literal `\n` escapes, and
+> passes a genuine multi-line PEM through untouched (so local
+> `DATABASE_CA_CERT="$(cat ca.pem)"` still works). Store the **same** encoded
+> value in the GitHub `production` environment secret so the two stay in sync.
 
 > ⚠️ **`DATABASE_CA_CERT` is REQUIRED.** An earlier version of this table called it
 > optional, "only if the DanubeData CA is not in the runner's trust store". That is

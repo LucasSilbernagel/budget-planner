@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import * as dotenv from 'dotenv'
 import type { Config } from 'drizzle-kit'
+import { normalizeCaCert } from './src/ca-cert'
 import { buildMigrationCredentials } from './src/migrate-credentials'
 import { hostnameMismatchAllowedFromEnv } from './src/migrate-tls'
 
@@ -26,7 +27,7 @@ const dbCredentials = databaseUrl
   ? buildMigrationCredentials(
       process.env.NODE_ENV,
       databaseUrl,
-      process.env.DATABASE_CA_CERT,
+      normalizeCaCert(process.env.DATABASE_CA_CERT),
       hostnameMismatchAllowedFromEnv(process.env)
     )
   : { host: '', port: 5432, user: '', password: '', database: '', ssl: false }

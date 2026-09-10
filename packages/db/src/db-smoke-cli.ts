@@ -15,6 +15,7 @@
  */
 
 import process from 'node:process'
+import { normalizeCaCert } from './ca-cert'
 import { closeDb, testDbConnection } from './client'
 import { assessSmokePreconditions } from './db-smoke'
 
@@ -23,7 +24,7 @@ async function main(): Promise<number> {
   const pre = assessSmokePreconditions(
     nodeEnv,
     process.env['DATABASE_URL'],
-    process.env['DATABASE_CA_CERT']
+    normalizeCaCert(process.env['DATABASE_CA_CERT'])
   )
 
   if (!pre.ok) {

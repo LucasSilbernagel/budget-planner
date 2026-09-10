@@ -18,6 +18,7 @@
 
 import process from 'node:process'
 import { Pool } from 'pg'
+import { normalizeCaCert } from './ca-cert'
 import { isEuSovereignDbHost, isRelaxedDbEnv } from './client'
 // The preflight runs inside the same DNS window, against the same public endpoint,
 // as the migration it gates — so it needs the same TLS posture. If it kept the
@@ -122,7 +123,7 @@ async function main(): Promise<number> {
     ...buildMigrationCredentials(
       nodeEnv,
       databaseUrl,
-      process.env['DATABASE_CA_CERT'],
+      normalizeCaCert(process.env['DATABASE_CA_CERT']),
       hostnameMismatchAllowedFromEnv(process.env)
     ),
     max: 1,
