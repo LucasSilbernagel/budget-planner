@@ -63,7 +63,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `SITE_URL` | Public https origin. Used as the Environment URL and by the smoke check. |
 | `RAPIDS_RESOURCE_PROFILE` | Optional override for the container's size: `free`, `small`, `medium` or `large`. Defaults to **`small`** (0.5-1 vCPU, 256-512MB), matching `apps/web/rapids-service.yaml`. ⚠️ Not optional to the API — creating a container without a profile fails `422 resource_profile`. `free` is 64-128MB, marginal for SSR, and caps max-scale at 3 against the rollout's 5. |
 | `DANUBE_TEAM_ID` | Optional. The CLI needs an explicit project/team id in non-interactive mode **when the account has more than one team**; unset is correct for a single-team account. Passed to every CLI step so a later second team does not silently break deploys. |
-| `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `build-image` prune step keeps as rollback targets. Defaults to **`5`**. Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). |
+| `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `build-image` prune step keeps as rollback targets. Defaults to **`5`**. Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). The prune runs **before** the push (§8), so a registry that has hit its storage quota recovers on the next run without hand intervention. Lower this if `KEEP_TAGS` images by themselves exceed the registry plan's storage limit. |
 | `VITE_COUNTERDEV_ID` | counter.dev site id — a **public** identifier baked into the client bundle at build time (ADR-005). A variable, not a secret, by design. |
 
 ### Environment secrets (`production`)
@@ -304,3 +304,56 @@ rollback is its own hazard. It fails the run loudly; a human follows §6.
 The deeper dependency check is `/api/ready` (Story 5-5, monitoring), and
 readiness/liveness probes use `/api/health` so scale-from-zero is not gated on
 the database (`DEPLOY-RAPIDS.md` §2).
+
+---
+
+## 8. Registry storage and manual prune
+
+Every deploy pushes one image tagged with its commit SHA. Nothing but the
+`build-image` **Prune old image tags** step removes them, and that step keeps the
+`REGISTRY_KEEP_TAGS` (default 5) newest tags as rollback targets. It runs
+**before** the push, so a registry sitting at quota is pruned first and the push
+that follows has room — the pipeline self-heals. A prune failure only warns; if
+there was genuinely no room the push then fails loudly with
+`denied: Storage quota exceeded`.
+
+### When you still need to prune by hand
+
+- The prune step keeps failing (a CLI shape change, an auth problem) and the
+  push is now blocked.
+- `REGISTRY_KEEP_TAGS` newest images *by themselves* exceed the plan's storage
+  limit, so no automatic prune can make room. Lower `REGISTRY_KEEP_TAGS` or
+  upgrade the plan.
+
+### Steps
+
+Requires the DanubeData CLI (`pnpm add -g @danubedata/cli@1.1.0`) and
+`DANUBE_TOKEN` exported (same token as the `production` environment secret).
+
+```bash
+export DANUBE_TOKEN=…                       # from the production environment secret
+REPO=budgetplanner795/budget-planner-web    # DANUBEDATA_REGISTRY without the host, + /budget-planner-web
+
+# 1. See what is stored.
+danube registry usage
+danube --json registry repos tags "$REPO" | python3 -c '
+import json,sys
+rows = json.load(sys.stdin)["data"]["data"]
+rows.sort(key=lambda r: r.get("pushed_at") or "", reverse=True)
+for i,r in enumerate(rows):
+    print(f"{i:3}  {r.get(\"pushed_at\",\"?\")}  {r.get(\"tag\")}")'
+
+# 2. Delete a specific old tag (repeat as needed). --force skips the prompt.
+danube registry repos rm-tag "$REPO" <old-sha> --force
+
+# 3. Confirm space was freed.
+danube registry usage
+```
+
+**Do not delete** any SHA you might roll back to (§6) — cross-check
+`gh run list --workflow "Deploy (production)" --branch main --limit 10` for the
+last known-good deploys before pruning. Keep at least the 2–3 most recent.
+
+After a manual prune, re-run the deploy from **Actions → Deploy (production) →
+Run workflow** (or push a trivial commit); the automatic prune takes over from
+there.

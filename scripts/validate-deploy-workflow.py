@@ -216,9 +216,14 @@ def main() -> int:
 
     print("\n== registry retention cannot eat its own rollback targets ==")
     # A 500 MB registry filled after six SHA-tagged pushes and the seventh died
-    # with `denied: Storage quota exceeded`. Pruning fixes that, but rollback
-    # (DEPLOY_RUNBOOK §6) redeploys an EARLIER tag, so an over-eager prune
-    # deletes the thing you would roll back to. These pin the safety properties.
+    # with `denied: Storage quota exceeded` (run 34497637074, 2026-09-10).
+    # Pruning fixes that, but two safety properties must hold:
+    #   1. The prune runs BEFORE the push. A prune after a failed push never
+    #      runs, so a registry already at quota stays wedged forever — which is
+    #      exactly what happened. Pruning first lets it self-heal.
+    #   2. Rollback (DEPLOY_RUNBOOK §6) redeploys an EARLIER tag, so an over-eager
+    #      prune deletes the thing you would roll back to.
+    # These pin both.
     build_steps = jobs["build-image"]["steps"]
     names = [str(step.get("name", "")) for step in build_steps]
     check("Prune old image tags" in names, "build-image has a 'Prune old image tags' step")
@@ -233,8 +238,8 @@ def main() -> int:
         prune_at = names.index("Prune old image tags")
         prune = build_steps[prune_at]["run"]
 
-        check(prune_at > push_at, "tags are pruned only after the push succeeded")
-        check("GITHUB_SHA" in prune, "the prune protects the tag this run just pushed")
+        check(prune_at < push_at, "tags are pruned BEFORE the push, so a full registry self-heals")
+        check("GITHUB_SHA" in prune, "the prune refuses to delete this run's own tag")
         check("--force" in prune,
               "rm-tag is forced (an interactive prompt would hang the runner)")
         check(build_steps[prune_at].get("continue-on-error") is True,

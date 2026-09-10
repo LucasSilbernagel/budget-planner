@@ -243,41 +243,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: docker rm -f bp-verify || true
 
-      # [OPS] blocked-on-account: push the built image to the DanubeData
-      # registry. Fails loudly if deploys are enabled without a registry
-      # configured, rather than letting a later job deploy a stale image.
-      - name: Push image to the DanubeData registry
-        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
-        env:
-          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
-          REGISTRY_USERNAME: ${{ secrets.DANUBEDATA_REGISTRY_USERNAME }}
-          REGISTRY_PASSWORD: ${{ secrets.DANUBEDATA_REGISTRY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${REGISTRY:-}" ]; then
-            echo "::error::DEPLOY_ENABLED is true but the DANUBEDATA_REGISTRY variable is unset."
-            echo "Set it to the registry path from provisioning (Story 4-16/5-2) before enabling deploys."
-            exit 1
-          fi
-          # Reject malformed values up front. A trailing slash or a scheme would
-          # otherwise build a broken image reference (`host//name`, `https://...`)
-          # and fail later with an opaque Docker error instead of this message.
-          case "${REGISTRY}" in
-            */)      echo "::error::DANUBEDATA_REGISTRY must not end with '/': '${REGISTRY}'"; exit 1 ;;
-            *://*)   echo "::error::DANUBEDATA_REGISTRY must not include a scheme: '${REGISTRY}'"; exit 1 ;;
-            *\ *)    echo "::error::DANUBEDATA_REGISTRY must not contain spaces: '${REGISTRY}'"; exit 1 ;;
-          esac
-          # DANUBEDATA_REGISTRY is the full image PREFIX (host + namespace), e.g.
-          # cr.danubedata.ro/budgetplanner795. `docker login` takes the HOST ONLY —
-          # passing it a path fails — so strip everything from the first slash.
-          REGISTRY_HOST="${REGISTRY%%/*}"
-          echo "Logging in to ${REGISTRY_HOST}"
-          echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" --password-stdin
-          docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
-          docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
-
       # pnpm/Node for the CLI install below. Same reason as the deploy job: a
       # fresh runner inherits no toolchain. Enforced by validate-deploy-workflow.
+      #
+      # ⚠️ These run BEFORE the push now, not after, because the prune step below
+      # runs before the push and needs the CLI. See that step's comment.
       - name: Set up pnpm
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         uses: pnpm/action-setup@v4
@@ -295,18 +265,26 @@ jobs:
       # Every run pushes a new SHA-tagged image and nothing removed the old ones.
       # Six runs filled a 500 MB plan and the seventh died with
       # `denied: Storage quota exceeded (638 MB used of 500 MB)` — after a full
-      # build, and it would have recurred every few deploys forever.
+      # build (run 34497637074, 2026-09-10).
+      #
+      # ⚠️ This step runs BEFORE the push, on purpose. A prune AFTER the push
+      # cannot recover a registry that is already at quota: the push fails, the
+      # job stops, and the prune never runs — the pipeline stays wedged until
+      # someone deletes tags by hand. Pruning first means a full registry
+      # self-heals on the next run.
       #
       # ⚠️ Retention is NOT just housekeeping: rollback redeploys an earlier tag
       # (DEPLOY_RUNBOOK §6), so pruning too hard deletes the thing you would roll
-      # back TO. REGISTRY_KEEP_TAGS defaults to 5 — five rollback targets.
+      # back TO. REGISTRY_KEEP_TAGS defaults to 5 — five rollback targets. The
+      # tag this run is about to push does not exist in the registry yet, so it
+      # is structurally impossible for this step to delete it; the GITHUB_SHA
+      # guard below is a belt-and-braces check for a re-run that re-pushes an
+      # existing SHA.
       #
-      # Runs only after a successful push (a failed push fails the step and the
-      # job stops), and it can never delete the tag this run just pushed.
-      #
-      # A prune failure WARNS rather than failing the job: the image is already
-      # pushed and the deploy that follows is valid. The quota filling up is not
-      # silent either way — it hard-fails the next push, loudly, as it just did.
+      # A prune failure WARNS rather than failing the job. If there was genuinely
+      # room, the push below still succeeds. If there was not, the push fails
+      # loudly with the quota error — the same signal as before, just one step
+      # later, and now preceded by a real attempt to make room.
       - name: Prune old image tags
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         continue-on-error: true
@@ -413,6 +391,42 @@ jobs:
           done <<< "${doomed}"
 
           danube registry usage || true
+
+      # [OPS] blocked-on-account: push the built image to the DanubeData
+      # registry. Fails loudly if deploys are enabled without a registry
+      # configured, rather than letting a later job deploy a stale image.
+      #
+      # Runs AFTER the prune above, so a registry that filled up recovers on its
+      # own before this step is attempted.
+      - name: Push image to the DanubeData registry
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        env:
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.DANUBEDATA_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DANUBEDATA_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${REGISTRY:-}" ]; then
+            echo "::error::DEPLOY_ENABLED is true but the DANUBEDATA_REGISTRY variable is unset."
+            echo "Set it to the registry path from provisioning (Story 4-16/5-2) before enabling deploys."
+            exit 1
+          fi
+          # Reject malformed values up front. A trailing slash or a scheme would
+          # otherwise build a broken image reference (`host//name`, `https://...`)
+          # and fail later with an opaque Docker error instead of this message.
+          case "${REGISTRY}" in
+            */)      echo "::error::DANUBEDATA_REGISTRY must not end with '/': '${REGISTRY}'"; exit 1 ;;
+            *://*)   echo "::error::DANUBEDATA_REGISTRY must not include a scheme: '${REGISTRY}'"; exit 1 ;;
+            *\ *)    echo "::error::DANUBEDATA_REGISTRY must not contain spaces: '${REGISTRY}'"; exit 1 ;;
+          esac
+          # DANUBEDATA_REGISTRY is the full image PREFIX (host + namespace), e.g.
+          # cr.danubedata.ro/budgetplanner795. `docker login` takes the HOST ONLY —
+          # passing it a path fails — so strip everything from the first slash.
+          REGISTRY_HOST="${REGISTRY%%/*}"
+          echo "Logging in to ${REGISTRY_HOST}"
+          echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" --password-stdin
+          docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
   # --- Database migration (AC-4) — closes 5-8 AC-11 -------------------------
   # Ordered BEFORE the deploy so the schema is never behind the code that serves
