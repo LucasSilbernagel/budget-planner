@@ -1,6 +1,6 @@
 _This page is informational and does not constitute legal advice, and is read together with Paddle's buyer terms._
 
-_Last updated: 7 August 2026_
+_Last updated: 11 September 2026_
 
 ## Cancelling your subscription
 
@@ -13,8 +13,9 @@ After your subscription ends, your account reverts to the free tier.
 Payments are processed by **Paddle.com**, our Merchant of Record.
 Refund requests are handled in accordance with Paddle's buyer terms together with this policy.
 
-- If you are charged in error, or experience a problem that prevents you from using Premium, contact us and we will work with you and Paddle to resolve it on a case-by-case basis.
-- Where required by applicable consumer-protection law (for example, statutory cooling-off / withdrawal rights in the EU/UK), those rights apply in full.
+- **You can request a full refund within 14 days of your purchase or renewal charge, no questions asked.**
+- After the 14-day window, if you are charged in error or experience a problem that prevents you from using Premium, contact us and we will work with you and Paddle to resolve it on a case-by-case basis.
+- Where required by applicable consumer-protection law (for example, statutory cooling-off / withdrawal rights in the EU/UK), those rights apply in full and are not limited by the 14-day window above.
 
 ## How to request a cancellation or refund
 
