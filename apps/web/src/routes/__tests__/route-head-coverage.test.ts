@@ -140,6 +140,7 @@ const EXPECTED_ROUTE_PATHS = [
   '/savings',
   '/settings',
   '/terms',
+  '/welcome',
 ] as const
 
 /**

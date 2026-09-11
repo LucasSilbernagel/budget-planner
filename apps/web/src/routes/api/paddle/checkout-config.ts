@@ -15,6 +15,18 @@
  * (`routes/api/webhooks/paddle.ts`): a production deploy missing a secret/price
  * or with `annual === lifetime` fails this endpoint loudly (500) instead of
  * quietly telling every `/pricing` visitor checkout is unconfigured (AC-3).
+ *
+ * BEFORE that, a narrower check unique to this endpoint: `PADDLE_ENVIRONMENT`
+ * itself must be explicitly set. `packages/config`'s schema defaults it to
+ * `sandbox` when unset (kept as-is — other Paddle code paths and their tests
+ * rely on that default, and this story scopes the stricter behaviour to the
+ * checkout entry point only, not the shared schema). This endpoint is the ONE
+ * place that hands the browser both the environment AND a client token —
+ * silently defaulting here is exactly the "ran against the wrong Paddle
+ * account" failure mode a real-money checkout must never risk. A developer
+ * exercising this checkout locally sets `PADDLE_ENVIRONMENT=sandbox` in `.env`
+ * (already the value `.env.example` documents) — a deliberate choice, not a
+ * default.
  */
 
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
@@ -27,6 +39,17 @@ import { json } from '@tanstack/react-start'
  */
 export const GET = async (): Promise<Response> => {
   try {
+    if (process.env['PADDLE_ENVIRONMENT'] === undefined) {
+      return json(
+        {
+          success: false,
+          error:
+            'PADDLE_ENVIRONMENT is not set. Refusing to silently default to sandbox for checkout — set it explicitly (sandbox or production).',
+        },
+        { status: 500 }
+      )
+    }
+
     assertPaddleProductionConfig()
 
     const config = getPaddleConfig()

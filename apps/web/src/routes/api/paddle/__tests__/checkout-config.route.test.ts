@@ -67,7 +67,8 @@ describe('GET /api/paddle/checkout-config', () => {
     expect(JSON.stringify(body)).not.toContain('secret')
   })
 
-  it('returns isConfigured:false with null fields when nothing is set (dev default)', async () => {
+  it('returns isConfigured:false with null fields when PADDLE_ENVIRONMENT is explicitly sandbox but nothing else is set', async () => {
+    withEnv({ PADDLE_ENVIRONMENT: 'sandbox' })
     const response = await GET()
     expect(response.status).toBe(200)
     const body = await response.json()
@@ -89,5 +90,17 @@ describe('GET /api/paddle/checkout-config', () => {
     const body = await response.json()
     expect(body.success).toBe(false)
     expect(body.error).toMatch(/PADDLE_API_KEY/)
+  })
+
+  it('fails loudly (500) when PADDLE_ENVIRONMENT itself was never set — never silently defaults', async () => {
+    // No withEnv() call: PADDLE_ENVIRONMENT is deleted by beforeEach and never
+    // set, unlike every other test in this file. This is the one case this
+    // endpoint refuses to let the schema's `.default('sandbox')` paper over —
+    // see the docblock on `GET` for why.
+    const response = await GET()
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body.success).toBe(false)
+    expect(body.error).toMatch(/PADDLE_ENVIRONMENT is not set/)
   })
 })

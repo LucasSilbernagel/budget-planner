@@ -18,12 +18,22 @@
  *
  * Config (`clientToken`, both price IDs) comes from `/api/paddle/checkout-config`
  * — never hardcoded, so sandbox and production behave identically here; only
- * the env vars behind that endpoint differ (AC-3).
+ * the env vars behind that endpoint differ (AC-3). Once that config is
+ * configured, Paddle.js is initialized and `Paddle.PricePreview()` fetches a
+ * country-localized price breakdown (subtotal / tax / total) for the toggle
+ * labels and the caption below them — no country is passed, so Paddle
+ * auto-detects from the visitor's IP; the static "€39/€99" fallback labels
+ * are shown until that resolves (or if it fails).
  */
 
 import { useEffect, useState } from 'react'
 import { useSessionSeed } from '../../context/session-seed'
-import { getPaddleInstance, openPaddleCheckout } from '../../lib/paddle/checkout'
+import {
+  type LocalizedPriceBreakdown,
+  getLocalizedPlanPrices,
+  getPaddleInstance,
+  openPaddleCheckout,
+} from '../../lib/paddle/checkout'
 
 type Plan = 'annual' | 'lifetime'
 type Status = 'idle' | 'loading' | 'error'
@@ -36,14 +46,15 @@ interface CheckoutConfig {
   lifetimePriceId: string | null
 }
 
-// Labels deliberately avoid the card's own "€39" / "€99 once" copy just above
-// this toggle (`pricing-page.tsx`'s `PlanCard`) — an overlapping substring
-// there made an early draft's `getByText(/€99 once/)` regression-test query
-// ambiguous between the two.
-const PLAN_OPTIONS: ReadonlyArray<{ id: Plan; label: string }> = [
-  { id: 'annual', label: 'Annual · €39/yr' },
-  { id: 'lifetime', label: 'Lifetime · €99' },
-]
+// Static fallback shown until Paddle.PricePreview() resolves (or if it never
+// does). Deliberately worded so it never collides with the card's own "€39" /
+// "€99 once" copy just above this toggle (`pricing-page.tsx`'s `PlanCard`) —
+// an overlapping substring there made an early draft's `getByText(/€99 once/)`
+// regression test ambiguous between the two.
+const FALLBACK_LABEL: Record<Plan, string> = {
+  annual: '€39/yr',
+  lifetime: '€99',
+}
 
 export function PremiumCheckoutButton() {
   const seed = useSessionSeed()
@@ -51,6 +62,12 @@ export function PremiumCheckoutButton() {
 
   const [plan, setPlan] = useState<Plan>('annual')
   const [config, setConfig] = useState<CheckoutConfig | null>(null)
+  const [localizedPrice, setLocalizedPrice] = useState<
+    Record<Plan, LocalizedPriceBreakdown | null>
+  >({
+    annual: null,
+    lifetime: null,
+  })
   const [status, setStatus] = useState<Status>('idle')
 
   // Fetched once on mount so an unconfigured environment (no live Paddle
@@ -75,6 +92,40 @@ export function PremiumCheckoutButton() {
     }
   }, [])
 
+  // Once config resolves to a configured Paddle Billing environment, fetch
+  // real localized totals so the toggle shows what checkout will actually
+  // charge — independent of sign-in state, since this is display-only.
+  useEffect(() => {
+    if (
+      !config?.isConfigured ||
+      !config.clientToken ||
+      !config.annualPriceId ||
+      !config.lifetimePriceId
+    ) {
+      return
+    }
+    let cancelled = false
+    getPaddleInstance({ environment: config.environment, clientToken: config.clientToken })
+      .then((paddle) => {
+        if (!paddle || cancelled) return undefined
+        return getLocalizedPlanPrices(paddle, {
+          annualPriceId: config.annualPriceId as string,
+          lifetimePriceId: config.lifetimePriceId as string,
+        })
+      })
+      .then((prices) => {
+        if (prices && !cancelled) {
+          setLocalizedPrice({ annual: prices.annual, lifetime: prices.lifetime })
+        }
+      })
+      .catch(() => {
+        // Silent: the static fallback label already covers this.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [config])
+
   const handleCheckout = async () => {
     const priceId = plan === 'annual' ? config?.annualPriceId : config?.lifetimePriceId
     if (!config?.isConfigured || !config.clientToken || !priceId) {
@@ -91,12 +142,32 @@ export function PremiumCheckoutButton() {
       if (!paddle) {
         throw new Error('Paddle.js failed to initialize')
       }
-      openPaddleCheckout(paddle, priceId, seed?.email ?? undefined)
+      openPaddleCheckout(paddle, priceId, {
+        customerEmail: seed?.email ?? undefined,
+        successUrl: `${window.location.origin}/welcome`,
+      })
       setStatus('idle')
     } catch {
       setStatus('error')
     }
   }
+
+  const planOptions: ReadonlyArray<{ id: Plan; label: string }> = [
+    { id: 'annual', label: `Annual · ${localizedPrice.annual?.total ?? FALLBACK_LABEL.annual}` },
+    {
+      id: 'lifetime',
+      label: `Lifetime · ${localizedPrice.lifetime?.total ?? FALLBACK_LABEL.lifetime}`,
+    },
+  ]
+
+  // The SELECTED plan's breakdown — shown only once a real PricePreview total
+  // has resolved for it (the static fallback labels aren't final prices, so
+  // there's nothing to break down yet). Paddle's total can differ noticeably
+  // from the €39/€99 reference price (e.g. a 13%-HST Canadian province turns
+  // €39 into €44.07): spelling out subtotal + tax = total is what turns "why
+  // is this different" into a visible, self-explaining fact rather than a
+  // one-line reassurance to take on faith.
+  const selectedBreakdown = localizedPrice[plan]
 
   return (
     <div className="mt-6 flex flex-col gap-3">
@@ -105,7 +176,7 @@ export function PremiumCheckoutButton() {
         aria-label="Premium plan"
         className="flex rounded-lg border border-gray-300 dark:border-gray-600 p-1 text-sm"
       >
-        {PLAN_OPTIONS.map(({ id, label }) => (
+        {planOptions.map(({ id, label }) => (
           <button
             key={id}
             type="button"
@@ -122,6 +193,12 @@ export function PremiumCheckoutButton() {
           </button>
         ))}
       </div>
+
+      {selectedBreakdown && (
+        <p className="text-xs text-muted">
+          {selectedBreakdown.subtotal} + {selectedBreakdown.tax} tax = {selectedBreakdown.total}
+        </p>
+      )}
 
       {isAuthenticated ? (
         <button
