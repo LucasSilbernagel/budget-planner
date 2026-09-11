@@ -17,9 +17,26 @@
  */
 
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PREMIUM_BENEFIT_IDS } from '../../../lib/premium/benefits'
 import { PricingPageView } from '../pricing-page'
+
+// Story 5-3 Task 2a: the Premium CTA is now `PremiumCheckoutButton`, which
+// renders a `<Link>` (signed-out branch) requiring a router in scope — hence
+// `renderWithRouter` in place of the plain RTL `render` this file used before
+// that CTA existed — and fetches `/api/paddle/checkout-config` on mount. Stub
+// that fetch so no real network call is attempted; its result is irrelevant
+// here since these tests never click the CTA.
+const originalFetch = global.fetch
+beforeEach(() => {
+  global.fetch = vi.fn(() =>
+    Promise.resolve(new Response(JSON.stringify({ isConfigured: false }), { status: 200 }))
+  ) as typeof global.fetch
+})
+afterEach(() => {
+  global.fetch = originalFetch
+  vi.restoreAllMocks()
+})
 
 // Each plan renders as a card <div> whose first child is an <h2>{name}</h2>.
 function card(name: string): HTMLElement {

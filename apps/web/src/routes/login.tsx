@@ -19,11 +19,26 @@ import { createFileRoute } from '@tanstack/react-router'
 export interface LoginSearch {
   /** Generic error code from a failed verify redirect (e.g. invalid_or_expired). */
   error?: string
+  /**
+   * Where the caller wants to return to after signing in (story 5-3, Task 2a
+   * — the `/pricing` checkout CTA). COSMETIC ONLY: this page uses it solely to
+   * tailor its copy ("continue to Pricing"). It is NOT threaded through the
+   * magic-link email or the verify endpoint — `routes/api/auth/login/verify.ts`
+   * deliberately hardcodes its post-login redirect to `/` as an anti-open-redirect
+   * measure, and this story does not reopen that. Restricted to a tiny allow-list
+   * so an arbitrary value can never reach the DOM unvalidated.
+   */
+  returnTo?: '/pricing'
+}
+
+const RETURN_TO_COPY: Record<NonNullable<LoginSearch['returnTo']>, string> = {
+  '/pricing': 'Pricing',
 }
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     error: typeof search['error'] === 'string' ? search['error'] : undefined,
+    returnTo: search['returnTo'] === '/pricing' ? '/pricing' : undefined,
   }),
   // "Sign in", not the page's <h1> — that <h1> is the brand wordmark, which
   // would make this tab read "Longhand Budget · Longhand Budget".
@@ -49,7 +64,7 @@ function errorMessage(code: string | undefined): string | undefined {
 }
 
 function LoginPage() {
-  const { error } = Route.useSearch()
+  const { error, returnTo } = Route.useSearch()
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
@@ -68,6 +83,12 @@ function LoginPage() {
               Enter your email and we&apos;ll send you a one-time sign-in link to access your
               subscription and synced data on any device.
             </p>
+            {returnTo && (
+              <p className="text-sm text-muted mb-6 -mt-4">
+                Then head back to <span className="font-medium">{RETURN_TO_COPY[returnTo]}</span> to
+                finish upgrading.
+              </p>
+            )}
           </div>
 
           {/* Magic-link email form */}

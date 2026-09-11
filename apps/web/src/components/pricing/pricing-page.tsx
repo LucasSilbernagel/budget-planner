@@ -2,6 +2,7 @@ import type React from 'react'
 import { PRICING_PAGE } from '../../content/legal'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { MarkdownRenderer } from '../docs/markdown-renderer'
+import { PremiumCheckoutButton } from './premium-checkout-button'
 
 /**
  * Public pricing page (`/pricing`) — UX review #5.
@@ -77,6 +78,7 @@ export function PricingPageView(): React.ReactElement {
               ctaLabel="Get Premium"
               ctaHref="/login"
               ctaPrimary
+              ctaElement={<PremiumCheckoutButton />}
               recommended
             />
           </section>
@@ -174,6 +176,14 @@ interface PlanCardProps {
   ctaHref: string
   /** Solid (blue) CTA for the recommended plan; outlined otherwise. */
   ctaPrimary: boolean
+  /**
+   * Overrides the plain `<a>` CTA with a custom element (story 5-3, Task 2a —
+   * the Premium card's real Paddle checkout button, which needs client state
+   * the static `ctaHref`/`ctaLabel` pair cannot express: an annual/lifetime
+   * toggle and an auth-gated checkout-vs-sign-in branch). `ctaLabel`/`ctaHref`
+   * still drive the Free card, unaffected.
+   */
+  ctaElement?: React.ReactNode
   /** Highlight this card with a ring and a "Recommended" badge. */
   recommended?: boolean
 }
@@ -188,6 +198,7 @@ function PlanCard({
   ctaLabel,
   ctaHref,
   ctaPrimary,
+  ctaElement,
   recommended = false,
 }: PlanCardProps): React.ReactElement {
   return (
@@ -224,30 +235,32 @@ function PlanCard({
           </li>
         ))}
       </ul>
-      <a
-        href={ctaHref}
-        // `dark:focus-visible:ring-offset-gray-800` is load-bearing: Tailwind's
-        // `--tw-ring-offset-color` defaults to WHITE with no global override, so
-        // on a `.surface` (gray-800) card a focused CTA would otherwise paint a
-        // white band between the button and its ring. gray-800 matches the CARD
-        // these sit on; `NotFoundPage.tsx:55` and `components/profiles/profiles-page.tsx:85` use
-        // gray-900 because those buttons sit on the page canvas instead.
-        className={`mt-6 inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 ${
-          ctaPrimary
-            ? // Deliberately keeps the blue-600 fill in BOTH themes. The shipped
-              // convention (`contact-form.tsx:309`) drops to blue-500 on dark, but
-              // white on blue-500 measures 3.68:1 — below WCAG AA's 4.5:1 for
-              // normal text — while blue-600 measures 5.17:1. Measured at 320px in
-              // a real browser during story 31-1; AC-7 outranks the convention.
-              'bg-blue-600 text-white hover:bg-blue-700'
-            : // gray-700, NOT the gray-800 that `reports/FinancialSummaryReport.tsx:230`
-              // uses for its outline button: that one sits on the page canvas, this one
-              // sits ON a `.surface` (gray-800) card, where gray-800 would make it vanish.
-              'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
-        }`}
-      >
-        {ctaLabel}
-      </a>
+      {ctaElement ?? (
+        <a
+          href={ctaHref}
+          // `dark:focus-visible:ring-offset-gray-800` is load-bearing: Tailwind's
+          // `--tw-ring-offset-color` defaults to WHITE with no global override, so
+          // on a `.surface` (gray-800) card a focused CTA would otherwise paint a
+          // white band between the button and its ring. gray-800 matches the CARD
+          // these sit on; `NotFoundPage.tsx:55` and `components/profiles/profiles-page.tsx:85` use
+          // gray-900 because those buttons sit on the page canvas instead.
+          className={`mt-6 inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 ${
+            ctaPrimary
+              ? // Deliberately keeps the blue-600 fill in BOTH themes. The shipped
+                // convention (`contact-form.tsx:309`) drops to blue-500 on dark, but
+                // white on blue-500 measures 3.68:1 — below WCAG AA's 4.5:1 for
+                // normal text — while blue-600 measures 5.17:1. Measured at 320px in
+                // a real browser during story 31-1; AC-7 outranks the convention.
+                'bg-blue-600 text-white hover:bg-blue-700'
+              : // gray-700, NOT the gray-800 that `reports/FinancialSummaryReport.tsx:230`
+                // uses for its outline button: that one sits on the page canvas, this one
+                // sits ON a `.surface` (gray-800) card, where gray-800 would make it vanish.
+                'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
+          }`}
+        >
+          {ctaLabel}
+        </a>
+      )}
     </div>
   )
 }
