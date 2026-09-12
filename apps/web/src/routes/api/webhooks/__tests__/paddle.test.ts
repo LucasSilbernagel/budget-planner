@@ -28,6 +28,7 @@ const {
   assertPaddleProductionConfig,
   fetchPaddleCustomerEmail,
   createDefaultProfileForUser,
+  checkWebhookIp,
   transaction,
   setSpy,
   insertValuesSpy,
@@ -36,12 +37,18 @@ const {
   assertPaddleProductionConfig: vi.fn(),
   fetchPaddleCustomerEmail: vi.fn(),
   createDefaultProfileForUser: vi.fn(),
+  checkWebhookIp: vi.fn(),
   transaction: vi.fn(),
   setSpy: vi.fn(),
   insertValuesSpy: vi.fn(),
 }))
 
 vi.mock('@budget-planner/config', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
+// Real `checkWebhookIp` does a live `fetch('https://api.paddle.com/ips')` — mocked per
+// NFR8. Defaults to observe-only (`enforced: false`, `allowed: true`) so every
+// pre-existing test below is unaffected; the dedicated IP-allowlist describe
+// block overrides this per test.
+vi.mock('@/server/paddle/webhook-ip-allowlist', () => ({ checkWebhookIp }))
 vi.mock('@budget-planner/db', () => ({
   db: { transaction },
   currencyEnum: { enumValues: ['NONE', 'USD', 'EUR'] },
@@ -129,9 +136,37 @@ beforeEach(() => {
   getPaddleConfig.mockReturnValue(config())
   fetchPaddleCustomerEmail.mockResolvedValue(undefined)
   createDefaultProfileForUser.mockResolvedValue({ success: true, data: {} })
+  checkWebhookIp.mockResolvedValue({ allowed: true, ip: '1.2.3.4', enforced: false })
   transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
     cb(makeTx({ existingStatus: 'free' }))
   )
+})
+
+describe('POST /api/webhooks/paddle — IP allowlist (defense-in-depth)', () => {
+  const validSubscriptionRequest = () =>
+    signedRequest({
+      event_type: 'subscription.created',
+      data: { customer_id: 'ctm_1', status: 'active', email: 'a@example.com' },
+    })
+
+  it('processes the webhook when observe-only and the IP is not allowed (default posture)', async () => {
+    checkWebhookIp.mockResolvedValue({ allowed: false, ip: '9.9.9.9', enforced: false })
+    const res = await POST({ request: validSubscriptionRequest() })
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects (403) an unallowed IP once enforcement is on', async () => {
+    checkWebhookIp.mockResolvedValue({ allowed: false, ip: '9.9.9.9', enforced: true })
+    const res = await POST({ request: validSubscriptionRequest() })
+    expect(res.status).toBe(403)
+    expect(transaction).not.toHaveBeenCalled()
+  })
+
+  it('processes normally when enforced and the IP IS allowed', async () => {
+    checkWebhookIp.mockResolvedValue({ allowed: true, ip: '3.4.5.6', enforced: true })
+    const res = await POST({ request: validSubscriptionRequest() })
+    expect(res.status).toBe(200)
+  })
 })
 
 describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {

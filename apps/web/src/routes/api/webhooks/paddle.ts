@@ -21,6 +21,7 @@ import { logger } from '@/lib/logger'
 import { normalizeEmail } from '@/server/api/auth/email'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { fetchPaddleCustomerEmail } from '@/server/paddle/customer-api'
+import { checkWebhookIp } from '@/server/paddle/webhook-ip-allowlist'
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import { type Currency, type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
@@ -421,6 +422,21 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
 
     if (!paddleConfig.webhookSecret) {
       return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
+    }
+
+    // Defense-in-depth alongside the signature check below: reject requests
+    // from outside Paddle's published sending ranges. Always LOGGED so the
+    // derived ip/allowed values can be confirmed against real deliveries
+    // before flipping PADDLE_WEBHOOK_ENFORCE_IP_ALLOWLIST=true — see
+    // checkWebhookIp's docblock for why this defaults to observe-only.
+    const ipCheck = await checkWebhookIp(request)
+    if (!ipCheck.allowed) {
+      logger.warn('Webhook: request IP not in Paddle allowlist', ipCheck)
+      if (ipCheck.enforced) {
+        return json({ success: false, error: 'Request IP not allowed' }, { status: 403 })
+      }
+    } else if (ipCheck.enforced) {
+      logger.debug('Webhook: request IP allowed', ipCheck)
     }
 
     const signature = request.headers.get('paddle-signature')
