@@ -142,9 +142,21 @@ describe('AC-7 guard: the sign-in-page rule comment states the shipped rule', ()
     // the exact failure mode epic 41 exists to remove and which this guard was
     // written to prevent.
     //
+    // ⚠️ UPDATED (UX review, 2026-09-14): a second link ("Upgrade", → /pricing)
+    // was added to the same unauthenticated branch, gated by its OWN
+    // `!isOnPricingPage && !isOnLoginPage` condition rather than sharing one
+    // top-level `&& !isOnLoginPage` on the whole branch — so the single literal
+    // clause this test used to pin no longer appears verbatim anywhere in the
+    // file. This is the "deliberately reversed" case this file's own docblock
+    // anticipates: the invariant (the "Sign in" `<Link>` is gated by
+    // `!isOnLoginPage`) still holds, so the pin was rewritten to match the new
+    // shape rather than deleted. `toMatch`, not `toContain`, because the pin
+    // needs to survive incidental reformatting between the condition and the
+    // `<Link>` it guards.
+    //
     // Hand-written, not read back from the component's own constants: a guard
     // built from the thing it guards cannot fail.
-    expect(source).toContain("authState.status === 'unauthenticated' && !isOnLoginPage")
+    expect(source).toMatch(/!isOnLoginPage\s*&&\s*\(\s*<Link\s+to=\{LOGIN_PATH\}/)
     // And the normalisation itself, which is what makes `/Login` match. A bare
     // `===` here is the defect code review found in the shipped implementation.
     expect(source).toContain('pathname.toLowerCase() === LOGIN_PATH')

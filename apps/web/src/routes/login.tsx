@@ -91,6 +91,27 @@ function LoginPage() {
             )}
           </div>
 
+          {/* New-customer panel (UX review, 2026-09-14): this page only ever
+              re-authenticates an EXISTING account — magic-link login silently
+              no-ops for an unknown email (no enumeration signal) — and account
+              creation happens ONLY via a completed Paddle checkout. Someone who
+              landed here without ever buying had no way to learn that; this
+              mirrors the "No account needed" panel below (same pattern,
+              pointed the other direction), placed above the form so it's seen
+              before typing an email that will just silently go nowhere. */}
+          <div className="mb-6 p-4 surface-inset rounded-lg border border-default text-left">
+            <h3 className="font-medium text-heading mb-1">New here?</h3>
+            <p className="text-sm text-body">
+              This page is for signing back in — an account is created when you subscribe.
+            </p>
+            <a
+              href="/pricing"
+              className="inline-block mt-2 text-sm text-accent hover:underline font-medium"
+            >
+              See Premium pricing →
+            </a>
+          </div>
+
           {/* Magic-link email form */}
           <MagicLinkForm initialError={errorMessage(error)} />
 

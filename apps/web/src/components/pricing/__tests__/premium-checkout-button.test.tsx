@@ -124,8 +124,13 @@ describe('PremiumCheckoutButton — price preview (auth-independent)', () => {
 })
 
 describe('PremiumCheckoutButton — signed out', () => {
-  it('renders a sign-in link to /pricing (returnTo), never opens checkout', async () => {
+  it('opens checkout directly with no pre-filled email — NOT gated behind sign-in', async () => {
+    // Regression test: checkout used to require isAuthenticated, which made it
+    // impossible for a brand-new customer to ever reach it (magic-link login
+    // only re-authenticates an EXISTING account; account creation happens at
+    // the Paddle webhook, on a COMPLETED checkout — a circular dependency).
     stubConfigFetch(CONFIGURED)
+    const user = userEvent.setup()
     render(
       <SessionSeedProvider
         seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
@@ -134,10 +139,18 @@ describe('PremiumCheckoutButton — signed out', () => {
       </SessionSeedProvider>
     )
 
-    const link = await screen.findByRole('link', { name: 'Get Premium' })
-    expect(link).toHaveAttribute('href', expect.stringContaining('/login'))
-    expect(link.getAttribute('href')).toContain('returnTo')
-    expect(checkoutOpen).not.toHaveBeenCalled()
+    const button = await screen.findByRole('button', { name: 'Get Premium' })
+    await user.click(button)
+
+    await waitFor(() => expect(checkoutOpen).toHaveBeenCalledTimes(1))
+    expect(checkoutOpen).toHaveBeenCalledWith({
+      items: [{ priceId: 'pri_annual_test', quantity: 1 }],
+      settings: {
+        displayMode: 'overlay',
+        variant: 'one-page',
+        successUrl: expect.stringContaining('/welcome'),
+      },
+    })
   })
 })
 

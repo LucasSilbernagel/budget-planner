@@ -264,6 +264,46 @@ describe('AuthIndicator', () => {
   })
 })
 
+describe('AuthIndicator — "Upgrade" affordance (UX review, 2026-09-14)', () => {
+  it('offers "Upgrade" to /pricing alongside "Sign in" when signed out', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />)
+
+    const upgrade = await screen.findByRole('link', { name: 'Upgrade' })
+    expect(upgrade).toHaveAttribute('href', '/pricing')
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument()
+  })
+
+  it('hides "Upgrade" on /pricing itself (self-link) but keeps "Sign in"', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />, { path: '/pricing' })
+
+    expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Upgrade' })).not.toBeInTheDocument()
+  })
+
+  it('hides "Upgrade" on /login too — that page keeps its deliberately-empty strip (story 41.3)', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />, { path: '/login' })
+
+    const indicator = await screen.findByRole('status', { name: /account status/i })
+    await waitFor(() => {
+      expect(indicator.children).toHaveLength(0)
+    })
+    expect(screen.queryByRole('link', { name: 'Upgrade' })).not.toBeInTheDocument()
+  })
+
+  it('never shows "Upgrade" for an authenticated user', async () => {
+    stubFetch({
+      user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' },
+    })
+    renderWithRouter(<AuthIndicator />)
+
+    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Upgrade' })).not.toBeInTheDocument()
+  })
+})
+
 describe('AuthIndicator — SSR seed (story UX-1)', () => {
   it('paints the email + Premium marker for an active seed while the refetch is pending — AC-2, AC-3', async () => {
     stubFetchPending()

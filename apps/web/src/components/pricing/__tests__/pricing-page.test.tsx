@@ -320,7 +320,7 @@ describe('PricingPageView theming', () => {
   it('gives the solid CTA a fixed blue-600 fill and the outlined CTA a gray-700 dark fill', () => {
     render(<PricingPageView />)
 
-    const primary = [...screen.getByRole('link', { name: 'Get Premium' }).classList]
+    const primary = [...screen.getByRole('button', { name: 'Get Premium' }).classList]
     // The blue-600 fill is held in BOTH themes on purpose. The shipped
     // convention (`contact-form.tsx:309`) drops to blue-500 on dark, but white
     // on blue-500 measures 3.68:1 — below AA's 4.5:1 for normal text — against

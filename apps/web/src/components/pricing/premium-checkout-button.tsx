@@ -4,17 +4,16 @@
  * Replaces the Premium plan card's former static `<a href="/login">` CTA with
  * an annual/lifetime toggle + a real Paddle Billing checkout entry point.
  *
- * Auth gate: Paddle needs a signed-in buyer so the webhook can key
- * `data.customer_id` to the right `users` row (5.16 magic-link session,
- * `useSessionSeed()` — the SSR-resolved seed, so this renders the right branch
- * on the very first frame, no signed-in/signed-out flash). A signed-out click
- * goes to `/login?returnTo=/pricing` (cosmetic only — see `routes/login.tsx`;
- * the magic-link verify redirect is deliberately hardcoded to `/` as an
- * anti-open-redirect measure, so this does not thread a real post-login
- * redirect through the email round trip). A plain `<a>`, not `<Link>`, matches
- * this file's sibling CTA (`PlanCard`'s Free-plan link) and needs no router
- * context in tests — `validateSearch` in `routes/login.tsx` parses the query
- * string from any navigation, `<Link>` or not.
+ * NOT auth-gated — an EARLIER version of this file required being signed in
+ * before opening checkout, which is backwards: magic-link login only
+ * re-authenticates an EXISTING account (`requestMagicLink` silently no-ops for
+ * an unknown email — by design, so the endpoint never reveals whether an
+ * account exists), and account creation happens ONLY at the Paddle webhook, on
+ * a COMPLETED checkout. Gating checkout behind sign-in made it impossible for
+ * a brand-new customer to ever reach checkout — the one thing that creates
+ * their account in the first place. `useSessionSeed()` is used ONLY to
+ * pre-fill the email field as a convenience when already signed in (e.g. an
+ * existing customer buying Lifetime after Annual); it is never a requirement.
  *
  * Config (`clientToken`, both price IDs) comes from `/api/paddle/checkout-config`
  * — never hardcoded, so sandbox and production behave identically here; only
@@ -58,7 +57,6 @@ const FALLBACK_LABEL: Record<Plan, string> = {
 
 export function PremiumCheckoutButton() {
   const seed = useSessionSeed()
-  const isAuthenticated = seed?.isAuthenticated ?? false
 
   const [plan, setPlan] = useState<Plan>('annual')
   const [config, setConfig] = useState<CheckoutConfig | null>(null)
@@ -200,24 +198,15 @@ export function PremiumCheckoutButton() {
         </p>
       )}
 
-      {isAuthenticated ? (
-        <button
-          type="button"
-          onClick={handleCheckout}
-          disabled={status === 'loading'}
-          aria-busy={status === 'loading'}
-          className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {status === 'loading' ? 'Opening checkout…' : 'Get Premium'}
-        </button>
-      ) : (
-        <a
-          href="/login?returnTo=/pricing"
-          className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 bg-blue-600 text-white hover:bg-blue-700"
-        >
-          Get Premium
-        </a>
-      )}
+      <button
+        type="button"
+        onClick={handleCheckout}
+        disabled={status === 'loading'}
+        aria-busy={status === 'loading'}
+        className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {status === 'loading' ? 'Opening checkout…' : 'Get Premium'}
+      </button>
 
       {status === 'error' && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">

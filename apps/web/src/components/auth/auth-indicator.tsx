@@ -7,10 +7,18 @@ import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
  *
  * Mounted once in `routes/__root.tsx`, so every route carries an always-visible
  * signal of session state: a signed-in user sees their email and — only when
- * their subscription is active — a "Premium" marker; a signed-out visitor sees a
- * "Sign in" affordance and nothing account-specific, EXCEPT on `/login` itself,
- * where that affordance would link to the page already on screen (story 41.3,
- * UX-DR51 — see the note on the unauthenticated branch). On desktop (≥640px) it sits
+ * their subscription is active — a "Premium" marker; a signed-out visitor sees
+ * "Upgrade" (→ `/pricing`, for a first-time customer — account creation
+ * happens only via completed checkout there) and "Sign in" (→ `/login`, for a
+ * returning one) and nothing account-specific. Deliberately NOT labelled "Get
+ * Premium": that string would match the `/premium/i` substring every test in
+ * this file already uses to assert the Premium MARKER is absent, turning a nav
+ * link into a false positive for an unrelated assertion. Each link hides both
+ * on the page it points to AND on `/login` (story 41.3, UX-DR51 — the sign-in
+ * page's strip stays deliberately empty for a signed-out visitor; `/login`
+ * gets its own dedicated "New here?" link in the page body instead, not a
+ * second copy of this one) — see the note on the unauthenticated branch. On
+ * desktop (≥640px) it sits
  * on the SAME row as the primary nav, trailing/right-aligned (story 19-3); below
  * `sm:` it is a full-width top strip above the content (GlobalNav's bottom tab
  * bar carries the nav on mobile). It is kept out of `GlobalNav` so the 320px
@@ -50,6 +58,17 @@ import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
  * cannot drift apart.
  */
 const LOGIN_PATH = '/login' as const
+
+/**
+ * Mirrors `LOGIN_PATH` for the "Upgrade" affordance added alongside "Sign in"
+ * (UX review, 2026-09-14): a first-time visitor had no obvious path to become
+ * a customer without already knowing `/pricing` is where checkout lives
+ * (account creation happens ONLY via a completed Paddle checkout — `/login`
+ * never creates one). Same self-link principle as UX-DR51 applies — don't
+ * invite someone to the page already on screen — so this hides on `/pricing`
+ * itself the same way "Sign in" hides on `/login`.
+ */
+const PRICING_PATH = '/pricing' as const
 
 interface CurrentUser {
   userId: string
@@ -137,6 +156,7 @@ export function AuthIndicator() {
   // `toLocaleLowerCase()`) is locale-independent, so a Turkish-locale client
   // cannot map `I` to a dotless `ı` and reopen the hole.
   const isOnLoginPage = pathname.toLowerCase() === LOGIN_PATH
+  const isOnPricingPage = pathname.toLowerCase() === PRICING_PATH
 
   // `pathname` now does two jobs. It is read in the render body (the route check
   // above), and it is ALSO an intentional re-run trigger for this effect: the
@@ -217,13 +237,39 @@ export function AuthIndicator() {
         `routes/retirement.tsx` — and the strip reporting who they are is the one
         signal that explains why the page looks wrong to them.
       */}
-      {authState.status === 'unauthenticated' && !isOnLoginPage && (
-        <Link
-          to={LOGIN_PATH}
-          className="rounded-md px-3 py-1 font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-        >
-          Sign in
-        </Link>
+      {authState.status === 'unauthenticated' && (
+        <>
+          {/*
+            "Upgrade" (UX review, 2026-09-14): a signed-out visitor had no path
+            to becoming a customer from anywhere but the footer's Pricing link
+            or a feature paywall. Account creation happens ONLY via a
+            completed Paddle checkout on `/pricing` — this is the same
+            account-status strip that already offers "Sign in" for a RETURNING
+            customer, so it is also where a FIRST-TIME one should be pointed.
+            Hidden on `/pricing` itself (self-link, `isOnPricingPage`) AND on
+            `/login` (`isOnLoginPage`) — the sign-in page keeps its
+            deliberately-empty strip (story 41.3) and gets its own "New here?"
+            link in the page body instead, so this is not a second, redundant
+            copy of that link sitting right next to the one thing (`/login`
+            itself) it would need to avoid re-pointing at.
+          */}
+          {!isOnPricingPage && !isOnLoginPage && (
+            <Link
+              to={PRICING_PATH}
+              className="rounded-md px-3 py-1 font-medium text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700"
+            >
+              Upgrade
+            </Link>
+          )}
+          {!isOnLoginPage && (
+            <Link
+              to={LOGIN_PATH}
+              className="rounded-md px-3 py-1 font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+            >
+              Sign in
+            </Link>
+          )}
+        </>
       )}
 
       {authState.status === 'authenticated' && (
