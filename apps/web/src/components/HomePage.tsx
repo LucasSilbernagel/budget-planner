@@ -13,7 +13,7 @@ import type {
   FinancialDataPoint,
   RechartsDataItem,
 } from '@budget-planner/core/finance/visualization'
-import React, { Suspense, useMemo } from 'react'
+import React, { Suspense, useCallback, useMemo } from 'react'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
@@ -139,6 +139,13 @@ const DEBT_COLOR = '#DC2626'
 // (blue) and SAVINGS_COLOR (violet) under the common red-green and blue-yellow
 // confusions — the three asset-side bars must not read as one block.
 const ASSET_COLOR = '#D97706'
+// Story UX-3 (code-review fix). A neutral gray for the expense-ratio pie's
+// "Remaining income" filler slice — deliberately NOT DEFAULT_COLORS.income
+// (`@budget-planner/core/finance/visualization`), which equals
+// CATEGORY_COLORS[1] and therefore collided with the first expense category's
+// color whenever there was exactly one income category. Verified absent from
+// the full CATEGORY_COLORS palette.
+const REMAINING_INCOME_COLOR = '#9CA3AF'
 
 export function HomePage() {
   const incomeSources = useIncomeSources()
@@ -399,6 +406,89 @@ export function HomePage() {
     () => expenseData.reduce((sum, item) => sum + item.value, 0),
     [expenseData]
   )
+
+  // Story UX-3: the LEFT pie still shows each individual expense category —
+  // exactly the same slices as the RIGHT "Expenses by category" pie, reusing
+  // `expenseData` and its category colors so the two pies read as the same
+  // categories — but its 100% denominator is INCOME, not expenses. A
+  // "Remaining income" filler slice (unspent income) fills out the circle to
+  // represent the whole of income, so each expense's slice honestly reflects
+  // its share of income rather than its share of expenses (which is what the
+  // RIGHT pie already shows). The filler is OMITTED (not pushed as a 0-value
+  // row) once expenses reach or exceed income — see `expenseRatioIsOverspend`
+  // below for why the wedges themselves stop being income-relative at that
+  // point, which is a real, documented (code-review-found) limitation, not
+  // this filler's concern.
+  //
+  // Uses a fixed neutral gray rather than `DEFAULT_COLORS.income` (code
+  // review found `DEFAULT_COLORS.income === CATEGORY_COLORS[1]`, so with
+  // exactly one income category — a common case — the filler and the first
+  // expense category rendered identically, in both the arc and the legend
+  // dot).
+  //
+  // The emptiness gate keys off `incomeData.length` (not `totalIncomeChart`),
+  // matching the pre-existing convention that a pie is "empty" only when
+  // there are no income ROWS, not when their amounts happen to sum to zero —
+  // see the zero-total guard test in HomePage.pie-labels.chart-wiring.test.tsx.
+  const expenseRatioData = useMemo<RechartsDataItem[]>(() => {
+    if (incomeData.length === 0) {
+      return []
+    }
+    const remaining = totalIncomeChart - totalExpenseChart
+    if (remaining <= 0) {
+      return expenseData
+    }
+    return [
+      ...expenseData,
+      {
+        name: 'Remaining income',
+        value: remaining,
+        type: 'income',
+        fill: REMAINING_INCOME_COLOR,
+      },
+    ]
+  }, [incomeData, expenseData, totalIncomeChart, totalExpenseChart])
+
+  // The chart's headline figure is a percentage, not a dollar total (AC-3).
+  // `totalIncomeChart <= 0` covers both "no income rows" (already routed to
+  // the empty state above) and "income rows exist but sum to 0" — that second
+  // case still renders the pie (data.length > 0) but cannot express a ratio,
+  // so it shows "—" rather than dividing by zero. Deliberately NOT capped at
+  // 100: an overspend period should read e.g. "132%", not a misleading 100%.
+  const expenseRatioHeadline = useMemo(() => {
+    if (totalIncomeChart <= 0) {
+      return '—'
+    }
+    return `${Math.round((totalExpenseChart / totalIncomeChart) * 100)}%`
+  }, [totalIncomeChart, totalExpenseChart])
+
+  // Each expense-ratio LEGEND row shows its own share of income as a percentage
+  // (not a dollar amount, unlike every other pie's legend) — the same "—" /
+  // uncapped-overspend guards as the headline above, applied per row instead
+  // of to the total.
+  const formatExpenseRatioLegendValue = useCallback(
+    (cents: number) => {
+      if (totalIncomeChart <= 0) {
+        return '—'
+      }
+      return `${Math.round((cents / totalIncomeChart) * 100)}%`
+    },
+    [totalIncomeChart]
+  )
+
+  // ⚠️ Code-review finding: Recharts sizes each wedge as `value / sum(all
+  // data values)`, not against the `total` prop the legend/tooltip percentages
+  // use. With no "Remaining income" filler to absorb the difference (omitted
+  // above once expenses >= income), `sum(expenseRatioData) === totalExpenseChart`
+  // — so during an overspend period the WEDGES silently become each category's
+  // share of EXPENSES while the LEGEND/headline still (correctly) show each
+  // category's share of INCOME. A pie cannot geometrically show more than a
+  // full circle, so this note is the chosen fix (accept + disclose) rather
+  // than trying to make the wedges themselves income-relative.
+  const expenseRatioIsOverspend = totalIncomeChart > 0 && totalExpenseChart > totalIncomeChart
+  const expenseRatioOverspendNote = expenseRatioIsOverspend
+    ? "Expenses exceed income this period, so the wedges below show each category's share of total spending (not of income) — the percentages next to each category are still its true share of income."
+    : undefined
 
   // Whether the per-entry rounding disclosure below can actually be TRUE.
   //
@@ -711,21 +801,33 @@ export function HomePage() {
             </SkeletonBlock>
           ) : hasData ? (
             <>
-              {/* Income and expense category breakdowns as TWO separate pies
-                  (UX review #4). Summing income and expense slices into one 100%
-                  pie made every percentage meaningless — a category's share was
+              {/* This section originally showed income and expense category
+                  breakdowns as TWO separate pies (UX review #4): summing
+                  income and expense slices into one 100% pie made every
+                  percentage meaningless, since a category's share was
                   measured against income + expenses combined, two different
-                  wholes. Each pie now sums to its own type's total.
+                  wholes. That "own type's total" denominator rule survives —
+                  see `totalExpenseChart`/`totalIncomeChart` above — but story
+                  UX-3 changed the LEFT pie's DENOMINATOR: it plots the exact
+                  same expense-category slices as the RIGHT pie (reusing
+                  `expenseData`), plus one "Remaining income" filler slice
+                  (unspent income, clamped at 0 during an overspend period),
+                  and its 100% denominator is INCOME rather than expenses —
+                  `expenseRatioData` — so each slice honestly shows its share
+                  of income, and a reader can judge spending against income at
+                  a glance. The RIGHT pie keeps its expense-of-expenses
+                  breakdown, unchanged.
 
-                  ⚠️ Since story 30.4b these group by the user's own CATEGORY,
-                  not by item name: `aggregateByCategoryAndType` merges rows that
-                  share a category, so four expenses in "Groceries" are one
-                  slice. A row with no category (or one this device cannot
-                  resolve — see `useCategoryLabels`) still falls back to its own
-                  name (Decision 10), so a merged category and a single
-                  uncategorized item render alike; distinguishing them is 30.5's
-                  concern. The former click-to-drill-down stays removed: one
-                  shared drill cannot span two independent pies. */}
+                  ⚠️ Since story 30.4b both pies group expenses by the user's
+                  own CATEGORY, not by item name: `aggregateByCategoryAndType`
+                  merges rows that share a category, so four expenses in
+                  "Groceries" are one slice. A row with no category (or one
+                  this device cannot resolve — see `useCategoryLabels`) still
+                  falls back to its own name (Decision 10), so a merged
+                  category and a single uncategorized item render alike;
+                  distinguishing them is 30.5's concern. The former
+                  click-to-drill-down stays removed: one shared drill cannot
+                  span two independent charts. */}
               <section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-xl font-semibold text-subheading">
@@ -792,14 +894,17 @@ export function HomePage() {
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <BreakdownPie
-                    testId="income"
-                    title={`Income by category ${DURATION_LABEL[duration]}`}
-                    data={incomeData}
+                    testId="expense-ratio"
+                    title={`Expenses as % of income ${DURATION_LABEL[duration]}`}
+                    data={expenseRatioData}
                     total={totalIncomeChart}
-                    emptyLabel="No income to break down yet"
-                    accentClass="text-green-600 dark:text-green-400"
+                    totalDisplay={expenseRatioHeadline}
+                    note={expenseRatioOverspendNote}
+                    emptyLabel="No income to compare against yet"
+                    accentClass="text-red-600 dark:text-red-400"
                     isNarrow={isNarrowViewport}
                     formatAmount={formatAmount}
+                    legendValue={formatExpenseRatioLegendValue}
                   />
                   <BreakdownPie
                     testId="expense"
@@ -1096,17 +1201,42 @@ interface BreakdownPieProps {
    * and `breakdown-pie-total-<testId>` on the total figure.
    *
    * ⚠️ `data-testid`, not the title, because the title now carries the period
-   * suffix (`Income by category (per week)`) and so changes with the selector —
+   * suffix (`Expenses by category (per week)`) and so changes with the selector —
    * a title-anchored query would silently match nothing at three of the four
    * periods. Same jsdom-vs-Chromium accessible-name reasoning the cards use.
    */
   testId: string
-  /** Sub-heading shown above the pie (e.g. "Income by category (per week)"). */
+  /** Sub-heading shown above the pie (e.g. "Expenses by category (per week)"). */
   title: string
   /** Pie slices for a SINGLE type, already period-scaled. */
   data: RechartsDataItem[]
-  /** Sum of `data` values — the pie's own 100% denominator, also shown as its total. */
+  /**
+   * The pie's own 100% denominator, used for the legend/tooltip percentage
+   * math and (unless `totalDisplay` overrides it) shown as the headline.
+   *
+   * ⚠️ NOT necessarily `sum(data)`. Recharts sizes each wedge as its own
+   * share of `sum(data)`, independent of this prop — the two normally
+   * coincide, but a caller whose `data` doesn't sum to `total` (story UX-3's
+   * expense-ratio pie, when expenses meet or exceed income) will show wedges
+   * proportioned differently than the legend/tooltip percentages computed
+   * from `total`. See `expenseRatioIsOverspend`/`note` at that call site —
+   * this is a known, disclosed limitation of a single Pie, not a bug to fix
+   * here.
+   */
   total: number
+  /**
+   * Override for the headline figure beside the title — e.g. a percentage
+   * string for a ratio chart (story UX-3) instead of `formatAmount(total)`.
+   * `total` still drives the pie's own denominator either way; this only
+   * changes what text is displayed for it.
+   */
+  totalDisplay?: string
+  /**
+   * Optional callout shown between the header and the chart — e.g. the
+   * expense-ratio pie's overspend disclosure (story UX-3 review). Omitted for
+   * every other caller.
+   */
+  note?: string
   /** Message shown when this type has no entries. */
   emptyLabel: string
   /** Tailwind text-color classes for the total figure (income green / expense red). */
@@ -1118,6 +1248,12 @@ interface BreakdownPieProps {
    */
   isNarrow: boolean
   formatAmount: (cents: number) => string
+  /**
+   * Override for each legend row's own figure — e.g. a percentage-of-`total`
+   * string for a ratio chart (story UX-3) instead of `formatAmount(item.value)`.
+   * Defaults to `formatAmount` when omitted, so existing callers are unaffected.
+   */
+  legendValue?: (cents: number) => string
 }
 
 type CategoryBarDatum = { category: string; amount: number; fill: string }
@@ -1197,12 +1333,16 @@ function BreakdownPie({
   title,
   data,
   total,
+  totalDisplay,
+  note,
   emptyLabel,
   accentClass,
   isNarrow,
   formatAmount,
+  legendValue,
 }: BreakdownPieProps): React.ReactElement {
   const sorted = [...data].sort((a, b) => b.value - a.value)
+  const formatLegendValue = legendValue ?? formatAmount
   return (
     <div data-testid={`breakdown-pie-${testId}`}>
       <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -1212,10 +1352,18 @@ function BreakdownPie({
             data-testid={`breakdown-pie-total-${testId}`}
             className={`text-sm font-semibold ${accentClass}`}
           >
-            {formatAmount(total)}
+            {totalDisplay ?? formatAmount(total)}
           </span>
         )}
       </div>
+      {note && (
+        <p
+          data-testid={`breakdown-pie-note-${testId}`}
+          className="mb-2 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-300"
+        >
+          {note}
+        </p>
+      )}
       {data.length === 0 ? (
         <div className="surface-inset flex h-[240px] items-center justify-center rounded-lg p-6 text-center">
           <p className="text-sm text-muted">{emptyLabel}</p>
@@ -1258,7 +1406,7 @@ function BreakdownPie({
                   />
                   <span className="truncate text-body">{item.name}</span>
                 </span>
-                <span className="shrink-0 text-muted">{formatAmount(item.value)}</span>
+                <span className="shrink-0 text-muted">{formatLegendValue(item.value)}</span>
               </li>
             ))}
           </ul>

@@ -92,16 +92,6 @@ function expenseLegend(): HTMLElement {
   return within(expensePie()).getByRole('list')
 }
 
-/** The INCOME pie's legend — the income side has its own resolve call site. */
-function incomeLegend(): HTMLElement {
-  const heading = screen.getByRole('heading', { name: /income by category/i })
-  const card = heading.parentElement?.parentElement
-  if (!card) {
-    throw new Error('Income pie card not found — BreakdownPie markup changed')
-  }
-  return within(card).getByRole('list')
-}
-
 beforeEach(() => {
   vi.clearAllMocks()
   usePremiumAccess.mockReturnValue({
@@ -272,14 +262,42 @@ describe('AC-3: a dangling categoryId degrades gracefully in the pies', () => {
   })
 })
 
-describe('AC-7: the INCOME pie groups by category too (found by mutation M34)', () => {
-  // ⚠️ The two pies have SEPARATE resolve call sites (`HomePage.tsx` income and
-  // expense loops). Covering only the expense side left the income one free to
-  // regress: deleting its `resolveCategoryLabel` call kept every other test in
-  // this file green.
-  it('merges two income sources sharing a category into one slice', () => {
+// Story UX-3 removed the Overview's rendered income-category legend (the
+// pie in that slot now shows expense categories against an income
+// denominator — see HomePage.tsx's `expenseRatioData`). The income loop's
+// `resolveCategoryLabel` call site (`HomePage.tsx`'s `financialData` builder)
+// still runs, feeding `incomeData`/`totalIncomeChart`, but its RESOLVED
+// CATEGORY LABELS themselves are no longer rendered anywhere on this page —
+// so the "AC-7: the INCOME pie groups by category too" describe block that
+// used to live here (asserting income category NAMES in a legend) has been
+// removed rather than left as dead, un-failable assertions.
+//
+// ⚠️ Code review (2026-09-13): a regression in that call site is NOT fully
+// unobservable, though — `categoryColors` (`HomePage.tsx`) builds ONE shared
+// color map over `[...income categories, ...expense categories]`, and
+// `generateColorMap` assigns colors by ARRAY INDEX
+// (`packages/core/src/finance/visualization.ts`). So the NUMBER of distinct
+// income categories shifts the color assigned to every EXPENSE category on
+// both pies — see the "income category count shifts expense colors" test
+// below, which replaces the removed coverage for that specific mechanism.
+//
+// Income category NAME resolution (`resolveCategoryLabel` itself) remains
+// covered by `apps/web/src/hooks/__tests__/useCategoryLabels.dom.test.tsx`
+// (NOT `packages/core/.../visualization.test.ts`, which tests
+// `aggregateByCategoryAndType` only and never calls `resolveCategoryLabel`)
+// and end-to-end via the independent `/categories` page, which has its own
+// separate resolve call site and its own tests
+// (`CategoryBreakdown.chart-wiring.test.tsx`).
+describe('income category count shifts expense category colors (code review, story UX-3)', () => {
+  it('the same expense category gets a DIFFERENT legend color depending on how many distinct income categories precede it', () => {
+    // Run A: two income rows sharing ONE category (correct merge behavior) —
+    // one income category slot, so the expense category lands at palette
+    // index 1.
     useCategoryStore.setState({
-      categories: [category({ id: 'i1', name: 'Employment', kind: 'income' })],
+      categories: [
+        category({ id: 'i1', name: 'Employment', kind: 'income' }),
+        category({ id: 'e1', name: 'Groceries', kind: 'expense' }),
+      ],
     })
     useIncomeStore.setState({
       incomeSources: [
@@ -287,24 +305,42 @@ describe('AC-7: the INCOME pie groups by category too (found by mutation M34)', 
         incomeRow('n2', 'Overtime', 3000, 'i1'),
       ],
     })
+    useExpenseStore.setState({ expenses: [expenseRow('x1', 'Tesco run', 5000, 'e1')] })
+
+    const { unmount } = render(<HomePage />)
+    const dotColorFor = (categoryLabel: string): string | null => {
+      const li = within(expenseLegend()).getByText(categoryLabel).closest('li')
+      if (!li) throw new Error(`no <li> for ${categoryLabel}`)
+      const dot = li.querySelector('.rounded-full') as HTMLElement | null
+      return dot?.style.backgroundColor ?? null
+    }
+    const colorWithOneIncomeCategory = dotColorFor('Groceries')
+    unmount()
+
+    // Run B: the SAME two income rows now resolve to TWO DISTINCT categories
+    // — exactly the shape a broken/deleted `resolveCategoryLabel` call would
+    // produce (each row falls back to its own name instead of merging), and
+    // exactly what the removed AC-7 block used to guard against directly.
+    useCategoryStore.setState({
+      categories: [
+        category({ id: 'i1', name: 'Employment', kind: 'income' }),
+        category({ id: 'i2', name: 'Freelance', kind: 'income' }),
+        category({ id: 'e1', name: 'Groceries', kind: 'expense' }),
+      ],
+    })
+    useIncomeStore.setState({
+      incomeSources: [
+        incomeRow('n1', 'Main salary', 5000, 'i1'),
+        incomeRow('n2', 'Overtime', 3000, 'i2'),
+      ],
+    })
+    useExpenseStore.setState({ expenses: [expenseRow('x1', 'Tesco run', 5000, 'e1')] })
 
     render(<HomePage />)
-    const legend = incomeLegend()
+    const colorWithTwoIncomeCategories = dotColorFor('Groceries')
 
-    expect(within(legend).getAllByRole('listitem')).toHaveLength(1)
-    expect(within(legend).getByText('Employment')).toBeInTheDocument()
-    expect(within(legend).getByText('960.00')).toBeInTheDocument()
-    expect(within(legend).queryByText('Main salary')).not.toBeInTheDocument()
-    expect(within(legend).queryByText('Overtime')).not.toBeInTheDocument()
-  })
-
-  it('falls back to the row name for a dangling income categoryId', () => {
-    useCategoryStore.setState({ categories: [] })
-    useIncomeStore.setState({ incomeSources: [incomeRow('n1', 'Main salary', 5000, 'i-gone')] })
-
-    render(<HomePage />)
-
-    expect(within(incomeLegend()).getByText('Main salary')).toBeInTheDocument()
-    expect(screen.queryByText(/i-gone/)).not.toBeInTheDocument()
+    expect(colorWithOneIncomeCategory).not.toBeNull()
+    expect(colorWithTwoIncomeCategories).not.toBeNull()
+    expect(colorWithTwoIncomeCategories).not.toBe(colorWithOneIncomeCategory)
   })
 })

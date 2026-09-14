@@ -206,23 +206,30 @@ test.describe('no horizontal overflow at 320px', () => {
     // wrong is the list being short or missing, which since story 36.2 would
     // leave a narrow user with no way at all to read the breakdown. So assert
     // that: one row per seeded slice, each naming its category.
+    //
+    // Story UX-3 gave the LEFT pie the SAME expense-category rows as the
+    // RIGHT pie (its testid changed from `breakdown-pie-income`), PLUS one
+    // "Remaining income" filler row — so its count is the expense category
+    // count + 1, not the seeded income category count.
     const expensePie = page.locator('[data-testid="breakdown-pie-expense"]')
-    const incomePie = page.locator('[data-testid="breakdown-pie-income"]')
+    const expenseRatioPie = page.locator('[data-testid="breakdown-pie-expense-ratio"]')
     await expect(expensePie.locator('li')).toHaveCount(6)
-    await expect(incomePie.locator('li')).toHaveCount(3)
-    for (const name of [
+    await expect(expenseRatioPie.locator('li')).toHaveCount(7)
+    const expenseCategoryNames = [
       'Mortgage & Housing Costs',
       'Groceries',
       'Transportation',
       'Utilities',
       'Insurance Premiums',
       'Entertainment & Dining',
-    ]) {
+    ]
+    for (const name of expenseCategoryNames) {
       await expect(expensePie.locator('li').filter({ hasText: name })).toBeVisible()
+      await expect(expenseRatioPie.locator('li').filter({ hasText: name })).toBeVisible()
     }
-    for (const name of ['Primary Salary Long Name', 'Freelance & Consulting', 'Dividends']) {
-      await expect(incomePie.locator('li').filter({ hasText: name })).toBeVisible()
-    }
+    await expect(
+      expenseRatioPie.locator('li').filter({ hasText: 'Remaining income' })
+    ).toBeVisible()
 
     // The CurrencyToggle's widest layout (currency <select> revealed in symbol
     // mode) now lives on /settings, not the page headers. The seeded symbol-mode

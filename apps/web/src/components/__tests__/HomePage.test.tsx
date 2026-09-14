@@ -1210,7 +1210,69 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
   })
 
   it('AC-2: category figures are frequency-normalized and re-express when the period changes', () => {
-    seedMixedFrequencyIncome()
+    // Story UX-3 replaced the LEFT pie's per-category income legend with an
+    // expense/income ratio, so this normalization behavior (shared code path
+    // for both types — `periodScaledData` / `aggregateByCategoryAndType`) is
+    // now proven via the RIGHT ("Expenses by category") pie instead. Mirrors
+    // seedMixedFrequencyIncome's shape/figures, on the expense store.
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-weekly',
+          userId: 0,
+          name: 'Weekly gig',
+          amount: 10000,
+          frequency: 'weekly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+        {
+          id: 'exp-annual',
+          userId: 0,
+          name: 'Annual bonus',
+          amount: 10000,
+          frequency: 'annually',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
+    // Code review found the income-side normalization path (`totalIncomeChart`,
+    // now the new feature's own denominator) had lost its direct unit-level
+    // proof when the LEFT pie stopped rendering income category figures.
+    // Restored here via a SEPARATE, equal-raw-amount income fixture (15000/
+    // 15000, distinct from the 10000/10000 expense fixture above) and an
+    // assertion on the expense-ratio headline, which is only correct if BOTH
+    // totals normalize correctly:
+    //   income:  weekly round(15000×52/12)=65000 + annual round(15000/12)=1250
+    //            = 66250c/mo -> annually ×12 = 795000c ($7,950.00)
+    //   expense: 44166c/mo (existing fixture) -> annually 529992c ($5,299.92)
+    //   ratio = round(529992 / 795000 × 100) = 67% — a non-degenerate value
+    //   (not 100%), and identical at Monthly by construction (both totals
+    //   scale by the same integral factor), so re-asserting it after the
+    //   switch below also proves the ratio recomputes rather than freezing.
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-weekly',
+          userId: 0,
+          name: 'Weekly salary',
+          amount: 15000,
+          frequency: 'weekly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+        {
+          id: 'inc-annual',
+          userId: 0,
+          name: 'Annual dividend',
+          amount: 15000,
+          frequency: 'annually',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
     render(<HomePage />)
 
     // Annually (default): equal raw amounts render as UNEQUAL, normalized slices.
@@ -1219,6 +1281,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     expect(screen.getByText('99.96')).toBeInTheDocument() // annual 10000c/yr
     // Not the raw sum — a raw-amount chart would show both as "100.00".
     expect(screen.queryByText('100.00')).not.toBeInTheDocument()
+    expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
 
     // Switch to Monthly: each figure becomes the Annually value ÷ 12.
     fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
@@ -1228,6 +1291,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     // The annual figures are no longer shown.
     expect(screen.queryByText('5,199.96')).not.toBeInTheDocument()
     expect(screen.queryByText('99.96')).not.toBeInTheDocument()
+    expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
   })
 
   /**
@@ -1248,6 +1312,38 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
    */
   it('AC-8: changing EITHER selector moves BOTH the overview card and the pies', () => {
     seedMixedFrequencyIncome()
+    // Story UX-3: the LEFT pie's legend now shows PERCENTAGES, not dollar
+    // amounts, so it can no longer witness a duration-driven dollar figure.
+    // Seed a weekly/annual shape onto expenses too, so the RIGHT ("Expenses
+    // by category") pie's dollar total — unaffected by UX-3 — can serve as
+    // that witness instead. DELIBERATELY a DIFFERENT amount than the income
+    // fixture (12000/6000 vs 10000/10000): a same-amount fixture would make
+    // this test's witness indistinguishable from what the income card would
+    // show, defeating its own point of proving BOTH surfaces re-aggregate.
+    //   monthly  round(12000×52/12) + round(6000/12) = 52000c + 500c = 52500c
+    //   annually 52500c × 12 = 630000c → "6,300.00"
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-weekly',
+          userId: 0,
+          name: 'Weekly gig',
+          amount: 12000,
+          frequency: 'weekly',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+        {
+          id: 'exp-annual',
+          userId: 0,
+          name: 'Annual bonus',
+          amount: 6000,
+          frequency: 'annually',
+          createdAt: '2026-07-04T00:00:00.000Z',
+          updatedAt: '2026-07-04T00:00:00.000Z',
+        },
+      ],
+    })
     render(<HomePage />)
 
     const overviewSelect = () =>
@@ -1267,30 +1363,30 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     expect(overviewSelect().value).toBe('annually')
     expect(breakdownSelect().value).toBe('annually')
     expect(cardText()).toContain('5,299.92')
-    expect(within(breakdownSection()).getByText('5,299.92')).toBeInTheDocument()
+    expect(within(breakdownSection()).getByText('6,300.00')).toBeInTheDocument()
 
     // Direction 1: drive the BREAKDOWN selector — the card must follow.
     fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
     expect(overviewSelect().value).toBe('monthly')
     expect(cardText()).toContain('441.66')
-    expect(within(breakdownSection()).getByText('441.66')).toBeInTheDocument()
+    expect(within(breakdownSection()).getByText('525.00')).toBeInTheDocument()
 
     // Direction 2: drive the OVERVIEW selector — the pies must follow.
     fireEvent.change(overviewSelect(), { target: { value: 'annually' } })
     expect(breakdownSelect().value).toBe('annually')
     expect(cardText()).toContain('5,299.92')
-    expect(within(breakdownSection()).getByText('5,299.92')).toBeInTheDocument()
+    expect(within(breakdownSection()).getByText('6,300.00')).toBeInTheDocument()
   })
 
   it('AC-8: each pie title states the period, so it is never implicit (FR58)', () => {
     seedMixedFrequencyIncome()
     render(<HomePage />)
 
-    expect(screen.getByText('Income by category (per year)')).toBeInTheDocument()
+    expect(screen.getByText('Expenses as % of income (per year)')).toBeInTheDocument()
     expect(screen.getByText('Expenses by category (per year)')).toBeInTheDocument()
 
     fireEvent.change(breakdownSelect(), { target: { value: 'weekly' } })
-    expect(screen.getByText('Income by category (per week)')).toBeInTheDocument()
+    expect(screen.getByText('Expenses as % of income (per week)')).toBeInTheDocument()
     expect(screen.getByText('Expenses by category (per week)')).toBeInTheDocument()
   })
 
@@ -1370,12 +1466,45 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     render(<HomePage />)
 
     // The dashboard renders (hasData is true via balances) with two empty pies…
-    expect(screen.getByText('No income to break down yet')).toBeInTheDocument()
+    expect(screen.getByText('No income to compare against yet')).toBeInTheDocument()
     expect(screen.getByText('No expenses to break down yet')).toBeInTheDocument()
     // …so a note about figures differing would be describing nothing.
     expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
 
     useBalanceStore.setState({ entries: [] })
+  })
+
+  it('AC-4: a user with income but no expenses yet sees a 0% ratio, not an empty/broken pie', () => {
+    // Code review found this state — the single most likely one for a brand
+    // new user, who enters income before expenses — was correct in the code
+    // but completely unpinned. `expenseRatioData` gates emptiness on
+    // `incomeData.length`, not on whether there are any expenses, so this
+    // renders ONE "Remaining income" slice at 100% of income, not the empty
+    // state (that only fires with zero income ROWS).
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-only',
+          userId: 0,
+          name: 'Salary',
+          amount: 500000,
+          frequency: 'monthly',
+          createdAt: '2026-08-15T00:00:00.000Z',
+          updatedAt: '2026-08-15T00:00:00.000Z',
+        },
+      ],
+    })
+    render(<HomePage />)
+
+    const ratioPie = screen.getByTestId('breakdown-pie-expense-ratio')
+    expect(within(ratioPie).queryByText('No income to compare against yet')).not.toBeInTheDocument()
+    expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('0%')
+    expect(within(ratioPie).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(ratioPie).getByText('Remaining income')).toBeInTheDocument()
+    expect(within(ratioPie).getByText(/100%/)).toBeInTheDocument()
+
+    // The sibling pie, with no expense rows at all, IS in its empty state.
+    expect(screen.getByText('No expenses to break down yet')).toBeInTheDocument()
   })
 
   it('AC-9: no rounding note for a SINGLE entry, where divergence is impossible', () => {
@@ -1484,11 +1613,15 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
     expect(
       screen.getByRole('heading', { name: /income vs expense breakdown/i })
     ).toBeInTheDocument()
-    // ...but income and expenses are now split into two sub-pies, each with its
-    // own correct 100% denominator and a distinct sub-heading (UX review #4).
-    // Retitled by story 30.4b: the pie groups by the user's own category now,
-    // not per income source, so "by source" had become a lie.
-    expect(screen.getByRole('heading', { name: /income by category/i })).toBeInTheDocument()
+    // ...but income and expenses are now split into two sub-charts, each with
+    // its own correct 100% denominator and a distinct sub-heading (UX review
+    // #4). Story UX-3 replaced the LEFT sub-chart's content — an income
+    // category breakdown became an expense/income ratio — so "income by
+    // category"/"income by source" no longer appear here at all; the RIGHT
+    // sub-chart (expense category breakdown, retitled by story 30.4b to group
+    // by category rather than per income source) is unchanged.
+    expect(screen.getByRole('heading', { name: /expenses as % of income/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /income by category/i })).toBeNull()
     expect(screen.queryByRole('heading', { name: /income by source/i })).toBeNull()
     expect(screen.getByRole('heading', { name: /expenses by category/i })).toBeInTheDocument()
     // The removed asset & liability pie stays gone.

@@ -72,7 +72,17 @@ const PAINT_MARGIN_MS = 800
 const PIE_LABEL_PAINT_MS =
   PIE_DEFAULTS.animationBegin + PIE_DEFAULTS.animationDuration + PAINT_MARGIN_MS
 
-const INCOME_PIE = '[data-testid="breakdown-pie-income"]'
+/**
+ * Story UX-3 gave the LEFT pie the SAME expense-category slices as the RIGHT
+ * pie (reusing `expenseData` — same categories, same colors), plus one
+ * "Remaining income" filler slice (unspent income, clamped at 0 during an
+ * overspend period) — but its 100% denominator is INCOME, not expenses, so
+ * each expense's slice honestly shows its share of income rather than its
+ * share of expenses. Its slice count is therefore always `expense categories
+ * + 1` (one more than the RIGHT pie's), not tied to the number of seeded
+ * income rows.
+ */
+const EXPENSE_RATIO_PIE = '[data-testid="breakdown-pie-expense-ratio"]'
 const EXPENSE_PIE = '[data-testid="breakdown-pie-expense"]'
 
 /** The two label surfaces. `label={false}` removes the enclosing layer as well
@@ -116,9 +126,12 @@ const INCOME: SeedRow[] = [
  * per-entry rounding divergence applies and the pie total is the plain sum.
  *   expenses 570,000c/mo × 12 = 6,840,000c  -> $68,400.00
  *   income 1,050,000c/mo × 12 = 12,600,000c -> $126,000.00
+ *   remaining income = 12,600,000 - 6,840,000 = 5,760,000c
+ *   ratio (headline) = 6,840,000 / 12,600,000 × 100 = 54.2857...% -> 54%
+ *   remaining income share = 5,760,000 / 12,600,000 × 100 = 45.71...% -> 46%
  */
 const EXPENSE_TOTAL = '$68,400.00'
-const INCOME_TOTAL = '$126,000.00'
+const EXPENSE_RATIO_HEADLINE = '54%'
 
 function seed(page: Page, income: SeedRow[], expenses: SeedRow[]): Promise<void> {
   return page.addInitScript(
@@ -176,14 +189,16 @@ function seed(page: Page, income: SeedRow[], expenses: SeedRow[]): Promise<void>
  */
 async function assertNoInPlotLabels(
   page: Page,
-  { incomeSlices, expenseSlices }: { incomeSlices: number; expenseSlices: number }
+  { expenseRatioSlices, expenseSlices }: { expenseRatioSlices: number; expenseSlices: number }
 ): Promise<void> {
   // ⚠️ BOTH containers get `toBeVisible()`. A bare `toHaveCount` passes on a
   // `display:none` chart, so witnessing one pie by count alone would let a
   // CSS-hidden chart through while the test's name claims it is readable.
-  await expect(page.locator(`${INCOME_PIE} .recharts-responsive-container`)).toBeVisible()
+  await expect(page.locator(`${EXPENSE_RATIO_PIE} .recharts-responsive-container`)).toBeVisible()
   await expect(page.locator(`${EXPENSE_PIE} .recharts-responsive-container`)).toBeVisible()
-  await expect(page.locator(`${INCOME_PIE} .recharts-sector`)).toHaveCount(incomeSlices)
+  await expect(page.locator(`${EXPENSE_RATIO_PIE} .recharts-sector`)).toHaveCount(
+    expenseRatioSlices
+  )
   await expect(page.locator(`${EXPENSE_PIE} .recharts-sector`)).toHaveCount(expenseSlices)
 
   await page.waitForTimeout(PIE_LABEL_PAINT_MS)
@@ -209,23 +224,34 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     expect(response?.ok()).toBeTruthy()
     await page.waitForLoadState('networkidle')
 
-    await assertNoInPlotLabels(page, { incomeSlices: 3, expenseSlices: 6 })
+    await assertNoInPlotLabels(page, { expenseRatioSlices: EXPENSES.length + 1, expenseSlices: 6 })
 
     // AC-5: the slice list beneath each pie is what carries the breakdown now,
     // so it must name every slice. One <li> per slice, no more and no fewer.
+    // The expense-ratio pie names every seeded expense category (same as its
+    // sibling) PLUS one "Remaining income" row.
     await expect(page.locator(`${EXPENSE_PIE} li`)).toHaveCount(EXPENSES.length)
-    await expect(page.locator(`${INCOME_PIE} li`)).toHaveCount(INCOME.length)
+    await expect(page.locator(`${EXPENSE_RATIO_PIE} li`)).toHaveCount(EXPENSES.length + 1)
     for (const { name } of EXPENSES) {
       await expect(page.locator(`${EXPENSE_PIE} li`).filter({ hasText: name })).toBeVisible()
+      await expect(page.locator(`${EXPENSE_RATIO_PIE} li`).filter({ hasText: name })).toBeVisible()
     }
-    for (const { name } of INCOME) {
-      await expect(page.locator(`${INCOME_PIE} li`).filter({ hasText: name })).toBeVisible()
-    }
+    // The expense-ratio pie's legend rows show each slice's own share of
+    // INCOME as a percentage, not a dollar amount (unlike every other pie's
+    // legend) — 57,600 / 126,000 × 100 = 45.71...% -> rounds to 46%.
+    // ⚠️ Anchored with a negative lookbehind, not a bare `toContainText`: a
+    // plain substring match on "46%" would also pass against a future "146%".
+    await expect(
+      page.locator(`${EXPENSE_RATIO_PIE} li`).filter({ hasText: 'Remaining income' })
+    ).toContainText(/(?<!\d)46%/)
 
     // AC-5: the totals, pinned as literals. `toBeVisible()` alone would pass on
-    // any string, including a wrong figure.
+    // any string, including a wrong figure. The expense-ratio pie's headline is
+    // a PERCENTAGE (AC-3), not a dollar total like its sibling.
     await expect(page.getByTestId('breakdown-pie-total-expense')).toHaveText(EXPENSE_TOTAL)
-    await expect(page.getByTestId('breakdown-pie-total-income')).toHaveText(INCOME_TOTAL)
+    await expect(page.getByTestId('breakdown-pie-total-expense-ratio')).toHaveText(
+      EXPENSE_RATIO_HEADLINE
+    )
 
     // AC-6: `role="img"` makes the plot opaque to assistive technology, so the
     // in-plot labels never reached the accessibility tree — the accessible name
@@ -233,7 +259,7 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     // before this story. Queried BY NAME: 9 elements expose role="img" on this
     // page, so a bare getByRole('img') is a strict-mode violation.
     await expect(
-      page.getByRole('img', { name: 'Income by category (per year) breakdown chart' })
+      page.getByRole('img', { name: 'Expenses as % of income (per year) breakdown chart' })
     ).toBeVisible()
     await expect(
       page.getByRole('img', { name: 'Expenses by category (per year) breakdown chart' })
@@ -246,27 +272,36 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     expect(response?.ok()).toBeTruthy()
     await page.waitForLoadState('networkidle')
 
-    await assertNoInPlotLabels(page, { incomeSlices: 2, expenseSlices: 2 })
+    // income $90,000.00/yr, expenses $27,600.00/yr, remaining $62,400.00/yr,
+    // ratio (headline) 27,600/90,000 × 100 = 30.67% -> rounds to 31%. The
+    // expense-ratio pie has one slice per seeded expense category, same as
+    // its sibling, PLUS the "Remaining income" filler — but its LEGEND rows
+    // show each slice's own share of income as a percentage, not a dollar
+    // amount: Rent 14,400/90,000×100=16%, Groceries 13,200/90,000×100=14.67%
+    // -> 15%, remaining 62,400/90,000×100=69.33% -> 69%.
+    await assertNoInPlotLabels(page, { expenseRatioSlices: 3, expenseSlices: 2 })
 
-    // AC-8 says the list names each slice WITH ITS AMOUNT, so pin every slice on
-    // BOTH pies — not just the expense side, and not just one row of it.
+    // AC-8 says the list names each slice WITH ITS AMOUNT.
     await expect(page.locator(`${EXPENSE_PIE} li`)).toHaveCount(2)
-    await expect(page.locator(`${INCOME_PIE} li`)).toHaveCount(2)
+    await expect(page.locator(`${EXPENSE_RATIO_PIE} li`)).toHaveCount(3)
     // Monthly cents × 12 (the default Annually view is an exact ×12 scale).
-    for (const [name, amount] of [
-      ['Rent', '$14,400.00'],
-      ['Groceries', '$13,200.00'],
+    // ⚠️ Percentages are anchored with a negative lookbehind: a bare
+    // `toContainText('16%')` would also pass against a future "116%".
+    for (const [name, amount, sharePercent] of [
+      ['Rent', '$14,400.00', /(?<!\d)16%/],
+      ['Groceries', '$13,200.00', /(?<!\d)15%/],
     ] as const) {
       await expect(page.locator(`${EXPENSE_PIE} li`).filter({ hasText: name })).toContainText(
         amount
       )
+      await expect(page.locator(`${EXPENSE_RATIO_PIE} li`).filter({ hasText: name })).toContainText(
+        sharePercent
+      )
     }
-    for (const [name, amount] of [
-      ['Salary', '$48,000.00'],
-      ['Freelance', '$42,000.00'],
-    ] as const) {
-      await expect(page.locator(`${INCOME_PIE} li`).filter({ hasText: name })).toContainText(amount)
-    }
+    await expect(
+      page.locator(`${EXPENSE_RATIO_PIE} li`).filter({ hasText: 'Remaining income' })
+    ).toContainText(/(?<!\d)69%/)
+    await expect(page.getByTestId('breakdown-pie-total-expense-ratio')).toHaveText('31%')
   })
 
   test('AC-8: a one-slice pie is still readable with no in-plot labels', async ({ page }) => {
@@ -275,16 +310,30 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     expect(response?.ok()).toBeTruthy()
     await page.waitForLoadState('networkidle')
 
-    // ⚠️ The single-slice pie is the exception to the sector-skip rule: Recharts
-    // keeps a lone sector even at zero sweep, so it is present from t=0.
-    await assertNoInPlotLabels(page, { incomeSlices: 1, expenseSlices: 1 })
+    // income $48,000.00/yr, expenses $14,400.00/yr, remaining $33,600.00/yr,
+    // ratio (headline) 14,400/48,000 × 100 = 30%. The expense-ratio pie has
+    // the one seeded expense category PLUS the "Remaining income" filler — 2
+    // slices, one more than its (genuinely one-slice) sibling — and its
+    // LEGEND rows show each slice's own share of income as a percentage:
+    // Rent 14,400/48,000×100=30%, remaining 33,600/48,000×100=70%.
+    //
+    // ⚠️ The single-slice EXPENSE pie is the exception to the sector-skip
+    // rule: Recharts keeps a lone sector even at zero sweep, so it is present
+    // from t=0.
+    await assertNoInPlotLabels(page, { expenseRatioSlices: 2, expenseSlices: 1 })
 
     await expect(page.locator(`${EXPENSE_PIE} li`)).toHaveCount(1)
     await expect(page.locator(`${EXPENSE_PIE} li`)).toContainText('Rent')
     await expect(page.locator(`${EXPENSE_PIE} li`)).toContainText('$14,400.00')
-    await expect(page.locator(`${INCOME_PIE} li`)).toHaveCount(1)
-    await expect(page.locator(`${INCOME_PIE} li`)).toContainText('Salary')
-    await expect(page.locator(`${INCOME_PIE} li`)).toContainText('$48,000.00')
+    await expect(page.locator(`${EXPENSE_RATIO_PIE} li`)).toHaveCount(2)
+    // ⚠️ Anchored: a bare `toContainText('30%')` would also pass against "130%".
+    await expect(page.locator(`${EXPENSE_RATIO_PIE} li`).filter({ hasText: 'Rent' })).toContainText(
+      /(?<!\d)30%/
+    )
+    await expect(
+      page.locator(`${EXPENSE_RATIO_PIE} li`).filter({ hasText: 'Remaining income' })
+    ).toContainText(/(?<!\d)70%/)
+    await expect(page.getByTestId('breakdown-pie-total-expense-ratio')).toHaveText('30%')
   })
 
   test('AC-9: no in-plot labels at 320px either', async ({ page }) => {
@@ -299,7 +348,7 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     expect(response?.ok()).toBeTruthy()
     await page.waitForLoadState('networkidle')
 
-    await assertNoInPlotLabels(page, { incomeSlices: 3, expenseSlices: 6 })
+    await assertNoInPlotLabels(page, { expenseRatioSlices: EXPENSES.length + 1, expenseSlices: 6 })
   })
 
   test('AC-7: the hover tooltip still reads out a slice with its figure and share', async ({
@@ -335,7 +384,7 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     await page.mouse.move(centreX, centreY)
     await page.mouse.move(centreX + RADIUS * Math.cos(angle), centreY - RADIUS * Math.sin(angle))
 
-    // Scoped to THIS pie: the income pie renders first, so an unscoped
+    // Scoped to THIS pie: the expense-ratio pie renders first, so an unscoped
     // `.recharts-tooltip-wrapper` resolves to the wrong chart and reads empty.
     const tooltip = page.locator(`${EXPENSE_PIE} .recharts-tooltip-wrapper`)
     // Assert the hover LANDED before asserting what it says, so a hover that
@@ -351,6 +400,51 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     expect(
       EXPENSES.some(({ name }) => text.includes(name)),
       `tooltip named no seeded expense category: ${JSON.stringify(text)}`
+    ).toBeTruthy()
+  })
+
+  test("the expense-ratio pie's hover tooltip still shows a dollar figure, unlike its legend", async ({
+    page,
+  }) => {
+    // Story UX-3 review (Correction 2): the LEGEND rows on this pie switched
+    // from dollar amounts to percentages, but the hover tooltip was meant to
+    // keep showing dollars — `BreakdownPieCanvas`'s tooltip formatter is
+    // untouched by that correction. Nothing proved that until now.
+    await seed(page, INCOME, EXPENSES)
+    const response = await page.goto('/')
+    expect(response?.ok()).toBeTruthy()
+    await page.waitForLoadState('networkidle')
+
+    const chart = page.locator(`${EXPENSE_RATIO_PIE} .recharts-responsive-container`)
+    await expect(chart).toBeVisible()
+    await expect(page.locator(`${EXPENSE_RATIO_PIE} .recharts-sector`)).toHaveCount(
+      EXPENSES.length + 1
+    )
+    await page.waitForTimeout(PIE_LABEL_PAINT_MS)
+
+    const box = await chart.boundingBox()
+    if (!box) {
+      throw new Error('expense-ratio pie chart has no bounding box')
+    }
+
+    // Same annulus-aiming technique as the sibling test above.
+    const centreX = box.x + box.width / 2
+    const centreY = box.y + box.height / 2
+    const RADIUS = 70
+    const angle = Math.PI / 4
+    await page.mouse.move(centreX, centreY)
+    await page.mouse.move(centreX + RADIUS * Math.cos(angle), centreY - RADIUS * Math.sin(angle))
+
+    const tooltip = page.locator(`${EXPENSE_RATIO_PIE} .recharts-tooltip-wrapper`)
+    await expect(tooltip).toBeVisible()
+
+    const text = (await tooltip.innerText()).trim()
+    expect(text).toMatch(/\$/)
+    expect(text).toMatch(/%/)
+    const seededNames = [...EXPENSES.map(({ name }) => name), 'Remaining income']
+    expect(
+      seededNames.some((name) => text.includes(name)),
+      `tooltip named no expense-ratio slice: ${JSON.stringify(text)}`
     ).toBeTruthy()
   })
 })

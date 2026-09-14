@@ -147,10 +147,10 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
   it('AC-1: hands BOTH pies `label={false}`, so no in-plot text can paint', async () => {
     render(<HomePage />)
 
-    // Two pies, income first (`HomePage.tsx` renders the income BreakdownPie
-    // before the expense one). Asserting only `[0]` would let one pie stand in
-    // for two — the per-surface blind spot stories 30-4b, 33.3, 34.1b and 34.2
-    // each hit.
+    // Two pies, expense-ratio first (`HomePage.tsx` renders the expense-ratio
+    // BreakdownPie before the expense-category one). Asserting only `[0]`
+    // would let one pie stand in for two — the per-surface blind spot stories
+    // 30-4b, 33.3, 34.1b and 34.2 each hit.
     //
     // The `waitFor` is the lazy-chunk boundary (see the file docblock), and it
     // doubles as the anti-vacuity guard: it cannot succeed on an empty array.

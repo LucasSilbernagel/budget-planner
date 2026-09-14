@@ -707,13 +707,15 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
     })
 
     // ⚠️ ALL THREE deferred surfaces, not one. Code review found this test measuring
-    // only `breakdown-pie-income` — and the surface it skipped, the bar chart, is the
+    // only the left pie's testid — and the surface it skipped, the bar chart, is the
     // one sized by a COMPUTED inline style (`categoryChartHeight(data.length)`) rather
     // than a fixed class, i.e. the one most able to drift. The pie-labels test in this
     // same change preaches the rule: "Asserting only [0] would let one pie stand in
     // for two — the per-surface blind spot stories 30-4b, 33.3, 34.1b and 34.2 each hit."
+    // Story UX-3 renamed the left pie's testid from `breakdown-pie-income` to
+    // `breakdown-pie-expense-ratio` (it no longer shows income categories).
     const SURFACES = [
-      'breakdown-pie-income',
+      'breakdown-pie-expense-ratio',
       'breakdown-pie-expense',
       'category-bar-flows',
     ] as const

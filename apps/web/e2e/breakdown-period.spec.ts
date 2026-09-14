@@ -8,9 +8,18 @@ import { expect, test } from '@playwright/test'
  * unit tests cannot: the client-side re-aggregation that runs when the period
  * control changes. The chart normalizes each entry through the core frequency
  * engine, so the per-category breakdown figures must update on toggle. A single
- * seeded income means the pie's total equals its one category, so that figure
- * renders twice in the section (total + legend row) — the visibility checks use
- * `.first()`; the disappearance check counts all matches.
+ * seeded expense means the "Expenses by category" pie's total equals its one
+ * category, so that figure renders twice in the section (total + legend row) —
+ * the visibility checks use `.first()`; the disappearance check counts all
+ * matches.
+ *
+ * ⚠️ Story UX-3 replaced the LEFT pie's income-category breakdown with an
+ * expense-as-%-of-income chart, whose headline and legend rows are now
+ * PERCENTAGES, not dollar amounts — so a dollar-figure witness can no longer
+ * come from that pie. A matching WEEKLY EXPENSE is seeded alongside the income
+ * (same amount) so the RIGHT ("Expenses by category") pie — unaffected by
+ * UX-3 — carries the dollar witness this test drives on. The income seed
+ * still exists so the LEFT pie isn't in its empty state.
  *
  * ⚠️ New users default to `$` (USD) symbols (FR38 / Epic 22), so amounts print
  * with a leading `$`. The header comment here previously claimed currency mode
@@ -20,9 +29,11 @@ import { expect, test } from '@playwright/test'
  * The assertions below match on substrings, so they hold either way — but the
  * comment was pointing the next reader at the wrong environment.
  *
- * A single weekly 10000c income re-expresses as:
- *   monthly  round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "$5,199.96"
- *   monthly                                  43333c            → "$433.33"
+ * The seeded weekly EXPENSE (12000c, distinct from the income amount so the
+ * witness below is provably expense-specific, not a coincidental match with
+ * what the income side would produce) re-expresses as:
+ *   monthly  round(12000 × 52/12) = 52000c → annually ×12 = 624000c → "$6,240.00"
+ *   monthly                                  52000c            → "$520.00"
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
@@ -31,9 +42,11 @@ import { expect, test } from '@playwright/test'
 const BREAKDOWN_SELECT = { role: 'combobox' as const, name: /show breakdown per/i }
 const OVERVIEW_SELECT = { role: 'combobox' as const, name: /show income and expenses per/i }
 
-// Seed one weekly income (cents) so the breakdown renders and its figures shift
-// visibly between Annually and Monthly.
-function seedWeeklyIncome() {
+// Seed one weekly income AND a matching weekly expense (same amount, cents) so
+// the breakdown renders and its figures shift visibly between Annually and
+// Monthly. The expense is what the dollar-figure assertions below key off —
+// see the file header for why (story UX-3).
+function seedWeeklyIncomeAndExpense() {
   const now = new Date().toISOString()
   localStorage.setItem(
     'budget-planner-income-v1',
@@ -54,12 +67,31 @@ function seedWeeklyIncome() {
       version: 1,
     })
   )
+  localStorage.setItem(
+    'budget-planner-expenses-v1',
+    JSON.stringify({
+      state: {
+        expenses: [
+          {
+            id: crypto.randomUUID(),
+            userId: 0,
+            name: 'Weekly expense',
+            amount: 12000,
+            frequency: 'weekly',
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+      version: 1,
+    })
+  )
 }
 
 test('breakdown control defaults to Annually, offers all four durations, and re-aggregates on toggle', async ({
   page,
 }) => {
-  await page.addInitScript(seedWeeklyIncome)
+  await page.addInitScript(seedWeeklyIncomeAndExpense)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -85,13 +117,15 @@ test('breakdown control defaults to Annually, offers all four durations, and re-
     .filter({ has: page.getByRole('heading', { name: 'Income vs Expense Breakdown' }) })
 
   // Annually: the weekly figure is normalized (weekly × 52/12 × 12), not raw.
-  await expect(breakdown.getByText('5,199.96').first()).toBeVisible()
+  // This is the seeded EXPENSE's figure — see the file header for why an
+  // income-only witness can no longer come from this section (story UX-3).
+  await expect(breakdown.getByText('6,240.00').first()).toBeVisible()
 
   // Switch to Monthly — the hydrated chart re-aggregates client-side.
   await selector.selectOption('monthly')
   await expect(selector).toHaveValue('monthly')
-  await expect(breakdown.getByText('433.33').first()).toBeVisible()
-  await expect(breakdown.getByText('5,199.96')).toHaveCount(0)
+  await expect(breakdown.getByText('520.00').first()).toBeVisible()
+  await expect(breakdown.getByText('6,240.00')).toHaveCount(0)
 })
 
 /**
@@ -105,7 +139,7 @@ test('breakdown control defaults to Annually, offers all four durations, and re-
 test('either period control moves both, and the shared choice survives a reload', async ({
   page,
 }) => {
-  await page.addInitScript(seedWeeklyIncome)
+  await page.addInitScript(seedWeeklyIncomeAndExpense)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
