@@ -11,7 +11,7 @@ Premium adds authenticated, EU-hosted multi-device sync.
 
 After the first mention the product is referred to simply as Longhand.
 
-<img width="2800" height="1800" alt="screenshot" src="https://github.com/user-attachments/assets/ec9d8257-b963-41c9-937a-88349fc52970" />
+<img width="2800" height="1800" alt="Screen Shot 2026-09-14 at 16 51 47" src="https://github.com/user-attachments/assets/bb55f631-9abd-45ee-bc83-53975db88e90" />
 
 ## Live URL
 
