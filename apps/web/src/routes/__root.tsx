@@ -67,6 +67,25 @@ export const Route = createRootRoute({
       // Drives the standalone titlebar color when installed as a PWA (story 7-1,
       // AC-2). Matches the manifest theme_color and the accent green.
       { name: 'theme-color', content: '#16a34a' },
+      // Open Graph / Twitter card preview image, shared across every route (no
+      // per-page override exists yet). Absolute URL because social scrapers
+      // (Facebook, Slack, X) don't reliably resolve a relative og:image against
+      // the page origin.
+      { property: 'og:type', content: 'website' },
+      {
+        property: 'og:title',
+        content: 'Longhand Budget — track your finances with privacy and control',
+      },
+      {
+        property: 'og:description',
+        content:
+          'Track your finances with privacy and control — income, expenses, savings, and long-term plans. The free tier runs entirely in your browser, so your financial data never leaves your device.',
+      },
+      { property: 'og:image', content: 'https://www.longhandbudget.com/og-image.png' },
+      { property: 'og:image:width', content: '2800' },
+      { property: 'og:image:height', content: '1800' },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:image', content: 'https://www.longhandbudget.com/og-image.png' },
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
