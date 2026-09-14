@@ -190,11 +190,23 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     return invalidRedirect()
   }
 
-  const sessionToken = signSession({
-    userId: verified.userId,
-    paddleId: verified.paddleId,
-    email: verified.email,
-  })
+  // signSession throws if SESSION_SECRET is missing/weak in production
+  // (getSessionSecret fails closed) — that must degrade to the same generic
+  // redirect as every other failure above, not an uncaught 500. The token is
+  // already consumed at this point (verifyMagicLink), so this is a fail-closed
+  // "request a new link" outcome, not a retry-safe one.
+  let sessionToken: string
+  try {
+    sessionToken = signSession({
+      userId: verified.userId,
+      paddleId: verified.paddleId,
+      email: verified.email,
+    })
+  } catch (error) {
+    logger.error('Session signing failed during magic-link verify', { error })
+    captureError(error, { scope: 'magic-link-verify-sign-session' })
+    return invalidRedirect()
+  }
 
   const headers = new Headers({ Location: '/' })
   headers.append(

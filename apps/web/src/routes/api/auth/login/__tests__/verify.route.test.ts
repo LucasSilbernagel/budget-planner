@@ -38,6 +38,7 @@ vi.mock('@/server/api/auth/magic-link', () => ({
 }))
 
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
+import * as sessionModule from '@/server/api/auth/session'
 import { verifySession } from '@/server/api/auth/session'
 import { GET, POST } from '../verify'
 
@@ -198,6 +199,29 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
     const res = await postVerify({ token: 'x', csrf: 'm' }, 'ml_csrf=m')
     expect(res.status).toBe(302)
     expect(res.headers.get('Location')).toBe('/login?error=invalid_or_expired')
+  })
+
+  it('fails closed (generic redirect, no session, no leaked error) when session signing throws', async () => {
+    // Regression: SESSION_SECRET missing/weak in production makes signSession
+    // throw (getSessionSecret fails closed) — that must degrade to the same
+    // generic redirect as every other failure, not an uncaught 500 that leaks
+    // a raw framework error page to the user.
+    asMock(verifyMagicLink).mockResolvedValueOnce({
+      userId: '11111111-1111-1111-1111-111111111111',
+      paddleId: 'pad_1',
+      email: 'user@example.com',
+    })
+    const signSpy = vi.spyOn(sessionModule, 'signSession').mockImplementationOnce(() => {
+      throw new Error('SESSION_SECRET must be a strong value outside development')
+    })
+
+    const res = await postVerify({ token: 'good-token', csrf: 'm' }, 'ml_csrf=m')
+
+    expect(res.status).toBe(302)
+    expect(res.headers.get('Location')).toBe('/login?error=invalid_or_expired')
+    expect(res.headers.getSetCookie().some((c) => c.startsWith('session='))).toBe(false)
+
+    signSpy.mockRestore()
   })
 
   it('rate-limits the consume endpoint per IP (10/60s via the shared store, AC-2)', async () => {
