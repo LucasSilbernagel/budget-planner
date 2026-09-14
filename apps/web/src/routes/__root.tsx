@@ -72,6 +72,9 @@ export const Route = createRootRoute({
       // (Facebook, Slack, X) don't reliably resolve a relative og:image against
       // the page origin.
       { property: 'og:type', content: 'website' },
+      // Discord renders this above the title on link previews; without it the
+      // card looks anonymous (meta-tag inspector audit, 2026-09-14).
+      { property: 'og:site_name', content: 'Longhand Budget' },
       // og:title/og:description are intentionally SHORTER than the FR-pinned
       // <title>/description above (root-head.test.ts pins those exactly) —
       // these are trimmed to social-preview truncation limits (~60/~125 chars)

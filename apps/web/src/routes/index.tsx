@@ -7,7 +7,7 @@ export const Route = createFileRoute('/')({
   // distinguishes this tab from the others.
   head: () => ({
     meta: [
-      { title: 'Overview · Longhand Budget' },
+      { title: 'Overview: income, expenses & net worth · Longhand Budget' },
       {
         name: 'description',
         content:
