@@ -204,7 +204,7 @@ describe('applySecurityHeaders', () => {
     it('allows the real connect / frame / img / font origins', () => {
       const d = parseCsp(csp ?? '')
       expect(d['connect-src']).toBe(
-        `'self' https://submit-form.com https://counter.dev https://*.paddle.com`
+        `'self' https://submit-form.com https://counter.dev https://*.counter.dev https://*.paddle.com`
       )
       expect(d['frame-src']).toBe('https://*.paddle.com')
       expect(d['img-src']).toBe(`'self' data:`)

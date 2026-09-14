@@ -67,7 +67,9 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  *                  style attributes), so `'unsafe-inline'` is accepted for STYLES
  *                  ONLY. Scripts stay strict.
  * - `connect-src`  same-origin `/api/*`, Formspark contact POST
- *                  (`submit-form.com`), counter.dev beacon, Paddle checkout.
+ *                  (`submit-form.com`), counter.dev beacon (the script posts to
+ *                  the `t.counter.dev` subdomain, not the apex, hence
+ *                  `*.counter.dev`), Paddle checkout.
  * - `frame-src`/`child-src`  Paddle checkout overlay.
  * - `worker-src`   'self' — the PWA service worker (`sw.js`, story 7-1) is
  *                  same-origin. This MUST be explicit: `worker-src` falls back to
@@ -102,7 +104,7 @@ export function buildContentSecurityPolicy(nonce: string): string {
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data:`,
     `font-src 'self' data:`,
-    `connect-src 'self' https://submit-form.com https://counter.dev https://*.paddle.com`,
+    `connect-src 'self' https://submit-form.com https://counter.dev https://*.counter.dev https://*.paddle.com`,
     'frame-src https://*.paddle.com',
     'child-src https://*.paddle.com',
     `worker-src 'self'`,
