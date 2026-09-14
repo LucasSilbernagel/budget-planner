@@ -72,18 +72,22 @@ export const Route = createRootRoute({
       // (Facebook, Slack, X) don't reliably resolve a relative og:image against
       // the page origin.
       { property: 'og:type', content: 'website' },
+      // og:title/og:description are intentionally SHORTER than the FR-pinned
+      // <title>/description above (root-head.test.ts pins those exactly) —
+      // these are trimmed to social-preview truncation limits (~60/~125 chars)
+      // instead, per the meta-tag inspector audit (2026-09-14).
       {
         property: 'og:title',
-        content: 'Longhand Budget — track your finances with privacy and control',
+        content: 'Longhand Budget — private budgeting, no bank sync',
       },
       {
         property: 'og:description',
         content:
-          'Track your finances with privacy and control — income, expenses, savings, and long-term plans. The free tier runs entirely in your browser, so your financial data never leaves your device.',
+          'Track income, expenses, and savings in your browser — no bank sync, no account required, your data stays on your device.',
       },
       { property: 'og:image', content: 'https://www.longhandbudget.com/og-image.png' },
-      { property: 'og:image:width', content: '2800' },
-      { property: 'og:image:height', content: '1800' },
+      { property: 'og:image:width', content: '1200' },
+      { property: 'og:image:height', content: '630' },
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:image', content: 'https://www.longhandbudget.com/og-image.png' },
     ],
