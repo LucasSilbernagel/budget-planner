@@ -521,35 +521,119 @@ jobs:
           danube db dns enable "${DB_INSTANCE}"
           echo "::notice::Public DNS OPEN for ${DB_INSTANCE} — closes at the end of this job."
 
-      # `dns enable` returns long before the endpoint actually accepts connections.
-      # Measured 2026-09-04: ~160 SECONDS from enable to first successful TCP
-      # connect. Without this wait the preflight runs straight into ECONNREFUSED
-      # and aborts the deploy for a reason that has nothing to do with the database.
-      # The name resolves throughout, so this polls the PORT, not DNS.
-      # ⚠️ The port is DERIVED from DATABASE_URL, never hardcoded. It was pinned
-      # to 5445 until 2026-09-08, when the live endpoint was measured at 5446 —
-      # DanubeData reassigns the public port on re-provisioning, and this
-      # instance has been rebuilt twice. A hardcoded port polls a closed door for
-      # 300s and then blames the database. Deriving it from the URL the migration
-      # actually uses means the two cannot disagree.
+      # Reads the CURRENT public host/port from the API — never from a secret —
+      # and composes DATABASE_URL from that plus the (non-secret) role name and
+      # database name and the (secret) password. See the rewrite note on the
+      # next step for why this exists: the public port is not stable across
+      # `dns enable` calls, only DanubeData's own API knows the live value.
       #
-      # The URL is a secret, so it is never echoed; only the numeric port (which
-      # is not secret) and the separately-configured host appear in logs.
-      - name: Wait for the public endpoint to accept connections
+      # DATABASE_MIGRATOR_USER and DATABASE_NAME are repository variables, not
+      # secrets — `bp_migrator` / `pgdb` are already plaintext in
+      # docs/production-database-runbook.md. Only the password is sensitive.
+      - name: Discover the public endpoint and compose DATABASE_URL
+        id: discover
         env:
-          DB_HOST: ${{ secrets.DATABASE_PUBLIC_HOST }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DB_USER: ${{ vars.DATABASE_MIGRATOR_USER }}
+          DB_PASSWORD: ${{ secrets.DATABASE_MIGRATOR_PASSWORD }}
+          DB_NAME: ${{ vars.DATABASE_NAME }}
         run: |
-          set -uo pipefail
-          DB_PORT=$(printf '%s' "${DATABASE_URL}" | sed -nE 's#^[^@]+@[^:/]+:([0-9]+)/.*$#\1#p')
-          case "${DB_PORT}" in
+          set -euo pipefail
+          for var in DB_USER DB_PASSWORD DB_NAME; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::${var} is not set. See DEPLOY_RUNBOOK.md §1 for the required repo variable/secret."
+              exit 1
+            fi
+          done
+
+          endpoint=""
+          raw_row="(no row seen yet)"
+          for i in $(seq 1 24); do
+            # `--json db ls` is a flat array under "data" — verified 2026-09-14
+            # against @danubedata/cli 1.1.0. Unlike `registry repos tags`
+            # (see build-image's prune step), this one is NOT double-wrapped.
+            # Which field carries the public endpoint once DNS is open has not
+            # been observed live yet, so this tries every plausible shape and
+            # fails loudly with the raw row if none of them populate in time —
+            # the same "don't silently report 0" discipline as the prune step.
+            result=$(danube --json db ls | python3 -c "
+          import json, os, sys
+          data = json.load(sys.stdin)['data']
+          row = next((r for r in data if r.get('name') == os.environ['DB_INSTANCE']), None)
+          if row is None:
+              print('MISSING')
+              sys.exit(0)
+          candidates = [
+              row.get('public_endpoint'),
+              ':'.join([row['dns_hostname'], str(row['dns_port'])]) if row.get('dns_hostname') and row.get('dns_port') else None,
+              ':'.join([row['proxy_dns_hostname'], str(row['proxy_dns_port'])]) if row.get('proxy_dns_hostname') and row.get('proxy_dns_port') else None,
+              ':'.join([row['proxy_dns_hostname'], str(row['proxy_any_dns_port'])]) if row.get('proxy_dns_hostname') and row.get('proxy_any_dns_port') else None,
+          ]
+          found = next((c for c in candidates if c), '')
+          print(f'ENDPOINT={found}')
+          print(f'ROW={json.dumps(row)}')
+          ")
+            if [ "${result}" = "MISSING" ]; then
+              echo "::error::No instance named ${DB_INSTANCE} in \`danube db ls\`."
+              exit 1
+            fi
+            endpoint=$(printf '%s\n' "${result}" | sed -n 's/^ENDPOINT=//p')
+            raw_row=$(printf '%s\n' "${result}" | sed -n 's/^ROW=//p')
+            if [ -n "${endpoint}" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ -z "${endpoint}" ]; then
+            echo "::error::${DB_INSTANCE} never reported a public endpoint within 120s of opening the window."
+            echo "Last row from \`danube db ls\`: ${raw_row}"
+            exit 1
+          fi
+
+          db_host="${endpoint%:*}"
+          db_port="${endpoint##*:}"
+          case "${db_port}" in
             ''|*[!0-9]*)
-              echo "::error::Could not read a port from DATABASE_URL. It must be of the form"
-              echo "postgresql://USER:PASSWORD@HOST:PORT/DATABASE — the port is not optional here,"
-              echo "because the public endpoint does not use the default 5432."
+              echo "::error::Parsed a non-numeric port ('${db_port}') out of endpoint '${endpoint}'."
               exit 1
               ;;
           esac
+
+          echo "::notice::Public endpoint is ${db_host}:${db_port} (read live from the API, not a pinned secret)."
+          echo "db_host=${db_host}" >> "$GITHUB_OUTPUT"
+          echo "db_port=${db_port}" >> "$GITHUB_OUTPUT"
+
+          database_url=$(DB_HOST="${db_host}" DB_PORT="${db_port}" python3 -c "
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ['DB_USER'], safe='')
+          password = quote(os.environ['DB_PASSWORD'], safe='')
+          print(f\"postgresql://{user}:{password}@{os.environ['DB_HOST']}:{os.environ['DB_PORT']}/{os.environ['DB_NAME']}\")
+          ")
+          echo "::add-mask::${database_url}"
+          echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
+
+      # ⚠️ REWRITTEN 2026-09-14 after this instance's public port changed a
+      # SECOND time (5445 -> 5446 on 2026-09-08, then refused entirely on
+      # 2026-09-14 — run 34801804663) despite `danube db ls` showing no
+      # re-provision since 2026-09-05. So the port is not merely "reassigned on
+      # re-provision", as previously believed: DanubeData appears to hand out a
+      # fresh public port on every `dns enable`. Pinning it in a secret — even
+      # one a human re-reads by hand after each failure — cannot keep up with
+      # that. This step now asks the API for the CURRENT endpoint instead of
+      # trusting anything configured ahead of time; only the DB role's
+      # credentials remain secret (see the `Discover...` step above).
+      #
+      # `db_host`/`db_port` are this job's Environment-secret-free source of
+      # truth for the rest of the job, not `secrets.DATABASE_URL` (removed —
+      # see DEPLOY_RUNBOOK.md §1).
+      - name: Wait for the public endpoint to accept connections
+        env:
+          DB_HOST: ${{ steps.discover.outputs.db_host }}
+          DB_PORT: ${{ steps.discover.outputs.db_port }}
+        run: |
+          set -uo pipefail
           # ⚠️ Rewritten 2026-09-08 after this step failed a real run by timing out
           # at 300s with NO evidence of why — it discarded the connection error
           # and never said which address it dialled. Three things changed:
@@ -590,9 +674,10 @@ jobs:
           echo "Resolved IPv4: ${v4:-none}"
           echo "Resolved IPv6: ${v6:-none}"
           echo "Last connection error: ${last_error}"
-          echo "If both addresses resolved and both refused, the endpoint is not listening on"
-          echo "${DB_PORT} — re-read the port from \`danube db ls\` with public DNS enabled, since"
-          echo "DanubeData reassigns it on re-provisioning."
+          echo "This host/port came live from the API (the 'Discover the public endpoint' step"
+          echo "above), not a pinned secret, so a stale port is no longer the likely cause. If"
+          echo "both addresses resolved and both refused, the endpoint the API reported is not"
+          echo "actually listening yet — check DanubeData's status for ${DB_INSTANCE}."
           exit 1
 
       # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only
@@ -604,7 +689,9 @@ jobs:
       - name: Preflight — refuse an unsafe migration target
         env:
           NODE_ENV: production
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # DATABASE_URL is NOT set here — it was exported to $GITHUB_ENV by the
+          # "Discover the public endpoint" step above and is already part of
+          # this job's environment. There is no `secrets.DATABASE_URL` anymore.
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
           # verify-ca, not verify-full: DanubeData issues the DB certificate for
           # in-cluster SANs only, so the public endpoint used inside this window is
@@ -625,7 +712,8 @@ jobs:
       - name: Apply migrations
         env:
           NODE_ENV: production
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # See the Preflight step above: DATABASE_URL comes from $GITHUB_ENV,
+          # not a secret.
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
           # verify-ca, not verify-full: DanubeData issues the DB certificate for
           # in-cluster SANs only, so the public endpoint used inside this window is

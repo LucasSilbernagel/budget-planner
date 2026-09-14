@@ -173,12 +173,26 @@ reads no `.env` file.
 | Variable | Required | How to obtain / generate | Consumed by |
 |---|---|---|---|
 | `DATABASE_URL` (app) | Yes | `postgresql://bp_app:PASSWORD@budget-planner-prod-rw:5432/pgdb` — in-cluster, port **5432** | `getPool()` (`packages/db/src/client.ts`) on the Rapids service |
-| `DATABASE_URL` (migration) | Yes | `postgresql://bp_migrator:PASSWORD@postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:PORT/pgdb` — public endpoint. ⚠️ **Read the port off `danube db ls` with public DNS enabled; do NOT copy one from this table.** It was 5445, measured 5446 on 2026-09-08 — DanubeData reassigns it on re-provisioning, and this instance has been rebuilt twice. The readiness poll derives its port from this URL, so the two cannot disagree. | The `migrate` job: preflight + `drizzle.config.ts` |
+| `DATABASE_MIGRATOR_USER` (CI only) | Yes | `bp_migrator` — not sensitive, a repository variable | The `migrate` job: composes `DATABASE_URL` at runtime |
+| `DATABASE_MIGRATOR_PASSWORD` (CI only) | Yes | The `bp_migrator` role's password | The `migrate` job: composes `DATABASE_URL` at runtime |
+| `DATABASE_NAME` (CI only) | Yes | `pgdb` — not sensitive, a repository variable | The `migrate` job: composes `DATABASE_URL` at runtime |
 | `DATABASE_CA_CERT` | **YES — mandatory, not optional** | PEM from the DanubeData console (or extracted from the server, §3.1). **On Rapids, base64-encode it** (`base64 -w0 ca.pem`) — see the callout below | `client.ts` (`getPool`), `migrate-preflight-cli.ts`, `ca-expiry-cli.ts`, `db-smoke-cli.ts`, and `drizzle.config.ts`, each via `normalizeCaCert()` (`packages/db/src/ca-cert.ts`) |
 | `NODE_ENV` | Yes — `production` | literal | Arms every fail-closed path: EU host allowlist, TLS verification, `SESSION_SECRET` floor, https `SITE_URL` check |
 | `SESSION_SECRET` | Yes | `openssl rand -hex 32` (≥32 chars, ≥8 distinct) | `getSessionSecret()` (`packages/config/src/schema.ts`); rotating it logs everyone out |
-| `DANUBE_TOKEN` | Yes (CI only) | DanubeData API token | The `migrate` job's `danube db dns enable/disable` calls |
-| `DATABASE_PUBLIC_HOST` | Yes (CI only) | `postgresql-budget-planner-prod.budgetplanner795.danubedata.ro` | The `migrate` job's endpoint-readiness poll |
+| `DANUBE_TOKEN` | Yes (CI only) | DanubeData API token | The `migrate` job's `danube db dns enable/disable` calls, and its `danube --json db ls` endpoint-discovery read |
+
+> ⚠️ **CHANGED 2026-09-14 — the migration's `DATABASE_URL` and `DATABASE_PUBLIC_HOST`
+> are no longer secrets at all.** The host/port previously had to be read by hand
+> off `danube db ls` and pasted into a secret, on the theory DanubeData only
+> reassigns the public port on re-provisioning. Run 34801804663 disproved that —
+> the port changed again with **no re-provision in between** (last one was
+> 2026-09-05; the port still moved on 2026-09-14). So it is reassigned on
+> (at least) every `dns enable`, not just re-provisioning, and nothing pinned
+> ahead of time can stay correct. The `migrate` job in `deploy.yml` now reads the
+> live public endpoint from `danube --json db ls` right after opening the window
+> and composes `DATABASE_URL` itself from that plus `DATABASE_MIGRATOR_USER` /
+> `DATABASE_MIGRATOR_PASSWORD` / `DATABASE_NAME`. There is nothing left to
+> re-read and re-paste by hand after a future port change.
 
 > ⚠️ **The migration runs at `verify-ca`, not `verify-full` — and this is deliberate.**
 > DanubeData issues the database certificate for **in-cluster SANs only**

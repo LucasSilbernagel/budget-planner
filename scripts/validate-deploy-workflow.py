@@ -115,7 +115,7 @@ def main() -> int:
     # ran with blank credentials. Found in code review 2026-09-03.
     for name, job in jobs.items():
         block = yaml.safe_dump(job)
-        if re.search(r"secrets\.DANUBEDATA_REGISTRY|secrets\.DATABASE_URL|secrets\.DANUBE_TOKEN", block):
+        if re.search(r"secrets\.DANUBEDATA_REGISTRY|secrets\.DATABASE_MIGRATOR_PASSWORD|secrets\.DANUBE_TOKEN", block):
             check(job.get("environment") is not None,
                   f"{name} declares an environment for its scoped secrets")
 
