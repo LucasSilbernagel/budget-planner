@@ -11,7 +11,11 @@ Premium adds authenticated, EU-hosted multi-device sync.
 
 After the first mention the product is referred to simply as Longhand.
 
-> **Note:** This project is not yet deployed to production, so there is no live demo link yet.
+<img width="2800" height="1800" alt="screenshot" src="https://github.com/user-attachments/assets/ec9d8257-b963-41c9-937a-88349fc52970" />
+
+## Live URL
+
+https://www.longhandbudget.com/
 
 ## Features
 
