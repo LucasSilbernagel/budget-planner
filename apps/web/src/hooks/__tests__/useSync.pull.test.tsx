@@ -26,6 +26,7 @@ vi.mock('../../features/api/client', () => ({
 
 import { fetchServerChanges } from '../../features/api/client'
 import { useIncomeStore } from '../../stores/incomeStore'
+import { useProfileStore } from '../../stores/profileStore'
 import { resetSyncStore, useSync } from '../useSync'
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
@@ -133,6 +134,46 @@ describe('useSync pull wiring (Story 4-18)', () => {
     expect(pullResult?.success).toBe(false)
     expect(pullResult?.error).toContain('network down')
     expect(useIncomeStore.getState().incomeSources).toEqual([])
+    unmount()
+  })
+
+  it("new device: once the first pull reconciles to the server profile, that profile's data is pulled immediately — not on the next poll", async () => {
+    const PLACEHOLDER = '33333333-3333-4333-8333-333333333333'
+    const SERVER_PROFILE = '44444444-4444-4444-8444-444444444444'
+    useProfileStore.setState({
+      profiles: [
+        { id: PLACEHOLDER, userId: '', name: 'Main Profile', isDefault: true, currency: 'NONE' },
+      ],
+      activeProfileId: PLACEHOLDER,
+    })
+    // The server scopes financial rows to the requested profile: the placeholder
+    // gets only the profile list; the real profile gets the account's data.
+    asMock(fetchServerChanges).mockImplementation(
+      async (_since: number | null, _limit: number, profileId?: string) =>
+        profileId === SERVER_PROFILE
+          ? [incomeChange({ updatedAt: 900 })]
+          : [
+              {
+                entityType: 'userProfile',
+                entityId: SERVER_PROFILE,
+                data: { id: SERVER_PROFILE, userId: 'u-1', name: 'Main Profile', isDefault: true },
+                updatedAt: 1000,
+                isDeleted: false,
+              },
+            ]
+    )
+
+    const { result, unmount } = renderHook(() =>
+      // A poll interval far beyond the waitFor timeout: only the re-pull can pass.
+      useSync({ userId: 'u-1', autoSync: false, autoPull: true, pullInterval: 600_000 })
+    )
+    await result.current.forcePull()
+
+    await waitFor(() => {
+      expect(useIncomeStore.getState().incomeSources.some((s) => s.id === INCOME_ID)).toBe(true)
+    })
+    // Full snapshot for the new profile: its rows predate the profile-list cursor.
+    expect(fetchServerChanges).toHaveBeenLastCalledWith(null, 100, SERVER_PROFILE)
     unmount()
   })
 

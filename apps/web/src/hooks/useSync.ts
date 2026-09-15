@@ -302,6 +302,11 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   // Guards against overlapping pulls (auto-poll vs manual) — debounce/skip when
   // a pull is already in flight.
   const pullInFlightRef = useRef(false)
+  // Set when a pull is requested while one is already in flight; the in-flight
+  // pull re-runs once on completion instead of silently dropping the request.
+  const repullRequestedRef = useRef(false)
+  const pullRef = useRef<() => Promise<PullResult | undefined>>(async () => undefined)
+  const isFirstProfileEffectRef = useRef(true)
 
   // Initialize sync service on first render
   useEffect(() => {
@@ -484,8 +489,19 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       return undefined
     } finally {
       pullInFlightRef.current = false
+      if (repullRequestedRef.current) {
+        repullRequestedRef.current = false
+        // Only a profile switch requests a re-pull, and the pull that was in
+        // flight has just advanced the cursor with the PREVIOUS profile's delta,
+        // overwriting the switch's reset. Reset again so this is a full snapshot.
+        syncServiceRef.current?.resetPullCursor()
+        pullRef.current().catch((error) => {
+          console.error('Re-pull failed:', error)
+        })
+      }
     }
   }, [store])
+  pullRef.current = pull
 
   // Force pull is an alias for pull (symmetry with forceSync).
   const forcePull = pull
@@ -516,11 +532,30 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   //  2. Reset the PULL cursor: the cursor is global but the delta is profile-scoped,
   //     so a switch must force a full snapshot or the newly-active profile would
   //     miss every row older than the previous profile's cursor.
-  // No-op on first mount (cursor already null).
+  //  3. Pull the newly-active profile NOW. The first pull on a new device is sent
+  //     with the local bootstrap profile, so it returns only the profile list;
+  //     reconciliation then switches to the server profile, and without this the
+  //     account's actual data would not arrive until the next poll (up to
+  //     `pullInterval`), showing a signed-in user an empty account meanwhile.
+  // No-op on first mount (cursor already null; ActiveSync does the initial pull).
   useEffect(() => {
     syncServiceRef.current?.updateConfig({ profileId: activeProfileId ?? undefined })
     syncServiceRef.current?.resetPullCursor()
-  }, [activeProfileId])
+    if (isFirstProfileEffectRef.current) {
+      isFirstProfileEffectRef.current = false
+      return
+    }
+    if (!autoPull || !syncServiceRef.current) {
+      return
+    }
+    if (pullInFlightRef.current) {
+      repullRequestedRef.current = true
+      return
+    }
+    pullRef.current().catch((error) => {
+      console.error('Pull after profile switch failed:', error)
+    })
+  }, [activeProfileId, autoPull])
 
   // Queue operations
   const queueCreate = useCallback(

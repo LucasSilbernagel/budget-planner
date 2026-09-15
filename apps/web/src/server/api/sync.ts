@@ -274,7 +274,17 @@ export const syncOperationSchema = z
     timestamp: z.number(),
     deviceId: z.string(),
     userId: z.string(),
+    // ⚠️ LOAD-BEARING. `z.object` STRIPS undeclared keys and `processBatchSync`
+    // consumes the PARSED output, so before these two were declared every op
+    // reached `applyOperation` with `profileId === undefined`. Every create of a
+    // profile-scoped entity (income, expenses, savings, balances, categories)
+    // then violated `profileId NOT NULL` — nothing the user entered ever reached
+    // the server, and a second device signed in to an empty account.
+    // `profileId` is ownership-checked against the session user in
+    // `applyOperation`; it is not trusted merely because it parses.
+    profileId: z.string().uuid().optional(),
     version: z.number().optional(),
+    baseVersion: z.number().optional(),
   })
   .superRefine((data, ctx) => {
     // Validate data structure based on entityType
@@ -524,6 +534,24 @@ async function entityExists(
 }
 
 /**
+ * Whether `profileId` is a live (non-tombstoned) profile owned by `userId`.
+ */
+async function profileBelongsToUser(profileId: string, userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: userProfiles.id })
+    .from(userProfiles)
+    .where(
+      and(
+        eq(userProfiles.id, profileId),
+        eq(userProfiles.userId, userId),
+        eq(userProfiles.isDeleted, false)
+      )
+    )
+    .limit(1)
+  return rows.length > 0
+}
+
+/**
  * Create entity in database
  */
 async function createEntity(
@@ -575,7 +603,13 @@ async function updateEntity(
     // Drizzle's defaultNow() only fires on INSERT, so an UPDATE that does not
     // set updatedAt would leave the cursor stale and a delta-by-updatedAt pull
     // would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
-    const updateData = { ...data, updatedAt: new Date() }
+    // The per-entity schemas VALIDATE but do not strip `operation.data`, so drop
+    // the identity columns a client must never be able to rewrite: `id` and
+    // `profileId` would re-home the row, and `data.userId` is not the
+    // session-verified `operation.userId` — spreading it would let a payload
+    // move a row into another user's account.
+    const { id: _id, profileId: _profileId, userId: _userId, ...fields } = data
+    const updateData = { ...fields, userId, updatedAt: new Date() }
     await db.update(table).set(updateData).where(whereClause)
     return { success: true }
   } catch (error) {
@@ -642,6 +676,17 @@ async function applyOperation(
   }
 
   try {
+    // Profile-scoped entities must name a live profile the SESSION user owns.
+    // The FK alone only proves the profile exists — for someone.
+    if ('profileId' in getTable(entityType)) {
+      if (!profileId) {
+        return { success: false, error: 'profileId is required for this entity type' }
+      }
+      if (!(await profileBelongsToUser(profileId, userId))) {
+        return { success: false, error: 'Profile not found' }
+      }
+    }
+
     switch (operation.type) {
       case 'create': {
         // Check if entity already exists
@@ -649,7 +694,12 @@ async function applyOperation(
         if (exists) {
           return { success: false, error: 'Entity already exists' }
         }
-        return createEntity(entityType, { ...operation.data, userId, profileId })
+        // `id: entityId` inserts the CLIENT's uuid (Story 5-14). Without it the
+        // row took a fresh `defaultRandom()` id, so the creating device's local
+        // row and the server row never matched: every later update/delete of it
+        // was "Entity not found", and a pull delivered it as a duplicate.
+        const { id: _id, ...fields } = operation.data
+        return createEntity(entityType, { ...fields, id: entityId, userId, profileId })
       }
 
       case 'update': {
@@ -1008,6 +1058,29 @@ export async function processBatchSync(
   for (const operation of operations) {
     // Check for conflicts
     const conflictCheck = await checkConflict(operation)
+
+    // A create whose uuid the server already holds (for this user + profile) is
+    // an ALREADY-APPLIED create — ids are client-generated uuids, so no other
+    // device can have minted it. Typical causes: a lost response, or the
+    // free→paid seed re-enqueueing a row. Acknowledge it as processed. Reported
+    // as a conflict, the client keeps the op queued forever (conflicts are never
+    // removed), and a batch that always contains a conflict never drains the
+    // operations behind it.
+    if (conflictCheck.hasConflict && conflictCheck.conflictType === 'create-create') {
+      processedCount++
+      await logAudit(
+        user.id,
+        operation.id,
+        operation.entityType,
+        operation.entityId,
+        operation.type,
+        true,
+        'Create already applied',
+        ipAddress,
+        userAgent
+      )
+      continue
+    }
 
     if (conflictCheck.hasConflict) {
       // Conflict detected - record it
