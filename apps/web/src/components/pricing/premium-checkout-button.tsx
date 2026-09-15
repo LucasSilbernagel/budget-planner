@@ -25,8 +25,8 @@
  * are shown until that resolves (or if it fails).
  */
 
-import { useEffect, useState } from 'react'
-import { useSessionSeed } from '../../context/session-seed'
+import { useEffect, useRef, useState } from 'react'
+import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
 import {
   type LocalizedPriceBreakdown,
   getLocalizedPlanPrices,
@@ -55,9 +55,61 @@ const FALLBACK_LABEL: Record<Plan, string> = {
   lifetime: '€99',
 }
 
+/**
+ * A signed-in account that already holds `active`, `past_due`, or `lifetime`
+ * has an open Paddle subscription (or a permanent grant) and nothing to buy
+ * here — offering checkout anyway risks a real duplicate charge (there is no
+ * in-app cancel-or-swap flow yet), so the CTA is replaced with a status
+ * message instead of rendering the toggle at all.
+ *
+ * `canceled` is deliberately NOT included: that subscription has actually
+ * ended, so checkout is the correct, intended way for them to resubscribe —
+ * blocking it would turn the guard into a regression for a real customer.
+ */
+function AlreadyPremiumNotice({ status }: { status: 'active' | 'past_due' | 'lifetime' }) {
+  if (status === 'lifetime') {
+    return (
+      <p className="mt-6 text-sm text-body">
+        You already have lifetime Premium access — there&apos;s nothing more to buy.
+      </p>
+    )
+  }
+  if (status === 'past_due') {
+    return (
+      <p className="mt-6 text-sm text-body">
+        Your Premium subscription has a payment issue. Buying a new plan won&apos;t fix this and
+        would charge you again — please update your payment details with Paddle instead.
+      </p>
+    )
+  }
+  return <p className="mt-6 text-sm text-body">You already have an active Premium subscription.</p>
+}
+
+const ALREADY_PREMIUM_STATUSES = ['active', 'past_due', 'lifetime'] as const
+
 export function PremiumCheckoutButton() {
   const seed = useSessionSeed()
 
+  if (
+    seed &&
+    (ALREADY_PREMIUM_STATUSES as readonly string[]).includes(seed.subscriptionStatus ?? '')
+  ) {
+    return (
+      <AlreadyPremiumNotice
+        status={seed.subscriptionStatus as 'active' | 'past_due' | 'lifetime'}
+      />
+    )
+  }
+
+  return <PremiumCheckoutForm seed={seed} />
+}
+
+/**
+ * The actual toggle + checkout CTA, split out from {@link PremiumCheckoutButton}
+ * so its hooks stay unconditional — the already-Premium short-circuit above
+ * must not sit between hook calls (Rules of Hooks).
+ */
+function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   const [plan, setPlan] = useState<Plan>('annual')
   const [config, setConfig] = useState<CheckoutConfig | null>(null)
   const [localizedPrice, setLocalizedPrice] = useState<
@@ -150,13 +202,76 @@ export function PremiumCheckoutButton() {
     }
   }
 
-  const planOptions: ReadonlyArray<{ id: Plan; label: string }> = [
-    { id: 'annual', label: `Annual · ${localizedPrice.annual?.total ?? FALLBACK_LABEL.annual}` },
+  // A plan whose price ID isn't configured (a partially-configured build) is
+  // disabled up front, not just at click-time — selecting it used to always
+  // render, then only surface the generic error AFTER a click.
+  const planOptions: ReadonlyArray<{ id: Plan; label: string; disabled: boolean }> = [
+    {
+      id: 'annual',
+      label: `Annual · ${localizedPrice.annual?.total ?? FALLBACK_LABEL.annual}`,
+      disabled: !config?.annualPriceId,
+    },
     {
       id: 'lifetime',
       label: `Lifetime · ${localizedPrice.lifetime?.total ?? FALLBACK_LABEL.lifetime}`,
+      disabled: !config?.lifetimePriceId,
     },
   ]
+  const enabledPlanIds = planOptions.filter((o) => !o.disabled).map((o) => o.id)
+  const radioRefs = useRef<Partial<Record<Plan, HTMLButtonElement | null>>>({})
+
+  // If the SELECTED plan is disabled (its price ID isn't configured), roving
+  // tabIndex has nowhere to go — `plan` defaults to `'annual'`, so a build
+  // missing only `PADDLE_ANNUAL_PRICE_ID` would otherwise leave the entire
+  // `radiogroup` keyboard-unreachable (no radio ever carries `tabIndex={0}`).
+  // Move the selection to the first enabled option instead.
+  // `planOptions`/`enabledPlanIds` are plain arrays recomputed fresh every
+  // render from `config`/`localizedPrice` — depending on `config`/`plan`
+  // (the two things that can actually flip `disabled`) already covers every
+  // case that needs a correction.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above; only config/plan can flip `disabled`
+  useEffect(() => {
+    const selected = planOptions.find((o) => o.id === plan)
+    if (selected?.disabled && enabledPlanIds.length > 0 && enabledPlanIds[0]) {
+      setPlan(enabledPlanIds[0])
+    }
+  }, [config, plan])
+
+  /**
+   * Roving-tabIndex ARIA radiogroup: arrow keys move BOTH focus and selection
+   * between the enabled options (Home/End jump to the first/last), skipping
+   * any plan whose price ID isn't configured. Two options today, but this
+   * doesn't assume exactly two.
+   */
+  const handleRadioKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, currentId: Plan) => {
+    if (enabledPlanIds.length === 0) return
+    const currentIndex = enabledPlanIds.indexOf(currentId)
+    let nextIndex: number | undefined
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        nextIndex = (currentIndex + 1) % enabledPlanIds.length
+        break
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        nextIndex = (currentIndex - 1 + enabledPlanIds.length) % enabledPlanIds.length
+        break
+      case 'Home':
+        nextIndex = 0
+        break
+      case 'End':
+        nextIndex = enabledPlanIds.length - 1
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    const nextId = enabledPlanIds[nextIndex]
+    if (nextId) {
+      setPlan(nextId)
+      radioRefs.current[nextId]?.focus()
+    }
+  }
 
   // The SELECTED plan's breakdown — shown only once a real PricePreview total
   // has resolved for it (the static fallback labels aren't final prices, so
@@ -174,14 +289,22 @@ export function PremiumCheckoutButton() {
         aria-label="Premium plan"
         className="flex rounded-lg border border-gray-300 dark:border-gray-600 p-1 text-sm"
       >
-        {planOptions.map(({ id, label }) => (
+        {planOptions.map(({ id, label, disabled }) => (
           <button
             key={id}
+            ref={(el) => {
+              radioRefs.current[id] = el
+            }}
             type="button"
             role="radio"
             aria-checked={plan === id}
+            disabled={disabled}
+            // Roving tabIndex: only the selected option is Tab-reachable; arrow
+            // keys move both focus and selection between the enabled options.
+            tabIndex={plan === id ? 0 : -1}
             onClick={() => setPlan(id)}
-            className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            onKeyDown={(event) => handleRadioKeyDown(event, id)}
+            className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 ${
               plan === id
                 ? 'bg-blue-600 text-white'
                 : 'text-body hover:bg-gray-100 dark:hover:bg-gray-700'

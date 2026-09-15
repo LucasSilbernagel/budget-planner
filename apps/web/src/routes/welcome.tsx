@@ -46,6 +46,22 @@ function WelcomePage() {
           >
             Sign in to your account
           </a>
+          {/* A buyer who clicks "Sign in" before the webhook lands gets the
+              magic-link endpoint's generic 200 (it never signals whether an
+              account exists — no enumeration) and no email, which otherwise
+              looks identical to the permanent failure case. This is the ONE
+              thing that distinguishes them: retry guidance for the ordinary
+              "just a few seconds behind" case. Consistent with the "few
+              seconds" framing above (a prior "a minute" here read as
+              contradictory), and links back to the same sign-in form the
+              button above opens rather than only naming the action. */}
+          <p className="text-xs text-muted mt-4">
+            No email after a few seconds? Wait a moment, then{' '}
+            <a href="/login" className="underline hover:no-underline">
+              request the sign-in link again
+            </a>
+            .
+          </p>
         </div>
       </div>
     </div>

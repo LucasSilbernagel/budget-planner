@@ -28,7 +28,7 @@ const {
   assertPaddleProductionConfig,
   fetchPaddleCustomerEmail,
   createDefaultProfileForUser,
-  checkWebhookIp,
+  captureError,
   transaction,
   setSpy,
   insertValuesSpy,
@@ -37,18 +37,13 @@ const {
   assertPaddleProductionConfig: vi.fn(),
   fetchPaddleCustomerEmail: vi.fn(),
   createDefaultProfileForUser: vi.fn(),
-  checkWebhookIp: vi.fn(),
+  captureError: vi.fn(),
   transaction: vi.fn(),
   setSpy: vi.fn(),
   insertValuesSpy: vi.fn(),
 }))
 
 vi.mock('@budget-planner/config', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
-// Real `checkWebhookIp` does a live `fetch('https://api.paddle.com/ips')` — mocked per
-// NFR8. Defaults to observe-only (`enforced: false`, `allowed: true`) so every
-// pre-existing test below is unaffected; the dedicated IP-allowlist describe
-// block overrides this per test.
-vi.mock('@/server/paddle/webhook-ip-allowlist', () => ({ checkWebhookIp }))
 vi.mock('@budget-planner/db', () => ({
   db: { transaction },
   currencyEnum: { enumValues: ['NONE', 'USD', 'EUR'] },
@@ -62,7 +57,7 @@ vi.mock('@/server/functions/profiles', () => ({ createDefaultProfileForUser }))
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
-vi.mock('@/lib/error-tracking', () => ({ captureError: vi.fn() }))
+vi.mock('@/lib/error-tracking', () => ({ captureError }))
 
 import { POST } from '../paddle'
 
@@ -136,37 +131,9 @@ beforeEach(() => {
   getPaddleConfig.mockReturnValue(config())
   fetchPaddleCustomerEmail.mockResolvedValue(undefined)
   createDefaultProfileForUser.mockResolvedValue({ success: true, data: {} })
-  checkWebhookIp.mockResolvedValue({ allowed: true, ip: '1.2.3.4', enforced: false })
   transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
     cb(makeTx({ existingStatus: 'free' }))
   )
-})
-
-describe('POST /api/webhooks/paddle — IP allowlist (defense-in-depth)', () => {
-  const validSubscriptionRequest = () =>
-    signedRequest({
-      event_type: 'subscription.created',
-      data: { customer_id: 'ctm_1', status: 'active', email: 'a@example.com' },
-    })
-
-  it('processes the webhook when observe-only and the IP is not allowed (default posture)', async () => {
-    checkWebhookIp.mockResolvedValue({ allowed: false, ip: '9.9.9.9', enforced: false })
-    const res = await POST({ request: validSubscriptionRequest() })
-    expect(res.status).toBe(200)
-  })
-
-  it('rejects (403) an unallowed IP once enforcement is on', async () => {
-    checkWebhookIp.mockResolvedValue({ allowed: false, ip: '9.9.9.9', enforced: true })
-    const res = await POST({ request: validSubscriptionRequest() })
-    expect(res.status).toBe(403)
-    expect(transaction).not.toHaveBeenCalled()
-  })
-
-  it('processes normally when enforced and the IP IS allowed', async () => {
-    checkWebhookIp.mockResolvedValue({ allowed: true, ip: '3.4.5.6', enforced: true })
-    const res = await POST({ request: validSubscriptionRequest() })
-    expect(res.status).toBe(200)
-  })
 })
 
 describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
@@ -180,17 +147,48 @@ describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
     expect(res.status).toBe(200)
   })
 
-  it('rejects a tampered h1 (401)', async () => {
+  it('rejects a tampered h1 — same length as a real HMAC, wrong value (401)', async () => {
+    // A short (8-byte) h1 is rejected by the length pre-check before the HMAC
+    // ever runs, which would let a broken `verifyWebhookSignature` pass this
+    // test unnoticed. Use a full 64-hex-char (32-byte) WRONG value so the
+    // comparison actually reaches `crypto.timingSafeEqual`.
     const body = JSON.stringify({
       event_type: 'subscription.created',
       data: { customer_id: 'ctm_1', status: 'active' },
     })
     const ts = Math.floor(Date.now() / 1000)
+    const wrongButRightLength = '0'.repeat(64)
     const req = new Request('https://app.test/api/webhooks/paddle', {
       method: 'POST',
-      headers: { 'paddle-signature': `ts=${ts};h1=deadbeefdeadbeef` },
+      headers: { 'paddle-signature': `ts=${ts};h1=${wrongButRightLength}` },
       body,
     })
+    const res = await POST({ request: req })
+    expect(res.status).toBe(401)
+    expect(transaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects a validly-formed signature computed over a DIFFERENT body', async () => {
+    // Proves the HMAC actually binds to the delivered body, not just to `ts`
+    // and a well-formed-looking `h1`.
+    const signedForOtherBody = signedRequest({
+      event_type: 'subscription.created',
+      data: { customer_id: 'ctm_1', status: 'active' },
+    })
+    const ts = signedForOtherBody.headers.get('paddle-signature')?.match(/ts=(\d+)/)?.[1]
+    const req = new Request('https://app.test/api/webhooks/paddle', {
+      method: 'POST',
+      headers: {
+        'paddle-signature': signedForOtherBody.headers.get('paddle-signature') ?? '',
+        'content-type': 'application/json',
+      },
+      // Same ts/signature, but a body that was never signed.
+      body: JSON.stringify({
+        event_type: 'subscription.created',
+        data: { customer_id: 'ctm_ATTACKER', status: 'active' },
+      }),
+    })
+    expect(ts).toBeDefined()
     const res = await POST({ request: req })
     expect(res.status).toBe(401)
     expect(transaction).not.toHaveBeenCalled()
@@ -385,6 +383,53 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
 
     expect(res.status).toBe(500)
     expect(insertValuesSpy).not.toHaveBeenCalled()
+    expect(captureError).toHaveBeenCalled()
+  })
+
+  it('grants lifetime for an EXISTING subscriber without ever resolving email — the update path needs it for nothing', async () => {
+    // Regression: email validity used to be checked BEFORE the existing-user
+    // check, so a malformed API-returned address could 500-loop a real
+    // subscriber's status update forever, even though the update never
+    // touches email at all.
+    //
+    // A follow-up review pass (2026-09-15 #3) sharpened the fix further:
+    // email is now resolved LAZILY, only inside the no-existing-row branch —
+    // so an existing subscriber's update no longer even PAYS FOR the
+    // customer-API round trip, let alone gets blocked by its result. Setting
+    // the mock to a malformed value proves it: if it were called, the OLD
+    // (pre-laziness) validation-ordering fix would still have accepted it,
+    // so the only way this test can distinguish behavior is the call-count
+    // assertion below.
+    fetchPaddleCustomerEmail.mockResolvedValue('not-an-email')
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'transaction.completed',
+        data: { customer_id: 'ctm_1', price_id: LIFETIME_PRICE },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    // Exact match, not `objectContaining` — proves email is NOT written on
+    // the update path, not merely that status is.
+    expect(setSpy).toHaveBeenCalledWith({ subscriptionStatus: 'lifetime' })
+    expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
+  })
+
+  it('still fails closed for a first-seen buyer whose resolved email is malformed', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: null }))
+    )
+    fetchPaddleCustomerEmail.mockResolvedValue('not-an-email')
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'transaction.completed',
+        data: { customer_id: 'ctm_bademail', price_id: LIFETIME_PRICE },
+      }),
+    })
+
+    expect(res.status).toBe(500)
+    expect(insertValuesSpy).not.toHaveBeenCalled()
+    expect(captureError).toHaveBeenCalled()
   })
 })
 
@@ -443,6 +488,49 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 
     expect(res.status).toBe(500)
     expect(insertValuesSpy).not.toHaveBeenCalled()
+    expect(captureError).toHaveBeenCalled()
+  })
+
+  it('updates an EXISTING subscriber without ever resolving email — the update path needs it for nothing', async () => {
+    // Regression: email validity used to be checked BEFORE the existing-user
+    // check, so a malformed API-returned address could 500-loop a real
+    // subscriber's `subscription.canceled` forever — access never revoked.
+    //
+    // A follow-up review pass (2026-09-15 #3) sharpened the fix further:
+    // email is now resolved LAZILY, only inside the no-existing-row branch —
+    // an existing subscriber's status update no longer pays for the
+    // customer-API round trip at all, closing the "still calls it eagerly"
+    // finding from that same review.
+    fetchPaddleCustomerEmail.mockResolvedValue('not-an-email')
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.canceled',
+        data: { customer_id: 'ctm_1', status: 'canceled' },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    // Exact match, not `objectContaining` — proves email is NOT written on
+    // the update path, not merely that status is.
+    expect(setSpy).toHaveBeenCalledWith({ subscriptionStatus: 'canceled' })
+    expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
+  })
+
+  it('still fails closed for a first-seen subscriber whose resolved email is malformed', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: null }))
+    )
+    fetchPaddleCustomerEmail.mockResolvedValue('not-an-email')
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.created',
+        data: { customer_id: 'ctm_bademail_sub', status: 'active' },
+      }),
+    })
+
+    expect(res.status).toBe(500)
+    expect(insertValuesSpy).not.toHaveBeenCalled()
+    expect(captureError).toHaveBeenCalled()
   })
 
   it('returns 500 (Paddle retries) when the subscription transaction throws', async () => {

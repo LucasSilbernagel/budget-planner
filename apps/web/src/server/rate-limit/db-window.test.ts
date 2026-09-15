@@ -181,7 +181,7 @@ describe('checkDbRateLimit — DB-error degrade (AC-6)', () => {
   it('fails CLOSED (deny, degraded) when the upsert returns no row — never a fresh budget', async () => {
     state.mode = 'empty'
     const r = await checkDbRateLimit({
-      scope: 'paddle-cb',
+      scope: 'login-verify',
       subject: 'x',
       windowMs: 60_000,
       maxAttempts: 5,

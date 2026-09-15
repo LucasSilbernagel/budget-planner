@@ -29,6 +29,7 @@ import {
   users,
 } from '@budget-planner/db/src/schema'
 import { eq } from 'drizzle-orm'
+import { cancelActiveSubscriptionsForCustomer } from '../paddle/subscription-api'
 import { getCurrentUserSession } from './auth/paddle'
 
 /**
@@ -114,42 +115,59 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
 }
 
 /**
+ * Overall ceiling for the whole best-effort Paddle cancel step, regardless of
+ * how many subscriptions the account holds.
+ *
+ * Each individual Paddle HTTP call inside `cancelActiveSubscriptionsForCustomer`
+ * already carries its own `AbortSignal.timeout(3000)`, but nothing previously
+ * bounded the WHOLE step — a customer with N open subscriptions could still
+ * take `list + N × cancel` seconds, run ahead of the erasure transaction, and
+ * (on a platform request-timeout) leave NOTHING deleted at all: a silent
+ * failure of the right-to-erasure guarantee this function's own docblock
+ * promises never happens. This is a hard ceiling, not a request timeout: on
+ * expiry, erasure proceeds regardless of how much cancellation finished.
+ */
+const CANCEL_STEP_TIMEOUT_MS = 8000
+
+/**
  * Best-effort Paddle subscription cancellation.
  *
  * Right to erasure is not conditional on a live subscription, and billing must
- * never block the DB erasure — so this NEVER throws and NEVER blocks. It cancels
- * only when a usable Paddle credential is configured; otherwise it logs an
- * actionable warning and returns.
- *
- * ⚠️ LAUNCH CHECKLIST: Story 5-3 reconciled the webhook to Paddle Billing but
- * did NOT wire an outbound cancel-subscription call (deferred to 5-3 Task 4/5,
- * which need the live Billing API). Until then this remains a documented
- * best-effort: it records intent and warns. Re-verify once that lands.
- * (Resolved decision #3, 2026-07-04.)
+ * never block the DB erasure — so this NEVER throws and NEVER blocks longer
+ * than {@link CANCEL_STEP_TIMEOUT_MS}. It cancels every active/trialing/
+ * past_due subscription for the account's Paddle customer when a usable
+ * Paddle credential is configured; otherwise it logs an actionable warning
+ * and returns.
  */
 async function cancelPaddleSubscriptionBestEffort(paddleId: string): Promise<void> {
   try {
     const paddleConfig = getPaddleConfig()
     if (!paddleConfig.isConfigured) {
-      logger.warn(
-        'Account deletion: Paddle not configured — skipping subscription cancellation. ' +
-          'LAUNCH CHECKLIST: re-verify the Paddle cancel path once Story 5-3 (Paddle production) lands.',
-        { paddleId }
-      )
+      logger.warn('Account deletion: Paddle not configured — skipping subscription cancellation.', {
+        paddleId,
+      })
       return
     }
 
-    // Paddle IS configured but the cancel-subscription API call is not wired in
-    // the codebase yet (Story 5-3 owns the real Paddle Billing integration; the
-    // webhook route only RECEIVES status events today). Log intent and proceed —
-    // erasure is never blocked on billing.
-    logger.warn(
-      'Account deletion: Paddle configured but cancel-subscription wiring is deferred to Story 5-3 — ' +
-        'subscription NOT cancelled programmatically. Re-verify once 5-3 lands.',
-      { paddleId }
-    )
+    const timedOut = Symbol('paddle-cancel-timeout')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const result = await Promise.race([
+      cancelActiveSubscriptionsForCustomer(paddleId),
+      new Promise<typeof timedOut>((resolve) => {
+        timer = setTimeout(() => resolve(timedOut), CANCEL_STEP_TIMEOUT_MS)
+      }),
+    ])
+    clearTimeout(timer)
+    if (result === timedOut) {
+      logger.error(
+        'Account deletion: Paddle cancel step exceeded its deadline — proceeding with erasure regardless',
+        { paddleId }
+      )
+    }
   } catch (error) {
     // Defensive: even a config-read failure must not block erasure.
+    // `cancelActiveSubscriptionsForCustomer` itself never throws, but this
+    // outer guard stays — erasure must survive ANY billing-side surprise.
     logger.error('Account deletion: best-effort Paddle cancel failed (continuing with erasure)', {
       error,
     })

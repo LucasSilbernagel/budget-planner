@@ -32,9 +32,29 @@ let paddleInstancePromise: Promise<Paddle | undefined> | null = null
 /** Lazily loads and initializes Paddle.js. Safe to call more than once. */
 export function getPaddleInstance(config: PaddleCheckoutClientConfig): Promise<Paddle | undefined> {
   if (!paddleInstancePromise) {
-    paddleInstancePromise = import('@paddle/paddle-js').then(({ initializePaddle }) =>
-      initializePaddle({ token: config.clientToken, environment: config.environment })
-    )
+    paddleInstancePromise = import('@paddle/paddle-js')
+      .then(({ initializePaddle }) =>
+        initializePaddle({ token: config.clientToken, environment: config.environment })
+      )
+      .then((paddle) => {
+        // `initializePaddle` signals its OWN failure by RESOLVING `undefined`
+        // (a bad token, a CDN load failure) — it does not reject for this
+        // case. A `.catch` alone never sees it, so the cache must be cleared
+        // here too, or a transient failure poisons every later checkout
+        // click ("Checkout isn't available right now") until a full reload.
+        if (!paddle) {
+          paddleInstancePromise = null
+        }
+        return paddle
+      })
+      .catch((error) => {
+        // Un-cache a REJECTED promise (a momentary cdn.paddle.com hiccup, a
+        // network blip during the price-preview effect) so the NEXT call
+        // retries instead of every future checkout click being permanently
+        // poisoned by one transient failure until a full page reload.
+        paddleInstancePromise = null
+        throw error
+      })
   }
   return paddleInstancePromise
 }

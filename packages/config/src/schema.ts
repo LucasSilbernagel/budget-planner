@@ -34,7 +34,19 @@ export const envSchema = z.object({
   // Max age (seconds) of a webhook's signed timestamp before it is rejected as a
   // replay. Paddle's SDKs default to 5s; a self-hosted receiver behind clock
   // skew needs a wider window. 300s (5 min) is the default.
-  PADDLE_WEBHOOK_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(300),
+  // ⚠️ Deliberately NOT `z.coerce.number()` — that throws inside `getConfig()`
+  // on ANY invalid value (not just `''`: `' '`, `'abc'`, `'0'`, `'-1'`,
+  // `'1.5'` all reach `.positive()`/`.int()` and throw too), 500ing SSR and
+  // every `/api/*` route, not just billing, for a deploy manifest with a
+  // stray value in this one var. Falls back to the 300s default on anything
+  // that isn't a positive integer instead of ever throwing.
+  PADDLE_WEBHOOK_MAX_AGE_SECONDS: z
+    .string()
+    .optional()
+    .transform((val) => {
+      const parsed = val === undefined ? Number.NaN : Number(val)
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : 300
+    }),
   // Paddle price IDs for the two Premium plans (story 25-2): the recurring
   // €39/yr annual plan and the one-time €99 lifetime license. Kept out of source
   // (never hardcoded) so the same build points at sandbox or production prices.
@@ -54,10 +66,19 @@ export const envSchema = z.object({
   // reports `isConfigured`, and the mailer fails closed outside development.
   EMAIL_API_KEY: z.string().optional(),
   // Verified sender address for the EU provider (the "from" on the magic link).
-  // ⚠️ Story 5-3/5-6: the default is a placeholder on a RETIRED brand domain.
-  // Production MUST set this to a real Longhand-owned address on an EU domain
-  // that is verified with the email provider (Brevo). Dev-only cosmetic default.
-  EMAIL_FROM: z.string().default('no-reply@budgetplanner.eu'),
+  // Longhand-owned, verified with the email provider (Brevo) — Story 5-3.
+  // `z.string().default()` applies ONLY to `undefined` — a manifest that
+  // declares `EMAIL_FROM` with no value validates as `''`, every send is then
+  // rejected by Brevo, and nobody can sign in with nothing failing at
+  // startup. Map an empty/whitespace-only value to undefined FIRST so the
+  // default actually applies. (Deliberately NOT `.email()`-validated: unlike
+  // the numeric configs above, a strict format check here would make an
+  // already-live typo THROW inside `getConfig()` and 500 every route — not
+  // just email — trading a silent mailer failure for a total outage.)
+  EMAIL_FROM: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+    z.string().default('hello@longhandbudget.com')
+  ),
 
   // Session signing secret (HMAC-SHA256 key for signed session cookies).
   // Optional at the schema level so dev/test can run without it (a guarded,

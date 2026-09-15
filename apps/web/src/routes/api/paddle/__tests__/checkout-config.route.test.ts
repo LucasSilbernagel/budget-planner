@@ -82,14 +82,19 @@ describe('GET /api/paddle/checkout-config', () => {
     })
   })
 
-  it('fails loudly (500) rather than silently when production is misconfigured', async () => {
+  it('fails loudly (500) rather than silently when production is misconfigured, without leaking which var is missing', async () => {
     withEnv({ NODE_ENV: 'production', PADDLE_ENVIRONMENT: 'production' })
 
     const response = await GET()
     expect(response.status).toBe(500)
     const body = await response.json()
     expect(body.success).toBe(false)
-    expect(body.error).toMatch(/PADDLE_API_KEY/)
+    // Regression: this endpoint is unauthenticated and unrate-limited, so the
+    // raw assertion message (which names every unset PADDLE_* var) must never
+    // reach the caller — that would make it a free "which secrets are
+    // missing" probe. The detail is logged server-side instead.
+    expect(body.error).not.toMatch(/PADDLE_API_KEY/)
+    expect(body.error).toBe('Checkout is not available right now.')
   })
 
   it('fails loudly (500) when PADDLE_ENVIRONMENT itself was never set — never silently defaults', async () => {
@@ -102,5 +107,48 @@ describe('GET /api/paddle/checkout-config', () => {
     const body = await response.json()
     expect(body.success).toBe(false)
     expect(body.error).toMatch(/PADDLE_ENVIRONMENT is not set/)
+  })
+
+  it('fails loudly (500) when PADDLE_ENVIRONMENT is declared with an EMPTY value — same as unset', async () => {
+    // Regression: `PADDLE_ENVIRONMENT=` (declared, no value) previously
+    // skipped the tailored diagnostic above (`'' !== undefined`) and fell
+    // through to the generic catch-all message instead.
+    withEnv({ PADDLE_ENVIRONMENT: '' })
+    const response = await GET()
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body.error).toMatch(/PADDLE_ENVIRONMENT is not set/)
+  })
+
+  it('trims a price ID before handing it to the browser', async () => {
+    // A pasted secret with a trailing newline is a common shape; the webhook
+    // already trims for its match, so the browser-facing value must match.
+    withEnv({
+      NODE_ENV: 'development',
+      PADDLE_ENVIRONMENT: 'sandbox',
+      PADDLE_API_KEY: 'pdl_sandbox_secret',
+      PADDLE_CLIENT_TOKEN: 'test_client_token',
+      PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_secret',
+      PADDLE_ANNUAL_PRICE_ID: '  pri_annual\n',
+      PADDLE_LIFETIME_PRICE_ID: 'pri_lifetime\t',
+    })
+
+    const response = await GET()
+    const body = await response.json()
+
+    expect(body.annualPriceId).toBe('pri_annual')
+    expect(body.lifetimePriceId).toBe('pri_lifetime')
+  })
+
+  it('never lets an intermediary cache the response, success or failure', async () => {
+    withEnv({ NODE_ENV: 'development', PADDLE_ENVIRONMENT: 'sandbox' })
+    const ok = await GET()
+    expect(ok.status).toBe(200)
+    expect(ok.headers.get('cache-control')).toBe('no-store')
+
+    withEnv({ NODE_ENV: 'production', PADDLE_ENVIRONMENT: 'production' })
+    const failed = await GET()
+    expect(failed.status).toBe(500)
+    expect(failed.headers.get('cache-control')).toBe('no-store')
   })
 })

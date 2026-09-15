@@ -18,10 +18,9 @@
 import crypto from 'crypto'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
-import { normalizeEmail } from '@/server/api/auth/email'
+import { isValidEmail, normalizeEmail } from '@/server/api/auth/email'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { fetchPaddleCustomerEmail } from '@/server/paddle/customer-api'
-import { checkWebhookIp } from '@/server/paddle/webhook-ip-allowlist'
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import { type Currency, type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
@@ -29,9 +28,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { eq, sql } from 'drizzle-orm'
 
-/** RFC 5321 max email length. */
-const EMAIL_MAX_LENGTH = 254
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** Mirror the body-size guard `routes/api/sync/batch.ts` applies (DoS guard). */
+const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024 // 1MB
 
 /**
  * Outcome of a webhook DB write.
@@ -65,13 +63,6 @@ function mapWebhookSubscriptionStatus(status: string): SubscriptionStatus {
     default:
       return 'free'
   }
-}
-
-/** Validate email format (shape + RFC 5321 length). Run on the NORMALIZED value. */
-function isValidEmail(email?: string): boolean {
-  if (!email || typeof email !== 'string') return false
-  if (email.length > EMAIL_MAX_LENGTH) return false
-  return EMAIL_REGEX.test(email)
 }
 
 /**
@@ -165,7 +156,7 @@ function mapProvidedCurrency(currency?: string): Currency | undefined {
 async function handleSubscriptionStatusUpdate(
   customerId: string,
   subscriptionStatus: string,
-  email?: string,
+  resolveEmail: () => Promise<string | undefined>,
   currency?: string
 ): Promise<WriteResult> {
   if (!customerId || typeof customerId !== 'string') {
@@ -174,15 +165,6 @@ async function handleSubscriptionStatusUpdate(
   }
 
   const mappedStatus = mapWebhookSubscriptionStatus(subscriptionStatus)
-
-  // Normalize BEFORE validating (email.ts contract) so a whitespace-padded or
-  // 255–256-char address that is valid once trimmed is not spuriously rejected.
-  const normalizedEmail = email ? normalizeEmail(email) : undefined
-  if (normalizedEmail && !isValidEmail(normalizedEmail)) {
-    logger.warn('Webhook: invalid email for customer', { customerId })
-    return { ok: false }
-  }
-
   const mappedCurrency = mapProvidedCurrency(currency)
 
   try {
@@ -210,11 +192,18 @@ async function handleSubscriptionStatusUpdate(
         return { ok: true }
       }
 
-      // No existing user. Create one only if we have an email to key on;
+      // No existing user. Resolve the email ONLY now — every existing
+      // subscriber's status update (by far the common case) must not pay for
+      // a customer-API round trip whose result the update path never uses.
+      // Normalize BEFORE validating (email.ts contract) so a whitespace-padded
+      // or 255–256-char address that is valid once trimmed is not spuriously
+      // rejected. Create the user only if we have a VALID email to key on;
       // otherwise nothing is written — report failure so the caller returns 500.
-      if (!normalizedEmail) {
+      const email = await resolveEmail()
+      const normalizedEmail = email ? normalizeEmail(email) : undefined
+      if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
         logger.error(
-          'Webhook: subscription event for unknown customer with no resolvable email — nothing written',
+          'Webhook: subscription event for unknown customer with no valid resolvable email — nothing written',
           { customerId }
         )
         return { ok: false }
@@ -292,17 +281,11 @@ function collectPurchasedPriceIds(payload?: {
  */
 async function handleLifetimePurchase(
   customerId: string,
-  email?: string,
+  resolveEmail: () => Promise<string | undefined>,
   currency?: string
 ): Promise<WriteResult> {
   if (!customerId || typeof customerId !== 'string') {
     logger.error('Webhook: invalid customer_id for lifetime purchase', { customerId })
-    return { ok: false }
-  }
-
-  const normalizedEmail = email ? normalizeEmail(email) : undefined
-  if (normalizedEmail && !isValidEmail(normalizedEmail)) {
-    logger.warn('Webhook: invalid email for lifetime buyer', { customerId })
     return { ok: false }
   }
 
@@ -322,9 +305,15 @@ async function handleLifetimePurchase(
         return { ok: true }
       }
 
-      if (!normalizedEmail) {
+      // No existing row to upgrade. Resolve the email ONLY now — an existing
+      // subscriber's grant (the UPDATE above) never needs it, so every
+      // renewal/upgrade must not pay for a customer-API round trip it
+      // discards. Validity is checked here too, right before the insert.
+      const email = await resolveEmail()
+      const normalizedEmail = email ? normalizeEmail(email) : undefined
+      if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
         logger.error(
-          'Webhook: lifetime purchase for unknown customer with no resolvable email — cannot grant',
+          'Webhook: lifetime purchase for unknown customer with no valid resolvable email — cannot grant',
           { customerId }
         )
         return { ok: false }
@@ -421,22 +410,25 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     const paddleConfig = getPaddleConfig()
 
     if (!paddleConfig.webhookSecret) {
+      // A permanently broken deployment retried forever with nothing raised
+      // beyond a log line deserves the same alerting the other 500 paths get.
+      captureError(new Error('Webhook secret not configured'), { scope: 'paddle-webhook' })
       return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
     }
 
-    // Defense-in-depth alongside the signature check below: reject requests
-    // from outside Paddle's published sending ranges. Always LOGGED so the
-    // derived ip/allowed values can be confirmed against real deliveries
-    // before flipping PADDLE_WEBHOOK_ENFORCE_IP_ALLOWLIST=true — see
-    // checkWebhookIp's docblock for why this defaults to observe-only.
-    const ipCheck = await checkWebhookIp(request)
-    if (!ipCheck.allowed) {
-      logger.warn('Webhook: request IP not in Paddle allowlist', ipCheck)
-      if (ipCheck.enforced) {
-        return json({ success: false, error: 'Request IP not allowed' }, { status: 403 })
+    // Body-size guard, BEFORE reading the body — the signature check is
+    // useless as a DoS guard if an arbitrarily large anonymous POST is
+    // buffered first. Mirrors `routes/api/sync/batch.ts`.
+    const contentLength = request.headers.get('content-length')
+    if (contentLength !== null) {
+      const parsedLength = Number.parseInt(contentLength, 10)
+      // Fail closed on a malformed header too (`NaN > MAX_WEBHOOK_BODY_SIZE`
+      // is `false`, which would otherwise silently skip the guard) — the
+      // exact DoS vector this check exists to close.
+      if (Number.isNaN(parsedLength) || parsedLength > MAX_WEBHOOK_BODY_SIZE) {
+        logger.warn('Webhook: rejected oversized or malformed content-length', { contentLength })
+        return json({ success: false, error: 'Request too large' }, { status: 413 })
       }
-    } else if (ipCheck.enforced) {
-      logger.debug('Webhook: request IP allowed', ipCheck)
     }
 
     const signature = request.headers.get('paddle-signature')
@@ -486,13 +478,22 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         return json({ success: true })
       }
 
-      const email = await resolveBuyerEmail(data)
-      const result = await handleSubscriptionStatusUpdate(customerId, status, email, currency)
+      const result = await handleSubscriptionStatusUpdate(
+        customerId,
+        status,
+        () => resolveBuyerEmail(data),
+        currency
+      )
       if (!result.ok) {
         // Nothing persisted (email unresolvable for a first-seen buyer, or a DB
         // error). Return 500 so Paddle retries rather than silently dropping a
         // paid subscriber / a lapse that should have removed access.
         logger.error('Webhook: subscription update failed to persist; returning 500 for retry', {
+          customerId,
+          eventType,
+        })
+        captureError(new Error('Webhook: subscription update failed to persist'), {
+          scope: 'paddle-webhook',
           customerId,
           eventType,
         })
@@ -533,11 +534,19 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         return json({ success: true })
       }
 
-      const email = await resolveBuyerEmail(data)
-      const result = await handleLifetimePurchase(customerId, email, currency)
+      const result = await handleLifetimePurchase(
+        customerId,
+        () => resolveBuyerEmail(data),
+        currency
+      )
       if (!result.ok) {
         logger.error('Webhook: lifetime grant failed to persist; returning 500 for retry', {
           customerId,
+        })
+        captureError(new Error('Webhook: lifetime grant failed to persist'), {
+          scope: 'paddle-webhook',
+          customerId,
+          eventType,
         })
         return json(
           { success: false, error: 'Failed to persist lifetime entitlement' },

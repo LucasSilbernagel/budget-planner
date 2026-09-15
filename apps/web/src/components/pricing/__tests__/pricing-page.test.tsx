@@ -22,11 +22,10 @@ import { PREMIUM_BENEFIT_IDS } from '../../../lib/premium/benefits'
 import { PricingPageView } from '../pricing-page'
 
 // Story 5-3 Task 2a: the Premium CTA is now `PremiumCheckoutButton`, which
-// renders a `<Link>` (signed-out branch) requiring a router in scope — hence
-// `renderWithRouter` in place of the plain RTL `render` this file used before
-// that CTA existed — and fetches `/api/paddle/checkout-config` on mount. Stub
-// that fetch so no real network call is attempted; its result is irrelevant
-// here since these tests never click the CTA.
+// fetches `/api/paddle/checkout-config` on mount regardless of auth state
+// (not auth-gated — see its module docblock). Stub that fetch so no real
+// network call is attempted; its result is irrelevant here since these tests
+// never click the CTA.
 const originalFetch = global.fetch
 beforeEach(() => {
   global.fetch = vi.fn(() =>

@@ -143,7 +143,7 @@ so each value is set a single time.
 | `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | optional | Webhook timestamp-freshness window. Default `300`. |
 | ~~`PADDLE_VENDOR_ID` / `PADDLE_PUBLIC_KEY`~~ | — | **Removed in Story 5-3** — Paddle Classic vars, unused by Billing. Do not set. |
 | `EMAIL_API_KEY` | 5-16 | Magic-link email (EU provider). Runtime secret. |
-| `EMAIL_FROM` | **5-3** | ⚠️ default is the retired `no-reply@budgetplanner.eu` — set a real verified Longhand-owned EU sender. |
+| `EMAIL_FROM` | **5-3** | Defaults to the verified Longhand sender `hello@longhandbudget.com`; override only if the Brevo-verified address changes. |
 | `PORT` / `HOST` | platform | `PORT` injected by Knative (entry defaults 8080 / `0.0.0.0`). |
 
 Generate the session secret:
@@ -180,8 +180,9 @@ Once the service is live, confirm on the **deployed** instance (verify the
 **hydrated** response, not just SSR HTML — Story 4-11 lesson):
 
 - [ ] SSR pages render.
-- [ ] `/api/calculations/*` (5-12), `/api/auth/paddle/*` (4-1), `/api/sync/*`
-      (4-18/5-15) all execute server-side.
+- [ ] `/api/calculations/*` (5-12), `/api/webhooks/paddle` (5-3), `/api/sync/*`
+      (4-18/5-15) all execute server-side. (`/api/auth/paddle/*` was the dead
+      OAuth stub — deleted by 5-3's AC-1; no longer exists.)
 - [ ] The global security-headers middleware (`apps/web/src/start.ts`, 5-8
       AC-14) is present on a **live** response (confirms `start.ts` is bundled +
       executed by this runtime). *Verified locally during AC-1 boot;

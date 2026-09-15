@@ -20,27 +20,33 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { transaction, txDelete, whereCalls, getCurrentUserSession, getPaddleConfig } = vi.hoisted(
-  () => {
-    const whereCalls: Array<{ table: unknown; arg: unknown }> = []
-    const txDelete = vi.fn((table: unknown) => ({
-      where: vi.fn((arg: unknown) => {
-        whereCalls.push({ table, arg })
-        return Promise.resolve(undefined)
-      }),
-    }))
-    const transaction = vi.fn(async (cb: (tx: { delete: typeof txDelete }) => Promise<void>) =>
-      cb({ delete: txDelete })
-    )
-    return {
-      transaction,
-      txDelete,
-      whereCalls,
-      getCurrentUserSession: vi.fn(),
-      getPaddleConfig: vi.fn(() => ({ isConfigured: false })),
-    }
+const {
+  transaction,
+  txDelete,
+  whereCalls,
+  getCurrentUserSession,
+  getPaddleConfig,
+  cancelActiveSubscriptionsForCustomer,
+} = vi.hoisted(() => {
+  const whereCalls: Array<{ table: unknown; arg: unknown }> = []
+  const txDelete = vi.fn((table: unknown) => ({
+    where: vi.fn((arg: unknown) => {
+      whereCalls.push({ table, arg })
+      return Promise.resolve(undefined)
+    }),
+  }))
+  const transaction = vi.fn(async (cb: (tx: { delete: typeof txDelete }) => Promise<void>) =>
+    cb({ delete: txDelete })
+  )
+  return {
+    transaction,
+    txDelete,
+    whereCalls,
+    getCurrentUserSession: vi.fn(),
+    getPaddleConfig: vi.fn(() => ({ isConfigured: false })),
+    cancelActiveSubscriptionsForCustomer: vi.fn().mockResolvedValue(undefined),
   }
-)
+})
 
 vi.mock('@budget-planner/db', () => ({ db: { transaction } }))
 // Preserve real drizzle exports (schema.ts needs `sql` at module load); only
@@ -51,6 +57,7 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 })
 vi.mock('./auth/paddle', () => ({ getCurrentUserSession }))
 vi.mock('@budget-planner/config', () => ({ getPaddleConfig }))
+vi.mock('../paddle/subscription-api', () => ({ cancelActiveSubscriptionsForCustomer }))
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn() } }))
 
 import {
@@ -166,6 +173,52 @@ describe('deleteUserAccount', () => {
 
     expect(result).toEqual({ success: true })
     expect(transaction).toHaveBeenCalledTimes(1)
+    expect(cancelActiveSubscriptionsForCustomer).not.toHaveBeenCalled()
+  })
+
+  it('cancels the Paddle subscription for the account customer id when configured', async () => {
+    getCurrentUserSession.mockResolvedValue(authedSession('user-A', 'ctm_123'))
+    getPaddleConfig.mockReturnValue({ isConfigured: true })
+
+    const result = await deleteUserAccount(req())
+
+    expect(result).toEqual({ success: true })
+    expect(cancelActiveSubscriptionsForCustomer).toHaveBeenCalledWith('ctm_123')
+    expect(transaction).toHaveBeenCalledTimes(1)
+  })
+
+  it('still succeeds and still erases when the Paddle cancel call throws', async () => {
+    getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
+    getPaddleConfig.mockReturnValue({ isConfigured: true })
+    cancelActiveSubscriptionsForCustomer.mockRejectedValueOnce(new Error('paddle down'))
+
+    const result = await deleteUserAccount(req())
+
+    expect(result).toEqual({ success: true })
+    expect(transaction).toHaveBeenCalledTimes(1)
+  })
+
+  it('still succeeds and still erases when the Paddle cancel step HANGS past its overall deadline (not just an individual request timeout)', async () => {
+    // Regression: each Paddle HTTP call inside `cancelActiveSubscriptionsForCustomer`
+    // has its own request timeout, but nothing previously bounded the WHOLE
+    // step — a customer with many open subscriptions could still block
+    // erasure indefinitely. A never-resolving mock proves the outer deadline,
+    // not any inner one, is what unblocks this.
+    vi.useFakeTimers()
+    try {
+      getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
+      getPaddleConfig.mockReturnValue({ isConfigured: true })
+      cancelActiveSubscriptionsForCustomer.mockReturnValue(new Promise(() => {}))
+
+      const resultPromise = deleteUserAccount(req())
+      await vi.advanceTimersByTimeAsync(8000)
+      const result = await resultPromise
+
+      expect(result).toEqual({ success: true })
+      expect(transaction).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('propagates a transaction failure as an error result (rolled back, not 500-crash)', async () => {

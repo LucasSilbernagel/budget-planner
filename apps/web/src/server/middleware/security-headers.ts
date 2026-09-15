@@ -84,10 +84,15 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  *                  framed; it does NOT affect us framing Paddle (that's `frame-src`).
  * - `base-uri`/`form-action`/`object-src`  lock the base tag, form posts, and plugins.
  *
- * Server-side-only Paddle Billing hosts (`api.paddle.com` /
- * `sandbox-api.paddle.com`) are called from server routes, never the browser —
- * intentionally NOT listed. (`cdn.paddle.com`, for the Paddle.js checkout
- * script, is already allow-listed in `script-src`.)
+ * The server's own Paddle Billing REST calls (`api.paddle.com` /
+ * `sandbox-api.paddle.com` — the webhook handler, the customer/subscription
+ * APIs) need no `connect-src` entry; those never originate from the browser.
+ * `https://*.paddle.com` IS listed in `connect-src` below anyway — since
+ * story 5-3's Task 2a, `Paddle.PricePreview()` (`lib/paddle/checkout.ts`) is
+ * a genuine BROWSER call to Paddle's API for localized pricing, alongside the
+ * pre-existing `frame-src`/`child-src` entries for the checkout overlay.
+ * (`cdn.paddle.com`, for the Paddle.js checkout script itself, is separately
+ * allow-listed in `script-src`.)
  */
 export function buildContentSecurityPolicy(nonce: string): string {
   // Defensive: the nonce is interpolated raw into the header, so a value
@@ -121,10 +126,12 @@ export function buildContentSecurityPolicy(nonce: string): string {
  *
  * `payment=()` disables the Payment Request API. Paddle Checkout renders in its
  * own `*.paddle.com` iframe and does not need the top document's Payment Request
- * permission for card entry. NOTE (story sec-1): Paddle billing is not yet live
- * (stub — story 5-3); when it is, verify a real checkout (esp. Apple/Google Pay,
- * which CAN use the Payment Request API) still works under `payment=()` before
- * production. If it breaks, relax to `payment=(self "https://checkout.paddle.com")`.
+ * permission for card entry. Paddle billing went live under story 5-3; a real
+ * checkout (annual + lifetime) was confirmed working end-to-end under this
+ * policy in both sandbox and production. Apple/Google Pay specifically (which
+ * CAN use the Payment Request API) have not been separately verified — see the
+ * verification runbook's wallet-check step. If a wallet method ever breaks,
+ * relax to `payment=(self "https://checkout.paddle.com")`.
  */
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=()'
 

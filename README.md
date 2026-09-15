@@ -160,10 +160,13 @@ A full production or paid-tier deployment additionally requires the server secre
 | `SESSION_SECRET` | Server | HMAC-SHA256 key for signed session cookies. **Required in production** - authentication fails closed if it is missing or shorter than 32 characters. Generate with `openssl rand -hex 32`. In development it may be omitted (an insecure fallback is used with a warning). |
 | `SITE_URL` | Server | Public HTTPS origin of the deployed app. **Required in production** - it fails closed if the value is missing, `localhost`, or non-HTTPS, because magic-link emails build absolute links from it. Defaults to `http://localhost:5173` in development. |
 | `EMAIL_API_KEY` | Server | API key for the EU transactional-email provider (Brevo) that sends magic-link login emails. Required in production for the paid tier - the mailer fails closed outside development. A runtime secret; never commit it. |
-| `EMAIL_FROM` | Server | Verified sender address for magic-link emails. ⚠️ If unset it falls back to a legacy address on a retired brand domain, so set it explicitly in production. |
-| `PADDLE_ENVIRONMENT` | Server | Selects the Paddle billing environment, `sandbox` or `production`. Defaults to `sandbox`. |
+| `EMAIL_FROM` | Server | Verified sender address for magic-link emails. Defaults to the Longhand-owned, Brevo-verified `hello@longhandbudget.com`. |
+| `PADDLE_ENVIRONMENT` | Server | Selects the Paddle billing environment, `sandbox` or `production`. Defaults to `sandbox` everywhere EXCEPT `GET /api/paddle/checkout-config`, which refuses to serve a default and 500s if this is unset. |
 | `PADDLE_API_KEY` | Server | Paddle billing API key for the paid tier. A runtime secret. |
+| `PADDLE_CLIENT_TOKEN` | Client-safe | Browser token for Paddle.js checkout. Not a secret — safe to expose via `/api/paddle/checkout-config`. |
 | `PADDLE_WEBHOOK_SECRET` | Server | Secret used to verify Paddle billing webhook signatures. A runtime secret. |
+| `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | Client-safe | Live Paddle price IDs for the €39/yr and €99 lifetime plans. Must differ from each other. |
+| `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | Server | Webhook timestamp-freshness window, in seconds. Optional, defaults to `300`. |
 | `VITE_FORMSPARK_FORM_ID` | Client | Public identifier for the in-app contact form, not a secret. When unset, the contact form shows "temporarily unavailable." |
 | `VITE_COUNTERDEV_ID` | Client | Public identifier for counter.dev analytics, not a secret. When unset, no analytics script is loaded. |
 

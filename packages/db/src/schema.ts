@@ -453,11 +453,14 @@ export const categories = pgTable(
 // One fixed-window counter per (scope, subject, windowStart) bucket, shared
 // across app instances so horizontal scaling can't multiply the effective limit.
 // Backs BOTH the sync per-user limiter AND the auth limiters (magic-link
-// request per-IP/per-email, verify per-IP, Paddle callback per-IP), replacing
-// the former in-memory single-instance `sliding-window.ts`.
+// request per-IP/per-email, verify per-IP), replacing the former in-memory
+// single-instance `sliding-window.ts`. The Paddle OAuth callback route this
+// once also rate-limited was deleted by story 5-3 (AC-1); its 'paddle-cb'
+// scope was removed from the union with it — no CHECK constraint or prune
+// query ever referenced the value, so this was doc-only drift.
 //
 // - `scope`   namespaces buckets so an IP/email/user can never consume another
-//             bucket's budget: 'ip' | 'email' | 'login-verify' | 'paddle-cb' | 'sync'.
+//             bucket's budget: 'ip' | 'email' | 'login-verify' | 'sync'.
 // - `subject` is the bucket key within a scope (IP string, lowercased email, or userId).
 // - `userId`  is populated ONLY for the 'sync' scope (FK → users), so account
 //             erasure (account.ts) still removes a user's sync counters; it is

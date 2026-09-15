@@ -76,7 +76,6 @@ export function PricingPageView(): React.ReactElement {
               tagline="Everything in Free, plus:"
               features={PREMIUM_FEATURE_LIST}
               ctaLabel="Get Premium"
-              ctaHref="/login"
               ctaPrimary
               ctaElement={<PremiumCheckoutButton />}
               recommended
@@ -161,7 +160,20 @@ const PREMIUM_FEATURE_LIST: readonly string[] = PREMIUM_BENEFIT_IDS.map(
   (id) => PREMIUM_FEATURES[id]
 )
 
-interface PlanCardProps {
+/**
+ * A card's CTA is EITHER a plain `<a href={ctaHref}>{ctaLabel}</a>` OR a
+ * custom element (story 5-3, Task 2a — the Premium card's real Paddle
+ * checkout button, which needs client state a static href/label pair cannot
+ * express: an annual/lifetime toggle and a real `Paddle.Checkout.open` call).
+ * A discriminated union, not two independently-optional props: the old shape
+ * type-checked a card passing NEITHER, which rendered `<a href={undefined}>`
+ * — a CTA that goes nowhere and isn't keyboard-focusable.
+ */
+type PlanCardCta =
+  | { ctaHref: string; ctaElement?: undefined }
+  | { ctaHref?: undefined; ctaElement: React.ReactNode }
+
+type PlanCardProps = {
   name: string
   /** Headline price, e.g. "€0" or "€39". */
   price: string
@@ -173,20 +185,11 @@ interface PlanCardProps {
   tagline: string
   features: readonly string[]
   ctaLabel: string
-  ctaHref: string
   /** Solid (blue) CTA for the recommended plan; outlined otherwise. */
   ctaPrimary: boolean
-  /**
-   * Overrides the plain `<a>` CTA with a custom element (story 5-3, Task 2a —
-   * the Premium card's real Paddle checkout button, which needs client state
-   * the static `ctaHref`/`ctaLabel` pair cannot express: an annual/lifetime
-   * toggle and an auth-gated checkout-vs-sign-in branch). `ctaLabel`/`ctaHref`
-   * still drive the Free card, unaffected.
-   */
-  ctaElement?: React.ReactNode
   /** Highlight this card with a ring and a "Recommended" badge. */
   recommended?: boolean
-}
+} & PlanCardCta
 
 function PlanCard({
   name,

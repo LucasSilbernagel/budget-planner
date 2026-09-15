@@ -239,3 +239,231 @@ describe('PremiumCheckoutButton — signed in', () => {
     expect(initializePaddle).not.toHaveBeenCalled()
   })
 })
+
+describe('PremiumCheckoutButton — already Premium', () => {
+  it('shows a status message instead of the checkout toggle for an active subscriber', () => {
+    stubConfigFetch(CONFIGURED)
+    render(
+      <SessionSeedProvider
+        seed={{
+          isAuthenticated: true,
+          userId: 'u1',
+          email: 'buyer@example.com',
+          subscriptionStatus: 'active',
+        }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    expect(screen.getByText(/already have an active premium subscription/i)).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Get Premium' })).not.toBeInTheDocument()
+  })
+
+  it('shows a status message instead of the checkout toggle for a lifetime holder', () => {
+    stubConfigFetch(CONFIGURED)
+    render(
+      <SessionSeedProvider
+        seed={{
+          isAuthenticated: true,
+          userId: 'u1',
+          email: 'buyer@example.com',
+          subscriptionStatus: 'lifetime',
+        }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    expect(screen.getByText(/already have lifetime premium access/i)).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
+  it('shows a status message (not the toggle) for a past_due subscriber — a duplicate charge is exactly what this guard prevents', () => {
+    stubConfigFetch(CONFIGURED)
+    render(
+      <SessionSeedProvider
+        seed={{
+          isAuthenticated: true,
+          userId: 'u1',
+          email: 'buyer@example.com',
+          subscriptionStatus: 'past_due',
+        }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    expect(screen.getByText(/payment issue/i)).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
+  it('still shows the checkout toggle for canceled/free/null statuses — canceled has nothing open, checkout is the correct resubscribe path', () => {
+    for (const subscriptionStatus of ['canceled', 'free', null] as const) {
+      stubConfigFetch(CONFIGURED)
+      const { unmount } = render(
+        <SessionSeedProvider
+          seed={{
+            isAuthenticated: true,
+            userId: 'u1',
+            email: 'buyer@example.com',
+            subscriptionStatus,
+          }}
+        >
+          <PremiumCheckoutButton />
+        </SessionSeedProvider>
+      )
+      expect(screen.getByRole('radiogroup')).toBeInTheDocument()
+      unmount()
+    }
+  })
+})
+
+describe('PremiumCheckoutButton — plan toggle a11y', () => {
+  it('disables a plan whose price ID is not configured, up front — not just at click-time', async () => {
+    stubConfigFetch({
+      isConfigured: true,
+      environment: 'sandbox',
+      clientToken: 'test_client_token',
+      annualPriceId: 'pri_annual_test',
+      lifetimePriceId: null,
+    })
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    expect(await screen.findByRole('radio', { name: /^Annual/ })).not.toBeDisabled()
+    expect(screen.getByRole('radio', { name: /^Lifetime/ })).toBeDisabled()
+  })
+
+  it('auto-selects an enabled plan when the DEFAULT selection (annual) is the disabled one — the radiogroup is never entirely keyboard-unreachable', async () => {
+    // Regression: `plan` defaults to 'annual'. If ONLY the annual price ID is
+    // missing, the old logic left `tabIndex={0}` on the disabled annual radio
+    // and -1 on the enabled lifetime radio — no radio in the group was ever
+    // Tab-reachable at all.
+    stubConfigFetch({
+      isConfigured: true,
+      environment: 'sandbox',
+      clientToken: 'test_client_token',
+      annualPriceId: null,
+      lifetimePriceId: 'pri_lifetime_test',
+    })
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    // The Lifetime radio is present from the very first render (both options
+    // always render; only `disabled` depends on config), so `findByRole`
+    // alone would resolve before the config fetch settles and the
+    // auto-correction effect runs. Wait for the corrected state explicitly.
+    const lifetime = await screen.findByRole('radio', { name: /^Lifetime/, checked: true })
+    expect(lifetime).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('radio', { name: /^Annual/ })).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('roving tabIndex: only the selected radio is Tab-reachable', async () => {
+    stubConfigFetch(CONFIGURED)
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    const annual = await screen.findByRole('radio', { name: /^Annual/ })
+    const lifetime = screen.getByRole('radio', { name: /^Lifetime/ })
+    expect(annual).toHaveAttribute('tabindex', '0')
+    expect(lifetime).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('ArrowRight moves BOTH focus and selection to the next plan', async () => {
+    stubConfigFetch(CONFIGURED)
+    const user = userEvent.setup()
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    const annual = await screen.findByRole('radio', { name: /^Annual/ })
+    annual.focus()
+    await user.keyboard('{ArrowRight}')
+
+    const lifetime = screen.getByRole('radio', { name: /^Lifetime/ })
+    expect(lifetime).toHaveAttribute('aria-checked', 'true')
+    expect(lifetime).toHaveFocus()
+  })
+
+  it('ArrowRight wraps from the last plan back to the first', async () => {
+    stubConfigFetch(CONFIGURED)
+    const user = userEvent.setup()
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    const lifetime = await screen.findByRole('radio', { name: /^Lifetime/ })
+    lifetime.focus()
+    await user.keyboard('{ArrowRight}')
+
+    const annual = screen.getByRole('radio', { name: /^Annual/ })
+    expect(annual).toHaveAttribute('aria-checked', 'true')
+    expect(annual).toHaveFocus()
+  })
+
+  it('ArrowRight skips a disabled (unconfigured-price) plan — proven by NEVER focusing it, not just by landing back on the start', async () => {
+    // With only two plans, "skips the disabled one and wraps back to the
+    // start" is indistinguishable from "the handler did nothing at all" by
+    // outcome alone — deleting the keydown handler entirely would leave this
+    // exact assertion green (caught by the 2026-09-15 #3 review). Spy on
+    // `focus` directly to prove `handleRadioKeyDown`'s logic actually ran
+    // and specifically chose the enabled option, rather than merely never
+    // having moved.
+    stubConfigFetch({
+      isConfigured: true,
+      environment: 'sandbox',
+      clientToken: 'test_client_token',
+      annualPriceId: 'pri_annual_test',
+      lifetimePriceId: null,
+    })
+    const user = userEvent.setup()
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    const annual = await screen.findByRole('radio', { name: /^Annual/ })
+    const lifetime = screen.getByRole('radio', { name: /^Lifetime/ })
+    const annualFocusSpy = vi.spyOn(annual, 'focus')
+    const lifetimeFocusSpy = vi.spyOn(lifetime, 'focus')
+    annual.focus()
+    annualFocusSpy.mockClear()
+
+    await user.keyboard('{ArrowRight}')
+
+    expect(annual).toHaveAttribute('aria-checked', 'true')
+    expect(annual).toHaveFocus()
+    // The handler DID run and DID choose a target — it just landed back on
+    // the only enabled option, since Lifetime is disabled.
+    expect(annualFocusSpy).toHaveBeenCalled()
+    expect(lifetimeFocusSpy).not.toHaveBeenCalled()
+  })
+})
