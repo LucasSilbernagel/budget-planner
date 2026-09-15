@@ -10,6 +10,9 @@
 
 import type { ServerChange } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { useBalanceStore } from '../../../stores/balanceStore'
+import { useCategoryStore } from '../../../stores/categoryStore'
+import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
@@ -212,5 +215,181 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
   it('does NOT touch the active profile on a non-profile (income) pull', () => {
     applyServerChangesToStores([incomeChange()])
     expect(useProfileStore.getState().activeProfileId).toBe('local-default')
+  })
+})
+
+describe('applyServerChangesToStores — placeholder re-home on reconcile (Story 54.4, AC-6)', () => {
+  const TS = '2026-09-15T00:00:00.000Z'
+  const OTHER_REAL = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+
+  beforeEach(() => {
+    useProfileStore.setState({
+      profiles: [
+        {
+          id: 'local-default',
+          userId: '',
+          name: 'Main Profile',
+          isDefault: true,
+          currency: 'NONE',
+        },
+      ],
+      activeProfileId: 'local-default',
+    })
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'stamped-placeholder',
+          profileId: 'local-default',
+          userId: 0,
+          name: 'Added before the server profile arrived',
+          amount: 1,
+          frequency: 'monthly',
+          categoryId: null,
+          createdAt: TS,
+          updatedAt: TS,
+        },
+        {
+          id: 'stamped-other-real',
+          profileId: OTHER_REAL,
+          userId: 0,
+          name: 'Belongs to a different real profile',
+          amount: 2,
+          frequency: 'monthly',
+          categoryId: null,
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-placeholder',
+          profileId: 'local-default',
+          userId: 0,
+          name: 'Rent',
+          amount: 1,
+          frequency: 'monthly',
+          categoryId: null,
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'sav-placeholder',
+          profileId: 'local-default',
+          name: 'Fund',
+          targetAmount: null,
+          currentBalance: 1,
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'bal-placeholder',
+          profileId: 'local-default',
+          type: 'investment',
+          name: 'ISA',
+          currentBalance: 1,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+    useCategoryStore.setState({
+      categories: [
+        {
+          id: 'cat-placeholder',
+          userId: 0,
+          profileId: 'local-default',
+          name: 'Groceries',
+          kind: 'expense',
+          isDeleted: false,
+          createdAt: TS,
+          updatedAt: TS,
+        },
+      ],
+    })
+  })
+
+  it('re-homes rows and categories stamped with a dropped placeholder onto the new active profile', () => {
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+
+    expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
+    const income = useIncomeStore.getState().incomeSources
+    expect(income.find((row) => row.id === 'stamped-placeholder')?.profileId).toBe(
+      SERVER_PROFILE_DEFAULT
+    )
+    expect(useExpenseStore.getState().expenses[0]?.profileId).toBe(SERVER_PROFILE_DEFAULT)
+    expect(useSavingsStore.getState().savingsGoals[0]?.profileId).toBe(SERVER_PROFILE_DEFAULT)
+    expect(useBalanceStore.getState().entries[0]?.profileId).toBe(SERVER_PROFILE_DEFAULT)
+    expect(useCategoryStore.getState().categories[0]?.profileId).toBe(SERVER_PROFILE_DEFAULT)
+  })
+
+  it('leaves a row stamped with a different REAL profile untouched', () => {
+    // The other real profile is IN the store (code review 54.4): a guard that
+    // compared profile objects by identity rather than id would re-home its rows.
+    useProfileStore.setState({
+      profiles: [
+        {
+          id: 'local-default',
+          userId: '',
+          name: 'Main Profile',
+          isDefault: true,
+          currency: 'NONE',
+        },
+        { id: OTHER_REAL, userId: 'u-1', name: 'Real', isDefault: false, currency: 'NONE' },
+      ],
+      activeProfileId: 'local-default',
+    })
+
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+
+    const income = useIncomeStore.getState().incomeSources
+    expect(income.find((row) => row.id === 'stamped-other-real')?.profileId).toBe(OTHER_REAL)
+  })
+
+  it('re-homes nothing when no placeholder was dropped', () => {
+    useProfileStore.setState({
+      profiles: [
+        { id: OTHER_REAL, userId: 'u-1', name: 'Real', isDefault: true, currency: 'NONE' },
+      ],
+      activeProfileId: OTHER_REAL,
+    })
+
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')])
+
+    // 'local-default' is not a profile in the store at all, so it was not dropped
+    // by this reconcile and must not be rewritten.
+    const income = useIncomeStore.getState().incomeSources
+    expect(income.find((row) => row.id === 'stamped-placeholder')?.profileId).toBe('local-default')
+  })
+
+  it('keeps the placeholder when a store write throws, so the next reconcile finishes the re-home', () => {
+    const original = useExpenseStore.setState
+    useExpenseStore.setState = () => {
+      throw new Error('QuotaExceededError')
+    }
+    try {
+      applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+    } finally {
+      useExpenseStore.setState = original
+    }
+
+    // The failed reconcile must not have dropped the placeholder...
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).toContain('local-default')
+
+    // ...so the next pull that delivers profiles completes the re-home.
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+    expect(useExpenseStore.getState().expenses[0]?.profileId).toBe(SERVER_PROFILE_DEFAULT)
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).not.toContain('local-default')
   })
 })

@@ -28,6 +28,12 @@ export interface ClientSavingsGoal {
   // device, so a server pull reconciles by this id with no duplicates. Replaces
   // the old negative-integer temp id.
   id: string
+  // Owning profile (Story 54.4, FR79). Stamped by the STORE on create with the
+  // active profile; a pulled row carries the server's value. Null/ABSENT means
+  // unscoped — rows persisted before 54.4 have no key at all — and is visible
+  // under every profile (see apps/web/src/lib/profile-scope.ts). Deliberately not
+  // on the `ClientNew*` input: an edit form must never re-home a row.
+  profileId?: string | null
   name: string
   // null ⇒ savings account (no target); a positive integer ⇒ goal (Story 16-1).
   // "No target" is an absent value, never a sentinel 0.

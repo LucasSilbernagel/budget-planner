@@ -279,6 +279,31 @@ export const useProfileStore = create<ProfileState>()(
         profiles: state.profiles,
         activeProfileId: state.activeProfileId,
       }),
+      // Code review of story 54.4 (HIGH): persist once after every successful
+      // rehydrate, so the default profile's id is SAVED on a fresh browser.
+      //
+      // ⚠️ WHY. `DEFAULT_PROFILE.id` is minted at MODULE LOAD, and a free user
+      // never writes this store. zustand 4.5.7's `rehydrate()` of an empty key
+      // writes nothing back, so every page load produced a NEW default id — and
+      // since 54.4 every new row is stamped with the active profile and reads are
+      // scoped by it, a free user's rows vanished on the next reload. Writing the
+      // (possibly just-defaulted) state here makes the id stable from the first
+      // load on. For an already-saved blob this rewrites identical content.
+      //
+      // Skipped when rehydration failed (corrupt JSON, blocked storage): the store
+      // then sits at its defaults, and overwriting the unreadable blob would turn a
+      // recoverable read error into a permanent loss. A blocked-storage write is
+      // swallowed for the same reason the hydrate is (see lib/store-hydration).
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) {
+          return
+        }
+        try {
+          useProfileStore.setState({})
+        } catch (writeError) {
+          console.error('[profileStore] could not persist the active profile:', writeError)
+        }
+      },
     }
   )
 )

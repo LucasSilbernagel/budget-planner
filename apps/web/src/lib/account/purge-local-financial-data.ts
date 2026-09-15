@@ -56,7 +56,8 @@ function safely(step: () => void): void {
 export async function purgeLocalFinancialData(userId?: string): Promise<void> {
   // Income / expenses / savings have no reset action — reset the persisted slice
   // directly, then drop the localStorage entry. Each is independently guarded so
-  // one failure does not leave later stores unpurged.
+  // one failure does not leave later stores unpurged. Every profile's rows go —
+  // this is deliberately not profile-scoped (story 54.4).
   safely(() => {
     useIncomeStore.setState({ incomeSources: [] })
     useIncomeStore.persist.clearStorage()

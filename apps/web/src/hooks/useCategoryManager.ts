@@ -105,6 +105,10 @@ const NOT_FOUND: CategoryValidationError = {
   message: 'Category not found',
 }
 
+// ⚠️ Deliberately NOT profile-scoped (story 54.4): `deleteCategory` below
+// un-assigns the category from EVERY local row, whichever profile owns it, so the
+// count shown before confirming must count the same set. Scoping only one of them
+// would make the dialog under-report what the delete touches.
 function countRowsUsing(id: string): number {
   const income = useIncomeStore
     .getState()
@@ -201,6 +205,7 @@ export function useCategoryManager(): UseCategoryManagerResult {
  * modal. Confirming a destructive action against a stale number is precisely
  * the failure the count exists to prevent.
  */
+// ⚠️ Unscoped for the same reason as `countRowsUsing` (story 54.4).
 export function useCategoryRowCount(id: string | null | undefined): number {
   const incomeSources = useIncomeStore((state) => state.incomeSources)
   const expenses = useExpenseStore((state) => state.expenses)

@@ -68,6 +68,12 @@ export interface ClientBalanceTracking {
   // device, so a server pull reconciles by this id with no duplicates. Replaces
   // the old negative-integer temp id.
   id: string
+  // Owning profile (Story 54.4, FR79). Stamped by the STORE on create with the
+  // active profile; a pulled row carries the server's value. Null/ABSENT means
+  // unscoped — rows persisted before 54.4 have no key at all — and is visible
+  // under every profile (see apps/web/src/lib/profile-scope.ts). Deliberately not
+  // on the `ClientNew*` input: an edit form must never re-home a row.
+  profileId?: string | null
   type: FinanceType
   name: string
   currentBalance: number // In cents (can be negative for debts)

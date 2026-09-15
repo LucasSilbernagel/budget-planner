@@ -24,11 +24,14 @@ import {
   withTimeline,
 } from '@budget-planner/core/services/balanceTracking'
 import type { FinanceType } from '@budget-planner/db'
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
+import { scopeToActiveProfile } from '../lib/profile-scope'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
+import { useProfileStore } from './profileStore'
 
 // ============================================================================
 // State Definition
@@ -94,6 +97,9 @@ export const useBalanceStore = create<BalanceState>()(
         const newEntry: ClientBalanceTracking = {
           ...toClientBalanceTracking(data),
           sortOrder: nextSortOrder(get().entries),
+          // Story 54.4 (FR79): stamp the owning profile, or the row would show under
+          // every profile. Read at call time, like `categoryStore`'s create path.
+          profileId: useProfileStore.getState().activeProfileId ?? null,
         }
 
         // Update state
@@ -230,6 +236,16 @@ export const useBalanceStore = create<BalanceState>()(
       // here. Do not add partitioning to this function — it would encode agreement
       // with the SQL for a state in which the list is already wrong on screen.
       //
+      // ⚠️ SUPERSEDED BY STORY 54.4 (FR79) — the paragraph above is history. The
+      // fix did NOT make these arrays single-profile: FR79 chose to FILTER READS by
+      // the active profile rather than clear the arrays on a switch, so a
+      // multi-profile array is now the normal, correct state and the list on screen
+      // is scoped (`lib/profile-scope`). The conclusion still holds for a different
+      // reason: numbering the whole array by createdAt/id gives every profile's rows
+      // the SAME RELATIVE order as the SQL's per-partition numbering (a subset of a
+      // sorted sequence stays sorted), and `sortOrder` is an order, not an index —
+      // only the values differ, never the order. Still do not add partitioning.
+      //
       // ⚠️ This list previously displayed NEWEST-FIRST, so ordering the backfill by
       // createdAt ASC REVERSES it once, on purpose (34.1a decision 1). The app is
       // pre-launch, so no user's data is affected.
@@ -284,34 +300,52 @@ export const useBalanceStore = create<BalanceState>()(
 // ============================================================================
 
 /**
- * Get all balance entries
+ * ⚠️ PROFILE-SCOPED (story 54.4, FR79). `entries` holds rows from every profile
+ * this device has seen, and a profile switch does not clear it (FR79's decision),
+ * so EVERY hook below that derives from entries must scope through
+ * `lib/profile-scope`. A new hook that reads `state.entries` directly puts another
+ * profile's balances back into net worth — the exact defect 54.4 closed.
+ *
+ * Array hooks derive in `useMemo` over {@link useBalanceEntries} (a stable identity
+ * across renders — the old `useBalanceEntriesByType` built a new array inside the
+ * selector); number hooks may scope inside the selector, since a number passes
+ * `Object.is`. `getState()` callers (sync seeding, account purge) are deliberately
+ * unscoped: they operate on every local row on purpose.
  */
-export const useBalanceEntries = (): ClientBalanceTracking[] =>
-  useBalanceStore((state) => state.entries)
+
+/**
+ * Get all balance entries for the active profile
+ */
+export const useBalanceEntries = (): ClientBalanceTracking[] => {
+  const rows = useBalanceStore((state) => state.entries)
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
+}
 
 /**
  * Get balance entries with timeline calculations
  */
-export const useBalanceEntriesWithTimeline = (): BalanceTrackingWithTimeline[] =>
-  useBalanceStore((state) => state.entries.map(withTimeline))
+export const useBalanceEntriesWithTimeline = (): BalanceTrackingWithTimeline[] => {
+  const rows = useBalanceEntries()
+  return useMemo(() => rows.map(withTimeline), [rows])
+}
 
 /**
  * Get filtered balance entries with timeline
  */
-export const useFilteredBalanceEntries = (): BalanceTrackingWithTimeline[] =>
-  useBalanceStore((state) => {
-    const entriesWithTimeline = state.entries.map(withTimeline)
-    return filterBalanceTracking(entriesWithTimeline, state.filter)
-  })
+export const useFilteredBalanceEntries = (): BalanceTrackingWithTimeline[] => {
+  const rows = useBalanceEntriesWithTimeline()
+  const filter = useBalanceStore((state) => state.filter)
+  return useMemo(() => filterBalanceTracking(rows, filter), [rows, filter])
+}
 
 /**
  * Get entries by type (investment, debt or asset)
  */
-export const useBalanceEntriesByType = (type: FinanceType): BalanceTrackingWithTimeline[] =>
-  useBalanceStore((state) => {
-    const entriesWithTimeline = state.entries.map(withTimeline)
-    return entriesWithTimeline.filter((entry) => entry.type === type)
-  })
+export const useBalanceEntriesByType = (type: FinanceType): BalanceTrackingWithTimeline[] => {
+  const rows = useBalanceEntriesWithTimeline()
+  return useMemo(() => rows.filter((entry) => entry.type === type), [rows, type])
+}
 
 /**
  * Get investment entries
@@ -335,15 +369,26 @@ export const useDebtEntries = (): BalanceTrackingWithTimeline[] => useBalanceEnt
  */
 export const useAssetEntries = (): BalanceTrackingWithTimeline[] => useBalanceEntriesByType('asset')
 
+/** Sum of `currentBalance` over the active profile's entries of one type. */
+function totalBalanceOfType(
+  entries: readonly ClientBalanceTracking[],
+  activeProfileId: string | null,
+  type: FinanceType
+): number {
+  return scopeToActiveProfile(entries, activeProfileId)
+    .filter((e) => e.type === type)
+    .reduce((sum, entry) => sum + entry.currentBalance, 0)
+}
+
 /**
  * Get total investment balance
  */
-export const useTotalInvestmentBalance = (): number =>
-  useBalanceStore((state) =>
-    state.entries
-      .filter((e) => e.type === 'investment')
-      .reduce((sum, entry) => sum + entry.currentBalance, 0)
+export const useTotalInvestmentBalance = (): number => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useBalanceStore((state) =>
+    totalBalanceOfType(state.entries, activeProfileId, 'investment')
   )
+}
 
 /**
  * Get total balance of assets owned outright (story 43.4, FR70).
@@ -354,22 +399,18 @@ export const useTotalInvestmentBalance = (): number =>
  * lazily-mounted route. `stores/__tests__/no-method-selectors.guard.test.ts` is
  * the tripwire — and calls itself a tripwire, not a proof.
  */
-export const useTotalAssetBalance = (): number =>
-  useBalanceStore((state) =>
-    state.entries
-      .filter((e) => e.type === 'asset')
-      .reduce((sum, entry) => sum + entry.currentBalance, 0)
-  )
+export const useTotalAssetBalance = (): number => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useBalanceStore((state) => totalBalanceOfType(state.entries, activeProfileId, 'asset'))
+}
 
 /**
  * Get total debt balance
  */
-export const useTotalDebtBalance = (): number =>
-  useBalanceStore((state) =>
-    state.entries
-      .filter((e) => e.type === 'debt')
-      .reduce((sum, entry) => sum + entry.currentBalance, 0)
-  )
+export const useTotalDebtBalance = (): number => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useBalanceStore((state) => totalBalanceOfType(state.entries, activeProfileId, 'debt'))
+}
 
 // ⚠️ There is deliberately NO net-balance selector here (story 32.2, FR59).
 //
@@ -391,7 +432,10 @@ export const useBalanceFilter = (): BalanceTrackingFilter =>
 /**
  * Get entry count
  */
-export const useBalanceEntryCount = (): number => useBalanceStore((state) => state.entries.length)
+export const useBalanceEntryCount = (): number => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useBalanceStore((state) => scopeToActiveProfile(state.entries, activeProfileId).length)
+}
 
 // ============================================================================
 // Action Hooks

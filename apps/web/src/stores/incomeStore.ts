@@ -1,11 +1,14 @@
 import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/db'
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
+import { scopeToActiveProfile } from '../lib/profile-scope'
 import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
+import { useProfileStore } from './profileStore'
 
 // Client-side type for income source (with string timestamps for localStorage)
 // For free tier without auth, userId defaults to 0
@@ -14,6 +17,12 @@ interface ClientIncomeSource {
   // device, so a server pull reconciles by this id with no duplicates. Replaces
   // the old negative-integer temp id.
   id: string
+  // Owning profile (Story 54.4, FR79). Stamped by the STORE on create with the
+  // active profile; a pulled row carries the server's value. Null/ABSENT means
+  // unscoped — rows persisted before 54.4 have no key at all — and is visible
+  // under every profile (see apps/web/src/lib/profile-scope.ts). Deliberately not
+  // on the `ClientNew*` input: an edit form must never re-home a row.
+  profileId?: string | null
   userId: number
   name: string
   amount: number
@@ -128,6 +137,9 @@ export const useIncomeStore = create<IncomeState>()(
         const incomeSource: ClientIncomeSource = {
           ...toClientIncomeSource(newIncomeSource),
           sortOrder: nextSortOrder(get().incomeSources),
+          // Story 54.4 (FR79): stamp the owning profile, or the row would show under
+          // every profile. Read at call time, like `categoryStore`'s create path.
+          profileId: useProfileStore.getState().activeProfileId ?? null,
         }
         set((state) => ({
           incomeSources: sortByDisplayOrder([...state.incomeSources, incomeSource]),
@@ -267,6 +279,16 @@ export const useIncomeStore = create<IncomeState>()(
       // construction and makes the two rules identical without any partition logic
       // here. Do not add partitioning to this function — it would encode agreement
       // with the SQL for a state in which the list is already wrong on screen.
+      //
+      // ⚠️ SUPERSEDED BY STORY 54.4 (FR79) — the paragraph above is history. The
+      // fix did NOT make these arrays single-profile: FR79 chose to FILTER READS by
+      // the active profile rather than clear the arrays on a switch, so a
+      // multi-profile array is now the normal, correct state and the list on screen
+      // is scoped (`lib/profile-scope`). The conclusion still holds for a different
+      // reason: numbering the whole array by createdAt/id gives every profile's rows
+      // the SAME RELATIVE order as the SQL's per-partition numbering (a subset of a
+      // sorted sequence stays sorted), and `sortOrder` is an order, not an index —
+      // only the values differ, never the order. Still do not add partitioning.
       version: 3,
       migrate: (persisted) => {
         const state = persisted as { incomeSources?: unknown }
@@ -302,23 +324,49 @@ export const useIncomeStore = create<IncomeState>()(
 )
 
 // Selector hooks for better performance
-export const useIncomeSources = () => useIncomeStore((state) => state.incomeSources)
+/**
+ * ⚠️ PROFILE-SCOPED (story 54.4, FR79). The array holds rows from every profile
+ * this device has seen, and a profile switch does not clear it (FR79's decision),
+ * so EVERY hook below that derives from rows must read `activeProfileId` and scope
+ * through `lib/profile-scope`. A new hook that reads the raw array puts another
+ * profile's money back on screen — the exact defect 54.4 closed.
+ *
+ * Array hooks scope in `useMemo` (a stable identity across renders); number hooks
+ * may scope inside the selector, since a number passes `Object.is`. `getState()`
+ * store METHODS are deliberately NOT scoped — their callers (sync seeding, account
+ * purge, category usage) operate on every local row on purpose.
+ */
+export const useIncomeSources = (): ClientIncomeSource[] => {
+  const rows = useIncomeStore((state) => state.incomeSources)
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
+}
 
 /** Monthly-normalized cents (story 32.1) — denormalize before display. */
-export const useTotalIncome = () => useIncomeStore((state) => totalIncomeFrom(state.incomeSources))
+export const useTotalIncome = () => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useIncomeStore((state) =>
+    totalIncomeFrom(scopeToActiveProfile(state.incomeSources, activeProfileId))
+  )
+}
 
-export const useUnreadableIncomeCount = () =>
-  useIncomeStore((state) => unreadableIncomeCountFrom(state.incomeSources))
+export const useUnreadableIncomeCount = () => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useIncomeStore((state) =>
+    unreadableIncomeCountFrom(scopeToActiveProfile(state.incomeSources, activeProfileId))
+  )
+}
 
 /**
- * ⚠️ Returns a NEW array on every store update, so it fails zustand v4's `Object.is`
- * check and costs one extra re-render per update (not an infinite loop — see the
- * correction above). Pre-existing: the method-selector form it replaced had the
- * identical property. It has no consumers today; adopting it needs an equality fn
- * (`useShallow`) or memoisation at the call site.
+ * Derived in `useMemo` over the profile-scoped rows (story 54.4). It used to build
+ * a NEW array inside the zustand selector, failing v4's `Object.is` check and
+ * costing one extra re-render per store update; it has no consumers today, and
+ * scoping it was the moment to stop carrying that hazard.
  */
-export const useIncomeByFrequency = (frequency: Frequency) =>
-  useIncomeStore((state) => incomeSourcesByFrequencyFrom(state.incomeSources, frequency))
+export const useIncomeByFrequency = (frequency: Frequency): ClientIncomeSource[] => {
+  const rows = useIncomeSources()
+  return useMemo(() => incomeSourcesByFrequencyFrom(rows, frequency), [rows, frequency])
+}
 
 // Client-side persistence enabled via Zustand persist middleware
 // Data persists in localStorage across page refreshes

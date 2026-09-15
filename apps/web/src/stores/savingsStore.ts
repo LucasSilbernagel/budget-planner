@@ -4,11 +4,14 @@ import type {
 } from '@budget-planner/core/services/savingsGoals'
 import { withProgress } from '@budget-planner/core/services/savingsGoals'
 import type { SavingsGoalWithProgress } from '@budget-planner/core/services/savingsGoals'
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
+import { scopeToActiveProfile } from '../lib/profile-scope'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
+import { useProfileStore } from './profileStore'
 
 // Define the type for our store state
 interface SavingsState {
@@ -95,6 +98,9 @@ export const useSavingsStore = create<SavingsState>()(
         const goal: ClientSavingsGoal = {
           ...toClientSavingsGoal(newGoal),
           sortOrder: nextSortOrder(get().savingsGoals),
+          // Story 54.4 (FR79): stamp the owning profile, or the row would show under
+          // every profile. Read at call time, like `categoryStore`'s create path.
+          profileId: useProfileStore.getState().activeProfileId ?? null,
         }
         set((state) => ({
           savingsGoals: sortByDisplayOrder([...state.savingsGoals, goal]),
@@ -223,6 +229,16 @@ export const useSavingsStore = create<SavingsState>()(
       // here. Do not add partitioning to this function — it would encode agreement
       // with the SQL for a state in which the list is already wrong on screen.
       //
+      // ⚠️ SUPERSEDED BY STORY 54.4 (FR79) — the paragraph above is history. The
+      // fix did NOT make these arrays single-profile: FR79 chose to FILTER READS by
+      // the active profile rather than clear the arrays on a switch, so a
+      // multi-profile array is now the normal, correct state and the list on screen
+      // is scoped (`lib/profile-scope`). The conclusion still holds for a different
+      // reason: numbering the whole array by createdAt/id gives every profile's rows
+      // the SAME RELATIVE order as the SQL's per-partition numbering (a subset of a
+      // sorted sequence stays sorted), and `sortOrder` is an order, not an index —
+      // only the values differ, never the order. Still do not add partitioning.
+      //
       // ⚠️ This list previously displayed NEWEST-FIRST, so ordering the backfill by
       // createdAt ASC REVERSES it once, on purpose (34.1a decision 1). The app is
       // pre-launch, so no user's data is affected.
@@ -261,26 +277,55 @@ export const useSavingsStore = create<SavingsState>()(
 )
 
 // Selector hooks for better performance
-export const useSavingsGoals = () => useSavingsStore((state) => state.savingsGoals)
+/**
+ * ⚠️ PROFILE-SCOPED (story 54.4, FR79). The array holds rows from every profile
+ * this device has seen, and a profile switch does not clear it (FR79's decision),
+ * so EVERY hook below that derives from rows must read `activeProfileId` and scope
+ * through `lib/profile-scope`. A new hook that reads the raw array puts another
+ * profile's money back on screen — the exact defect 54.4 closed.
+ *
+ * Array hooks scope in `useMemo` (a stable identity across renders); number hooks
+ * may scope inside the selector, since a number passes `Object.is`. `getState()`
+ * store METHODS are deliberately NOT scoped — their callers (sync seeding, account
+ * purge, category usage) operate on every local row on purpose.
+ */
+export const useSavingsGoals = (): ClientSavingsGoal[] => {
+  const rows = useSavingsStore((state) => state.savingsGoals)
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
+}
 
 /**
- * ⚠️ Returns a NEW array on every store update, so it fails zustand v4's `Object.is`
- * check and costs one extra re-render per update (not an infinite loop — see the
- * correction above). Pre-existing: the method-selector form it replaced had the
- * identical property. It has no consumers today; adopting it needs an equality fn
- * (`useShallow`) or memoisation at the call site.
+ * Derived in `useMemo` over the profile-scoped rows (story 54.4). It used to build
+ * a NEW array inside the zustand selector, failing v4's `Object.is` check and
+ * costing one extra re-render per store update; it has no consumers today, and
+ * scoping it was the moment to stop carrying that hazard.
  */
-export const useSavingsGoalsWithProgress = () =>
-  useSavingsStore((state) => savingsGoalsWithProgressFrom(state.savingsGoals))
+export const useSavingsGoalsWithProgress = () => {
+  const rows = useSavingsGoals()
+  return useMemo(() => savingsGoalsWithProgressFrom(rows), [rows])
+}
 
-export const useTotalSavings = () =>
-  useSavingsStore((state) => totalSavingsFrom(state.savingsGoals))
+export const useTotalSavings = () => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useSavingsStore((state) =>
+    totalSavingsFrom(scopeToActiveProfile(state.savingsGoals, activeProfileId))
+  )
+}
 
-export const useTotalTargetAmount = () =>
-  useSavingsStore((state) => totalTargetAmountFrom(state.savingsGoals))
+export const useTotalTargetAmount = () => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useSavingsStore((state) =>
+    totalTargetAmountFrom(scopeToActiveProfile(state.savingsGoals, activeProfileId))
+  )
+}
 
-export const useOverallSavingsProgress = () =>
-  useSavingsStore((state) => overallProgressFrom(state.savingsGoals))
+export const useOverallSavingsProgress = () => {
+  const activeProfileId = useProfileStore((state) => state.activeProfileId)
+  return useSavingsStore((state) =>
+    overallProgressFrom(scopeToActiveProfile(state.savingsGoals, activeProfileId))
+  )
+}
 
 // Selector for actions
 export const useSavingsActions = () => ({

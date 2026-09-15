@@ -92,7 +92,9 @@ function applyOne(change: ServerChange): boolean {
     return true
   }
 
-  // Insert the authoritative server row keyed by its shared uuid id.
+  // Insert the authoritative server row keyed by its shared uuid id. Deliberately
+  // NOT profile-scoped (story 54.4): the server row carries its own `profileId`,
+  // and reads — not writes — decide what is visible under the active profile.
   const entity = { ...change.data, id }
   store.setState({ [collection]: [...without, entity] })
   return true
@@ -165,23 +167,78 @@ function reconcileActiveProfile(): void {
     return
   }
 
+  // Placeholders are identified by ID, not object identity (code review 54.4):
+  // `realProfiles` must stay a subset of `profiles` for an identity check to be
+  // safe, and a future `.map` would silently re-home a REAL profile's rows.
+  const realProfileIds = new Set(realProfiles.map((p) => p.id))
+  const droppedPlaceholderIds = new Set(
+    profiles.filter((p) => !realProfileIds.has(p.id)).map((p) => p.id)
+  )
+
+  const active = realProfiles.find((p) => p.id === activeProfileId)
+  // realProfiles is non-empty here (guarded above), so the fallback is defined.
+  // An already-real active profile is preserved (a deliberate switch); otherwise
+  // repoint to the server's default (or first) profile.
+  const target = active ?? realProfiles.find((p) => p.isDefault) ?? realProfiles[0]
+  if (!target) {
+    return
+  }
+
+  // Re-home BEFORE dropping the placeholders (code review 54.4). If a store write
+  // throws partway (e.g. a localStorage quota error), the placeholders are still
+  // in the list, so the next reconcile recomputes the same set and finishes the
+  // job; dropping first would leave the un-re-homed rows hidden for good.
+  rehomePlaceholderRows(droppedPlaceholderIds, target.id)
+
   // Drop un-synced bootstrap placeholders now that real profiles exist (keeps the
   // profile list authoritative). setProfiles repoints active to the first entry,
   // so we re-assert the intended active id immediately after.
   if (realProfiles.length !== profiles.length) {
     state.setProfiles(realProfiles)
   }
+  state.setActiveProfileId(target.id)
+}
 
-  const active = realProfiles.find((p) => p.id === activeProfileId)
-  if (active) {
-    // User is already on a real profile — preserve their selection.
-    state.setActiveProfileId(active.id)
+/**
+ * Move rows stamped with a dropped bootstrap placeholder onto the profile that is
+ * now active (story 54.4, FR79, AC-6).
+ *
+ * ⚠️ WHY. Reads are profile-scoped, and every locally-created row is stamped with
+ * the active profile at create time. A paid device's first rows can therefore
+ * carry the LOCAL placeholder's id — which {@link reconcileActiveProfile} is about
+ * to delete — so without this they would vanish from the screen until a seed push
+ * and a pull round-tripped them back with the server's id. The target matches
+ * where the server receives them: seeded ops carry the post-reconcile
+ * `config.profileId` (`ActiveSync.tsx`).
+ *
+ * A plain `setState`, deliberately NOT the stores' `update*` actions: this is a
+ * local re-labelling to the id the server will assign anyway, and routing it
+ * through the actions would enqueue a sync update per row.
+ *
+ * Categories are included: they were the first profile-stamped store and had the
+ * same latent disappearance on the placeholder → server transition.
+ */
+function rehomePlaceholderRows(placeholderIds: ReadonlySet<string>, targetId: string): void {
+  if (placeholderIds.size === 0) {
     return
   }
-  // realProfiles is non-empty here (guarded above), so the fallback is defined.
-  const target = realProfiles.find((p) => p.isDefault) ?? realProfiles[0]
-  if (target) {
-    state.setActiveProfileId(target.id)
+  const bindings = Object.values(ENTITY_BINDINGS).filter(
+    (binding) => binding.collection !== 'profiles'
+  )
+  for (const { store, collection } of bindings) {
+    const current = (store.getState()[collection] as Record<string, unknown>[] | undefined) ?? []
+    let changed = false
+    const next = current.map((row) => {
+      const profileId = row['profileId']
+      if (typeof profileId === 'string' && placeholderIds.has(profileId)) {
+        changed = true
+        return { ...row, profileId: targetId }
+      }
+      return row
+    })
+    if (changed) {
+      store.setState({ [collection]: next })
+    }
   }
 }
 

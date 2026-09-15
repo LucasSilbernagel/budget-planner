@@ -128,6 +128,8 @@ export async function seedLocalDataToServer(sessionUserId: string): Promise<numb
     }
     consider('category', row)
   }
+  // Every local row, deliberately NOT profile-scoped (story 54.4): the seed
+  // uploads this device's whole free-tier backlog, not just what is on screen.
   for (const row of useIncomeStore.getState().incomeSources) {
     consider('incomeSource', row)
   }
