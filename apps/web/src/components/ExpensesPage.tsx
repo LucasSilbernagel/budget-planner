@@ -6,6 +6,7 @@ import {
 import type { Frequency } from '@budget-planner/db'
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
+import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
@@ -340,7 +341,14 @@ export function ExpensesPage() {
   // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
   // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
   // and NOT `persist.hasHydrated()`.
-  const hydrated = useStoresHydrated()
+  const storesHydrated = useStoresHydrated()
+  // Story 53.1 (AC-4): a paid session's first-EVER cross-device pull on this
+  // device can still be in flight after stores hydrate. `useIsInitialSyncPending`
+  // combines a device-level "has this device ever synced" flag with this
+  // page's own emptiness check — either one being false means an established
+  // user sees no different behavior (AC-6).
+  const isInitialSyncPending = useIsInitialSyncPending(expenses.length === 0)
+  const hydrated = storesHydrated && !isInitialSyncPending
 
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">

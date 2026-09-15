@@ -35,6 +35,7 @@ import {
   sendSyncOperation,
 } from '../features/api/client'
 import { applyServerChangesToStores } from '../lib/sync/applyServerChanges'
+import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
 import { useProfileStore } from '../stores/profileStore'
 
 // ============================================================================
@@ -473,6 +474,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         changesPulledCount: result.changesPulledCount,
         lastError: result.success ? undefined : result.error,
       })
+      // Mirror into the lightweight session-status store (Story 53.1 review)
+      // so `useIsInitialSyncPending` and other leaf consumers can read this
+      // WITHOUT importing this (heavy) module — see that store's own docblock.
+      setLastPullTimestamp(result.lastPullTimestamp)
       return result
     } catch (error) {
       console.error('Pull failed:', error)

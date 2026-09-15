@@ -15,6 +15,7 @@ import type {
 } from '@budget-planner/core/finance/visualization'
 import React, { Suspense, useCallback, useMemo } from 'react'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
+import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
@@ -262,7 +263,15 @@ export function HomePage() {
    * So the page has THREE states, not two: pending, resolved-with-data, and
    * resolved-empty. `hasData` distinguishes only the last two.
    */
-  const hydrated = useStoresHydrated()
+  const storesHydrated = useStoresHydrated()
+  // Story 53.1 (AC-4): a paid session's first-EVER cross-device pull on this
+  // device can still be in flight after stores hydrate. `useIsInitialSyncPending`
+  // combines a device-level "has this device ever synced" flag with `!hasData`
+  // — either one being false means an established user sees no different
+  // behavior (AC-6): a synced-before device is never gated, and a page that
+  // already has local data is never gated even on a never-synced device.
+  const isInitialSyncPending = useIsInitialSyncPending(!hasData)
+  const hydrated = storesHydrated && !isInitialSyncPending
   const chartsReady = useChartsChunkReady()
 
   // ============================================================================

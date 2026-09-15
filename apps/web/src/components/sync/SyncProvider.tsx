@@ -23,6 +23,7 @@
  */
 
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
+import { setSyncSessionStatus } from '@/lib/sync/sessionStatusStore'
 import { type ReactElement, Suspense, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../ErrorBoundary'
 
@@ -66,6 +67,22 @@ function isPaidSyncSession(user: SessionUser | null): user is SessionUser {
   )
 }
 
+/**
+ * Whether the browser plausibly holds a session, checked via `has_session` — a
+ * deliberately NON-HttpOnly marker cookie set alongside the real `session`
+ * cookie (Story 53.1). The real session cookie is `HttpOnly` by design (XSS
+ * protection: `routes/api/auth/login/verify.ts`), so it is NEVER visible to
+ * `document.cookie` in a real browser. This function used to test for
+ * `session=` directly, which — because of that — evaluated false for every
+ * real authenticated user: the probe below never ran, and sync never worked on
+ * ANY device (not just a new one). `has_session` carries no secret (its value
+ * is meaningless; only presence matters) and is not itself trusted for
+ * anything — `/api/auth/me` below remains the sole, server-authoritative check.
+ */
+export function hasProbableSession(cookieString: string): boolean {
+  return /(?:^|;\s*)has_session=/.test(cookieString)
+}
+
 export function SyncProvider(): ReactElement | null {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [resolved, setResolved] = useState(false)
@@ -74,11 +91,24 @@ export function SyncProvider(): ReactElement | null {
   // "no paid session" — the free tier path, never a crash.
   useEffect(() => {
     let cancelled = false
+    // Reading `document.cookie` can throw `SecurityError` in a sandboxed or
+    // opaque-origin iframe / blocked site data. This effect has no boundary
+    // above it before TanStack Router's root catch (see the load-bearing
+    // ErrorBoundary note below), so an uncaught throw here would take down
+    // the whole app for that reason alone — degrade to "no probable session"
+    // instead (Story 53.1 review).
+    let cookieString = ''
+    try {
+      cookieString = typeof document !== 'undefined' ? document.cookie : ''
+    } catch {
+      cookieString = ''
+    }
     // Anonymous visitors carry no session cookie — skip the probe entirely so the
     // free / unauthenticated tier makes ZERO network calls (AC-6, review P3). Only
     // a request that actually carries a session is worth resolving server-side.
-    if (typeof document !== 'undefined' && !/(?:^|;\s*)session=/.test(document.cookie)) {
+    if (!hasProbableSession(cookieString)) {
       setResolved(true)
+      setSyncSessionStatus(true, false)
       return
     }
     fetch('/api/auth/me', { headers: { Accept: 'application/json' } })
@@ -87,12 +117,14 @@ export function SyncProvider(): ReactElement | null {
         if (!cancelled) {
           setUser(body.user ?? null)
           setResolved(true)
+          setSyncSessionStatus(true, isPaidSyncSession(body.user ?? null))
         }
       })
       .catch(() => {
         if (!cancelled) {
           setUser(null)
           setResolved(true)
+          setSyncSessionStatus(true, false)
         }
       })
     return () => {

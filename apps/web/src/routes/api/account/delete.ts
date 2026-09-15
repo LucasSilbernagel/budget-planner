@@ -18,31 +18,22 @@
  */
 
 import { deleteUserAccount } from '@/server/api/account'
+import { buildClearSessionCookies, isProductionEnv } from '@/server/api/auth/session-cookies'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
-
-function isProduction(): boolean {
-  return process.env['NODE_ENV'] === 'production'
-}
-
-/**
- * Clear the session cookie. Matches how the session is set (login/verify,
- * paddle/callback): `Secure` is added in production only.
- */
-function clearSessionCookie(): string {
-  const secureFlag = isProduction() ? '; Secure' : ''
-  return `session=; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=0`
-}
 
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   const result = await deleteUserAccount(request)
 
   if (result.success) {
-    // Erasure succeeded — clear the cookie and report success. The DB row is
+    // Erasure succeeded — clear the cookies (session + its non-HttpOnly
+    // `has_session` companion, Story 53.1) and report success. The DB row is
     // gone so the session is already unauthenticatable; the cookie clear is the
     // client-side half of signing out.
     const response = json({ success: true })
-    response.headers.set('Set-Cookie', clearSessionCookie())
+    for (const cookie of buildClearSessionCookies(isProductionEnv())) {
+      response.headers.append('Set-Cookie', cookie)
+    }
     return response
   }
 

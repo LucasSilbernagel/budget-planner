@@ -29,12 +29,11 @@ import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
 import { signSession } from '@/server/api/auth/session'
+import { buildHasSessionCookie, buildSessionCookie } from '@/server/api/auth/session-cookies'
 import { clientIpForRateLimit } from '@/server/rate-limit/client-ip'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { createFileRoute } from '@tanstack/react-router'
 
-/** 7-day session lifetime (matches the signed-session TTL in `session.ts`). */
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60
 /** CSRF cookie lifetime — aligned with the 15-min token TTL. */
 const CSRF_MAX_AGE = 15 * 60
 /** Cookie path scopes the CSRF cookie to this endpoint only. */
@@ -209,12 +208,13 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   }
 
   const headers = new Headers({ Location: '/' })
-  headers.append(
-    'Set-Cookie',
-    `session=${encodeURIComponent(
-      sessionToken
-    )}; Path=/; HttpOnly; SameSite=Lax${secureFlag()}; Max-Age=${SESSION_MAX_AGE}`
-  )
+  headers.append('Set-Cookie', buildSessionCookie(sessionToken, isProduction()))
+  // Deliberately NON-HttpOnly companion cookie (Story 53.1): carries no secret
+  // (a fixed value; only its presence is checked), set purely so client-side
+  // code (`SyncProvider.hasProbableSession`) can tell "probably signed in" is
+  // worth a server round trip without being able to read the real, HttpOnly
+  // session cookie at all — which is the point of it being HttpOnly.
+  headers.append('Set-Cookie', buildHasSessionCookie(isProduction()))
   // Clear the one-time CSRF cookie now that it has served its purpose.
   headers.append(
     'Set-Cookie',

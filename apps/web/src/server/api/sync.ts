@@ -1280,6 +1280,106 @@ export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: numbe
   return sorted.slice(0, end)
 }
 
+/**
+ * Upper bound on a supplementary exact-timestamp fetch (below). Real
+ * financial data essentially never has thousands of rows sharing one
+ * millisecond; this is a DoS guard, not an expected ceiling.
+ */
+const MAX_BOUNDARY_GROUP_SIZE = 5000
+
+interface SafeTablePage {
+  changes: ServerChange[]
+  /**
+   * The highest `updatedAt` (epoch ms) this table is now KNOWN to be
+   * completely fetched up to and including. `Infinity` when the table had no
+   * more rows beyond what was returned (fully drained by this pull).
+   */
+  safeWatermark: number
+}
+
+/**
+ * Fetch one entity table's page for a pull, guaranteed never to silently,
+ * permanently drop rows at a shared-`updatedAt` boundary (Story 53.1, AC-3;
+ * review-hardened — see the story's Review Findings).
+ *
+ * Two-phase strategy:
+ *  1. Over-fetch by one row (`cappedLimit + 1`) so the LAST row's timestamp
+ *     reveals whether the page's tail sits inside a still-open group.
+ *  2. If the group at that boundary fills the ENTIRE over-fetched window (the
+ *     degenerate case `capChangesAtTimestampBoundary` already detects), issue
+ *     ONE supplementary query for every row at that exact timestamp
+ *     (`fetchExactTimestamp`, bounded by `MAX_BOUNDARY_GROUP_SIZE`) so the
+ *     group is returned COMPLETE — not merely "not split mid-group", which is
+ *     as far as the pre-existing cross-table-only fix went.
+ *
+ * `safeWatermark` is this table's own contribution to the GLOBAL pull cursor:
+ * `getSyncChanges` takes the MINIMUM watermark across all 6 tables, because a
+ * table that stopped early (its own cap, not exhaustion) has UNSEEN rows that
+ * a cursor advanced past any other table's later timestamp would skip
+ * forever — exactly the cross-table interaction the story's code review
+ * found broken in the first version of this fix.
+ */
+async function fetchTableChangesSafely<
+  Row extends { id: string; updatedAt: Date; isDeleted: boolean },
+>(
+  entityType: ServerChange['entityType'],
+  fetchPage: (limit: number) => Promise<Row[]>,
+  fetchExactTimestamp: (timestamp: Date) => Promise<Row[]>,
+  cappedLimit: number
+): Promise<SafeTablePage> {
+  const toChange = (row: Row): ServerChange => ({
+    entityType,
+    entityId: row.id,
+    data: row,
+    updatedAt: toEpochMs(row.updatedAt),
+    isDeleted: row.isDeleted,
+  })
+
+  const rows = await fetchPage(cappedLimit + 1)
+  if (rows.length <= cappedLimit) {
+    // Exhausted: every matching row for this table was returned.
+    return { changes: rows.map(toChange), safeWatermark: Number.POSITIVE_INFINITY }
+  }
+
+  // rows.length === cappedLimit + 1 here (fetchPage never returns more than
+  // asked), so index `cappedLimit` is the first row we over-fetched to peek at.
+  const boundaryRow = rows[cappedLimit]
+  if (!boundaryRow) {
+    // Unreachable given the length check above; narrowed rather than asserted.
+    return { changes: rows.map(toChange), safeWatermark: Number.POSITIVE_INFINITY }
+  }
+  const boundaryTs = boundaryRow.updatedAt
+  const boundaryMs = boundaryTs.getTime()
+
+  const belowBoundary = rows.filter((row) => row.updatedAt.getTime() < boundaryMs)
+  if (belowBoundary.length > 0) {
+    // A safe cutoff exists strictly below the boundary timestamp — defer the
+    // whole boundary group to the next pull rather than risk returning it
+    // incomplete.
+    const lastSafeRow = belowBoundary[belowBoundary.length - 1]
+    // Unreachable (belowBoundary.length > 0 just checked); narrowed not asserted.
+    const safeWatermark = lastSafeRow ? lastSafeRow.updatedAt.getTime() : Number.NEGATIVE_INFINITY
+    return { changes: belowBoundary.map(toChange), safeWatermark }
+  }
+
+  // Degenerate case: every one of the cappedLimit+1 fetched rows shares the
+  // boundary timestamp, so this fetch alone cannot tell whether more rows
+  // exist at that exact instant. Fetch the true full group.
+  const fullGroup = await fetchExactTimestamp(boundaryTs)
+  if (fullGroup.length >= MAX_BOUNDARY_GROUP_SIZE) {
+    // Pathological: bail out rather than trust a possibly-incomplete
+    // "complete" group. Defer the whole thing — no forward progress from
+    // this table this round, but no silent loss either.
+    logger.error('[getSyncChanges] boundary group exceeds safety cap, deferring', {
+      entityType,
+      boundaryTs: boundaryTs.toISOString(),
+      size: fullGroup.length,
+    })
+    return { changes: [], safeWatermark: Number.NEGATIVE_INFINITY }
+  }
+  return { changes: fullGroup.map(toChange), safeWatermark: boundaryMs }
+}
+
 export async function getSyncChanges(
   userId: string,
   since: number | null,
@@ -1289,35 +1389,51 @@ export async function getSyncChanges(
   const cappedLimit = Math.min(Math.max(1, Math.floor(limit)), MAX_PULL_LIMIT)
   const sinceDate = since !== null ? new Date(since) : null
   const changes: ServerChange[] = []
+  const watermarks: number[] = []
 
   // Profile-scoped entity tables are pulled ONLY when an active profile is known
   // (Story 4-18 review P3). Without a profileId we must NOT fall back to "all
   // profiles", or a null / mid-switch active profile would mix other profiles'
   // rows into the active stores. `userProfiles` is user-scoped and always pulled
   // (the client needs the profile list before it can choose an active profile).
+  //
+  // ⚠️ Every table below goes through `fetchTableChangesSafely` (Story 53.1,
+  // AC-3), not a bare `.limit()` — see that function's docblock for why a
+  // per-table-only fix (the first version of this story's patch) was still
+  // provably lossy across tables, and how the GLOBAL cursor below is derived.
   if (profileId !== undefined) {
     // Income sources (profile-scoped)
-    const incomeRows = await db
-      .select()
-      .from(incomeSources)
-      .where(
-        and(
-          eq(incomeSources.userId, userId),
-          eq(incomeSources.profileId, profileId),
-          sinceDate ? gt(incomeSources.updatedAt, sinceDate) : undefined
-        )
-      )
-      .orderBy(asc(incomeSources.updatedAt))
-      .limit(cappedLimit)
-    for (const row of incomeRows) {
-      changes.push({
-        entityType: 'incomeSource',
-        entityId: row.id,
-        data: row,
-        updatedAt: toEpochMs(row.updatedAt),
-        isDeleted: row.isDeleted,
-      })
-    }
+    const income = await fetchTableChangesSafely(
+      'incomeSource',
+      (pageLimit) =>
+        db
+          .select()
+          .from(incomeSources)
+          .where(
+            and(
+              eq(incomeSources.userId, userId),
+              eq(incomeSources.profileId, profileId),
+              sinceDate ? gt(incomeSources.updatedAt, sinceDate) : undefined
+            )
+          )
+          .orderBy(asc(incomeSources.updatedAt))
+          .limit(pageLimit),
+      (timestamp) =>
+        db
+          .select()
+          .from(incomeSources)
+          .where(
+            and(
+              eq(incomeSources.userId, userId),
+              eq(incomeSources.profileId, profileId),
+              eq(incomeSources.updatedAt, timestamp)
+            )
+          )
+          .limit(MAX_BOUNDARY_GROUP_SIZE),
+      cappedLimit
+    )
+    changes.push(...income.changes)
+    watermarks.push(income.safeWatermark)
 
     // Categories (profile-scoped, Story 30.4a)
     //
@@ -1326,124 +1442,184 @@ export async function getSyncChanges(
     // the whole row — but a new ENTITY reaches no second device at all unless a
     // block like this is added. Silent: nothing fails, the data simply never
     // arrives.
-    const categoryRows = await db
-      .select()
-      .from(categories)
-      .where(
-        and(
-          eq(categories.userId, userId),
-          eq(categories.profileId, profileId),
-          sinceDate ? gt(categories.updatedAt, sinceDate) : undefined
-        )
-      )
-      .orderBy(asc(categories.updatedAt))
-      .limit(cappedLimit)
-    for (const row of categoryRows) {
-      changes.push({
-        entityType: 'category',
-        entityId: row.id,
-        data: row,
-        updatedAt: toEpochMs(row.updatedAt),
-        isDeleted: row.isDeleted,
-      })
-    }
+    const category = await fetchTableChangesSafely(
+      'category',
+      (pageLimit) =>
+        db
+          .select()
+          .from(categories)
+          .where(
+            and(
+              eq(categories.userId, userId),
+              eq(categories.profileId, profileId),
+              sinceDate ? gt(categories.updatedAt, sinceDate) : undefined
+            )
+          )
+          .orderBy(asc(categories.updatedAt))
+          .limit(pageLimit),
+      (timestamp) =>
+        db
+          .select()
+          .from(categories)
+          .where(
+            and(
+              eq(categories.userId, userId),
+              eq(categories.profileId, profileId),
+              eq(categories.updatedAt, timestamp)
+            )
+          )
+          .limit(MAX_BOUNDARY_GROUP_SIZE),
+      cappedLimit
+    )
+    changes.push(...category.changes)
+    watermarks.push(category.safeWatermark)
 
     // Expenses (profile-scoped)
-    const expenseRows = await db
-      .select()
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.userId, userId),
-          eq(expenses.profileId, profileId),
-          sinceDate ? gt(expenses.updatedAt, sinceDate) : undefined
-        )
-      )
-      .orderBy(asc(expenses.updatedAt))
-      .limit(cappedLimit)
-    for (const row of expenseRows) {
-      changes.push({
-        entityType: 'expense',
-        entityId: row.id,
-        data: row,
-        updatedAt: toEpochMs(row.updatedAt),
-        isDeleted: row.isDeleted,
-      })
-    }
+    const expense = await fetchTableChangesSafely(
+      'expense',
+      (pageLimit) =>
+        db
+          .select()
+          .from(expenses)
+          .where(
+            and(
+              eq(expenses.userId, userId),
+              eq(expenses.profileId, profileId),
+              sinceDate ? gt(expenses.updatedAt, sinceDate) : undefined
+            )
+          )
+          .orderBy(asc(expenses.updatedAt))
+          .limit(pageLimit),
+      (timestamp) =>
+        db
+          .select()
+          .from(expenses)
+          .where(
+            and(
+              eq(expenses.userId, userId),
+              eq(expenses.profileId, profileId),
+              eq(expenses.updatedAt, timestamp)
+            )
+          )
+          .limit(MAX_BOUNDARY_GROUP_SIZE),
+      cappedLimit
+    )
+    changes.push(...expense.changes)
+    watermarks.push(expense.safeWatermark)
 
     // Savings goals (profile-scoped)
-    const savingsRows = await db
-      .select()
-      .from(savingsGoals)
-      .where(
-        and(
-          eq(savingsGoals.userId, userId),
-          eq(savingsGoals.profileId, profileId),
-          sinceDate ? gt(savingsGoals.updatedAt, sinceDate) : undefined
-        )
-      )
-      .orderBy(asc(savingsGoals.updatedAt))
-      .limit(cappedLimit)
-    for (const row of savingsRows) {
-      changes.push({
-        entityType: 'savingsGoal',
-        entityId: row.id,
-        data: row,
-        updatedAt: toEpochMs(row.updatedAt),
-        isDeleted: row.isDeleted,
-      })
-    }
+    const savings = await fetchTableChangesSafely(
+      'savingsGoal',
+      (pageLimit) =>
+        db
+          .select()
+          .from(savingsGoals)
+          .where(
+            and(
+              eq(savingsGoals.userId, userId),
+              eq(savingsGoals.profileId, profileId),
+              sinceDate ? gt(savingsGoals.updatedAt, sinceDate) : undefined
+            )
+          )
+          .orderBy(asc(savingsGoals.updatedAt))
+          .limit(pageLimit),
+      (timestamp) =>
+        db
+          .select()
+          .from(savingsGoals)
+          .where(
+            and(
+              eq(savingsGoals.userId, userId),
+              eq(savingsGoals.profileId, profileId),
+              eq(savingsGoals.updatedAt, timestamp)
+            )
+          )
+          .limit(MAX_BOUNDARY_GROUP_SIZE),
+      cappedLimit
+    )
+    changes.push(...savings.changes)
+    watermarks.push(savings.safeWatermark)
 
     // Balance tracking (profile-scoped)
-    const balanceRows = await db
-      .select()
-      .from(balanceTracking)
-      .where(
-        and(
-          eq(balanceTracking.userId, userId),
-          eq(balanceTracking.profileId, profileId),
-          sinceDate ? gt(balanceTracking.updatedAt, sinceDate) : undefined
-        )
-      )
-      .orderBy(asc(balanceTracking.updatedAt))
-      .limit(cappedLimit)
-    for (const row of balanceRows) {
-      changes.push({
-        entityType: 'balanceTracking',
-        entityId: row.id,
-        data: row,
-        updatedAt: toEpochMs(row.updatedAt),
-        isDeleted: row.isDeleted,
-      })
-    }
+    const balance = await fetchTableChangesSafely(
+      'balanceTracking',
+      (pageLimit) =>
+        db
+          .select()
+          .from(balanceTracking)
+          .where(
+            and(
+              eq(balanceTracking.userId, userId),
+              eq(balanceTracking.profileId, profileId),
+              sinceDate ? gt(balanceTracking.updatedAt, sinceDate) : undefined
+            )
+          )
+          .orderBy(asc(balanceTracking.updatedAt))
+          .limit(pageLimit),
+      (timestamp) =>
+        db
+          .select()
+          .from(balanceTracking)
+          .where(
+            and(
+              eq(balanceTracking.userId, userId),
+              eq(balanceTracking.profileId, profileId),
+              eq(balanceTracking.updatedAt, timestamp)
+            )
+          )
+          .limit(MAX_BOUNDARY_GROUP_SIZE),
+      cappedLimit
+    )
+    changes.push(...balance.changes)
+    watermarks.push(balance.safeWatermark)
   }
 
   // User profiles (scoped by user only — profiles are not themselves profile-scoped)
-  const profileRows = await db
-    .select()
-    .from(userProfiles)
-    .where(
-      and(
-        eq(userProfiles.userId, userId),
-        sinceDate ? gt(userProfiles.updatedAt, sinceDate) : undefined
-      )
-    )
-    .orderBy(asc(userProfiles.updatedAt))
-    .limit(cappedLimit)
-  for (const row of profileRows) {
-    changes.push({
-      entityType: 'userProfile',
-      entityId: row.id,
-      data: row,
-      updatedAt: toEpochMs(row.updatedAt),
-      isDeleted: row.isDeleted,
-    })
-  }
+  const profiles = await fetchTableChangesSafely(
+    'userProfile',
+    (pageLimit) =>
+      db
+        .select()
+        .from(userProfiles)
+        .where(
+          and(
+            eq(userProfiles.userId, userId),
+            sinceDate ? gt(userProfiles.updatedAt, sinceDate) : undefined
+          )
+        )
+        .orderBy(asc(userProfiles.updatedAt))
+        .limit(pageLimit),
+    (timestamp) =>
+      db
+        .select()
+        .from(userProfiles)
+        .where(and(eq(userProfiles.userId, userId), eq(userProfiles.updatedAt, timestamp)))
+        .limit(MAX_BOUNDARY_GROUP_SIZE),
+    cappedLimit
+  )
+  changes.push(...profiles.changes)
+  watermarks.push(profiles.safeWatermark)
+
+  // The GLOBAL cursor this pull can safely promise is the MINIMUM watermark
+  // across all 6 tables — the tightest constraint wins. A table with a lower
+  // watermark than another has rows this pull never even looked at yet
+  // (its own page ran out before reaching that far); advancing the cursor
+  // past that point would make `gt(updatedAt, cursor)` skip them forever on
+  // the next pull. Some already-safe rows from a faster-draining table may
+  // get re-delivered next pull as a result — harmless, since applying a
+  // change twice is idempotent (`applyServerChangesToStores`).
+  const safeCursor = Math.min(...watermarks)
+  const safeChanges =
+    safeCursor === Number.POSITIVE_INFINITY
+      ? changes
+      : changes.filter((c) => c.updatedAt <= safeCursor)
 
   // Merge across tables, order by the global cursor with a stable id tiebreaker,
   // then cap WITHOUT splitting a same-timestamp group across the boundary (P1).
-  changes.sort((a, b) => a.updatedAt - b.updatedAt || a.entityId.localeCompare(b.entityId))
-  return capChangesAtTimestampBoundary(changes, cappedLimit)
+  // (Every table's own page is already safe up to `safeCursor` above; this
+  // second pass bounds the TOTAL response size across all 6 tables combined.)
+  safeChanges.sort((a, b) => a.updatedAt - b.updatedAt || a.entityId.localeCompare(b.entityId))
+  return capChangesAtTimestampBoundary(safeChanges, cappedLimit)
 }
 
 /**

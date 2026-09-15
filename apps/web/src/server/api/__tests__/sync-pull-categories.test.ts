@@ -217,10 +217,15 @@ describe('getSyncChanges — the categories block (gate 10)', () => {
     expect(sqlFragments(orderBy?.arg).join(' ')).toMatch(/\basc\b/i)
   })
 
-  it('applies the caller-supplied row cap', async () => {
+  it('applies the caller-supplied row cap, over-fetched by one (Story 53.1, AC-3)', async () => {
     await getSyncChanges('u1', null, 500, 'p1')
 
-    // MUTATION KILLED: ignore `cappedLimit`, or hard-code a different value.
-    expect(callFor('categories', 'limit')?.arg).toBe(500)
+    // The raw SQL LIMIT is cappedLimit + 1, not cappedLimit: the extra row lets
+    // the per-table boundary trim in `getSyncChanges` detect whether the last
+    // returned timestamp group was cut off, so it can defer an incomplete
+    // group to the next pull instead of silently truncating it. See
+    // `sync-pagination-per-table-boundary.test.ts` for the failure this
+    // prevents. MUTATION KILLED: ignore `cappedLimit`, or drop the `+ 1`.
+    expect(callFor('categories', 'limit')?.arg).toBe(501)
   })
 })

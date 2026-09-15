@@ -33,7 +33,7 @@ vi.mock('@/hooks/useSync', () => ({
 }))
 
 import { useProfileStore } from '@/stores/profileStore'
-import { SyncProvider } from '../SyncProvider'
+import { SyncProvider, hasProbableSession } from '../SyncProvider'
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 const forcePull = vi.fn(async () => undefined)
@@ -45,13 +45,16 @@ function stubMe(user: { userId: string; subscriptionStatus: string } | null, ok 
   )
 }
 
-// The probe is skipped entirely when no `session` cookie is present (review P3), so
-// authenticated-path tests must set one; the anonymous test clears it.
+// The probe is skipped entirely when no `has_session` marker cookie is present
+// (review P3 / Story 53.1), so authenticated-path tests must set one; the
+// anonymous test clears it. `has_session` — not `session` — is what the gate
+// checks: see the Story 53.1 tests below for why (the real `session` cookie is
+// HttpOnly and is never visible to `document.cookie` in a real browser).
 function setSessionCookie() {
-  document.cookie = 'session=test-token'
+  document.cookie = 'has_session=1'
 }
 function clearSessionCookie() {
-  document.cookie = 'session=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  document.cookie = 'has_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
 }
 
 beforeEach(() => {
@@ -189,5 +192,29 @@ describe('SyncProvider free→paid seeding + push gate (review P1)', () => {
 
     await waitFor(() => expect(registerSyncBridge).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(seedOnce).toHaveBeenCalledWith(SESSION_USER_ID))
+  })
+})
+
+describe('hasProbableSession — Story 53.1 cross-device sync fix', () => {
+  it('is false with no cookies at all', () => {
+    expect(hasProbableSession('')).toBe(false)
+  })
+
+  it('is false for the real (HttpOnly) session cookie name alone', () => {
+    // This is the exact pre-fix defect, reproduced directly: a real browser
+    // never exposes an HttpOnly cookie to `document.cookie`, so even if
+    // `session=...` were somehow present here, checking for it is checking
+    // for something that can never appear in production. Before this story,
+    // this function (inlined) tested for `session=` — which is why the sync
+    // engine never mounted for ANY authenticated user, not just a new device.
+    expect(hasProbableSession('session=abc123')).toBe(false)
+  })
+
+  it('is true when the has_session marker is present', () => {
+    expect(hasProbableSession('has_session=1')).toBe(true)
+  })
+
+  it('is true when has_session is present alongside other cookies', () => {
+    expect(hasProbableSession('foo=bar; has_session=1; baz=qux')).toBe(true)
   })
 })

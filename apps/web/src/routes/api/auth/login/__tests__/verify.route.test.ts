@@ -40,6 +40,7 @@ vi.mock('@/server/api/auth/magic-link', () => ({
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
 import * as sessionModule from '@/server/api/auth/session'
 import { verifySession } from '@/server/api/auth/session'
+import { SESSION_COOKIE_MAX_AGE } from '@/server/api/auth/session-cookies'
 import { GET, POST } from '../verify'
 
 // Default trusted-hop count (0 = rightmost) resolves a lone XFF value to the client IP.
@@ -155,7 +156,7 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
     const session = setCookies.find((c) => c.startsWith('session='))
     expect(session).toMatch(/HttpOnly/)
     expect(session).toMatch(/SameSite=Lax/)
-    expect(session).toMatch(/Max-Age=604800/)
+    expect(session).toMatch(new RegExp(`Max-Age=${SESSION_COOKIE_MAX_AGE}`))
     expect(session).not.toContain('Secure') // not production in tests
     // CSRF cookie is cleared.
     expect(setCookies.some((c) => c.startsWith('ml_csrf=') && c.includes('Max-Age=0'))).toBe(true)
@@ -169,6 +170,16 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
       email: 'user@example.com',
     })
     expect(typeof payload?.iat).toBe('number')
+
+    // Story 53.1: a deliberately NON-HttpOnly companion cookie is minted
+    // alongside the real session, so client-side code (SyncProvider) can tell
+    // "probably signed in" without being able to read the real session cookie
+    // at all (it is HttpOnly by design).
+    const hasSession = setCookies.find((c) => c.startsWith('has_session='))
+    expect(hasSession).toBeDefined()
+    expect(hasSession).toMatch(/SameSite=Lax/)
+    expect(hasSession).toMatch(new RegExp(`Max-Age=${SESSION_COOKIE_MAX_AGE}`))
+    expect(hasSession).not.toMatch(/HttpOnly/)
   })
 
   it('rejects a CSRF mismatch generically and does NOT consume the token (login-CSRF defense)', async () => {
