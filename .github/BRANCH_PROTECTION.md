@@ -59,9 +59,11 @@ confirm the **Merge** button is blocked until the check passes.
 
 `ci.yml` is now also invoked as a **reusable workflow** by
 [`deploy.yml`](workflows/deploy.yml), which gates the production deploy on it.
-That change was additive — the `pull_request` / `push` triggers and the three
-job `name:` values above are untouched, so the required checks configured here
-still resolve.
+The three job `name:` values above are untouched, so the required checks
+configured here still resolve. The `push: main` trigger was removed on
+2026-09-15 because `deploy.yml` already runs the same gates on every push to
+`main`; the `pull_request` trigger, which is what branch protection evaluates,
+is unchanged.
 
 Renaming any of those three jobs therefore breaks **two** things at once: the
 required status checks listed above silently stop matching (a rule that requires

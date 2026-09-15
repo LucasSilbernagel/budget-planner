@@ -70,21 +70,17 @@ jobs:
   # blocks if you remember to test `conclusion == 'success'`, which makes "a red
   # build never deploys" a convention. Here it is structural.
   #
-  # Tradeoff, accepted knowingly: on a push to `main` these gates also run via
-  # ci.yml's own push trigger, so they execute twice. Removing ci.yml's push
-  # trigger would deduplicate them, but that edits 4-15's contract and its
-  # required-check names. The repo is public (free Actions minutes) and
-  # pre-launch, so the duplicate costs wall-clock, not money.
+  # ci.yml no longer has a `push: main` trigger (removed 2026-09-15), so on a
+  # push to `main` these gates run exactly once — here. They previously ran
+  # twice, once per workflow. The job names are unchanged, so the required
+  # status checks on PRs still resolve.
   #
-  # Why the duplicate cannot dedupe itself: ci.yml's concurrency group is
-  # `ci-${{ github.workflow }}-${{ github.ref }}`, and under `workflow_call`
-  # `github.workflow` resolves to the CALLING workflow. So the nested run sits in
-  # `ci-Deploy (production)-<ref>` while the standalone run sits in `ci-CI-<ref>`
-  # — different groups, so neither supersedes the other. That also means the
-  # nested gates cannot be cancelled out from under an in-flight deploy: this
-  # workflow's own `deploy-production` group queues later runs rather than
-  # running them concurrently. Stated explicitly because it was previously left
-  # as an assumption (code review 2026-09-03).
+  # Concurrency: ci.yml's group is `ci-${{ github.workflow }}-${{ github.ref }}`,
+  # and under `workflow_call` `github.workflow` resolves to the CALLING workflow,
+  # so the nested run sits in `ci-Deploy (production)-<ref>`. A PR run
+  # (`ci-CI-<ref>`) can therefore never cancel the nested gates out from under an
+  # in-flight deploy, and this workflow's own `deploy-production` group queues
+  # later runs rather than running them concurrently (code review 2026-09-03).
   quality-gates:
     name: Quality gates
     uses: ./.github/workflows/ci.yml
@@ -170,16 +166,22 @@ jobs:
   # Runs on EVERY push, gated or not: building the image needs no DanubeData
   # account, and a Dockerfile that stopped building is something we want to learn
   # about now rather than on cutover day. Only the registry PUSH is blocked.
+  #
+  # No `needs:` — this runs IN PARALLEL with the quality gates and the
+  # type-check (2026-09-15; it used to wait ~9 minutes for them). That is safe
+  # because this job only builds and verifies locally and touches nothing
+  # outside its runner: it references no secrets and never pushes. The step that
+  # makes the image a deploy candidate — the registry push — lives in
+  # `push-image`, which DOES need every gate. The verified bytes are handed over
+  # as a short-lived artifact, so what gets pushed is exactly what booted here.
   build-image:
     name: Build container image
     runs-on: ubuntu-latest
-    needs: [quality-gates, type-check]
     timeout-minutes: 30
-    # DANUBEDATA_REGISTRY_USERNAME/_PASSWORD are `production` ENVIRONMENT secrets
-    # (DEPLOY_RUNBOOK.md §1). GitHub does NOT expose environment-scoped secrets to
-    # a job that does not declare the environment — without this key they resolve
-    # to EMPTY STRINGS and `docker login` silently runs with blank credentials.
-    # Found in code review 2026-09-03; the workflow and the runbook had disagreed.
+    # NOT for secrets (this job reads none; validate-deploy-workflow pins that).
+    # VITE_COUNTERDEV_ID is defined at BOTH repository and `production` scope with
+    # DIFFERENT values, and the environment value wins — so dropping this key
+    # would silently bake the repository-scope id into the production bundle.
     environment: production
     steps:
       - name: Checkout
@@ -242,6 +244,57 @@ jobs:
       - name: Stop verification container
         if: ${{ !cancelled() }}
         run: docker rm -f bp-verify || true
+
+      # Hand the verified image to `push-image`. Only when deploys are on —
+      # otherwise nothing would ever consume it. zstd, and no second zip pass on
+      # an already-compressed file. One-day retention covers "Re-run failed jobs".
+      - name: Export the verified image
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        run: |
+          set -euo pipefail
+          docker save "${IMAGE_NAME}:${GITHUB_SHA}" | zstd -T0 -3 -q -o image.tar.zst
+          ls -lh image.tar.zst
+
+      - name: Upload the verified image
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-image
+          path: image.tar.zst
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  # --- Push the verified image (AC-2) ----------------------------------------
+  # The first job that makes a build a deploy candidate, so it needs EVERY gate:
+  # lint/unit/e2e, the type-check, and the image build + boot check.
+  push-image:
+    name: Push container image
+    runs-on: ubuntu-latest
+    needs: [quality-gates, type-check, build-image]
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    timeout-minutes: 15
+    # DANUBEDATA_REGISTRY_USERNAME/_PASSWORD are `production` ENVIRONMENT secrets
+    # (DEPLOY_RUNBOOK.md §1). GitHub does NOT expose environment-scoped secrets to
+    # a job that does not declare the environment — without this key they resolve
+    # to EMPTY STRINGS and `docker login` silently runs with blank credentials.
+    # Found in code review 2026-09-03; the workflow and the runbook had disagreed.
+    environment: production
+    steps:
+      # Needed for `packageManager` in package.json, which pnpm/action-setup reads.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the verified image
+        uses: actions/download-artifact@v4
+        with:
+          name: container-image
+
+      - name: Load the verified image
+        run: |
+          set -euo pipefail
+          zstd -dc image.tar.zst | docker load
+          docker image inspect "${IMAGE_NAME}:${GITHUB_SHA}" > /dev/null
 
       # pnpm/Node for the CLI install below. Same reason as the deploy job: a
       # fresh runner inherits no toolchain. Enforced by validate-deploy-workflow.
@@ -432,13 +485,107 @@ jobs:
           docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
+  # --- Are there migrations to apply? ----------------------------------------
+  # The migrate job costs ~6 minutes, ~5 of them waiting for the public DNS
+  # window to come up, and most pushes change no migration. This decides whether
+  # it has to run at all. Skipping it also keeps the database's public window
+  # closed on every push that does not need it.
+  #
+  # The baseline is the head commit of the most recent run whose DEPLOY JOB
+  # succeeded — not `github.event.before`. A deploy only succeeds after its
+  # migrations were applied (or were found to be already applied by this same
+  # check), so that commit's migrations are known to be live. `event.before`
+  # would be wrong twice over: a previous run that failed before migrating would
+  # be forgotten, and this workflow's concurrency group REPLACES a pending run
+  # with a newer one, so a push's migrations can belong to a run that never ran.
+  #
+  # FAILS SAFE: every path that cannot prove "nothing changed" — a manual
+  # dispatch, an API error, no previous deploy, a baseline commit missing from
+  # history (force-push), a git error — outputs migrate=true. If this job itself
+  # fails, its output is empty, which the deploy job treats as "not proven", so
+  # nothing deploys.
+  migration-check:
+    name: Detect pending migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # `actions: read` to list previous runs of this workflow and their jobs. The
+    # only job allowed to widen permissions; validate-deploy-workflow pins it.
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      migrate: ${{ steps.detect.outputs.migrate }}
+      reason: ${{ steps.detect.outputs.reason }}
+    steps:
+      - name: Checkout (full history, to diff against the last deploy)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare migrations against the last successful deploy
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN: ${{ github.run_id }}
+          # Must match the deploy job's `name:` exactly (pinned by the validator).
+          DEPLOY_JOB_NAME: Deploy to DanubeData Rapids
+          # What `drizzle-kit migrate` actually applies: the journal + SQL files,
+          # and the config that names that folder and the migrations table.
+          MIGRATION_PATHS: packages/db/migrations packages/db/drizzle.config.ts
+        run: |
+          set -uo pipefail
+          decide() {
+            echo "migrate=$1" >> "$GITHUB_OUTPUT"
+            echo "reason=$2" >> "$GITHUB_OUTPUT"
+            echo "::notice::migrate=$1 — $2"
+            exit 0
+          }
+
+          # A dispatch is the rollback / redeploy path; keep its old behaviour.
+          [ "${EVENT_NAME}" = "push" ] || decide true "manual dispatch always migrates"
+
+          runs=$(gh api "repos/${REPO}/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=30" \
+            --jq '.workflow_runs[] | "\(.id) \(.head_sha)"') \
+            || decide true "could not list previous deploy runs"
+
+          base=""
+          while read -r id sha; do
+            [ -n "${id}" ] || continue
+            [ "${id}" != "${CURRENT_RUN}" ] || continue
+            deployed=$(gh api "repos/${REPO}/actions/runs/${id}/jobs?per_page=100" \
+              --jq "[.jobs[] | select(.name == \"${DEPLOY_JOB_NAME}\" and .conclusion == \"success\")] | length" < /dev/null) \
+              || decide true "could not read the jobs of run ${id}"
+            if [ "${deployed}" -gt 0 ]; then
+              base="${sha}"
+              break
+            fi
+          done <<< "${runs}"
+
+          [ -n "${base}" ] || decide true "no previous successful deploy in the last 30 successful runs"
+          git cat-file -e "${base}^{commit}" 2>/dev/null \
+            || decide true "last deployed commit ${base} is not in this history"
+
+          # shellcheck disable=SC2086 # MIGRATION_PATHS is a deliberate word list
+          git diff --quiet "${base}" "${GITHUB_SHA}" -- ${MIGRATION_PATHS}
+          case $? in
+            0) decide false "no migration changes since the last deployed commit ${base}" ;;
+            1) decide true "migrations changed since the last deployed commit ${base}" ;;
+            *) decide true "git diff against ${base} failed" ;;
+          esac
+
   # --- Database migration (AC-4) — closes 5-8 AC-11 -------------------------
   # Ordered BEFORE the deploy so the schema is never behind the code that serves
   # it, and any failure here aborts the run before the new revision goes live.
   #
-  # `build-image` also names the `production` Environment (see its `environment:`
-  # key) and runs first, so an Environment approval rule pauses the run THERE, not
-  # here. Three jobs name it in total — build-image, migrate, deploy — and GitHub
+  # Runs only when `migration-check` says there is something to apply. When it
+  # is skipped for that reason, `deploy` proceeds; when it is skipped or fails
+  # for any other reason, `deploy` does not (see the deploy job's `if:`).
+  #
+  # `build-image` and `push-image` also name the `production` Environment and run
+  # first, so an Environment approval rule pauses the run THERE before here. Four
+  # jobs name it in total — build-image, push-image, migrate, deploy — and GitHub
   # prompts once per job. DEPLOY_RUNBOOK.md §3 has the authoritative account.
   #
   # ⏳ TIME-BOXED ADR-001 EXCEPTION (Story 5.17, 2026-09-03).
@@ -456,8 +603,8 @@ jobs:
   migrate:
     name: Migrate production database
     runs-on: ubuntu-latest
-    needs: build-image
-    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    needs: [push-image, migration-check]
+    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && needs.migration-check.outputs.migrate == 'true' }}
     environment: production
     # Tight on purpose. The preflight and the migration both talk to production
     # PostgreSQL; a query blocked on a lock would otherwise run to GitHub's
@@ -551,7 +698,7 @@ jobs:
           for i in $(seq 1 24); do
             # `--json db ls` is a flat array under "data" — verified 2026-09-14
             # against @danubedata/cli 1.1.0. Unlike `registry repos tags`
-            # (see build-image's prune step), this one is NOT double-wrapped.
+            # (see push-image's prune step), this one is NOT double-wrapped.
             # Which field carries the public endpoint once DNS is open has not
             # been observed live yet, so this tries every plausible shape and
             # fails loudly with the raw row if none of them populate in time —
@@ -755,8 +902,21 @@ jobs:
   deploy:
     name: Deploy to DanubeData Rapids
     runs-on: ubuntu-latest
-    needs: migrate
-    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    needs: [push-image, migration-check, migrate]
+    # `!cancelled()` replaces the implicit success() so this can run when
+    # `migrate` was SKIPPED — but only skipped because `migration-check`
+    # positively reported nothing to apply. Every other state (migrate failed,
+    # migrate skipped because the check failed and left its output empty, image
+    # not pushed) keeps the deploy off. Do not loosen to `always()`.
+    if: >-
+      ${{ !cancelled()
+      && vars.DEPLOY_ENABLED == 'true'
+      && github.ref == 'refs/heads/main'
+      && needs.push-image.result == 'success'
+      && (needs.migrate.result == 'success'
+      || (needs.migrate.result == 'skipped'
+      && needs.migration-check.result == 'success'
+      && needs.migration-check.outputs.migrate == 'false')) }}
     environment:
       name: production
       url: ${{ vars.SITE_URL }}
@@ -888,7 +1048,9 @@ jobs:
     name: Post-deploy smoke check
     runs-on: ubuntu-latest
     needs: deploy
-    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    # Explicit result check: `deploy` can succeed while an upstream job
+    # (`migrate`) was skipped, and the implicit success() would then skip this.
+    if: ${{ !cancelled() && vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && needs.deploy.result == 'success' }}
     timeout-minutes: 10
     steps:
       - name: Smoke-check the live site
@@ -933,7 +1095,7 @@ jobs:
   summary:
     name: Pipeline summary
     runs-on: ubuntu-latest
-    needs: [quality-gates, type-check, build-image, migrate, deploy, smoke]
+    needs: [quality-gates, type-check, build-image, push-image, migration-check, migrate, deploy, smoke]
     if: ${{ always() }}
     timeout-minutes: 5
     steps:
@@ -943,6 +1105,10 @@ jobs:
           GATES: ${{ needs.quality-gates.result }}
           TYPES: ${{ needs.type-check.result }}
           BUILD: ${{ needs.build-image.result }}
+          PUSH: ${{ needs.push-image.result }}
+          CHECK: ${{ needs.migration-check.result }}
+          PENDING: ${{ needs.migration-check.outputs.migrate }}
+          PENDING_REASON: ${{ needs.migration-check.outputs.reason }}
           MIGRATE: ${{ needs.migrate.result }}
           DEPLOY: ${{ needs.deploy.result }}
           SMOKE: ${{ needs.smoke.result }}
@@ -955,6 +1121,8 @@ jobs:
             echo "| Quality gates (lint/unit/e2e) | ${GATES} |"
             echo "| Type-check (all packages) | ${TYPES} |"
             echo "| Build + verify image | ${BUILD} |"
+            echo "| Push image | ${PUSH} |"
+            echo "| Detect pending migrations | ${CHECK} (migrate=${PENDING:-unknown}: ${PENDING_REASON:-no reason reported}) |"
             echo "| Migrate database | ${MIGRATE} |"
             echo "| Deploy to Rapids | ${DEPLOY} |"
             echo "| Post-deploy smoke | ${SMOKE} |"
@@ -969,7 +1137,9 @@ jobs:
               echo "> could have been deployed regardless of the \`DEPLOY_ENABLED\` setting."
               echo "> Fix the failing stage first — do not read this run as a quiet no-op."
             elif [ "${ENABLED}" = "true" ]; then
-              if [ "${SMOKE}" = "success" ]; then
+              if [ "${SMOKE}" = "success" ] && [ "${MIGRATE}" = "skipped" ]; then
+                echo "> ✅ Deployed and smoke-checked. Migrations were skipped: ${PENDING_REASON}."
+              elif [ "${SMOKE}" = "success" ]; then
                 echo "> ✅ Deployed and smoke-checked."
               else
                 echo "> ❌ **Deploy did not complete cleanly.** Check the failed stage above and"

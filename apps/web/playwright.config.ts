@@ -15,8 +15,14 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
-  retries: process.env['CI'] ? 2 : 0,
-  workers: process.env['CI'] ? 1 : undefined,
+  // One retry, not two: a genuinely broken test otherwise runs three times
+  // before CI reports it.
+  retries: process.env['CI'] ? 1 : 0,
+  // GitHub-hosted runners have 4 vCPUs. The suite is safe to parallelise: every
+  // test gets its own browser context (so its own localStorage), the server
+  // side is only ever read, and the few order-dependent files opt into serial
+  // mode with `test.describe.configure`. At 1 worker the suite took ~7.5 min.
+  workers: process.env['CI'] ? 4 : undefined,
   reporter: 'html',
   use: {
     baseURL,

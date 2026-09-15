@@ -63,7 +63,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `SITE_URL` | Public https origin. Used as the Environment URL and by the smoke check. |
 | `RAPIDS_RESOURCE_PROFILE` | Optional override for the container's size: `free`, `small`, `medium` or `large`. Defaults to **`small`** (0.5-1 vCPU, 256-512MB), matching `apps/web/rapids-service.yaml`. ⚠️ Not optional to the API — creating a container without a profile fails `422 resource_profile`. `free` is 64-128MB, marginal for SSR, and caps max-scale at 3 against the rollout's 5. |
 | `DANUBE_TEAM_ID` | Optional. The CLI needs an explicit project/team id in non-interactive mode **when the account has more than one team**; unset is correct for a single-team account. Passed to every CLI step so a later second team does not silently break deploys. |
-| `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `build-image` prune step keeps as rollback targets. Defaults to **`2`** (was `5` until run 34528527480 hit `Storage quota exceeded (638 MB used of 500 MB)` — the runtime image ships the whole workspace, so five tags do not fit the 500 MB plan). Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). The prune runs **before** the push (§8), so a registry that has hit its storage quota recovers on the next run without hand intervention. Lower this further, slim the image, or upgrade the plan if `KEEP_TAGS` images by themselves exceed the registry storage limit. |
+| `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `push-image` prune step keeps as rollback targets. Defaults to **`2`** (was `5` until run 34528527480 hit `Storage quota exceeded (638 MB used of 500 MB)` — the runtime image ships the whole workspace, so five tags do not fit the 500 MB plan). Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). The prune runs **before** the push (§8), so a registry that has hit its storage quota recovers on the next run without hand intervention. Lower this further, slim the image, or upgrade the plan if `KEEP_TAGS` images by themselves exceed the registry storage limit. |
 | `VITE_COUNTERDEV_ID` | counter.dev site id — a **public** identifier baked into the client bundle at build time (ADR-005). A variable, not a secret, by design. |
 | `DATABASE_MIGRATOR_USER` | The `bp_migrator` role name used by the `migrate` job. Not sensitive — already plaintext in `docs/production-database-runbook.md` §1.1 — so it is a variable, not a secret. |
 | `DATABASE_NAME` | The database name (`pgdb`) used by the `migrate` job. Not sensitive, same reasoning as above. |
@@ -74,7 +74,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 |---|---|---|
 | `DATABASE_MIGRATOR_PASSWORD` | `migrate` job | Password for **`bp_migrator`** (the DDL role). The **only** sensitive piece of the migration connection string — host, port, user and database name are no longer secrets (see the note below). |
 | `DATABASE_CA_CERT` | `migrate` job | **Mandatory, not optional.** The DanubeData chain is self-signed, so without it every connection fails `SELF_SIGNED_CERT_IN_CHAIN` before a statement runs (verified 2026-09-03). The `migrate` job connects at **`verify-ca`** — chain validation against this CA is kept; only the hostname check is waived, because the public endpoint is absent from the in-cluster-only certificate (`packages/db/src/migrate-tls.ts`). |
-| `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `build-image` | Registry login for the image push. **`build-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
+| `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `push-image` | Registry login for the image push. **`push-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
 | `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives `danube db dns enable/disable` (the migration window, §4) and the endpoint-discovery read (`danube --json db ls`). **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
 
 > **⚠️ CHANGED 2026-09-14 — `DATABASE_URL` and `DATABASE_PUBLIC_HOST` are GONE
@@ -141,12 +141,15 @@ Like branch protection (4-15), this cannot be done in code. In
   branch impossible even by manual dispatch.
 - **Required reviewers:** optional but recommended before the first real
   cutover. **Note that approval is requested once per job that names the
-  environment, not once per run** — and three jobs do: `build-image`, `migrate`
-  and `deploy`. So enabling reviewers means three prompts, not one. The
+  environment, not once per run** — and four jobs do: `build-image`,
+  `push-image`, `migrate` and `deploy`. So enabling reviewers means four prompts,
+  not one (three when `migrate` is skipped because no migration changed). The
   load-bearing one is `migrate`: it is the first irreversible action against
   production, and it is gated before a single migration statement runs.
-  (`build-image` names the environment because that is the only way GitHub will
-  hand it the registry secrets — see §1.) The `migrate` prompt is where the
+  (`push-image` names the environment because that is the only way GitHub will
+  hand it the registry secrets — see §1. `build-image` names it only to read the
+  environment-scoped `VITE_COUNTERDEV_ID`, which differs from the repository-scoped
+  one; it reads no secrets.) The `migrate` prompt is where the
   migration window (§4) opens, so that approval also gates the only moment the
   production database is publicly reachable.
 - **Environment secrets:** add every secret from §1 — `DATABASE_MIGRATOR_PASSWORD`,
@@ -163,6 +166,15 @@ is the documented path here, matching `.github/BRANCH_PROTECTION.md`.
 
 `migrate` runs **before** `deploy`, so the schema is never behind the code
 serving it, and a failure aborts the run before any release.
+
+**`migrate` only runs when there is something to apply.** The
+`migration-check` job diffs `packages/db/migrations/` and
+`packages/db/drizzle.config.ts` between this commit and the head commit of the
+most recent run whose `deploy` job succeeded. No change → `migrate` is skipped
+(so the public-DNS window below never opens) and `deploy` proceeds. Anything it
+cannot prove — a manual dispatch, an API error, no earlier successful deploy, a
+baseline commit missing after a force-push — runs `migrate` as before. To force
+a migration without a migration change, dispatch the workflow manually.
 
 Ahead of `drizzle-kit migrate` the pipeline runs a preflight
 (`pnpm --filter @budget-planner/db db:migrate:preflight`) that classifies the
@@ -333,7 +345,7 @@ infrastructure and therefore in CLOUD Act scope. What passes through it today:
 
 | Job | Reaches a US-controlled runner | Weight |
 |---|---|---|
-| `build-image` | registry username + password | Push-only credentials to an EU registry. |
+| `push-image` | registry username + password | Push-only credentials to an EU registry. |
 | `migrate` | **production `DATABASE_MIGRATOR_PASSWORD`, `DATABASE_CA_CERT`, `DANUBE_TOKEN`**, and a `DATABASE_URL` it composes itself from those plus the live public endpoint — and it opens a live connection to the production database from that runner, through a public-DNS window it also opens | **The serious one.** |
 | `deploy` | `DANUBE_TOKEN` | Platform API token; can redeploy and reconfigure containers. |
 
@@ -374,7 +386,7 @@ the database (`DEPLOY-RAPIDS.md` §2).
 ## 8. Registry storage and manual prune
 
 Every deploy pushes one image tagged with its commit SHA. Nothing but the
-`build-image` **Prune old image tags** step removes them, and that step keeps the
+`push-image` **Prune old image tags** step removes them, and that step keeps the
 `REGISTRY_KEEP_TAGS` (default 2) newest tags as rollback targets. It runs
 **before** the push, so a registry sitting at quota is pruned first and the push
 that follows has room — the pipeline self-heals. A prune failure only warns; if

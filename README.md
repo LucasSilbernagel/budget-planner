@@ -208,7 +208,8 @@ Use `pnpm --filter <package> type-check` instead, or `pnpm type-check:all` for e
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs on pull requests into `main` and on pushes to `main`, on Node 20, in three jobs:
+`.github/workflows/ci.yml` runs on pull requests into `main`, on Node 20, in three jobs.
+Pushes to `main` run the same jobs through `.github/workflows/deploy.yml`, which calls `ci.yml` as a reusable workflow:
 
 1. **Lint** - `pnpm biome check .` and `pnpm validate:tsconfig`.
 2. **Unit tests** - `pnpm test:unit`.

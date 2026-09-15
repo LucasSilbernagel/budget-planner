@@ -70,7 +70,10 @@ def main() -> int:
 
     print("\n== ci.yml: story 4-15's contract is preserved ==")
     check(set(ci["jobs"]) == {"lint", "unit-tests", "e2e-tests"}, "the three gate jobs are unchanged")
-    check("pull_request" in triggers(ci) and "push" in triggers(ci), "original triggers intact")
+    check("pull_request" in triggers(ci), "the PR trigger (what branch protection evaluates) is intact")
+    # Removed 2026-09-15: deploy.yml already runs these gates on every push to
+    # main, so a standalone push run only duplicated ~8 minutes of runner time.
+    check("push" not in triggers(ci), "no push trigger duplicating the deploy-nested gates")
     check("workflow_call" in triggers(ci), "workflow_call exposed for the deploy gate")
 
     print("\n== a red build structurally cannot deploy ==")
@@ -86,8 +89,45 @@ def main() -> int:
     walk("deploy")
     check("quality-gates" in reachable, "deploy transitively needs the quality gates")
     check("type-check" in reachable, "deploy transitively needs the type-check")
-    check(needs_of(jobs, "deploy") == ["migrate"], "deploy needs migrate (schema precedes code)")
+    check("migrate" in needs_of(jobs, "deploy"), "deploy needs migrate (schema precedes code)")
+    check("push-image" in needs_of(jobs, "deploy"), "deploy needs the image push directly")
+    check("migration-check" in needs_of(jobs, "deploy"), "deploy needs the migration check directly")
     check(needs_of(jobs, "smoke") == ["deploy"], "smoke needs deploy")
+
+    print("\n== the image builds in parallel, but only a gated build is pushed ==")
+    # build-image dropped its `needs:` on 2026-09-15 so it runs alongside the
+    # gates. That is only safe while it cannot publish anything.
+    check(not needs_of(jobs, "build-image"), "build-image runs in parallel with the gates")
+    check("secrets." not in yaml.safe_dump(jobs["build-image"]), "build-image reads no secrets")
+    check("docker push" not in yaml.safe_dump(jobs["build-image"]), "build-image never pushes")
+    push_needs = set(needs_of(jobs, "push-image"))
+    check({"quality-gates", "type-check", "build-image"} <= push_needs,
+          "push-image needs every gate and the verified build")
+
+    print("\n== migrate may be skipped only when positively proven unnecessary ==")
+    migrate_if = str(jobs["migrate"].get("if"))
+    check("needs.migration-check.outputs.migrate == 'true'" in migrate_if,
+          "migrate runs when the check reports pending migrations")
+    deploy_if = " ".join(str(jobs["deploy"].get("if")).split())
+    check("always()" not in deploy_if, "deploy never uses always()")
+    check("!cancelled()" in deploy_if, "deploy does not run on a cancelled workflow")
+    check("needs.push-image.result == 'success'" in deploy_if, "deploy requires a pushed image")
+    check("needs.migrate.result == 'success'" in deploy_if, "deploy proceeds after a successful migrate")
+    check("needs.migration-check.result == 'success'" in deploy_if
+          and "needs.migration-check.outputs.migrate == 'false'" in deploy_if,
+          "a skipped migrate is accepted only on an explicit 'false' from a successful check")
+    smoke_if = str(jobs["smoke"].get("if"))
+    check("needs.deploy.result == 'success'" in smoke_if, "smoke checks deploy's result explicitly")
+    detect = "\n".join((st.get("run", "") or "") for st in jobs["migration-check"]["steps"])
+    detect_env = yaml.safe_dump(jobs["migration-check"])
+    check("decide true" in detect and detect.count("decide false") == 1,
+          "the check has exactly one path to migrate=false; every other path migrates")
+    check("manual dispatch always migrates" in detect, "a manual dispatch always migrates")
+    check("packages/db/migrations" in detect_env, "the check diffs the migrations folder")
+    check(jobs["deploy"].get("name") in detect_env,
+          "the check looks up the deploy job by its real name")
+    checkout = jobs["migration-check"]["steps"][0]
+    check(checkout.get("with", {}).get("fetch-depth") == 0, "the check has full history to diff against")
 
     print("\n== the type-check gate uses live scripts, not the dead tsc:* ones ==")
     runs = [step.get("run", "") for step in jobs["type-check"]["steps"]]
@@ -121,7 +161,11 @@ def main() -> int:
 
     print("\n== least privilege, timeouts, and branch confinement ==")
     check(deploy["permissions"] == {"contents": "read"}, "workflow-level permissions are read-only")
-    check(not any("permissions" in job for job in jobs.values()), "no job widens permissions")
+    check(not any("permissions" in job for name, job in jobs.items() if name != "migration-check"),
+          "no job widens permissions (except migration-check, pinned below)")
+    check(jobs["migration-check"].get("permissions") == {"contents": "read", "actions": "read"},
+          "migration-check adds only actions: read, to list previous runs")
+    check(jobs["migration-check"].get("environment") is None, "migration-check holds no environment")
     for name, job in jobs.items():
         if "uses" not in job:
             check("timeout-minutes" in job, f"{name} has a timeout (a hung job queues every later deploy)")
@@ -224,12 +268,12 @@ def main() -> int:
     #   2. Rollback (DEPLOY_RUNBOOK §6) redeploys an EARLIER tag, so an over-eager
     #      prune deletes the thing you would roll back to.
     # These pin both.
-    build_steps = jobs["build-image"]["steps"]
+    build_steps = jobs["push-image"]["steps"]
     names = [str(step.get("name", "")) for step in build_steps]
-    check("Prune old image tags" in names, "build-image has a 'Prune old image tags' step")
+    check("Prune old image tags" in names, "push-image has a 'Prune old image tags' step")
     check(
         "Push image to the DanubeData registry" in names,
-        "build-image has a 'Push image to the DanubeData registry' step",
+        "push-image has a 'Push image to the DanubeData registry' step",
     )
     # A rename fails the two checks above with a clean report; the position and
     # body invariants below simply can't run, so guard rather than IndexError.

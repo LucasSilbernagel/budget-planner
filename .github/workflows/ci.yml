@@ -2,8 +2,7 @@ name: CI
 
 # Quality-gate pipeline (Story 4-15).
 #
-# Runs the three required checks on every PR into `main` and on pushes to
-# `main`. Each gate is an independent job so it surfaces as its own required
+# Runs the three required checks on every PR into `main`. Each gate is an independent job so it surfaces as its own required
 # status check in GitHub branch protection (see .github/BRANCH_PROTECTION.md):
 #   - lint        → pnpm biome check . (+ tsconfig validation)
 #   - unit-tests  → pnpm test:unit (Vitest, all workspaces)
@@ -24,12 +23,16 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  # NO `push: main` trigger, on purpose. Every push to `main` already runs these
+  # exact gates through `deploy.yml` (below), so a standalone push run duplicated
+  # ~8 minutes of runner time per push. Removed 2026-09-15. Required status
+  # checks are evaluated on the PR, which this trigger still covers, and a push
+  # that bypasses a PR still cannot deploy without passing the nested run.
+  #
   # Story 5-4: lets `deploy.yml` invoke these exact gates as a `needs:`
   # dependency, so the deploy job structurally cannot start unless lint, unit
-  # and e2e all pass. Additive only — the triggers above are unchanged, so the
-  # required status checks in BRANCH_PROTECTION.md keep their names.
+  # and e2e all pass. The job names are unchanged, so the required status checks
+  # in BRANCH_PROTECTION.md keep their names.
   workflow_call:
 
 # Supersede in-flight runs for the same ref so pushes don't pile up CI minutes.
@@ -139,12 +142,33 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Chromium binary + its OS deps are not part of `pnpm install`.
+      # Chromium binary + its OS deps are not part of `pnpm install`. The binary
+      # is cached per Playwright version; the OS packages live outside the cache
+      # directory, so they are installed on a hit too.
+      - name: Resolve Playwright version
+        id: playwright
+        run: |
+          set -euo pipefail
+          version=$(pnpm --filter @budget-planner/web exec playwright --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
       - name: Install Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @budget-planner/web exec playwright install --with-deps chromium
 
+      - name: Install Playwright OS dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @budget-planner/web exec playwright install-deps chromium
+
       # Playwright boots the app itself (webServer: `pnpm dev`). GitHub Actions
-      # sets CI=true automatically, which enables retries + single worker and
+      # sets CI=true automatically, which enables one retry + 4 workers and
       # disables dev-server reuse (see apps/web/playwright.config.ts).
       - name: Run Playwright tests
         run: pnpm test:e2e
