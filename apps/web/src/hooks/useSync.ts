@@ -335,10 +335,29 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       ...syncConfig,
     })
 
-    // Initialize the service
-    syncServiceRef.current.initialize().catch((error) => {
-      console.error('Failed to initialize sync service:', error)
-    })
+    // Initialize the service, then flush the PERSISTED push queue. Ops left over
+    // from an earlier session (offline edits, or pushes the server rejected) were
+    // otherwise only re-sent after a NEW local edit or a tab-visibility change,
+    // so a device could sit on unsynced data indefinitely across reloads. This
+    // must wait for `initialize()` — before it resolves the queue is not loaded
+    // and a sync sees nothing to send. Queued ops already carry their own
+    // profileId, so this does not depend on profile reconciliation.
+    const service = syncServiceRef.current
+    service
+      .initialize()
+      .then(() => {
+        if (
+          autoSync &&
+          syncServiceRef.current === service &&
+          service.getState().pendingOperations.length > 0
+        ) {
+          return service.forceSync()
+        }
+        return undefined
+      })
+      .catch((error) => {
+        console.error('Failed to initialize sync service:', error)
+      })
 
     // Subscribe to status changes
     const unsubscribe = syncServiceRef.current.onStatusChange((state) => {
@@ -377,7 +396,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       syncServiceRef.current?.destroy()
       syncServiceRef.current = null
     }
-  }, [userId, syncConfig, store, pullLimit])
+  }, [userId, syncConfig, store, pullLimit, autoSync])
 
   // Sync state from store
   const {

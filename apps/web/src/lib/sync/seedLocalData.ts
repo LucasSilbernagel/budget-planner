@@ -32,7 +32,12 @@ import { enqueueCreate, isSyncActive } from './syncBridge'
 
 /** localStorage key marking that this user's free-tier backlog has been seeded. */
 export function seedMarkerKey(userId: string): string {
-  return `budget-planner:sync-seeded:${userId}`
+  // `v2`: every seed before the server's profileId/id repair was set as done
+  // while the server rejected every row it sent, so the v1 marker certifies
+  // nothing. Bumping it re-seeds each device once. Safe: already-synced rows are
+  // skipped (`needsSeeding`) and a create the server already holds is
+  // acknowledged as applied, not duplicated.
+  return `budget-planner:sync-seeded-v2:${userId}`
 }
 
 /** Whether this user's backlog has already been seeded on this device. */
