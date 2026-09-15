@@ -161,9 +161,8 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
  * Handles access control and renders appropriate UI based on subscription status.
  */
 function ForecastingPage(): React.ReactElement {
-  const { status, checkAccess } = usePremiumAccess()
+  const { status } = usePremiumAccess()
   const [activeTab, setActiveTab] = useState<ForecastingTab>('scenarios')
-  const [isLoading, setIsLoading] = useState(true)
   // The latest forecast computed by the Scenario Builder, lifted here so the
   // Projections tab reflects the user's real scenario instead of sample data
   // (story bug-3).
@@ -174,15 +173,6 @@ function ForecastingPage(): React.ReactElement {
   // Bumped on every Load so the builder remounts even when the SAME forecast is
   // re-loaded (an id-only key would not change → stale edits would survive).
   const [loadNonce, setLoadNonce] = useState(0)
-
-  // Check premium access on mount
-  useEffect(() => {
-    const check = async () => {
-      await checkAccess()
-      setIsLoading(false)
-    }
-    check()
-  }, [checkAccess])
 
   // Handle tab change
   const handleTabChange = useCallback((tab: ForecastingTab) => {
@@ -345,8 +335,8 @@ function ForecastingPage(): React.ReactElement {
     setActiveTab('scenarios')
   }, [])
 
-  // Show loading state
-  if (isLoading) {
+  // Show loading state (SSR + first client paint — see usePremiumAccess).
+  if (status.isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner />

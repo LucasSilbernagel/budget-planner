@@ -12,7 +12,8 @@
  */
 
 import { MagicLinkForm } from '@/components/auth/magic-link-form'
-import { createFileRoute } from '@tanstack/react-router'
+import { getSessionSeed } from '@/server/api/auth/session-seed'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 // Exported because `routeTree.gen.ts` infers `LoginRoute` from `validateSearch`'s
 // return type and cannot name a type that is module-private (TS4023).
@@ -36,6 +37,20 @@ const RETURN_TO_COPY: Record<NonNullable<LoginSearch['returnTo']>, string> = {
 }
 
 export const Route = createFileRoute('/login')({
+  // The only route guard in the app (see `routes/retirement.tsx` for why every
+  // other gate prefers rendering an in-place notice over a redirect): a signed-in
+  // user has nothing to do on a sign-IN form, and leaving them on it risks them
+  // re-entering their email against an already-authenticated session. Reuses the
+  // same server-only resolver the root loader seeds the first paint with, so an
+  // authenticated visitor never sees the form flash before bouncing to `/`. A
+  // `null` seed (resolver errored/unverified) is treated as signed-out — fail
+  // open to the form rather than trap an uncertain session on a redirect loop.
+  beforeLoad: async () => {
+    const seed = await getSessionSeed()
+    if (seed?.isAuthenticated) {
+      throw redirect({ to: '/' })
+    }
+  },
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     error: typeof search['error'] === 'string' ? search['error'] : undefined,
     returnTo: search['returnTo'] === '/pricing' ? '/pricing' : undefined,
