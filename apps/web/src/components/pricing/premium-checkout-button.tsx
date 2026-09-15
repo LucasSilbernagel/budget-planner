@@ -123,10 +123,19 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   // Fetched once on mount so an unconfigured environment (no live Paddle
   // credentials yet) can be reflected in the CTA before the user ever clicks,
   // rather than only failing after an attempted checkout.
+  //
+  // The body is drained even on a non-OK response: an unread body keeps the
+  // request open in the browser indefinitely (it never reaches "finished"),
+  // which in an unconfigured environment (the endpoint deliberately 500s)
+  // left `/pricing` never network-idle.
   useEffect(() => {
     let cancelled = false
     fetch('/api/paddle/checkout-config')
-      .then((response) => (response.ok ? (response.json() as Promise<CheckoutConfig>) : null))
+      .then(async (response) => {
+        if (response.ok) return (await response.json()) as CheckoutConfig
+        await response.text()
+        return null
+      })
       .then((data) => {
         if (!cancelled) {
           setConfig(data)
