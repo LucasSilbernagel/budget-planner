@@ -32,8 +32,16 @@ vi.mock('@/server/api/sync', () => ({
   checkRateLimit: vi.fn(),
 }))
 
+// Post-53.1-incident fix: the route self-heals a missing default profile
+// (pre-story-5-3 accounts never got one, which permanently deadlocked
+// `reconcileActiveProfile()` client-side even after 53.1's cookie fix).
+vi.mock('@/server/functions/profiles', () => ({
+  createDefaultProfileForUser: vi.fn(),
+}))
+
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { checkRateLimit, getSyncChanges } from '@/server/api/sync'
+import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { GET } from '../changes'
 
 type SessionResult = Awaited<ReturnType<typeof getCurrentUserSession>>
@@ -95,6 +103,10 @@ describe('GET /api/sync/changes served boundary', () => {
     vi.clearAllMocks()
     mockChanges([])
     mockRateLimit(true)
+    ;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { id: 'profile-1', userId: SESSION_USER_ID, isDefault: true },
+    })
   })
 
   it('returns 401 for an unauthenticated request', async () => {
@@ -220,5 +232,72 @@ describe('GET /api/sync/changes served boundary', () => {
     expect(response.status).toBe(500)
     expect(payload.success).toBe(false)
     expect(payload.error).toContain('db exploded')
+  })
+
+  describe('default-profile self-heal (post-53.1 incident fix)', () => {
+    it('calls createDefaultProfileForUser with the SESSION user id on every authorized pull', async () => {
+      mockSession(paidSession)
+      await GET({ request: getRequest() })
+
+      expect(createDefaultProfileForUser).toHaveBeenCalledTimes(1)
+      expect(createDefaultProfileForUser).toHaveBeenCalledWith(SESSION_USER_ID)
+      // Runs BEFORE the actual delta fetch, so a freshly-created profile's
+      // rows (if any) are visible to this same pull.
+      const backfillOrder = (createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>)
+        .mock.invocationCallOrder[0]
+      const fetchOrder = (getSyncChanges as unknown as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0]
+      expect(backfillOrder).toBeLessThan(fetchOrder as number)
+    })
+
+    it('is NOT called for an unauthenticated request', async () => {
+      mockSession(noSession)
+      await GET({ request: getRequest() })
+      expect(createDefaultProfileForUser).not.toHaveBeenCalled()
+    })
+
+    it('is NOT called for a free-tier (non-paid) session — the premium gate runs first', async () => {
+      mockSession(freeSession)
+      await GET({ request: getRequest() })
+      expect(createDefaultProfileForUser).not.toHaveBeenCalled()
+    })
+
+    it('a backfill failure (returned, not thrown) does not fail the pull — the deadlock this fixes must not become a NEW hard failure', async () => {
+      mockSession(paidSession)
+      mockChanges([sampleChange])
+      ;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        success: false,
+        error: 'db unavailable',
+      })
+
+      const response = await GET({ request: getRequest() })
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.success).toBe(true)
+      expect(getSyncChanges).toHaveBeenCalledTimes(1)
+    })
+
+    it('a backfill that THROWS does not fail the pull either', async () => {
+      mockSession(paidSession)
+      mockChanges([sampleChange])
+      ;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('unexpected throw')
+      )
+
+      const response = await GET({ request: getRequest() })
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.success).toBe(true)
+    })
+
+    it("is idempotent from the route's perspective — called every pull, safe because the underlying function no-ops when a profile already exists", async () => {
+      mockSession(paidSession)
+      await GET({ request: getRequest() })
+      await GET({ request: getRequest() })
+
+      expect(createDefaultProfileForUser).toHaveBeenCalledTimes(2)
+    })
   })
 })

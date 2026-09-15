@@ -17,8 +17,10 @@
  *   profile-scoped entities). A client-supplied userId is never trusted.
  */
 
+import { logger } from '@/lib/logger'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { PAID_SYNC_STATUSES, checkRateLimit, getSyncChanges } from '@/server/api/sync'
+import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
@@ -44,6 +46,30 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
       },
       { status: 403 }
     )
+  }
+
+  // 2a) Self-healing default-profile backfill (post-53.1 incident fix). The
+  // Paddle webhook (story 5-3) creates a default `userProfiles` row for every
+  // NEW signup, but any account that predates 5-3 never got one — and
+  // `reconcileActiveProfile()` (`lib/sync/applyServerChanges.ts`) permanently
+  // no-ops when a pull returns zero profiles, which also means the push
+  // bridge and the free→paid backlog seed never register. Story 53.1's
+  // `has_session` fix let `ActiveSync` finally mount for such an account, but
+  // its very first pull still came back empty and the client-side deadlock
+  // was unbreakable from there. `createDefaultProfileForUser` is idempotent
+  // (a no-op, returning the existing profile, when one already exists) — safe
+  // to call on every pull rather than only on account creation. Failure here
+  // must not fail the pull itself: worst case is the pre-existing deadlock,
+  // not a new one, and the NEXT pull (30s poll) tries again.
+  try {
+    const backfillResult = await createDefaultProfileForUser(session.data.userId)
+    if (!backfillResult.success) {
+      logger.error('[sync/changes] default-profile backfill failed', {
+        error: backfillResult.error,
+      })
+    }
+  } catch (error) {
+    logger.error('[sync/changes] default-profile backfill threw', { error })
   }
 
   // 2b) Rate limit — shares the per-user budget with push (review D3). A runaway
