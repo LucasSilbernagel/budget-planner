@@ -15,6 +15,7 @@ import {
   applyHeadersToNextResult,
   applySecurityHeaders,
   buildContentSecurityPolicy,
+  isCanonicalHttpsRequest,
   isConfirmedHttps,
 } from '../security-headers'
 
@@ -288,6 +289,38 @@ describe('applySecurityHeaders', () => {
       expect(isConfirmedHttps(null)).toBe(false)
       expect(isConfirmedHttps(undefined)).toBe(false)
       expect(isConfirmedHttps('')).toBe(false)
+    })
+  })
+
+  describe('isCanonicalHttpsRequest (story 5-6 F2, custom-domain HSTS gate)', () => {
+    const SITE = 'https://www.longhandbudget.com'
+
+    it('is true when the request host IS the canonical https origin host', () => {
+      expect(isCanonicalHttpsRequest('www.longhandbudget.com', SITE)).toBe(true)
+    })
+
+    it('matches case-insensitively and ignores a default :443 port (Host header forms)', () => {
+      expect(isCanonicalHttpsRequest('WWW.LonghandBudget.com', SITE)).toBe(true)
+      expect(isCanonicalHttpsRequest('www.longhandbudget.com:443', SITE)).toBe(true)
+    })
+
+    it('is FALSE for any other host — a spoofed Host header cannot summon HSTS', () => {
+      expect(isCanonicalHttpsRequest('evil.example', SITE)).toBe(false)
+      expect(isCanonicalHttpsRequest('longhandbudget.com', SITE)).toBe(false)
+      expect(isCanonicalHttpsRequest('www.longhandbudget.com.evil.example', SITE)).toBe(false)
+      // A non-default port is a different origin, so it must not match.
+      expect(isCanonicalHttpsRequest('www.longhandbudget.com:8080', SITE)).toBe(false)
+    })
+
+    it('is FALSE when the configured site origin is not https (dev/localhost)', () => {
+      expect(isCanonicalHttpsRequest('localhost:5173', 'http://localhost:5173')).toBe(false)
+    })
+
+    it('is FALSE for a missing host or an unparseable site url, rather than throwing', () => {
+      expect(isCanonicalHttpsRequest(null, SITE)).toBe(false)
+      expect(isCanonicalHttpsRequest('', SITE)).toBe(false)
+      expect(isCanonicalHttpsRequest('www.longhandbudget.com', 'not a url')).toBe(false)
+      expect(isCanonicalHttpsRequest('www.longhandbudget.com', undefined)).toBe(false)
     })
   })
 

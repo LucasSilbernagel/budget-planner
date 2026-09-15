@@ -20,16 +20,45 @@
  * real client scheme (see `server/node-adapter.mjs`).
  */
 
+import { getSiteUrl } from '@budget-planner/config'
 import { createMiddleware, createStart } from '@tanstack/react-start'
 import { generateCspNonce, runWithCspNonce } from './server/csp-nonce'
-import { applyHeadersToNextResult, isConfirmedHttps } from './server/middleware/security-headers'
+import {
+  applyHeadersToNextResult,
+  isCanonicalHttpsRequest,
+  isConfirmedHttps,
+} from './server/middleware/security-headers'
+
+/**
+ * The configured public origin, read once. `getSiteUrl()` throws in production
+ * when `SITE_URL` is missing/not https; that must not turn every page into a 500,
+ * so a failure here degrades to "no canonical origin" and HSTS falls back to the
+ * forwarded-proto signal alone.
+ */
+function canonicalSiteUrl(): string | undefined {
+  try {
+    return getSiteUrl()
+  } catch {
+    return undefined
+  }
+}
 
 const securityHeadersMiddleware = createMiddleware({ type: 'request' }).server(
   ({ next, request }) => {
     const isDev = process.env['NODE_ENV'] === 'development'
-    // Confirmed HTTPS only when the edge proxy reports it (case-insensitive,
-    // first hop of a possibly comma-joined value) — see `isConfirmedHttps`.
-    const isHttps = isConfirmedHttps(request.headers.get('x-forwarded-proto'))
+    // Confirmed HTTPS when the edge proxy reports it (case-insensitive, first hop
+    // of a possibly comma-joined value) — see `isConfirmedHttps`. The custom
+    // domain's ingress path does NOT send that header (story 5-6 finding F2: the
+    // live `www` host served 0/3 responses with HSTS while the `*.danubedata.run`
+    // host served 3/3), so a request whose host IS our configured https origin
+    // also counts as confirmed — see `isCanonicalHttpsRequest` for why a
+    // client-controlled Host header cannot widen this.
+    const isHttps =
+      isConfirmedHttps(request.headers.get('x-forwarded-proto')) ||
+      isCanonicalHttpsRequest(
+        request.headers.get('x-forwarded-host') ?? request.headers.get('host'),
+        canonicalSiteUrl()
+      )
 
     // Mint one nonce and make it available to the render (via AsyncLocalStorage →
     // getRouter → router.options.ssr.nonce) AND to the CSP header below, so both

@@ -160,6 +160,66 @@ export function isConfirmedHttps(forwardedProto: string | null | undefined): boo
   return forwardedProto?.split(',')[0]?.trim().toLowerCase() === 'https'
 }
 
+/**
+ * Whether the request arrived on the app's own canonical **https** origin, judged
+ * by comparing the request's host against `SITE_URL`.
+ *
+ * ## Why this exists (story 5-6, finding F2)
+ *
+ * `isConfirmedHttps` alone was not enough in production. The Rapids-assigned
+ * `*.danubedata.run` hostname emits HSTS; the custom domain
+ * `www.longhandbudget.com` did **not** — measured 3/3 on the live deployment —
+ * because the custom-domain ingress path reaches the container without
+ * `x-forwarded-proto: https`. The result was that the domain real users visit was
+ * the one domain with no TLS-strip protection.
+ *
+ * ## Why a Host comparison is safe here
+ *
+ * A `Host` header is client-controlled, so it can never *widen* anything. It is
+ * only ever compared for equality against the operator-configured `SITE_URL`
+ * origin, which is itself required to be `https://` in production
+ * (`getSiteUrl()` fails closed). So the only header value that unlocks HSTS is
+ * the one naming an origin we already assert is https — a client sending
+ * `Host: evil.example` gets no HSTS, and a client sending our own canonical host
+ * gains nothing it could not get by simply requesting that host over TLS.
+ *
+ * Port handling: a bare host and an explicit `:443` are the same https origin; any
+ * other explicit port is a different origin and does not match.
+ *
+ * @param requestHost - The request's host (`x-forwarded-host`, else `Host`).
+ * @param siteUrl - The configured public origin (`getSiteUrl()`); may be absent or
+ *   unparseable in dev/test, which yields `false` rather than a throw.
+ */
+export function isCanonicalHttpsRequest(
+  requestHost: string | null | undefined,
+  siteUrl: string | null | undefined
+): boolean {
+  if (!requestHost || !siteUrl) return false
+
+  let canonical: URL
+  try {
+    canonical = new URL(siteUrl)
+  } catch {
+    return false
+  }
+  if (canonical.protocol !== 'https:') return false
+
+  // `URL.host` keeps a non-default port and drops a default one, so normalizing
+  // the request host through the same rule makes `:443` and bare hosts compare
+  // equal while `:8080` stays distinct.
+  const normalizedRequestHost = requestHost.trim().toLowerCase()
+  if (!normalizedRequestHost) return false
+
+  let requested: URL
+  try {
+    requested = new URL(`https://${normalizedRequestHost}`)
+  } catch {
+    return false
+  }
+
+  return requested.host === canonical.host
+}
+
 /** Options controlling the conditional/per-request headers. */
 export interface SecurityHeaderOptions {
   /**
