@@ -112,6 +112,9 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', routeFetch)
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
+  // ⚠️ `localStorage` MUST come from the JSDOM window. The node environment has
+  // none unless Node runs with `--localstorage-file` — which dev boxes set and
+  // CI does not, so omitting it passes locally and fails in CI.
   for (const key of [
     'window',
     'document',
@@ -119,12 +122,42 @@ beforeAll(async () => {
     'Node',
     'navigator',
     'MutationObserver',
+    'localStorage',
   ]) {
     vi.stubGlobal(
       key,
       key === 'window' ? dom.window : (dom.window as unknown as Record<string, unknown>)[key]
     )
   }
+  // Persisted stores bind their storage when their module is first evaluated,
+  // and `vitest.setup.ts` imports several of them before this hook installs the
+  // JSDOM `localStorage`. What they bound depends on the Node version: on Node
+  // 26 without `--localstorage-file` a DEAD storage (the setup file's own
+  // `setState` then throws); on Node 20 (CI) none at all, so the store has no
+  // `persist` API. Rebind whichever have one.
+  const { createJSONStorage } = await import('zustand/middleware')
+  const persisted = await Promise.all([
+    import('@/stores/incomeStore').then((m) => m.useIncomeStore),
+    import('@/stores/expenseStore').then((m) => m.useExpenseStore),
+    import('@/stores/savingsStore').then((m) => m.useSavingsStore),
+    import('@/stores/balanceStore').then((m) => m.useBalanceStore),
+    import('@/stores/categoryStore').then((m) => m.useCategoryStore),
+    import('@/stores/currencyStore').then((m) => m.useCurrencyStore),
+    import('@/stores/profileStore').then((m) => m.useProfileStore),
+    import('@/stores/themeStore').then((m) => m.useThemeStore),
+    import('@/stores/overviewDurationStore').then((m) => m.useOverviewDurationStore),
+    import('@/stores/plannerVisibilityStore').then((m) => m.usePlannerVisibilityStore),
+    import('@/stores/tableSortStore').then((m) => m.useTableSortStore),
+    import('@/stores/retirementPlannerStore').then((m) => m.useRetirementPlannerStore),
+  ])
+  for (const store of persisted) {
+    const api = (store as { persist?: { setOptions: (o: Record<string, unknown>) => void } })
+      .persist
+    api?.setOptions({
+      storage: createJSONStorage(() => dom.window.localStorage),
+    })
+  }
+
   rtl = await import('@testing-library/react')
   ;({ resetSyncStore } = await import('@/hooks/useSync'))
   ;({ useIncomeStore } = await import('@/stores/incomeStore'))
