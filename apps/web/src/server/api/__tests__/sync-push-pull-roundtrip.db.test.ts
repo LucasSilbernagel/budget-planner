@@ -38,7 +38,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { incomeSources, userProfiles, users } from '@budget-planner/db'
 import { eq } from 'drizzle-orm'
-import { getSyncChanges, processBatchSync } from '../sync'
+import { getLiveProfileIds, getSyncChanges, processBatchSync } from '../sync'
 
 const MIGRATIONS = new URL('../../../../../../packages/db/migrations/', import.meta.url)
 
@@ -209,5 +209,24 @@ describe('sync push → pull round trip (real PostgreSQL)', () => {
     ])
     const [row] = await db.select().from(incomeSources).where(eq(incomeSources.id, rowId))
     expect(row).toMatchObject({ userId: USER_A, profileId: PROFILE_A })
+  })
+
+  it('a create replayed for a row this user already deleted is acknowledged and does NOT resurrect it', async () => {
+    const rowId = nextRowId()
+    await push([incomeCreate(rowId)])
+    await push([
+      { ...incomeCreate(rowId), id: `op-del-${rowId}`, type: 'delete', data: { userId: USER_A } },
+    ])
+
+    const replay = await push([{ ...incomeCreate(rowId), id: `op-replay-${rowId}` }])
+
+    expect(replay).toMatchObject({ success: true, processedCount: 1, failedCount: 0 })
+    const rows = await db.select().from(incomeSources).where(eq(incomeSources.id, rowId))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.isDeleted).toBe(true)
+  })
+
+  it('getLiveProfileIds lists only live profiles owned by the user', async () => {
+    expect(await getLiveProfileIds(USER_A)).toEqual([PROFILE_A])
   })
 })

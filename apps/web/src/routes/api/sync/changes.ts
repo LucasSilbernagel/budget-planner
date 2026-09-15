@@ -19,7 +19,12 @@
 
 import { logger } from '@/lib/logger'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
-import { PAID_SYNC_STATUSES, checkRateLimit, getSyncChanges } from '@/server/api/sync'
+import {
+  PAID_SYNC_STATUSES,
+  checkRateLimit,
+  getLiveProfileIds,
+  getSyncChanges,
+} from '@/server/api/sync'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
@@ -113,7 +118,16 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     // narrow so the fallback stays explicit.
     const newestChange = changes[changes.length - 1]
     const lastPullTimestamp = newestChange ? newestChange.updatedAt : since
-    return json({ success: true, changes, lastPullTimestamp })
+    // The authoritative live profile list (see `getLiveProfileIds`). Optional in
+    // the envelope: if it cannot be read, the pull itself still succeeds and the
+    // client simply skips unsynced-profile detection this round.
+    let profileIds: string[] | undefined
+    try {
+      profileIds = await getLiveProfileIds(session.data.userId)
+    } catch (error) {
+      logger.error('[sync/changes] live profile list failed', { error })
+    }
+    return json({ success: true, changes, lastPullTimestamp, profileIds })
   } catch (error) {
     return json(
       {

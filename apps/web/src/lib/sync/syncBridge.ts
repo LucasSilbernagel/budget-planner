@@ -85,7 +85,7 @@ function toBaseVersion(updatedAt: unknown): number | undefined {
  * authenticated session uuid instead, which the server also re-verifies against
  * the session. Only the columns the server validates per entity are forwarded.
  */
-function toServerPayload(
+export function toServerPayload(
   entityType: SyncEntityType,
   entityIn: ClientEntity,
   userId: string

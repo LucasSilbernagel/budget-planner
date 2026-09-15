@@ -329,8 +329,15 @@ export class SyncQueue {
    * @param limit - Maximum number of operations to return
    */
   getReadyOperations(limit?: number): SyncOperation[] {
-    // Sort by timestamp (oldest first)
-    const sorted = [...this.queue].sort((a, b) => a.timestamp - b.timestamp)
+    // Sort by timestamp (oldest first) — except that profile CREATES go first.
+    // Every profile-scoped op names a profileId the server requires to exist, and
+    // a profile that was created while sync was not wired is only enqueued LATER
+    // (when it is found missing server-side), so plain timestamp order would send
+    // its dependents first and have each rejected as "Profile not found". A
+    // profile create depends on nothing, so moving it ahead is always safe.
+    const rank = (op: SyncOperation) =>
+      op.entityType === 'userProfile' && op.type === 'create' ? 0 : 1
+    const sorted = [...this.queue].sort((a, b) => rank(a) - rank(b) || a.timestamp - b.timestamp)
 
     // Only apply a limit when one is explicitly provided. `limit === 0` must
     // return an empty batch, not the whole queue (the previous `if (limit)`

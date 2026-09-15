@@ -30,12 +30,10 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
-import {
-  fetchServerChanges as fetchServerChangesHttp,
-  sendSyncOperation,
-} from '../features/api/client'
+import { fetchServerChangesWithMeta, sendSyncOperation } from '../features/api/client'
 import { applyServerChangesToStores } from '../lib/sync/applyServerChanges'
 import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
+import { toServerPayload } from '../lib/sync/syncBridge'
 import { useProfileStore } from '../stores/profileStore'
 
 // ============================================================================
@@ -307,6 +305,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   const repullRequestedRef = useRef(false)
   const pullRef = useRef<() => Promise<PullResult | undefined>>(async () => undefined)
   const isFirstProfileEffectRef = useRef(true)
+  // The server's live profile ids from the most recent pull response (see
+  // `uploadMissingProfiles`). Written by the transport wrapper, consumed by pull().
+  const lastLiveProfileIdsRef = useRef<string[] | undefined>(undefined)
+  const syncSoonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Initialize sync service on first render
   useEffect(() => {
@@ -326,12 +328,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       // Pull transport (Story 4-18): goes over HTTP to /api/sync/changes. The
       // active profile is read lazily at call time so a profile switch is
       // reflected without re-creating the service. Never imports the server fn.
-      fetchServerChanges: ((since: number | null) =>
-        fetchServerChangesHttp(
+      fetchServerChanges: (async (since: number | null) => {
+        const { changes, profileIds } = await fetchServerChangesWithMeta(
           since,
           pullLimit,
           useProfileStore.getState().activeProfileId ?? undefined
-        )) as FetchServerChangesFn,
+        )
+        lastLiveProfileIdsRef.current = profileIds
+        return changes
+      }) as FetchServerChangesFn,
       ...syncConfig,
     })
 
@@ -482,6 +487,77 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
   }, [handleStatusChange])
 
+  // Push the queue soon, re-arming while another sync is still running: a
+  // `sync()` that finds one in progress returns immediately and nothing else
+  // would retry, leaving freshly queued ops unsent until an unrelated trigger.
+  const syncSoon = useCallback((): void => {
+    const schedule = (attempt: number): void => {
+      if (syncSoonTimerRef.current) {
+        clearTimeout(syncSoonTimerRef.current)
+      }
+      syncSoonTimerRef.current = setTimeout(() => {
+        syncSoonTimerRef.current = null
+        const service = syncServiceRef.current
+        if (!service) {
+          return
+        }
+        service
+          .forceSync()
+          .then((result) => {
+            if (result.error === 'Sync already in progress' && attempt < 10) {
+              schedule(attempt + 1)
+            }
+          })
+          .catch((error) => {
+            console.error('Sync after profile upload failed:', error)
+          })
+      }, debounceDelay)
+    }
+    schedule(0)
+  }, [debounceDelay])
+
+  /**
+   * Upload every local profile the server does not have (user choice,
+   * 2026-09-15). A profile created while sync was not wired (e.g. on the
+   * Profiles page before the push bridge registered) was never enqueued, yet it
+   * can be the ACTIVE profile — so every row this device queues is stamped with
+   * it and the server rejects each one as "Profile not found", indefinitely.
+   * `profileIds` is the server's authoritative live list for this user; a
+   * profile with a pending op is already on its way and is skipped. The queue
+   * sends profile creates ahead of everything else, so the rows that depend on
+   * the profile succeed in the same sync.
+   */
+  const uploadMissingProfiles = useCallback(
+    async (profileIds: string[]): Promise<void> => {
+      const service = syncServiceRef.current
+      if (!service) {
+        return
+      }
+      const live = new Set(profileIds)
+      const queue = service.getQueue()
+      const missing = useProfileStore
+        .getState()
+        .profiles.filter(
+          (profile) =>
+            Boolean(profile.userId) &&
+            !live.has(profile.id) &&
+            !queue.hasPendingOperations('userProfile', profile.id)
+        )
+      for (const profile of missing) {
+        await service.queueCreate(
+          'userProfile',
+          profile.id,
+          toServerPayload('userProfile', profile, userId),
+          userId
+        )
+      }
+      if (missing.length > 0 && autoSync) {
+        syncSoon()
+      }
+    },
+    [userId, autoSync, syncSoon]
+  )
+
   // Pull server → client changes (AC-5 manual trigger; AC-4 auto-poll reuses it).
   // Skips if a pull is already in flight so overlapping triggers debounce.
   const pull = useCallback(async (): Promise<PullResult | undefined> => {
@@ -502,6 +578,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       // so `useIsInitialSyncPending` and other leaf consumers can read this
       // WITHOUT importing this (heavy) module — see that store's own docblock.
       setLastPullTimestamp(result.lastPullTimestamp)
+      const liveProfileIds = lastLiveProfileIdsRef.current
+      lastLiveProfileIdsRef.current = undefined
+      // An empty list means the server has not even a default profile yet (its
+      // backfill failed) — nothing trustworthy to compare against.
+      if (result.success && liveProfileIds && liveProfileIds.length > 0) {
+        await uploadMissingProfiles(liveProfileIds).catch((error) => {
+          console.error('Uploading unsynced profiles failed:', error)
+        })
+      }
       return result
     } catch (error) {
       console.error('Pull failed:', error)
@@ -519,7 +604,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         })
       }
     }
-  }, [store])
+  }, [store, uploadMissingProfiles])
   pullRef.current = pull
 
   // Force pull is an alias for pull (symmetry with forceSync).
@@ -684,11 +769,14 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     store.getState().reset()
   }, [store])
 
-  // Cleanup debounce timer on unmount
+  // Cleanup debounce timers on unmount
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
+      }
+      if (syncSoonTimerRef.current) {
+        clearTimeout(syncSoonTimerRef.current)
       }
     }
   }, [])

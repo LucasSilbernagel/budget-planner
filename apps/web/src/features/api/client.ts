@@ -211,6 +211,20 @@ export async function fetchServerChanges(
   limit = 100,
   profileId?: string
 ): Promise<ServerChange[]> {
+  return (await fetchServerChangesWithMeta(since, limit, profileId)).changes
+}
+
+/**
+ * {@link fetchServerChanges}, plus the envelope's `profileIds`: every live
+ * profile the user owns on the server (`undefined` when the server could not
+ * read it). The pulled `userProfile` changes are a capped delta and cannot tell
+ * the client which profiles are MISSING server-side; this list can.
+ */
+export async function fetchServerChangesWithMeta(
+  since: number | null,
+  limit = 100,
+  profileId?: string
+): Promise<{ changes: ServerChange[]; profileIds: string[] | undefined }> {
   const params = new URLSearchParams()
   if (since !== null) {
     params.set('since', String(since))
@@ -232,14 +246,22 @@ export async function fetchServerChanges(
     throw new Error(errorData.error || 'Failed to fetch server changes')
   }
 
-  const result: { success: boolean; changes?: ServerChange[]; error?: string } =
-    await response.json()
+  const result: {
+    success: boolean
+    changes?: ServerChange[]
+    profileIds?: unknown
+    error?: string
+  } = await response.json()
 
   if (!result.success) {
     throw new Error(result.error || 'Failed to fetch server changes')
   }
 
-  return result.changes ?? []
+  const profileIds =
+    Array.isArray(result.profileIds) && result.profileIds.every((id) => typeof id === 'string')
+      ? (result.profileIds as string[])
+      : undefined
+  return { changes: result.changes ?? [], profileIds }
 }
 
 /**

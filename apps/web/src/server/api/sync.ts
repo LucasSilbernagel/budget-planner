@@ -552,6 +552,45 @@ async function profileBelongsToUser(profileId: string, userId: string): Promise<
 }
 
 /**
+ * Ids of every live (non-tombstoned) profile the user owns — the authoritative
+ * profile list, returned alongside each pull (`/api/sync/changes`).
+ *
+ * The pull's own `userProfile` changes are NOT a substitute: they are a delta
+ * (empty whenever the cursor is past every profile's `updatedAt`) and a capped,
+ * paginated page, so a client cannot infer "this profile does not exist on the
+ * server" from its absence there. The client uses this list to find profiles it
+ * created while sync was not wired, which would otherwise never be uploaded —
+ * and every row stamped with them would be rejected as "Profile not found".
+ */
+export async function getLiveProfileIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: userProfiles.id })
+    .from(userProfiles)
+    .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+  return rows.map((row) => row.id)
+}
+
+/**
+ * Whether a TOMBSTONED row with this id exists for this user. `entityExists`
+ * treats tombstones as absent, so a create for a deleted id would otherwise
+ * reach the INSERT and fail on the primary key — permanently, since the client
+ * keeps non-retryable failures queued.
+ */
+async function tombstoneExists(
+  entityType: keyof EntityTableMap,
+  entityId: string,
+  userId: string
+): Promise<boolean> {
+  const table = getTable(entityType)
+  const rows = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(and(eq(table.userId, userId), eq(table.id, entityId), eq(table.isDeleted, true)))
+    .limit(1)
+  return rows.length > 0
+}
+
+/**
  * Create entity in database
  */
 async function createEntity(
@@ -676,6 +715,13 @@ async function applyOperation(
   }
 
   try {
+    // A create for an id this user already DELETED is a stale replay (e.g. a
+    // device that had not yet pulled the tombstone). Acknowledge it without
+    // resurrecting the row: deletion wins.
+    if (operation.type === 'create' && (await tombstoneExists(entityType, entityId, userId))) {
+      return { success: true }
+    }
+
     // Profile-scoped entities must name a live profile the SESSION user owns.
     // The FK alone only proves the profile exists — for someone.
     if ('profileId' in getTable(entityType)) {

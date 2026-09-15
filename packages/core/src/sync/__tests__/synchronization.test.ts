@@ -482,5 +482,37 @@ describe('Synchronization Service', () => {
       expect(ready[1].timestamp).toBe(2000)
       expect(ready[2].timestamp).toBe(3000)
     })
+
+    it('sends profile creates before older ops, since profile-scoped ops need the profile to exist server-side', async () => {
+      const queue = createSyncQueue(testUserId)
+      await queue.add(
+        createTestOperation({ id: 'expense', entityType: 'expense', timestamp: 1000 })
+      )
+      await queue.add(
+        createTestOperation({
+          id: 'profile-update',
+          entityType: 'userProfile',
+          type: 'update',
+          timestamp: 1500,
+        })
+      )
+      await queue.add(
+        createTestOperation({
+          id: 'profile-create',
+          entityType: 'userProfile',
+          type: 'create',
+          timestamp: 3000,
+        })
+      )
+      await queue.add(
+        createTestOperation({ id: 'income', entityType: 'incomeSource', timestamp: 2000 })
+      )
+      expect(queue.getReadyOperations().map((op) => op.id)).toEqual([
+        'profile-create',
+        'expense',
+        'profile-update',
+        'income',
+      ])
+    })
   })
 })

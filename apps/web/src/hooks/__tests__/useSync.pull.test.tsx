@@ -19,10 +19,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Mock the HTTP transport the hook wires into the core service. Both the pull
 // (fetchServerChanges) and push (sendSyncOperation, Story 5-15) transports live
 // here now; mock both so no real network is touched (NFR8).
-vi.mock('../../features/api/client', () => ({
-  fetchServerChanges: vi.fn(),
-  sendSyncOperation: vi.fn(async () => ({ success: true })),
-}))
+vi.mock('../../features/api/client', () => {
+  const fetchServerChanges = vi.fn()
+  return {
+    fetchServerChanges,
+    // The hook uses the envelope-aware variant; route it through the same mock
+    // so each test keeps stubbing and asserting `fetchServerChanges` alone.
+    fetchServerChangesWithMeta: async (...args: unknown[]) => ({
+      changes: await fetchServerChanges(...args),
+      profileIds: undefined,
+    }),
+    sendSyncOperation: vi.fn(async () => ({ success: true })),
+  }
+})
 
 import { fetchServerChanges } from '../../features/api/client'
 import { useIncomeStore } from '../../stores/incomeStore'

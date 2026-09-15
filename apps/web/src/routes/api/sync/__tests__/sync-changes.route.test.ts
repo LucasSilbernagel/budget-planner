@@ -30,6 +30,7 @@ vi.mock('@/server/api/sync', () => ({
   PAID_SYNC_STATUSES: ['active', 'past_due'],
   getSyncChanges: vi.fn(),
   checkRateLimit: vi.fn(),
+  getLiveProfileIds: vi.fn(async () => []),
 }))
 
 // Post-53.1-incident fix: the route self-heals a missing default profile

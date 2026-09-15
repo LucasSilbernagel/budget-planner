@@ -290,4 +290,59 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
       { timeout: 15_000 }
     )
   }, 60_000)
+
+  it('a profile created while sync was off is uploaded, so the data queued under it reaches the server and another device can switch to it', async () => {
+    await pg.exec('delete from "incomeSources"')
+    freshDevice()
+    // Device A, as observed in production: its ACTIVE profile carries the user's
+    // id but was never uploaded (created before the push bridge registered).
+    const localOnlyProfile = crypto.randomUUID()
+    useProfileStore.setState({
+      profiles: [
+        {
+          id: localOnlyProfile,
+          userId: USER,
+          name: 'Household',
+          isDefault: false,
+          currency: 'NONE',
+        },
+      ],
+      activeProfileId: localOnlyProfile,
+    })
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Freelance', amount: 250_000, frequency: 'monthly' })
+
+    rtl.render(<ActiveSync userId={USER} />)
+    await rtl.waitFor(
+      async () => {
+        const rows = await pg.query<{ profileId: string }>(
+          'select "profileId" from "incomeSources"'
+        )
+        expect(rows.rows.map((r) => r.profileId)).toEqual([localOnlyProfile])
+      },
+      { timeout: 20_000 }
+    )
+    const profiles = await pg.query<{ id: string }>(
+      `select id from "userProfiles" where "userId" = '${USER}' and "isDeleted" = false`
+    )
+    expect(profiles.rows.map((r) => r.id)).toContain(localOnlyProfile)
+
+    // Device B: fresh, lands on the default profile, then switches to the uploaded one.
+    freshDevice()
+    rtl.render(<ActiveSync userId={USER} />)
+    await rtl.waitFor(
+      () => {
+        expect(useProfileStore.getState().profiles.map((p) => p.id)).toContain(localOnlyProfile)
+      },
+      { timeout: 15_000 }
+    )
+    useProfileStore.getState().switchProfile(localOnlyProfile)
+    await rtl.waitFor(
+      () => {
+        expect(useIncomeStore.getState().incomeSources.map((s) => s.name)).toContain('Freelance')
+      },
+      { timeout: 15_000 }
+    )
+  }, 90_000)
 })
