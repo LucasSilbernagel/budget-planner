@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover
 
 CI = ".github/workflows/ci.yml"
 DEPLOY = ".github/workflows/deploy.yml"
+PRESENCE_HELPER = ".github/scripts/rapids_presence.py"
 
 failures: list[str] = []
 checked = 0
@@ -136,11 +137,107 @@ def main() -> int:
 
     print("\n== migration is ordered, abortive, and gated ==")
     steps = jobs["migrate"]["steps"]
-    pre = next(i for i, s in enumerate(steps) if "db:migrate:preflight" in s.get("run", ""))
-    mig = next(i for i, s in enumerate(steps) if s.get("run", "").strip().endswith("db:migrate"))
-    check(pre < mig, "preflight runs before db:migrate")
     check(not any(s.get("continue-on-error") for s in steps), "no continue-on-error in migrate")
     check(jobs["migrate"].get("environment") == "production", "migrate sits in the production environment")
+
+    # Story 5.18. The preflight -> drizzle-kit ordering moved INSIDE the image
+    # (apps/web/migrate-entry.mjs, pinned by its own unit tests), so it is no
+    # longer expressible as two workflow steps. What this file can still pin is
+    # that the pipeline runs the migration in-cluster and reads a real verdict.
+    print("\n== the ADR-001 public-DNS window is retired and cannot come back ==")
+    migrate_block = yaml.safe_dump(jobs["migrate"])
+    # Asserted over the executable surface — every step's `run:` script and its
+    # `env:` block — NOT the raw file, so the comments that explain why the window
+    # was retired do not read as the window still being there.
+    # Every place a value can actually reach a runner: step `run:` bodies, step
+    # `env:`, step `with:`, job-level `env:`, and the WORKFLOW-level `env:`.
+    # The last two mattered: `DB_INSTANCE` — the variable whose only purpose was
+    # naming the instance to the DNS-window commands — lived at workflow level,
+    # so a check that skipped it would have called the window retired while the
+    # variable that drove it sat there (code review 2026-09-15).
+    executable = "\n".join(
+        (step.get("run", "") or "")
+        + "\n"
+        + yaml.safe_dump(step.get("env", {}) or {})
+        + yaml.safe_dump(step.get("with", {}) or {})
+        for job in jobs.values()
+        for step in (job.get("steps", []) or [])
+    )
+    executable += "\n" + yaml.safe_dump({name: job.get("env", {}) or {} for name, job in jobs.items()})
+    executable += "\n" + yaml.safe_dump(deploy.get("env", {}) or {})
+    check("db dns" not in executable, "no step opens or closes a public database endpoint")
+    check("DATABASE_PUBLIC_HOST" not in executable, "the public-endpoint variable is gone")
+    check("danubedata.ro:54" not in executable, "no public database endpoint is referenced")
+    check("DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH" not in executable,
+          "the verify-ca hostname waiver is gone (migrations run at verify-full)")
+    check("svc.cluster.local" in migrate_block, "the migration targets the in-cluster writer")
+
+    print("\n== the migrate container is started, read, and always removed ==")
+    preclean_i = next(i for i, s in enumerate(steps) if "leftover" in str(s.get("name", "")).lower())
+    apply_i = next(i for i, s in enumerate(steps) if "rapids apply" in s.get("run", ""))
+    update_i = next(i for i, s in enumerate(steps) if "rapids update" in s.get("run", ""))
+    verdict_i = next(i for i, s in enumerate(steps) if "migrate-status" in s.get("run", ""))
+    rm_i = len(steps) - 1
+    # A leftover from a crashed run carries that run's env through `--env` merge
+    # semantics, and Knative can route to it. Delete before creating.
+    check(preclean_i < apply_i, "any leftover container is removed before the new one is created")
+    # `apply`/`create` cannot set env and `update` can, so the container MUST be
+    # created scaled-to-zero and only then given credentials — otherwise it boots
+    # in migrate mode with no DATABASE_URL.
+    check(apply_i < update_i, "the container is created before credentials are injected")
+    check("--min-scale 0" in steps[apply_i]["run"], "it is created scaled to zero")
+    check(update_i < verdict_i, "the verdict is read after the migration is started")
+    # The one step that carries DATABASE_URL into the platform. `--json` here
+    # would print the container's environment_variables into the run log.
+    check("--json" not in steps[update_i]["run"],
+          "the credential-injecting step never uses --json (it would print DATABASE_URL)")
+    check("APP_ENTRYPOINT=migrate" in steps[update_i]["run"], "the container runs in migrate mode")
+    check("MIGRATE_RUN_ID=" in steps[update_i]["run"],
+          "the container is bound to this run, so a stale verdict cannot be accepted")
+    check("rapids rm" in steps[rm_i].get("run", ""), "teardown is the last step")
+    check(str(steps[rm_i].get("if")) == "${{ always() }}",
+          "the migrate container is torn down even on failure or cancellation")
+    check("exit 1" in steps[rm_i]["run"], "a teardown that does not take fails the job")
+
+    # ⚠️ These two replace substring checks that could pass vacuously. The old
+    # verdict check was `'"succeeded"' in run`, which also passes for
+    # `!= "succeeded"` and for a step that merely ECHOES the word — it pinned
+    # nothing about failing closed (code review 2026-09-15).
+    print("\n== the verdict and the teardown both fail CLOSED ==")
+    verdict_run = steps[verdict_i]["run"]
+    check(re.search(r'if\s+\[\s*"\$\{state\}"\s*=\s*"succeeded"\s*\]', verdict_run) is not None,
+          "success is an explicit equality test on the parsed state, not a substring")
+    check(re.search(r'exit 1\s*$', verdict_run.strip()) is not None,
+          "the verdict step's last act on a non-success path is to exit non-zero")
+    check('"${reported_run}" != "${RUN_ID}"' in verdict_run,
+          "a verdict from a container this run did not start is rejected")
+    # The HIGH this file failed to catch the first time: presence must be a WORD,
+    # because an exit code cannot distinguish "absent" from "could not tell".
+    teardown_run = steps[rm_i]["run"]
+    check("rapids_presence.py" in teardown_run and "rapids_presence.py" in steps[preclean_i]["run"],
+          "both presence checks use the three-state helper, not an ambiguous exit code")
+    check('"${presence}" = "absent"' in teardown_run,
+          "teardown succeeds ONLY on an explicit absent")
+    check('"${presence}" = "error"' in teardown_run,
+          "an unreadable listing is reported and fails the job rather than reading as absent")
+    try:
+        with open(PRESENCE_HELPER, encoding="utf-8") as fh:
+            helper_src = fh.read()
+    except OSError:
+        helper_src = ""
+    check(bool(helper_src), "the presence helper exists")
+    if helper_src:
+        # Strip the module docstring before asserting absence: it QUOTES the old
+        # `sys.exit(0 if present else 1)` to explain why that shape was wrong, and
+        # a check that matched the explanation would fail on documentation rather
+        # than on code — the same trap the Dockerfile guard in entrypoint.test.ts hit.
+        body = helper_src.split('"""')[-1] if helper_src.count('"""') >= 2 else helper_src
+        check("sys.exit(0 if" not in body,
+              "the helper never encodes presence in an exit code")
+        check("sys.exit(main())" in body, "the helper's only exit is main()'s return")
+        for word in ("present", "absent", "error"):
+            check(f'return "{word}"' in body or f'print("{word}")' in body,
+                  f"the helper can report {word}")
 
     print("\n== secrets are referenced, never inlined ==")
     for name, job in jobs.items():

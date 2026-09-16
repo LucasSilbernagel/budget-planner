@@ -120,6 +120,29 @@ export function isEuSovereignDbHost(host: string): boolean {
 }
 
 /**
+ * True only for the in-cluster writer names — the STRICT subset of
+ * `isEuSovereignDbHost` that excludes the public `.danubedata.ro` endpoint
+ * (Story 5.18, AC-4).
+ *
+ * Both predicates are EU-sovereign, so this is not a sovereignty distinction: it
+ * is a reachability one. `.danubedata.ro` is what `danube db dns enable` exposes
+ * to the public internet, and ADR-001 forbids that as a standing configuration.
+ * The migration is the one path that ever had a reason to dial it — under the
+ * time-boxed exception this story retires — so the migration is where the
+ * narrower rule is enforced.
+ *
+ * Deliberately NOT applied to the application pool: `isEuSovereignDbHost` stays
+ * as it is. Narrowing the shared predicate would also bind `db:smoke`,
+ * `db:ca-expiry` and any operator-run tooling that may still legitimately reach a
+ * public endpoint by hand, which is a wider change than this story's invariant
+ * needs. See the story's Dev Agent Record for the deviation note on AC-4.
+ */
+export function isInClusterDbHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, '')
+  return (EU_DB_INTERNAL_HOSTS as readonly string[]).includes(h)
+}
+
+/**
  * Resolve the pg SSL option for a given environment.
  *
  * - Relaxed (development/test): SSL disabled for local Postgres.

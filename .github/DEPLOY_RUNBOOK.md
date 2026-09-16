@@ -65,6 +65,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `DANUBE_TEAM_ID` | Optional. The CLI needs an explicit project/team id in non-interactive mode **when the account has more than one team**; unset is correct for a single-team account. Passed to every CLI step so a later second team does not silently break deploys. |
 | `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `push-image` prune step keeps as rollback targets. Defaults to **`2`** (was `5` until run 34528527480 hit `Storage quota exceeded (638 MB used of 500 MB)` — the runtime image ships the whole workspace, so five tags do not fit the 500 MB plan). Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). The prune runs **before** the push (§8), so a registry that has hit its storage quota recovers on the next run without hand intervention. Lower this further, slim the image, or upgrade the plan if `KEEP_TAGS` images by themselves exceed the registry storage limit. |
 | `VITE_COUNTERDEV_ID` | counter.dev site id — a **public** identifier baked into the client bundle at build time (ADR-005). A variable, not a secret, by design. |
+| `VITE_FORMSPARK_FORM_ID` | Formspark form id for the in-app contact form — a **public** identifier baked into the client bundle at build time (ADR-004, the scoped CLOUD-Act exception). A variable, not a secret, by design. Unset is safe: the contact form renders "temporarily unavailable" rather than failing. Define it at **one** scope (repository *or* `production`), unlike `VITE_COUNTERDEV_ID`, so there is no question which value ships. |
 | `DATABASE_MIGRATOR_USER` | The `bp_migrator` role name used by the `migrate` job. Not sensitive — already plaintext in `docs/production-database-runbook.md` §1.1 — so it is a variable, not a secret. |
 | `DATABASE_NAME` | The database name (`pgdb`) used by the `migrate` job. Not sensitive, same reasoning as above. |
 
@@ -73,30 +74,28 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | Secret | Used by | Purpose |
 |---|---|---|
 | `DATABASE_MIGRATOR_PASSWORD` | `migrate` job | Password for **`bp_migrator`** (the DDL role). The **only** sensitive piece of the migration connection string — host, port, user and database name are no longer secrets (see the note below). |
-| `DATABASE_CA_CERT` | `migrate` job | **Mandatory, not optional.** The DanubeData chain is self-signed, so without it every connection fails `SELF_SIGNED_CERT_IN_CHAIN` before a statement runs (verified 2026-09-03). The `migrate` job connects at **`verify-ca`** — chain validation against this CA is kept; only the hostname check is waived, because the public endpoint is absent from the in-cluster-only certificate (`packages/db/src/migrate-tls.ts`). |
+| `DATABASE_CA_CERT` | `migrate` job | **Mandatory, not optional.** The DanubeData chain is self-signed, so without it every connection fails `SELF_SIGNED_CERT_IN_CHAIN` before a statement runs (verified 2026-09-03). Since Story 5.18 the `migrate` job connects at **`verify-full`**: it runs in-cluster, so the host it dials is the name on the certificate and nothing is waived. (Until 2026-09-15 it ran at `verify-ca` over the public endpoint, which the in-cluster-only certificate does not name; `migrate-tls.ts` and `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH` were deleted along with that path.) |
 | `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `push-image` | Registry login for the image push. **`push-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
-| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives `danube db dns enable/disable` (the migration window, §4) and the endpoint-discovery read (`danube --json db ls`). **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
+| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives the short-lived in-cluster migrate container (`danube rapids apply` / `update` / `ls` / `rm`, §4). **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
 
-> **⚠️ CHANGED 2026-09-14 — `DATABASE_URL` and `DATABASE_PUBLIC_HOST` are GONE
-> from this table.** They used to pin the public endpoint's host/port ahead of
-> time, on the theory that DanubeData only reassigns the port on re-provisioning.
-> Run 34801804663 disproved that: the port changed again (refused entirely) with
-> no re-provision in between, so a pinned value can never stay current. The
-> `migrate` job now reads the live public host/port from `danube --json db ls`
-> immediately after opening the window (the "Discover the public endpoint" step
-> in `deploy.yml`) and composes `DATABASE_URL` itself from that plus
-> `DATABASE_MIGRATOR_USER` / `DATABASE_MIGRATOR_PASSWORD` / `DATABASE_NAME`.
-> Nothing about the endpoint needs to be re-read and re-pasted by hand again.
+> **⚠️ `DATABASE_URL` and `DATABASE_PUBLIC_HOST` are not in this table, and are
+> not coming back.** `DATABASE_PUBLIC_HOST` pinned the public endpoint's
+> host/port ahead of time, on the theory that DanubeData only reassigns the port
+> on re-provisioning. Run 34801804663 disproved that (the port changed again,
+> refusing connections, with no re-provision in between), and 2026-09-14 replaced
+> it with a live read. **Story 5.18 then removed the public endpoint from the
+> release path entirely**, so there is nothing to pin *or* discover: the `migrate`
+> job composes `DATABASE_URL` from the fixed in-cluster writer
+> (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432`) plus
+> `DATABASE_MIGRATOR_USER` / `DATABASE_MIGRATOR_PASSWORD` / `DATABASE_NAME`, and
+> hands it to the migrate container as an environment variable.
 >
 > **The one deliberate duplication that remains.** The composed migration
-> `DATABASE_URL` (role `bp_migrator`, public endpoint) is a *different value*
-> from the Rapids runtime secret of the same name (role `bp_app`, in-cluster host
-> `…-rw:5432`, configured separately in `apps/web/DEPLOY-RAPIDS.md` §3) — not a
-> bookkeeping slip. The migration runs from a GitHub runner, outside the Rapids
-> network, and 4-17's database is reachable only over Kubernetes in-cluster DNS.
-> Story 5.17 resolved this with a **time-boxed public-DNS window** the `migrate`
-> job opens and closes around the migration (§4), under an audited **ADR-001
-> exception** that expires before the first real user.
+> `DATABASE_URL` is a *different value* from the Rapids runtime secret of the
+> same name — same in-cluster host, different **role**: `bp_migrator` (DDL) here,
+> `bp_app` (DML) there, configured separately in `apps/web/DEPLOY-RAPIDS.md` §3.
+> That split is the point (Story 4.17), not a bookkeeping slip: the serving app
+> holds no rights to rewrite the schema.
 
 Nothing here is ever echoed. Secrets reach steps as `env:` only, GitHub masks
 them in logs, and no step prints one. The workflow keeps the repository default
@@ -149,9 +148,10 @@ Like branch protection (4-15), this cannot be done in code. In
   (`push-image` names the environment because that is the only way GitHub will
   hand it the registry secrets — see §1. `build-image` names it only to read the
   environment-scoped `VITE_COUNTERDEV_ID`, which differs from the repository-scoped
-  one; it reads no secrets.) The `migrate` prompt is where the
-  migration window (§4) opens, so that approval also gates the only moment the
-  production database is publicly reachable.
+  one, and the build-time `VITE_FORMSPARK_FORM_ID` alongside it; it reads no
+  secrets.) The `migrate` prompt is where the
+  in-cluster migrate container is created and the schema is actually changed (§4),
+  so that approval is the gate on production DDL.
 - **Environment secrets:** add every secret from §1 — `DATABASE_MIGRATOR_PASSWORD`,
   `DATABASE_CA_CERT`, the two `DANUBEDATA_REGISTRY_*` values, and `DANUBE_TOKEN`.
   Also add the two repository variables `DATABASE_MIGRATOR_USER` and
@@ -171,14 +171,16 @@ serving it, and a failure aborts the run before any release.
 `migration-check` job diffs `packages/db/migrations/` and
 `packages/db/drizzle.config.ts` between this commit and the head commit of the
 most recent run whose `deploy` job succeeded. No change → `migrate` is skipped
-(so the public-DNS window below never opens) and `deploy` proceeds. Anything it
+and `deploy` proceeds. Anything it
 cannot prove — a manual dispatch, an API error, no earlier successful deploy, a
 baseline commit missing after a force-push — runs `migrate` as before. To force
 a migration without a migration change, dispatch the workflow manually.
 
-Ahead of `drizzle-kit migrate` the pipeline runs a preflight
-(`pnpm --filter @budget-planner/db db:migrate:preflight`) that classifies the
-target and **refuses anything it cannot prove safe**:
+Ahead of `drizzle-kit migrate` a preflight
+(`packages/db/src/migrate-preflight-cli.ts`) classifies the target and
+**refuses anything it cannot prove safe**. Since Story 5.18 both steps run
+*inside the migrate container* rather than as two workflow steps, in the same
+order and with the same meaning:
 
 | Shape | Verdict |
 |---|---|
@@ -201,45 +203,76 @@ carry the schema with no journal rows. Replaying `0000 → …` there re-mints
 fails half-way. The guard has no override flag on purpose — if it fires, the
 answer is a baseline/squash strategy decided in **Story 4-17**, not a bypass.
 
-### The migration window (Story 5.17 — ⏳ time-boxed ADR-001 exception)
+### How the migration runs in-cluster (Story 5.18)
 
 The production database is reachable only over Kubernetes in-cluster DNS, and
-DanubeData Rapids has no run-to-completion primitive or container-command
-override, so there is no in-cluster job to migrate from. Until the database holds
-real user data, the `migrate` job bridges the gap: it opens the database's public
-DNS (`danube db dns enable`) immediately before the preflight and closes it
-(`danube db dns disable`) immediately after.
+DanubeData Rapids has no run-to-completion job primitive and no container-command
+override (re-verified against `@danubedata/cli` 1.1.0, 2026-09-15). So the
+migration runs from *inside* the cluster, in the only execution host the platform
+offers: a Rapids container in the same namespace, running the app image in
+migrate mode.
 
-- The close step is `if: always()` — it fires on migration failure, preflight
-  refusal, step timeout and job cancellation. It decides by a `danube db ls`
-  **state check**, not the disable's exit code, and **fails the job** if the
-  window is still open. A window left open is worse than a failed migration.
-- The window brackets **only** preflight + migrate — no build, push or deploy.
-- `danube db dns enable` returns ~160s before the endpoint accepts connections,
-  so a readiness poll sits between opening the window and the preflight.
-- The migrating connection runs at **`verify-ca`** (chain validated against
-  `DATABASE_CA_CERT`, hostname check waived) because the public endpoint is
-  absent from the in-cluster-only certificate. The app is never affected.
-- The `migrate` job's `timeout-minutes: 15` bounds how long the window can stay
-  open even if a migration hangs.
+The `migrate` job:
 
-**This is an exception with an expiry, not the design.** It is valid only while
-the database is empty; before the first real user it is replaced by an in-cluster
-migration container (ADR-001 exit criteria, Story 5.6), and the ADR-001 exception
-section is deleted. Do not reuse this pattern for routine post-launch migrations.
+1. **Mints a per-run status token** (`openssl rand -hex 32`, masked) and composes
+   `DATABASE_URL` for the **in-cluster writer**
+   (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432`) as
+   `bp_migrator`. Nothing is discovered at run time — there is no public endpoint
+   to look up.
+2. **Creates the container scaled to zero**
+   (`danube rapids apply --name budget-planner-migrate --min-scale 0`). This
+   ordering is forced by the CLI: `apply`/`create` cannot set environment
+   variables and `update` can, so a container brought up here would boot in
+   migrate mode with no `DATABASE_URL`.
+3. **Injects credentials and starts one pod**
+   (`danube rapids update … --env APP_ENTRYPOINT=migrate … --min-scale 1`).
+   ⚠️ **Never add `--json` to this step** — `rapids update --json` prints the
+   container object, which carries `environment_variables`, i.e. it would print
+   `DATABASE_URL` into the run log. The validator pins this.
+4. **Polls the verdict** at `GET <container-url>/migrate-status` with the bearer
+   token, bounded at 600s, and fails on anything that is not an explicit
+   `succeeded`.
+5. **Deletes the container** in an `if: always()` step, and **fails the job** if
+   the deletion does not take.
 
-See [`docs/production-database-runbook.md` §4](../docs/production-database-runbook.md)
-for the operator-side detail and
-[ADR-001 → "Time-boxed exception"](../_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md)
-for the exception's terms and exit criteria.
+**Readiness is not the verdict.** `/healthz` returns 200 as soon as the container
+boots, on purpose. If readiness meant "the migration succeeded", a failed
+migration, a broken image and a crash-loop would all present as the same
+`--wait` timeout. The verdict is reported positively and separately, so those are
+distinguishable. Logs (`danube rapids logs budget-planner-migrate`) are
+diagnostics only — the CLI can report them `unavailable`, and a verdict that can
+silently become unreadable is not a verdict.
 
-**If a window is ever left open** — a runner dies mid-job, the close step is
-skipped — close it by hand and confirm it took:
+**TLS is `verify-full`, with nothing waived.** In-cluster, the host we dial is the
+name on the certificate. Story 5.17's `verify-ca` hostname waiver
+(`packages/db/src/migrate-tls.ts`, `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH`) was
+**deleted**, not switched off. `buildMigrationCredentials` additionally refuses
+any migration target that is not an in-cluster writer name, so pointing
+`DATABASE_URL` at a `*.danubedata.ro` endpoint now fails closed rather than
+quietly reopening the retired window.
+
+**Failure recovery.** The container is named `budget-planner-migrate` (fixed, not
+run-scoped) so a leftover from a crashed run is reused and torn down on the next
+run rather than accumulating orphans — each of which would be publicly routable
+*and* hold a `DATABASE_URL` in its environment. If a run dies between step 3 and
+step 5, remove it by hand and confirm it is gone:
 
 ```bash
-danube db dns disable budget-planner-prod
-danube db ls        # the endpoint must show only the *.svc.cluster.local form
+danube rapids rm budget-planner-migrate --force
+danube rapids ls     # budget-planner-migrate must not be listed
 ```
+
+Re-running a migration is safe: `drizzle-kit migrate` is journal-driven, and the
+preflight re-runs first, so a repeat applies nothing.
+
+See [`docs/production-database-runbook.md` §4](../docs/production-database-runbook.md)
+for the operator-side detail.
+
+> **Historical note.** Between 2026-09-03 and 2026-09-15 this section described a
+> **time-boxed ADR-001 exception**: the `migrate` job opened the database's public
+> DNS, migrated from the GitHub runner, and closed it again. That exception has
+> been retired and its ADR section deleted — it expired on its own terms once the
+> database held real user data. Do not reintroduce the pattern.
 
 ---
 
@@ -346,16 +379,22 @@ infrastructure and therefore in CLOUD Act scope. What passes through it today:
 | Job | Reaches a US-controlled runner | Weight |
 |---|---|---|
 | `push-image` | registry username + password | Push-only credentials to an EU registry. |
-| `migrate` | **production `DATABASE_MIGRATOR_PASSWORD`, `DATABASE_CA_CERT`, `DANUBE_TOKEN`**, and a `DATABASE_URL` it composes itself from those plus the live public endpoint — and it opens a live connection to the production database from that runner, through a public-DNS window it also opens | **The serious one.** |
+| `migrate` | **production `DATABASE_MIGRATOR_PASSWORD`, `DATABASE_CA_CERT`, `DANUBE_TOKEN`**, and a `DATABASE_URL` it composes from those plus the fixed in-cluster writer name. Since Story 5.18 the runner **hands these to an in-cluster container and never connects to the database itself.** | Credentials still transit the runner. |
 | `deploy` | `DANUBE_TOKEN` | Platform API token; can redeploy and reconfigure containers. |
 
-This is not a new regression — it is the shape `migrate` has had since 5-4.
-**Story 5.17** did *not* remove it: the runner still holds a `DATABASE_URL` (now
-composed at runtime rather than pinned in a secret — see §1) and still connects
-to production, inside a time-boxed public-DNS window (§4). What 5.17 added is
-that the window is audited, always closes, and is bounded by the ADR-001
-exception. The runner stops touching `DATABASE_URL` only when the in-cluster
-migration container replaces this path (ADR-001 exit criteria, Story 5.6).
+**Story 5.18 (2026-09-15) removed the worst half of this.** The runner no longer
+opens a public database endpoint and no longer connects to production at all: it
+creates an in-cluster container, hands it the credentials through
+`rapids update --env`, polls a status endpoint, and deletes it. There is no
+public-DNS window to audit, because there is no window. ADR-001's rule holds
+unconditionally again.
+
+What remains, honestly stated: the runner still **holds** `DATABASE_MIGRATOR_PASSWORD`
+and `DATABASE_CA_CERT` in memory long enough to pass them to the platform API, so
+production database credentials still transit US-controlled infrastructure even
+though production data never does. Removing that too would require the credentials
+to be injected by the platform rather than the pipeline (a Rapids-side secret
+reference), which the CLI does not currently expose.
 
 **It does not block launch, and it should not be quietly filed as "compliant".**
 No user data is at risk; credentials to EU systems are. Revisit here if the

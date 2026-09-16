@@ -24,9 +24,20 @@ Legend: **[CODE]** done in-repo now · **[OPS]** needs the DanubeData account ·
 **not** serve `dist/client/` assets. Knative routes traffic to a container that
 must listen on `$PORT`. The self-listening process is:
 
-- **`apps/web/server-entry.mjs`** — binds `process.env.PORT` (default `8080`) on
+- **`apps/web/server-entry.mjs`** — the entrypoint the container always starts. A
+  dispatcher since Story 5.18: it reads `APP_ENTRYPOINT` once at boot and
+  dynamically imports one of the two branches below. Nothing else lives here.
+- **`apps/web/serve-entry.mjs`** — the normal path (`APP_ENTRYPOINT` unset or
+  anything but `migrate`). Binds `process.env.PORT` (default `8080`) on
   `0.0.0.0`, serves `dist/client/` static assets, and delegates SSR + `/api/*`
   to the built fetch handler.
+- **`apps/web/migrate-entry.mjs`** — selected by **`APP_ENTRYPOINT=migrate`** only.
+  Applies database migrations from inside the cluster and reports a terminal
+  verdict on a token-gated `/migrate-status`; it never loads the application
+  server, so that process has no routes at all. Used exclusively by the deploy
+  pipeline's `migrate` job, which creates the container, reads the verdict and
+  deletes it. See `.github/DEPLOY_RUNBOOK.md` §4. **Never set `APP_ENTRYPOINT` on
+  the serving container.**
 - **`apps/web/src/server/node-adapter.mjs`** — zero-dependency `node:http` ⇄
   web-`fetch` adapter (static file serving + Request/Response conversion,
   including correct multi-`Set-Cookie` handling for the signed session cookie).

@@ -6,6 +6,7 @@ import {
   closeDb,
   decodeUrlField,
   isEuSovereignDbHost,
+  isInClusterDbHost,
   isRelaxedDbEnv,
   redactDbUrl,
   testDbConnection,
@@ -71,6 +72,48 @@ describe('isEuSovereignDbHost (anchored EU allowlist)', () => {
 
   it('rejects localhost (only relaxed envs skip the host check)', () => {
     expect(isEuSovereignDbHost('localhost')).toBe(false)
+  })
+})
+
+// Story 5.18 — AC-4. A strict subset of the above: same sovereignty, narrower
+// reachability. Used by the MIGRATION path only, so a retired public-DNS window
+// cannot be reopened by pointing DATABASE_URL back at the public endpoint.
+describe('isInClusterDbHost (migration-only, excludes the public endpoint)', () => {
+  it('accepts both in-cluster writer forms', () => {
+    expect(isInClusterDbHost('budget-planner-prod-rw')).toBe(true)
+    expect(isInClusterDbHost('budget-planner-prod-rw.budgetplanner795.svc.cluster.local')).toBe(
+      true
+    )
+  })
+
+  it('is case-insensitive and accepts the absolute-FQDN form', () => {
+    expect(isInClusterDbHost('BUDGET-PLANNER-PROD-RW')).toBe(true)
+    expect(isInClusterDbHost('budget-planner-prod-rw.budgetplanner795.svc.cluster.local.')).toBe(
+      true
+    )
+  })
+
+  // The distinguishing case, and the whole reason this predicate exists: the
+  // public endpoint IS EU-sovereign, so `isEuSovereignDbHost` admits it.
+  it('rejects the public endpoint that the sovereignty check admits', () => {
+    const publicHost = 'postgresql-budget-planner-prod.budgetplanner795.danubedata.ro'
+    expect(isEuSovereignDbHost(publicHost)).toBe(true)
+    expect(isInClusterDbHost(publicHost)).toBe(false)
+  })
+
+  it('rejects any other danubedata.ro host', () => {
+    expect(isInClusterDbHost('danubedata.ro')).toBe(false)
+    expect(isInClusterDbHost('pg-01.fra.danubedata.ro')).toBe(false)
+  })
+
+  // Exact match, never a suffix: a `.svc.cluster.local` suffix rule would admit
+  // every service in every namespace of any cluster.
+  it('rejects lookalikes and other in-cluster services', () => {
+    expect(isInClusterDbHost('budget-planner-prod-rw.attacker.com')).toBe(false)
+    expect(isInClusterDbHost('budget-planner-prod-ro')).toBe(false)
+    expect(isInClusterDbHost('evil.budgetplanner795.svc.cluster.local')).toBe(false)
+    expect(isInClusterDbHost('budget-planner-prod-rw.other-ns.svc.cluster.local')).toBe(false)
+    expect(isInClusterDbHost('localhost')).toBe(false)
   })
 })
 

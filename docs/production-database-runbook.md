@@ -126,6 +126,13 @@ keeps migrations off the public internet is **ADR-001 policy** ("no external
 connections, no SSH tunnels in production"), which is a decision, not a wall.
 Treat enabling it as an ADR amendment, not a workaround.
 
+Since Story 5.18 there is also a code-level backstop, so the policy no longer
+rests on nobody typing the command: `buildMigrationCredentials` refuses any
+migration target that is not an in-cluster writer name (`isInClusterDbHost`), so
+even with the toggle on, a migration pointed at the public endpoint fails closed
+before it connects. The toggle can still expose the database to anything *else*
+that dials it — the backstop covers migrations, not the instance.
+
 `packages/db/src/client.ts` therefore admits the internal **writer** name by
 **exact match** (`EU_DB_INTERNAL_HOSTS`), alongside the dot-anchored
 `.danubedata.ro` suffix list (`EU_DB_HOST_SUFFIXES` — corrected from
@@ -179,38 +186,35 @@ reads no `.env` file.
 | `DATABASE_CA_CERT` | **YES — mandatory, not optional** | PEM from the DanubeData console (or extracted from the server, §3.1). **On Rapids, base64-encode it** (`base64 -w0 ca.pem`) — see the callout below | `client.ts` (`getPool`), `migrate-preflight-cli.ts`, `ca-expiry-cli.ts`, `db-smoke-cli.ts`, and `drizzle.config.ts`, each via `normalizeCaCert()` (`packages/db/src/ca-cert.ts`) |
 | `NODE_ENV` | Yes — `production` | literal | Arms every fail-closed path: EU host allowlist, TLS verification, `SESSION_SECRET` floor, https `SITE_URL` check |
 | `SESSION_SECRET` | Yes | `openssl rand -hex 32` (≥32 chars, ≥8 distinct) | `getSessionSecret()` (`packages/config/src/schema.ts`); rotating it logs everyone out |
-| `DANUBE_TOKEN` | Yes (CI only) | DanubeData API token | The `migrate` job's `danube db dns enable/disable` calls, and its `danube --json db ls` endpoint-discovery read |
+| `DANUBE_TOKEN` | Yes (CI only) | DanubeData API token | The `migrate` job's `danube rapids apply` / `update` / `ls` / `rm` calls, which run the in-cluster migrate container (§4) |
 
-> ⚠️ **CHANGED 2026-09-14 — the migration's `DATABASE_URL` and `DATABASE_PUBLIC_HOST`
-> are no longer secrets at all.** The host/port previously had to be read by hand
-> off `danube db ls` and pasted into a secret, on the theory DanubeData only
-> reassigns the public port on re-provisioning. Run 34801804663 disproved that —
-> the port changed again with **no re-provision in between** (last one was
-> 2026-09-05; the port still moved on 2026-09-14). So it is reassigned on
-> (at least) every `dns enable`, not just re-provisioning, and nothing pinned
-> ahead of time can stay correct. The `migrate` job in `deploy.yml` now reads the
-> live public endpoint from `danube --json db ls` right after opening the window
-> and composes `DATABASE_URL` itself from that plus `DATABASE_MIGRATOR_USER` /
-> `DATABASE_MIGRATOR_PASSWORD` / `DATABASE_NAME`. There is nothing left to
-> re-read and re-paste by hand after a future port change.
+> ⚠️ **The migration's `DATABASE_URL` and `DATABASE_PUBLIC_HOST` are not secrets,
+> and the public endpoint is no longer part of a release at all.** The host/port
+> once had to be read by hand and pasted into a secret, on the theory DanubeData
+> only reassigns the public port on re-provisioning. Run 34801804663 disproved
+> that — the port moved again with **no re-provision in between** (last one
+> 2026-09-05; the port still changed on 2026-09-14) — so nothing pinned ahead of
+> time could stay correct, and 2026-09-14 replaced the pin with a live read.
+> **Story 5.18 then removed the public path entirely (2026-09-15):** the `migrate`
+> job composes `DATABASE_URL` from the fixed in-cluster writer
+> (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432`) plus
+> `DATABASE_MIGRATOR_USER` / `DATABASE_MIGRATOR_PASSWORD` / `DATABASE_NAME`.
+> There is nothing to discover, and a future public-port change is irrelevant.
 
-> ⚠️ **The migration runs at `verify-ca`, not `verify-full` — and this is deliberate.**
-> DanubeData issues the database certificate for **in-cluster SANs only**
-> (`budget-planner-prod-rw[.budgetplanner795[.svc[.cluster.local]]]`, plus `-r`/`-ro`).
-> The public endpoint is a TCP passthrough with no certificate of its own, so full
-> verification **cannot** succeed over it — you get `ERR_TLS_CERT_ALTNAME_INVALID`.
-> The `migrate` job therefore sets `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH=true`,
-> which waives **only** the hostname check and keeps chain validation against the
-> cluster CA. See `packages/db/src/migrate-tls.ts`; it refuses to engage at all
-> without `DATABASE_CA_CERT`. **The application never gets this** — it connects
-> in-cluster, where the hostname matches.
-
-> ⏱️ **`danube db dns enable` returns long before the endpoint accepts traffic.**
-> Measured 2026-09-04: **~160 seconds** from enable to first successful TCP
-> connect. The name resolves the whole time and the port refuses, so this reads as
-> "connection refused", not a DNS failure. The `migrate` job polls the port for up
-> to 300s before running the preflight. If you open a window by hand, wait — do not
-> conclude something is broken.
+> ✅ **The migration runs at `verify-full`, with nothing waived (Story 5.18,
+> 2026-09-15).** DanubeData issues the database certificate for **in-cluster SANs
+> only** (`budget-planner-prod-rw[.budgetplanner795[.svc[.cluster.local]]]`, plus
+> `-r`/`-ro`). Migrations now run inside the cluster, so the name dialled is a name
+> on the certificate and full verification succeeds.
+>
+> Until 2026-09-15 the migration ran over the public endpoint — a TCP passthrough
+> with no certificate of its own, where `verify-full` **cannot** succeed
+> (`ERR_TLS_CERT_ALTNAME_INVALID`) — and the job set
+> `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH=true` to waive the hostname check while
+> keeping chain validation. That variable and `packages/db/src/migrate-tls.ts`
+> were **deleted**, not switched off: a downgrade that outlives the path it was
+> granted for is how a time-boxed exception becomes permanent. Migration and
+> application now share one TLS posture.
 
 > ⚠️ **Rapids env-var inputs are single-line — encode the CA before pasting it.**
 > A CA certificate is a multi-line PEM whose `-----BEGIN/END CERTIFICATE-----`
@@ -297,41 +301,69 @@ The chain is **`0000_rare_johnny_storm` → `0016_neat_metal_master` (17
 migrations)**. `migration-chain.test.ts` proves the journal and the `.sql` files
 agree; the live replay still has to happen against the instance.
 
-**Who runs it:** the `migrate` job in `.github/workflows/deploy.yml`, inside a
-**time-boxed public-DNS window** — decided 2026-09-03, per **Story 5.17** and the
-**ADR-001 time-boxed exception**. Never from a laptop.
+**Who runs it:** the `migrate` job in `.github/workflows/deploy.yml`, **inside
+the cluster** — per **Story 5.18**, 2026-09-15. Never from a laptop.
 
-**Why not from inside the cluster.** DanubeData Rapids has **no run-to-completion
+**Where it runs, and why there.** DanubeData Rapids has **no run-to-completion
 primitive and no way to override a container's command** — `rapids create` /
 `apply` / `update` expose image, tag, port, scale, profile, health-check path and
-`--env`, but no `--command`. Rapids is Knative **Serving**: a container that runs
-and exits is a failed revision. Building an entrypoint-mode migration container to
-work around that was judged disproportionate for a one-time apply against an empty
-database.
+(on `update` only) `--env`, but no `--command` (re-verified against
+`@danubedata/cli` 1.1.0, 2026-09-15). Rapids is Knative **Serving**: a container
+that runs and exits is a failed revision. Since the database resolves only on
+in-cluster DNS, the one available execution host is a Rapids container in the
+same cluster and namespace — so that is what the pipeline uses.
 
-**How the window works.** The pipeline runs `danube db dns enable` immediately
-before the preflight and `danube db dns disable` immediately after, with the close
-step marked **`if: always()`** so it fires on failure, refusal, timeout and
-cancellation alike. The window brackets only preflight + migrate.
+**How it works.** The `migrate` job starts the **app image** as a short-lived
+container named `budget-planner-migrate`, in migrate mode:
 
-> ⚠️ **This is an exception with an expiry, not the design.** It is valid only
-> while the database holds no user data. Before the first real user, it is replaced
-> by an in-cluster migration container and the ADR-001 section is deleted. Do not
-> reuse this pattern for routine migrations after launch.
+1. `danube rapids apply --name budget-planner-migrate --min-scale 0` — the
+   container exists, nothing is running. (It must be created scaled to zero:
+   `apply` cannot set environment variables, so a container brought up here would
+   boot with no `DATABASE_URL`.)
+2. `danube rapids update … --env APP_ENTRYPOINT=migrate DATABASE_URL=…
+   DATABASE_CA_CERT=… MIGRATE_STATUS_TOKEN=… --min-scale 1` — one pod starts.
+   `apps/web/migrate-entry.mjs` binds `$PORT`, answers `/healthz`, then runs the
+   preflight and `drizzle-kit migrate`.
+3. The pipeline polls `GET /migrate-status` (bearer token, per-run) until the
+   state is terminal, bounded at 600s, and **fails on anything that is not
+   `succeeded`**.
+4. `danube rapids rm budget-planner-migrate --force` in an `if: always()` step.
 
-**If a window is ever left open** — a runner dies mid-job, or the close step is
-skipped — close it by hand and confirm:
+**Readiness is not the verdict.** `/healthz` goes green as soon as the container
+boots. Tying readiness to migration success would make a failed migration, a
+broken image and a crash-loop indistinguishable — all three would look like a
+timeout. The verdict is reported positively instead. `danube rapids logs
+budget-planner-migrate` is for diagnosis only; the CLI can legitimately report
+logs as unavailable, so nothing depends on reading them.
+
+**No public endpoint is opened at any point.** Confirm with `danube db ls`: the
+instance must show only the `.svc.cluster.local` form, before, during and after a
+release.
+
+> ✅ **The ADR-001 time-boxed public-DNS exception is RETIRED (2026-09-15).**
+> From 2026-09-03 this section described a `danube db dns enable` → migrate →
+> `disable` window run from the GitHub runner. It expired on its own terms once
+> the database held real user data, and its ADR section has been deleted. Do not
+> reintroduce it: `buildMigrationCredentials` now refuses any migration target
+> that is not an in-cluster writer name, so a `*.danubedata.ro` `DATABASE_URL`
+> fails closed rather than quietly reopening the window.
+
+**If a migrate container is ever left behind** — a runner dies between steps 2
+and 4 — remove it by hand and confirm. A leftover is publicly routable *and*
+holds `DATABASE_URL` in its environment:
 
 ```
-danube db dns disable budget-planner-prod
-danube db ls        # endpoint should show the .svc.cluster.local form only
+danube rapids rm budget-planner-migrate --force
+danube rapids ls     # budget-planner-migrate must not be listed
 ```
 
-Whichever is chosen, the migration connects as **`bp_migrator`** (§1.1) — the
-DDL-capable role — over the CA-validated, host-checked path added in Story 5.17
-AC-4.
+The migration connects as **`bp_migrator`** (§1.1) — the DDL-capable role — over
+the CA-validated path added in Story 5.17 AC-4, now at **`verify-full`**: the
+in-cluster name it dials is the name on the certificate, so Story 5.17's
+`verify-ca` hostname waiver was deleted rather than left switched off.
 
-Immediately before migrating, the preflight must pass:
+The preflight runs immediately before the migration, inside the same container.
+To run it by hand against a reachable target:
 
 ```
 pnpm --filter @budget-planner/db db:migrate:preflight
@@ -347,6 +379,9 @@ It classifies the target as `empty` / `journaled` / `push-built` / `inconsistent
 > instance sidesteps this entirely, which is why §1 provisions a new one. If a
 > push-built database ever must be reused, establish a baseline (`migrate --to`)
 > first.
+
+Re-running a migration is safe: `drizzle-kit migrate` is journal-driven and the
+preflight re-runs first, so a repeat applies nothing.
 
 Applying the chain also closes Story 5.8 AC-11: `users.sessionsRevokedAt`
 exists, so logout revocation stops failing open.

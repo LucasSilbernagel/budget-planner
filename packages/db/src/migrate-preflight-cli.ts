@@ -19,15 +19,15 @@
 import process from 'node:process'
 import { Pool } from 'pg'
 import { normalizeCaCert } from './ca-cert'
-import { isEuSovereignDbHost, isRelaxedDbEnv } from './client'
-// The preflight runs inside the same DNS window, against the same public endpoint,
-// as the migration it gates — so it needs the same TLS posture. If it kept the
-// app's verify-full policy it would fail ERR_TLS_CERT_ALTNAME_INVALID and abort
-// every migration before the guard could reach the database. `migrate-preflight.ts`
-// and its classification logic are untouched; only the connection option changes.
+import { isEuSovereignDbHost, isInClusterDbHost, isRelaxedDbEnv } from './client'
+// The preflight runs in the same place, against the same endpoint, as the
+// migration it gates — so it shares one TLS posture with it by construction.
+// Since Story 5.18 that place is INSIDE the cluster, so the posture is plain
+// verify-full: the 5.17 hostname waiver existed only for the public endpoint and
+// went away with it. `migrate-preflight.ts` and its classification logic are
+// untouched by either story.
 import { buildMigrationCredentials } from './migrate-credentials'
 import { type DbShape, assessMigrateSafety } from './migrate-preflight'
-import { hostnameMismatchAllowedFromEnv } from './migrate-tls'
 
 /** Postgres journal written by drizzle-kit: schema `drizzle`, table `__drizzle_migrations`. */
 const JOURNAL = 'drizzle.__drizzle_migrations'
@@ -98,16 +98,28 @@ async function main(): Promise<number> {
 
   // Same fail-closed rule as the application's pool: only an explicit
   // development/test NODE_ENV may point at a non-DanubeData host.
-  if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
-    console.error(
-      `[migrate-preflight] Refusing to migrate: "${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected e.g. *.danubedata.ro.`
-    )
-    return 1
+  if (!isRelaxedDbEnv(nodeEnv)) {
+    if (!isEuSovereignDbHost(host)) {
+      console.error(
+        `[migrate-preflight] Refusing to migrate: "${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected e.g. *.danubedata.ro.`
+      )
+      return 1
+    }
+
+    // Story 5.18: migrations are in-cluster only. `buildMigrationCredentials`
+    // enforces this too and is the real gate; checking it here as well is what
+    // turns an opaque constructor throw into a message that names the problem.
+    if (!isInClusterDbHost(host)) {
+      console.error(
+        `[migrate-preflight] Refusing to migrate over the public endpoint "${host}". Migrations run in-cluster only, over internal DNS (ADR-001; public-DNS window retired by Story 5.18).`
+      )
+      return 1
+    }
   }
 
   // ⚠️⚠️ DECOMPOSED credentials, never `connectionString`. Passing the raw URL
   // here let a `?sslmode=` parameter in it OVERRIDE the `ssl` option built
-  // below — silently discarding the CA and the hostname waiver. Observed in a
+  // below — silently discarding the CA. Observed in a
   // real run on 2026-09-08: a `?sslmode=require` URL failed with "self-signed
   // certificate in certificate chain" while DATABASE_CA_CERT was correctly set,
   // because `pg-connection-string` now maps 'require' to VERIFY-FULL and that
@@ -123,8 +135,7 @@ async function main(): Promise<number> {
     ...buildMigrationCredentials(
       nodeEnv,
       databaseUrl,
-      normalizeCaCert(process.env['DATABASE_CA_CERT']),
-      hostnameMismatchAllowedFromEnv(process.env)
+      normalizeCaCert(process.env['DATABASE_CA_CERT'])
     ),
     max: 1,
     connectionTimeoutMillis: 10_000,

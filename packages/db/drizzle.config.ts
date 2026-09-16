@@ -3,7 +3,6 @@ import * as dotenv from 'dotenv'
 import type { Config } from 'drizzle-kit'
 import { normalizeCaCert } from './src/ca-cert'
 import { buildMigrationCredentials } from './src/migrate-credentials'
-import { hostnameMismatchAllowedFromEnv } from './src/migrate-tls'
 
 // Load environment variables from project root .env for LOCAL runs. In
 // production nothing reads a .env file — every value is injected as a platform
@@ -18,6 +17,10 @@ const databaseUrl = process.env.DATABASE_URL
 // bare url, as this file used to, silently gave up CA verification and the
 // EU-sovereignty check on the one connection that can rewrite the schema.
 //
+// Story 5.18, AC-4: the hostname-check waiver that 5.17 needed for the public
+// endpoint is gone — migrations run in-cluster, so `verify-full` succeeds with no
+// downgrade. `buildMigrationCredentials` now takes no override parameter at all.
+//
 // `drizzle-kit generate` runs offline and must keep working on a machine with no
 // DATABASE_URL, so a MISSING url degrades to an unusable credential set instead
 // of throwing here. A url that is present but refused still throws: that is the
@@ -27,8 +30,7 @@ const dbCredentials = databaseUrl
   ? buildMigrationCredentials(
       process.env.NODE_ENV,
       databaseUrl,
-      normalizeCaCert(process.env.DATABASE_CA_CERT),
-      hostnameMismatchAllowedFromEnv(process.env)
+      normalizeCaCert(process.env.DATABASE_CA_CERT)
     )
   : { host: '', port: 5432, user: '', password: '', database: '', ssl: false }
 

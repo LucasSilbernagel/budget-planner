@@ -56,10 +56,14 @@ permissions:
 env:
   NODE_VERSION: '20'
   IMAGE_NAME: budget-planner-web
-  # DanubeData managed PostgreSQL instance name, as `danube db ls` reports it.
-  DB_INSTANCE: budget-planner-prod
-  # Pinned deliberately: the `migrate` job's safety depends on `db dns disable`
-  # behaving exactly as expected, so the CLI does not float.
+  # Pinned deliberately: the `migrate` job's safety depends on `rapids
+  # apply`/`update`/`rm` behaving exactly as expected, and the `deploy` job's on
+  # `rapids apply --wait`, so the CLI does not float underneath the pipeline.
+  #
+  # `DB_INSTANCE` lived here until Story 5.18 for the sole purpose of naming the
+  # instance to `danube db dns enable`/`disable`. No step opens a public database
+  # endpoint any more, so nothing in this workflow addresses the database
+  # instance by name — only the app reaches it, over internal DNS.
   DANUBE_CLI_VERSION: '1.1.0'
 
 jobs:
@@ -182,6 +186,8 @@ jobs:
     # VITE_COUNTERDEV_ID is defined at BOTH repository and `production` scope with
     # DIFFERENT values, and the environment value wins — so dropping this key
     # would silently bake the repository-scope id into the production bundle.
+    # VITE_FORMSPARK_FORM_ID rides the same path; define it at ONE scope only, so
+    # which value ships is not a question anyone has to look up.
     environment: production
     steps:
       - name: Checkout
@@ -200,11 +206,13 @@ jobs:
       - name: Build production image
         env:
           VITE_COUNTERDEV_ID: ${{ vars.VITE_COUNTERDEV_ID }}
+          VITE_FORMSPARK_FORM_ID: ${{ vars.VITE_FORMSPARK_FORM_ID }}
         run: |
           set -euo pipefail
           docker build \
             -f apps/web/Dockerfile \
             --build-arg "VITE_COUNTERDEV_ID=${VITE_COUNTERDEV_ID}" \
+            --build-arg "VITE_FORMSPARK_FORM_ID=${VITE_FORMSPARK_FORM_ID}" \
             -t "${IMAGE_NAME}:${GITHUB_SHA}" \
             .
 
@@ -486,10 +494,10 @@ jobs:
           docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
   # --- Are there migrations to apply? ----------------------------------------
-  # The migrate job costs ~6 minutes, ~5 of them waiting for the public DNS
-  # window to come up, and most pushes change no migration. This decides whether
-  # it has to run at all. Skipping it also keeps the database's public window
-  # closed on every push that does not need it.
+  # The migrate job costs a few minutes and most pushes change no migration, so
+  # this decides whether it has to run at all. (Before Story 5.18 it also kept
+  # the database's public DNS window closed on pushes that did not need it;
+  # there is no window any more, so this is now purely a time saving.)
   #
   # The baseline is the head commit of the most recent run whose DEPLOY JOB
   # succeeded — not `github.event.before`. A deploy only succeeds after its
@@ -588,31 +596,49 @@ jobs:
   # jobs name it in total — build-image, push-image, migrate, deploy — and GitHub
   # prompts once per job. DEPLOY_RUNBOOK.md §3 has the authoritative account.
   #
-  # ⏳ TIME-BOXED ADR-001 EXCEPTION (Story 5.17, 2026-09-03).
-  # The database is reachable only over Kubernetes in-cluster DNS
-  # (budget-planner-prod-rw.budgetplanner795.svc.cluster.local), which a
-  # GitHub-hosted runner cannot resolve. DanubeData Rapids offers no
-  # run-to-completion primitive and no container command override, so there is no
-  # in-cluster job to run this from. For the INITIAL, pre-launch migration only,
-  # this job opens the database's public DNS for the duration of the migration and
-  # closes it immediately afterwards.
+  # ✅ IN-CLUSTER SINCE STORY 5.18 (2026-09-15). The ADR-001 time-boxed exception
+  # — open the database's public DNS, migrate from this runner, close it again —
+  # is RETIRED. It expired on its own terms the moment the database held real
+  # user data, which live 5.3 checkouts produced.
   #
-  # This expires the moment the database holds real user data. Before the first
-  # real user it is replaced by an in-cluster migration container (ADR-001 exit
-  # criteria, Story 5.6). Do not copy this pattern for routine migrations.
+  # How this works now: the database is reachable only over Kubernetes in-cluster
+  # DNS, and DanubeData Rapids offers no run-to-completion job primitive and no
+  # container command override (re-verified against @danubedata/cli 1.1.0 on
+  # 2026-09-15). So the app image is started as a short-lived Rapids container in
+  # the same cluster and namespace, in `APP_ENTRYPOINT=migrate` mode. It applies
+  # the migrations, reports a terminal verdict over a token-gated endpoint, and is
+  # deleted. No public database endpoint is opened at any point.
+  #
+  # ⚠️ Readiness is NOT the verdict. `/healthz` goes green as soon as the
+  # container boots, deliberately: if readiness meant "the migration succeeded",
+  # then a failed migration, a broken image and a crash-loop would all present as
+  # the same `--wait` timeout. The verdict is read positively from
+  # `/migrate-status`, and anything short of an explicit `succeeded` fails the job.
   migrate:
     name: Migrate production database
     runs-on: ubuntu-latest
     needs: [push-image, migration-check]
     if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && needs.migration-check.outputs.migrate == 'true' }}
     environment: production
-    # Tight on purpose. The preflight and the migration both talk to production
-    # PostgreSQL; a query blocked on a lock would otherwise run to GitHub's
-    # 6-hour default, and because this workflow serialises on a NON-cancelling
-    # concurrency group, that one stuck run queues every later deploy behind it.
-    # Budget: ~2min setup + up to 5min waiting for the endpoint to come up +
-    # preflight + a 17-migration clean-slate apply. 15 leaves comfortable slack.
-    timeout-minutes: 15
+    # Tight on purpose. Because this workflow serialises on a NON-cancelling
+    # concurrency group, one stuck run queues every later deploy behind it.
+    # Budget: ~2min setup + container create/update + cold start + the apply
+    # itself, with the verdict poll separately bounded at 600s below.
+    timeout-minutes: 20
+    env:
+      # The short-lived migrate container. A FIXED name (not run-scoped) so a
+      # leftover from a crashed run is reused and torn down rather than
+      # accumulating one orphan per failure — each of which would hold a
+      # DATABASE_URL in its environment.
+      MIGRATE_CONTAINER: budget-planner-migrate
+      # In-cluster writer endpoint. Static now that no public endpoint is ever
+      # opened, so there is nothing to discover at run time.
+      # ⚠️ Must stay in sync with EU_DB_INTERNAL_HOSTS in packages/db/src/client.ts:
+      # `buildMigrationCredentials` refuses any host that is not on that list, so a
+      # drift here fails the migration closed rather than connecting to something
+      # unexpected.
+      DB_INTERNAL_HOST: budget-planner-prod-rw.budgetplanner795.svc.cluster.local
+      DB_INTERNAL_PORT: '5432'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -629,8 +655,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Pinned: an unpinned CLI could change `db dns` semantics under us, and this
-      # job's safety rests on `dns disable` behaving exactly as expected.
+      # Pinned: this job's safety now rests on `rapids apply/update/rm` behaving
+      # exactly as expected, so the tool does not float underneath the pipeline.
       - name: Install the DanubeData CLI
         run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
 
@@ -641,10 +667,8 @@ jobs:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
         run: danube whoami
 
-      # Offline, and BEFORE the window opens: an expired or missing CA makes the
-      # migration impossible, so failing here costs nothing, whereas failing
-      # after `dns enable` leaves the database publicly reachable while the job
-      # unwinds.
+      # Offline, and before anything is created: an expired or missing CA makes
+      # the migration impossible, so failing here costs nothing.
       #
       # ⚠️ Threshold is deliberately 0, NOT the 21 days the weekly job uses. This
       # gate blocks only on a certificate that is actually broken — expired or
@@ -657,30 +681,29 @@ jobs:
           CA_EXPIRY_WARN_DAYS: '0'
         run: pnpm --filter @budget-planner/db db:ca-expiry
 
-      # ⏳ WINDOW OPENS. Everything between here and "close the window" runs with
-      # the database publicly reachable, so only the preflight and the migration
-      # belong in between — no build, no push, no deploy.
-      - name: Open the migration window
-        env:
-          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+      # Per-run secret for the status endpoint. The migrate container is publicly
+      # routable for the minutes it exists, and its status endpoint would
+      # otherwise describe the production database's migration state to anyone.
+      # Minted here, never stored, dies with the container.
+      - name: Mint the migration status token
+        id: token
         run: |
           set -euo pipefail
-          danube db dns enable "${DB_INSTANCE}"
-          echo "::notice::Public DNS OPEN for ${DB_INSTANCE} — closes at the end of this job."
+          token=$(openssl rand -hex 32)
+          echo "::add-mask::${token}"
+          echo "token=${token}" >> "$GITHUB_OUTPUT"
 
-      # Reads the CURRENT public host/port from the API — never from a secret —
-      # and composes DATABASE_URL from that plus the (non-secret) role name and
-      # database name and the (secret) password. See the rewrite note on the
-      # next step for why this exists: the public port is not stable across
-      # `dns enable` calls, only DanubeData's own API knows the live value.
+      # Composed from the INTERNAL host only. There is no endpoint discovery any
+      # more: nothing is exposed, so nothing has to be looked up, and the port is
+      # the stable in-cluster 5432 rather than the public port that DanubeData
+      # reassigned on every `dns enable` (5445 -> 5446 -> refused, across 2026-09).
       #
       # DATABASE_MIGRATOR_USER and DATABASE_NAME are repository variables, not
       # secrets — `bp_migrator` / `pgdb` are already plaintext in
       # docs/production-database-runbook.md. Only the password is sensitive.
-      - name: Discover the public endpoint and compose DATABASE_URL
-        id: discover
+      - name: Compose the in-cluster DATABASE_URL
+        id: dburl
         env:
-          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
           DB_USER: ${{ vars.DATABASE_MIGRATOR_USER }}
           DB_PASSWORD: ${{ secrets.DATABASE_MIGRATOR_PASSWORD }}
           DB_NAME: ${{ vars.DATABASE_NAME }}
@@ -693,210 +716,283 @@ jobs:
             fi
           done
 
-          endpoint=""
-          raw_row="(no row seen yet)"
-          for i in $(seq 1 24); do
-            # `--json db ls` is a flat array under "data" — verified 2026-09-14
-            # against @danubedata/cli 1.1.0. Unlike `registry repos tags`
-            # (see push-image's prune step), this one is NOT double-wrapped.
-            # Which field carries the public endpoint once DNS is open has not
-            # been observed live yet, so this tries every plausible shape and
-            # fails loudly with the raw row if none of them populate in time —
-            # the same "don't silently report 0" discipline as the prune step.
-            result=$(danube --json db ls | python3 -c "
-          import json, os, sys
-          data = json.load(sys.stdin)['data']
-          row = next((r for r in data if r.get('name') == os.environ['DB_INSTANCE']), None)
-          if row is None:
-              print('MISSING')
-              sys.exit(0)
-          candidates = [
-              row.get('public_endpoint'),
-              ':'.join([row['dns_hostname'], str(row['dns_port'])]) if row.get('dns_hostname') and row.get('dns_port') else None,
-              ':'.join([row['proxy_dns_hostname'], str(row['proxy_dns_port'])]) if row.get('proxy_dns_hostname') and row.get('proxy_dns_port') else None,
-              ':'.join([row['proxy_dns_hostname'], str(row['proxy_any_dns_port'])]) if row.get('proxy_dns_hostname') and row.get('proxy_any_dns_port') else None,
-          ]
-          found = next((c for c in candidates if c), '')
-          print(f'ENDPOINT={found}')
-          print(f'ROW={json.dumps(row)}')
+          database_url=$(python3 -c "
+          import os
+          from urllib.parse import quote
+          user = quote(os.environ['DB_USER'], safe='')
+          password = quote(os.environ['DB_PASSWORD'], safe='')
+          host = os.environ['DB_INTERNAL_HOST']
+          port = os.environ['DB_INTERNAL_PORT']
+          print(f\"postgresql://{user}:{password}@{host}:{port}/{os.environ['DB_NAME']}\")
           ")
-            if [ "${result}" = "MISSING" ]; then
-              echo "::error::No instance named ${DB_INSTANCE} in \`danube db ls\`."
-              exit 1
+          echo "::add-mask::${database_url}"
+          echo "url=${database_url}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Migrating over internal DNS (${DB_INTERNAL_HOST}:${DB_INTERNAL_PORT}). No public endpoint is opened."
+
+      # ⚠️ PRE-CLEAN, added by code review 2026-09-15 (Lucas's call). A container
+      # left behind by a crashed earlier run is NOT inert: `rapids update --env`
+      # MERGES, so `apply` below would inherit that run's `APP_ENTRYPOINT=migrate`,
+      # its `DATABASE_URL` and its status token. Knative also routes to the latest
+      # READY revision, so the first poll request could activate that stale pod and
+      # run a SECOND `drizzle-kit migrate` concurrently with this run's. Deleting
+      # first makes the start state unambiguous instead of depending on what
+      # `--min-scale 0` does about `initial-scale`, which is a live-platform
+      # question this pipeline should not be resting a premise on (AC-6 observes it).
+      - name: Remove any leftover migrate container
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+        run: |
+          set -uo pipefail
+          danube rapids rm "${MIGRATE_CONTAINER}" --force \
+            || echo "No leftover container to remove (or rm returned non-zero); verifying state."
+
+          for i in $(seq 1 12); do
+            listing=$(danube --json rapids ls 2>/dev/null) || listing=""
+            presence=$(printf '%s' "${listing}" | python3 .github/scripts/rapids_presence.py "${MIGRATE_CONTAINER}")
+            if [ "${presence}" = "absent" ]; then
+              echo "::notice::No leftover migrate container. Starting from a clean state."
+              exit 0
             fi
-            endpoint=$(printf '%s\n' "${result}" | sed -n 's/^ENDPOINT=//p')
-            raw_row=$(printf '%s\n' "${result}" | sed -n 's/^ROW=//p')
-            if [ -n "${endpoint}" ]; then
+            sleep 5
+          done
+
+          echo "::error::${MIGRATE_CONTAINER} is still ${presence} after 60s. Refusing to start a migration on top of it."
+          echo "Delete it by hand: danube rapids rm ${MIGRATE_CONTAINER} --force"
+          exit 1
+
+      # Create the container SHAPE only, at min-scale 0. This ordering is forced by
+      # the CLI: `apply`/`create` cannot set environment variables and `update` can,
+      # so a container brought up here would boot in migrate mode with no
+      # DATABASE_URL.
+      #
+      # No `--wait`: with min-scale 0 there is deliberately nothing to become
+      # ready, and waiting for readiness that is not coming is how a job hangs.
+      - name: Create the migrate container (scaled to zero)
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+          RESOURCE_PROFILE: ${{ vars.RAPIDS_RESOURCE_PROFILE || 'small' }}
+          IDEMPOTENCY_KEY: migrate-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          danube rapids apply \
+            --name "${MIGRATE_CONTAINER}" \
+            --image "${REGISTRY}/${IMAGE_NAME}" \
+            --tag "${IMAGE_TAG}" \
+            --port 8080 \
+            --health-check-path /healthz \
+            --profile "${RESOURCE_PROFILE}" \
+            --min-scale 0 \
+            --max-scale 1 \
+            --idempotency-key "${IDEMPOTENCY_KEY}"
+
+      # ⚠️ NEVER add `--json` to this step. `rapids update --json` prints the whole
+      # container object, and that object carries `environment_variables` — i.e.
+      # it would print DATABASE_URL, password and all, into the run log. The human
+      # output path prints only the container name. Every value below is masked
+      # before it is passed, so a future `--json` slip is redacted rather than
+      # leaked, but the rule stands on its own.
+      #
+      # MIGRATE_RUN_ID binds the container to THIS run: the verdict carries it back
+      # and the poll below refuses a verdict that does not match, so a stale or
+      # foreign container can never be mistaken for this migration (code review
+      # 2026-09-15). The pre-clean step above makes that unlikely; this makes it
+      # detectable rather than merely unlikely.
+      - name: Inject credentials and start the migration
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          DATABASE_URL: ${{ steps.dburl.outputs.url }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          STATUS_TOKEN: ${{ steps.token.outputs.token }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          danube rapids update "${MIGRATE_CONTAINER}" \
+            --env \
+              "APP_ENTRYPOINT=migrate" \
+              "NODE_ENV=production" \
+              "DATABASE_URL=${DATABASE_URL}" \
+              "DATABASE_CA_CERT=${DATABASE_CA_CERT}" \
+              "MIGRATE_STATUS_TOKEN=${STATUS_TOKEN}" \
+              "MIGRATE_RUN_ID=${RUN_ID}" \
+            --min-scale 1
+          echo "::notice::Migrate container started in-cluster. Polling for a terminal verdict."
+
+      # Read the container's public URL out of the API. `--json` is piped straight
+      # into python and ONLY the url field is ever printed — the same discipline
+      # the old endpoint-discovery step used, and necessary here because the raw
+      # rows carry environment_variables.
+      - name: Resolve the migrate container URL
+        id: url
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+        run: |
+          # ⚠️ `set -e` is deliberately NOT used here. With it, a single transient
+          # CLI/API failure aborted this step on the first iteration and the retry
+          # loop only ever protected against an EMPTY url — i.e. it guarded the one
+          # failure that was least likely (code review 2026-09-15). Each attempt now
+          # absorbs its own failure and the loop is what decides.
+          set -uo pipefail
+          url=""
+          for i in $(seq 1 12); do
+            listing=$(danube --json rapids ls 2>/dev/null) || listing=""
+            if [ -n "${listing}" ]; then
+              url=$(printf '%s' "${listing}" | python3 -c "
+          import json, os, sys
+          try:
+              rows = json.load(sys.stdin).get('data') or []
+          except Exception:
+              rows = []
+          row = next((r for r in rows if isinstance(r, dict) and r.get('name') == os.environ['MIGRATE_CONTAINER']), None)
+          print((row or {}).get('url') or '')
+          " 2>/dev/null) || url=""
+            fi
+            if [ -n "${url}" ]; then
               break
             fi
             sleep 5
           done
 
-          if [ -z "${endpoint}" ]; then
-            echo "::error::${DB_INSTANCE} never reported a public endpoint within 120s of opening the window."
-            echo "Last row from \`danube db ls\`: ${raw_row}"
+          if [ -z "${url}" ]; then
+            echo "::error::${MIGRATE_CONTAINER} never reported a URL within 60s of being created."
             exit 1
           fi
+          echo "::notice::Migrate container URL: ${url}"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
 
-          db_host="${endpoint%:*}"
-          db_port="${endpoint##*:}"
-          case "${db_port}" in
-            ''|*[!0-9]*)
-              echo "::error::Parsed a non-numeric port ('${db_port}') out of endpoint '${endpoint}'."
-              exit 1
-              ;;
-          esac
-
-          echo "::notice::Public endpoint is ${db_host}:${db_port} (read live from the API, not a pinned secret)."
-          echo "db_host=${db_host}" >> "$GITHUB_OUTPUT"
-          echo "db_port=${db_port}" >> "$GITHUB_OUTPUT"
-
-          database_url=$(DB_HOST="${db_host}" DB_PORT="${db_port}" python3 -c "
-          import os
-          from urllib.parse import quote
-          user = quote(os.environ['DB_USER'], safe='')
-          password = quote(os.environ['DB_PASSWORD'], safe='')
-          print(f\"postgresql://{user}:{password}@{os.environ['DB_HOST']}:{os.environ['DB_PORT']}/{os.environ['DB_NAME']}\")
-          ")
-          echo "::add-mask::${database_url}"
-          echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
-
-      # ⚠️ REWRITTEN 2026-09-14 after this instance's public port changed a
-      # SECOND time (5445 -> 5446 on 2026-09-08, then refused entirely on
-      # 2026-09-14 — run 34801804663) despite `danube db ls` showing no
-      # re-provision since 2026-09-05. So the port is not merely "reassigned on
-      # re-provision", as previously believed: DanubeData appears to hand out a
-      # fresh public port on every `dns enable`. Pinning it in a secret — even
-      # one a human re-reads by hand after each failure — cannot keep up with
-      # that. This step now asks the API for the CURRENT endpoint instead of
-      # trusting anything configured ahead of time; only the DB role's
-      # credentials remain secret (see the `Discover...` step above).
+      # THE VERDICT. Exit status propagates straight out of this step into the
+      # job, and every downstream job `needs:` this one, so a failed or
+      # unreadable migration aborts the release before `deploy` runs (AC-3).
       #
-      # `db_host`/`db_port` are this job's Environment-secret-free source of
-      # truth for the rest of the job, not `secrets.DATABASE_URL` (removed —
-      # see DEPLOY_RUNBOOK.md §1).
-      - name: Wait for the public endpoint to accept connections
+      # Fails closed on every ambiguous outcome: still `running` at the deadline,
+      # unreachable, unparseable, a run id that is not ours, or any state that is
+      # not exactly `succeeded`.
+      - name: Wait for the migration verdict
         env:
-          DB_HOST: ${{ steps.discover.outputs.db_host }}
-          DB_PORT: ${{ steps.discover.outputs.db_port }}
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          STATUS_TOKEN: ${{ steps.token.outputs.token }}
+          CONTAINER_URL: ${{ steps.url.outputs.url }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -uo pipefail
-          # ⚠️ Rewritten 2026-09-08 after this step failed a real run by timing out
-          # at 300s with NO evidence of why — it discarded the connection error
-          # and never said which address it dialled. Three things changed:
-          #
-          # 1. Dial an explicit IPv4 address, RE-RESOLVED every attempt. The name
-          #    carries both an A and a AAAA record, and `/dev/tcp` follows the
-          #    resolver's ordering, which differs between hosts — measured this
-          #    session picking IPv6 on one machine and IPv4 on another. A runner
-          #    with no IPv6 route that dials the AAAA fails instantly and looks
-          #    exactly like a database that never came up. Re-resolving matters
-          #    because the A record ROTATES (91.98.15.85 -> 136.243.9.122 within
-          #    minutes, observed).
-          # 2. IPv6 is still tried as a fallback, so this cannot regress if the
-          #    endpoint ever becomes v6-only.
-          # 3. The ceiling is 600s, not 300s. Enable-to-accepting was measured at
-          #    ~160s once; that was one sample, and it is not a budget.
-          #
-          # If this still fails, the diagnostics below say which addresses were
-          # tried and what the last error was — the previous version could only
-          # say "never became reachable", which is a symptom, not a finding.
-          echo "::notice::Polling ${DB_HOST}:${DB_PORT} for readiness."
+          deadline=$(( SECONDS + 600 ))
+          state="(never reached)"
+          body=""
+          # ⚠️ Keep the last transport error. The previous version sent curl's
+          # stderr to /dev/null, so a 600s timeout reported "(never reached)" and
+          # nothing else — 401, 503, DNS failure and TLS failure were
+          # indistinguishable. An earlier step in this same file had already been
+          # rewritten once for exactly that fault; this is not a mistake worth
+          # making twice (code review 2026-09-15).
           last_error="(no attempt completed)"
-          v4=""; v6=""
-          for i in $(seq 1 60); do
-            v4=$(getent ahostsv4 "${DB_HOST}" 2>/dev/null | awk 'NR==1{print $1}')
-            v6=$(getent ahostsv6 "${DB_HOST}" 2>/dev/null | awk 'NR==1{print $1}')
-            for addr in "${v4}" "${v6}"; do
-              [ -n "${addr}" ] || continue
-              if err=$(timeout 5 bash -c "cat < /dev/null > /dev/tcp/${addr}/${DB_PORT}" 2>&1); then
-                echo "::notice::Endpoint accepted a connection at ${addr} after ~$(( i * 10 ))s."
-                exit 0
+
+          while [ "${SECONDS}" -lt "${deadline}" ]; do
+            if body=$(curl -fsS --max-time 15 \
+                -H "Authorization: Bearer ${STATUS_TOKEN}" \
+                "${CONTAINER_URL%/}/migrate-status" 2>/tmp/curl-err); then
+              parsed=$(printf '%s' "${body}" | python3 -c "
+          import json, sys
+          try:
+              payload = json.load(sys.stdin)
+              print(payload.get('state', 'unparseable'), payload.get('runId', ''))
+          except Exception:
+              print('unparseable', '')
+          ")
+              state="${parsed%% *}"
+              reported_run="${parsed#* }"
+
+              # A verdict from a container this run did not start is not our
+              # verdict, whatever it says. Keep polling rather than trusting it.
+              if [ "${reported_run}" != "${RUN_ID}" ]; then
+                last_error="reported runId '${reported_run}' != this run '${RUN_ID}'"
+                state="(foreign container)"
+              elif [ "${state}" != "running" ]; then
+                break
               fi
-              last_error="${addr} -> ${err:-connection failed}"
-            done
+            else
+              last_error="curl: $(tr -d '\n' < /tmp/curl-err)"
+            fi
             sleep 10
           done
-          echo "::error::${DB_HOST}:${DB_PORT} never accepted a connection within 600s of opening the window."
-          echo "Resolved IPv4: ${v4:-none}"
-          echo "Resolved IPv6: ${v6:-none}"
-          echo "Last connection error: ${last_error}"
-          echo "This host/port came live from the API (the 'Discover the public endpoint' step"
-          echo "above), not a pinned secret, so a stale port is no longer the likely cause. If"
-          echo "both addresses resolved and both refused, the endpoint the API reported is not"
-          echo "actually listening yet — check DanubeData's status for ${DB_INSTANCE}."
+
+          echo "::notice::Terminal state: ${state}"
+
+          if [ "${state}" = "succeeded" ]; then
+            echo "Migration applied in-cluster. No public endpoint was opened."
+            exit 0
+          fi
+
+          # Diagnostics, not the verdict: logs can be reported unavailable, which
+          # is exactly why the verdict does not travel through them.
+          echo "::error::Migration did not succeed (state: ${state}). Aborting the release before deploy."
+          echo "Last transport error: ${last_error}"
+          echo "--- status body ---"
+          printf '%s\n' "${body:-(no response)}"
+          echo "--- revisions ---"
+          danube rapids revisions "${MIGRATE_CONTAINER}" || true
+          echo "--- events ---"
+          danube rapids events "${MIGRATE_CONTAINER}" || true
+          echo "--- logs ---"
+          danube rapids logs "${MIGRATE_CONTAINER}" --since 30m --limit 200 || true
           exit 1
 
-      # The 4-17 clean-slate-vs-push-built guard. `drizzle-kit migrate` is only
-      # safe against a database drizzle owns the history of; the existing
-      # DanubeData dev DBs were built with `drizzle-kit push` and have NO journal
-      # rows, so replaying the chain there re-mints userProfiles ids and orphans
-      # profileId / forecastingProfiles references (deferred-work.md:643).
-      # Fails closed on anything it cannot classify. Never `continue-on-error`.
-      - name: Preflight — refuse an unsafe migration target
-        env:
-          NODE_ENV: production
-          # DATABASE_URL is NOT set here — it was exported to $GITHUB_ENV by the
-          # "Discover the public endpoint" step above and is already part of
-          # this job's environment. There is no `secrets.DATABASE_URL` anymore.
-          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
-          # verify-ca, not verify-full: DanubeData issues the DB certificate for
-          # in-cluster SANs only, so the public endpoint used inside this window is
-          # absent from it. Chain validation against the cluster CA is KEPT; only
-          # the hostname check is waived, and only here. See packages/db/src/
-          # migrate-tls.ts. Goes away with the ADR-001 exception.
-          DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH: 'true'
-        run: pnpm --filter @budget-planner/db db:migrate:preflight
-
-      # Aborts the deploy on failure: no `continue-on-error`, and every
-      # downstream job `needs:` this one, so a half-migrated database can never
-      # be followed by a release.
+      # `always()` is load-bearing, exactly as the window-close step it replaces
+      # was: this MUST run when the migration fails, when the verdict times out,
+      # when a step errors, and when the job is cancelled. A leftover migrate
+      # container is publicly routable AND holds DATABASE_URL in its environment,
+      # so leaving one behind is a worse outcome than a failed migration. The step
+      # therefore also FAILS THE JOB if the deletion does not take — never
+      # `continue-on-error`, never a bare `|| true` on the state check.
       #
-      # DATABASE_CA_CERT is REQUIRED here, not optional: the DanubeData chain is
-      # self-signed, so without it the connection fails SELF_SIGNED_CERT_IN_CHAIN
-      # (verified 2026-09-03). Since Story 5.17 AC-4 the migrating connection
-      # enforces the same CA-validated TLS and EU host allowlist as the app pool.
-      - name: Apply migrations
-        env:
-          NODE_ENV: production
-          # See the Preflight step above: DATABASE_URL comes from $GITHUB_ENV,
-          # not a secret.
-          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
-          # verify-ca, not verify-full: DanubeData issues the DB certificate for
-          # in-cluster SANs only, so the public endpoint used inside this window is
-          # absent from it. Chain validation against the cluster CA is KEPT; only
-          # the hostname check is waived, and only here. See packages/db/src/
-          # migrate-tls.ts. Goes away with the ADR-001 exception.
-          DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH: 'true'
-        run: pnpm --filter @budget-planner/db db:migrate
-
-      # ⏳ WINDOW CLOSES. `always()` is load-bearing: this MUST run when the
-      # migration fails, when the preflight refuses, when a step times out, and
-      # when the job is cancelled. A window left open is a worse outcome than a
-      # failed migration, so the step also FAILS THE JOB if the close does not
-      # take — never `continue-on-error`, never a bare `|| true`.
-      - name: Close the migration window
+      # ⚠️ The state check reads a WORD (`present`/`absent`/`error`), not an exit
+      # code. It used to `sys.exit(0 if present else 1)`, which gave "absent" and
+      # "could not read the listing at all" the SAME exit code — so an API error
+      # printed "Migrate container removed" and exited 0 with the container still
+      # alive. Two review layers found that independently (2026-09-15); it is the
+      # one failure this step exists to prevent. `error` now fails the job.
+      #
+      # The loop also gives an asynchronous delete time to take effect, so a
+      # still-terminating container does not fail a job whose migration succeeded.
+      - name: Tear down the migrate container
         if: ${{ always() }}
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
         run: |
           set -uo pipefail
-          # `always()` means this also runs when the job failed BEFORE the window
-          # opened, where `dns disable` on an already-closed instance may return
-          # non-zero. So the exit code is advisory and the STATE CHECK below is
-          # what decides — otherwise a safe, already-closed database would fail
-          # the job and train everyone to ignore this step.
-          danube db dns disable "${DB_INSTANCE}" \
-            || echo "dns disable returned non-zero; verifying actual state instead"
+          # `always()` means this also runs when the job failed BEFORE the
+          # container was created, where `rm` on a non-existent container returns
+          # non-zero. So the exit code is advisory and the STATE CHECK below
+          # decides — otherwise a run that failed early would fail again here and
+          # train everyone to ignore this step.
+          danube rapids rm "${MIGRATE_CONTAINER}" --force \
+            || echo "rapids rm returned non-zero; verifying actual state instead"
 
-          # The public endpoint has a distinctive shape
-          # (postgresql-<instance>.<ns>.danubedata.ro); the closed one is
-          # *.svc.cluster.local. Match the former to detect a still-open window.
-          if danube db ls | grep -Eq "postgresql-.*\.danubedata\.ro"; then
-            echo "::error::Public DNS still OPEN for ${DB_INSTANCE}. Close it by hand: danube db dns disable ${DB_INSTANCE}"
-            exit 1
+          presence="error"
+          for i in $(seq 1 12); do
+            listing=$(danube --json rapids ls 2>/dev/null) || listing=""
+            presence=$(printf '%s' "${listing}" | python3 .github/scripts/rapids_presence.py "${MIGRATE_CONTAINER}")
+            if [ "${presence}" = "absent" ]; then
+              echo "::notice::Migrate container removed."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          if [ "${presence}" = "error" ]; then
+            echo "::error::Could not establish whether ${MIGRATE_CONTAINER} still exists — the listing was unreadable."
+            echo "Treating this as STILL PRESENT. A container left behind is publicly routable and holds DATABASE_URL."
+          else
+            echo "::error::${MIGRATE_CONTAINER} still exists after 60s."
           fi
-          echo "::notice::Public DNS closed for ${DB_INSTANCE}."
+          echo "Delete it by hand and confirm: danube rapids rm ${MIGRATE_CONTAINER} --force && danube rapids ls"
+          exit 1
 
   # --- Deploy to Rapids (AC-2/AC-5) ------------------------------------------
   deploy:
