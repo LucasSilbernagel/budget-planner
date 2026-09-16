@@ -48,10 +48,25 @@ account); the code it exercises is already merged.
 
 ## 3a. Retry, refund and identity behaviour (Story 5-19)
 
+> ⏭️ **NOT RUN. Accepted-as-skipped by Lucas on 2026-09-16 when story 5-19 closed.**
+> None of the seven steps below has been executed against live or sandbox Paddle.
+> They are kept because they remain the right checks — not because they passed.
+>
+> **Do not read 5-19's `done` status as evidence that any of this behaviour works
+> against real Paddle payloads.** The handler is well covered by automated tests,
+> but those tests feed it *our* fixtures.
+>
+> ⚠️ **Highest residual risk: a wrong `adjustment.*` payload-shape assumption.** If
+> our assumed shape is wrong, all 25 automated tests still pass and refunds
+> silently never revoke — a refunded buyer keeps €99 of access, or a paying
+> customer is wrongly revoked. **Steps 3 and 4 are the honest minimum** if anyone
+> revisits this; both run in sandbox with no real money.
+
 Everything in this section is covered by automated tests against real
 PostgreSQL (`routes/api/webhooks/__tests__/paddle-webhook.db.test.ts`). These
 steps confirm the same behaviour against **live Paddle**, where the payload
-shapes and retry timing are Paddle's rather than ours.
+shapes and retry timing are Paddle's rather than ours — which is precisely the
+gap the skip leaves open.
 
 1. **Duplicate delivery.** In the Paddle dashboard, replay a delivered event
    from the notification log. Expect `200`, no change to the `users` row, and
@@ -79,11 +94,12 @@ shapes and retry timing are Paddle's rather than ours.
 7. **Zero-value transaction.** If the dashboard allows a 100%-discount
    transaction on the lifetime price, confirm it does NOT grant `lifetime`.
 
-⚠️ **Migration 0017 must be applied before any of this is meaningful** — it
-creates `paddleWebhookEvents`, the `users` watermark/lifetime-accounting
-columns, and the `userProfiles_one_default_per_user` partial unique index. Its
-`UPDATE` demotes any pre-existing duplicate default profiles; the index cannot
-be created while duplicates exist.
+✅ **Migration 0017 is applied** (`0017_sad_venus.sql`, deploy run 35150867103,
+2026-09-16) — it creates `paddleWebhookEvents`, the `users` watermark/lifetime-
+accounting columns, and the `userProfiles_one_default_per_user` partial unique
+index. Its `UPDATE` demotes any pre-existing duplicate default profiles; the
+index cannot be created while duplicates exist. No longer a prerequisite for the
+steps above.
 
 ## 4. Authenticated sync round trip
 
@@ -106,4 +122,5 @@ Brevo-verified address — not the retired `budgetplanner.eu` domain.
 | Date | Result |
 |------|--------|
 | 2026-09-11 | Sandbox checkout confirmed end-to-end (open → pay with test card → `checkout.completed` → `successUrl` redirect) once the sandbox account's default payment link was set. See story 5-3 Dev Agent Record change log. |
+| 2026-09-16 | ⏭️ **§3a NOT verified — accepted-as-skipped by Lucas** on closing story 5-19. No live or sandbox round trip was run for retry idempotency, refund/chargeback revocation, identity collision or the entitled-user 403. Migration 0017 confirmed applied (run 35150867103). Reasoning and residual risk: story 5-19, Task 8. |
 | 2026-09-15 | Live production round trip confirmed by Lucas: seller account approved, live products/prices/webhook registered, all Paddle + `EMAIL_FROM` secrets injected as Rapids runtime secrets, real webhook delivery verified, real checkout completed for both plans with the premium gate flipping on, cancellation/past-due downgrade and the lifetime no-downgrade guard confirmed, and the authenticated `/api/sync/*` round trip verified against the live managed database. |
