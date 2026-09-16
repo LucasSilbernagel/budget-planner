@@ -32,6 +32,7 @@ CI = ".github/workflows/ci.yml"
 DEPLOY = ".github/workflows/deploy.yml"
 ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
 DEPLOYED_TAGS_HELPER = ".github/scripts/rapids_deployed_tags.py"
+VERDICT_HELPER = ".github/scripts/rapids_verdict.py"
 
 failures: list[str] = []
 checked = 0
@@ -235,6 +236,43 @@ def main() -> int:
           "the poll follows redirects (`rapids ls` reports http://, the edge 301s to https)")
     check('[ -n "${body}" ]' in verdict_run_early,
           "an empty 200 is not treated as a verdict")
+
+    # ⚠️ The HTTP endpoint is reached through the container's public URL, which
+    # Knative routes to whatever revision is currently READY — not necessarily the
+    # one that migrated. Run 35042874267-1 succeeded and then answered every poll
+    # with 401 from a successor revision, so the job timed out on finished work.
+    # Logs aggregate across revisions; the run id makes a line attributable.
+    print("\n== the verdict has a second channel that survives revision churn ==")
+    check("rapids_verdict.py" in verdict_run_early,
+          "the poll also reads the verdict from the container logs")
+    check('"${RUN_ID}"' in verdict_run_early,
+          "the log verdict is matched against THIS run's id")
+    try:
+        with open(VERDICT_HELPER, encoding="utf-8") as fh:
+            verdict_src = fh.read()
+    except OSError:
+        verdict_src = ""
+    check(bool(verdict_src), "the verdict helper exists")
+    if verdict_src:
+        vbody = verdict_src.split('"""')[-1] if verdict_src.count('"""') >= 2 else verdict_src
+        # "not finished yet" and "cannot tell" must stay different answers.
+        check('"none"' in vbody and '"error"' in vbody,
+              "it distinguishes 'no verdict yet' from 'logs unreadable'")
+        check('available' in vbody,
+              "an unavailable log backend reads as error, never as 'no verdict'")
+        check("\\S+" not in vbody,
+              "its field patterns are narrow (a greedy one read `succeeded\"}` as a failure)")
+    # The container has to emit what the helper parses.
+    try:
+        with open("apps/web/migrate-entry.mjs", encoding="utf-8") as fh:
+            entry_src = fh.read()
+    except OSError:
+        entry_src = ""
+    # The sentinel is assembled, not a literal, so match its parts.
+    check("VERDICT ${parts.join" in entry_src and "run=${runId}" in entry_src,
+          "the container emits the verdict sentinel the helper parses")
+    check("emitVerdict(result)" in entry_src and "emitVerdict({ state: 'failed'" in entry_src,
+          "both the normal and the unexpected-failure paths emit it")
 
     print("\n== migrations are serialised across pods ==")
     # Knative started TWO revisions of the migrate container and both ran

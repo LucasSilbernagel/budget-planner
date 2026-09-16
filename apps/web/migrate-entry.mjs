@@ -120,6 +120,37 @@ function readEnv(/** @type {string} */ name) {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+/**
+ * Print the verdict as a single machine-readable line, tagged with this run's id.
+ *
+ * ⚠️ THE PIPELINE PARSES THIS. Do not reword it without updating
+ * `.github/scripts/rapids_verdict.py` and its tests.
+ *
+ * Why the logs carry the verdict at all, when there is already an HTTP endpoint:
+ * the endpoint is reached through the container's public URL, and Knative routes
+ * that URL to whatever revision is currently READY — not necessarily the revision
+ * that ran the migration. Live run 35042874267-1 proved the difference: revision
+ * `budget-planner-migrator-00001` completed the migration and reported
+ * `succeeded`, was then replaced, and every subsequent poll got 401 from a
+ * successor carrying a different token. The migration had worked; the pipeline
+ * simply could not reach the pod that knew it.
+ *
+ * Logs have the property the URL lacks: they aggregate across revisions. So the
+ * verdict now travels both ways, and the run id is what makes a log line
+ * attributable to THIS release rather than a previous one.
+ *
+ * The line contains an id and a state — never a credential.
+ *
+ * @param {{ state: string, failedStep?: string, exitCode?: number | null }} result
+ */
+function emitVerdict(result) {
+  const parts = [`run=${runId}`, `state=${result.state}`]
+  if (result.state !== 'succeeded') {
+    parts.push(`step=${result.failedStep ?? 'unknown'}`, `code=${result.exitCode ?? 'null'}`)
+  }
+  console.log(`[migrate-entry] VERDICT ${parts.join(' ')}`)
+}
+
 // ⚠️ MISSING CONFIGURATION IS "NOTHING TO DO", NOT A CRASH. Changed 2026-09-16.
 //
 // This used to `process.exit(1)` on a missing variable. That is right for a
@@ -189,6 +220,7 @@ if (!token || !databaseUrl || !runId) {
     runMigration({ runStep }).then(
       (result) => {
         Object.assign(status, result, { finishedAt: new Date().toISOString() })
+        emitVerdict(result)
         if (result.state === 'succeeded') {
           console.log('[migrate-entry] MIGRATION SUCCEEDED. Holding the status endpoint open.')
         } else {
@@ -207,6 +239,7 @@ if (!token || !databaseUrl || !runId) {
           error: error instanceof Error ? error.message : String(error),
           finishedAt: new Date().toISOString(),
         })
+        emitVerdict({ state: 'failed', failedStep: 'unknown', exitCode: null })
         console.error('[migrate-entry] MIGRATION FAILED (unexpected):', error)
       }
     )

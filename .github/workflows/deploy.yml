@@ -962,6 +962,37 @@ jobs:
                 last_error="empty response from ${CONTAINER_URL%/}/migrate-status (redirect not followed, or no body)"
               fi
             fi
+
+            # SECOND CHANNEL — the logs. The endpoint above is reached through the
+            # container's public URL, and Knative routes that URL to whatever
+            # revision is currently READY, which need not be the one that migrated.
+            # Live run 35042874267-1: the migration SUCCEEDED and every later poll
+            # got 401 from a successor revision holding a different token, so the
+            # job timed out on work that was already done. Logs aggregate across
+            # revisions, so they can answer when the URL cannot.
+            #
+            # Matched on this run's id, so a previous release's verdict sitting in
+            # the log window is never mistaken for this one.
+            log_verdict=$(danube --json rapids logs "${MIGRATE_CONTAINER}" --since 1h --limit 500 2>/dev/null \
+              | python3 .github/scripts/rapids_verdict.py "${RUN_ID}") || log_verdict="error"
+            case "${log_verdict}" in
+              succeeded)
+                echo "::notice::Verdict read from the container logs for run ${RUN_ID}."
+                state="succeeded"
+                break
+                ;;
+              failed:*)
+                echo "::error::Logs report this run's migration failed (${log_verdict#failed:})."
+                state="failed"
+                break
+                ;;
+              error)
+                # Not fatal on its own: the HTTP channel may still answer, and a
+                # missing `serverless:diagnostics` scope shows up exactly here.
+                last_error="${last_error}; logs unreadable"
+                ;;
+            esac
+
             sleep 10
           done
 

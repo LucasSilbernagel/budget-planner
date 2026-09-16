@@ -201,3 +201,43 @@ describe('Dockerfile (AC-2: the image actually carries the migrate payload)', ()
     expect(instructions).not.toMatch(/--prod\b/)
   })
 })
+
+/**
+ * The verdict travels on TWO channels: a bearer-gated HTTP endpoint, and a
+ * sentinel line in the container logs. The second exists because the first cannot
+ * survive revision churn — Knative routes the container URL to whatever revision
+ * is currently ready, which need not be the one that migrated. Live run
+ * 35042874267-1 succeeded and then answered every poll with 401 from a successor.
+ *
+ * `.github/scripts/rapids_verdict.py` parses these lines, so the format is a
+ * contract between two files in different languages. Pin both ends.
+ */
+describe('verdict sentinel (migrate container -> pipeline logs channel)', () => {
+  const entry = readWebFile('migrate-entry.mjs')
+  const parser = readFileSync(
+    new URL('../../../../../.github/scripts/rapids_verdict.py', import.meta.url),
+    'utf8'
+  )
+
+  it('is emitted on the success path and the unexpected-failure path', () => {
+    expect(entry).toMatch(/emitVerdict\(result\)/)
+    expect(entry).toMatch(/emitVerdict\(\{ state: 'failed'/)
+  })
+
+  it('carries this run id and the state', () => {
+    expect(entry).toMatch(/run=\$\{runId\}/)
+    expect(entry).toMatch(/state=\$\{result\.state\}/)
+  })
+
+  it('never carries a credential', () => {
+    const emitFn = entry.split('function emitVerdict(')[1]?.split('\n}')[0] ?? ''
+    expect(emitFn).not.toMatch(/token|DATABASE_URL|password|CA_CERT/i)
+  })
+
+  // If either side is reworded without the other, the pipeline silently stops
+  // reading verdicts and every release times out. Keep the shapes aligned.
+  it('matches the prefix the parser looks for', () => {
+    expect(entry).toMatch(/\[migrate-entry\] VERDICT /)
+    expect(parser).toMatch(/migrate-entry\\\]\\s\+VERDICT/)
+  })
+})
