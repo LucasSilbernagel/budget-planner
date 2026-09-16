@@ -203,6 +203,37 @@ def main() -> int:
     # verdict check was `'"succeeded"' in run`, which also passes for
     # `!= "succeeded"` and for a step that merely ECHOES the word — it pinned
     # nothing about failing closed (code review 2026-09-15).
+    # ⚠️ GitHub runs every `run:` block as `bash -e {0}`. The `-e` is injected by
+    # the runner, and a script CANNOT opt out by leaving it off its own `set` line
+    # — `set -uo pipefail` does not disable it. So any command whose non-zero exit
+    # is MEANINGFUL DATA (`git diff --quiet` returning 1 for "there are changes",
+    # `grep -q`, a helper returning a status) must capture that status instead of
+    # letting it reach the shell as a fatal error.
+    #
+    # This is not hypothetical: run 35041921329 (2026-09-15) died with exit 1 and
+    # no output on the first push that touched a migration path, because
+    # `git diff --quiet ... ; case $?` never reached its `case`.
+    print("\n== non-zero exit codes that carry MEANING are captured, not fatal ==")
+    for name, job in jobs.items():
+        for step in job.get("steps", []) or []:
+            run = step.get("run", "") or ""
+            if not run:
+                continue
+            where = f"{name}/{step.get('name')}"
+            # `case $?` reads the status of whatever ran immediately before, which
+            # under -e has already killed the shell if it was non-zero.
+            check("case $?" not in run,
+                  f"{where} does not branch on a bare `case $?` (use `|| status=$?`)")
+            # Join `\` continuations first: the guard is often on the NEXT physical
+            # line, and a line-by-line check would flag correct code (it flagged
+            # `smoke`'s grep, whose `|| { … exit 1; }` sits on the following line).
+            logical = re.sub(r"\\\n\s*", " ", run)
+            for line in logical.split("\n"):
+                stripped = line.strip()
+                if stripped.startswith("git diff --quiet") or stripped.startswith("grep -q"):
+                    check("||" in stripped,
+                          f"{where}: `{stripped[:48]}…` captures its status rather than tripping -e")
+
     print("\n== the verdict and the teardown both fail CLOSED ==")
     verdict_run = steps[verdict_i]["run"]
     check(re.search(r'if\s+\[\s*"\$\{state\}"\s*=\s*"succeeded"\s*\]', verdict_run) is not None,

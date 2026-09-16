@@ -575,9 +575,18 @@ jobs:
           git cat-file -e "${base}^{commit}" 2>/dev/null \
             || decide true "last deployed commit ${base} is not in this history"
 
+          # ⚠️ `|| status=$?` is REQUIRED, not stylistic. GitHub runs every `run:`
+          # block as `bash -e {0}` — the `-e` is injected by the runner and a
+          # script cannot opt out by merely omitting it from its own `set` line.
+          # `git diff --quiet` returns 1 to mean "there ARE changes", which is this
+          # step's whole answer, but `-e` treats that 1 as a fatal error and kills
+          # the script before `case` runs. Result: the job failed with exit 1 and
+          # no output on the first push that actually touched a migration path
+          # (run 35041921329, 2026-09-15). Capturing the status keeps it data.
+          status=0
           # shellcheck disable=SC2086 # MIGRATION_PATHS is a deliberate word list
-          git diff --quiet "${base}" "${GITHUB_SHA}" -- ${MIGRATION_PATHS}
-          case $? in
+          git diff --quiet "${base}" "${GITHUB_SHA}" -- ${MIGRATION_PATHS} || status=$?
+          case ${status} in
             0) decide false "no migration changes since the last deployed commit ${base}" ;;
             1) decide true "migrations changed since the last deployed commit ${base}" ;;
             *) decide true "git diff against ${base} failed" ;;
@@ -903,7 +912,7 @@ jobs:
               print(payload.get('state', 'unparseable'), payload.get('runId', ''))
           except Exception:
               print('unparseable', '')
-          ")
+          ") || parsed="unparseable "
               state="${parsed%% *}"
               reported_run="${parsed#* }"
 
