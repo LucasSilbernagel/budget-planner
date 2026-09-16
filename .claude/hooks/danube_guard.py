@@ -18,9 +18,46 @@ import re
 import sys
 
 # Read-only verbs. `danube <resource> <verb>` is allowed when the verb is here.
-SAFE_VERBS = {"ls", "list", "events", "metrics"}
+# `available-metrics` lists the metric TYPES alertable on a resource KIND (not an
+# instance), so it reaches no credential; it is how story 5-6 established that
+# DanubeData registers no evaluator for database/cache/app, and a future session
+# needs it to re-check whether that has changed.
+SAFE_VERBS = {"ls", "list", "events", "metrics", "available-metrics"}
 # Top-level subcommands that take no resource and print nothing sensitive.
 SAFE_TOP = {"whoami", "help", "version", "completion", "docs"}
+# Resources whose every verb is safe, because they never hold a connection
+# secret. Story 5-6 needed `uptime create` to provision the AC-5 monitoring, and
+# the verb-level allow-list cannot express that: adding "create" to SAFE_VERBS
+# would also unblock `danube db create`, which prints the new instance's admin
+# password. Scoping by RESOURCE keeps every credential-bearing resource (db,
+# vps, cache, queue, apps, storage, registry, rapids) fully guarded.
+#
+# `alerts`/`metric-alerts` were in this set briefly and were REMOVED after
+# review: metric alerts have no evaluator for any resource kind this project
+# uses, so one must never be created here, which left the entries buying
+# nothing while keeping an `alerts get` surface. `alerts ls` and
+# `alerts available-metrics` still work via SAFE_VERBS.
+#
+# WARNING: the residual exposure is `uptime create --url <url>`, which accepts
+# any URL. A check created against `https://user:pass@host/...` or a `?token=`
+# URL has those credentials echoed back by `uptime get`, `uptime ls` and
+# `uptime diagnose`, all allowed here. Probe only unauthenticated endpoints.
+SAFE_RESOURCES = {"uptime", "uptime-checks"}
+# Global flags KNOWN to take no value. Any other flag seen before the first
+# positional is assumed to consume the next token (see offending_invocation) —
+# fail-closed, because an unknown value-taking flag would otherwise make its
+# value look like the subcommand and hand an attacker a free pass.
+GLOBAL_BOOLEAN_FLAGS = {
+    "--json",
+    "--help",
+    "-h",
+    "--version",
+    "-V",
+    "--debug",
+    "--verbose",
+    "--quiet",
+    "--no-color",
+}
 # Global flags that consume the following token, so it is not the subcommand.
 VALUE_FLAGS = {"--project", "--team", "--namespace", "-p", "-n"}
 
@@ -28,15 +65,30 @@ REASON = """DanubeData prints live credentials into the transcript for most non-
 subcommands, and offers no credential rotation - a leak forces deleting and
 re-provisioning the instance.
 
-Allowed here: ls / list, events, metrics, whoami, help, version.
+Allowed here: the read-only verbs ls / list / events / metrics /
+available-metrics on any resource; the top-level whoami / help / version; and
+every verb on the monitoring resources uptime / uptime-checks.
 
 If you need a value that only a blocked subcommand prints, read it from the
 DanubeData dashboard rather than through any tool that records output. Do NOT
 re-run this via `!` - that prints the same secret into the same transcript.
 
 If a blocked subcommand is genuinely safe and needed often, add it to
-SAFE_VERBS/SAFE_TOP in .claude/hooks/danube_guard.py as a deliberate, reviewed
-change. See docs/production-database-runbook.md."""
+SAFE_VERBS / SAFE_TOP / SAFE_RESOURCES in .claude/hooks/danube_guard.py as a
+deliberate, reviewed change. See docs/production-database-runbook.md."""
+
+
+# A command may begin at the string start or after a shell metacharacter.
+_CMD_START = r"""(?:^|[;|&()`{}'"\s]|\$\()\s*"""
+# The binary, with an optional directory prefix (absolute, ~, or relative) and an
+# optional backslash escape. The lookahead keeps `danubedata.ro` from matching.
+_BINARY = r"""(?:[^\s;|&()`'"]*/)?\\?danube(?![\w.\-/])"""
+# `npx @danubedata/cli ...` / `pnpm dlx @danubedata/cli@1.3.0 ...` run the same
+# CLI without ever spelling the bare binary name.
+_PACKAGE = r"""@danubedata/cli(?:@[\w.\-]+)?(?![\w.\-])"""
+_INVOCATION_RE = _CMD_START + r"(?:" + _BINARY + r"|" + _PACKAGE + r")"
+# Shell redirection tokens: optional fd, then < or >, then anything.
+_REDIRECT_RE = re.compile(r"^\d*[<>]")
 
 
 def block(what: str) -> None:
@@ -58,7 +110,16 @@ def offending_invocation(cmd: str):
     # stops `danubedata.ro` from matching. The previous shell version anchored on
     # a TRAILING [[:space:]]|$ instead, which missed $(danube db get), pipes,
     # semicolons and redirects.
-    for match in re.finditer(r"""(?:^|[;|&()`{}'"\s]|\$\()\s*danube(?![\w.\-/])""", cmd):
+    #
+    # The optional PATH PREFIX and the package alternative below close a hole
+    # found by code review 2026-09-16: the bare-name pattern matched none of
+    # `/home/u/.local/share/pnpm/bin/danube db get`, `~/bin/danube db get`,
+    # `./bin/danube db get`, `\danube db get`, `npx @danubedata/cli db get` or
+    # `pnpm dlx @danubedata/cli db get` - every one of which ran the real CLI
+    # and printed the live admin password. `command -v danube` returns an
+    # absolute path, so the path-prefixed form is the NORMAL way to invoke it,
+    # not an exotic one.
+    for match in re.finditer(_INVOCATION_RE, cmd):
         rest = cmd[match.end():]
         # Stop at the end of this command; a later one gets its own match.
         rest = re.split(r"[;|&)`}]|\$\(", rest, maxsplit=1)[0]
@@ -68,10 +129,23 @@ def offending_invocation(cmd: str):
         index = 0
         while index < len(tokens):
             token = tokens[index]
-            if token.startswith("-"):
+            if _REDIRECT_RE.match(token):
+                # `2>`, `>out`, `1>&2` - shell plumbing, never a subcommand.
+                # Without this, `danube --help 2>&1` split to a `2>` positional
+                # and was wrongly DENIED.
+                pass
+            elif token.startswith("-"):
                 # --project=x is self-contained; --project x eats the next token.
-                if "=" not in token and token in VALUE_FLAGS:
-                    index += 1
+                if "=" not in token:
+                    if token in VALUE_FLAGS:
+                        index += 1
+                    elif not positional and token not in GLOBAL_BOOLEAN_FLAGS:
+                        # An UNKNOWN global flag before the subcommand: assume it
+                        # takes a value, so its value cannot masquerade as the
+                        # subcommand. Fail-closed - `danube --output uptime db
+                        # get` otherwise read as the allowed resource `uptime`
+                        # while the CLI ran `db get`.
+                        index += 1
             else:
                 positional.append(token.strip("\"'"))
             index += 1
@@ -79,6 +153,8 @@ def offending_invocation(cmd: str):
         if not positional:
             continue  # bare `danube`, or flags only - prints help
         if positional[0] in SAFE_TOP:
+            continue
+        if positional[0] in SAFE_RESOURCES:
             continue
         if len(positional) >= 2 and positional[1] in SAFE_VERBS:
             continue
@@ -97,6 +173,17 @@ def main() -> None:
         # exactly the risky case without breaking every other Bash call.
         if "danube" in raw:
             block("cannot parse the hook payload, and it mentions `danube`.")
+        sys.exit(0)
+
+    # A non-string `command` (list, int, None) would otherwise raise below and
+    # exit 1 - and PreToolUse treats any code but 2 as NON-blocking, so the call
+    # would proceed. Decide on its text form instead, fail-closed. Found by code
+    # review 2026-09-16.
+    if command is not None and not isinstance(command, str):
+        rendered = repr(command)
+        if "danube" in rendered:
+            block("the payload's `command` is {}, not a string, and it mentions "
+                  "`danube`.".format(type(command).__name__))
         sys.exit(0)
 
     if not command or "danube" not in command:

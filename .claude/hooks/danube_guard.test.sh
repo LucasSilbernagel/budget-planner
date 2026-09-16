@@ -66,6 +66,56 @@ probe DENY 'credentials'             "danube $C"
 probe DENY 'chained, blocked last'   "danube db ls && danube $G"
 probe DENY 'chained, blocked first'  "danube $G && danube db ls"
 
+# Story 5-6 added SAFE_RESOURCES so AC-5 monitoring could be provisioned. The
+# risk of that change is scope creep into credential-bearing resources, so the
+# DENY probes below are the regression canaries, not decoration.
+echo "== SAFE_RESOURCES: monitoring resources allow every verb =="
+probe ALLOW 'uptime create'          "danube uptime create --name x --url https://e.com"
+probe ALLOW 'uptime rm'              "danube uptime rm x"
+# NOT `uptime-checks ls`: `ls` is in SAFE_VERBS, so that probe passed even with
+# SAFE_RESOURCES deleted - it was vacuous, caught by code review 2026-09-16.
+# `pause` is reachable ONLY through the resource allow-list.
+probe ALLOW 'uptime-checks alias'    "danube uptime-checks pause x"
+
+echo "== alerts were REMOVED from SAFE_RESOURCES (reviewed 2026-09-16) =="
+probe DENY  'alerts create blocked'  "danube alerts create --name x"
+probe DENY  'alerts get blocked'     "danube alerts get x"
+probe ALLOW 'alerts ls (SAFE_VERBS)' "danube alerts ls"
+probe ALLOW 'available-metrics verb' "danube alerts available-metrics database"
+
+echo "== SAFE_RESOURCES must NOT leak to credential-bearing resources =="
+probe DENY  'db create still blocked'   "danube db create --name x"
+probe DENY  'vps create still blocked'  "danube vps create --name x"
+probe DENY  'registry still blocked'    "danube registry usage"
+probe DENY  'storage still blocked'     "danube storage get x"
+probe DENY  'uptime-lookalike resource' "danube uptimedb get x"
+
+# These pin the new branch's SHAPE. Without them, changing the SAFE_RESOURCES
+# `continue` to a `return`/`break` left every other probe green.
+echo "== SAFE_RESOURCES must not mask a later or adjacent invocation =="
+probe DENY  'uptime then blocked, &&'   "danube uptime ls && danube $G"
+probe DENY  'uptime then blocked, ;'    "danube uptime ls; danube $G"
+probe DENY  'blocked inside uptime arg' "danube uptime create --url \$(danube $G)"
+probe DENY  'value flag eats uptime'    "danube --project uptime $G"
+probe DENY  'unknown flag eats uptime'  "danube --output uptime $G"
+
+# Code review 2026-09-16 (HIGH): every one of these ran the real CLI and printed
+# the live admin password while the guard returned ALLOW. `command -v danube`
+# yields an absolute path, so the path-prefixed form is the NORMAL invocation.
+echo "== invocation forms that bypassed the command-position regex =="
+probe DENY  'absolute path'          "/home/u/.local/share/pnpm/bin/danube $G"
+probe DENY  'tilde path'             "~/.local/share/pnpm/bin/danube $G"
+probe DENY  'relative path'          "./bin/danube $G"
+probe DENY  'backslash escape'       "\\danube $G"
+probe DENY  'npx package'            "npx @danubedata/cli $G"
+probe DENY  'pnpm dlx package'       "pnpm dlx @danubedata/cli@1.3.0 $G"
+probe ALLOW 'registry host not a cmd' "docker pull cr.danubedata.ro/ns/img:tag"
+probe ALLOW 'abs path + safe verb'    "/usr/local/bin/danube db ls"
+
+echo "== redirects are shell plumbing, not subcommands =="
+probe ALLOW 'help with 2>&1'         "danube --help 2>&1"
+probe ALLOW 'uptime ls with 2>&1'    "danube uptime ls 2>&1"
+
 echo "== must ALLOW: read-only work must keep working =="
 probe ALLOW 'db ls'                  "danube db ls"
 probe ALLOW 'rapids ls'              "danube rapids ls"
