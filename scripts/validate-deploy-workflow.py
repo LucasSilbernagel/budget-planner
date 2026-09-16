@@ -46,6 +46,22 @@ def check(condition: object, label: str) -> None:
         failures.append(label)
 
 
+def code_only(script: str) -> str:
+    """A shell script with its comment lines removed.
+
+    ⚠️ Use this for every ABSENCE assertion. Four separate checks in this file
+    have failed on their own documentation: a step comment saying "never add
+    `--json` here", a Dockerfile note discussing `pnpm deploy --prod`, a module
+    docstring quoting the `sys.exit(0 if …)` shape it replaced, and another
+    explaining why `pg_try_advisory_lock` is wrong. Each time the guard was right
+    and the prose tripped it. Absence of a STRING is not absence of a BEHAVIOUR —
+    check what runs, not what is written about it.
+    """
+    return "\n".join(
+        line for line in script.split("\n") if not line.strip().startswith("#")
+    )
+
+
 def read(path: str) -> str:
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -174,21 +190,36 @@ def main() -> int:
           "the verify-ca hostname waiver is gone (migrations run at verify-full)")
     check("svc.cluster.local" in migrate_block, "the migration targets the in-cluster writer")
 
-    print("\n== the migrate container is started, read, and always left safe ==")
-    ensure_i = next(i for i, s in enumerate(steps) if "rapids apply" in s.get("run", ""))
-    update_i = next(i for i, s in enumerate(steps) if "--min-scale 1" in s.get("run", ""))
+    print("\n== the migration starts in ONE call, and the rollout is confirmed ==")
+    start_i = next(i for i, s in enumerate(steps) if "rapids apply" in s.get("run", ""))
     verdict_i = next(i for i, s in enumerate(steps) if "migrate-status" in s.get("run", ""))
     teardown_i = len(steps) - 1
     teardown_run = steps[teardown_i].get("run", "")
+    start_run = steps[start_i]["run"]
 
-    check(ensure_i < update_i, "the container is ensured before credentials are injected")
-    check("--min-scale 0" in steps[ensure_i]["run"], "it is created idle at min-scale 0")
-    check(update_i < verdict_i, "the verdict is read after the migration is started")
-    check("--json" not in steps[update_i]["run"],
-          "the credential-injecting step never uses --json (it would print DATABASE_URL)")
-    check("APP_ENTRYPOINT=migrate" in steps[update_i]["run"], "the container runs in migrate mode")
-    check("MIGRATE_RUN_ID=" in steps[update_i]["run"],
+    # ⚠️ EXACTLY ONE mutating call may configure and start the container.
+    # DanubeData confirmed (2026-09-16) that an update arriving while the previous
+    # update to the same container was still rolling out was accepted, returned
+    # success, and was never applied. The old design issued `apply` then `update`
+    # seconds apart on every run — that collision, built in. Two live runs were
+    # lost to it before the cause was known. CLI 1.3.0's `apply --env` makes one
+    # call sufficient; keep it that way.
+    env_setters = [i for i, s in enumerate(steps)
+                   if "--env " in (s.get("run", "") or "") and "--rm-env" not in (s.get("run", "") or "")]
+    check(env_setters == [start_i],
+          "exactly one step sets the container's environment (no create+update pair)")
+    check("APP_ENTRYPOINT=migrate" in start_run, "that call puts the container in migrate mode")
+    check("MIGRATE_RUN_ID=" in start_run,
           "the container is bound to this run, so a stale verdict cannot be accepted")
+    check("--min-scale 1" in start_run, "and starts it, rather than leaving it idle")
+    # Generation-aware in 1.3.0: returns only once THIS call's spec_generation is
+    # observed and the operation is terminal. A green step therefore means the
+    # configuration is LIVE, not merely accepted — which is the distinction that
+    # cost two runs.
+    check("--wait" in start_run, "it waits for its own rollout to actually land")
+    check("--json" not in code_only(start_run),
+          "the credential-carrying step never uses --json (it would print DATABASE_URL)")
+    check(start_i < verdict_i, "the verdict is read after the migration is started")
 
     # ⚠️ The container must NEVER be deleted. Deleting a Rapids container leaves
     # its config orphaned in DanubeData's GitOps repo, and the next create of that

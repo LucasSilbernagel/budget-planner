@@ -64,7 +64,7 @@ env:
   # instance to `danube db dns enable`/`disable`. No step opens a public database
   # endpoint any more, so nothing in this workflow addresses the database
   # instance by name — only the app reaches it, over internal DNS.
-  DANUBE_CLI_VERSION: '1.1.0'
+  DANUBE_CLI_VERSION: '1.3.0'
 
 jobs:
   # --- Gate 1: the existing quality checks (AC-1) ----------------------------
@@ -780,27 +780,24 @@ jobs:
           echo "url=${database_url}" >> "$GITHUB_OUTPUT"
           echo "::notice::Migrating over internal DNS (${DB_INTERNAL_HOST}:${DB_INTERNAL_PORT}). No public endpoint is opened."
 
-      # ⚠️ CREATE-OR-UPDATE, NEVER DELETE. Rewritten 2026-09-16 after two lost runs.
+      # ⚠️ ONE CALL. This was two — `apply` to create, then `update` to inject the
+      # environment — because `apply` could not set env before CLI 1.3.0. That gap
+      # is closed, and closing it removes a real hazard rather than just tidying:
       #
-      # This job used to delete the container before creating it, and delete it
-      # again afterwards. That is what DanubeData's platform cannot survive:
-      # deleting a Rapids container leaves its config behind in their GitOps repo
-      # as untracked files, so the NEXT create of the same name aborts with
-      # "untracked working tree files would be overwritten by merge" and
-      # provisioning fails. It cost runs 35042874267 and its successor.
+      # DanubeData confirmed (2026-09-16) that an update arriving while the
+      # PREVIOUS update to the same container was still rolling out was accepted,
+      # returned success, and was then never rolled out. Our two calls landed
+      # seconds apart, every run, which is precisely that collision. At 13:32 and
+      # 13:53 UTC the second call of each pair — the one setting `--min-scale 1` —
+      # was silently dropped, so the migration never started and the job polled a
+      # container that was never told to run. The platform-side fix is in flight;
+      # this removes our side of it regardless.
       #
-      # So the container is now PERMANENT and idle at min-scale 0 between runs.
-      # `apply` is create-or-update, so the first run creates it and every later
-      # run is a no-op on an unchanged spec — no churn for the platform to trip on.
-      #
-      # The property deletion used to provide — no credentials sitting around
-      # between releases — is provided instead by the teardown step below, which
-      # strips them with `--rm-env` and VERIFIES they are gone.
-      #
-      # The name is deliberately NOT `budget-planner-migrate`: that name's orphaned
-      # files are still in DanubeData's repo, so reusing it would fail on the very
-      # first create until their support clears them.
-      - name: Ensure the migrate container exists (idle)
+      # `--wait` is generation-aware in 1.3.0: it follows the `spec_generation` this
+      # very call produced and returns only once `observed_generation` has caught up
+      # and `status_details.operation.terminal` is true. So a green step here means
+      # THIS configuration is live — not merely accepted.
+      - name: Start the migration (create-or-update in one call)
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
           DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
@@ -808,8 +805,17 @@ jobs:
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
           RESOURCE_PROFILE: ${{ vars.RAPIDS_RESOURCE_PROFILE || 'small' }}
           IDEMPOTENCY_KEY: migrate-${{ github.run_id }}-${{ github.run_attempt }}
+          DATABASE_URL: ${{ steps.dburl.outputs.url }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          STATUS_TOKEN: ${{ steps.token.outputs.token }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          # ⚠️ NEVER add `--json` to this step. The container object it prints
+          # carries `environment_variables` WITH VALUES — it would put DATABASE_URL
+          # and its password straight into the run log. (True of `rapids ls --json`
+          # too, which is why every step reading that pipes into a script emitting
+          # only a single word or a URL.) The validator pins this.
           danube rapids apply \
             --name "${MIGRATE_CONTAINER}" \
             --image "${REGISTRY}/${IMAGE_NAME}" \
@@ -817,36 +823,8 @@ jobs:
             --port 8080 \
             --health-check-path /healthz \
             --profile "${RESOURCE_PROFILE}" \
-            --min-scale 0 \
+            --min-scale 1 \
             --max-scale 1 \
-            --idempotency-key "${IDEMPOTENCY_KEY}"
-          echo "::notice::${MIGRATE_CONTAINER} is present at this commit's image, idle at min-scale 0."
-
-      # ⚠️ NEVER add `--json` to this step. `rapids update --json` prints the whole
-      # container object, and that object carries `environment_variables` — i.e.
-      # it would print DATABASE_URL, password and all, into the run log. (The same
-      # is true of `rapids ls --json`, confirmed against the live API, which is why
-      # every step that reads it pipes straight into a script that emits nothing
-      # but a single word or a URL.) Every value below is masked before it is
-      # passed, so a future `--json` slip is redacted rather than leaked, but the
-      # rule stands on its own.
-      #
-      # MIGRATE_RUN_ID binds the container to THIS run: the verdict carries it back
-      # and the poll below refuses a verdict that does not match, so a stale or
-      # foreign container can never be mistaken for this migration.
-      #
-      # Scaling 0 -> 1 is what actually starts the migration.
-      - name: Inject credentials and start the migration
-        env:
-          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
-          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
-          DATABASE_URL: ${{ steps.dburl.outputs.url }}
-          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
-          STATUS_TOKEN: ${{ steps.token.outputs.token }}
-          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-          danube rapids update "${MIGRATE_CONTAINER}" \
             --env \
               "APP_ENTRYPOINT=migrate" \
               "NODE_ENV=production" \
@@ -854,8 +832,10 @@ jobs:
               "DATABASE_CA_CERT=${DATABASE_CA_CERT}" \
               "MIGRATE_STATUS_TOKEN=${STATUS_TOKEN}" \
               "MIGRATE_RUN_ID=${RUN_ID}" \
-            --min-scale 1
-          echo "::notice::Migrate container started in-cluster. Polling for a terminal verdict."
+            --idempotency-key "${IDEMPOTENCY_KEY}" \
+            --wait \
+            --wait-timeout 10m
+          echo "::notice::Migrate container is live with this run's configuration. Polling for a verdict."
 
       # Read the container's public URL out of the API. `--json` is piped straight
       # into python and ONLY the url field is ever printed — necessary because the
@@ -1046,9 +1026,16 @@ jobs:
           # `update` returns non-zero. The exit code is advisory; the STATE CHECK
           # below decides.
           # shellcheck disable=SC2086 # SECRET_KEYS is a deliberate word list
+          # `--wait` (CLI 1.3.0) follows THIS call's `spec_generation` and returns
+          # only once it is actually live, so the strip cannot be one of the
+          # accepted-but-never-rolled-out updates that cost us two runs. The state
+          # check below still decides — `--wait` makes it converge, it does not
+          # replace it.
           danube rapids update "${MIGRATE_CONTAINER}" \
             --rm-env ${SECRET_KEYS} \
             --min-scale 0 \
+            --wait \
+            --wait-timeout 5m \
             || echo "rapids update returned non-zero; verifying actual state instead"
 
           verdict="error"

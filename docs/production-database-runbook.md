@@ -316,29 +316,32 @@ same cluster and namespace — so that is what the pipeline uses.
 **How it works.** The `migrate` job drives a **permanent** container named
 `budget-planner-migrator`, which sits idle at `min-scale 0` between releases:
 
-1. `danube rapids apply --name budget-planner-migrator --min-scale 0` — ensures it
-   exists at this commit's image. Create-or-update, so the first run creates it and
-   later runs are a no-op. **It is never deleted.**
-2. `danube rapids update … --env APP_ENTRYPOINT=migrate DATABASE_URL=…
-   DATABASE_CA_CERT=… MIGRATE_STATUS_TOKEN=… MIGRATE_RUN_ID=… --min-scale 1` —
-   scaling 0 → 1 starts one pod. `apps/web/migrate-entry.mjs` binds `$PORT`,
-   answers `/healthz`, then runs the locked migration sequence.
-3. The pipeline polls `GET /migrate-status` (bearer token, per-run) until the state
-   is terminal, bounded at 600s, and **fails on anything that is not `succeeded`**.
-4. `danube rapids update … --rm-env DATABASE_URL DATABASE_CA_CERT
-   MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID --min-scale 0` in an `if: always()` step,
-   then a verification that the strip actually took.
+1. `danube rapids apply --name budget-planner-migrator --env APP_ENTRYPOINT=migrate
+   DATABASE_URL=… DATABASE_CA_CERT=… MIGRATE_STATUS_TOKEN=… MIGRATE_RUN_ID=…
+   --min-scale 1 --wait` — **one call** that creates or reconfigures the container
+   and starts it. `apps/web/migrate-entry.mjs` binds `$PORT`, answers `/healthz`,
+   then runs the locked migration sequence.
+2. The pipeline polls two channels — `GET /migrate-status` (bearer token) and the
+   container logs — both matched against this run's id, bounded at 600s, and
+   **fails on anything that is not `succeeded`**.
+3. `danube rapids update … --rm-env DATABASE_URL DATABASE_CA_CERT
+   MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID --min-scale 0 --wait` in an `if: always()`
+   step, then a verification that the strip actually took.
 
-> ⚠️ **Never delete the migrate container.** Deleting a Rapids container leaves its
-> config behind in DanubeData's GitOps repo as untracked files, and the next create
-> of that name fails to provision (*"untracked working tree files would be
-> overwritten by merge"*). Two live runs were lost to this on 2026-09-16 before the
-> cause was clear. The container is cheap to keep — idle at `min-scale 0` it runs
-> nothing — and step 4 removes what actually mattered: the credentials.
+> ⚠️ **Send the configuration in ONE call, and wait for it.** Until CLI 1.3.0
+> `apply` could not set environment variables, so this was `apply` then `update` a
+> second apart. DanubeData confirmed on 2026-09-16 that an update arriving while
+> the previous update to the same container was still rolling out was **accepted,
+> reported success, and never applied** — exactly what our two calls produced on
+> every run, and why two migrations never started despite green CLI output.
+> `apply --env` plus generation-aware `--wait` removes it. Do not split it back up.
 >
-> The name is `budget-planner-migrator` because the older `budget-planner-migrate`
-> still has orphaned files in their repo. DanubeData support has been asked to
-> clear them.
+> **Deleting the container is fine.** DanubeData confirmed its configuration is
+> removed cleanly — correcting an earlier theory of ours that orphaned files caused
+> the failed provisions, which was wrong. We keep the container anyway: idle at
+> `min-scale 0` it costs ~€0, and not recreating it avoids a class of create/update
+> races. The name is `budget-planner-migrator`; the earlier `budget-planner-migrate`
+> is simply unused.
 
 **Only one pod migrates, even when Knative starts two.** Live run `35042874267-1`
 started two revisions and **both** ran `drizzle-kit migrate` against production —

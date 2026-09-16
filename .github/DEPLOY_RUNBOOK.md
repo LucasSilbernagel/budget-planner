@@ -219,44 +219,55 @@ The `migrate` job:
    (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432`) as
    `bp_migrator`. Nothing is discovered at run time — there is no public endpoint
    to look up.
-2. **Ensures the container exists, idle**
-   (`danube rapids apply --name budget-planner-migrator --min-scale 0`).
-   `apply` is create-or-update, so the first run creates it and later runs are a
-   no-op. It is **never deleted** — see "Why it is permanent" below.
-3. **Injects credentials and starts one pod**
-   (`danube rapids update … --env APP_ENTRYPOINT=migrate … --min-scale 1`).
-   Scaling 0 → 1 is what starts the migration; `apply` cannot set environment
-   variables and `update` can, which is why it takes two steps.
-   ⚠️ **Never add `--json` to this step** — `rapids update --json` prints the
-   container object, which carries `environment_variables`, i.e. it would print
-   `DATABASE_URL` into the run log. The same is true of `rapids ls --json`
-   (confirmed against the live API), which is why every step reading it pipes
-   straight into a script that emits only a single word or a URL. The validator
-   pins this.
-4. **Polls the verdict** at `GET <container-url>/migrate-status` with the bearer
-   token, bounded at 600s, and fails on anything that is not an explicit
-   `succeeded`.
-5. **Scales it back to zero and strips its credentials**
-   (`rapids update --rm-env DATABASE_URL DATABASE_CA_CERT MIGRATE_STATUS_TOKEN
-   MIGRATE_RUN_ID --min-scale 0`) in an `if: always()` step, then **verifies the
-   strip took** and fails the job if it cannot prove it did.
+2. **Starts the migration in ONE call**
+   (`danube rapids apply --name budget-planner-migrator --env APP_ENTRYPOINT=migrate
+   DATABASE_URL=… MIGRATE_STATUS_TOKEN=… MIGRATE_RUN_ID=… --min-scale 1 --wait`).
+   `apply` is create-or-update, so the first run creates the container and later
+   runs reconfigure it. It is **never deleted**.
 
-**Why it is permanent (2026-09-16).** The job used to delete the container after
-every run. DanubeData cannot survive that: deleting a Rapids container leaves its
-config behind in their GitOps repo as untracked files, so the **next** create of
-the same name aborts with *"untracked working tree files would be overwritten by
-merge"* and provisioning fails. Two live runs were lost to it before the cause was
-clear. The container is therefore created once and kept, idle at `min-scale 0`
-where it runs nothing and costs ~€0.
+   ⚠️ **One call, not two — this matters.** Until CLI 1.3.0, `apply` could not set
+   environment variables, so the job did `apply` then `update` a second later.
+   DanubeData confirmed (2026-09-16) that an update arriving while the previous
+   update to the same container is still rolling out was **accepted, reported
+   success, and never applied**. Our two calls were exactly that collision, on
+   every run; at 13:32 and 13:53 UTC the second call of each pair — the one
+   starting the container — was silently dropped and the migration never ran.
+   `apply --env` removes the collision. Do not split this back into two calls.
 
-The safety property deletion was really providing — *no credentials sitting around
-between releases* — is provided instead by step 5's `--rm-env`, which is verified
-rather than assumed. If anything ever scales the container up outside a release,
-it boots with no `DATABASE_URL` and exits immediately.
+   `--wait` is generation-aware in 1.3.0: it follows the `spec_generation` that
+   this call produced and returns only once `observed_generation` has caught up and
+   `status_details.operation.terminal` is true. A green step means the
+   configuration is **live**, not merely accepted.
 
-⚠️ The name is **`budget-planner-migrator`**, not `budget-planner-migrate`. The
-older name's orphaned files are still in DanubeData's GitOps repo, so reusing it
-fails at create until their support clears them.
+   ⚠️ **Never add `--json`** — the container object it prints carries
+   `environment_variables` with values, i.e. `DATABASE_URL` and its password into
+   the run log. The same is true of `rapids ls --json`, which is why every step
+   reading it pipes into a script that emits only a word or a URL.
+3. **Polls the verdict** on two channels — `GET <url>/migrate-status` with the
+   bearer token, and the container logs via `.github/scripts/rapids_verdict.py` —
+   both matched against this run's id, bounded at 600s, failing on anything that is
+   not an explicit `succeeded`. Two channels because Knative routes the container
+   URL to whatever revision is currently READY, which need not be the revision that
+   migrated; logs aggregate across revisions and can answer when the URL cannot.
+4. **Scales it back to zero and strips its credentials**
+   (`rapids update --rm-env … --min-scale 0 --wait`) in an `if: always()` step,
+   then **verifies the strip took** and fails the job if it cannot prove it did.
+
+**Why it is permanent.** The container is created once and kept, idle at
+`min-scale 0` between releases, where it runs nothing and costs ~€0. Deleting and
+recreating it each run is not forbidden — DanubeData confirmed on 2026-09-16 that
+deleting a container removes its configuration cleanly, correcting an earlier
+theory of ours that orphaned config was to blame for failed provisions. Keeping it
+is simply less churn for no benefit, and it removes a class of create/update races
+entirely.
+
+The property that deletion used to provide — *no credentials sitting around
+between releases* — is provided by step 4's `--rm-env`, which is verified rather
+than assumed.
+
+⚠️ The name is **`budget-planner-migrator`**; an earlier `budget-planner-migrate`
+was retired during that investigation. Nothing is wrong with the old name, it is
+simply unused.
 
 **Readiness is not the verdict.** `/healthz` returns 200 as soon as the container
 boots, on purpose. If readiness meant "the migration succeeded", a failed
