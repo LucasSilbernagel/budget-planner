@@ -17,20 +17,26 @@ import { MIGRATION_STEPS, runMigration } from '../migrate-runner.mjs'
 type Step = { name: string; bin: string; args: string[] }
 
 describe('MIGRATION_STEPS', () => {
-  it('runs the preflight before the migration, in that order', () => {
-    expect((MIGRATION_STEPS as Step[]).map((step) => step.name)).toEqual(['preflight', 'migrate'])
+  // One step, not two. The preflight -> drizzle-kit ordering moved INSIDE
+  // `migrate-lock-cli.ts` so that both run under one advisory lock — live run
+  // 35042874267-1 had two pods run both steps against production concurrently.
+  it('runs exactly one step, the locked sequence', () => {
+    expect((MIGRATION_STEPS as Step[]).map((step) => step.name)).toEqual(['migrate'])
   })
 
-  // The preflight is the 4-17 clean-slate guard. It has to be the SAME CLI the
-  // windowed path ran, or this story would quietly drop a safety check while
-  // claiming to preserve it (AC-4).
-  it('uses the existing preflight CLI and drizzle-kit, not a reimplementation', () => {
-    const [preflight, migrate] = MIGRATION_STEPS as Step[]
+  it('delegates to the lock CLI rather than invoking drizzle-kit directly', () => {
+    const [step] = MIGRATION_STEPS as Step[]
 
-    expect(preflight.bin).toBe('tsx')
-    expect(preflight.args).toEqual(['src/migrate-preflight-cli.ts'])
-    expect(migrate.bin).toBe('drizzle-kit')
-    expect(migrate.args).toEqual(['migrate'])
+    expect(step.bin).toBe('tsx')
+    expect(step.args).toEqual(['src/migrate-lock-cli.ts'])
+  })
+
+  // Guard against someone "simplifying" the lock back out by calling drizzle-kit
+  // straight from the container again.
+  it('never spawns drizzle-kit without the lock', () => {
+    for (const step of MIGRATION_STEPS as Step[]) {
+      expect(step.bin).not.toBe('drizzle-kit')
+    }
   })
 })
 
@@ -39,23 +45,13 @@ describe('runMigration', () => {
     const runStep = vi.fn().mockResolvedValue(0)
 
     await expect(runMigration({ runStep })).resolves.toMatchObject({ state: 'succeeded' })
-    expect(runStep).toHaveBeenCalledTimes(2)
-  })
-
-  // The whole point of the preflight: an unsafe target must abort BEFORE a
-  // single migration statement runs.
-  it('stops at a refused preflight and never reaches drizzle-kit', async () => {
-    const runStep = vi.fn().mockResolvedValue(1)
-
-    const result = await runMigration({ runStep })
-
-    expect(result).toMatchObject({ state: 'failed', failedStep: 'preflight', exitCode: 1 })
-    expect(runStep).toHaveBeenCalledTimes(1)
-    expect((runStep.mock.calls[0]?.[0] as Step).name).toBe('preflight')
+    // One step since the preflight -> drizzle-kit ordering moved inside the lock
+    // CLI; derived from MIGRATION_STEPS so this cannot drift out of sync again.
+    expect(runStep).toHaveBeenCalledTimes((MIGRATION_STEPS as Step[]).length)
   })
 
   it('reports a failing migration as failed, naming the step and code', async () => {
-    const runStep = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(3)
+    const runStep = vi.fn().mockResolvedValue(3)
 
     await expect(runMigration({ runStep })).resolves.toMatchObject({
       state: 'failed',
@@ -64,10 +60,22 @@ describe('runMigration', () => {
     })
   })
 
+  // The lock CLI exits 1 when another pod holds the lock. That must read as a
+  // failed release, not a quiet pass.
+  it('treats "another pod holds the lock" (exit 1) as a failure', async () => {
+    const runStep = vi.fn().mockResolvedValue(1)
+
+    await expect(runMigration({ runStep })).resolves.toMatchObject({
+      state: 'failed',
+      failedStep: 'migrate',
+      exitCode: 1,
+    })
+  })
+
   // A step that dies on a signal reports a null exit code. Treating that as
   // "not non-zero" would read an OOM-killed migration as a success.
   it('treats a signal-killed step as a failure', async () => {
-    const runStep = vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(null)
+    const runStep = vi.fn().mockResolvedValue(null)
 
     await expect(runMigration({ runStep })).resolves.toMatchObject({
       state: 'failed',
@@ -76,11 +84,11 @@ describe('runMigration', () => {
   })
 
   it('turns a thrown spawn error into a failed verdict rather than an unhandled rejection', async () => {
-    const runStep = vi.fn().mockRejectedValue(new Error('ENOENT: drizzle-kit missing'))
+    const runStep = vi.fn().mockRejectedValue(new Error('ENOENT: tsx missing'))
 
     const result = await runMigration({ runStep })
 
-    expect(result).toMatchObject({ state: 'failed', failedStep: 'preflight' })
+    expect(result).toMatchObject({ state: 'failed', failedStep: 'migrate' })
     expect(String((result as { error?: string }).error)).toMatch(/ENOENT/)
   })
 })

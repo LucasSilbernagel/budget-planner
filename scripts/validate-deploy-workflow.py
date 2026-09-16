@@ -234,6 +234,50 @@ def main() -> int:
                     check("||" in stripped,
                           f"{where}: `{stripped[:48]}…` captures its status rather than tripping -e")
 
+    # Both of these are regressions that ALREADY HAPPENED on a live run
+    # (35042874267-1, 2026-09-16) and cost a stalled release each. Pinned so they
+    # cannot come back quietly.
+    print("\n== the verdict poll survives the platform's redirect ==")
+    verdict_run_early = steps[verdict_i]["run"]
+    check("curl -fsSL" in verdict_run_early,
+          "the poll follows redirects (`rapids ls` reports http://, the edge 301s to https)")
+    check('[ -n "${body}" ]' in verdict_run_early,
+          "an empty 200 is not treated as a verdict")
+
+    print("\n== migrations are serialised across pods ==")
+    # Knative started TWO revisions of the migrate container and both ran
+    # `drizzle-kit migrate` against production. `--min-scale 0` does not prevent
+    # it, so the exclusion must live in the database.
+    try:
+        with open("packages/db/src/migrate-lock.ts", encoding="utf-8") as fh:
+            lock_src = fh.read()
+    except OSError:
+        lock_src = ""
+    check(bool(lock_src), "the migration advisory lock module exists")
+    if lock_src:
+        # Strip comments and block comments first. This module DISCUSSES
+        # `pg_try_advisory_lock` at length to explain why it is the wrong
+        # primitive here, and a check that read the prose would fail on the
+        # explanation rather than on the code — the third time this exact trap
+        # has appeared in this story's guards.
+        lock_code = re.sub(r"/\*[\s\S]*?\*/", "", lock_src)
+        lock_code = "\n".join(
+            line for line in lock_code.split("\n") if not line.strip().startswith("//")
+        )
+        check("pg_advisory_lock" in lock_code, "it takes a PostgreSQL advisory lock")
+        check("pg_try_advisory_lock" not in lock_code,
+              "it BLOCKS rather than skipping (a skipping pod cannot report honestly)")
+        check("lock_timeout" in lock_code, "the wait is bounded")
+    try:
+        with open("apps/web/src/server/migrate-runner.mjs", encoding="utf-8") as fh:
+            runner_src = fh.read()
+    except OSError:
+        runner_src = ""
+    check("migrate-lock-cli" in runner_src,
+          "the container runs migrations through the lock CLI")
+    check("'drizzle-kit'" not in runner_src,
+          "the container never spawns drizzle-kit outside the lock")
+
     print("\n== the verdict and the teardown both fail CLOSED ==")
     verdict_run = steps[verdict_i]["run"]
     check(re.search(r'if\s+\[\s*"\$\{state\}"\s*=\s*"succeeded"\s*\]', verdict_run) is not None,

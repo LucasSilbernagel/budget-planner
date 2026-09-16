@@ -902,9 +902,18 @@ jobs:
           last_error="(no attempt completed)"
 
           while [ "${SECONDS}" -lt "${deadline}" ]; do
-            if body=$(curl -fsS --max-time 15 \
+            # ⚠️ `-L` is REQUIRED. `danube rapids ls` reports the container URL with
+            # an `http://` scheme and the platform edge 301-redirects to https.
+            # Without -L, curl returns exit 0 and an EMPTY BODY for that redirect —
+            # so the poll read "unparseable" forever and the job hung until its
+            # 600s deadline while the migration had in fact already succeeded
+            # (live run 35042874267-1, 2026-09-16).
+            #
+            # The `-n "${body}"` guard below is the second half of that lesson: a
+            # successful curl with nothing in it is not a verdict.
+            if body=$(curl -fsSL --max-time 15 \
                 -H "Authorization: Bearer ${STATUS_TOKEN}" \
-                "${CONTAINER_URL%/}/migrate-status" 2>/tmp/curl-err); then
+                "${CONTAINER_URL%/}/migrate-status" 2>/tmp/curl-err) && [ -n "${body}" ]; then
               parsed=$(printf '%s' "${body}" | python3 -c "
           import json, sys
           try:
@@ -925,7 +934,15 @@ jobs:
                 break
               fi
             else
-              last_error="curl: $(tr -d '\n' < /tmp/curl-err)"
+              # Distinguish "curl failed" from "curl succeeded but said nothing" —
+              # the second is what an unfollowed redirect looks like, and reporting
+              # them identically is what made the earlier hang so hard to read.
+              curl_err="$(tr -d '\n' < /tmp/curl-err 2>/dev/null)" || curl_err=""
+              if [ -n "${curl_err}" ]; then
+                last_error="curl: ${curl_err}"
+              else
+                last_error="empty response from ${CONTAINER_URL%/}/migrate-status (redirect not followed, or no body)"
+              fi
             fi
             sleep 10
           done

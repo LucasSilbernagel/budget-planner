@@ -26,11 +26,17 @@
  * @type {MigrationStep[]}
  */
 export const MIGRATION_STEPS = [
-  // The abort-before-migrate gate. Refuses anything that is not a clean slate or
-  // a journal-tracked database, so a `drizzle-kit push`-built target can never be
-  // replayed over (deferred-work.md:643).
-  { name: 'preflight', bin: 'tsx', args: ['src/migrate-preflight-cli.ts'] },
-  { name: 'migrate', bin: 'drizzle-kit', args: ['migrate'] },
+  // ONE step, which internally holds a PostgreSQL advisory lock and then runs
+  // preflight -> drizzle-kit migrate (packages/db/src/migrate-lock-cli.ts).
+  //
+  // ⚠️ These used to be two steps spawned from here. Live run 35042874267-1
+  // (2026-09-16) started TWO Knative revisions of this container, and both ran
+  // the preflight AND `drizzle-kit migrate` against production simultaneously —
+  // harmless only because no migrations were pending. `--min-scale 0` does not
+  // mean "nothing boots", and no pipeline-side trick reliably prevents a second
+  // pod, so the mutual exclusion lives in the database where every pod meets.
+  // Ordering now lives inside the lock CLI, under the lock, where it belongs.
+  { name: 'migrate', bin: 'tsx', args: ['src/migrate-lock-cli.ts'] },
 ]
 
 /**
