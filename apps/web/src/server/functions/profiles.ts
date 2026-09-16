@@ -510,14 +510,33 @@ export async function setDefaultProfile(
 /**
  * Auto-create default profile for a new user
  * This should be called when a user is created
+ *
+ * ⚠️ RACE-SAFE AT THE DATABASE LEVEL (Story 5-19, AC-4). The check-then-insert
+ * below is NOT sufficient on its own and never was: one lifetime purchase emits
+ * BOTH `transaction.paid` and `transaction.completed`, the webhook accepts both,
+ * and processed concurrently they both saw zero rows here and both inserted —
+ * leaving two "Main Profile" rows with `isDefault: true`, after which
+ * profile-scoped reads pick arbitrarily and the buyer's data appears to vanish
+ * between requests. The docblock used to claim this function was "idempotent";
+ * that held for SERIAL calls only, which is not the case it was cited for.
+ *
+ * What makes it safe is the partial unique index
+ * `userProfiles_one_default_per_user` (migration 0017) plus the
+ * `onConflictDoNothing` below: the loser of the race inserts nothing and reads
+ * back the winner's row. The pre-check remains as a cheap fast path for the
+ * common (already-provisioned) case, not as the guarantee.
  */
 export async function createDefaultProfileForUser(userId: string): Promise<ApiResult<UserProfile>> {
   try {
-    // Check if user already has profiles
+    // Fast path: user already has a LIVE profile.
+    // ⚠️ `isDeleted` filter is load-bearing — code review. Without it a user
+    // whose only profile is a tombstone is reported as already provisioned, and
+    // the tombstone is handed back as their default profile. It also matches
+    // the partial unique index, which excludes tombstones.
     const existingProfiles = await db
       .select()
       .from(userProfiles)
-      .where(eq(userProfiles.userId, userId))
+      .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
 
     if (existingProfiles.length > 0) {
       // User already has profiles
@@ -536,7 +555,9 @@ export async function createDefaultProfileForUser(userId: string): Promise<ApiRe
 
     const userCurrency = user?.currency || 'NONE'
 
-    // Create default profile
+    // Create default profile. `onConflictDoNothing` absorbs the concurrent
+    // insert: the index covers (userId) WHERE isDefault AND NOT isDeleted, so a
+    // second caller for the same brand-new user writes nothing.
     const [defaultProfile] = await db
       .insert(userProfiles)
       .values({
@@ -546,11 +567,44 @@ export async function createDefaultProfileForUser(userId: string): Promise<ApiRe
         currency: userCurrency,
         isDefault: true,
       } as NewUserProfile)
+      .onConflictDoNothing()
       .returning()
 
+    if (defaultProfile) {
+      return {
+        success: true,
+        data: defaultProfile,
+      }
+    }
+
+    // Lost the race: the winner's row is committed, so read it back rather than
+    // reporting a failure the caller would log as a provisioning error.
+    const [existingDefault] = await db
+      .select()
+      .from(userProfiles)
+      .where(
+        and(
+          eq(userProfiles.userId, userId),
+          eq(userProfiles.isDefault, true),
+          // Tombstones excluded, matching the partial unique index this
+          // read-back complements — `(userId) WHERE isDefault AND NOT
+          // isDeleted`. Without it a soft-deleted default could be returned as
+          // the caller's live default profile.
+          eq(userProfiles.isDeleted, false)
+        )
+      )
+      .limit(1)
+
+    if (existingDefault) {
+      return {
+        success: true,
+        data: existingDefault,
+      }
+    }
+
     return {
-      success: true,
-      data: defaultProfile,
+      success: false,
+      error: 'Failed to create default profile',
     }
   } catch (error) {
     return {

@@ -26,6 +26,13 @@ interface CurrentUser {
   subscriptionStatus: string
 }
 
+/**
+ * Statuses that carry live paid access — the ones for which deleting the
+ * account actually forfeits something (Story 5-19, AC-6). `canceled` is absent:
+ * that subscription has already ended, so there is nothing left to forfeit.
+ */
+const PAID_ACCESS_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']
+
 type AuthState =
   | { status: 'loading' }
   | { status: 'unauthenticated' }
@@ -125,6 +132,18 @@ export function AccountSection() {
     return null
   }
 
+  // Story 5-19 AC-6: deletion cancels the Paddle subscription with
+  // `effective_from: 'immediately'`, so remaining paid time is forfeited. The
+  // product decision was to KEEP that (a subscription outliving its deleted
+  // user row lets a later webhook resurrect the account) and to say so plainly
+  // instead. Shown only to someone who actually HAS paid access — telling a
+  // free or already-cancelled user their subscription is about to end would be
+  // a lie about their own account.
+  const hasPaidAccess = PAID_ACCESS_STATUSES.includes(authState.user.subscriptionStatus)
+  const billingForfeitureNotice = hasPaidAccess
+    ? ' Your Premium subscription is cancelled immediately — any remaining paid time is forfeited and will not be refunded.'
+    : ''
+
   return (
     <section
       ref={sectionRef}
@@ -161,6 +180,7 @@ export function AccountSection() {
           <h3 className="text-sm font-semibold text-red-800 dark:text-red-300">Delete account</h3>
           <p className="mt-1 text-sm text-red-700 dark:text-red-300/80">
             Permanently deletes your account and all synced financial data. This cannot be undone.
+            {billingForfeitureNotice}
           </p>
           <button
             type="button"
@@ -188,7 +208,7 @@ export function AccountSection() {
         confirmLabel={isDeleting ? 'Deleting…' : 'Delete account'}
         isConfirming={isDeleting}
         finalFocusRef={sectionRef}
-        message="This permanently deletes your account and all synced data (income, expenses, savings goals, balances, and profiles). This cannot be undone."
+        message={`This permanently deletes your account and all synced data (income, expenses, savings goals, balances, and profiles). This cannot be undone.${billingForfeitureNotice}`}
       />
     </section>
   )

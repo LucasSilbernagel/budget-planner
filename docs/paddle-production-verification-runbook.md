@@ -46,6 +46,45 @@ account); the code it exercises is already merged.
 2. Confirm a `lifetime` buyer is **never** downgraded by any subscription
    event (25-2 no-downgrade guard).
 
+## 3a. Retry, refund and identity behaviour (Story 5-19)
+
+Everything in this section is covered by automated tests against real
+PostgreSQL (`routes/api/webhooks/__tests__/paddle-webhook.db.test.ts`). These
+steps confirm the same behaviour against **live Paddle**, where the payload
+shapes and retry timing are Paddle's rather than ours.
+
+1. **Duplicate delivery.** In the Paddle dashboard, replay a delivered event
+   from the notification log. Expect `200`, no change to the `users` row, and
+   exactly one row for that `event_id` in `paddleWebhookEvents`.
+2. **Out-of-order retry.** Cancel a subscription, then replay an EARLIER
+   `subscription.updated{active}` event for the same customer. Expect `200` and
+   the status to stay `canceled` — the ordering watermark
+   (`users.entitlementUpdatedAt`) decides, not arrival order. ⚠️ Before 5-19
+   this silently re-granted Premium to a cancelled user.
+3. **Full refund.** Refund a lifetime purchase in full. Expect
+   `subscriptionStatus` to move off `lifetime` and the premium gate to close on
+   the next request.
+4. **Partial refund.** Issue a small partial refund against a lifetime purchase
+   on a separate test account. Expect access to be RETAINED and
+   `users.lifetimeRefundedTotal` to increase.
+5. **Identity collision.** With an account already holding an entitled row for
+   `<email>`, complete a checkout for a NEW Paddle customer using that same
+   address. Expect a terminal `200` (Paddle must stop retrying), the original
+   account untouched, no new `users` row, and an error captured for manual
+   reconciliation. ⚠️ Before 5-19 this 500-looped Paddle's full retry schedule
+   and the entitlement was never granted.
+6. **Entitled user cannot re-buy.** Signed in as an `active`/`lifetime` account,
+   request `GET /api/paddle/checkout-config`. Expect `403` with no
+   `clientToken` in the body, and no checkout offered on `/pricing`.
+7. **Zero-value transaction.** If the dashboard allows a 100%-discount
+   transaction on the lifetime price, confirm it does NOT grant `lifetime`.
+
+⚠️ **Migration 0017 must be applied before any of this is meaningful** — it
+creates `paddleWebhookEvents`, the `users` watermark/lifetime-accounting
+columns, and the `userProfiles_one_default_per_user` partial unique index. Its
+`UPDATE` demotes any pre-existing duplicate default profiles; the index cannot
+be created while duplicates exist.
+
 ## 4. Authenticated sync round trip
 
 1. On a real paid account, drive an authenticated `/api/sync/*` write, then

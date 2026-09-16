@@ -244,3 +244,61 @@ describe('validateSessionToken via getCurrentUserSession', () => {
     expect(result.data).toBeNull()
   })
 })
+
+/**
+ * Story 5-19 code review — an infrastructure failure must NOT look like
+ * "signed out".
+ *
+ * `validateSessionToken` used to catch every error and return `null`, which is
+ * the same value it returns for a genuinely absent or invalid session. Two
+ * guarantees were silently defeated by that:
+ *
+ *  - `/api/paddle/checkout-config`'s already-entitled guard saw "anonymous"
+ *    during a DB outage and waved an entitled user through to a second real
+ *    charge — in exactly the outage where the webhook could not record it.
+ *  - `getSessionSeed` returns `null` on error SPECIFICALLY so the client
+ *    re-checks rather than being shown a wrong signed-out state (UX-1, code
+ *    review 2026-07-14). The error never reached it.
+ */
+describe('getCurrentUserSession — infrastructure failure is not "signed out"', () => {
+  it('reports success:false when the user lookup throws, rather than a null session', async () => {
+    const { getCurrentUserSession } = await import('./paddle')
+    const token = signSession({
+      userId: VALID_UUID,
+      paddleId: 'paddle-123',
+      email: 'a@example.test',
+    })
+    limitMock.mockRejectedValueOnce(new Error('connection terminated unexpectedly'))
+
+    const result = await getCurrentUserSession(
+      new Request('https://app.test/', { headers: { cookie: `session=${token}` } })
+    )
+
+    // NOT `{ success: true, data: null }` — that would assert the caller is
+    // signed out, which is a claim this outage does not support.
+    expect(result.success).toBe(false)
+    expect(result.data).toBeUndefined()
+  })
+
+  it('still reports an ABSENT session as success:true with a null session', async () => {
+    // The complement: the distinction only has value if the ordinary
+    // signed-out path is unchanged.
+    const { getCurrentUserSession } = await import('./paddle')
+
+    const result = await getCurrentUserSession(new Request('https://app.test/'))
+
+    expect(result.success).toBe(true)
+    expect(result.data).toBeNull()
+  })
+
+  it('still reports an INVALID cookie as success:true with a null session', async () => {
+    const { getCurrentUserSession } = await import('./paddle')
+
+    const result = await getCurrentUserSession(
+      new Request('https://app.test/', { headers: { cookie: 'session=not-a-valid-token' } })
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.data).toBeNull()
+  })
+})

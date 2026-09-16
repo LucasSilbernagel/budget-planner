@@ -188,7 +188,23 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
       isAuthenticated: true,
     }
   } catch (error) {
+    // ⚠️ RETHROW — do NOT collapse an infrastructure failure into `null`.
+    //
+    // `null` from this function means "this request carries no valid session",
+    // an AUTHORITATIVE answer that every caller is entitled to act on. A DB
+    // outage is not that answer; it is "unknown". Swallowing it here made a
+    // database blip indistinguishable from a signed-out visitor, which
+    // (a) let `/api/paddle/checkout-config`'s already-entitled guard wave an
+    // entitled user through to a second real charge during exactly the outage
+    // in which the webhook could not record it (Story 5-19 review), and
+    // (b) silently defeated `getSessionSeed`'s documented contract — it returns
+    // `null` on error SPECIFICALLY so the client re-checks rather than being
+    // shown a wrong signed-out state (UX-1, code review 2026-07-14) — because
+    // the error never reached it.
+    //
+    // `getCurrentUserSession` turns this into `{success:false}`, which callers
+    // already treat as "could not determine", and which is the whole point.
     logger.error('Failed to validate session token', { error })
-    return null
+    throw error
   }
 }

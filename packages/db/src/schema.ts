@@ -132,6 +132,29 @@ export const users = pgTable(
     subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
     currency: currencyEnum('currency').default('NONE'),
     isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
+    // --- Billing-event ordering + lifetime accounting (Story 5-19) -------------
+    //
+    // `entitlementUpdatedAt` is the ORDERING WATERMARK: the `occurred_at` (epoch
+    // ms) of the newest Paddle event that has changed this user's entitlement.
+    // Every entitlement-changing webhook path requires an event STRICTLY NEWER
+    // than this, so a late retry cannot flip entitlement backwards — Paddle
+    // re-signs each retry with a fresh `ts`, so the signature freshness window
+    // filters nothing here (AC-2). NULL = no billing event processed yet.
+    entitlementUpdatedAt: bigint('entitlementUpdatedAt', { mode: 'number' }),
+    // The transaction that bought a `lifetime` grant, and its grand total in the
+    // currency's lowest unit. Recorded at grant time so a later refund can be
+    // judged FULL vs PARTIAL without a second Paddle API round trip (AC-1), and
+    // so a zero-value / non-collecting transaction cannot grant lifetime (AC-8).
+    lifetimeTransactionId: varchar('lifetimeTransactionId', { length: 255 }),
+    lifetimeGrantTotal: bigint('lifetimeGrantTotal', { mode: 'number' }),
+    // ⚠️ There is deliberately NO `lifetimeRefundedTotal` counter here. An
+    // earlier draft of this story had one and incremented it in place, which
+    // was wrong twice over: it was never reset when a new grant was recorded
+    // (so a re-purchase inherited the previous grant's refunds, and a €1 refund
+    // revoked a fresh €99 entitlement), and an incremented counter cannot be
+    // made idempotent against Paddle's duplicate deliveries. The refunded total
+    // is DERIVED instead, by summing `paddleAdjustments` for the transaction
+    // that granted the entitlement — see that table's docblock.
     // Session revocation watermark (Story 5-8): epoch-ms timestamp of the user's
     // last logout/"sign out everywhere". A signed session token is rejected when
     // its issued-at (`iat`) is at or before this value, so an exfiltrated token
@@ -376,6 +399,22 @@ export const userProfiles = pgTable(
   },
   (table) => ({
     userIdIdx: index('userProfiles_userId_idx').on(table.userId),
+    // ⚠️ Partial unique index (Story 5-19, AC-4): AT MOST ONE default profile per
+    // user, enforced by the DATABASE rather than by a read-then-write check.
+    //
+    // `createDefaultProfileForUser` is check-then-insert outside any transaction,
+    // and one lifetime purchase emits BOTH `transaction.paid` and
+    // `transaction.completed` — processed concurrently, both saw zero rows and
+    // both inserted, leaving two "Main Profile" rows with `isDefault: true`,
+    // after which profile-scoped reads pick arbitrarily and the buyer's data
+    // appears to vanish between requests. No application-level guard closes that
+    // window; only a constraint does.
+    //
+    // Tombstoned rows are excluded: a soft-deleted default (Story 4-18) must not
+    // block creating a new one.
+    oneDefaultPerUser: uniqueIndex('userProfiles_one_default_per_user')
+      .on(table.userId)
+      .where(sql`${table.isDefault} AND NOT ${table.isDeleted}`),
   })
 )
 
@@ -567,6 +606,75 @@ export const loginTokens = pgTable(
   })
 )
 
+// Paddle webhook event log (Story 5-19, AC-2) — the idempotency store.
+//
+// Signature + freshness were the only defences on the webhook, and NEITHER
+// stops a duplicate: Paddle re-signs every retry with a fresh `ts`, so a retry
+// is indistinguishable from a first delivery by signature alone.
+//
+// One row per Paddle event id. The PRIMARY KEY is the dedup mechanism: the
+// handler inserts BEFORE doing any work, and a conflict means "already seen" →
+// return a terminal 200 and do nothing. There is deliberately no FK to `users`:
+// an event can arrive for a customer we have no row for yet (that is the
+// first-seen-buyer path), and the log must survive account erasure so a replay
+// after deletion is still recognised as a replay.
+export const paddleWebhookEvents = pgTable(
+  'paddleWebhookEvents',
+  {
+    // Paddle's own event id (`evt_...`), or `data.id` when the envelope omits
+    // one. Supplied by us, never generated — it IS the identity of the delivery.
+    eventId: varchar('eventId', { length: 255 }).primaryKey(),
+    eventType: varchar('eventType', { length: 255 }).notNull(),
+    // Nullable: a few event types carry no customer (and we still want the
+    // delivery deduplicated).
+    customerId: varchar('customerId', { length: 255 }),
+    // The event's own `occurred_at`, epoch ms — the ordering key. NOT arrival
+    // time: arrival order is exactly what cannot be trusted here.
+    occurredAt: bigint('occurredAt', { mode: 'number' }),
+    processedAt: timestamp('processedAt', { mode: 'date', withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    customerIdx: index('paddleWebhookEvents_customerId_idx').on(table.customerId),
+  })
+)
+
+// Paddle adjustment ledger (Story 5-19 review) — one row per ADJUSTMENT.
+//
+// ⚠️ This exists because the webhook-event store cannot do this job. Paddle
+// emits BOTH `adjustment.created` and `adjustment.updated` for the SAME
+// adjustment, as two deliveries with two different `event_id`s. Event-level
+// dedup therefore lets both through, and an accumulator keyed on the customer
+// counted one €50 partial refund twice — revoking a €99 lifetime grant that
+// was only half refunded.
+//
+// The refunded total is now DERIVED by summing this table rather than
+// incremented in place, so replaying any delivery any number of times cannot
+// change the result. `adjustmentId` is the primary key; re-delivery is an
+// `ON CONFLICT DO NOTHING`.
+export const paddleAdjustments = pgTable(
+  'paddleAdjustments',
+  {
+    // Paddle's adjustment id (`adj_...`) — the identity of the MONEY MOVEMENT,
+    // as distinct from the identity of the delivery that told us about it.
+    adjustmentId: varchar('adjustmentId', { length: 255 }).primaryKey(),
+    customerId: varchar('customerId', { length: 255 }).notNull(),
+    // The transaction the adjustment is against, so a refund can be matched to
+    // the grant it belongs to rather than to the customer at large.
+    transactionId: varchar('transactionId', { length: 255 }),
+    /** `refund` | `credit` | `chargeback` | `chargeback_warning` | reversals. */
+    action: varchar('action', { length: 64 }).notNull(),
+    /** Amount in the currency's lowest unit. */
+    total: bigint('total', { mode: 'number' }).notNull(),
+    createdAt: timestamp('createdAt', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    customerIdx: index('paddleAdjustments_customerId_idx').on(table.customerId),
+    transactionIdx: index('paddleAdjustments_transactionId_idx').on(table.transactionId),
+  })
+)
+
 // Type exports for TypeScript type safety
 // Note: Using InferSelectModel instead of deprecated InferModel
 export type User = InferSelectModel<typeof users>
@@ -599,6 +707,12 @@ export type NewLoginToken = InferInsertModel<typeof loginTokens>
 export type Category = InferSelectModel<typeof categories>
 export type NewCategory = InferInsertModel<typeof categories>
 
+export type PaddleWebhookEvent = InferSelectModel<typeof paddleWebhookEvents>
+export type NewPaddleWebhookEvent = InferInsertModel<typeof paddleWebhookEvents>
+
+export type PaddleAdjustment = InferSelectModel<typeof paddleAdjustments>
+export type NewPaddleAdjustment = InferInsertModel<typeof paddleAdjustments>
+
 // Frequency enum type
 export type Frequency = (typeof frequencyEnum.enumValues)[number]
 
@@ -626,6 +740,8 @@ export const allTables = {
   forecastingProfiles,
   loginTokens,
   categories,
+  paddleWebhookEvents,
+  paddleAdjustments,
 }
 
 // NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)

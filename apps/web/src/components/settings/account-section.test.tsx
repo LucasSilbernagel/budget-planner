@@ -121,3 +121,54 @@ describe('AccountSection', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * Story 5-19, AC-6 — deletion states the billing consequence plainly.
+ *
+ * `subscription-api.ts` cancels with `effective_from: 'immediately'`, so an
+ * annual subscriber who deletes in month 11 forfeits the rest. The product
+ * decision was to KEEP immediate cancellation — scheduling at period end would
+ * leave a live Paddle subscription with no `users` row behind it, and the next
+ * `subscription.*` webhook would take the first-seen-insert path and RESURRECT
+ * the deleted account — and to say so, rather than let it happen silently.
+ */
+describe('AccountSection — deletion forfeits paid time (5-19 AC-6)', () => {
+  it.each(['active', 'past_due', 'lifetime'])(
+    'warns a %s subscriber that paid time is forfeited, in both the panel and the dialog',
+    async (subscriptionStatus) => {
+      stubFetch({ user: { userId: 'u1', email: 'user@example.com', subscriptionStatus } })
+      const user = userEvent.setup()
+      render(<AccountSection />)
+
+      const panelWarning = await screen.findByText(/remaining paid time is forfeited/i)
+      expect(panelWarning).toBeInTheDocument()
+      expect(panelWarning).toHaveTextContent(/cancelled immediately/i)
+      expect(panelWarning).toHaveTextContent(/will not be refunded/i)
+
+      // The confirmation step — the last point before an irreversible action —
+      // must carry it too, not just the panel the user may have scrolled past.
+      await user.click(screen.getByRole('button', { name: /^delete account$/i }))
+      const dialog = await screen.findByRole('alertdialog')
+      expect(dialog).toHaveTextContent(/cancelled immediately/i)
+      expect(dialog).toHaveTextContent(/will not be refunded/i)
+    }
+  )
+
+  it.each(['free', 'canceled'])(
+    'does NOT claim a %s user is losing a subscription — there is nothing to forfeit',
+    async (subscriptionStatus) => {
+      stubFetch({ user: { userId: 'u1', email: 'user@example.com', subscriptionStatus } })
+      const user = userEvent.setup()
+      render(<AccountSection />)
+
+      expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+      expect(screen.queryByText(/remaining paid time is forfeited/i)).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /^delete account$/i }))
+      const dialog = await screen.findByRole('alertdialog')
+      // The erasure warning still stands; only the billing sentence is absent.
+      expect(dialog).toHaveTextContent(/cannot be undone/i)
+      expect(dialog).not.toHaveTextContent(/cancelled immediately/i)
+    }
+  )
+})

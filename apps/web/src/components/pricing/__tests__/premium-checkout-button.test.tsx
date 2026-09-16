@@ -486,3 +486,94 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
     expect(lifetimeFocusSpy).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * Story 5-19, AC-5 — the client half of the already-Premium guard.
+ *
+ * A `null` seed does NOT mean "signed out": `getSessionSeed` returns an
+ * authoritative signed-out seed for that, and `null` ONLY when it could not
+ * verify the session at all. The old guard read `seed?.subscriptionStatus`
+ * directly, so an unverified seed belonging to an `active` or `lifetime`
+ * subscriber fell straight through to a live "Get Premium" button — a guard
+ * against a real duplicate charge that defaulted to offering the purchase.
+ */
+describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => {
+  /** `/api/auth/me` answers with `user`; checkout-config stays configured. */
+  function stubAuthMe(user: unknown, opts: { neverResolves?: boolean } = {}) {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/paddle/checkout-config')) {
+        return Promise.resolve(new Response(JSON.stringify(CONFIGURED), { status: 200 }))
+      }
+      if (String(input).includes('/api/auth/me')) {
+        if (opts.neverResolves) return new Promise(() => {})
+        return Promise.resolve(new Response(JSON.stringify({ user }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+  }
+
+  it('does NOT offer checkout to a lifetime holder whose seed failed to resolve', async () => {
+    // The exact fall-through this AC closes: rendered with NO provider (seed
+    // null), the pre-5-19 component showed a live "Get Premium" to this user.
+    stubAuthMe({ subscriptionStatus: 'lifetime' })
+
+    render(<PremiumCheckoutButton />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/already have lifetime premium access/i)).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: 'Get Premium' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
+  it('does NOT offer checkout to an active subscriber whose seed failed to resolve', async () => {
+    stubAuthMe({ subscriptionStatus: 'active' })
+
+    render(<PremiumCheckoutButton />)
+
+    await waitFor(() =>
+      expect(screen.getByText(/already have an active premium subscription/i)).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: 'Get Premium' })).not.toBeInTheDocument()
+  })
+
+  it('offers no checkout WHILE the probe is still in flight', async () => {
+    // The fail-open direction mattered most here: an unresolved probe used to
+    // render the live CTA immediately.
+    stubAuthMe(null, { neverResolves: true })
+
+    render(<PremiumCheckoutButton />)
+
+    expect(screen.getByText(/checking your account/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Get Premium' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
+  it('DOES offer checkout once the probe says the visitor is not entitled', async () => {
+    // The complement: a brand-new customer must never be locked out of buying
+    // by this guard, or it would be a worse bug than the one it fixes.
+    stubAuthMe(null)
+
+    render(<PremiumCheckoutButton />)
+
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+    expect(screen.queryByText(/already have/i)).not.toBeInTheDocument()
+  })
+
+  it('falls back to offering checkout when the probe itself fails', async () => {
+    // A failed probe must not permanently block purchases — the SERVER guard
+    // in `/api/paddle/checkout-config` is the authoritative one and refuses an
+    // entitled session regardless of what the client believes.
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/paddle/checkout-config')) {
+        return Promise.resolve(new Response(JSON.stringify(CONFIGURED), { status: 200 }))
+      }
+      if (String(input).includes('/api/auth/me')) return Promise.reject(new Error('offline'))
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+
+    render(<PremiumCheckoutButton />)
+
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeInTheDocument())
+  })
+})

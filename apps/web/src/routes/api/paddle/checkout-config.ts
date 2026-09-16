@@ -6,10 +6,16 @@
  * Story 5-3, Task 2a. Exposes ONLY the browser-safe subset of
  * `getPaddleConfig()` that Paddle.js checkout needs client-side: the
  * environment, the client-side token, and the two catalog price IDs. The
- * server API key and webhook secret are never read here. No auth is required —
+ * server API key and webhook secret are never read here. No auth is REQUIRED —
  * none of these values are secret (the client token is designed to ship in
  * the browser bundle; the price IDs are visible in any checkout request
  * anyway), matching how `/pricing` itself is a public, unauthenticated route.
+ *
+ * ⚠️ Story 5-19 (AC-5): the endpoint stays public, but it now READS the session
+ * when one is present and REFUSES (403) an already-entitled user, so a second
+ * real charge cannot be started from a stale or failed client-side guard. It
+ * also fails closed (503) when the session cannot be resolved at all. See the
+ * inline rationale in the handler.
  *
  * `assertPaddleProductionConfig()` runs first, mirroring the webhook route
  * (`routes/api/webhooks/paddle.ts`): a production deploy missing a secret/price
@@ -30,9 +36,20 @@
  */
 
 import { logger } from '@/lib/logger'
+import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
+
+/**
+ * Statuses that already carry paid access. A session in one of these is
+ * refused checkout configuration (Story 5-19, AC-5).
+ *
+ * `canceled` is deliberately absent: that subscription has ended, so checkout
+ * is the correct way to resubscribe — blocking it would be a regression for a
+ * real customer.
+ */
+const ENTITLED_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']
 
 /**
  * This endpoint is deliberately public and unauthenticated (see the module
@@ -52,7 +69,7 @@ function noStoreHeaders() {
  * Exported standalone so it is unit-testable without a running server —
  * mirrors `routes/api/webhooks/paddle.ts`'s exported `POST`.
  */
-export const GET = async (): Promise<Response> => {
+export const GET = async ({ request }: { request: Request }): Promise<Response> => {
   try {
     // Treat an explicitly-empty value the same as unset — `PADDLE_ENVIRONMENT=`
     // (declared, no value) must not skip this endpoint's tailored diagnostic
@@ -70,6 +87,45 @@ export const GET = async (): Promise<Response> => {
     }
 
     assertPaddleProductionConfig()
+
+    // AC-5: refuse to mint checkout configuration for a session that ALREADY
+    // has paid access. Until now the only thing standing between an entitled
+    // user and a second real charge was a client-side render guard that fails
+    // open on an unverified session seed — a guard against a real-money outcome
+    // living entirely in optional client state.
+    //
+    // ⚠️ FAILS CLOSED when the session cannot be resolved. An unresolvable
+    // session is not "anonymous": we genuinely do not know, and the wrong
+    // direction here charges a paying customer twice. The same outage that
+    // breaks session resolution also stops the webhook recording a purchase, so
+    // there is nothing coherent to sell during one. An anonymous visitor
+    // resolves normally (`data: null`) and is unaffected.
+    const session = await getCurrentUserSession(request)
+    if (!session.success) {
+      logger.warn(
+        'Paddle checkout-config: session unresolvable — refusing checkout (fail closed)',
+        {
+          error: session.error,
+        }
+      )
+      return json(
+        { success: false, error: 'Checkout is not available right now.' },
+        { status: 503, ...noStoreHeaders() }
+      )
+    }
+    if (session.data && ENTITLED_STATUSES.includes(session.data.subscriptionStatus)) {
+      logger.info('Paddle checkout-config: refused for an already-entitled session', {
+        subscriptionStatus: session.data.subscriptionStatus,
+      })
+      return json(
+        {
+          success: false,
+          error: 'You already have Premium access — there is nothing to buy here.',
+          alreadyEntitled: true,
+        },
+        { status: 403, ...noStoreHeaders() }
+      )
+    }
 
     const config = getPaddleConfig()
 

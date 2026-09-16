@@ -32,6 +32,7 @@ const {
   transaction,
   setSpy,
   insertValuesSpy,
+  dbHasUser,
 } = vi.hoisted(() => ({
   getPaddleConfig: vi.fn(),
   assertPaddleProductionConfig: vi.fn(),
@@ -41,15 +42,39 @@ const {
   transaction: vi.fn(),
   setSpy: vi.fn(),
   insertValuesSpy: vi.fn(),
+  dbHasUser: { value: true },
 }))
 
 vi.mock('@budget-planner/config', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
 vi.mock('@budget-planner/db', () => ({
-  db: { transaction },
+  // `select` backs the PRE-TRANSACTION existence check that decides whether the
+  // buyer's email needs resolving (Story 5-19 review moved that Paddle HTTP
+  // round trip out of the transaction). `dbHasUser` drives it.
+  db: {
+    transaction,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve(dbHasUser.value ? [{ id: 'existing-user-id' }] : []),
+        }),
+      }),
+    }),
+  },
   currencyEnum: { enumValues: ['NONE', 'USD', 'EUR'] },
 }))
 vi.mock('@budget-planner/db/src/schema', () => ({
-  users: { paddleId: 'paddleId', id: 'id', subscriptionStatus: 'subscriptionStatus' },
+  users: {
+    paddleId: 'paddleId',
+    id: 'id',
+    email: 'email',
+    subscriptionStatus: 'subscriptionStatus',
+    isDeleted: 'isDeleted',
+    entitlementUpdatedAt: 'entitlementUpdatedAt',
+    lifetimeTransactionId: 'lifetimeTransactionId',
+    lifetimeGrantTotal: 'lifetimeGrantTotal',
+    lifetimeRefundedTotal: 'lifetimeRefundedTotal',
+  },
+  paddleWebhookEvents: { __table: 'paddleWebhookEvents', eventId: 'eventId' },
 }))
 vi.mock('drizzle-orm', () => ({ eq: vi.fn(), sql: vi.fn(() => 'sql-fragment') }))
 vi.mock('@/server/paddle/customer-api', () => ({ fetchPaddleCustomerEmail }))
@@ -65,13 +90,33 @@ const SECRET = 'pdl_ntfset_test_secret'
 const LIFETIME_PRICE = 'pri_lifetime_99'
 const ANNUAL_PRICE = 'pri_annual_39'
 
+/**
+ * A stand-in transaction.
+ *
+ * ⚠️ This fixture proves ROUTING and PAYLOAD SHAPE only — which handler an
+ * event reaches, and what it asks the DB to write. It cannot prove that a
+ * `.where()` actually matches, because `drizzle-orm` is mocked above. The
+ * guarantees that depend on real SQL — match-by-customer, the unique
+ * constraints, dedup and ordering — are covered against real PostgreSQL in
+ * `paddle-webhook.db.test.ts` (Story 5-19, AC-7). Do not add a guarantee of
+ * that kind here and believe it.
+ *
+ * ⚠️ ONE GUARANTEE IS COVERED BY NEITHER SUITE, AND SAYING SO IS THE POINT: the
+ * `setWhere` no-downgrade race guard on the `onConflictDoUpdate` path. That
+ * branch only executes when a CONCURRENT insert wins the race, and PGlite is a
+ * single in-process connection, so the db suite cannot reach it either.
+ * Verified by positive control during code review: deleting `setWhere`
+ * entirely leaves all 53 tests across both suites green. An earlier version of
+ * this comment claimed the db suite covered it. It does not.
+ */
 function makeTx({ existingStatus = 'free' }: { existingStatus?: string | null } = {}) {
   const rowCount = existingStatus === null ? 0 : 1
+  const selectedRow = existingStatus === null ? undefined : { status: existingStatus }
   return {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve(existingStatus === null ? [] : [{ status: existingStatus }]),
+          limit: () => Promise.resolve(selectedRow ? [selectedRow] : []),
         }),
       }),
     }),
@@ -81,18 +126,28 @@ function makeTx({ existingStatus = 'free' }: { existingStatus?: string | null } 
         return { where: () => Promise.resolve({ rowCount }) }
       },
     }),
-    insert: () => ({
-      values: (values: unknown) => {
-        insertValuesSpy(values)
-        return {
-          // handleLifetimePurchase / handleSubscriptionStatusUpdate insert path:
-          // .values().onConflictDoUpdate().returning() → [{ id }]
-          onConflictDoUpdate: () => ({
-            returning: () => Promise.resolve([{ id: 'new-user-id' }]),
-          }),
-        }
-      },
-    }),
+    insert: (table: unknown) => {
+      const isEventClaim = (table as { __table?: string })?.__table === 'paddleWebhookEvents'
+      return {
+        values: (values: unknown) => {
+          if (isEventClaim) {
+            return {
+              onConflictDoNothing: () => ({
+                returning: () => Promise.resolve([{ eventId: 'evt_1' }]),
+              }),
+            }
+          }
+          insertValuesSpy(values)
+          return {
+            // handleLifetimePurchase / handleSubscriptionStatusUpdate insert path:
+            // .values().onConflictDoUpdate().returning() → [{ id }]
+            onConflictDoUpdate: () => ({
+              returning: () => Promise.resolve([{ id: 'new-user-id' }]),
+            }),
+          }
+        },
+      }
+    },
   }
 }
 
@@ -128,6 +183,9 @@ function config(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: the customer already exists, so the pre-transaction email lookup
+  // short-circuits. Tests exercising the first-seen-buyer path set this false.
+  dbHasUser.value = true
   getPaddleConfig.mockReturnValue(config())
   fetchPaddleCustomerEmail.mockResolvedValue(undefined)
   createDefaultProfileForUser.mockResolvedValue({ success: true, data: {} })
@@ -241,6 +299,7 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
       request: signedRequest({
         event_type: 'transaction.completed',
         data: {
+          details: { totals: { grand_total: '9900' } },
           customer_id: 'ctm_1',
           email: 'buyer@example.com',
           currency_code: 'EUR',
@@ -251,14 +310,30 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
 
     expect(res.status).toBe(200)
     expect(transaction).toHaveBeenCalledTimes(1)
-    expect(setSpy).toHaveBeenCalledWith({ subscriptionStatus: 'lifetime', currency: 'EUR' })
+    // ⚠️ `currency` is deliberately ABSENT (Story 5-19, AC-8). It used to be
+    // written here, which meant a renewal billed from another country silently
+    // flipped the user's chosen DISPLAY currency — the two are different
+    // things. It is insert-only now, asserted below.
+    expect(setSpy).toHaveBeenCalledWith({
+      subscriptionStatus: 'lifetime',
+      entitlementUpdatedAt: expect.any(Number),
+      // Recorded at grant time so a later refund can be judged full vs partial
+      // (AC-1). A grant with no usable total is now REFUSED outright, so this
+      // field is always present on a successful lifetime write.
+      lifetimeGrantTotal: 9900,
+    })
   })
 
   it('also reads the price from a direct price_id field', async () => {
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_2', email: 'b@example.com', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_2',
+          email: 'b@example.com',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -271,6 +346,7 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
       request: signedRequest({
         event_type: 'transaction.completed',
         data: {
+          details: { totals: { grand_total: '9900' } },
           customer_id: 'ctm_4',
           email: 'c@example.com',
           items: [{ price: { id: ANNUAL_PRICE } }, { price: { id: LIFETIME_PRICE } }],
@@ -287,7 +363,12 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_5', email: 'd@example.com', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_5',
+          email: 'd@example.com',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -296,13 +377,19 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
   })
 
   it('creates a new user as "lifetime" when none exists yet (insert path)', async () => {
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_new', email: 'New@Example.com', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_new',
+          email: 'New@Example.com',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -315,13 +402,18 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
 
   it('resolves the buyer email from the Billing customer API when the payload omits it', async () => {
     fetchPaddleCustomerEmail.mockResolvedValue('resolved@example.com')
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_api', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_api',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -336,19 +428,35 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_6', email: 'e@example.com', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_6',
+          email: 'e@example.com',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
     expect(res.status).toBe(200)
-    expect(setSpy).toHaveBeenCalledWith({ subscriptionStatus: 'lifetime' })
+    expect(setSpy).toHaveBeenCalledWith({
+      subscriptionStatus: 'lifetime',
+      entitlementUpdatedAt: expect.any(Number),
+      // Recorded at grant time so a later refund can be judged full vs partial
+      // (AC-1). A grant with no usable total is now REFUSED outright, so this
+      // field is always present on a successful lifetime write.
+      lifetimeGrantTotal: 9900,
+    })
   })
 
   it('ignores a transaction for a NON-lifetime price (annual renewal invoice)', async () => {
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_1', items: [{ price: { id: ANNUAL_PRICE } }] },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_1',
+          items: [{ price: { id: ANNUAL_PRICE } }],
+        },
       }),
     })
 
@@ -362,7 +470,11 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_1', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_1',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -371,13 +483,18 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
   })
 
   it('returns 500 (Paddle retries) when the grant persists nothing — no silent loss', async () => {
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_noemail', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_noemail',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -404,18 +521,30 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_1', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_1',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
     expect(res.status).toBe(200)
     // Exact match, not `objectContaining` — proves email is NOT written on
     // the update path, not merely that status is.
-    expect(setSpy).toHaveBeenCalledWith({ subscriptionStatus: 'lifetime' })
+    expect(setSpy).toHaveBeenCalledWith({
+      subscriptionStatus: 'lifetime',
+      entitlementUpdatedAt: expect.any(Number),
+      // Recorded at grant time so a later refund can be judged full vs partial
+      // (AC-1). A grant with no usable total is now REFUSED outright, so this
+      // field is always present on a successful lifetime write.
+      lifetimeGrantTotal: 9900,
+    })
     expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
   })
 
   it('still fails closed for a first-seen buyer whose resolved email is malformed', async () => {
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
@@ -423,7 +552,11 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
-        data: { customer_id: 'ctm_bademail', price_id: LIFETIME_PRICE },
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_bademail',
+          price_id: LIFETIME_PRICE,
+        },
       }),
     })
 
@@ -476,6 +609,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 
   it('returns 500 (Paddle retries) when a first-seen subscriber has no resolvable email', async () => {
     // Billing subscription payloads carry no inline email; the customer API is down.
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
@@ -512,11 +646,15 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
     expect(res.status).toBe(200)
     // Exact match, not `objectContaining` — proves email is NOT written on
     // the update path, not merely that status is.
-    expect(setSpy).toHaveBeenCalledWith({ subscriptionStatus: 'canceled' })
+    expect(setSpy).toHaveBeenCalledWith({
+      subscriptionStatus: 'canceled',
+      entitlementUpdatedAt: expect.any(Number),
+    })
     expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
   })
 
   it('still fails closed for a first-seen subscriber whose resolved email is malformed', async () => {
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
@@ -545,6 +683,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
   })
 
   it('creates a default profile for a first-seen subscriber (sole account-creation path)', async () => {
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )
@@ -576,6 +715,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 
   it('a failed default-profile creation does not fail the webhook (non-fatal)', async () => {
     createDefaultProfileForUser.mockResolvedValue({ success: false, error: 'db down' })
+    dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
     )

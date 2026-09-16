@@ -18,6 +18,7 @@
 
 import { render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SessionSeedProvider } from '../../../context/session-seed'
 import { PREMIUM_BENEFIT_IDS } from '../../../lib/premium/benefits'
 import { PricingPageView } from '../pricing-page'
 
@@ -317,7 +318,18 @@ describe('PricingPageView theming', () => {
   })
 
   it('gives the solid CTA a fixed blue-600 fill and the outlined CTA a gray-700 dark fill', () => {
-    render(<PricingPageView />)
+    // The provider is required since Story 5-19 (AC-5): a `null` session seed
+    // means "could not verify", and the checkout CTA no longer renders on one —
+    // it used to fall through and offer a live checkout to an unverified
+    // (possibly already-paying) visitor. An AUTHORITATIVE signed-out seed is
+    // what the real page always carries here.
+    render(
+      <SessionSeedProvider
+        seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
+      >
+        <PricingPageView />
+      </SessionSeedProvider>
+    )
 
     const primary = [...screen.getByRole('button', { name: 'Get Premium' }).classList]
     // The blue-600 fill is held in BOTH themes on purpose. The shipped

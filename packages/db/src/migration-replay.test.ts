@@ -120,6 +120,14 @@ function normalizeExpr(raw: string): string {
   // own parens and `lower(name)` collapses to `lowername`.
   s = s.replace(/(?<![A-Za-z0-9_])\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, '$1')
   s = s.replace(/\s+/g, ' ').trim()
+  // Parens PostgreSQL adds around a NEGATED bare column when it is one term of
+  // a compound predicate: `isDefault AND (NOT isDeleted)`. The whole-expression
+  // unwrap below only handles a predicate with ONE condition, so without this
+  // every multi-term partial index would fail on parenthesization alone
+  // (Story 5-19's `userProfiles_one_default_per_user` is the first such index).
+  // Deliberately narrow: only `(NOT <bare column>)`, so it cannot collapse a
+  // real grouping like `(a OR b)` and hide a difference in operator precedence.
+  s = s.replace(/\(\s*NOT\s+([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, 'NOT $1')
   // A whole-expression wrapper: `(isDeleted = false)`.
   const wrapped = s.match(/^\((.*)\)$/)
   return (wrapped ? wrapped[1] : s).trim()
@@ -289,8 +297,8 @@ describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
-    expect(journal.entries.length).toBe(17)
-    expect(appliedStatements).toBe(135)
+    expect(journal.entries.length).toBe(18)
+    expect(appliedStatements).toBe(145)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {

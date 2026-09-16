@@ -87,18 +87,61 @@ function AlreadyPremiumNotice({ status }: { status: 'active' | 'past_due' | 'lif
 
 const ALREADY_PREMIUM_STATUSES = ['active', 'past_due', 'lifetime'] as const
 
+/**
+ * Resolve the session client-side when the SSR seed is `null` (Story 5-19, AC-5).
+ *
+ * A `null` seed does NOT mean "signed out" — `getSessionSeed` returns an
+ * authoritative signed-out seed for that, and `null` ONLY when it could not
+ * verify the session at all. The previous guard read `seed?.subscriptionStatus`
+ * directly, so an unverified seed belonging to an `active` or `lifetime`
+ * subscriber fell straight through to a live "Get Premium" button — a guard
+ * against a real duplicate charge that defaulted to offering the purchase.
+ *
+ * So instead of guessing in either direction, ask: `/api/auth/me` is the same
+ * client check `AuthIndicator` uses. `undefined` = still resolving (offer
+ * nothing yet), `null` = resolved and not entitled.
+ */
+function useResolvedStatusWhenUnverified(seedIsNull: boolean) {
+  const [status, setStatus] = useState<string | null | undefined>(seedIsNull ? undefined : null)
+
+  useEffect(() => {
+    if (!seedIsNull) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/auth/me')
+        const body = (await res.json()) as { user?: { subscriptionStatus?: string } | null }
+        if (!cancelled) setStatus(body?.user?.subscriptionStatus ?? null)
+      } catch {
+        // Still unverified. Resolve to "not entitled" so a brand-new customer
+        // is never permanently locked out of buying by a failed probe — the
+        // SERVER guard in `/api/paddle/checkout-config` is the authoritative
+        // one, and it refuses an entitled session regardless of what the
+        // client believes.
+        if (!cancelled) setStatus(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [seedIsNull])
+
+  return status
+}
+
 export function PremiumCheckoutButton() {
   const seed = useSessionSeed()
+  const resolvedStatus = useResolvedStatusWhenUnverified(seed === null)
 
-  if (
-    seed &&
-    (ALREADY_PREMIUM_STATUSES as readonly string[]).includes(seed.subscriptionStatus ?? '')
-  ) {
-    return (
-      <AlreadyPremiumNotice
-        status={seed.subscriptionStatus as 'active' | 'past_due' | 'lifetime'}
-      />
-    )
+  const status = seed ? seed.subscriptionStatus ?? null : resolvedStatus
+
+  // Unverified and still resolving — show nothing rather than a live checkout.
+  if (status === undefined) {
+    return <p className="mt-6 text-sm text-body">Checking your account…</p>
+  }
+
+  if ((ALREADY_PREMIUM_STATUSES as readonly string[]).includes(status ?? '')) {
+    return <AlreadyPremiumNotice status={status as 'active' | 'past_due' | 'lifetime'} />
   }
 
   return <PremiumCheckoutForm seed={seed} />
