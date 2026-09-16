@@ -33,7 +33,10 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { MIGRATION_STEPS, runMigration } from './src/server/migrate-runner.mjs'
-import { createMigrateStatusListener } from './src/server/migrate-status.mjs'
+import {
+  createIdleHealthListener,
+  createMigrateStatusListener,
+} from './src/server/migrate-status.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 /** Both steps run here: `drizzle.config.ts` and `migrations/` live in this package. */
@@ -112,99 +115,130 @@ function runStep(step) {
   })
 }
 
-function requireEnv(/** @type {string} */ name) {
+function readEnv(/** @type {string} */ name) {
   const value = process.env[name]
-  if (typeof value !== 'string' || value.trim() === '') {
-    console.error(`[migrate-entry] ${name} is not set. Refusing to start the migrate container.`)
-    process.exit(1)
-  }
-  return value
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
-// Fail at boot rather than coming up unguarded or unconfigured. A container that
-// never starts is a loud, diagnosable failure; one that starts without
-// DATABASE_URL would report a confusing migration error instead.
-const token = requireEnv('MIGRATE_STATUS_TOKEN')
-requireEnv('DATABASE_URL')
-
-// Binds this process to the pipeline run that started it. The pipeline accepts a
-// verdict only when this id matches the one it minted, so a container left over
-// from an earlier run — which `rapids update --env` MERGE semantics would
-// otherwise leave carrying a stale but perfectly valid-looking `succeeded` — can
-// never be mistaken for this run's. (Code review 2026-09-15, Lucas's call.)
-const runId = requireEnv('MIGRATE_RUN_ID')
-status['runId'] = runId
+// ⚠️ MISSING CONFIGURATION IS "NOTHING TO DO", NOT A CRASH. Changed 2026-09-16.
+//
+// This used to `process.exit(1)` on a missing variable. That is right for a
+// container whose job is to migrate NOW, and wrong for this one: the container is
+// permanent, and between releases the pipeline deliberately strips its credentials
+// while leaving `APP_ENTRYPOINT=migrate` set. Knative then started it, it exited 1
+// four times, and the platform reported `CrashLoopBackOff` and emailed a
+// provisioning failure (revision `budget-planner-migrator-00005`). Nothing was
+// wrong — the container simply had no way to say "idle".
+//
+// `MIGRATE_RUN_ID` is what binds this process to the pipeline run that started it:
+// the pipeline accepts a verdict only when the id matches the one it minted, so a
+// container carrying a stale but well-formed `succeeded` can never be mistaken for
+// the current run's. All three are required TOGETHER — a partial set is not a
+// configuration, it is a mistake, and migrating on it would be worse than idling.
+const token = readEnv('MIGRATE_STATUS_TOKEN')
+const databaseUrl = readEnv('DATABASE_URL')
+const runId = readEnv('MIGRATE_RUN_ID')
 
 const port = parsePort(process.env['PORT'])
 const healthPath = process.env['MIGRATE_HEALTH_PATH'] || '/healthz'
 
-const httpServer = createServer(
-  createMigrateStatusListener({ token, healthPath, readState: () => ({ ...status }) })
-)
+if (!token || !databaseUrl || !runId) {
+  // IDLE. Serve health, nothing else, and never migrate. Everything below this
+  // branch is the configured path and is deliberately not reached.
+  const missing = [
+    !token && 'MIGRATE_STATUS_TOKEN',
+    !databaseUrl && 'DATABASE_URL',
+    !runId && 'MIGRATE_RUN_ID',
+  ].filter(Boolean)
 
-httpServer.on('error', (err) => {
-  console.error('[migrate-entry] HTTP server error:', err)
-  process.exit(1)
-})
+  console.warn(`[migrate-entry] IDLE — not configured to migrate (missing: ${missing.join(', ')}).`)
+  console.warn('[migrate-entry] Serving health only. No migration will run, no status exposed.')
 
-httpServer.listen(port, '0.0.0.0', () => {
-  console.log(
-    `[migrate-entry] status server listening on 0.0.0.0:${port} (health ${healthPath}, run ${runId})`
-  )
-  console.log(`[migrate-entry] steps: ${MIGRATION_STEPS.map((s) => s.name).join(' -> ')}`)
-
-  runMigration({ runStep }).then(
-    (result) => {
-      Object.assign(status, result, { finishedAt: new Date().toISOString() })
-      if (result.state === 'succeeded') {
-        console.log('[migrate-entry] MIGRATION SUCCEEDED. Holding the status endpoint open.')
-      } else {
-        console.error(`[migrate-entry] MIGRATION FAILED at ${result.failedStep}: ${result.error}`)
-      }
-    },
-    (error) => {
-      // Defence in depth: runMigration already converts a thrown step into a
-      // verdict, so reaching here means something outside the steps failed. The
-      // verdict must still become terminal, or the pipeline would poll `running`
-      // until its deadline and report a timeout instead of a failure.
-      Object.assign(status, {
-        state: 'failed',
-        failedStep: 'unknown',
-        exitCode: null,
-        error: error instanceof Error ? error.message : String(error),
-        finishedAt: new Date().toISOString(),
-      })
-      console.error('[migrate-entry] MIGRATION FAILED (unexpected):', error)
-    }
-  )
-})
-
-// The pipeline deletes this container; SIGTERM is that deletion arriving.
-//
-// Mirrors `serve-entry.mjs`'s drain rather than a bare `close()`: Knative's
-// queue-proxy holds keep-alive sockets open, so `close()`'s callback would never
-// fire and the process would sit until SIGKILL. The running step is signalled
-// too — an orphaned `drizzle-kit` would otherwise keep issuing DDL against
-// production after the container it belongs to has been told to go away.
-let shuttingDown = false
-for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
-  process.on(signal, () => {
-    if (shuttingDown) {
-      return
-    }
-    shuttingDown = true
-    console.log(`[migrate-entry] ${signal} received; state=${status['state']}; draining…`)
-
-    if (activeChild) {
-      console.warn(`[migrate-entry] signalling the in-flight step with ${signal}`)
-      activeChild.kill(signal)
-    }
-
-    httpServer.close(() => process.exit(0))
-    httpServer.closeIdleConnections()
-    setTimeout(() => {
-      console.warn('[migrate-entry] drain timed out; forcing exit')
-      process.exit(1)
-    }, SHUTDOWN_TIMEOUT_MS).unref()
+  const idleServer = createServer(createIdleHealthListener({ healthPath }))
+  idleServer.on('error', (err) => {
+    console.error('[migrate-entry] HTTP server error:', err)
+    process.exit(1)
   })
+  idleServer.listen(port, '0.0.0.0', () => {
+    console.log(`[migrate-entry] idle health server listening on 0.0.0.0:${port}`)
+  })
+  for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+    process.on(signal, () => {
+      console.log(`[migrate-entry] ${signal} received while idle; exiting.`)
+      idleServer.close(() => process.exit(0))
+    })
+  }
+} else {
+  status['runId'] = runId
+
+  const httpServer = createServer(
+    createMigrateStatusListener({ token, healthPath, readState: () => ({ ...status }) })
+  )
+
+  httpServer.on('error', (err) => {
+    console.error('[migrate-entry] HTTP server error:', err)
+    process.exit(1)
+  })
+
+  httpServer.listen(port, '0.0.0.0', () => {
+    console.log(
+      `[migrate-entry] status server listening on 0.0.0.0:${port} (health ${healthPath}, run ${runId})`
+    )
+    console.log(`[migrate-entry] steps: ${MIGRATION_STEPS.map((s) => s.name).join(' -> ')}`)
+
+    runMigration({ runStep }).then(
+      (result) => {
+        Object.assign(status, result, { finishedAt: new Date().toISOString() })
+        if (result.state === 'succeeded') {
+          console.log('[migrate-entry] MIGRATION SUCCEEDED. Holding the status endpoint open.')
+        } else {
+          console.error(`[migrate-entry] MIGRATION FAILED at ${result.failedStep}: ${result.error}`)
+        }
+      },
+      (error) => {
+        // Defence in depth: runMigration already converts a thrown step into a
+        // verdict, so reaching here means something outside the steps failed. The
+        // verdict must still become terminal, or the pipeline would poll `running`
+        // until its deadline and report a timeout instead of a failure.
+        Object.assign(status, {
+          state: 'failed',
+          failedStep: 'unknown',
+          exitCode: null,
+          error: error instanceof Error ? error.message : String(error),
+          finishedAt: new Date().toISOString(),
+        })
+        console.error('[migrate-entry] MIGRATION FAILED (unexpected):', error)
+      }
+    )
+  })
+
+  // The pipeline scales this container down; SIGTERM is that arriving.
+  //
+  // Mirrors `serve-entry.mjs`'s drain rather than a bare `close()`: Knative's
+  // queue-proxy holds keep-alive sockets open, so `close()`'s callback would never
+  // fire and the process would sit until SIGKILL. The running step is signalled
+  // too — an orphaned `drizzle-kit` would otherwise keep issuing DDL against
+  // production after the container it belongs to has been told to go away.
+  let shuttingDown = false
+  for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+    process.on(signal, () => {
+      if (shuttingDown) {
+        return
+      }
+      shuttingDown = true
+      console.log(`[migrate-entry] ${signal} received; state=${status['state']}; draining…`)
+
+      if (activeChild) {
+        console.warn(`[migrate-entry] signalling the in-flight step with ${signal}`)
+        activeChild.kill(signal)
+      }
+
+      httpServer.close(() => process.exit(0))
+      httpServer.closeIdleConnections()
+      setTimeout(() => {
+        console.warn('[migrate-entry] drain timed out; forcing exit')
+        process.exit(1)
+      }, SHUTDOWN_TIMEOUT_MS).unref()
+    })
+  }
 }

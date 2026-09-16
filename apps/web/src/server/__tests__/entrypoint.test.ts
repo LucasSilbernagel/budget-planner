@@ -140,8 +140,18 @@ describe('run-id binding (migrate container <-> pipeline run)', () => {
     'utf8'
   )
 
-  it('the container refuses to boot without a run id', () => {
-    expect(migrateEntry).toMatch(/requireEnv\('MIGRATE_RUN_ID'\)/)
+  // ⚠️ Changed 2026-09-16: the container used to EXIT on a missing run id, which
+  // crash-looped it once the pipeline stripped credentials from the permanent
+  // container (revision `budget-planner-migrator-00005`, CrashLoopBackOff). It now
+  // idles instead. The safety property is unchanged and is what this asserts:
+  // without a run id it does not migrate.
+  it('will not migrate without a run id', () => {
+    expect(migrateEntry).toMatch(/readEnv\('MIGRATE_RUN_ID'\)/)
+    expect(migrateEntry).toMatch(/if \(!token \|\| !databaseUrl \|\| !runId\)/)
+
+    const idleBranch =
+      migrateEntry.split('if (!token || !databaseUrl || !runId) {')[1]?.split('} else {')[0] ?? ''
+    expect(idleBranch).not.toMatch(/runMigration/)
   })
 
   it('the container reports its run id in the verdict', () => {

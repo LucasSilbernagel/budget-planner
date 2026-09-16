@@ -383,10 +383,37 @@ jobs:
           fi
           echo "Keeping the ${KEEP} newest tags in ${REPO}"
 
+          # ⚠️⚠️ NEVER PRUNE A TAG THAT IS CURRENTLY DEPLOYED. Added 2026-09-16
+          # after this step took the live site down.
+          #
+          # A deployed Knative revision is pinned to the exact image it was created
+          # from. On 2026-09-15 several deploy attempts pushed tags in quick
+          # succession, pushing the tag `budget-planner-web` was RUNNING out of the
+          # keep-window; this step deleted it. The container served happily until it
+          # scaled to zero, then could not restart — `manifest unknown` — and the
+          # site was down from ~05:28 CEST until it was redeployed by hand.
+          #
+          # "Keep one more tag" was considered and rejected: it moves the cliff
+          # instead of removing it, and a burst of runs walks straight off the new
+          # one. Age is the wrong question; "is anything running this?" is the right
+          # one.
+          #
+          # FAILS CLOSED: if the deployed tags cannot be read, this prunes NOTHING.
+          # A registry that grows is a bounded, visible problem; deleting the image
+          # your site is running is an outage.
+          if ! deployed=$(danube --json rapids ls | python3 .github/scripts/rapids_deployed_tags.py); then
+            echo "::warning::Could not determine which tags are deployed; skipping the prune entirely."
+            echo "A tag pruned while a container runs it takes the site down on its next cold start."
+            exit 0
+          fi
+          printf 'Deployed tags (never pruned): %s\n' "${deployed:-none}"
+          printf '%s\n' "${deployed}" > /tmp/deployed-tags.txt
+
           danube --json registry repos tags "${REPO}" > /tmp/tags.json
 
           # Newest-first by pushed_at, skip the newest KEEP, and never the tag
-          # this run just pushed even if the sort or the clock disagrees.
+          # this run just pushed even if the sort or the clock disagrees, and never
+          # a tag some container is currently deployed from.
           doomed=$(KEEP="${KEEP}" KEEPSHA="${GITHUB_SHA}" python3 - <<'PY'
           import json, os, sys
 
@@ -431,11 +458,26 @@ jobs:
                   "cover the first page — verify the CLI response shape",
                   file=sys.stderr,
               )
+          # Tags currently deployed to a Rapids container. Read from a file the
+          # step wrote after a fail-closed check: if that check could not answer,
+          # the step already exited without pruning anything, so reaching here
+          # means this list is trustworthy.
+          try:
+              with open("/tmp/deployed-tags.txt", encoding="utf-8") as fh:
+                  deployed = {line.strip() for line in fh if line.strip()}
+          except OSError:
+              sys.exit("deployed-tag list missing; refusing to prune")
+
           rows.sort(key=lambda r: r.get("pushed_at") or "", reverse=True)
           for r in rows[keep:]:
               tag = r.get("tag")
-              if tag and tag != keepsha:
-                  print(tag)
+              if not tag or tag == keepsha:
+                  continue
+              if tag in deployed:
+                  # Deleting this is what caused the 2026-09-16 outage.
+                  print(f"::notice::keeping {tag} — a container is deployed from it", file=sys.stderr)
+                  continue
+              print(tag)
           PY
           )
 

@@ -11,6 +11,7 @@
  * the bearer check and the 404 fallthrough are the security-relevant parts.
  */
 
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { connect } from 'node:net'
 import type { AddressInfo } from 'node:net'
@@ -19,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { server as mswServer } from '../../mocks/server'
 // @ts-expect-error - .mjs module has no type declarations; behaviour is asserted below.
-import { createMigrateStatusListener } from '../migrate-status.mjs'
+import { createIdleHealthListener, createMigrateStatusListener } from '../migrate-status.mjs'
 
 const TOKEN = 'a'.repeat(64)
 
@@ -244,5 +245,88 @@ describe('createMigrateStatusListener', () => {
     })
 
     expect(response.status).toBe(405)
+  })
+})
+
+/**
+ * The idle listener exists because a permanent migrate container whose credentials
+ * have been stripped used to `exit(1)` and crash-loop — revision
+ * `budget-planner-migrator-00005`, four restarts, a CrashLoopBackOff email from the
+ * platform, 2026-09-16. Nothing was actually wrong; the container just had no way
+ * to say "nothing to do".
+ */
+describe('createIdleHealthListener (unconfigured migrate container)', () => {
+  it('answers the health path so the revision goes Ready instead of crash-looping', async () => {
+    const server = createServer(createIdleHealthListener({}))
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const { port } = server.address() as AddressInfo
+
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`)
+
+    expect(response.status).toBe(200)
+    // `state: idle` so a human reading a probe response can tell the two modes apart.
+    await expect(response.json()).resolves.toEqual({ status: 'ok', state: 'idle' })
+  })
+
+  it('exposes NO status endpoint — there is no token to guard one with', async () => {
+    const server = createServer(createIdleHealthListener({}))
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const { port } = server.address() as AddressInfo
+
+    for (const path of ['/migrate-status', '/', '/api/ready']) {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`)
+      expect(response.status, `expected 404 for ${path}`).toBe(404)
+      // Crucially it must not look like a verdict: the pipeline's poll must fail,
+      // not read a success from a container that did nothing.
+      expect(await response.text()).not.toMatch(/succeeded|state/)
+    }
+  })
+
+  it('honours a custom health path', async () => {
+    const server = createServer(createIdleHealthListener({ healthPath: '/hz' }))
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const { port } = server.address() as AddressInfo
+
+    expect((await fetch(`http://127.0.0.1:${port}/hz`)).status).toBe(200)
+    expect((await fetch(`http://127.0.0.1:${port}/healthz`)).status).toBe(404)
+  })
+
+  it('survives a malformed request target, like the configured listener', async () => {
+    const server = createServer(createIdleHealthListener({}))
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const { port } = server.address() as AddressInfo
+
+    const response = await rawRequest(`http://127.0.0.1:${port}`, 'GET http://a:99999/ HTTP/1.1')
+    expect(response.status).toBe(404)
+
+    expect((await fetch(`http://127.0.0.1:${port}/healthz`)).status).toBe(200)
+  })
+})
+
+/**
+ * The entrypoint must choose idle vs configured as a unit: a PARTIAL configuration
+ * is a mistake, not a configuration, and migrating on it would be worse than idling.
+ */
+describe('migrate-entry idle gating (source-level)', () => {
+  const entry = readFileSync(new URL('../../../migrate-entry.mjs', import.meta.url), 'utf8')
+
+  it('no longer exits when configuration is missing', () => {
+    expect(entry).not.toMatch(/Refusing to start the migrate container/)
+    expect(entry).toMatch(/IDLE — not configured to migrate/)
+  })
+
+  it('requires all three values together before migrating', () => {
+    expect(entry).toMatch(/if \(!token \|\| !databaseUrl \|\| !runId\)/)
+  })
+
+  it('serves the idle listener on that branch, and never runs a migration there', () => {
+    const idleBranch =
+      entry.split('if (!token || !databaseUrl || !runId) {')[1]?.split('} else {')[0] ?? ''
+    expect(idleBranch).toMatch(/createIdleHealthListener/)
+    expect(idleBranch).not.toMatch(/runMigration/)
   })
 })

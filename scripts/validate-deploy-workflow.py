@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover
 CI = ".github/workflows/ci.yml"
 DEPLOY = ".github/workflows/deploy.yml"
 ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
+DEPLOYED_TAGS_HELPER = ".github/scripts/rapids_deployed_tags.py"
 
 failures: list[str] = []
 checked = 0
@@ -449,6 +450,31 @@ def main() -> int:
 
         check(prune_at < push_at, "tags are pruned BEFORE the push, so a full registry self-heals")
         check("GITHUB_SHA" in prune, "the prune refuses to delete this run's own tag")
+        # ⚠️ THE OUTAGE OF 2026-09-16. The prune deleted the tag `budget-planner-web`
+        # was running; a deployed Knative revision is pinned to that exact image, so
+        # the site died on its next cold start with `manifest unknown`. Sparing this
+        # run's own SHA was never enough — what matters is what is RUNNING.
+        check("rapids_deployed_tags.py" in prune,
+              "the prune asks which tags are currently deployed")
+        check("tag in deployed" in prune,
+              "a tag a container is deployed from is never pruned, whatever its age")
+        check("skipping the prune entirely" in prune,
+              "if the deployed tags cannot be read, the prune does nothing (fails closed)")
+        try:
+            with open(DEPLOYED_TAGS_HELPER, encoding="utf-8") as fh:
+                tags_src = fh.read()
+        except OSError:
+            tags_src = ""
+        check(bool(tags_src), "the deployed-tags helper exists")
+        if tags_src:
+            tags_body = tags_src.split('"""')[-1] if tags_src.count('"""') >= 2 else tags_src
+            # Unlike the other helpers, this one's exit status IS the signal:
+            # "could not tell" must be distinguishable from "nothing is deployed".
+            check("return None" in tags_body,
+                  "an unreadable listing returns None rather than an empty list")
+            check("return 1" in tags_body, "and exits non-zero so the caller skips pruning")
+            check("environment_variables" not in tags_body,
+                  "the helper never touches the env map it is reading past")
         check("--force" in prune,
               "rm-tag is forced (an interactive prompt would hang the runner)")
         check(build_steps[prune_at].get("continue-on-error") is True,

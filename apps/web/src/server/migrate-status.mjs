@@ -59,6 +59,55 @@ function readBearer(header) {
 }
 
 /**
+ * A health endpoint and nothing else, for a migrate container with no work to do.
+ *
+ * ⚠️ THIS EXISTS BECAUSE OF A CRASH LOOP. 2026-09-16.
+ *
+ * The migrate container is permanent, and between releases its credentials are
+ * stripped (`--rm-env`) while `APP_ENTRYPOINT=migrate` stays set. The entrypoint
+ * used to `process.exit(1)` when `MIGRATE_STATUS_TOKEN` was missing — a sound
+ * instinct for a container that is *supposed* to migrate, but wrong for one that
+ * is deliberately idle: Knative started revision `budget-planner-migrator-00005`,
+ * it exited 1 four times, and the platform reported `CrashLoopBackOff` and emailed
+ * a provisioning failure. The container was doing exactly what it was told; the
+ * design just had no way to say "nothing to do right now".
+ *
+ * So an unconfigured migrate container now STARTS and stays healthy, and serves
+ * NO status endpoint at all — there is no token to guard one with, and a status
+ * endpoint with nothing to report has nothing to gain by existing. It never
+ * migrates: that still requires a full, explicit configuration.
+ *
+ * Safety is unchanged. The pipeline only ever accepts a verdict that carries its
+ * own run id; an idle container returns 404 there, the poll times out, and the
+ * release fails closed — which is the same outcome the old `exit(1)` produced,
+ * minus the crash loop and the false alarm.
+ *
+ * @param {object} options
+ * @param {string} [options.healthPath]
+ * @returns {import('node:http').RequestListener}
+ */
+export function createIdleHealthListener({ healthPath = DEFAULT_HEALTH_PATH } = {}) {
+  return (request, response) => {
+    let pathname
+    try {
+      ;({ pathname } = new URL(request.url ?? '/', 'http://container.invalid'))
+    } catch {
+      pathname = ''
+    }
+
+    const body = JSON.stringify(
+      pathname === healthPath ? { status: 'ok', state: 'idle' } : { error: 'not_found' }
+    )
+    response.writeHead(pathname === healthPath ? 200 : 404, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': Buffer.byteLength(body),
+      'cache-control': 'no-store',
+    })
+    response.end(body)
+  }
+}
+
+/**
  * @param {object} options
  * @param {string | undefined} options.token per-run secret, minted by the pipeline
  * @param {() => Record<string, unknown>} options.readState current verdict snapshot

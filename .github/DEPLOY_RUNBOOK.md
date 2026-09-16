@@ -460,6 +460,27 @@ that follows has room — the pipeline self-heals. A prune failure only warns; i
 there was genuinely no room the push then fails loudly with
 `denied: Storage quota exceeded`.
 
+> ⚠️ **The prune never deletes a tag a container is deployed from — whatever its
+> age.** Added 2026-09-16, after it took the site down.
+>
+> A deployed Knative revision is pinned to the exact image it was created from. On
+> 2026-09-15 a burst of deploy attempts pushed several tags in quick succession,
+> pushing the tag `budget-planner-web` was *running* out of the keep-window, and the
+> prune deleted it. The container kept serving until it scaled to zero, then could
+> not start again (`manifest unknown`). The site was down from ~05:28 CEST until it
+> was redeployed by hand onto a surviving tag.
+>
+> The step now reads the deployed tags first
+> (`.github/scripts/rapids_deployed_tags.py`) and excludes them. **If it cannot
+> determine them, it prunes nothing** — a registry that grows is a bounded, visible
+> problem; deleting the image your site runs is an outage. `REGISTRY_KEEP_TAGS` was
+> deliberately *not* raised to fix this: that moves the cliff rather than removing
+> it, and a longer burst walks off the new one.
+>
+> DanubeData are adding a server-side guard too (the registry will refuse to delete
+> an in-use tag, `409`, overridable with `--delete-in-use`; CLI 1.2.1+). Ours does
+> not depend on it.
+
 ### When you still need to prune by hand
 
 - The prune step keeps failing (a CLI shape change, an auth problem) and the
