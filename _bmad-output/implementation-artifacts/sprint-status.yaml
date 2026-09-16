@@ -292,7 +292,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-15
+last_updated: 2026-09-16
 baseline_commit: 412c94d  # 2026-08-10 reset to HEAD at epic-30 close (was 46396f0, stale by many commits). Tree is clean and all epic-30 work is committed, so this is a true baseline for epic-31 stories.
 project: budget-planner
 project_key: NOKEY
@@ -719,7 +719,7 @@ development_status:
 
   # Epic 54: Profiles You Can Trust and Control (FR77-81, UX-DR59-60)
   epic-54: in-progress
-  54-1-let-users-edit-an-existing-profiles-name-description-and-currency: backlog
+  54-1-let-users-edit-an-existing-profiles-name-description-and-currency: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-16 (3-layer, Fable), UNCOMMITTED: 7 patches applied (MED: editing the un-synced placeholder profile in a paid session is now refused; MED: dialog keyed by profile id; unchanged-Save baseline captured at open), 3 deferred, 10 dismissed. Post-review: web 2686/200 (Node 26 + 20), tsc 0, Biome 0 (560), e2e 359/4. PRIOR: 🔧 DEV COMPLETE 2026-09-16 (opus-5), UNCOMMITTED: web 2680/200 (Node 26 + Node 20), tsc 0, Biome 0 (560), e2e 359/4; 6 mutation arms red. PRIOR: 🆕 CREATED 2026-09-16 (opus-5), RESCOPED same day by Lucas: currency field DROPPED from both create+edit dialogs (display-only on the card row 54.5 removes; data model untouched, create stamps NONE); create-dialog uniqueness bug (excluded active profile) FIXED here via shared validator. Clearing description must write "" or sync keeps the old value.
   54-2-let-users-choose-a-profiles-icon: backlog  # depends on 54.1 (extends its Edit dialog); schema/sync-touching
   54-3-make-the-profile-switcher-the-one-way-to-switch-profiles: backlog
   54-4-stop-showing-a-different-profiles-data-after-switching: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-15 (3-layer, Fable): HIGH free-tier reload data loss found + fixed (profileStore persists after rehydrate); 6 patches applied, 3 deferred (incl. lapsed-premium lock), 9 dismissed; post-review web 2593/195 (Node 26+20), e2e 359/4; UNCOMMITTED.  PRIOR: DEV COMPLETE 2026-09-15 (opus-5): web 2587/194 (Node 26 flagged + Node 20), core 864, tsc 0/0, Biome 0, e2e 359/4; M1-M5 recorded; DEV STARTED 2026-09-15; STORY FILE CREATED 2026-09-15 (baseline `1e760f7`); epic premises corrected — rows carry NO profileId (stamping is required work) and totals hooks must be scoped too; highest-severity story in this epic — see deferred-work.md:263

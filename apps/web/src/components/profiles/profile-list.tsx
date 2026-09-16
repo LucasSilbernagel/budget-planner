@@ -18,6 +18,7 @@ import type { ClientProfile } from '@/hooks/useActiveProfile'
 import { profileColor, profileIcon } from '@/lib/profile-appearance'
 import { canonicalizeCurrency } from '@budget-planner/core'
 import { useState } from 'react'
+import { EditProfileDialog } from './edit-profile'
 
 // Profile color options for visual distinction
 // Profile icon options (simple SVG icons)
@@ -45,6 +46,8 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   const { deleteProfile } = useProfileManager()
   const hasMultipleProfiles = useHasMultipleProfiles()
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // The profile whose Edit dialog is open (story 54.1) — any profile, not only the active one.
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
 
   // Handle profile deletion
   const handleDelete = async (profileId: string) => {
@@ -95,11 +98,23 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
               isActive={profile.id === activeProfileId}
               isDeleting={deletingId === profile.id}
               onDelete={() => handleDelete(profile.id)}
+              onEdit={() => setEditingProfileId(profile.id)}
               color={profileColor(profile.id)}
               icon={profileIcon(profile.id)}
             />
           ))}
         </div>
+      )}
+
+      {editingProfileId && (
+        <EditProfileDialog
+          // Keyed so switching straight from one profile to another re-seeds the
+          // form. `Modal` does not inert the background, so another card's Edit
+          // stays reachable while a dialog is open (code review 54.1).
+          key={editingProfileId}
+          profileId={editingProfileId}
+          onClose={() => setEditingProfileId(null)}
+        />
       )}
 
       {/* Multiple profiles notice */}
@@ -121,11 +136,20 @@ interface ProfileCardProps {
   isActive: boolean
   isDeleting: boolean
   onDelete: () => void
+  onEdit: () => void
   color: string
   icon: string
 }
 
-function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: ProfileCardProps) {
+function ProfileCard({
+  profile,
+  isActive,
+  isDeleting,
+  onDelete,
+  onEdit,
+  color,
+  icon,
+}: ProfileCardProps) {
   const { switchToProfile } = useProfileSwitcher()
   const hasMultipleProfiles = useHasMultipleProfiles()
 
@@ -201,6 +225,18 @@ function ProfileCard({ profile, isActive, isDeleting, onDelete, color, icon }: P
             Switch to
           </button>
         )}
+
+        {/* Edit button - every profile, including the default and a lone one (story 54.1).
+            The profile's name is in the accessible name so several cards' Edit
+            buttons are distinguishable; the visible "Edit" is contained in it. */}
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${profile.name}`}
+          className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
+        >
+          Edit
+        </button>
 
         {/* Delete button - only for non-default, non-last profiles */}
         {!profile.isDefault && hasMultipleProfiles && (

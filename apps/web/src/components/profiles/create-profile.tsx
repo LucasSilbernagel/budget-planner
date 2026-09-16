@@ -8,57 +8,28 @@
  * State Management: Zustand via useProfileManager hook
  */
 
-import { useActiveProfileId, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
-import { canonicalizeCurrency, currencyDisplayLabel } from '@budget-planner/core'
+import { useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
 import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
+import { EMPTY_PROFILE_FORM, type ProfileFormState, validateProfileForm } from './profile-form'
 
-// Available currency options.
-// The dollar family CAD/AUD render identically to USD via the app's formatting
-// path (story 8-2), so they are dropped as redundant — a single USD entry stands
-// in for the whole cluster. SEK/NZD are kept: they format distinctly (kr / NZ$)
-// and are not part of the consolidated dollar cluster.
-//
-// Labels use the shared, nationality-neutral symbol-first `currencyDisplayLabel`
-// (story 14-1 / Epic 22) so this picker matches the Settings currency picker and
-// no national name ("US Dollar", "New Zealand Dollar") surfaces now that `$` is
-// the app default. Outputs: USD → "$", EUR → "€", GBP → "£", JPY → "¥ JPY",
-// CNY → "¥ CNY" (shared-glyph suffix), CHF → "CHF". SEK / NZD have no symbol in
-// core so they render as their bare ISO code ("SEK" / "NZD") — canonical and
-// leak-free (not a national-dollar label). 'NONE' keeps a semantic label: it is
-// the currency-less sentinel, not a symbol.
-const CURRENCY_OPTIONS = ['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CNY', 'SEK', 'NZD'].map(
-  (value) => ({
-    value,
-    label: value === 'NONE' ? 'No Currency' : currencyDisplayLabel(value),
-  })
-)
+// ⚠️ No currency field (story 54.1, Lucas 2026-09-16). The picker this dialog
+// carried since story 8-2 was removed: a profile's currency is displayed nowhere
+// but the card row story 54.5 deletes, so choosing one had no effect. New profiles
+// are created with `'NONE'`, which was the picker's default.
 
 interface CreateProfileDialogProps {
   onClose: () => void
 }
 
-interface FormState {
-  name: string
-  description: string
-  currency: string
-}
-
-const INITIAL_FORM: FormState = {
-  name: '',
-  description: '',
-  currency: 'NONE',
-}
-
 export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
-  const [form, setForm] = useState<FormState>(INITIAL_FORM)
+  const [form, setForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
 
   const { createProfile } = useProfileManager()
   const profiles = useProfiles()
-  const activeProfileId = useActiveProfileId()
 
   // Auto-focus the name field on mount
   useEffect(() => {
@@ -68,30 +39,16 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
   // Reset form when dialog opens (mount)
   useEffect(() => {
-    setForm(INITIAL_FORM)
+    setForm(EMPTY_PROFILE_FORM)
     setErrors({})
     setSuccess(false)
     setIsSubmitting(false)
   }, [])
 
-  // Form validation
+  // Form validation. `null`: a new profile has no id, so every existing name
+  // counts — including the active profile's (story 54.1).
   const validate = (): boolean => {
-    const newErrors: Record<string, string> = {}
-
-    // Name validation
-    if (!form.name.trim()) {
-      newErrors['name'] = 'Profile name is required'
-    } else if (form.name.length > 255) {
-      newErrors['name'] = 'Profile name must be 255 characters or less'
-    } else if (profiles.some((p) => p.name === form.name && p.id !== activeProfileId)) {
-      newErrors['name'] = 'A profile with this name already exists'
-    }
-
-    // Description validation
-    if (form.description && form.description.length > 500) {
-      newErrors['description'] = 'Description must be 500 characters or less'
-    }
-
+    const newErrors = validateProfileForm(form, profiles, null)
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -111,9 +68,9 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
       createProfile({
         ...form,
-        // Never persist a consolidated code (story 8-2) — store the canonical
-        // representative so profiles stay consistent with the shrunk selector.
-        currency: canonicalizeCurrency(form.currency),
+        // No currency field any more (story 54.1): new profiles carry the
+        // currency-less sentinel, the former picker's default.
+        currency: 'NONE',
         userId,
         // ⚠️ Required by `ClientProfile`, and it was never supplied — so every
         // profile created through this form persisted `isDefault: undefined`.
@@ -140,7 +97,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
   }
 
   // Handle input change
-  const handleChange = (field: keyof FormState, value: string) => {
+  const handleChange = (field: keyof ProfileFormState, value: string) => {
     setForm({ ...form, [field]: value })
 
     // Clear error for this field
@@ -260,28 +217,6 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
                   {errors['description']}
                 </p>
               )}
-            </div>
-
-            {/* Currency field */}
-            <div>
-              <label
-                htmlFor="profile-currency"
-                className="block text-sm font-medium text-label mb-1"
-              >
-                Currency
-              </label>
-              <select
-                id="profile-currency"
-                value={form.currency}
-                onChange={(e) => handleChange('currency', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              >
-                {CURRENCY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
             </div>
 
             {/* Info message */}
