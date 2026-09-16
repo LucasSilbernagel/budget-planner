@@ -58,6 +58,19 @@ function stubConfigFetch(config: unknown) {
   }) as typeof global.fetch
 }
 
+/**
+ * Both radios render from the very first paint but stay `disabled` until
+ * `/api/paddle/checkout-config` settles, so `findByRole` alone resolves
+ * against the PRE-config render. Any assertion about `disabled`, focus or
+ * selection is a coin flip on fetch timing unless it waits for the
+ * post-config state first (this is what failed in CI on 2026-09-16).
+ */
+async function findEnabledRadio(name: RegExp): Promise<HTMLElement> {
+  const radio = await screen.findByRole('radio', { name })
+  await waitFor(() => expect(radio).not.toBeDisabled())
+  return radio
+}
+
 beforeEach(() => {
   resetPaddleInstanceForTests()
   checkoutOpen.mockReset()
@@ -139,6 +152,9 @@ describe('PremiumCheckoutButton — signed out', () => {
       </SessionSeedProvider>
     )
 
+    // Checkout can only open once the config fetch has landed, so wait for
+    // the configured (enabled) radiogroup before clicking.
+    await findEnabledRadio(/^Annual/)
     const button = await screen.findByRole('button', { name: 'Get Premium' })
     await user.click(button)
 
@@ -171,6 +187,9 @@ describe('PremiumCheckoutButton — signed in', () => {
       </SessionSeedProvider>
     )
 
+    // Checkout can only open once the config fetch has landed, so wait for
+    // the configured (enabled) radiogroup before clicking.
+    await findEnabledRadio(/^Annual/)
     const button = await screen.findByRole('button', { name: 'Get Premium' })
     await user.click(button)
 
@@ -202,7 +221,7 @@ describe('PremiumCheckoutButton — signed in', () => {
       </SessionSeedProvider>
     )
 
-    await user.click(await screen.findByRole('radio', { name: /^Lifetime/ }))
+    await user.click(await findEnabledRadio(/^Lifetime/))
     await user.click(await screen.findByRole('button', { name: 'Get Premium' }))
 
     await waitFor(() => expect(checkoutOpen).toHaveBeenCalledTimes(1))
@@ -337,7 +356,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
       </SessionSeedProvider>
     )
 
-    expect(await screen.findByRole('radio', { name: /^Annual/ })).not.toBeDisabled()
+    await findEnabledRadio(/^Annual/)
     expect(screen.getByRole('radio', { name: /^Lifetime/ })).toBeDisabled()
   })
 
@@ -380,7 +399,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
       </SessionSeedProvider>
     )
 
-    const annual = await screen.findByRole('radio', { name: /^Annual/ })
+    const annual = await findEnabledRadio(/^Annual/)
     const lifetime = screen.getByRole('radio', { name: /^Lifetime/ })
     expect(annual).toHaveAttribute('tabindex', '0')
     expect(lifetime).toHaveAttribute('tabindex', '-1')
@@ -397,7 +416,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
       </SessionSeedProvider>
     )
 
-    const annual = await screen.findByRole('radio', { name: /^Annual/ })
+    const annual = await findEnabledRadio(/^Annual/)
     annual.focus()
     await user.keyboard('{ArrowRight}')
 
@@ -417,7 +436,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
       </SessionSeedProvider>
     )
 
-    const lifetime = await screen.findByRole('radio', { name: /^Lifetime/ })
+    const lifetime = await findEnabledRadio(/^Lifetime/)
     lifetime.focus()
     await user.keyboard('{ArrowRight}')
 
@@ -450,7 +469,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
       </SessionSeedProvider>
     )
 
-    const annual = await screen.findByRole('radio', { name: /^Annual/ })
+    const annual = await findEnabledRadio(/^Annual/)
     const lifetime = screen.getByRole('radio', { name: /^Lifetime/ })
     const annualFocusSpy = vi.spyOn(annual, 'focus')
     const lifetimeFocusSpy = vi.spyOn(lifetime, 'focus')
