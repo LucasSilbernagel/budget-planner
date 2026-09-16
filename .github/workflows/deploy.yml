@@ -639,7 +639,7 @@ jobs:
       # leftover from a crashed run is reused and torn down rather than
       # accumulating one orphan per failure — each of which would hold a
       # DATABASE_URL in its environment.
-      MIGRATE_CONTAINER: budget-planner-migrate
+      MIGRATE_CONTAINER: budget-planner-migrator
       # In-cluster writer endpoint. Static now that no public endpoint is ever
       # opened, so there is nothing to discover at run time.
       # ⚠️ Must stay in sync with EU_DB_INTERNAL_HOSTS in packages/db/src/client.ts:
@@ -738,46 +738,27 @@ jobs:
           echo "url=${database_url}" >> "$GITHUB_OUTPUT"
           echo "::notice::Migrating over internal DNS (${DB_INTERNAL_HOST}:${DB_INTERNAL_PORT}). No public endpoint is opened."
 
-      # ⚠️ PRE-CLEAN, added by code review 2026-09-15 (Lucas's call). A container
-      # left behind by a crashed earlier run is NOT inert: `rapids update --env`
-      # MERGES, so `apply` below would inherit that run's `APP_ENTRYPOINT=migrate`,
-      # its `DATABASE_URL` and its status token. Knative also routes to the latest
-      # READY revision, so the first poll request could activate that stale pod and
-      # run a SECOND `drizzle-kit migrate` concurrently with this run's. Deleting
-      # first makes the start state unambiguous instead of depending on what
-      # `--min-scale 0` does about `initial-scale`, which is a live-platform
-      # question this pipeline should not be resting a premise on (AC-6 observes it).
-      - name: Remove any leftover migrate container
-        env:
-          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
-          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
-        run: |
-          set -uo pipefail
-          danube rapids rm "${MIGRATE_CONTAINER}" --force \
-            || echo "No leftover container to remove (or rm returned non-zero); verifying state."
-
-          for i in $(seq 1 12); do
-            listing=$(danube --json rapids ls 2>/dev/null) || listing=""
-            presence=$(printf '%s' "${listing}" | python3 .github/scripts/rapids_presence.py "${MIGRATE_CONTAINER}")
-            if [ "${presence}" = "absent" ]; then
-              echo "::notice::No leftover migrate container. Starting from a clean state."
-              exit 0
-            fi
-            sleep 5
-          done
-
-          echo "::error::${MIGRATE_CONTAINER} is still ${presence} after 60s. Refusing to start a migration on top of it."
-          echo "Delete it by hand: danube rapids rm ${MIGRATE_CONTAINER} --force"
-          exit 1
-
-      # Create the container SHAPE only, at min-scale 0. This ordering is forced by
-      # the CLI: `apply`/`create` cannot set environment variables and `update` can,
-      # so a container brought up here would boot in migrate mode with no
-      # DATABASE_URL.
+      # ⚠️ CREATE-OR-UPDATE, NEVER DELETE. Rewritten 2026-09-16 after two lost runs.
       #
-      # No `--wait`: with min-scale 0 there is deliberately nothing to become
-      # ready, and waiting for readiness that is not coming is how a job hangs.
-      - name: Create the migrate container (scaled to zero)
+      # This job used to delete the container before creating it, and delete it
+      # again afterwards. That is what DanubeData's platform cannot survive:
+      # deleting a Rapids container leaves its config behind in their GitOps repo
+      # as untracked files, so the NEXT create of the same name aborts with
+      # "untracked working tree files would be overwritten by merge" and
+      # provisioning fails. It cost runs 35042874267 and its successor.
+      #
+      # So the container is now PERMANENT and idle at min-scale 0 between runs.
+      # `apply` is create-or-update, so the first run creates it and every later
+      # run is a no-op on an unchanged spec — no churn for the platform to trip on.
+      #
+      # The property deletion used to provide — no credentials sitting around
+      # between releases — is provided instead by the teardown step below, which
+      # strips them with `--rm-env` and VERIFIES they are gone.
+      #
+      # The name is deliberately NOT `budget-planner-migrate`: that name's orphaned
+      # files are still in DanubeData's repo, so reusing it would fail on the very
+      # first create until their support clears them.
+      - name: Ensure the migrate container exists (idle)
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
           DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
@@ -797,19 +778,22 @@ jobs:
             --min-scale 0 \
             --max-scale 1 \
             --idempotency-key "${IDEMPOTENCY_KEY}"
+          echo "::notice::${MIGRATE_CONTAINER} is present at this commit's image, idle at min-scale 0."
 
       # ⚠️ NEVER add `--json` to this step. `rapids update --json` prints the whole
       # container object, and that object carries `environment_variables` — i.e.
-      # it would print DATABASE_URL, password and all, into the run log. The human
-      # output path prints only the container name. Every value below is masked
-      # before it is passed, so a future `--json` slip is redacted rather than
-      # leaked, but the rule stands on its own.
+      # it would print DATABASE_URL, password and all, into the run log. (The same
+      # is true of `rapids ls --json`, confirmed against the live API, which is why
+      # every step that reads it pipes straight into a script that emits nothing
+      # but a single word or a URL.) Every value below is masked before it is
+      # passed, so a future `--json` slip is redacted rather than leaked, but the
+      # rule stands on its own.
       #
       # MIGRATE_RUN_ID binds the container to THIS run: the verdict carries it back
       # and the poll below refuses a verdict that does not match, so a stale or
-      # foreign container can never be mistaken for this migration (code review
-      # 2026-09-15). The pre-clean step above makes that unlikely; this makes it
-      # detectable rather than merely unlikely.
+      # foreign container can never be mistaken for this migration.
+      #
+      # Scaling 0 -> 1 is what actually starts the migration.
       - name: Inject credentials and start the migration
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
@@ -832,9 +816,8 @@ jobs:
           echo "::notice::Migrate container started in-cluster. Polling for a terminal verdict."
 
       # Read the container's public URL out of the API. `--json` is piped straight
-      # into python and ONLY the url field is ever printed — the same discipline
-      # the old endpoint-discovery step used, and necessary here because the raw
-      # rows carry environment_variables.
+      # into python and ONLY the url field is ever printed — necessary because the
+      # raw rows carry environment_variables with their values.
       - name: Resolve the migrate container URL
         id: url
         env:
@@ -844,8 +827,8 @@ jobs:
           # ⚠️ `set -e` is deliberately NOT used here. With it, a single transient
           # CLI/API failure aborted this step on the first iteration and the retry
           # loop only ever protected against an EMPTY url — i.e. it guarded the one
-          # failure that was least likely (code review 2026-09-15). Each attempt now
-          # absorbs its own failure and the loop is what decides.
+          # failure that was least likely. Each attempt now absorbs its own failure
+          # and the loop is what decides.
           set -uo pipefail
           url=""
           for i in $(seq 1 12); do
@@ -868,7 +851,7 @@ jobs:
           done
 
           if [ -z "${url}" ]; then
-            echo "::error::${MIGRATE_CONTAINER} never reported a URL within 60s of being created."
+            echo "::error::${MIGRATE_CONTAINER} never reported a URL within 60s."
             exit 1
           fi
           echo "::notice::Migrate container URL: ${url}"
@@ -893,12 +876,6 @@ jobs:
           deadline=$(( SECONDS + 600 ))
           state="(never reached)"
           body=""
-          # ⚠️ Keep the last transport error. The previous version sent curl's
-          # stderr to /dev/null, so a 600s timeout reported "(never reached)" and
-          # nothing else — 401, 503, DNS failure and TLS failure were
-          # indistinguishable. An earlier step in this same file had already been
-          # rewritten once for exactly that fault; this is not a mistake worth
-          # making twice (code review 2026-09-15).
           last_error="(no attempt completed)"
 
           while [ "${SECONDS}" -lt "${deadline}" ]; do
@@ -907,10 +884,9 @@ jobs:
             # Without -L, curl returns exit 0 and an EMPTY BODY for that redirect —
             # so the poll read "unparseable" forever and the job hung until its
             # 600s deadline while the migration had in fact already succeeded
-            # (live run 35042874267-1, 2026-09-16).
-            #
-            # The `-n "${body}"` guard below is the second half of that lesson: a
-            # successful curl with nothing in it is not a verdict.
+            # (live run 35042874267-1, 2026-09-16). The `-n "${body}"` guard is the
+            # second half of that lesson: a successful curl with nothing in it is
+            # not a verdict.
             if body=$(curl -fsSL --max-time 15 \
                 -H "Authorization: Bearer ${STATUS_TOKEN}" \
                 "${CONTAINER_URL%/}/migrate-status" 2>/tmp/curl-err) && [ -n "${body}" ]; then
@@ -968,56 +944,61 @@ jobs:
           danube rapids logs "${MIGRATE_CONTAINER}" --since 30m --limit 200 || true
           exit 1
 
-      # `always()` is load-bearing, exactly as the window-close step it replaces
-      # was: this MUST run when the migration fails, when the verdict times out,
-      # when a step errors, and when the job is cancelled. A leftover migrate
-      # container is publicly routable AND holds DATABASE_URL in its environment,
-      # so leaving one behind is a worse outcome than a failed migration. The step
-      # therefore also FAILS THE JOB if the deletion does not take — never
-      # `continue-on-error`, never a bare `|| true` on the state check.
+      # `always()` is load-bearing, exactly as the window-close step it descends
+      # from was: this MUST run when the migration fails, when the verdict times
+      # out, when a step errors, and when the job is cancelled.
       #
-      # ⚠️ The state check reads a WORD (`present`/`absent`/`error`), not an exit
-      # code. It used to `sys.exit(0 if present else 1)`, which gave "absent" and
-      # "could not read the listing at all" the SAME exit code — so an API error
-      # printed "Migrate container removed" and exited 0 with the container still
-      # alive. Two review layers found that independently (2026-09-15); it is the
-      # one failure this step exists to prevent. `error` now fails the job.
+      # ⚠️ This step REPLACES a `rapids rm`. The container is no longer deleted —
+      # deleting it is what left orphaned config in DanubeData's GitOps repo and
+      # broke the next two provisions. Instead it is scaled back to zero (so no pod
+      # runs and it costs ~nothing) and its credentials are STRIPPED, which is the
+      # property deletion was really there for.
       #
-      # The loop also gives an asynchronous delete time to take effect, so a
-      # still-terminating container does not fail a job whose migration succeeded.
-      - name: Tear down the migrate container
+      # The strip is then VERIFIED, because "the container holds no credentials
+      # between releases" is a safety claim and an unverified safety claim is just
+      # a hope. The check reads a WORD (`clean`/`dirty:KEYS`/`error`) rather than an
+      # exit code, for the same reason the presence check does: an exit code cannot
+      # distinguish "they are gone" from "we could not tell", and an earlier version
+      # of this job announced success on exactly that confusion.
+      - name: Scale down and strip the migrate container's credentials
         if: ${{ always() }}
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
           DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
         run: |
           set -uo pipefail
-          # `always()` means this also runs when the job failed BEFORE the
-          # container was created, where `rm` on a non-existent container returns
-          # non-zero. So the exit code is advisory and the STATE CHECK below
-          # decides — otherwise a run that failed early would fail again here and
-          # train everyone to ignore this step.
-          danube rapids rm "${MIGRATE_CONTAINER}" --force \
-            || echo "rapids rm returned non-zero; verifying actual state instead"
+          SECRET_KEYS="DATABASE_URL DATABASE_CA_CERT MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID"
 
-          presence="error"
+          # `always()` means this can run before the container ever existed, where
+          # `update` returns non-zero. The exit code is advisory; the STATE CHECK
+          # below decides.
+          # shellcheck disable=SC2086 # SECRET_KEYS is a deliberate word list
+          danube rapids update "${MIGRATE_CONTAINER}" \
+            --rm-env ${SECRET_KEYS} \
+            --min-scale 0 \
+            || echo "rapids update returned non-zero; verifying actual state instead"
+
+          verdict="error"
           for i in $(seq 1 12); do
             listing=$(danube --json rapids ls 2>/dev/null) || listing=""
-            presence=$(printf '%s' "${listing}" | python3 .github/scripts/rapids_presence.py "${MIGRATE_CONTAINER}")
-            if [ "${presence}" = "absent" ]; then
-              echo "::notice::Migrate container removed."
+            # shellcheck disable=SC2086 # SECRET_KEYS is a deliberate word list
+            verdict=$(printf '%s' "${listing}" \
+              | python3 .github/scripts/rapids_env_check.py "${MIGRATE_CONTAINER}" ${SECRET_KEYS}) \
+              || verdict="error"
+            if [ "${verdict}" = "clean" ]; then
+              echo "::notice::Migrate container scaled to zero; credentials stripped."
               exit 0
             fi
             sleep 5
           done
 
-          if [ "${presence}" = "error" ]; then
-            echo "::error::Could not establish whether ${MIGRATE_CONTAINER} still exists — the listing was unreadable."
-            echo "Treating this as STILL PRESENT. A container left behind is publicly routable and holds DATABASE_URL."
+          if [ "${verdict}" = "error" ]; then
+            echo "::error::Could not establish whether ${MIGRATE_CONTAINER} still holds credentials — the listing was unreadable."
+            echo "Treating this as STILL HOLDING them."
           else
-            echo "::error::${MIGRATE_CONTAINER} still exists after 60s."
+            echo "::error::${MIGRATE_CONTAINER} still holds credentials after 60s (${verdict})."
           fi
-          echo "Delete it by hand and confirm: danube rapids rm ${MIGRATE_CONTAINER} --force && danube rapids ls"
+          echo "Strip them by hand: danube rapids update ${MIGRATE_CONTAINER} --rm-env ${SECRET_KEYS} --min-scale 0"
           exit 1
 
   # --- Deploy to Rapids (AC-2/AC-5) ------------------------------------------

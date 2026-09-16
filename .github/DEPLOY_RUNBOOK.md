@@ -76,7 +76,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `DATABASE_MIGRATOR_PASSWORD` | `migrate` job | Password for **`bp_migrator`** (the DDL role). The **only** sensitive piece of the migration connection string — host, port, user and database name are no longer secrets (see the note below). |
 | `DATABASE_CA_CERT` | `migrate` job | **Mandatory, not optional.** The DanubeData chain is self-signed, so without it every connection fails `SELF_SIGNED_CERT_IN_CHAIN` before a statement runs (verified 2026-09-03). Since Story 5.18 the `migrate` job connects at **`verify-full`**: it runs in-cluster, so the host it dials is the name on the certificate and nothing is waived. (Until 2026-09-15 it ran at `verify-ca` over the public endpoint, which the in-cluster-only certificate does not name; `migrate-tls.ts` and `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH` were deleted along with that path.) |
 | `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `push-image` | Registry login for the image push. **`push-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
-| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives the short-lived in-cluster migrate container (`danube rapids apply` / `update` / `ls` / `rm`, §4). **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
+| `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives the in-cluster migrate container (`danube rapids apply` / `update` / `ls`, §4). **Scopes needed: `serverless:read`, `serverless:write`, and `serverless:diagnostics`** (the last only so the failure path's `rapids logs`/`revisions`/`events` produce output). `serverless:delete` is deliberately **not** required — the container is never deleted, only emptied and scaled to zero. **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
 
 > **⚠️ `DATABASE_URL` and `DATABASE_PUBLIC_HOST` are not in this table, and are
 > not coming back.** `DATABASE_PUBLIC_HOST` pinned the public endpoint's
@@ -219,29 +219,59 @@ The `migrate` job:
    (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432`) as
    `bp_migrator`. Nothing is discovered at run time — there is no public endpoint
    to look up.
-2. **Creates the container scaled to zero**
-   (`danube rapids apply --name budget-planner-migrate --min-scale 0`). This
-   ordering is forced by the CLI: `apply`/`create` cannot set environment
-   variables and `update` can, so a container brought up here would boot in
-   migrate mode with no `DATABASE_URL`.
+2. **Ensures the container exists, idle**
+   (`danube rapids apply --name budget-planner-migrator --min-scale 0`).
+   `apply` is create-or-update, so the first run creates it and later runs are a
+   no-op. It is **never deleted** — see "Why it is permanent" below.
 3. **Injects credentials and starts one pod**
    (`danube rapids update … --env APP_ENTRYPOINT=migrate … --min-scale 1`).
+   Scaling 0 → 1 is what starts the migration; `apply` cannot set environment
+   variables and `update` can, which is why it takes two steps.
    ⚠️ **Never add `--json` to this step** — `rapids update --json` prints the
    container object, which carries `environment_variables`, i.e. it would print
-   `DATABASE_URL` into the run log. The validator pins this.
+   `DATABASE_URL` into the run log. The same is true of `rapids ls --json`
+   (confirmed against the live API), which is why every step reading it pipes
+   straight into a script that emits only a single word or a URL. The validator
+   pins this.
 4. **Polls the verdict** at `GET <container-url>/migrate-status` with the bearer
    token, bounded at 600s, and fails on anything that is not an explicit
    `succeeded`.
-5. **Deletes the container** in an `if: always()` step, and **fails the job** if
-   the deletion does not take.
+5. **Scales it back to zero and strips its credentials**
+   (`rapids update --rm-env DATABASE_URL DATABASE_CA_CERT MIGRATE_STATUS_TOKEN
+   MIGRATE_RUN_ID --min-scale 0`) in an `if: always()` step, then **verifies the
+   strip took** and fails the job if it cannot prove it did.
+
+**Why it is permanent (2026-09-16).** The job used to delete the container after
+every run. DanubeData cannot survive that: deleting a Rapids container leaves its
+config behind in their GitOps repo as untracked files, so the **next** create of
+the same name aborts with *"untracked working tree files would be overwritten by
+merge"* and provisioning fails. Two live runs were lost to it before the cause was
+clear. The container is therefore created once and kept, idle at `min-scale 0`
+where it runs nothing and costs ~€0.
+
+The safety property deletion was really providing — *no credentials sitting around
+between releases* — is provided instead by step 5's `--rm-env`, which is verified
+rather than assumed. If anything ever scales the container up outside a release,
+it boots with no `DATABASE_URL` and exits immediately.
+
+⚠️ The name is **`budget-planner-migrator`**, not `budget-planner-migrate`. The
+older name's orphaned files are still in DanubeData's GitOps repo, so reusing it
+fails at create until their support clears them.
 
 **Readiness is not the verdict.** `/healthz` returns 200 as soon as the container
 boots, on purpose. If readiness meant "the migration succeeded", a failed
 migration, a broken image and a crash-loop would all present as the same
 `--wait` timeout. The verdict is reported positively and separately, so those are
-distinguishable. Logs (`danube rapids logs budget-planner-migrate`) are
+distinguishable. Logs (`danube rapids logs budget-planner-migrator`) are
 diagnostics only — the CLI can report them `unavailable`, and a verdict that can
 silently become unreadable is not a verdict.
+
+**Concurrency is handled in the database, not the pipeline.** Knative can and does
+start more than one revision: live run `35042874267-1` ran **two** pods that both
+executed `drizzle-kit migrate` against production. `--min-scale 0` does not prevent
+it. So the migration runs under a PostgreSQL **advisory lock**
+(`packages/db/src/migrate-lock.ts`) covering the preflight and the DDL together; a
+second pod waits, then finds the journal current and applies nothing.
 
 **TLS is `verify-full`, with nothing waived.** In-cluster, the host we dial is the
 name on the certificate. Story 5.17's `verify-ca` hostname waiver
@@ -251,15 +281,13 @@ any migration target that is not an in-cluster writer name, so pointing
 `DATABASE_URL` at a `*.danubedata.ro` endpoint now fails closed rather than
 quietly reopening the retired window.
 
-**Failure recovery.** The container is named `budget-planner-migrate` (fixed, not
-run-scoped) so a leftover from a crashed run is reused and torn down on the next
-run rather than accumulating orphans — each of which would be publicly routable
-*and* hold a `DATABASE_URL` in its environment. If a run dies between step 3 and
-step 5, remove it by hand and confirm it is gone:
+**Failure recovery.** If a run dies between steps 3 and 5, the container is left
+scaled up and holding credentials. Put it back by hand — do **not** delete it:
 
 ```bash
-danube rapids rm budget-planner-migrate --force
-danube rapids ls     # budget-planner-migrate must not be listed
+danube rapids update budget-planner-migrator \
+  --rm-env DATABASE_URL DATABASE_CA_CERT MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID \
+  --min-scale 0
 ```
 
 Re-running a migration is safe: `drizzle-kit migrate` is journal-driven, and the

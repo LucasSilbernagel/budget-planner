@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
 
 CI = ".github/workflows/ci.yml"
 DEPLOY = ".github/workflows/deploy.yml"
-PRESENCE_HELPER = ".github/scripts/rapids_presence.py"
+ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
 
 failures: list[str] = []
 checked = 0
@@ -172,47 +172,38 @@ def main() -> int:
           "the verify-ca hostname waiver is gone (migrations run at verify-full)")
     check("svc.cluster.local" in migrate_block, "the migration targets the in-cluster writer")
 
-    print("\n== the migrate container is started, read, and always removed ==")
-    preclean_i = next(i for i, s in enumerate(steps) if "leftover" in str(s.get("name", "")).lower())
-    apply_i = next(i for i, s in enumerate(steps) if "rapids apply" in s.get("run", ""))
-    update_i = next(i for i, s in enumerate(steps) if "rapids update" in s.get("run", ""))
+    print("\n== the migrate container is started, read, and always left safe ==")
+    ensure_i = next(i for i, s in enumerate(steps) if "rapids apply" in s.get("run", ""))
+    update_i = next(i for i, s in enumerate(steps) if "--min-scale 1" in s.get("run", ""))
     verdict_i = next(i for i, s in enumerate(steps) if "migrate-status" in s.get("run", ""))
-    rm_i = len(steps) - 1
-    # A leftover from a crashed run carries that run's env through `--env` merge
-    # semantics, and Knative can route to it. Delete before creating.
-    check(preclean_i < apply_i, "any leftover container is removed before the new one is created")
-    # `apply`/`create` cannot set env and `update` can, so the container MUST be
-    # created scaled-to-zero and only then given credentials — otherwise it boots
-    # in migrate mode with no DATABASE_URL.
-    check(apply_i < update_i, "the container is created before credentials are injected")
-    check("--min-scale 0" in steps[apply_i]["run"], "it is created scaled to zero")
+    teardown_i = len(steps) - 1
+    teardown_run = steps[teardown_i].get("run", "")
+
+    check(ensure_i < update_i, "the container is ensured before credentials are injected")
+    check("--min-scale 0" in steps[ensure_i]["run"], "it is created idle at min-scale 0")
     check(update_i < verdict_i, "the verdict is read after the migration is started")
-    # The one step that carries DATABASE_URL into the platform. `--json` here
-    # would print the container's environment_variables into the run log.
     check("--json" not in steps[update_i]["run"],
           "the credential-injecting step never uses --json (it would print DATABASE_URL)")
     check("APP_ENTRYPOINT=migrate" in steps[update_i]["run"], "the container runs in migrate mode")
     check("MIGRATE_RUN_ID=" in steps[update_i]["run"],
           "the container is bound to this run, so a stale verdict cannot be accepted")
-    check("rapids rm" in steps[rm_i].get("run", ""), "teardown is the last step")
-    check(str(steps[rm_i].get("if")) == "${{ always() }}",
-          "the migrate container is torn down even on failure or cancellation")
-    check("exit 1" in steps[rm_i]["run"], "a teardown that does not take fails the job")
 
-    # ⚠️ These two replace substring checks that could pass vacuously. The old
-    # verdict check was `'"succeeded"' in run`, which also passes for
-    # `!= "succeeded"` and for a step that merely ECHOES the word — it pinned
-    # nothing about failing closed (code review 2026-09-15).
-    # ⚠️ GitHub runs every `run:` block as `bash -e {0}`. The `-e` is injected by
-    # the runner, and a script CANNOT opt out by leaving it off its own `set` line
-    # — `set -uo pipefail` does not disable it. So any command whose non-zero exit
-    # is MEANINGFUL DATA (`git diff --quiet` returning 1 for "there are changes",
-    # `grep -q`, a helper returning a status) must capture that status instead of
-    # letting it reach the shell as a fatal error.
-    #
-    # This is not hypothetical: run 35041921329 (2026-09-15) died with exit 1 and
-    # no output on the first push that touched a migration path, because
-    # `git diff --quiet ... ; case $?` never reached its `case`.
+    # ⚠️ The container must NEVER be deleted. Deleting a Rapids container leaves
+    # its config orphaned in DanubeData's GitOps repo, and the next create of that
+    # name fails to provision — it cost two live runs (2026-09-16). The safety
+    # property deletion provided is now "credentials stripped", verified below.
+    print("\n== the migrate container is never deleted, only emptied ==")
+    all_migrate_runs = "\n".join((st.get("run", "") or "") for st in steps)
+    check("rapids rm" not in all_migrate_runs,
+          "no step deletes the container (deletion orphans its GitOps config)")
+    check(str(steps[teardown_i].get("if")) == "${{ always() }}",
+          "the container is emptied even on failure or cancellation")
+    check("--rm-env" in teardown_run, "teardown strips the credentials")
+    check("--min-scale 0" in teardown_run, "teardown scales it back to idle")
+    for key in ("DATABASE_URL", "DATABASE_CA_CERT", "MIGRATE_STATUS_TOKEN"):
+        check(key in teardown_run, f"teardown strips {key}")
+    check("exit 1" in teardown_run, "a strip that cannot be verified fails the job")
+
     print("\n== non-zero exit codes that carry MEANING are captured, not fatal ==")
     for name, job in jobs.items():
         for step in job.get("steps", []) or []:
@@ -286,33 +277,35 @@ def main() -> int:
           "the verdict step's last act on a non-success path is to exit non-zero")
     check('"${reported_run}" != "${RUN_ID}"' in verdict_run,
           "a verdict from a container this run did not start is rejected")
-    # The HIGH this file failed to catch the first time: presence must be a WORD,
-    # because an exit code cannot distinguish "absent" from "could not tell".
-    teardown_run = steps[rm_i]["run"]
-    check("rapids_presence.py" in teardown_run and "rapids_presence.py" in steps[preclean_i]["run"],
-          "both presence checks use the three-state helper, not an ambiguous exit code")
-    check('"${presence}" = "absent"' in teardown_run,
-          "teardown succeeds ONLY on an explicit absent")
-    check('"${presence}" = "error"' in teardown_run,
-          "an unreadable listing is reported and fails the job rather than reading as absent")
+    # The HIGH this file failed to catch the first time: the teardown's answer must
+    # be a WORD, because an exit code cannot distinguish "it is safe" from "we could
+    # not tell". That lesson survived the move from delete-the-container to
+    # strip-its-credentials; only the question changed.
+    check("rapids_env_check.py" in teardown_run,
+          "the credential check uses the three-state helper, not an ambiguous exit code")
+    check('"${verdict}" = "clean"' in teardown_run,
+          "teardown succeeds ONLY on an explicit clean")
+    check('"${verdict}" = "error"' in teardown_run,
+          "an unreadable listing is reported and fails the job rather than reading as clean")
     try:
-        with open(PRESENCE_HELPER, encoding="utf-8") as fh:
+        with open(ENV_CHECK_HELPER, encoding="utf-8") as fh:
             helper_src = fh.read()
     except OSError:
         helper_src = ""
-    check(bool(helper_src), "the presence helper exists")
+    check(bool(helper_src), "the credential-check helper exists")
     if helper_src:
-        # Strip the module docstring before asserting absence: it QUOTES the old
-        # `sys.exit(0 if present else 1)` to explain why that shape was wrong, and
-        # a check that matched the explanation would fail on documentation rather
-        # than on code — the same trap the Dockerfile guard in entrypoint.test.ts hit.
+        # Strip the module docstring before asserting: it discusses the shapes it
+        # rejects, and a check that matched the prose would fail on documentation
+        # rather than on code.
         body = helper_src.split('"""')[-1] if helper_src.count('"""') >= 2 else helper_src
-        check("sys.exit(0 if" not in body,
-              "the helper never encodes presence in an exit code")
+        check("sys.exit(0 if" not in body, "the helper never encodes its answer in an exit code")
         check("sys.exit(main())" in body, "the helper's only exit is main()'s return")
-        for word in ("present", "absent", "error"):
-            check(f'return "{word}"' in body or f'print("{word}")' in body,
-                  f"the helper can report {word}")
+        for word in ("clean", "dirty", "error"):
+            check(f'"{word}' in body, f"the helper can report {word}")
+        # It reads rows that contain secret VALUES; it must emit names at most.
+        check("environment_variables" in body, "the helper inspects the env map")
+        check(".values()" not in body and "json.dumps" not in body,
+              "the helper never emits an env VALUE")
 
     print("\n== secrets are referenced, never inlined ==")
     for name, job in jobs.items():

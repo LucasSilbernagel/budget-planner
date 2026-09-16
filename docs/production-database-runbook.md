@@ -313,28 +313,48 @@ that runs and exits is a failed revision. Since the database resolves only on
 in-cluster DNS, the one available execution host is a Rapids container in the
 same cluster and namespace — so that is what the pipeline uses.
 
-**How it works.** The `migrate` job starts the **app image** as a short-lived
-container named `budget-planner-migrate`, in migrate mode:
+**How it works.** The `migrate` job drives a **permanent** container named
+`budget-planner-migrator`, which sits idle at `min-scale 0` between releases:
 
-1. `danube rapids apply --name budget-planner-migrate --min-scale 0` — the
-   container exists, nothing is running. (It must be created scaled to zero:
-   `apply` cannot set environment variables, so a container brought up here would
-   boot with no `DATABASE_URL`.)
+1. `danube rapids apply --name budget-planner-migrator --min-scale 0` — ensures it
+   exists at this commit's image. Create-or-update, so the first run creates it and
+   later runs are a no-op. **It is never deleted.**
 2. `danube rapids update … --env APP_ENTRYPOINT=migrate DATABASE_URL=…
-   DATABASE_CA_CERT=… MIGRATE_STATUS_TOKEN=… --min-scale 1` — one pod starts.
-   `apps/web/migrate-entry.mjs` binds `$PORT`, answers `/healthz`, then runs the
-   preflight and `drizzle-kit migrate`.
-3. The pipeline polls `GET /migrate-status` (bearer token, per-run) until the
-   state is terminal, bounded at 600s, and **fails on anything that is not
-   `succeeded`**.
-4. `danube rapids rm budget-planner-migrate --force` in an `if: always()` step.
+   DATABASE_CA_CERT=… MIGRATE_STATUS_TOKEN=… MIGRATE_RUN_ID=… --min-scale 1` —
+   scaling 0 → 1 starts one pod. `apps/web/migrate-entry.mjs` binds `$PORT`,
+   answers `/healthz`, then runs the locked migration sequence.
+3. The pipeline polls `GET /migrate-status` (bearer token, per-run) until the state
+   is terminal, bounded at 600s, and **fails on anything that is not `succeeded`**.
+4. `danube rapids update … --rm-env DATABASE_URL DATABASE_CA_CERT
+   MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID --min-scale 0` in an `if: always()` step,
+   then a verification that the strip actually took.
+
+> ⚠️ **Never delete the migrate container.** Deleting a Rapids container leaves its
+> config behind in DanubeData's GitOps repo as untracked files, and the next create
+> of that name fails to provision (*"untracked working tree files would be
+> overwritten by merge"*). Two live runs were lost to this on 2026-09-16 before the
+> cause was clear. The container is cheap to keep — idle at `min-scale 0` it runs
+> nothing — and step 4 removes what actually mattered: the credentials.
+>
+> The name is `budget-planner-migrator` because the older `budget-planner-migrate`
+> still has orphaned files in their repo. DanubeData support has been asked to
+> clear them.
+
+**Only one pod migrates, even when Knative starts two.** Live run `35042874267-1`
+started two revisions and **both** ran `drizzle-kit migrate` against production —
+harmless only because nothing was pending. `--min-scale 0` does not prevent a pod
+from booting. The migration therefore runs under a PostgreSQL **advisory lock**
+(`packages/db/src/migrate-lock.ts`, taken by `migrate-lock-cli.ts`) that covers the
+preflight and the DDL in one critical section. A second pod waits for the lock,
+then finds the journal current and applies nothing. The lock is session-level, so
+PostgreSQL releases it automatically if the holding container is killed.
 
 **Readiness is not the verdict.** `/healthz` goes green as soon as the container
-boots. Tying readiness to migration success would make a failed migration, a
-broken image and a crash-loop indistinguishable — all three would look like a
-timeout. The verdict is reported positively instead. `danube rapids logs
-budget-planner-migrate` is for diagnosis only; the CLI can legitimately report
-logs as unavailable, so nothing depends on reading them.
+boots. Tying readiness to migration success would make a failed migration, a broken
+image and a crash-loop indistinguishable — all three would look like a timeout. The
+verdict is reported positively instead. `danube rapids logs budget-planner-migrator`
+is for diagnosis only; the CLI can legitimately report logs as unavailable, so
+nothing depends on reading them.
 
 **No public endpoint is opened at any point.** Confirm with `danube db ls`: the
 instance must show only the `.svc.cluster.local` form, before, during and after a
@@ -348,13 +368,14 @@ release.
 > that is not an in-cluster writer name, so a `*.danubedata.ro` `DATABASE_URL`
 > fails closed rather than quietly reopening the window.
 
-**If a migrate container is ever left behind** — a runner dies between steps 2
-and 4 — remove it by hand and confirm. A leftover is publicly routable *and*
-holds `DATABASE_URL` in its environment:
+**If a run dies mid-migration**, the container may be left scaled up and still
+holding credentials. Put it back by hand — do **not** delete it:
 
 ```
-danube rapids rm budget-planner-migrate --force
-danube rapids ls     # budget-planner-migrate must not be listed
+danube rapids update budget-planner-migrator \
+  --rm-env DATABASE_URL DATABASE_CA_CERT MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID \
+  --min-scale 0
+danube rapids ls     # budget-planner-migrator should show 0 replicas
 ```
 
 The migration connects as **`bp_migrator`** (§1.1) — the DDL-capable role — over
@@ -362,8 +383,8 @@ the CA-validated path added in Story 5.17 AC-4, now at **`verify-full`**: the
 in-cluster name it dials is the name on the certificate, so Story 5.17's
 `verify-ca` hostname waiver was deleted rather than left switched off.
 
-The preflight runs immediately before the migration, inside the same container.
-To run it by hand against a reachable target:
+The preflight runs immediately before the migration, inside the same container and
+under the same lock. To run it by hand against a reachable target:
 
 ```
 pnpm --filter @budget-planner/db db:migrate:preflight
