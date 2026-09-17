@@ -57,9 +57,7 @@ That module is the single source of truth, and the app's surfaces derive their b
 ## Pricing
 
 - **Free:** €0, forever, no account required.
-- **Premium:** €39 per year, or €99 once for a lifetime license.
-
-There is no monthly tier.
+- **Premium:** €5.99 per month, €39 per year (about 46% cheaper than monthly), or €99 once for a lifetime license.
 Prices are shown in euros; at checkout Paddle displays and charges the equivalent in your local currency.
 Paddle acts as the authorised reseller and Merchant of Record, so it is responsible for sales tax and VAT, and receipts come from Paddle.
 
@@ -165,7 +163,7 @@ A full production or paid-tier deployment additionally requires the server secre
 | `PADDLE_API_KEY` | Server | Paddle billing API key for the paid tier. A runtime secret. |
 | `PADDLE_CLIENT_TOKEN` | Client-safe | Browser token for Paddle.js checkout. Not a secret — safe to expose via `/api/paddle/checkout-config`. |
 | `PADDLE_WEBHOOK_SECRET` | Server | Secret used to verify Paddle billing webhook signatures. A runtime secret. |
-| `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | Client-safe | Live Paddle price IDs for the €39/yr and €99 lifetime plans. Must differ from each other. |
+| `PADDLE_MONTHLY_PRICE_ID` / `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | Client-safe | Live Paddle price IDs for the €5.99/mo, €39/yr and €99 lifetime plans. All three are **required in production** and must differ from each other (`assertPaddleProductionConfig` throws otherwise). |
 | `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | Server | Webhook timestamp-freshness window, in seconds. Optional, defaults to `300`. |
 | `VITE_FORMSPARK_FORM_ID` | Client | Public identifier for the in-app contact form, not a secret. When unset, the contact form shows "temporarily unavailable." |
 | `VITE_COUNTERDEV_ID` | Client | Public identifier for counter.dev analytics, not a secret. When unset, no analytics script is loaded. |

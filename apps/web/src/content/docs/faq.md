@@ -3,7 +3,7 @@
 ### Do I need an account to use Longhand Budget?
 
 No. The Free tier runs entirely in your browser with no sign-up. An account is
-only required for Premium features such as multi-device sync.
+only required for Premium features such as advanced forecasting.
 
 ### Where is my data stored?
 

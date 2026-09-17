@@ -97,8 +97,10 @@ spec:
             # --- once across 5-2 / 4-16 / 4-17 / 5-3.                          ---
             # DATABASE_URL, DATABASE_CA_CERT (optional), SESSION_SECRET,
             # SITE_URL, PADDLE_ENVIRONMENT, PADDLE_API_KEY, PADDLE_CLIENT_TOKEN,
-            # PADDLE_WEBHOOK_SECRET, PADDLE_ANNUAL_PRICE_ID,
-            # PADDLE_LIFETIME_PRICE_ID, PADDLE_WEBHOOK_MAX_AGE_SECONDS (optional),
+            # PADDLE_WEBHOOK_SECRET, PADDLE_MONTHLY_PRICE_ID,
+            # PADDLE_ANNUAL_PRICE_ID, PADDLE_LIFETIME_PRICE_ID (story 5-20: all
+            # three price IDs are REQUIRED in production and must differ),
+            # PADDLE_WEBHOOK_MAX_AGE_SECONDS (optional),
             # EMAIL_API_KEY, EMAIL_FROM (optional — defaults to a verified sender).
             # PADDLE_VENDOR_ID / PADDLE_PUBLIC_KEY are Classic-only — removed in
             # Story 5-3; do not set them.

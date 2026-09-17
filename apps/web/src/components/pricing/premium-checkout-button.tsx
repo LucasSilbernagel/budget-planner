@@ -2,7 +2,9 @@
  * Premium checkout CTA (Story 5-3, Task 2a).
  *
  * Replaces the Premium plan card's former static `<a href="/login">` CTA with
- * an annual/lifetime toggle + a real Paddle Billing checkout entry point.
+ * a monthly/annual/lifetime toggle + a real Paddle Billing checkout entry
+ * point. (Story 5-20 added monthly; annual remains the default selection, as
+ * it is the anchor plan the pricing page recommends.)
  *
  * NOT auth-gated — an EARLIER version of this file required being signed in
  * before opening checkout, which is backwards: magic-link login only
@@ -15,14 +17,14 @@
  * pre-fill the email field as a convenience when already signed in (e.g. an
  * existing customer buying Lifetime after Annual); it is never a requirement.
  *
- * Config (`clientToken`, both price IDs) comes from `/api/paddle/checkout-config`
+ * Config (`clientToken`, all three price IDs) comes from `/api/paddle/checkout-config`
  * — never hardcoded, so sandbox and production behave identically here; only
  * the env vars behind that endpoint differ (AC-3). Once that config is
  * configured, Paddle.js is initialized and `Paddle.PricePreview()` fetches a
  * country-localized price breakdown (subtotal / tax / total) for the toggle
  * labels and the caption below them — no country is passed, so Paddle
- * auto-detects from the visitor's IP; the static "€39/€99" fallback labels
- * are shown until that resolves (or if it fails).
+ * auto-detects from the visitor's IP; the static "€5.99/€39/€99" fallback
+ * labels are shown until that resolves (or if it fails).
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -34,13 +36,25 @@ import {
   openPaddleCheckout,
 } from '../../lib/paddle/checkout'
 
-type Plan = 'annual' | 'lifetime'
+type Plan = 'monthly' | 'annual' | 'lifetime'
 type Status = 'idle' | 'loading' | 'error'
 
 interface CheckoutConfig {
   isConfigured: boolean
   environment: 'sandbox' | 'production'
   clientToken: string | null
+  /**
+   * Story 5-20. `null` means the monthly plan is not purchasable in this build.
+   *
+   * ⚠️ It cannot be null in PRODUCTION — `assertPaddleProductionConfig()` throws
+   * without it (settled at code review: `pricing.md` states the €5.99 price on
+   * the legal pricing page, so it must be chargeable). Null is reachable in
+   * dev/sandbox, where the plan renders DISABLED — visible, labelled with its
+   * static price, and unselectable — rather than removed. Keeping the row lets
+   * a developer see at a glance that the plan exists but their env lacks the id,
+   * which a silently absent option would hide.
+   */
+  monthlyPriceId: string | null
   annualPriceId: string | null
   lifetimePriceId: string | null
 }
@@ -51,6 +65,7 @@ interface CheckoutConfig {
 // an overlapping substring there made an early draft's `getByText(/€99 once/)`
 // regression test ambiguous between the two.
 const FALLBACK_LABEL: Record<Plan, string> = {
+  monthly: '€5.99/mo',
   annual: '€39/yr',
   lifetime: '€99',
 }
@@ -158,6 +173,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   const [localizedPrice, setLocalizedPrice] = useState<
     Record<Plan, LocalizedPriceBreakdown | null>
   >({
+    monthly: null,
     annual: null,
     lifetime: null,
   })
@@ -211,13 +227,21 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
       .then((paddle) => {
         if (!paddle || cancelled) return undefined
         return getLocalizedPlanPrices(paddle, {
+          // Only a CONFIGURED monthly id is previewed — `getLocalizedPlanPrices`
+          // would otherwise send Paddle an undefined line item and fail the whole
+          // call, taking annual's and lifetime's real totals down with it.
+          monthlyPriceId: config.monthlyPriceId ?? undefined,
           annualPriceId: config.annualPriceId as string,
           lifetimePriceId: config.lifetimePriceId as string,
         })
       })
       .then((prices) => {
         if (prices && !cancelled) {
-          setLocalizedPrice({ annual: prices.annual, lifetime: prices.lifetime })
+          setLocalizedPrice({
+            monthly: prices.monthly,
+            annual: prices.annual,
+            lifetime: prices.lifetime,
+          })
         }
       })
       .catch(() => {
@@ -229,7 +253,15 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   }, [config])
 
   const handleCheckout = async () => {
-    const priceId = plan === 'annual' ? config?.annualPriceId : config?.lifetimePriceId
+    // A lookup, not a nested ternary: a two-branch conditional cannot express
+    // three plans, and nesting one is how a fourth plan later gets silently
+    // mis-routed to the wrong price.
+    const priceIdForPlan: Record<Plan, string | null | undefined> = {
+      monthly: config?.monthlyPriceId,
+      annual: config?.annualPriceId,
+      lifetime: config?.lifetimePriceId,
+    }
+    const priceId = priceIdForPlan[plan]
     if (!config?.isConfigured || !config.clientToken || !priceId) {
       setStatus('error')
       return
@@ -258,6 +290,11 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   // disabled up front, not just at click-time — selecting it used to always
   // render, then only surface the generic error AFTER a click.
   const planOptions: ReadonlyArray<{ id: Plan; label: string; disabled: boolean }> = [
+    {
+      id: 'monthly',
+      label: `Monthly · ${localizedPrice.monthly?.total ?? FALLBACK_LABEL.monthly}`,
+      disabled: !config?.monthlyPriceId,
+    },
     {
       id: 'annual',
       label: `Annual · ${localizedPrice.annual?.total ?? FALLBACK_LABEL.annual}`,
@@ -292,8 +329,8 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   /**
    * Roving-tabIndex ARIA radiogroup: arrow keys move BOTH focus and selection
    * between the enabled options (Home/End jump to the first/last), skipping
-   * any plan whose price ID isn't configured. Two options today, but this
-   * doesn't assume exactly two.
+   * any plan whose price ID isn't configured. Three options since story 5-20,
+   * and this has never assumed a fixed count — it walks `enabledPlanIds`.
    */
   const handleRadioKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, currentId: Plan) => {
     if (enabledPlanIds.length === 0) return

@@ -50,18 +50,32 @@
  *
  * ## Order
  *
- * The tuple order IS the display order on every surface. `sync` leads because it
- * is the tier's headline benefit; the two Epic-30 additions are appended last so
- * that `categories` stays the final `features.md` bullet — `docs-content.test.ts`
- * finds "the categories bullet" by scanning forward to the next `- **` or `###`,
- * so inserting anything after it re-scopes that assertion.
+ * The tuple order IS the display order on every surface.
+ *
+ * ⚠️ **REORDERED by story 5-20 (2026-09-16); both prior rationales are DEAD.**
+ * `sync` used to lead as "the tier's headline benefit", and `categories` was
+ * pinned last to keep it the final `features.md` bullet. Neither survives:
+ *
+ *   - **Sync no longer leads.** The 2026-09-16 pricing market research found a
+ *     sync-led pitch loses on comparison, because **Goodbudget gives two-device
+ *     sync away free**. Sync is still a Premium benefit and still listed — it
+ *     moved down, it was NOT removed and NOT moved to the free tier. The
+ *     benefits that actually differentiate the tier lead instead: forecasting,
+ *     the report, profiles, categories.
+ *   - **`categories` is no longer last**, so the `docs-content.test.ts` slice
+ *     that bounded "the categories bullet" by scanning forward to the next
+ *     `- **` / `###` now ends at the `sync` bullet rather than running to the
+ *     end of the section. That assertion was re-read when this moved: it still
+ *     measures exactly what it claims (the categories bullet makes no sync
+ *     claim), on a slice that is now correctly scoped rather than incidentally
+ *     over-wide.
  */
 export const PREMIUM_BENEFIT_IDS = [
-  'sync',
   'forecasting',
-  'profiles',
   'report',
+  'profiles',
   'categories',
+  'sync',
 ] as const
 
 /**

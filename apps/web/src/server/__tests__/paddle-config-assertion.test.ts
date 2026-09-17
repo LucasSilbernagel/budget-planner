@@ -19,6 +19,7 @@ const PADDLE_KEYS = [
   'PADDLE_WEBHOOK_SECRET',
   'PADDLE_ANNUAL_PRICE_ID',
   'PADDLE_LIFETIME_PRICE_ID',
+  'PADDLE_MONTHLY_PRICE_ID',
 ] as const
 
 const saved: Record<string, string | undefined> = {}
@@ -47,6 +48,7 @@ const FULL = {
   PADDLE_API_KEY: 'pdl_live_x',
   PADDLE_CLIENT_TOKEN: 'live_x',
   PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_x',
+  PADDLE_MONTHLY_PRICE_ID: 'pri_monthly',
   PADDLE_ANNUAL_PRICE_ID: 'pri_annual',
   PADDLE_LIFETIME_PRICE_ID: 'pri_lifetime',
 } as const
@@ -92,5 +94,90 @@ describe('assertPaddleProductionConfig', () => {
   it('still validates when NODE_ENV is unset but PADDLE_ENVIRONMENT=production (split-brain gap)', () => {
     withEnv({ PADDLE_ENVIRONMENT: 'production' }) // NODE_ENV unset → schema default "development"
     expect(() => assertPaddleProductionConfig()).toThrow(/not fully configured/)
+  })
+
+  // ── Story 5-20: the third plan ───────────────────────────────────────────
+  //
+  // The required-set and the must-differ guard were both PAIRWISE (annual +
+  // lifetime). Monthly is deliberately NOT added to the required set — see the
+  // rationale on the assertion itself — but it MUST join the distinctness
+  // check, because the `:216` mis-grant rationale applies just as hard to a
+  // monthly id colliding with the lifetime id.
+
+  it('REQUIRES PADDLE_MONTHLY_PRICE_ID in production (story 5-20, settled at code review)', () => {
+    // ⚠️ INVERTED, not deleted. The first implementation of 5-20 made monthly
+    // optional, reasoning that a post-launch plan must not be able to take all
+    // billing down. Code review found that the same story states "€5.99 per
+    // month" on `content/legal/pricing.md` — the Paddle-required legal pricing
+    // page. A price stated on a compliance surface must be chargeable, so the
+    // id is required and a build without it must fail loudly rather than
+    // advertise a plan it cannot sell.
+    const { PADDLE_MONTHLY_PRICE_ID: _omitted, ...withoutMonthly } = FULL
+    withEnv({ NODE_ENV: 'production', PADDLE_ENVIRONMENT: 'production', ...withoutMonthly })
+    expect(() => assertPaddleProductionConfig()).toThrow(/PADDLE_MONTHLY_PRICE_ID/)
+  })
+
+  it.each([['PADDLE_MONTHLY_PRICE_ID'], ['PADDLE_ANNUAL_PRICE_ID'], ['PADDLE_LIFETIME_PRICE_ID']])(
+    'rejects a WHITESPACE-ONLY %s as missing, not as present',
+    (key) => {
+      // ⚠️ THE REGRESSION THIS PINS was introduced by 5-20's own first pass and
+      // caught by two independent review layers. The required check used a plain
+      // `!env.X`, so '  ' read as PRESENT; the distinctness loop then dropped it as
+      // trimmed-empty, so nothing was compared and the assertion reported healthy.
+      // Production would boot with every plan unbuyable and every lifetime purchase
+      // silently ignored by the webhook — money taken, no entitlement granted.
+      withEnv({
+        NODE_ENV: 'production',
+        PADDLE_ENVIRONMENT: 'production',
+        ...FULL,
+        [key]: '   \n',
+      })
+      expect(() => assertPaddleProductionConfig()).toThrow(new RegExp(key))
+    }
+  )
+
+  it('rejects a monthly price ID equal to the lifetime one (mis-grant guard)', () => {
+    withEnv({
+      NODE_ENV: 'production',
+      PADDLE_ENVIRONMENT: 'production',
+      ...FULL,
+      PADDLE_MONTHLY_PRICE_ID: 'pri_lifetime',
+    })
+    expect(() => assertPaddleProductionConfig()).toThrow(
+      /PADDLE_MONTHLY_PRICE_ID.*PADDLE_LIFETIME_PRICE_ID.*must differ/s
+    )
+  })
+
+  it('rejects a monthly price ID equal to the annual one (wrong-cadence guard)', () => {
+    withEnv({
+      NODE_ENV: 'production',
+      PADDLE_ENVIRONMENT: 'production',
+      ...FULL,
+      PADDLE_MONTHLY_PRICE_ID: 'pri_annual',
+    })
+    expect(() => assertPaddleProductionConfig()).toThrow(/must differ/)
+  })
+
+  it('ignores surrounding whitespace when comparing the three ids', () => {
+    // The ids are `.trim()`-compared everywhere else (checkout-config trims
+    // before handing them to the browser; the webhook trims before matching),
+    // so a pasted trailing newline must not slip a collision past this guard.
+    withEnv({
+      NODE_ENV: 'production',
+      PADDLE_ENVIRONMENT: 'production',
+      ...FULL,
+      PADDLE_MONTHLY_PRICE_ID: '  pri_lifetime\n',
+    })
+    expect(() => assertPaddleProductionConfig()).toThrow(/must differ/)
+  })
+
+  it('accepts three distinct price IDs', () => {
+    withEnv({
+      NODE_ENV: 'production',
+      PADDLE_ENVIRONMENT: 'production',
+      ...FULL,
+      PADDLE_MONTHLY_PRICE_ID: 'pri_monthly',
+    })
+    expect(() => assertPaddleProductionConfig()).not.toThrow()
   })
 })

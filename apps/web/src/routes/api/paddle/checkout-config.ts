@@ -5,7 +5,8 @@
  *
  * Story 5-3, Task 2a. Exposes ONLY the browser-safe subset of
  * `getPaddleConfig()` that Paddle.js checkout needs client-side: the
- * environment, the client-side token, and the two catalog price IDs. The
+ * environment, the client-side token, and the three catalog price IDs (monthly
+ * added by story 5-20; it may be `null` on a healthy build). The
  * server API key and webhook secret are never read here. No auth is REQUIRED —
  * none of these values are secret (the client token is designed to ship in
  * the browser bundle; the price IDs are visible in any checkout request
@@ -138,6 +139,19 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
         // pasted with a trailing newline (a common pasted-secret shape)
         // would otherwise pass every config check here but get silently
         // rejected by `Paddle.Checkout.open` client-side.
+        //
+        // ⚠️ In PRODUCTION none of the three can be null — `assertPaddleProductionConfig()`
+        // above has already thrown. A null here means a dev/sandbox build, where
+        // clients degrade by disabling that plan. (Story 5-20 originally allowed a
+        // null monthly id in production; code review reversed that, because
+        // `pricing.md` states the €5.99 price on the legal pricing page.)
+        //
+        // `|| null`, not `?? null`: a declared-but-empty manifest value
+        // (`PADDLE_MONTHLY_PRICE_ID=`, the `.env.example` convention) trims to
+        // `''`, and `??` would serve that empty string while this contract says
+        // the field is `string | null`. Clients survive either on truthiness,
+        // but the route should not emit a third state its own type denies.
+        monthlyPriceId: config.monthlyPriceId?.trim() || null,
         annualPriceId: config.annualPriceId?.trim() ?? null,
         lifetimePriceId: config.lifetimePriceId?.trim() ?? null,
       },

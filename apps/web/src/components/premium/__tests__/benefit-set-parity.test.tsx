@@ -159,6 +159,26 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     expect(new Set(PREMIUM_BENEFIT_IDS).size).toBe(PREMIUM_BENEFIT_IDS.length)
   })
 
+  it('pins the CONTENT of the tuple, not just that surfaces follow it (story 5-20, AC-3)', () => {
+    // ⚠️ THIS TEST EXISTS BECAUSE THE REST OF THIS FILE DOES NOT COVER IT, AND
+    // story 5-20 wrongly claimed it did. Every other assertion here is of the form
+    // `rendered === PREMIUM_BENEFIT_IDS.map(...)` — they prove surfaces FOLLOW the
+    // tuple, whatever the tuple happens to say. A code-review layer measured this
+    // directly: reverting the tuple to the old sync-first order left 234/234 tests
+    // green. The ordering IS the behaviour AC-3 asked for, so it needs a pin of
+    // its own.
+    //
+    // ⚠️ Order is load-bearing and is NOT arbitrary. `sync` is deliberately LAST:
+    // the 2026-09-16 pricing research found a sync-led pitch loses on comparison
+    // because Goodbudget gives two-device sync away free, so the benefits that
+    // actually differentiate the tier lead. Do not "tidy" this back to
+    // alphabetical or to the old order without re-opening that decision.
+    //
+    // `sync` must also still be PRESENT — it stays a Premium benefit; 5-20 moved
+    // its position and nothing else.
+    expect(PREMIUM_BENEFIT_IDS).toEqual(['forecasting', 'report', 'profiles', 'categories', 'sync'])
+  })
+
   // ⚠️ Only the first three are SURFACES. The last two are this file's own anchor
   // fixtures, whose key sets `tsc` already guarantees — they are included so a
   // benefit added to the canonical set cannot land without someone deciding how the

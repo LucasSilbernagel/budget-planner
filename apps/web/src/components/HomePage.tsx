@@ -1087,7 +1087,10 @@ export function HomePage() {
                 gone, which is what keeps this section at FIVE tier subscriptions
                 rather than six (deferred-work.md:593 — each is an independent,
                 uncached check when the session seed is null).
-                Sync leads the section so the canonical benefit set reads first.
+                Sync is rendered LAST since story 5-20 — it used to lead, but a
+                sync-led pitch loses on comparison (Goodbudget gives two-device
+                sync away free), so the differentiating benefits lead instead.
+                The order is not decided here: it is `PREMIUM_BENEFIT_IDS`.
 
                 The boxes are RENDERED FROM `OVERVIEW_BENEFITS`, keyed by
                 `PremiumBenefitId`, rather than written out by hand (story 33.2,

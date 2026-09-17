@@ -150,7 +150,7 @@ so each value is set a single time.
 | `PADDLE_API_KEY` | 5-3 | Server-side Billing REST API key (`pdl_live_…`). Runtime secret. |
 | `PADDLE_CLIENT_TOKEN` | 5-3 | Browser token for Paddle.js checkout (`live_…`). Safe to expose to the client. |
 | `PADDLE_WEBHOOK_SECRET` | 5-3 | `pdl_ntfset_…` — HMAC key for the `Paddle-Signature` header. Runtime secret. |
-| `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | 5-3 | Live Paddle price IDs for the €39/yr and €99 lifetime plans. **Must differ** (`assertPaddleProductionConfig` throws if equal). |
+| `PADDLE_MONTHLY_PRICE_ID` / `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | 5-3, 5-20 | Live Paddle price IDs for the €5.99/mo, €39/yr and €99 lifetime plans. **All three are required in production**, and all three **must differ** (`assertPaddleProductionConfig` throws otherwise). ⚠️ These are Rapids **runtime** env vars — `deploy.yml` passes no `PADDLE_*` value at all, so adding or changing one is a Rapids env update on the service, **not** a GitHub secret and **not** something a redeploy will pick up. |
 | `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | optional | Webhook timestamp-freshness window. Default `300`. |
 | ~~`PADDLE_VENDOR_ID` / `PADDLE_PUBLIC_KEY`~~ | — | **Removed in Story 5-3** — Paddle Classic vars, unused by Billing. Do not set. |
 | `EMAIL_API_KEY` | 5-16 | Magic-link email (EU provider). Runtime secret. |

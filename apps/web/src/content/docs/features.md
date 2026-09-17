@@ -1,8 +1,8 @@
 ## Features
 
 Longhand Budget is split into a Free tier that runs entirely on your device
-and a Premium tier that adds multi-device syncing, custom profiles, advanced
-forecasting, a financial summary report, and custom categories. The free
+and a Premium tier that adds advanced forecasting, a financial summary report,
+custom profiles, custom categories, and multi-device syncing. The free
 retirement projection charts where your current numbers lead. Premium
 forecasting is a separate what-if workspace: build a scenario from your own
 figures, save it to a searchable list, and reload any of them later.
@@ -42,11 +42,6 @@ model, because there is no model. This holds for every visitor on both tiers.
 
 ### Premium tier
 
-- **Multi-device sync** — your data is securely stored and synced across all your
-  devices, so your plan follows you from phone to laptop. Synced data lives on
-  servers in the European Union (see below).
-- **Custom profiles** — keep separate sets of finances, such as personal versus
-  household, and switch between them without mixing the numbers.
 - **Advanced forecasting** — build detailed what-if scenarios from your income
   and expense growth, one-time events, and current savings, then save each
   forecast to a searchable list and reload any of them back into the builder.
@@ -57,6 +52,8 @@ model, because there is no model. This holds for every visitor on both tiers.
   browser from the figures on your device, so nothing is sent anywhere to
   produce it. It is a document to read or keep, not a backup: it cannot be
   loaded back into the app.
+- **Custom profiles** — keep separate sets of finances, such as personal versus
+  household, and switch between them without mixing the numbers.
 - **Custom categories** — create your own income and expense categories, pick one
   when you add or edit an entry, and see the overview charts grouped the way you
   think about your money instead of one slice per entry. Renaming a category
@@ -64,6 +61,9 @@ model, because there is no model. This holds for every visitor on both tiers.
   place, simply uncategorized. The categories page also breaks your money down
   by category, showing what each one totals and what share of that side it is,
   with everything unassigned gathered into a single Uncategorized line.
+- **Multi-device sync** — your data is securely stored and synced across all your
+  devices, so your plan follows you from phone to laptop. Synced data lives on
+  servers in the European Union (see below).
 
 ### Privacy and data location
 

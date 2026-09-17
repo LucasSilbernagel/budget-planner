@@ -89,6 +89,7 @@ import { POST } from '../paddle'
 const SECRET = 'pdl_ntfset_test_secret'
 const LIFETIME_PRICE = 'pri_lifetime_99'
 const ANNUAL_PRICE = 'pri_annual_39'
+const MONTHLY_PRICE = 'pri_monthly_599'
 
 /**
  * A stand-in transaction.
@@ -174,6 +175,7 @@ function config(overrides: Record<string, unknown> = {}) {
     webhookSecret: SECRET,
     webhookMaxAgeSeconds: 300,
     apiBaseUrl: 'https://sandbox-api.paddle.com',
+    monthlyPriceId: MONTHLY_PRICE,
     annualPriceId: ANNUAL_PRICE,
     lifetimePriceId: LIFETIME_PRICE,
     isConfigured: true,
@@ -577,6 +579,100 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 
     expect(res.status).toBe(200)
     expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'active' }))
+  })
+
+  // ── Story 5-20, AC-1: the monthly plan flows the SUBSCRIPTION path ───────
+  //
+  // ⚠️ READ THE NAMES LITERALLY. Code review found the first drafts overclaimed:
+  // the `subscription.*` dispatch never reads `items[].price.id`, so the two
+  // subscription tests below would stay green with this whole story reverted, and
+  // substituting any string for MONTHLY_PRICE changes nothing. They pin that the
+  // path is price-AGNOSTIC — which is the property that makes monthly safe — not
+  // anything monthly-specific. The `transaction.completed` test is the one that
+  // carries real weight: it fails if the lifetime match ever widens.
+  //
+  // ⚠️ AC-1 is explicit that this must be PROVEN BY TEST, not reasoned through.
+  // The reasoning is sound — subscriptions resolve via
+  // `mapWebhookSubscriptionStatus` and never consult a price id, while the
+  // lifetime grant is a different event (`transaction.completed`) matched
+  // against `PADDLE_LIFETIME_PRICE_ID` — but "the two paths do not overlap" is
+  // exactly the kind of claim that is cheap to assert and expensive to be wrong
+  // about: being wrong means handing a €5.99/mo buyer a permanent entitlement.
+
+  it('routes a monthly-priced subscription.created down the price-AGNOSTIC subscription path', async () => {
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.created',
+        data: {
+          customer_id: 'ctm_monthly',
+          status: 'active',
+          email: 'monthly@example.com',
+          // A real Billing subscription payload carries its price on the items.
+          items: [{ price: { id: MONTHLY_PRICE } }],
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'active' }))
+    // The mis-grant this guards: 'lifetime' must appear nowhere in what was written.
+    expect(setSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ subscriptionStatus: 'lifetime' })
+    )
+  })
+
+  it('does NOT treat a monthly transaction.completed as a lifetime purchase', async () => {
+    // The lifetime grant keys off the LIFETIME price id specifically. A monthly
+    // subscription's first invoice also arrives as `transaction.completed`, so
+    // this is the event where a sloppy "any completed transaction = lifetime"
+    // match would actually fire.
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'transaction.completed',
+        data: {
+          // ⚠️ A REAL, POSITIVE grand_total (€5.99 in the lowest unit) is
+          // essential to this test's validity. Without it the handler refuses
+          // at the LATER AC-8 "no usable grand_total" guard, so the test would
+          // pass whether or not the price-id match works — which is exactly how
+          // the first draft of it came out vacuous. With a valid total, the
+          // price-id mismatch is the ONLY thing standing between this payload
+          // and a permanent entitlement.
+          details: { totals: { grand_total: '599' } },
+          customer_id: 'ctm_monthly',
+          items: [{ price: { id: MONTHLY_PRICE } }],
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    // ⚠️ Asserted as "never even opened a transaction", matching the sibling
+    // annual-renewal test above — NOT as "was not written with status
+    // 'lifetime'". The weaker form was VACUOUS: this story's positive control
+    // granted lifetime to every price id and the weak assertion stayed green,
+    // reproducing story 5.3's four-vacuous-webhook-tests finding exactly.
+    expect(transaction).not.toHaveBeenCalled()
+    expect(setSpy).not.toHaveBeenCalled()
+    expect(insertValuesSpy).not.toHaveBeenCalled()
+  })
+
+  it('downgrades on cancellation for any non-lifetime row, monthly included', async () => {
+    // The mirror of the no-downgrade guard: that guard protects `lifetime`
+    // rows specifically. A monthly subscriber who cancels must still lose
+    // access — if the guard were widened to everyone, cancellation would
+    // become a no-op and churned subscribers would keep Premium for free.
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.canceled',
+        data: {
+          customer_id: 'ctm_monthly',
+          status: 'canceled',
+          items: [{ price: { id: MONTHLY_PRICE } }],
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'canceled' }))
   })
 
   it('maps subscription.updated status=past_due to past_due', async () => {

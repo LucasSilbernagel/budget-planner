@@ -1,6 +1,6 @@
 _This page is informational and does not constitute legal advice._
 
-_Last updated: 7 August 2026_
+_Last updated: 16 September 2026_
 
 These Terms of Service ("Terms") govern your use of Longhand Budget (the "Service").
 The Service is operated by **Lucas Silbernagel**, an individual based in Toronto, Ontario, Canada ("we", "us").
@@ -25,6 +25,10 @@ Premium subscriptions are sold and processed by **Paddle.com**, who act as the *
 This means Paddle — not us directly — is the seller of record, collects payment and any applicable taxes, and handles billing.
 By subscribing you also agree to Paddle's buyer terms.
 Subscription pricing, renewal, cancellation, and refunds are described on our [Pricing](/pricing) and [Refund & Cancellation Policy](/refund) pages.
+
+A **lifetime** license is a one-time purchase that grants Premium access for the operational lifetime of the product — that is, for as long as we continue to operate Longhand Budget.
+It is not tied to the lifetime of the purchaser, and it is not a guarantee that the service will run for any particular length of time.
+If we ever discontinue the service, we will give lifetime license holders reasonable advance notice so that data can be exported, and no further charge will be made.
 
 ## 4. Acceptable use
 

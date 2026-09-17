@@ -47,11 +47,21 @@ export const envSchema = z.object({
       const parsed = val === undefined ? Number.NaN : Number(val)
       return Number.isInteger(parsed) && parsed > 0 ? parsed : 300
     }),
-  // Paddle price IDs for the two Premium plans (story 25-2): the recurring
-  // €39/yr annual plan and the one-time €99 lifetime license. Kept out of source
-  // (never hardcoded) so the same build points at sandbox or production prices.
+  // Paddle price IDs for the three Premium plans: the recurring €5.99/mo monthly
+  // plan (story 5-20), the recurring €39/yr annual plan and the one-time €99
+  // lifetime license (both story 25-2). Kept out of source (never hardcoded) so
+  // the same build points at sandbox or production prices.
   // PADDLE_LIFETIME_PRICE_ID is what the webhook keys off to recognise a
   // one-time lifetime purchase and grant permanent Premium (see webhooks/paddle.ts).
+  // Monthly needs no such id-matching: like annual it arrives as a `subscription.*`
+  // event and resolves through `mapWebhookSubscriptionStatus`, price-agnostically.
+  //
+  // ⚠️ Story 5-20 REVERSED story 25-2's "no monthly" decision. 25-2 was right that
+  // monthly is the least fee-efficient plan (Paddle's fixed €0.50 alone is 8.3% of
+  // €5.99, so monthly nets 14.2-14.7% in fees against annual's 7.1-7.6%); the
+  // reversal is on conversion grounds for an unproven product, not by disputing
+  // that arithmetic.
+  PADDLE_MONTHLY_PRICE_ID: z.string().optional(),
   PADDLE_ANNUAL_PRICE_ID: z.string().optional(),
   PADDLE_LIFETIME_PRICE_ID: z.string().optional(),
 
@@ -132,6 +142,19 @@ export interface PaddleConfig {
   webhookMaxAgeSeconds: number
   /** Billing REST API base URL, derived from `environment`. */
   apiBaseUrl: string
+  /**
+   * Paddle price ID for the recurring €5.99/mo monthly plan (story 5-20).
+   *
+   * REQUIRED in production, like its two siblings — `assertPaddleProductionConfig()`
+   * throws without it, because `pricing.md` states the €5.99 price on the legal
+   * pricing page and that claim must be chargeable.
+   *
+   * Still typed `| undefined` and still absent in dev/sandbox builds, so consumers
+   * must go on degrading gracefully (render the plan disabled, omit it from the
+   * price preview) rather than assuming a string. They simply can no longer reach
+   * that state in production.
+   */
+  monthlyPriceId: string | undefined
   /** Paddle price ID for the recurring €39/yr annual plan (story 25-2). */
   annualPriceId: string | undefined
   /** Paddle price ID for the one-time €99 lifetime license (story 25-2). */
@@ -166,6 +189,7 @@ export function getPaddleConfig(): PaddleConfig {
     webhookSecret: env.PADDLE_WEBHOOK_SECRET,
     webhookMaxAgeSeconds: env.PADDLE_WEBHOOK_MAX_AGE_SECONDS,
     apiBaseUrl: PADDLE_API_BASE_URL[env.PADDLE_ENVIRONMENT],
+    monthlyPriceId: env.PADDLE_MONTHLY_PRICE_ID,
     annualPriceId: env.PADDLE_ANNUAL_PRICE_ID,
     lifetimePriceId: env.PADDLE_LIFETIME_PRICE_ID,
     isConfigured,
@@ -181,9 +205,30 @@ export function getPaddleConfig(): PaddleConfig {
  * the revenue-critical paths (the webhook handler; the checkout route) so a
  * misdeployed production build crashes loudly instead.
  *
- * Throws in production/test when the full Billing set is absent, or when the two
- * price IDs are equal (which would make every annual renewal invoice match the
- * lifetime price and be mis-granted as a permanent entitlement).
+ * Throws in production/test when the full Billing set is absent, or when any two
+ * price IDs are equal (which would make a subscription renewal invoice match the
+ * lifetime price and be mis-granted as a permanent entitlement, or charge one
+ * cadence at the other's price).
+ *
+ * ⚠️ **All three price IDs are REQUIRED, monthly included** (story 5-20, settled
+ * at code review). An earlier draft of that story made monthly OPTIONAL, reasoning
+ * that it was a post-launch addition the other two plans did not depend on, and
+ * that requiring it would turn "the monthly price does not exist yet" into a total
+ * billing outage. That was sound while monthly was unshipped — but the SAME story
+ * put "Premium is €39 per year, **€5.99 per month**, or €99 once" on
+ * `content/legal/pricing.md`, the Paddle-required legal pricing page. Once a price
+ * is stated on a compliance surface, the id is no longer optional: without it the
+ * page advertises a price the product cannot charge. A loud boot failure is the
+ * correct response to that, and is exactly what this function is for.
+ *
+ * ⚠️ Every price ID is checked with `.trim()`, and that is load-bearing rather than
+ * defensive. A plain `!env.X` treats `'  '` (a pasted-blank manifest value) as
+ * PRESENT, so a whitespace-only id passed this required check, then dropped out of
+ * the distinctness comparison below as trimmed-empty, and the whole assertion
+ * reported healthy. Downstream, `checkout-config` trimmed it to `''` and served a
+ * disabled plan, while the webhook silently ignored every lifetime purchase whose
+ * price could no longer match — money collected, no entitlement granted. Both
+ * checks must share ONE notion of "configured", which is the trimmed value.
  *
  * Runs the strict checks whenever `NODE_ENV` is non-development OR
  * `PADDLE_ENVIRONMENT === 'production'`. The `PADDLE_ENVIRONMENT` clause closes
@@ -203,8 +248,10 @@ export function assertPaddleProductionConfig(): void {
   if (!env.PADDLE_API_KEY) missing.push('PADDLE_API_KEY')
   if (!env.PADDLE_CLIENT_TOKEN) missing.push('PADDLE_CLIENT_TOKEN')
   if (!env.PADDLE_WEBHOOK_SECRET) missing.push('PADDLE_WEBHOOK_SECRET')
-  if (!env.PADDLE_ANNUAL_PRICE_ID) missing.push('PADDLE_ANNUAL_PRICE_ID')
-  if (!env.PADDLE_LIFETIME_PRICE_ID) missing.push('PADDLE_LIFETIME_PRICE_ID')
+  // `.trim()` on all three — see the whitespace note in the docblock.
+  if (!env.PADDLE_MONTHLY_PRICE_ID?.trim()) missing.push('PADDLE_MONTHLY_PRICE_ID')
+  if (!env.PADDLE_ANNUAL_PRICE_ID?.trim()) missing.push('PADDLE_ANNUAL_PRICE_ID')
+  if (!env.PADDLE_LIFETIME_PRICE_ID?.trim()) missing.push('PADDLE_LIFETIME_PRICE_ID')
   if (missing.length > 0) {
     throw new Error(
       `Paddle Billing is not fully configured for production — missing: ${missing.join(
@@ -213,10 +260,43 @@ export function assertPaddleProductionConfig(): void {
     )
   }
 
-  if (env.PADDLE_ANNUAL_PRICE_ID?.trim() === env.PADDLE_LIFETIME_PRICE_ID?.trim()) {
-    throw new Error(
-      'PADDLE_ANNUAL_PRICE_ID and PADDLE_LIFETIME_PRICE_ID must differ — an equal value makes every annual renewal invoice match the lifetime price and grant a permanent entitlement.'
-    )
+  // Distinctness across all three price ids.
+  //
+  // The filter below still drops trimmed-empty values. That is now belt-and-braces
+  // rather than the load-bearing behaviour it once was: the required check above
+  // has already rejected any blank id, so this loop can only ever see real values
+  // in production. It is kept so the function stays correct if the required set is
+  // ever narrowed again — `undefined === undefined` must never read as a collision
+  // between two unset vars.
+  //
+  // Trimmed before comparing, mirroring the trimming the webhook does before
+  // matching an id and `checkout-config` does before handing ids to the browser
+  // — an id pasted with a trailing newline must not slip a collision past here
+  // only to collide for real downstream.
+  //
+  // Only configured ids take part: an absent monthly id is a supported state
+  // (see the docblock), and `undefined === undefined` would otherwise report a
+  // phantom collision between two unset vars.
+  const configuredPriceIds: [name: string, id: string][] = []
+  for (const [name, value] of [
+    ['PADDLE_MONTHLY_PRICE_ID', env.PADDLE_MONTHLY_PRICE_ID],
+    ['PADDLE_ANNUAL_PRICE_ID', env.PADDLE_ANNUAL_PRICE_ID],
+    ['PADDLE_LIFETIME_PRICE_ID', env.PADDLE_LIFETIME_PRICE_ID],
+  ] as [string, string | undefined][]) {
+    const trimmed = value?.trim()
+    if (trimmed) configuredPriceIds.push([name, trimmed])
+  }
+
+  for (let i = 0; i < configuredPriceIds.length; i++) {
+    for (let j = i + 1; j < configuredPriceIds.length; j++) {
+      const first = configuredPriceIds[i]
+      const second = configuredPriceIds[j]
+      if (first && second && first[1] === second[1]) {
+        throw new Error(
+          `${first[0]} and ${second[0]} must differ — sharing one price ID makes a subscription invoice match the other plan's price: against the lifetime price that grants a permanent entitlement on every renewal, and between the two recurring plans it charges one cadence at the other's price.`
+        )
+      }
+    }
   }
 }
 

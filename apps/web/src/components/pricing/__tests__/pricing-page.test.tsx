@@ -86,19 +86,46 @@ describe('PricingPageView benefit lists', () => {
   })
 })
 
-describe('PricingPageView pricing (story 25-2)', () => {
-  it('shows the Premium card as €39 / year with a €99 lifetime note — no monthly', () => {
+describe('PricingPageView pricing (stories 25-2, 5-20)', () => {
+  it('anchors on €39 / year and offers monthly and lifetime alongside it', () => {
+    render(<PricingPageView />)
+    const premium = within(card('Premium'))
+
+    // ANNUAL REMAINS THE ANCHOR (5-20 AC-2). €5.99 is the low-commitment entry
+    // point, not the headline — if the €39 headline ever moves to €5.99 this
+    // assertion is what catches it.
+    expect(premium.getByText('€39')).toBeInTheDocument()
+    expect(premium.getByText('/ year')).toBeInTheDocument()
+    expect(premium.getByText(/€99 once — lifetime license/)).toBeInTheDocument()
+    expect(premium.getByText(/€5\.99 \/ month/)).toBeInTheDocument()
+
+    // The saving claim steers committed buyers to annual, so it is pinned — but
+    // DERIVED, not hard-coded. A literal `/46%/` would stay green if €5.99 or €39
+    // ever changed and the copy did not, which is exactly the regression a pricing
+    // test exists to catch (code review).
+    const savingPct = Math.round((1 - 39 / (5.99 * 12)) * 100)
+    expect(premium.getByText(new RegExp(`annual saves ${savingPct}%`))).toBeInTheDocument()
+
+    // ⚠️ Story 25-2's negative is INVERTED, not deleted — 5-20 reversed the
+    // annual-only decision on conversion grounds. The €10 figure it also banned
+    // stays banned: that was a pre-25-2 draft price that never shipped, and it
+    // is NOT the €5.99 this story added.
+    expect(premium.queryByText('€10')).not.toBeInTheDocument()
+    expect(premium.queryByText(/two months free/)).not.toBeInTheDocument()
+  })
+
+  it('does not raise the pinned €39 and €99 figures (5-20 AC-2)', () => {
+    // The 2026-09-16 market research REFUTED the "€99 is underpriced" premise
+    // and recommended explicitly against raising either figure — €99 already
+    // sits near the top of the budgeting-app lifetime field. A future pricing
+    // story that bumps them must fail here and re-derive the decision, not
+    // slide past on a green suite.
     render(<PricingPageView />)
     const premium = within(card('Premium'))
 
     expect(premium.getByText('€39')).toBeInTheDocument()
-    expect(premium.getByText('/ year')).toBeInTheDocument()
-    expect(premium.getByText(/€99 once — lifetime license/)).toBeInTheDocument()
-
-    // The dropped monthly model must not resurface on this surface (AC-1).
-    expect(premium.queryByText('€10')).not.toBeInTheDocument()
-    expect(premium.queryByText(/\/ month/)).not.toBeInTheDocument()
-    expect(premium.queryByText(/two months free/)).not.toBeInTheDocument()
+    expect(premium.getByText(/€99 once/)).toBeInTheDocument()
+    expect(premium.queryByText(/€49|€59|€129|€149/)).not.toBeInTheDocument()
   })
 })
 

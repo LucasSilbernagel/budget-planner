@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { LEGAL_PAGES, PRICING_PAGE, getLegalPage } from '../index'
 
 /**
- * Legal/commercial content registry tests (story 5-13, updated in stories 10-3, 25-2).
+ * Legal/commercial content registry tests (story 5-13, updated in stories 10-3,
+ * 25-2, 5-20).
  *
  * Confirms the registry exposes the four Paddle-required pages with well-formed
  * bodies loaded from the static `.md` files, that slug lookup behaves, that the
  * pricing page carries the Merchant-of-Record disclosure and the finalized EUR
- * pricing (€39/yr + €99 lifetime, no monthly — story 25-2), and that no unresolved
+ * pricing (€5.99/mo + €39/yr + €99 lifetime — the monthly plan added by story
+ * 5-20, which reversed 25-2's annual-only decision), and that no unresolved
  * DRAFT/placeholder tokens remain (10-3 AC-1).
  */
 describe('LEGAL_PAGES', () => {
@@ -103,12 +105,27 @@ describe('pricing page content (AC-4)', () => {
     expect(PRICING_PAGE.content).toMatch(/Merchant of Record/i)
   })
 
-  it('states the finalized EUR pricing (annual + lifetime, no monthly) — story 25-2', () => {
+  it('states the finalized EUR pricing — three plans (stories 25-2, 5-20)', () => {
     expect(PRICING_PAGE.content).toMatch(/€39 per year/)
     expect(PRICING_PAGE.content).toMatch(/€99/)
     expect(PRICING_PAGE.content).toMatch(/lifetime/i)
-    // Monthly plan dropped (25-2 AC-1): no per-month pricing remains anywhere.
-    expect(PRICING_PAGE.content).not.toMatch(/per month/)
+
+    // ⚠️ Story 5-20 REVERSED story 25-2's "no monthly" decision, so the negative
+    // this assertion used to carry (`not.toMatch(/per month/)`) is INVERTED, not
+    // deleted — coverage moves rather than dropping. 25-2's arithmetic was never
+    // disputed (monthly is the least fee-efficient plan); the reversal is on
+    // trial-to-paid conversion grounds for an unproven product.
+    expect(PRICING_PAGE.content).toMatch(/€5\.99 per month/)
+
+    // The €39 and €99 figures are PINNED and must not be raised — the 2026-09-16
+    // market research confirmed both against budgeting-app comparables and
+    // recommended explicitly against raising either. €5.99 is likewise chosen so
+    // €39/yr reads as a visible saving; the saving claim is stated on the page.
+    // Derived, not a literal — see the sibling assertion in pricing-page.test.tsx.
+    const savingPct = Math.round((1 - 39 / (5.99 * 12)) * 100)
+    expect(PRICING_PAGE.content).toMatch(new RegExp(`${savingPct}% cheaper`))
+
+    // The never-shipped €10/mo figure from the pre-25-2 drafts stays banned.
     expect(PRICING_PAGE.content).not.toMatch(/€10\b/)
   })
 

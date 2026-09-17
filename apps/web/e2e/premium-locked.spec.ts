@@ -58,7 +58,9 @@ test('free visitor sees Advanced Forecasting locked and can open the upgrade pro
   // index, no e2e assertion named any routed gate's locked control at all. Sync's
   // own coverage belongs BESIDE this test, not on top of it: it has three homes —
   // the hover test's named check, the ROUTELESS loop in the alignment test, and
-  // the gate-0 identity assertion in the overlay loop.
+  // the sync-presence assertion in the overlay loop. (That last was a gate-0
+  // identity check until story 5-20 moved sync off index 0; it is now an
+  // order-independent presence assertion, so it survives the next reorder.)
   const lockedFeature = page.getByRole('button', {
     name: /advanced forecasting — premium, locked/i,
   })
@@ -520,6 +522,9 @@ for (const width of [320, 1280] as const) {
   }) => {
     await page.setViewportSize({ width, height: 720 })
 
+    // See the sync-coverage assertion after the loop.
+    let sawSyncGate = false
+
     for (let index = 0; index < GATED_COUNT; index++) {
       // Reload between gates: each gate owns its own `isPromptOpen` state and
       // `Modal` assumes a single modal is open at a time (deferred-work.md:477), so
@@ -534,19 +539,26 @@ for (const width of [320, 1280] as const) {
 
       // AC-7: the sync gate is genuinely one of the boxes this loop opens. An
       // index loop over GATED_COUNT would be satisfied by five gates none of
-      // which is sync — the state this story changed.
+      // which is sync — the state story 33.2 changed.
       //
-      // ⚠️ ORDERING IS LOAD-BEARING, and it was wrong on the first attempt. The
-      // wrapper-testid assertion below used to sit HERE, before the measurement —
-      // so deleting sync's wrapper `<div>` (the exact defect this test exists to
-      // catch) failed on the missing testid at 5s timeout and the overlay was never
-      // measured at all. An arm that goes red for the wrong reason certifies
-      // nothing. This check reads `aria-label`, which survives a wrapper deletion,
-      // so the overlay assertion is what fires first when the wrapper goes.
-      if (index === 0) {
-        expect(label, 'sync must lead the section and be gate 0').toMatch(
-          /multi-device sync — premium, locked/i
-        )
+      // ⚠️ This used to assert `index === 0` is sync, because sync LED
+      // `PREMIUM_BENEFIT_IDS`. Story 5-20 reordered that tuple (sync moved last,
+      // on market-research grounds), which broke this test — correctly: it was
+      // pinning a POSITION while claiming to guarantee PRESENCE. Rewritten to
+      // record presence and assert it after the loop, so the guarantee survives
+      // the next reorder instead of having to be re-pinned each time.
+      //
+      // ⚠️ ORDERING IS STILL LOAD-BEARING WITHIN THE ITERATION, and it was wrong
+      // on the first attempt: the wrapper-testid assertion below used to sit
+      // HERE, before the measurement — so deleting sync's wrapper `<div>` (the
+      // exact defect this test exists to catch) failed on the missing testid at
+      // 5s timeout and the overlay was never measured at all. An arm that goes
+      // red for the wrong reason certifies nothing. This check reads
+      // `aria-label`, which survives a wrapper deletion, so the overlay
+      // assertion is what fires first when the wrapper goes.
+      const isSyncGate = /multi-device sync — premium, locked/i.test(label)
+      if (isSyncGate) {
+        sawSyncGate = true
       }
 
       // Same hydration-tolerant click as the first test in this file: the resolved
@@ -573,13 +585,22 @@ for (const width of [320, 1280] as const) {
 
       // Now that the geometry has been measured, pin the structure it depends on:
       // sync's own wrapper `<div>`, added by story 41.1. Deliberately AFTER the
-      // measurement — see the ordering note above.
-      if (index === 0) {
+      // measurement — see the ordering note above. Keyed off THIS iteration's
+      // label, not a position and not the latch: `sawSyncGate` is sticky, so
+      // using it here would re-run this check on every gate after sync rather
+      // than on sync itself (code review).
+      if (isSyncGate) {
         await expect(
           page.getByTestId('premium-benefit-sync').getByTestId('premium-gate-locked'),
           'sync must be gated inside its own wrapper div'
         ).toHaveCount(1)
       }
     }
+
+    // The presence guarantee this test's sync assertions exist for: whatever the
+    // tuple order, one of the gates this loop opened and measured WAS sync. If a
+    // future reorder or removal drops sync out of the gated set, this fails —
+    // which is the real regression, rather than a position assertion going stale.
+    expect(sawSyncGate, 'the sync gate must be among the gated benefits measured').toBe(true)
   })
 }

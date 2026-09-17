@@ -72,7 +72,16 @@ export function PricingPageView(): React.ReactElement {
               name="Premium"
               price="€39"
               priceSuffix="/ year"
-              priceNote="or €99 once — lifetime license"
+              // Annual is the ANCHOR (story 5-20, AC-2): it stays the headline
+              // price and states its saving against monthly, so the cheaper
+              // entry point never reframes the page around €5.99. The 46%
+              // figure is €39/yr against €5.99 × 12 = €71.88 — a real saving.
+              // ⚠️ It is ALSO stated in `content/legal/pricing.md` (the legal
+              // page must stand alone), so this is two copies of one derived
+              // number. Both are pinned by tests that RE-DERIVE it rather than
+              // matching a literal, so a price change fails rather than leaving
+              // stale copy green.
+              priceNote="or €5.99 / month (annual saves 46%) · €99 once — lifetime license"
               tagline="Everything in Free, plus:"
               features={PREMIUM_FEATURE_LIST}
               ctaLabel="Get Premium"
@@ -89,9 +98,9 @@ export function PricingPageView(): React.ReactElement {
               the pricing.md billing prose below states in full — not a duplicate
               of it, so the two need not be kept word-for-word in sync. */}
           <p className="mx-auto max-w-2xl text-balance text-center text-sm text-muted">
-            The annual plan cancels anytime; the lifetime license is a one-time purchase. Billed
-            securely by Paddle, our Merchant of Record. Prices shown in EUR; Paddle charges the
-            equivalent in your local currency at checkout.
+            The monthly and annual plans cancel anytime; the lifetime license is a one-time
+            purchase. Billed securely by Paddle, our Merchant of Record. Prices shown in EUR; Paddle
+            charges the equivalent in your local currency at checkout.
           </p>
 
           {/* Full details, billing, and legal — the authoritative copy, rendered

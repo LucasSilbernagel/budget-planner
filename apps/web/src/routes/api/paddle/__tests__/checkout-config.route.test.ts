@@ -33,6 +33,7 @@ const PADDLE_KEYS = [
   'PADDLE_WEBHOOK_SECRET',
   'PADDLE_ANNUAL_PRICE_ID',
   'PADDLE_LIFETIME_PRICE_ID',
+  'PADDLE_MONTHLY_PRICE_ID',
 ] as const
 
 const saved: Record<string, string | undefined> = {}
@@ -70,6 +71,7 @@ describe('GET /api/paddle/checkout-config', () => {
       PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_secret',
       PADDLE_ANNUAL_PRICE_ID: 'pri_annual',
       PADDLE_LIFETIME_PRICE_ID: 'pri_lifetime',
+      PADDLE_MONTHLY_PRICE_ID: 'pri_monthly',
     })
 
     const response = await GETWith()
@@ -80,6 +82,7 @@ describe('GET /api/paddle/checkout-config', () => {
       isConfigured: true,
       environment: 'sandbox',
       clientToken: 'test_client_token',
+      monthlyPriceId: 'pri_monthly',
       annualPriceId: 'pri_annual',
       lifetimePriceId: 'pri_lifetime',
     })
@@ -96,9 +99,55 @@ describe('GET /api/paddle/checkout-config', () => {
       isConfigured: false,
       environment: 'sandbox',
       clientToken: null,
+      monthlyPriceId: null,
       annualPriceId: null,
       lifetimePriceId: null,
     })
+  })
+
+  it('FAILS CLOSED (500) in production when the monthly price is unset (story 5-20, code review)', async () => {
+    // ⚠️ INVERTED from the version 5-20 first shipped, which asserted a 200 here
+    // on the grounds that a missing monthly price was a "healthy" state. Code
+    // review reversed that decision: the same story states "€5.99 per month" on
+    // `content/legal/pricing.md`, the Paddle-required legal pricing page. A price
+    // advertised on a compliance surface must be chargeable, so a production
+    // build without the id is misconfigured and must fail loudly.
+    //
+    // The generic message is deliberate — this route is public and unrate-limited,
+    // so it must not become a free "which secrets are missing" probe.
+    withEnv({
+      NODE_ENV: 'production',
+      PADDLE_ENVIRONMENT: 'production',
+      PADDLE_API_KEY: 'pdl_live_secret',
+      PADDLE_CLIENT_TOKEN: 'live_client_token',
+      PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_secret',
+      PADDLE_ANNUAL_PRICE_ID: 'pri_annual',
+      PADDLE_LIFETIME_PRICE_ID: 'pri_lifetime',
+      // PADDLE_MONTHLY_PRICE_ID deliberately absent.
+    })
+
+    const response = await GETWith()
+    expect(response.status).toBe(500)
+    const body = await response.json()
+    expect(body.success).toBe(false)
+    expect(JSON.stringify(body)).not.toContain('PADDLE_MONTHLY_PRICE_ID')
+  })
+
+  it('serves null (never an empty string) for a declared-but-empty monthly id', async () => {
+    // `PADDLE_MONTHLY_PRICE_ID=` is the `.env.example` convention. `?? null` would
+    // have served `''` — a third state the route's own `string | null` contract
+    // denies. Sandbox, because an empty id cannot pass the production assertion.
+    withEnv({
+      NODE_ENV: 'development',
+      PADDLE_ENVIRONMENT: 'sandbox',
+      PADDLE_CLIENT_TOKEN: 'test_client_token',
+      PADDLE_MONTHLY_PRICE_ID: '   ',
+    })
+
+    const response = await GETWith()
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.monthlyPriceId).toBeNull()
   })
 
   it('fails loudly (500) rather than silently when production is misconfigured, without leaking which var is missing', async () => {
@@ -150,6 +199,7 @@ describe('GET /api/paddle/checkout-config', () => {
       PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_secret',
       PADDLE_ANNUAL_PRICE_ID: '  pri_annual\n',
       PADDLE_LIFETIME_PRICE_ID: 'pri_lifetime\t',
+      PADDLE_MONTHLY_PRICE_ID: '\n pri_monthly  ',
     })
 
     const response = await GETWith()
@@ -157,6 +207,7 @@ describe('GET /api/paddle/checkout-config', () => {
 
     expect(body.annualPriceId).toBe('pri_annual')
     expect(body.lifetimePriceId).toBe('pri_lifetime')
+    expect(body.monthlyPriceId).toBe('pri_monthly')
   })
 
   it('never lets an intermediary cache the response, success or failure', async () => {

@@ -23,19 +23,45 @@ vi.mock('@paddle/paddle-js', () => ({
 
 const originalFetch = global.fetch
 
+/**
+ * ⚠️ Deliberately has NO `monthlyPriceId`. Story 5-20 added a third plan whose
+ * price id is OPTIONAL in production, so "annual + lifetime, no monthly" is a
+ * real supported build — and keeping it as the default fixture means every
+ * pre-existing assertion here goes on measuring that state. The monthly-enabled
+ * fixture is {@link CONFIGURED_WITH_MONTHLY}.
+ */
 const CONFIGURED = {
   isConfigured: true,
   environment: 'sandbox' as const,
   clientToken: 'test_client_token',
+  monthlyPriceId: null,
   annualPriceId: 'pri_annual_test',
   lifetimePriceId: 'pri_lifetime_test',
 }
 
-/** A realistic-shaped `Paddle.PricePreview()` response for both catalog prices. */
+/** A fully-configured build — all three plans available (story 5-20). */
+const CONFIGURED_WITH_MONTHLY = {
+  ...CONFIGURED,
+  monthlyPriceId: 'pri_monthly_test',
+}
+
+/**
+ * A realistic-shaped `Paddle.PricePreview()` response.
+ *
+ * It carries a monthly line item as well, even though the DEFAULT fixture does
+ * not request one: Paddle returns what it was asked for, and a response holding
+ * an id the component never requested is exactly the case where a naive
+ * "read lineItems[0]" implementation would mis-attribute a price. The component
+ * looks each id up by `price.id`, so the extra line is correctly ignored.
+ */
 const PRICE_PREVIEW_RESPONSE = {
   data: {
     details: {
       lineItems: [
+        {
+          price: { id: 'pri_monthly_test' },
+          formattedTotals: { subtotal: '€5.99', tax: '€0.78', total: '€6.77' },
+        },
         {
           price: { id: 'pri_annual_test' },
           formattedTotals: { subtotal: '€39.00', tax: '€5.07', total: '€44.07' },
@@ -133,6 +159,115 @@ describe('PremiumCheckoutButton — price preview (auth-independent)', () => {
 
     expect(screen.getByText('€99.00 + €12.87 tax = €111.87')).toBeInTheDocument()
     expect(screen.queryByText('€39.00 + €5.07 tax = €44.07')).not.toBeInTheDocument()
+  })
+})
+
+describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => {
+  const ANON_SEED = {
+    isAuthenticated: false,
+    userId: null,
+    email: null,
+    subscriptionStatus: null,
+  } as const
+
+  it('offers monthly as a third enabled plan and previews its real localized total', async () => {
+    stubConfigFetch(CONFIGURED_WITH_MONTHLY)
+    render(
+      <SessionSeedProvider seed={ANON_SEED}>
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    // Static fallback first…
+    expect(screen.getByRole('radio', { name: 'Monthly · €5.99/mo' })).toBeInTheDocument()
+    // …then Paddle's own formatted total.
+    expect(await screen.findByRole('radio', { name: 'Monthly · €6.77' })).toBeInTheDocument()
+
+    // All three plans are requested in ONE PricePreview call, monthly included.
+    expect(pricePreview).toHaveBeenCalledWith({
+      items: [
+        { priceId: 'pri_monthly_test', quantity: 1 },
+        { priceId: 'pri_annual_test', quantity: 1 },
+        { priceId: 'pri_lifetime_test', quantity: 1 },
+      ],
+    })
+  })
+
+  it('keeps ANNUAL selected by default even when monthly is available — annual is the anchor (AC-2)', async () => {
+    stubConfigFetch(CONFIGURED_WITH_MONTHLY)
+    render(
+      <SessionSeedProvider seed={ANON_SEED}>
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    // ⚠️ Wait on the BREAKDOWN, not just an enabled radio. `findEnabledRadio`
+    // settles as soon as `/api/paddle/checkout-config` resolves, which is one
+    // await EARLIER than PricePreview — asserting the breakdown right after it
+    // is a coin flip on fetch ordering. (Caught by this story's own positive
+    // control, where the assertion failed for timing reasons rather than for
+    // the mutation under test. Same shape as the recorded findByRole
+    // pre-config race.)
+    await screen.findByText('€39.00 + €5.07 tax = €44.07')
+
+    expect(screen.getByRole('radio', { name: /^Annual/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: /^Monthly/ })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('opens checkout with the MONTHLY price id after selecting monthly — never the lifetime one', async () => {
+    stubConfigFetch(CONFIGURED_WITH_MONTHLY)
+    const user = userEvent.setup()
+    render(
+      <SessionSeedProvider seed={ANON_SEED}>
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    await user.click(await findEnabledRadio(/^Monthly/))
+    // Same pre-config race as above: await the breakdown rather than assuming
+    // PricePreview has already resolved by the time the click lands.
+    await screen.findByText('€5.99 + €0.78 tax = €6.77')
+
+    await user.click(screen.getByRole('button', { name: /get premium/i }))
+
+    await waitFor(() => expect(checkoutOpen).toHaveBeenCalledTimes(1))
+    const call = checkoutOpen.mock.calls[0]?.[0] as { items: Array<{ priceId: string }> }
+    expect(call.items).toEqual([{ priceId: 'pri_monthly_test', quantity: 1 }])
+    // ⚠️ The specific mis-route this guards: a three-plan selection collapsed
+    // into a two-branch ternary sends monthly to the LIFETIME price — a €99
+    // one-time charge for someone who asked to pay €5.99 a month.
+    expect(JSON.stringify(call.items)).not.toContain('pri_lifetime_test')
+  })
+
+  it('DISABLES monthly when its price id is unset, WITHOUT breaking the other two plans', async () => {
+    // A dev/sandbox build without the monthly id. (Production cannot reach this
+    // state since code review made the id required.) The plan must render
+    // DISABLED rather than vanish — the test name said "hides" while the code
+    // disabled, which review flagged as a mismatch between name and behaviour —
+    // and must not take annual/lifetime down with it:
+    // in particular the PricePreview call must not send an undefined line item,
+    // which would fail the whole call and strand every plan on static labels.
+    stubConfigFetch(CONFIGURED)
+    render(
+      <SessionSeedProvider seed={ANON_SEED}>
+        <PremiumCheckoutButton />
+      </SessionSeedProvider>
+    )
+
+    expect(await screen.findByRole('radio', { name: 'Annual · €44.07' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Lifetime · €111.87' })).toBeInTheDocument()
+
+    const monthly = screen.getByRole('radio', { name: /^Monthly/ })
+    expect(monthly).toBeDisabled()
+    // It still shows the static fallback, never a resolved total it cannot have.
+    expect(monthly).toHaveAccessibleName('Monthly · €5.99/mo')
+
+    expect(pricePreview).toHaveBeenCalledWith({
+      items: [
+        { priceId: 'pri_annual_test', quantity: 1 },
+        { priceId: 'pri_lifetime_test', quantity: 1 },
+      ],
+    })
   })
 })
 

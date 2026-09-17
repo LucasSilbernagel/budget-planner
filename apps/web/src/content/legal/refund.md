@@ -1,12 +1,15 @@
 _This page is informational and does not constitute legal advice, and is read together with Paddle's buyer terms._
 
-_Last updated: 11 September 2026_
+_Last updated: 16 September 2026_
 
 ## Cancelling your subscription
 
-You can cancel your Premium subscription at any time.
+You can cancel your Premium subscription at any time, whether you pay monthly or annually.
 When you cancel, your subscription remains active until the end of the current billing period, after which it will not renew and you will not be charged again.
 After your subscription ends, your account reverts to the free tier.
+
+A **lifetime** license is a one-time purchase, so there is no subscription to cancel and nothing will ever renew.
+See our [Terms of Service](/terms) for what a lifetime license covers.
 
 ## Refunds
 

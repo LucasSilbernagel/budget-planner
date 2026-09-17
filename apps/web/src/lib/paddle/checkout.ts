@@ -75,6 +75,8 @@ export interface LocalizedPriceBreakdown {
 }
 
 export interface LocalizedPlanPrices {
+  /** Paddle's own pre-formatted breakdown for the monthly price (story 5-20). */
+  monthly: LocalizedPriceBreakdown | null
   /** Paddle's own pre-formatted breakdown for the annual price. */
   annual: LocalizedPriceBreakdown | null
   /** Paddle's own pre-formatted breakdown for the lifetime price. */
@@ -82,8 +84,9 @@ export interface LocalizedPlanPrices {
 }
 
 /**
- * Fetches a country-localized price breakdown for both catalog prices in one
- * `Paddle.PricePreview()` call.
+ * Fetches a country-localized price breakdown for the catalog prices in one
+ * `Paddle.PricePreview()` call (three since story 5-20, when the monthly plan
+ * was added; monthly is omitted from the request when it is not configured).
  *
  * Deliberately passes NO country/address — Paddle auto-detects the visitor's
  * location from their IP when none is given, which is exactly what we want:
@@ -100,16 +103,48 @@ export interface LocalizedPlanPrices {
  */
 export async function getLocalizedPlanPrices(
   paddle: Paddle,
-  priceIds: { annualPriceId: string; lifetimePriceId: string }
+  priceIds: {
+    /**
+     * Story 5-20. OPTIONAL, unlike its two siblings: a build can legitimately
+     * have annual and lifetime configured and no monthly price (the production
+     * assertion does not require one). Only configured ids are sent as line
+     * items — asking Paddle to preview an `undefined` price fails the WHOLE
+     * `PricePreview` call, which would take the other two plans' real totals
+     * down with it and fall the entire toggle back to static labels.
+     */
+    monthlyPriceId?: string | undefined
+    annualPriceId: string
+    lifetimePriceId: string
+  }
 ): Promise<LocalizedPlanPrices> {
-  const preview = await paddle.PricePreview({
-    items: [
-      { priceId: priceIds.annualPriceId, quantity: 1 },
-      { priceId: priceIds.lifetimePriceId, quantity: 1 },
-    ],
-  })
+  const requiredItems = [
+    { priceId: priceIds.annualPriceId, quantity: 1 },
+    { priceId: priceIds.lifetimePriceId, quantity: 1 },
+  ]
+  const monthlyItem = priceIds.monthlyPriceId
+    ? [{ priceId: priceIds.monthlyPriceId, quantity: 1 }]
+    : []
 
-  const breakdownFor = (priceId: string): LocalizedPriceBreakdown | null => {
+  // ⚠️ `PricePreview` is ALL-OR-NOTHING: one unknown price id rejects the whole
+  // call. Before the monthly plan existed only a required id could do that, so a
+  // failure meant checkout was broken anyway. Now a typo'd, archived, or
+  // wrong-environment monthly id — none of which this code can validate — would
+  // take annual's and lifetime's real localized totals down with it, silently
+  // stranding BOTH on their static "€39/€99" fallbacks via the caller's
+  // `.catch()`. So a failure with a monthly item present is retried without it:
+  // the optional plan degrades alone rather than damaging the two that pay.
+  let preview: Awaited<ReturnType<typeof paddle.PricePreview>>
+  let monthlyRequested = monthlyItem.length > 0
+  try {
+    preview = await paddle.PricePreview({ items: [...monthlyItem, ...requiredItems] })
+  } catch (error) {
+    if (!monthlyRequested) throw error
+    monthlyRequested = false
+    preview = await paddle.PricePreview({ items: requiredItems })
+  }
+
+  const breakdownFor = (priceId: string | undefined): LocalizedPriceBreakdown | null => {
+    if (!priceId) return null
     const formatted = preview.data.details.lineItems.find(
       (item) => item.price.id === priceId
     )?.formattedTotals
@@ -119,6 +154,10 @@ export async function getLocalizedPlanPrices(
   }
 
   return {
+    // `monthlyRequested` is false after a retry, so a monthly id that Paddle
+    // rejected reports `null` (static fallback) rather than being looked up in a
+    // response that never contained it.
+    monthly: monthlyRequested ? breakdownFor(priceIds.monthlyPriceId) : null,
     annual: breakdownFor(priceIds.annualPriceId),
     lifetime: breakdownFor(priceIds.lifetimePriceId),
   }
