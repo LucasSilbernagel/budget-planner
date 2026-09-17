@@ -127,6 +127,13 @@
       "when": 1789591564183,
       "tag": "0017_sad_venus",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789654227789,
+      "tag": "0018_panoramic_gunslinger",
+      "breakpoints": true
     }
   ]
 }

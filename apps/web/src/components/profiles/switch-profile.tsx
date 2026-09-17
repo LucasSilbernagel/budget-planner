@@ -13,7 +13,7 @@ import {
   useProfileSwitcher,
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
-import { profileColor, profileIcon } from '@/lib/profile-appearance'
+import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
 import { useEffect, useRef, useState } from 'react'
 
 // Profile color options (same as profile-list.tsx)
@@ -60,9 +60,13 @@ export function SwitchProfileDropdown() {
   // ⚠️ These were `(profileId: number) => PROFILE_COLORS[profileId % …]`, and a
   // profile id has been a uuid STRING since story 5-14 — so `"a1b2…" % 8` was
   // `NaN` and every avatar here rendered with no colour class and no icon. Now
-  // routed through the shared hash `profile-list.tsx` already used.
+  // routed through the same shared helpers `profile-list.tsx` uses.
+  //
+  // ⚠️ They differ since story 54.2, and the difference is the point: COLOUR is
+  // still purely hash-derived and takes an id, while the ICON takes the whole
+  // profile, because a user-chosen `icon` wins over the hash.
   const getProfileColor = profileColor
-  const getProfileIcon = profileIcon
+  const getProfileIcon = resolveProfileIcon
 
   const toggleDropdown = () => setIsOpen(!isOpen)
 
@@ -90,7 +94,7 @@ export function SwitchProfileDropdown() {
             activeProfile.id
           )}`}
         >
-          {getProfileIcon(activeProfile.id)}
+          {getProfileIcon(activeProfile)}
         </div>
         <div className="flex flex-col items-start">
           <span className="text-sm font-medium text-gray-900">{activeProfile.name}</span>
@@ -135,7 +139,7 @@ export function SwitchProfileDropdown() {
                     profile.id
                   )}`}
                 >
-                  {getProfileIcon(profile.id)}
+                  {getProfileIcon(profile)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{profile.name}</p>
@@ -186,7 +190,7 @@ export function SwitchProfileSimple() {
   }
 
   const color = profileColor(activeProfile.id)
-  const icon = profileIcon(activeProfile.id)
+  const icon = resolveProfileIcon(activeProfile)
 
   return (
     <a

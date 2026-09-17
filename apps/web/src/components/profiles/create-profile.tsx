@@ -66,8 +66,19 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
       // For now, we use a temporary userId - in production this would come from auth
       const userId = localStorage.getItem('userId') || 'temp-user'
 
+      // ⚠️ `icon` is stripped, NOT spread (code review 54.2, HIGH — found by all
+      // three review layers). This dialog renders no icon picker, so `form.icon`
+      // is always `EMPTY_PROFILE_FORM`'s `''`. Spreading it stored `icon: ''` on
+      // the new profile AND shipped it to the server, because `toServerPayload`'s
+      // guard is `!= null` and `'' != null` is true — giving the column two
+      // different "unset" encodings and contradicting the `null` = "never chosen"
+      // contract documented in `packages/db/src/schema.ts`. Nothing rendered
+      // differently (`isProfileIcon('')` is false, so the hash fallback showed
+      // either way), which is precisely why the whole suite stayed green.
+      const { icon: _unusedIcon, ...formWithoutIcon } = form
+
       createProfile({
-        ...form,
+        ...formWithoutIcon,
         // No currency field any more (story 54.1): new profiles carry the
         // currency-less sentinel, the former picker's default.
         currency: 'NONE',

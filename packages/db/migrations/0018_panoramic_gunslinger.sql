@@ -1,0 +1,1 @@
+ALTER TABLE "userProfiles" ADD COLUMN "icon" varchar(16);

@@ -43,6 +43,60 @@ describe('override-modal dark surfaces (story 11-2, AC-3)', () => {
     expect(dialog.className).toContain('dark:bg-gray-800')
   })
 
+  /**
+   * Story 54.2: the icon picker sits inside that dark card, so BOTH of its states
+   * need a dark variant — an unselected option with only a light `border-gray-300`
+   * is invisible against `dark:bg-gray-800`.
+   */
+  it('gives both icon-picker states a dark variant (story 54.2)', () => {
+    useProfileStore.setState({
+      profiles: [{ id: 'p1', userId: 'u1', name: 'Main', isDefault: true, currency: 'NONE' }],
+      activeProfileId: 'p1',
+    })
+    renderWithProviders(<EditProfileDialog profileId="p1" onClose={() => {}} />)
+
+    const options = screen.getAllByRole('radio')
+    const selected = options.filter((o) => o.getAttribute('aria-checked') === 'true')
+    const unselected = options.filter((o) => o.getAttribute('aria-checked') === 'false')
+
+    expect(selected).toHaveLength(1)
+    expect(unselected).toHaveLength(7)
+    expect(selected[0]?.className).toContain('dark:border-blue-300')
+    for (const option of unselected) {
+      expect(option.className).toContain('dark:border-gray-600')
+    }
+  })
+
+  /**
+   * ⚠️ SEPARATE FROM THE DARK-MODE TEST ON PURPOSE (code review 54.2). The test
+   * above asserts colour tokens, so it can only ever prove the two states have
+   * DIFFERENT COLOURS — it would pass against a picker whose states differ by hue
+   * alone, which is the WCAG 1.4.1 defect the review actually found. This one
+   * asserts the non-colour signal: the border WIDTH differs, so the selection
+   * survives colour-blindness and a monochrome rendering.
+   */
+  it('distinguishes the selected icon by border width, not colour alone (story 54.2)', () => {
+    useProfileStore.setState({
+      profiles: [{ id: 'p1', userId: 'u1', name: 'Main', isDefault: true, currency: 'NONE' }],
+      activeProfileId: 'p1',
+    })
+    renderWithProviders(<EditProfileDialog profileId="p1" onClose={() => {}} />)
+
+    const options = screen.getAllByRole('radio')
+    const selected = options.find((o) => o.getAttribute('aria-checked') === 'true')
+    const unselected = options.filter((o) => o.getAttribute('aria-checked') === 'false')
+
+    // Class TOKEN membership, not substring: 'border-2' is a substring of nothing
+    // here, but 'border-4' vs 'border-2' must be compared as whole tokens.
+    const tokens = (el: Element) => el.className.split(/\s+/)
+    expect(tokens(selected as Element)).toContain('border-4')
+    expect(tokens(selected as Element)).not.toContain('border-2')
+    for (const option of unselected) {
+      expect(tokens(option)).toContain('border-2')
+      expect(tokens(option)).not.toContain('border-4')
+    }
+  })
+
   it('gives the BalancePage add/edit modal card a dark surface', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)

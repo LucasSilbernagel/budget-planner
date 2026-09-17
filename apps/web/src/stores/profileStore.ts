@@ -34,6 +34,15 @@ export interface ClientProfile {
   description?: string
   isDefault: boolean
   currency: string
+  // User-chosen avatar emoji (Story 54.2, FR78). Optional because it is nullable
+  // in the database and unset for every profile until its owner picks one — in
+  // which case the avatar falls back to the id hash (`resolveProfileIcon`).
+  //
+  // ⚠️ NO persist-version bump for this field, and that is deliberate: adding an
+  // OPTIONAL property needs no migration, because an older persisted record
+  // simply lacks the key and reads as `undefined`. Bumping `version` below would
+  // re-run the currency-canonicalizing `migrate` for no reason.
+  icon?: string | null
   // Set by useProfileManager.createProfile / server sync. Optional because the
   // seeded DEFAULT_PROFILE and older persisted records may predate these fields.
   createdAt?: string

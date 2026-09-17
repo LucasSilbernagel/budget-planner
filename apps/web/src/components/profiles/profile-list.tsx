@@ -15,7 +15,7 @@ import {
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
-import { profileColor, profileIcon } from '@/lib/profile-appearance'
+import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
 import { canonicalizeCurrency } from '@budget-planner/core'
 import { useState } from 'react'
 import { EditProfileDialog } from './edit-profile'
@@ -100,7 +100,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
               onDelete={() => handleDelete(profile.id)}
               onEdit={() => setEditingProfileId(profile.id)}
               color={profileColor(profile.id)}
-              icon={profileIcon(profile.id)}
+              icon={resolveProfileIcon(profile)}
             />
           ))}
         </div>

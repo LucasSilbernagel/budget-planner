@@ -90,6 +90,13 @@ export const userProfileSchema = z.object({
   description: z.string().max(500).optional(),
   isDefault: z.boolean().default(false),
   currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']),
+  // Story 54.2 (FR78): the user-chosen avatar emoji. Nullable because the column
+  // is nullable and `null` ("never chosen", render the hash fallback) must
+  // round-trip through a pull without a ZodError. Bounded to the varchar(16) the
+  // column declares. ⚠️ TRIPLE-GATED: mirrored in syncOperationDataSchema below,
+  // in the server gate (apps/web/src/server/api/sync.ts) and in the syncBridge
+  // payload whitelist, or the field silently does not round-trip.
+  icon: z.string().max(16).nullable().optional(),
   userId: z.string().uuid(),
 })
 
@@ -159,6 +166,17 @@ export const syncOperationDataSchema = z.object({
   currency: z
     .enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD'])
     .optional(),
+  // Story 54.2 (FR78): the userProfile entity's chosen avatar emoji.
+  //
+  // ⚠️ This gate STRIPS undeclared keys, so omitting this line would drop `icon`
+  // from the payload before the operation is ever queued — with no error, no
+  // rejection, and a "successful" sync that silently discards the user's choice.
+  // Same trap `sortOrder` documents above.
+  //
+  // `.nullable()` as well as `.optional()`, for the reason `categoryId` records
+  // above: a `null` is a legitimate value ("never chosen") that must survive a
+  // pull, and an optional-only schema would reject it at the queue gate.
+  icon: z.string().max(16).nullable().optional(),
   userId: z.string().uuid().optional(),
 })
 

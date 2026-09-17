@@ -226,6 +226,18 @@ export function toServerPayload(
       if (entity['description'] != null) {
         payload['description'] = entity['description']
       }
+      // Story 54.2 (FR78): the chosen avatar emoji.
+      //
+      // ⚠️ OMITTED when unset, deliberately — the same conditional shape as
+      // `description` above, and the opposite of `sortOrder`'s always-send rule.
+      // `updateEntity` does a partial `.set()`, so omitting the key leaves the
+      // server's value alone, which is exactly right for a profile that has never
+      // had an icon chosen. Story 54.2 ships no "clear my icon" affordance, so
+      // nothing ever needs to transmit an explicit null; if one is ever added,
+      // this condition is what has to change.
+      if (entity['icon'] != null) {
+        payload['icon'] = entity['icon']
+      }
       return payload
     }
     default: {

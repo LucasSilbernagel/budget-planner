@@ -392,6 +392,23 @@ export const userProfiles = pgTable(
     description: text('description'),
     isDefault: boolean('isDefault').default(false).notNull(),
     currency: currencyEnum('currency').default('NONE'),
+    // User-chosen avatar emoji (Story 54.2, FR78).
+    //
+    // ⚠️ NULLABLE ON PURPOSE, and there is deliberately no backfill. `null` means
+    // "never chosen", and the client renders the hash-derived fallback it has
+    // always rendered (`apps/web/src/lib/profile-appearance.ts`). That is what
+    // makes this column invisible to every user who does not open the picker.
+    //
+    // ⚠️ NOT an enum and NOT CHECK-constrained, so the stored value is not
+    // trustworthy: drizzle-kit 0.23 does not emit CHECK constraints to migrations
+    // at all in this repo (see packages/core/src/sync/types.ts), so a constraint
+    // here would be documentation, not enforcement. The real gate is
+    // `isProfileIcon` at the render boundary, which falls back to the hash for
+    // anything that is not one of the eight known emoji.
+    //
+    // 16 is comfortable for a multi-code-point emoji: '✈️' alone carries a
+    // variation selector, and a flag or ZWJ sequence is longer still.
+    icon: varchar('icon', { length: 16 }),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),

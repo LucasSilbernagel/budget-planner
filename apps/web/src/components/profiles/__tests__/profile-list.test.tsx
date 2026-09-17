@@ -1,3 +1,4 @@
+import { profileIcon } from '@/lib/profile-appearance'
 import { useProfileStore } from '@/stores/profileStore'
 import { fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -131,5 +132,68 @@ describe('ProfileList edit action (story 54.1)', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Edit Profile' })
     expect(within(dialog).getByLabelText(/profile name/i)).toHaveValue('Main Profile')
+  })
+})
+
+/**
+ * Story 54.2 (FR78): the card avatar prefers a stored icon.
+ *
+ * ⚠️ AC-8 is the point of the second test: a profile that has never chosen an icon
+ * must render EXACTLY what it rendered before this story, so the column's arrival
+ * is invisible to everyone who does not open the picker. Asserting "some emoji is
+ * present" would pass even if the fallback had changed, so this compares against
+ * `profileIcon` — the hash function, which this story does not touch.
+ */
+describe('ProfileList avatar icon (story 54.2)', () => {
+  afterEach(() => {
+    useProfileStore.getState().reset()
+  })
+
+  const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
+
+  it('renders the stored icon when the profile has one', () => {
+    useProfileStore.setState({
+      profiles: [{ ...main, icon: '✈️' }],
+      activeProfileId: 'main',
+    })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.getByText('✈️')).toBeInTheDocument()
+    // Discriminating: the hash would NOT have produced this one.
+    expect(profileIcon('main')).not.toBe('✈️')
+  })
+
+  it('falls back to exactly the hash icon when no icon is stored (AC-8)', () => {
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
+  })
+
+  it('ignores a stored value that is not one of the eight icons', () => {
+    useProfileStore.setState({
+      profiles: [{ ...main, icon: '🦄' }],
+      activeProfileId: 'main',
+    })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.queryByText('🦄')).toBeNull()
+    expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
+  })
+
+  /**
+   * Task 6.4's second half, which the code review found ticked but unasserted: a
+   * row PULLED from the server with an explicit `icon: null` must render the hash
+   * fallback. `applyServerChanges.test.ts` proves the null lands in the store;
+   * this proves what the store then renders, which is the half a user sees.
+   */
+  it('renders the hash fallback for a profile whose stored icon is explicitly null', () => {
+    useProfileStore.setState({
+      profiles: [{ ...main, icon: null }],
+      activeProfileId: 'main',
+    })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
   })
 })

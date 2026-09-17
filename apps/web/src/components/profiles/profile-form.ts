@@ -21,14 +21,36 @@ import type { ClientProfile } from '@/hooks/useActiveProfile'
 export interface ProfileFormState {
   name: string
   description: string
+  /**
+   * The chosen avatar emoji (story 54.2). Always one of `PROFILE_ICONS`.
+   *
+   * ⚠️ The EDIT dialog seeds this with the profile's CURRENTLY DISPLAYED icon —
+   * its stored one, or the hash fallback when it has never chosen one — so the
+   * avatar does not appear to change the moment the dialog opens. It follows that
+   * a non-empty value here does NOT mean the user picked anything, which is why
+   * the dialog sends `icon` only when it differs from the value captured at open.
+   *
+   * The CREATE dialog does not render a picker (story 54.2 scope), so it leaves
+   * this at `''` and new profiles are stored with no icon at all.
+   */
+  icon: string
 }
 
 export const EMPTY_PROFILE_FORM: ProfileFormState = {
   name: '',
   description: '',
+  icon: '',
 }
 
-/** Returns a field → message map; an empty object means the form is valid. */
+/**
+ * Returns a field → message map; an empty object means the form is valid.
+ *
+ * ⚠️ There is deliberately NO rule for `icon`: the picker is a closed set of eight
+ * radio options, so it cannot produce an invalid value the way a free-text field
+ * can. The defence against a bad value is at the RENDER boundary
+ * (`resolveProfileIcon`, which falls back to the hash), because that is where an
+ * untrusted value actually arrives — from a pulled row, not from this form.
+ */
 export function validateProfileForm(
   form: ProfileFormState,
   profiles: readonly ClientProfile[],

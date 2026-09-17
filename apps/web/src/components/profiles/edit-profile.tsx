@@ -12,8 +12,9 @@
  */
 
 import { useProfileById, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
+import { PROFILE_ICONS, PROFILE_ICON_LABELS, resolveProfileIcon } from '@/lib/profile-appearance'
 import { isSyncActive } from '@/lib/sync/syncBridge'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { type ProfileFormState, validateProfileForm } from './profile-form'
 
@@ -36,10 +37,19 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
   const [initialForm] = useState<ProfileFormState>(() => ({
     name: profile?.name ?? '',
     description: profile?.description ?? '',
+    // The icon the profile is ALREADY showing — its stored one, or the
+    // hash-derived fallback when it has never had one chosen. Seeding the picker
+    // with the fallback is what stops the avatar appearing to change the instant
+    // the dialog opens. It also means a non-empty value here is not evidence of a
+    // choice, which is why `handleSubmit` sends `icon` only when it differs.
+    icon: profile ? resolveProfileIcon(profile) : '',
   }))
   const [form, setForm] = useState<ProfileFormState>(initialForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // One slot per icon option, so the arrow-key handler can move focus under the
+  // roving tabindex (the unselected options are not focusable on their own).
+  const iconRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   // The profile can disappear under an open dialog (a pull delivered its
   // tombstone). There is nothing left to edit, so close.
@@ -59,7 +69,16 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
     // Nothing changed: skip the write so no pointless sync op is queued. Checked
     // BEFORE validation, so a profile whose stored name already collides with
     // another (duplicates merged from two devices) can still be closed with Save.
-    if (form.name === initialForm.name && form.description === initialForm.description) {
+    //
+    // ⚠️ `icon` MUST be part of this comparison (story 54.2). Without it an
+    // icon-only edit matches "unchanged" and closes having saved nothing — and
+    // every other test in this file still passes, because they all change the name
+    // or the description.
+    if (
+      form.name === initialForm.name &&
+      form.description === initialForm.description &&
+      form.icon === initialForm.icon
+    ) {
       onClose()
       return
     }
@@ -88,7 +107,29 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
       // The sync payload omits a null/undefined description and the server only
       // SETs fields it receives, so `undefined` would leave the OLD description on
       // the server, and the next pull would restore it on every device.
-      modifyProfile(profileId, { name: form.name, description: form.description })
+      // ⚠️ `icon` is put in the UPDATES OBJECT only when the user actually changed
+      // it. The picker opens pre-selected on the hash fallback, so including it
+      // unconditionally would stamp that fallback into the database as a
+      // deliberate choice every time someone merely renamed a profile — a write
+      // the user never made, and one that would outlive any future hash change.
+      //
+      // ⚠️ PRECISION, corrected by code review 54.2: this is a claim about the
+      // UPDATES OBJECT, not about the wire. `updateProfile` syncs
+      // `{ ...previous, ...updates }`, so once a profile HAS a stored icon, that
+      // icon rides along in the payload of every later edit — and `updateEntity`
+      // does a partial `.set()` with no `baseVersion` check, so a stale device can
+      // revert a newer choice made elsewhere. That is pre-existing last-write-wins
+      // (it applies to `name` and `description` identically) and is logged in
+      // `deferred-work.md`; what this guard genuinely prevents is a NEVER-CHOSEN
+      // profile acquiring an icon it never had.
+      const updates: { name: string; description: string; icon?: string } = {
+        name: form.name,
+        description: form.description,
+      }
+      if (form.icon !== initialForm.icon) {
+        updates.icon = form.icon
+      }
+      modifyProfile(profileId, updates)
     } catch (_error) {
       setErrors({ form: 'Failed to save profile. Please try again.' })
       setIsSubmitting(false)
@@ -103,6 +144,52 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 
     if (errors[field]) {
       setErrors({ ...errors, [field]: '' })
+    }
+  }
+
+  /**
+   * The WAI-ARIA radiogroup keyboard contract for the icon picker (code review
+   * 54.2). Arrows move to the adjacent option, wrapping at both ends; Home/End
+   * jump to the first/last. Moving SELECTS as it goes, which is the standard
+   * behaviour for a radiogroup and what `aria-checked` then announces.
+   *
+   * Focus is moved explicitly because the roving tabindex leaves the other seven
+   * options unfocusable — without this the browser has nowhere to send focus.
+   */
+  const handleIconKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const count = PROFILE_ICONS.length
+    const current = PROFILE_ICONS.findIndex((icon) => icon === form.icon)
+    // -1 when the stored value is not one of the eight; start from the first so
+    // the keyboard still works on a profile holding an unrecognised icon.
+    const from = current === -1 ? 0 : current
+
+    let next: number
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = (from + 1) % count
+        break
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = (from - 1 + count) % count
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = count - 1
+        break
+      default:
+        return
+    }
+
+    // Only now, once we know the key was ours: an unhandled key must keep its
+    // default (Tab must still leave the group, Escape must still close the modal).
+    e.preventDefault()
+    const icon = PROFILE_ICONS[next]
+    if (icon) {
+      handleChange('icon', icon)
+      iconRefs.current[next]?.focus()
     }
   }
 
@@ -146,6 +233,65 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        {/* Icon picker (story 54.2, FR78) */}
+        <div>
+          <span id="edit-profile-icon-label" className="block text-sm font-medium text-label mb-1">
+            Profile Icon
+          </span>
+          {/*
+            A radiogroup rather than eight independent toggles: exactly one is
+            chosen at a time.
+            ⚠️ Choosing `role="radio"` OBLIGES us to implement the radiogroup
+            keyboard contract, because assistive tech announces "N of 8" and tells
+            the user to arrow between options. Code review 54.2 caught this
+            promising behaviour the widget did not have. Hence `onKeyDown` below
+            and the roving tabindex: exactly ONE option is in the tab order, and
+            arrows move (and select) within the group.
+          */}
+          <div
+            role="radiogroup"
+            aria-labelledby="edit-profile-icon-label"
+            className="flex flex-wrap gap-2"
+            onKeyDown={handleIconKeyDown}
+          >
+            {PROFILE_ICONS.map((icon, index) => {
+              const selected = form.icon === icon
+              return (
+                <button
+                  key={icon}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  // ⚠️ An emoji is not an accessible name — see PROFILE_ICON_LABELS.
+                  aria-label={PROFILE_ICON_LABELS[icon]}
+                  // Roving tabindex: Tab enters the group once, landing on the
+                  // selected option, rather than stopping on all eight.
+                  tabIndex={selected ? 0 : -1}
+                  ref={(el) => {
+                    iconRefs.current[index] = el
+                  }}
+                  onClick={() => handleChange('icon', icon)}
+                  className={`w-10 h-10 rounded-lg text-xl flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    selected
+                      ? // ⚠️ The selected state must NOT be carried by colour alone
+                        // (WCAG 1.4.1). Code review 54.2 found the original pair
+                        // differed only in hue — `border-2` was in the shared base
+                        // string, and the only ring was `focus:`, i.e. focus state,
+                        // not selection state. The BORDER WIDTH now differs (4 vs 2),
+                        // which survives both colour-blindness and a monochrome
+                        // rendering. `dark:border-blue-300` rather than `-400` lifts
+                        // the dark-mode non-text contrast above 1.4.11's 3:1.
+                        'border-4 border-blue-600 bg-blue-50 dark:border-blue-300 dark:bg-blue-950/40'
+                      : 'border-2 border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500'
+                  }`}
+                >
+                  <span aria-hidden="true">{icon}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {/* Name field */}
         <div>
           <label htmlFor="edit-profile-name" className="block text-sm font-medium text-label mb-1">

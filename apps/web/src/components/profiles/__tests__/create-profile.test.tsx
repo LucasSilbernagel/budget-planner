@@ -1,6 +1,7 @@
+import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
 import { renderWithProviders, screen, userEvent } from '@/test/utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CreateProfileDialog } from '../create-profile'
 
 /**
@@ -100,5 +101,57 @@ describe('CreateProfileDialog viewport fit (story 31.3)', () => {
     // already wins on Tailwind's emitted source order, so this is hygiene —
     // but `vh` is also the wrong unit on mobile Safari (large viewport).
     expect(cardTokens()).not.toContain('max-h-[90vh]')
+  })
+})
+
+/**
+ * Story 54.2 (FR78) — the create dialog must NOT stamp an icon.
+ *
+ * ⚠️ THIS IS THE REGRESSION TEST FOR A HIGH FOUND BY ALL THREE CODE-REVIEW LAYERS.
+ * Story 54.2 added `icon` to the shared `ProfileFormState`, and this dialog does
+ * `createProfile({ ...form, … })`. `EMPTY_PROFILE_FORM.icon` is `''`, so every new
+ * profile persisted `icon: ''` — and `toServerPayload`'s guard is `!= null`, so
+ * `''` shipped to the server too, giving the nullable column two different
+ * "unset" encodings and contradicting the `null` = "never chosen" contract.
+ *
+ * Nothing LOOKED wrong (`isProfileIcon('')` is false, so the hash fallback
+ * rendered either way), which is exactly why 2815 passing tests missed it. The
+ * assertions below are therefore about the absence of a KEY, not about rendering.
+ */
+describe('CreateProfileDialog does not stamp an icon (story 54.2, code review)', () => {
+  afterEach(() => {
+    clearSyncBridge()
+    useProfileStore.getState().reset()
+  })
+
+  const submit = async () => {
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(/profile name/i), 'Investments')
+    await user.click(screen.getByRole('button', { name: /create profile/i }))
+  }
+
+  it('stores a new profile with no icon key at all', async () => {
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+    await submit()
+
+    const created = useProfileStore.getState().profiles.find((p) => p.name === 'Investments')
+    expect(created).toBeDefined()
+    expect(Object.hasOwn(created as object, 'icon')).toBe(false)
+  })
+
+  it('queues a create payload with no icon key', async () => {
+    const handle = {
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      queueCreate: vi.fn(async () => {}),
+      queueUpdate: vi.fn(async () => {}),
+      queueDelete: vi.fn(async () => {}),
+    }
+    registerSyncBridge(handle)
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+    await submit()
+
+    expect(handle.queueCreate).toHaveBeenCalledTimes(1)
+    const payload = handle.queueCreate.mock.calls[0]?.[2] as Record<string, unknown>
+    expect(Object.hasOwn(payload, 'icon')).toBe(false)
   })
 })

@@ -242,6 +242,18 @@ const userProfileSchema = z.object({
   description: z.string().max(500).optional(),
   isDefault: z.boolean().default(false),
   currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']),
+  // Story 54.2 (FR78): the user-chosen avatar emoji.
+  //
+  // ⚠️ This object is a HAND-MAINTAINED DUPLICATE of core's `userProfileSchema`
+  // (packages/core/src/sync/types.ts) — it is not derived from it, so the two
+  // drift silently. Change both.
+  //
+  // ⚠️ This gate VALIDATES but does not STRIP: it is invoked inside
+  // `syncOperationSchema`'s `superRefine`, whose return value zod discards, and
+  // `data` is `z.record(z.unknown())` at the top level. So omitting this line
+  // would not drop `icon` — it would let an over-long value through to the
+  // INSERT, to fail against `varchar(16)` in the database instead of here.
+  icon: z.string().max(16).nullable().optional(),
   userId: z.string().uuid(),
 })
 

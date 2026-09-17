@@ -393,3 +393,62 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
     expect(useProfileStore.getState().profiles.map((p) => p.id)).not.toContain('local-default')
   })
 })
+
+/**
+ * Story 54.2 (FR78): the PULL half of the icon round trip.
+ *
+ * There is no per-field gate on this side — `getSyncChanges` selects whole rows
+ * (`db.select()`) and `applyOne` spreads `change.data` — so what these assert is
+ * that the structural path really is structural, and that a `null` icon survives
+ * it rather than being dropped or coerced.
+ */
+describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
+  beforeEach(() => {
+    useProfileStore.setState({ profiles: [], activeProfileId: null })
+  })
+
+  it('lands a pulled icon in the store', () => {
+    applyServerChangesToStores([
+      {
+        entityType: 'userProfile',
+        entityId: SERVER_PROFILE_OTHER,
+        data: {
+          id: SERVER_PROFILE_OTHER,
+          userId: 'u-1',
+          name: 'Business',
+          isDefault: false,
+          currency: 'EUR',
+          icon: '✈️',
+        },
+        updatedAt: 2000,
+        isDeleted: false,
+      },
+    ])
+
+    const stored = useProfileStore.getState().profiles.find((p) => p.id === SERVER_PROFILE_OTHER)
+    expect(stored?.icon).toBe('✈️')
+  })
+
+  it('lands an explicit null icon without dropping the key or throwing', () => {
+    applyServerChangesToStores([
+      {
+        entityType: 'userProfile',
+        entityId: SERVER_PROFILE_OTHER,
+        data: {
+          id: SERVER_PROFILE_OTHER,
+          userId: 'u-1',
+          name: 'Business',
+          isDefault: false,
+          currency: 'EUR',
+          icon: null,
+        },
+        updatedAt: 2000,
+        isDeleted: false,
+      },
+    ])
+
+    const stored = useProfileStore.getState().profiles.find((p) => p.id === SERVER_PROFILE_OTHER)
+    expect(stored).toBeDefined()
+    expect(stored?.icon).toBeNull()
+  })
+})
