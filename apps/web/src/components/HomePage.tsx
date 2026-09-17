@@ -1530,31 +1530,63 @@ function LockedTileContent({
  * in both the unlocked (link) and locked (gate button) states so the two look
  * the same apart from the lock badge the gate adds.
  *
- * The subtitle states only what ships (story 30-2): a what-if scenario you build
- * yourself, saved to a searchable list, and reloadable back into the builder.
- * It must not claim a side-by-side comparison of two saved forecasts — no such
- * view exists.
+ * The subtitle names the SITUATIONS the tool models rather than its mechanism
+ * (story 57.1, FR86), so a user can tell when they would open it before clicking
+ * in. Every situation it names must be expressible by the shipped engine, and the
+ * engine is SMALLER than `ForecastingScenario`'s interface suggests. What
+ * `calculateFinancialForecast` actually reads (`core/finance/forecasting.ts:105-142`):
+ *   1. `incomeGrowthRate` — compounds from year 1 over the user's income items.
+ *   2. `expenseGrowthRate` — likewise over expenses.
+ *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input, and INFLOW-ONLY:
+ *      it is ADDED (`netIncome + oneTimeForYear`, `:125`) and the builder clamps a
+ *      negative amount to 0 (`scenario-builder.tsx:1034-1038`, `min={0}`, placeholder
+ *      "Bonus, Windfall, etc.").
+ * ⚠️ `newIncome`/`newExpenses` are declared on the interface (`:23-24`) but **never
+ * read** — the builder passes the same items as both `currentData` and `newIncome`,
+ * so they are baseline, not a dated delta. Do not cite them as scenario-expressive.
+ *
+ * So a raise, rising bills and a one-off windfall are all expressible. **A one-off
+ * COST, a house purchase and an early retirement are NOT** — each needs either an
+ * outflow event or a change dated to a chosen year, and the engine has neither.
+ * (`/retirement` is a separate page for the last of those.) The copy must also not
+ * claim a side-by-side comparison of two saved forecasts — no such view exists.
+ *
+ * The copy is pinned verbatim by `HomePage.test.tsx`'s "57.1" test. ⚠️ That pin is a
+ * full-string `getByText`, so it breaks on ANY edit, not selectively on overpromises;
+ * what keeps it an honesty guard is this list being re-checked when the copy changes.
  *
  * ⚠️ The two states derive their accessible name by DIFFERENT routes, and
  * neither is a backstop for the other:
  *   - LOCKED: `PremiumFeatureGate` puts `aria-label={`${featureName} — premium,
- *     locked`}` on the button (`PremiumFeatureGate.tsx:104`). Per accname an
+ *     locked`}` on the button (`PremiumFeatureGate.tsx:110`). Per accname an
  *     `aria-label` REPLACES the content, so this subtree contributes nothing.
- *     `HomePage.test.tsx:59`, `PremiumFeatureGate.test.tsx:94` and
- *     `e2e/premium-locked.spec.ts:23` ride on the `featureName` prop alone.
- *   - UNLOCKED: the `<a>` carries no `aria-label`, so its name comes from its
- *     contents and `featureName` is not involved at all. `HomePage.test.tsx:63`,
- *     `:70` and `:197` match "Advanced Forecasting" from the title span below.
- * So: renaming the title breaks the unlocked queries; changing `featureName`
- * breaks the locked ones. (Story 30-2 §6 described the name as a concatenation
- * of the two — it is neither state's actual mechanism. Corrected in 30-2 review.)
+ *     The locked queries (`HomePage.test.tsx:123`, `e2e/premium-locked.spec.ts:65`)
+ *     ride on the `featureName` prop alone.
+ *   - UNLOCKED: the `<a>` carries no `aria-label`, so its name is its CONTENTS —
+ *     the title span AND the subtitle span, concatenated. The name therefore
+ *     changes whenever the subtitle changes (story 57.1 did exactly that). Its
+ *     queries still resolve because each is a REGEX matching a substring of that
+ *     concatenation, not because the name is stable: `HomePage.test.tsx:134` is a
+ *     hand-written `/advanced forecasting/i` literal, while `OPENABLE_ROUTES`
+ *     (`:63-72`) builds its regex from `featureName`.
+ * So: renaming the title breaks BOTH unlocked queries (neither regex would match
+ * the new contents), while changing `featureName` breaks the locked ones and the
+ * `OPENABLE_ROUTES` half of the unlocked ones. Keep the title span and
+ * `featureName` identical to each other. (Story 30-2 §6 described the name as a
+ * concatenation of the title and `featureName` — it is neither state's actual
+ * mechanism. Corrected in 30-2 review.)
+ *
+ * ⚠️ Because the subtitle is part of the unlocked accessible name, a subtitle
+ * wording that also matches another element's role-query regex makes `getByRole`
+ * ambiguous, and it THROWS on multiple matches. Sweep the suite's role-query
+ * regexes before changing this copy.
  */
 function PremiumFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
       <span className="font-medium text-subheading">Advanced Forecasting</span>
       <span className="text-sm text-muted">
-        What-if scenario modeling with saved, searchable, reloadable forecasts
+        See how a raise, rising bills or a one-off windfall plays out over the years ahead
       </span>
     </span>
   )

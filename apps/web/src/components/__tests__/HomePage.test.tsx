@@ -137,20 +137,43 @@ describe('HomePage premium discovery', () => {
     expect(screen.queryByRole('button', { name: /premium, locked/i })).not.toBeInTheDocument()
   })
 
-  it('30-2: pins the Advanced Forecasting subtitle to the honest capability copy', () => {
+  it('57.1: pins the Advanced Forecasting subtitle to honest, situation-based copy', () => {
     // The tile subtitle (shared by locked + unlocked states) must describe only
-    // what ships. Story 20-1 wrote this pin when saved forecasts could NOT be
-    // reloaded and the Projections chart showed canned sample data, so it
-    // deliberately withheld the reload claim. Story bug-3 shipped both — reload
-    // is wired end-to-end (`routes/forecasting.tsx:381,395`) and the chart takes
-    // the user's own result (`:387`) — so story 30-2 adds "reloadable", which the
-    // in-app copy at `routes/forecasting.tsx:5,:351` had already been stating.
-    // Pin the exact string so future overpromising drift breaks this test.
+    // what ships. This pin has existed since story 20-1, which wrote it when saved
+    // forecasts could NOT be reloaded and deliberately withheld the reload claim;
+    // story 30-2 added "reloadable" once bug-3 actually shipped reload. Story 57.1
+    // (FR86) replaces the mechanism description with the SITUATIONS the tool models,
+    // so a user can tell when they would open it — but the pin's job is unchanged:
+    // it exists to break on OVERPROMISING drift, not merely on any edit.
+    //
+    // ⚠️ Each situation named must be expressible by what the engine actually READS
+    // (`core/finance/forecasting.ts:105-142`), which is LESS than `ForecastingScenario`
+    // declares:
+    //   - `incomeGrowthRate` / `expenseGrowthRate` — compound from year 1.
+    //   - `oneTimeEvents: {year, amount}` — the only DATED input, and INFLOW-ONLY:
+    //     added to net income (`:125`), negatives clamped to 0 by the builder
+    //     (`scenario-builder.tsx:1034-1038`, `min={0}`, placeholder "Bonus, Windfall").
+    //   - `newIncome`/`newExpenses` are declared (`:23-24`) but NEVER READ; the builder
+    //     passes the same items as `currentData`, so they are baseline, not a delta.
+    // So: a raise ✅, rising bills ✅, a one-off windfall ✅.
+    //
+    // ⚠️ DO NOT re-add any of these — each was checked against the engine and fails:
+    // "a big one-off cost" and "a house purchase" (both need an OUTFLOW event, which
+    // cannot be entered), and "early retirement" (needs income to STOP at a chosen
+    // year; `/retirement` is a separate page). The first two shipped in this story's
+    // first draft and were caught in review — they are the precise overpromise this
+    // pin exists to prevent, and a green suite did not notice them.
+    //
+    // ⚠️ This assertion is a full-string `getByText`, so it breaks on ANY edit to the
+    // copy, not selectively on overpromises. It is a tripwire, not a judge: what makes
+    // it an honesty guard is re-checking the list above whenever it goes red.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
     expect(
-      screen.getByText('What-if scenario modeling with saved, searchable, reloadable forecasts')
+      screen.getByText(
+        'See how a raise, rising bills or a one-off windfall plays out over the years ahead'
+      )
     ).toBeInTheDocument()
   })
 

@@ -365,6 +365,24 @@ function ForecastingPage(): React.ReactElement {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Intro (story 57.1, FR86) — names the SITUATIONS this page models so a
+            paid user who arrived from the nav (epic 58), with no Overview card
+            copy in view, can tell straight away whether this is the tool they
+            want. ⚠️ Every situation named must be expressible by what
+            `calculateFinancialForecast` actually READS: the two growth rates and
+            `oneTimeEvents`, which is the only dated input and is INFLOW-ONLY (it
+            is added to net income, and the builder clamps negatives to 0).
+            `newIncome`/`newExpenses` are declared but never read. So a one-off
+            COST, a house purchase and an early retirement are all out — each
+            needs an outflow or a change dated to a chosen year. Keep this in
+            step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
+            No positional wording ("below"): the intro renders on every tab, and
+            the builder is only on the first one. */}
+        <p data-testid="forecasting-intro" className="text-body mb-6 max-w-3xl">
+          Wondering how a raise, steadily rising bills or a one-off windfall would change things?
+          Build it out here and see how your finances track over the years ahead.
+        </p>
+
         {/* Tabs */}
         <div className="mb-8">
           <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} />
