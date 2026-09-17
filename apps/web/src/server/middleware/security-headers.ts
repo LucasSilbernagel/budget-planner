@@ -19,6 +19,7 @@
 
 import { createHash } from 'node:crypto'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../lib/nav/no-flash-planner-visibility-script'
+import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../lib/overview/no-flash-account-notice-script'
 import { NO_FLASH_THEME_SCRIPT } from '../../lib/theme/no-flash-theme-script'
 
 /**
@@ -49,6 +50,23 @@ export const THEME_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  */
 export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
   .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
+  .digest('base64')}`
+
+/**
+ * sha256 of the exact inline no-flash account-notice script rendered at
+ * `routes/__root.tsx` (story 55.1, AC-4). Same discipline as the two hashes
+ * above: derived from the imported constant so it cannot drift out of sync with
+ * the script it authorizes (a drifted hash = blocked bootstrap = the dismissed
+ * "No account needed" box flashes in before React removes it). Pinned by a test.
+ *
+ * ⚠️ This is the THIRD static hash, and it belongs in `script-src` ONLY. Do not
+ * "help" by adding a `script-src-elem` directive: none is emitted today, that
+ * directive OVERRIDES `script-src` for every script element, and the
+ * "closes the DIRECTIVE SET" test in `__tests__/security-headers.test.ts`
+ * exists to fail its introduction (story 39.2).
+ */
+export const ACCOUNT_NOTICE_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
+  .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
   .digest('base64')}`
 
 /**
@@ -105,7 +123,7 @@ export function buildContentSecurityPolicy(nonce: string): string {
   }
   return [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
+    `script-src 'self' 'nonce-${nonce}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data:`,
     `font-src 'self' data:`,

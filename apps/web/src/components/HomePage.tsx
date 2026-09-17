@@ -36,6 +36,7 @@ import {
   useSetOverviewDuration,
 } from '../stores/overviewDurationStore'
 import { ErrorBoundary } from './ErrorBoundary'
+import { AccountNoticeBox } from './overview/AccountNoticeBox'
 import { PremiumFeatureGate } from './premium'
 import { InfoTooltip } from './ui/InfoTooltip'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
@@ -594,28 +595,15 @@ export function HomePage() {
                 — byte-identical to the subtitle on routes/login.tsx, so the two
                 first-contact surfaces read the same. */}
             <p className="text-lg text-body mt-2">Track your finances with privacy and control</p>
-            {/* Privacy positioning (story 27-5, FR45 as amended by brand-1): the
-                three privacy pillars + the "intentional budgeting without bank
-                sync or AI integrations" framing, shown compactly beneath the
-                subtitle. Every claim is true — the Free tier is client-only (no
-                account; data stays in the browser), the OPTIONAL Premium sync is
-                EU-hosted (DanubeData, Germany), the app has no bank/financial-
-                institution integration, and there is no AI/LLM dependency in any
-                package manifest or source tree (re-verified at brand-1 merge).
-                The no-AI claim lives on the FRAMING line only, never on the
-                pillars line — stating it twice inside this two-line block reads
-                as padding (brand-1 AC-6, pinned in HomePage.test.tsx). Styled with
-                theme-aware semantic tokens (surface-inset / text-body / text-muted)
-                so it stays legible in dark mode, and it wraps rather than
-                overflowing at 320px. */}
-            <div className="surface-inset mt-4 rounded-lg p-3 text-sm">
-              <p className="text-body">
-                No account needed · Optional sync is EU-hosted · No bank connection.
-              </p>
-              <p className="text-muted mt-1">
-                Intentional budgeting without bank sync or AI integrations.
-              </p>
-            </div>
+            {/* Privacy positioning (story 27-5, FR45 as amended by brand-1),
+                dismissable since story 55.1 (FR82). The copy, the semantic
+                tokens and the brand-1 AC-6 split of the no-AI claim all moved
+                intact into `components/overview/AccountNoticeBox` — see that
+                file for why the two <p> text nodes must stay byte-identical
+                (an SSR HTML substring assertion pins them) and why dismissal
+                needs BOTH a pre-paint <head> bootstrap and this component's
+                effect. */}
+            <AccountNoticeBox />
           </div>
         </header>
 

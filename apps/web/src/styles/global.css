@@ -153,6 +153,44 @@
   [data-hide-retirement='1'] [data-nav-path='/retirement'] {
     display: none;
   }
+
+  /* --- Pre-paint Overview account-notice suppression (story 55.1, FR82, AC-4) ---
+     `data-dismiss-account-notice="1"` is set on <html> by the synchronous <head>
+     bootstrap in `lib/overview/no-flash-account-notice-script`, before first
+     paint. This rule is the half of the feature that runs BEFORE React.
+
+     ⚠️ WHY IT IS REQUIRED, and note the reason DIFFERS from the planner rule
+     above. There the blocker is `skipHydration: true` stores. Here it is
+     simpler and harder: the dismissal is per-browser localStorage, so the
+     SERVER cannot know it. The server must render the box present — and
+     `e2e/loading-state.spec.ts`'s SEO fence independently REQUIRES that the
+     copy survive in the server response — so the box is always in the SSR HTML
+     and `AccountNoticeBox`'s own read is in an effect, i.e. after first paint.
+     Without this rule the box paints and then vanishes on every page load for a
+     user who closed it, which is the exact annoyance the story removes.
+
+     ⚠️ UNLIKE THE PLANNER RULE, THIS ATTRIBUTE NEEDS NO POST-HYDRATION CLEAN-UP,
+     and that is a property of the feature rather than an oversight. The warning
+     above exists because planner visibility is RE-ENABLABLE, so a <head> script
+     that only ever SETS the attribute left the entry hidden after a user turned
+     it back on mid-session. This dismissal is one-way and permanent (AC-2):
+     there is no undo surface, so the attribute can never outlive its truth.
+     ⚠️ If an "undo" is ever added, whatever restores the box MUST also remove
+     this attribute, or the box stays invisible until a reload.
+
+     ⚠️ `display: none` (not visibility/opacity) so the box leaves the
+     accessibility tree too, matching the post-hydration DOM where React has
+     removed the node outright.
+
+     Specificity: 0-2-0 (two attribute selectors) versus a 0-1-0 display
+     utility, and this is Tailwind 3.4 — `@tailwind` layers resolve at BUILD
+     time into plain CSS, so normal specificity decides and this rule wins even
+     though utilities are emitted later. The target <div> carries no display
+     utility today. `e2e/overview-account-notice.spec.ts` asserts the FIRST
+     FRAME, so deleting this rule turns that suite red. */
+  [data-dismiss-account-notice='1'] [data-account-notice] {
+    display: none;
+  }
 }
 
 /* Custom utility styles */

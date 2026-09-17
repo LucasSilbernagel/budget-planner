@@ -5,8 +5,10 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../../lib/nav/no-flash-planner-visibility-script'
+import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../../lib/overview/no-flash-account-notice-script'
 import { NO_FLASH_THEME_SCRIPT } from '../../../lib/theme/no-flash-theme-script'
 import {
+  ACCOUNT_NOTICE_SCRIPT_CSP_HASH,
   PERMISSIONS_POLICY,
   PLANNER_SCRIPT_CSP_HASH,
   REFERRER_POLICY,
@@ -162,10 +164,11 @@ describe('applySecurityHeaders', () => {
     // authorize an extra host while the pin passes (same string on both sides) and both
     // drift guards pass (their `toContain` substring is still present). This is the one
     // assertion here computed independently of what the constants happen to contain.
-    it('constrains both CSP hash constants to a bare sha256 token (39.2 review)', () => {
+    it('constrains every CSP hash constant to a bare sha256 token (39.2 review)', () => {
       const bareSha256 = /^sha256-[A-Za-z0-9+/]{43}=$/
       expect(THEME_SCRIPT_CSP_HASH).toMatch(bareSha256)
       expect(PLANNER_SCRIPT_CSP_HASH).toMatch(bareSha256)
+      expect(ACCOUNT_NOTICE_SCRIPT_CSP_HASH).toMatch(bareSha256)
     })
 
     // Story 39.2, AC-5. Before this, `script-src` was asserted only with
@@ -174,7 +177,7 @@ describe('applySecurityHeaders', () => {
     // arm is recorded in the story). The only loosening they caught was the literal
     // string `'unsafe-inline'`.
     //
-    // Built from the two EXPORTED hash constants, never from pasted base64, so it
+    // Built from the three EXPORTED hash constants, never from pasted base64, so it
     // tracks the bootstraps instead of stranding when one is edited. Division of
     // labour: the drift guards below own "the hash matches the script"; the format
     // guard owns "the hash is a bare sha256 and smuggles nothing"; this one owns
@@ -190,10 +193,15 @@ describe('applySecurityHeaders', () => {
     // is the intent — adding one is a security decision, and this is where it gets
     // made rather than noticed later. (Note `https://cdn.paddle.com` is ALREADY
     // present, so story 5-3 turning Paddle billing on does not by itself trip this.)
+    //
+    // Story 55.1 added the THIRD hash (`ACCOUNT_NOTICE_SCRIPT_CSP_HASH`) and this
+    // test failed until it was listed here — which is the test working as designed,
+    // not an obstacle: a new inline script is exactly the "security decision" the
+    // comment above says must be made at this line.
     it('pins the ENTIRE production script-src, so no source can be added unnoticed (39.2 AC-5)', () => {
       const d = parseCsp(csp ?? '')
       expect(d['script-src']).toBe(
-        `'self' 'nonce-${TEST_NONCE}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`
+        `'self' 'nonce-${TEST_NONCE}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`
       )
     })
 
@@ -239,15 +247,31 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain(`'${expectedHash}'`)
     })
 
-    // Anti-vacuity: the two hashes must be DIFFERENT sources, not one hash
-    // asserted twice. If the scripts were ever collapsed into one constant, both
-    // guards above would pass while only one bootstrap actually shipped.
-    it('authorizes two distinct inline script hashes', () => {
+    // Story 55.1 — the THIRD inline bootstrap. Same drift guard, recomputed
+    // independently: a future edit to NO_FLASH_ACCOUNT_NOTICE_SCRIPT that forgets
+    // the policy blocks the script, and a blocked script means the dismissed
+    // "No account needed" box paints on the first frame for a user who closed it.
+    it('pins the sha256 of the EXACT inline account-notice script in script-src (55.1 AC-4)', () => {
+      const expectedHash = `sha256-${createHash('sha256')
+        .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
+        .digest('base64')}`
+      const d = parseCsp(csp ?? '')
+      expect(d['script-src']).toContain(`'${expectedHash}'`)
+    })
+
+    // Anti-vacuity: the three hashes must be DIFFERENT sources, not one hash
+    // asserted three times. If any two scripts were ever collapsed into one
+    // constant, their guards above would both pass while only one bootstrap
+    // actually shipped.
+    it('authorizes three distinct inline script hashes', () => {
       const themeHash = createHash('sha256').update(NO_FLASH_THEME_SCRIPT, 'utf8').digest('base64')
       const plannerHash = createHash('sha256')
         .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
         .digest('base64')
-      expect(plannerHash).not.toBe(themeHash)
+      const accountNoticeHash = createHash('sha256')
+        .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
+        .digest('base64')
+      expect(new Set([themeHash, plannerHash, accountNoticeHash]).size).toBe(3)
     })
   })
 

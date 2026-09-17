@@ -79,6 +79,13 @@ beforeEach(() => {
     // leaks it into every later test in the same file.
     useRetirementPlannerStore.getState().resetPlan()
     localStorage.removeItem('budget-planner-retirement-planner-v1')
+    // Story 55.1: same ordering trap, no store involved. The Overview's
+    // "No account needed" box writes a RAW localStorage flag, and a dismissal
+    // is PERMANENT (no expiry), so one test that clicks Dismiss would hide the
+    // box in every later test in the same file — including the brand-1 / 27-5
+    // copy assertions in HomePage.test.tsx, which would fail for a reason that
+    // has nothing to do with the code under test.
+    localStorage.removeItem('bp-overview-account-notice-dismissed')
   }
 })
 
