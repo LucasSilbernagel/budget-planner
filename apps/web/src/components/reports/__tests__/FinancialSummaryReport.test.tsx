@@ -14,6 +14,7 @@
  */
 
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useCurrencyStore } from '../../../stores/currencyStore'
@@ -688,5 +689,288 @@ describe('FinancialSummaryReport — assets are printed, not just counted (Story
     expect(netWorthRows.some((el) => el.parentElement?.textContent?.includes('400,000.00'))).toBe(
       true
     )
+  })
+})
+
+/**
+ * Budget period toggle (story 56.3, FR84).
+ *
+ * The Budget section can be read as monthly or annual figures. Only the
+ * DERIVED column and the three section totals respond; the entered Amount and
+ * Frequency columns, and the Net Worth and Savings sections, do not.
+ *
+ * ⚠️ EVERY ASSERTION HERE MUST CROSS A STATE CHANGE. The default is monthly —
+ * today's only behaviour — so a render-only test passes against a component
+ * that has no toggle at all, and against one whose toggle is wired to nothing.
+ * The switch is driven through `user.selectOptions` on the real control rather
+ * than by reaching for a setter, so the control and the conversion are proven
+ * wired to each other.
+ *
+ * ⚠️ NON-VACUITY. A switch that threw would unmount the figures and leave a
+ * page on which most `queryBy`/absence-shaped checks still pass. Each test
+ * therefore re-anchors on the report having actually rendered — the <h1> plus
+ * one concrete figure — AFTER the switch, not just before it.
+ *
+ * ⚠️ The annual expectations are LITERALS, hand-computed from
+ * `seedTypicalData()`'s known monthly figures (×12), never recomputed in the
+ * test the same way the component computes them. Figures render currency-less
+ * (the jsdom default, see the file header), so grouped digits and no symbol.
+ */
+describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', () => {
+  /**
+   * ⚠️ A REGEX, not a string. `getByRole`'s `name` option is a FULL-STRING
+   * match when given a string, so a later label rename would turn every query
+   * here into a throw rather than a silent pass — but the repo's standing
+   * lesson is the mirror case (an absence probe against a renamed label going
+   * silently green), and a regex keeps this robust to trailing punctuation.
+   */
+  function periodControl(): HTMLSelectElement {
+    return screen.getByRole('combobox', { name: /show the budget per/i }) as HTMLSelectElement
+  }
+
+  /** The Nth `columnheader` of the named table. */
+  function columnHeaders(tableName: RegExp): HTMLElement[] {
+    return within(screen.getByRole('table', { name: tableName })).getAllByRole('columnheader')
+  }
+
+  /** The data cells of the row whose row-header is `name`. */
+  function cellsOfRow(name: string): HTMLElement[] {
+    const row = screen.getByRole('rowheader', { name }).closest('tr')
+    expect(row).not.toBeNull()
+    return within(row as HTMLElement).getAllByRole('cell')
+  }
+
+  /** Re-anchor after a switch: the report really is still rendering figures. */
+  function expectReportStillRendered(): void {
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Financial summary')
+    expect(screen.getAllByRole('table').length).toBeGreaterThan(0)
+  }
+
+  /**
+   * ⚠️ Title says "figures and labels", NOT "byte-for-byte" — the default
+   * render is NOT byte-identical to the pre-56.3 document: it gained a heading
+   * wrapper, a `data-print-hide` div, a `<label>`, an `sr-only` span and a
+   * `<select>`. The original title claimed an identity these assertions do not
+   * and cannot make (code review 2026-09-17, raised independently by two
+   * layers). What IS unchanged, and what this pins, is every figure and label.
+   */
+  it('defaults to monthly, leaving the figures and labels unchanged (AC-1)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(periodControl().value).toBe('monthly')
+    expect(columnHeaders(/income/i)[3]).toHaveTextContent('Monthly')
+    expect(totalFor('Monthly income')).toHaveTextContent('5,433.33')
+    expect(totalFor('Monthly expenses')).toHaveTextContent('1,500.00')
+    expect(totalFor('Monthly surplus')).toHaveTextContent('3,933.33')
+    // The normalization note keeps 56.1's exact monthly wording by default.
+    expect(
+      screen.getByText(/every entry is converted to a monthly figure so the totals are comparable/i)
+    ).toBeInTheDocument()
+  })
+
+  /**
+   * The section's explanatory note must not contradict the column above it.
+   * Under Annual it used to read "converted to a monthly figure" beside a
+   * column headed "Annual" — and it PRINTS, while the control explaining it is
+   * `data-print-hide`, so the paper offered no cue.
+   */
+  it('re-words the conversion note so the printed page cannot contradict itself', async () => {
+    const user = userEvent.setup()
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+
+    const article = document.querySelector('#financial-summary-report') as HTMLElement
+    expect(within(article).getByText(/converted to a yearly figure/i)).toBeInTheDocument()
+    expect(within(article).queryByText(/converted to a monthly figure/i)).not.toBeInTheDocument()
+
+    // ⚠️ The new copy must still clear 56.1's reserved words, in this branch
+    // too — the existing guards only ever render the MONTHLY wording.
+    expect(document.body.textContent).not.toMatch(/currency/i)
+    expect(document.body.textContent).not.toMatch(/amounts\b/i)
+  })
+
+  it('annualizes the derived column and all three totals when switched (AC-3, AC-4)', async () => {
+    const user = userEvent.setup()
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+
+    // Column header flips — scoped to the table, because the option list also
+    // contains the word and a page-wide getByText would match it instead.
+    expect(columnHeaders(/income/i)[3]).toHaveTextContent('Annual')
+    expect(columnHeaders(/expenses/i)[3]).toHaveTextContent('Annual')
+
+    // Per-row derived figures: monthly ×12, as literals.
+    // Salary   500,000c/mo → 6,000,000c   Freelance 43,333c/mo → 519,996c
+    expect(cellsOfRow('Salary')[2]).toHaveTextContent('60,000.00')
+    expect(cellsOfRow('Freelance')[2]).toHaveTextContent('5,199.96')
+
+    // Totals relabel AND revalue. 543,333×12 / 150,000×12 / 393,333×12.
+    expect(totalFor('Annual income')).toHaveTextContent('65,199.96')
+    expect(totalFor('Annual expenses')).toHaveTextContent('18,000.00')
+    expect(totalFor('Annual surplus')).toHaveTextContent('47,199.96')
+
+    // The monthly labels are GONE, not merely joined by annual ones.
+    expect(screen.queryByText('Monthly income', { selector: 'dt' })).not.toBeInTheDocument()
+  })
+
+  it('leaves the entered Amount and Frequency columns untouched (AC-5)', async () => {
+    const user = userEvent.setup()
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // Entered weekly 100.00, which is NOT what the derived column shows.
+    expect(cellsOfRow('Freelance')[0]).toHaveTextContent('100.00')
+    expect(cellsOfRow('Freelance')[1]).toHaveTextContent('Weekly')
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+
+    // Unchanged — these state what the user typed, at the cadence they typed it.
+    expect(cellsOfRow('Freelance')[0]).toHaveTextContent('100.00')
+    expect(cellsOfRow('Freelance')[1]).toHaveTextContent('Weekly')
+    // …while the derived column beside them DID move, so this is not a test of
+    // a component that ignored the switch entirely.
+    expect(cellsOfRow('Freelance')[2]).toHaveTextContent('5,199.96')
+  })
+
+  it('keeps the status word when relabelling a break-even budget (AC-4)', async () => {
+    const user = userEvent.setup()
+    useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 200_000, 'monthly')] })
+    useExpenseStore.setState({ expenses: [incomeRow('e1', 'Rent', 200_000, 'monthly')] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.getByText('Monthly net (break-even)')).toBeInTheDocument()
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+
+    // Only the PERIOD word changes. A story that rebuilt this label from
+    // scratch would most likely drop the "(break-even)" qualifier.
+    expect(screen.getByText('Annual net (break-even)')).toBeInTheDocument()
+    expect(screen.queryByText('Annual shortfall')).not.toBeInTheDocument()
+    expect(screen.queryByText('Annual surplus')).not.toBeInTheDocument()
+  })
+
+  it('keeps the status word when relabelling a deficit budget (AC-4)', async () => {
+    const user = userEvent.setup()
+    useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 100_000, 'monthly')] })
+    useExpenseStore.setState({ expenses: [incomeRow('e1', 'Rent', 200_000, 'monthly')] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.getByText('Monthly shortfall')).toBeInTheDocument()
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+
+    expect(screen.getByText('Annual shortfall')).toBeInTheDocument()
+    // −100,000c/mo × 12.
+    expect(totalFor('Annual shortfall')).toHaveTextContent('-12,000.00')
+  })
+
+  it('leaves the Net Worth and Savings sections alone (AC-6)', async () => {
+    const user = userEvent.setup()
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    const before = {
+      netWorth: totalFor('Net worth').textContent,
+      investments: totalFor('Total investments').textContent,
+      saved: totalFor('Total saved').textContent,
+      progress: totalFor('Overall progress').textContent,
+    }
+    // Non-vacuity: these are real figures, not empty strings being compared.
+    expect(before.netWorth).toMatch(/-139,000\.00/)
+    expect(before.saved).toMatch(/3,000\.00/)
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+    // The Budget section really did respond, so this is not a no-op switch.
+    expect(totalFor('Annual income')).toHaveTextContent('65,199.96')
+
+    expect(totalFor('Net worth').textContent).toBe(before.netWorth)
+    expect(totalFor('Total investments').textContent).toBe(before.investments)
+    expect(totalFor('Total saved').textContent).toBe(before.saved)
+    expect(totalFor('Overall progress').textContent).toBe(before.progress)
+  })
+
+  it('keeps the control off the printed page while the figures print (AC-7)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // ⚠️ Reached via the CONTROL, not `querySelector('[data-print-hide]')` —
+    // that returns the print-button row (first in document order) and would
+    // assert nothing whatsoever about this element.
+    const hidden = periodControl().closest('[data-print-hide]')
+    expect(hidden).not.toBeNull()
+
+    // …and unlike the print button, the control lives INSIDE the article, so
+    // the section it governs still prints with the selected figures.
+    expect(periodControl().closest('#financial-summary-report')).not.toBeNull()
+  })
+
+  /**
+   * Round-trip fidelity (code review 2026-09-17, Blind Hunter HIGH).
+   *
+   * `monthlyCents` is a ROUNDED intermediate, so re-expressing it at the row's
+   * OWN entered cadence is lossy whenever the entered cents are not divisible
+   * by 12. Before the fix this rendered "100.00 | Annually | 99.96" — one row
+   * disagreeing with itself by four cents, on a document users print and file.
+   *
+   * ⚠️ THE FIXTURE IS THE WHOLE TEST. Round numbers hide this completely:
+   * 1,200.00/Annually round-trips exactly (÷12 = 10,000c, ×12 = 1,200.00), and
+   * a suite seeded only with round figures — as this file's `seedTypicalData`
+   * is — passes against the defect. Both amounts below are chosen because they
+   * do NOT survive the round trip: 10,000c → 833c → 9,996c (−4), and
+   * 100,001c → 8,333c → 99,996c (−5).
+   */
+  it('shows the entered figure when the period IS the row’s own cadence', async () => {
+    const user = userEvent.setup()
+    useIncomeStore.setState({
+      incomeSources: [
+        incomeRow('i1', 'Insurance', 10_000, 'annually'),
+        incomeRow('i2', 'Bonus', 100_001, 'annually'),
+        // A control on a DIFFERENT cadence: this one must still convert.
+        incomeRow('i3', 'Freelance', 10_000, 'weekly'),
+      ],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    await user.selectOptions(periodControl(), 'annually')
+    expectReportStillRendered()
+
+    // The user typed these exact annual figures; the Annual column must agree.
+    expect(cellsOfRow('Insurance')[2]).toHaveTextContent('100.00')
+    expect(cellsOfRow('Bonus')[2]).toHaveTextContent('1,000.01')
+    // …and the pre-fix values must NOT come back.
+    expect(cellsOfRow('Insurance')[2]).not.toHaveTextContent('99.96')
+    expect(cellsOfRow('Bonus')[2]).not.toHaveTextContent('999.96')
+
+    // ⚠️ NON-VACUITY / SCOPE: a weekly row has no entered annual figure, so it
+    // still converts. Without this the fix could have been "never convert".
+    expect(cellsOfRow('Freelance')[2]).toHaveTextContent('5,199.96')
+
+    // And in the MONTHLY view nothing changed for any of them.
+    await user.selectOptions(periodControl(), 'monthly')
+    expect(cellsOfRow('Insurance')[2]).toHaveTextContent('8.33')
+    expect(cellsOfRow('Freelance')[2]).toHaveTextContent('433.33')
+  })
+
+  it('is absent when the budget has no figures to re-express', () => {
+    // A period control over "No income or expenses have been added" is an
+    // affordance that does nothing. Only a seeded balance here, so the Budget
+    // section renders its empty branch while other sections still show.
+    useBalanceStore.setState({ entries: [balanceRow('b1', 'ISA', 'investment', 100_000)] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.getByRole('heading', { name: 'Budget' })).toBeInTheDocument()
+    expect(screen.getByText(/no income or expenses have been added/i)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /show the budget per/i })).not.toBeInTheDocument()
   })
 })

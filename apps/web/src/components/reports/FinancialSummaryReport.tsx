@@ -44,7 +44,8 @@
  * document.
  */
 
-import { useMemo } from 'react'
+import { denormalizeFromMonthly } from '@budget-planner/core/finance'
+import { useMemo, useState } from 'react'
 import type React from 'react'
 import {
   type FinancialSummaryReportModel,
@@ -65,6 +66,60 @@ const FREQUENCY_LABELS: Record<string, string> = {
   annually: 'Annually',
 }
 
+/**
+ * The period the Budget section's DERIVED figures are expressed in (story 56.3,
+ * FR84).
+ *
+ * ⚠️ Both members are also valid core `Frequency` values, and that is
+ * load-bearing: it lets `denormalizeFromMonthly` take the period directly, so
+ * there is exactly ONE conversion rule with no `monthly`-vs-`annually` branch
+ * anywhere in this file (`monthly` is ×1, i.e. the identity). Re-deriving from
+ * a row's entered `amount`/`frequency`, or hand-writing `× 12`, would create a
+ * second rule — the thing FR84's acceptance criteria explicitly forbid.
+ *
+ * ⚠️ NOT `OverviewDuration` and NOT the shared `overviewDurationStore`. That
+ * store is persisted, defaults to `annually`, and is written by the dashboard
+ * and the Income/Expenses pages — wiring it in here would change the report's
+ * default view for every existing user and make a toggle on a printed document
+ * silently move three other screens. This report is a point-in-time document,
+ * so its period is local, ephemeral, and monthly on every visit.
+ */
+type BudgetPeriod = 'monthly' | 'annually'
+
+/**
+ * Everything that varies with the period, in ONE place.
+ *
+ * `word` is used by BOTH the derived column header and the three section total
+ * labels. Two independent literals are how a header and its totals drift apart
+ * — the column saying "Annual" over figures labelled "Monthly" is a wrong
+ * document, not a cosmetic bug.
+ */
+const BUDGET_PERIOD_LABEL: Record<BudgetPeriod, { option: string; word: string }> = {
+  monthly: { option: 'Monthly', word: 'Monthly' },
+  annually: { option: 'Annually', word: 'Annual' },
+}
+
+/**
+ * Render order for the control's options. Derived from the label record rather
+ * than written out a second time — the `overviewDurationStore` lesson: a
+ * hand-written `readonly BudgetPeriod[]` happily accepts a SUBSET, so adding a
+ * third period to the union alone would type-check, leave every test green and
+ * silently omit the new option from the list.
+ */
+const BUDGET_PERIODS = Object.keys(BUDGET_PERIOD_LABEL) as readonly BudgetPeriod[]
+
+/**
+ * Accessible name for the period control.
+ *
+ * ⚠️ DO NOT use the words "amounts" or "currency" here. Story 56.1 (UX-DR62)
+ * left two guards asserting `document.body.textContent` matches neither
+ * `/currency/i` nor `/amounts\b/i`, and they run with this section rendered —
+ * so "Show amounts per" turns two passing tests red, and the tempting repair
+ * (loosening those regexes) would delete 56.1's guard instead. Phrasing follows
+ * the sibling control at `HomePage.tsx:624` ("Show income and expenses per").
+ */
+const BUDGET_PERIOD_LABEL_TEXT = 'Show the budget per'
+
 const TABLE_CLASS = 'mt-3 min-w-full divide-y divide-gray-200 dark:divide-gray-700'
 const TH_CLASS = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-label'
 const TH_NUMERIC_CLASS = `${TH_CLASS} text-right`
@@ -82,15 +137,23 @@ function formatPercent(percent: number | null): string {
   return percent === null ? '—' : `${Math.round(percent)}%`
 }
 
-/** Rows plus their monthly-normalized column, shared by the income and expense tables. */
+/**
+ * Rows plus their normalized column, shared by the income and expense tables.
+ *
+ * The model stores every row's figure MONTHLY-canonical (`monthlyCents`); this
+ * component re-expresses that one column at `period` (story 56.3). The entered
+ * `Amount` and `Frequency` columns state what the user typed and never move.
+ */
 function CashflowTable({
   caption,
   rows,
   format,
+  period,
 }: {
   caption: string
   rows: readonly ReportCashflowRow[]
   format: (cents: number) => string
+  period: BudgetPeriod
 }): React.ReactElement {
   return (
     <table className={TABLE_CLASS}>
@@ -107,7 +170,7 @@ function CashflowTable({
             Frequency
           </th>
           <th scope="col" className={TH_NUMERIC_CLASS}>
-            Monthly
+            {BUDGET_PERIOD_LABEL[period].word}
           </th>
         </tr>
       </thead>
@@ -134,9 +197,44 @@ function CashflowTable({
             <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
               {row.name}
             </th>
+            {/* ⚠️ These two state what the user ENTERED, at the cadence they
+                entered it. They are inert under the period control — only the
+                derived column beside them moves (story 56.3). */}
             <td className={TD_NUMERIC_CLASS}>{format(row.amountCents)}</td>
             <td className={TD_CLASS}>{FREQUENCY_LABELS[row.frequency] ?? row.frequency}</td>
-            <td className={TD_NUMERIC_CLASS}>{format(row.monthlyCents)}</td>
+            {/* ⚠️ When the selected period IS the row's own entered cadence,
+                print what the user typed — do not round-trip it through the
+                monthly canonical figure.
+
+                `monthlyCents` is a ROUNDED intermediate, so the round trip is
+                lossy whenever the entered cents are not divisible by 12:
+                100.00/Annually normalizes to 833c and denormalizes back to
+                99.96, and the row would then read "100.00 | Annually | 99.96"
+                — the same figure, twice, four cents apart, on a page the user
+                prints and files. 1,000.01 drifts by five. (1,200.00 is exact,
+                which is why a fixture of round numbers hides this entirely.)
+
+                Story 56.3 originally forbade this branch, reasoning there must
+                be exactly ONE conversion rule. AMENDED at code review
+                (2026-09-17, Lucas): correctness wins over rule-count. This is
+                not a second conversion — it is the ABSENCE of a conversion in
+                the one case where converting can only lose information.
+
+                ⚠️ CONSEQUENCE, accepted deliberately: the derived column no
+                longer necessarily sums to the section total, which still comes
+                from the model's monthly-canonical figures (×12). For an
+                annually-entered row the column can differ from the total by a
+                few cents. Preferred to the alternative, because a row
+                contradicting its OWN entered amount is checkable at a glance
+                by the person who typed it, while a few cents across a column
+                is not. See the guard test naming both figures. */}
+            <td className={TD_NUMERIC_CLASS}>
+              {format(
+                period === row.frequency
+                  ? row.amountCents
+                  : denormalizeFromMonthly(row.monthlyCents, period)
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -229,6 +327,17 @@ export function FinancialSummaryReport({
   const savings = useSavingsGoals()
   const format = useFormattedAmount()
 
+  // Story 56.3 (FR84). Local and ephemeral BY DESIGN: the report opens on
+  // `monthly` every visit, so the default view is unchanged for every existing
+  // user and re-selecting annual is a one-click action each time. See
+  // `BudgetPeriod` for why this is not the shared, persisted duration store.
+  const [budgetPeriod, setBudgetPeriod] = useState<BudgetPeriod>('monthly')
+  const periodWord = BUDGET_PERIOD_LABEL[budgetPeriod].word
+
+  // ⚠️ `budgetPeriod` is deliberately NOT a dependency. The model stays
+  // monthly-canonical and the period is applied at render; adding it here would
+  // rebuild the whole document — and re-run every corrupt-row partition — on a
+  // display toggle, for nothing.
   const model: FinancialSummaryReportModel = useMemo(
     () =>
       buildFinancialSummary({
@@ -296,9 +405,42 @@ export function FinancialSummaryReport({
               </p>
             )}
             <section aria-labelledby="report-budget-heading" className={SECTION_CLASS}>
-              <h2 id="report-budget-heading" className={SECTION_HEADING_CLASS}>
-                Budget
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 id="report-budget-heading" className={SECTION_HEADING_CLASS}>
+                  Budget
+                </h2>
+                {/* Story 56.3 (FR84). Rendered only when there ARE figures to
+                    re-express — a period control over "No income or expenses
+                    have been added" is an affordance that does nothing.
+
+                    `data-print-hide`: the control is a screen-only reading aid,
+                    exactly like the print button. It sits INSIDE the <article>,
+                    so unlike that button the section it governs still prints,
+                    showing whichever figures were selected on screen.
+
+                    Shape copied from the sibling duration selector at
+                    `HomePage.tsx:621-635` rather than inventing a control type.
+                    ⚠️ Read `BUDGET_PERIOD_LABEL_TEXT` before renaming this. */}
+                {!model.budget.isEmpty && (
+                  <div data-print-hide>
+                    <label className="flex items-center gap-1 text-sm text-label">
+                      <span className="sr-only">{BUDGET_PERIOD_LABEL_TEXT}</span>
+                      <select
+                        aria-label={BUDGET_PERIOD_LABEL_TEXT}
+                        value={budgetPeriod}
+                        onChange={(e) => setBudgetPeriod(e.target.value as BudgetPeriod)}
+                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      >
+                        {BUDGET_PERIODS.map((value) => (
+                          <option key={value} value={value}>
+                            {BUDGET_PERIOD_LABEL[value].option}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </div>
               {model.budget.isEmpty ? (
                 <p className="mt-2 text-sm text-body">
                   {emptySectionCopy(
@@ -308,38 +450,75 @@ export function FinancialSummaryReport({
                 </p>
               ) : (
                 <>
+                  {/* ⚠️ PERIOD-AWARE, and it must be. The monthly wording is
+                      byte-identical to what 56.1 left (that story froze this
+                      section's copy), but under Annual it was flatly wrong:
+                      "converted to a monthly figure" printed directly above a
+                      column headed "Annual" — and the control that would
+                      explain the mismatch is `data-print-hide`, so the printed
+                      page offered no cue at all. Found independently by two
+                      review layers, 2026-09-17.
+
+                      The second sentence documents the round-trip fix at the
+                      derived column: a yearly-entered figure is shown as typed,
+                      not re-derived.
+
+                      ⚠️ Neither string may contain "amounts" or "currency" —
+                      see `BUDGET_PERIOD_LABEL_TEXT`. Both 56.1 guards run with
+                      this paragraph rendered. */}
                   <p className="mt-1 text-sm text-muted">
-                    Every entry is converted to a monthly figure so the totals are comparable.
+                    {budgetPeriod === 'monthly'
+                      ? 'Every entry is converted to a monthly figure so the totals are comparable.'
+                      : 'Every entry is converted to a yearly figure so the totals are comparable. Anything you entered yearly is shown exactly as you typed it.'}
                   </p>
                   {model.budget.income.length > 0 && (
-                    <CashflowTable caption="Income" rows={model.budget.income} format={format} />
+                    <CashflowTable
+                      caption="Income"
+                      rows={model.budget.income}
+                      format={format}
+                      period={budgetPeriod}
+                    />
                   )}
                   {model.budget.expenses.length > 0 && (
                     <CashflowTable
                       caption="Expenses"
                       rows={model.budget.expenses}
                       format={format}
+                      period={budgetPeriod}
                     />
                   )}
+                  {/* Story 56.3: only the PERIOD WORD is interpolated. The
+                      three-way status branch is otherwise untouched — the
+                      break-even case in particular is a boundary the model
+                      derives deliberately (core's `isSurplus` reports a deficit
+                      at exactly zero), and a rewrite here would quietly lose
+                      it. `periodWord` is shared with the column header above,
+                      so the two cannot disagree. */}
                   <dl className="mt-4">
                     <TotalRow
-                      label="Monthly income"
-                      value={format(model.budget.monthlyIncomeCents)}
+                      label={`${periodWord} income`}
+                      value={format(
+                        denormalizeFromMonthly(model.budget.monthlyIncomeCents, budgetPeriod)
+                      )}
                     />
                     <TotalRow
-                      label="Monthly expenses"
-                      value={format(model.budget.monthlyExpensesCents)}
+                      label={`${periodWord} expenses`}
+                      value={format(
+                        denormalizeFromMonthly(model.budget.monthlyExpensesCents, budgetPeriod)
+                      )}
                     />
                     <TotalRow
                       emphasis
                       label={
                         model.budget.status === 'surplus'
-                          ? 'Monthly surplus'
+                          ? `${periodWord} surplus`
                           : model.budget.status === 'deficit'
-                            ? 'Monthly shortfall'
-                            : 'Monthly net (break-even)'
+                            ? `${periodWord} shortfall`
+                            : `${periodWord} net (break-even)`
                       }
-                      value={format(model.budget.monthlyNetCents)}
+                      value={format(
+                        denormalizeFromMonthly(model.budget.monthlyNetCents, budgetPeriod)
+                      )}
                     />
                   </dl>
                 </>
