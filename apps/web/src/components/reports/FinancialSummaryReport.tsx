@@ -114,7 +114,24 @@ function CashflowTable({
       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
         {rows.map((row) => (
           <tr key={row.id}>
-            <th scope="row" className={`${TD_CLASS} font-normal`}>
+            {/* Story 56.2 (UX-DR63): `text-left` is EXPLICIT here, and at the
+                other two row-header sites in this file. (Deliberately worded
+                without the scope attribute literal, so grepping for that
+                attribute counts the three real call sites and nothing else.)
+                An unstyled `<th>`
+                takes the UA stylesheet's `text-align: center`, and nothing in
+                this app resets it — Tailwind's Preflight declares no
+                `text-align` at all (unlike Bootstrap's `th { text-align:
+                inherit }`) and `global.css` has no `th` rule, so these cells
+                rendered centered beneath a left-aligned `TH_CLASS` header.
+                Applied per call site, NOT on the shared `TD_CLASS`:
+                `TD_NUMERIC_CLASS` derives from it, so that would put
+                `text-left` and `text-right` on every figure cell. Those have
+                EQUAL specificity (both single-class), so the winner is decided
+                by Tailwind's own emission order — correct today, and silently
+                dependent on a vendor internal. Sibling precedent:
+                `categories/CategoryBreakdown.tsx:390,411`. */}
+            <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
               {row.name}
             </th>
             <td className={TD_NUMERIC_CLASS}>{format(row.amountCents)}</td>
@@ -434,7 +451,9 @@ export function FinancialSummaryReport({
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                       {model.savings.goals.map((goal) => (
                         <tr key={goal.id}>
-                          <th scope="row" className={`${TD_CLASS} font-normal`}>
+                          {/* `text-left`: see the note at `CashflowTable`'s
+                              row header — same UA default, same fix. */}
+                          <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
                             {goal.name}
                           </th>
                           <td className={TD_NUMERIC_CLASS}>{format(goal.currentCents)}</td>
@@ -516,7 +535,9 @@ function BalanceTable({
       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
         {rows.map((row) => (
           <tr key={row.id}>
-            <th scope="row" className={`${TD_CLASS} font-normal`}>
+            {/* `text-left`: see the note at `CashflowTable`'s row header —
+                same UA default, same fix. */}
+            <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
               {row.name}
             </th>
             <td className={TD_NUMERIC_CLASS}>{format(row.balanceCents)}</td>

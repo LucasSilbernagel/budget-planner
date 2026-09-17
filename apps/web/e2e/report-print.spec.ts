@@ -200,6 +200,58 @@ test('an in-page (non-chrome) footer still prints — only chrome is suppressed'
   await expect(page.locator('footer[data-print-hide]')).toBeHidden()
 })
 
+test('a row-header cell carrying the report class string left-aligns in a real engine', async ({
+  page,
+}) => {
+  // Story 56.2 (UX-DR63).
+  //
+  // ⚠️ THE STUB CAVEAT, up front. `/report` is Premium and every e2e suite here
+  // is UNAUTHENTICATED (this file's header comment; `helpers/seed-finance-rows.ts:44-52`),
+  // so the real component cannot be rendered. This test proves a CSS FACT, not
+  // that the component ships it: that the class string the report now puts on
+  // its `scope="row"` cells actually beats the UA stylesheet's centering of
+  // `<th>` in a real engine. WHICH class string the component uses is pinned by
+  // `FinancialSummaryReport.test.tsx`'s token guard. Neither layer is
+  // sufficient alone, and a green run HERE is not evidence story 56.2 landed —
+  // the same caution this file already carries about its `Generated 2026-08-08`
+  // stub text.
+  //
+  // It exists because the unit layer physically cannot see alignment: jsdom
+  // returns `textAlign: ""` for a `<th>` either way, and no Tailwind stylesheet
+  // is loaded under Vitest at all.
+  await page.goto('/')
+
+  // Both cells carry the report's `TD_CLASS` + `font-normal`; only `fixed` also
+  // carries the `text-left` this story added.
+  await page.evaluate(() => {
+    const base = 'px-3 py-2 text-sm text-body font-normal'
+    const table = document.createElement('table')
+    table.innerHTML = `
+      <tbody>
+        <tr><th scope="row" data-probe="fixed" class="${base} text-left">Salary</th><td>1</td></tr>
+        <tr><th scope="row" data-probe="unfixed" class="${base}">Salary</th><td>2</td></tr>
+      </tbody>`
+    document.body.append(table)
+  })
+
+  const alignOf = (probe: string): Promise<string> =>
+    page.locator(`[data-probe="${probe}"]`).evaluate((el) => getComputedStyle(el).textAlign)
+
+  // The fix.
+  expect(await alignOf('fixed')).toBe('left')
+
+  // ⚠️ NEGATIVE CONTROL — the load-bearing half. Without it this test would
+  // also pass in a world where `<th>` was never centered, i.e. where the defect
+  // UX-DR63 reported did not exist, so it would say nothing about the fix being
+  // necessary. This is the assertion that demonstrates the UA default is real.
+  // Measured in this engine: Chromium reports exactly `"center"` here, which is
+  // the defect UX-DR63 described, confirmed in a browser rather than inferred
+  // from reading Tailwind's Preflight. Matched loosely all the same, because
+  // engines have spelled this default differently (`-internal-center`) and the
+  // claim being made is "centered, not left", not one particular string.
+  expect(await alignOf('unfixed')).toMatch(/center/)
+})
+
 test('a free visitor reaching /report gets the upgrade surface, not the report', async ({
   page,
 }) => {

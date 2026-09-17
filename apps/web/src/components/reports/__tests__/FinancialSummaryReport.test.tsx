@@ -79,6 +79,40 @@ function totalFor(label: string): HTMLElement {
   return term.nextElementSibling as HTMLElement
 }
 
+/**
+ * An element's class attribute as TOKENS.
+ *
+ * Membership is asserted against this array, never as a substring of the raw
+ * string — a substring match on class names is how a rename turns a real
+ * assertion into a silent pass.
+ */
+function tokensOf(element: Element): string[] {
+  return element.className.split(/\s+/)
+}
+
+/** Every Tailwind text-align utility. */
+const ALIGNMENT_TOKEN = /^text-(left|center|right|justify|start|end)$/
+
+/**
+ * The alignment utilities on an element, in class-attribute order.
+ *
+ * ⚠️ Alignment must be asserted as an EXCLUSIVE set, never as membership.
+ * Tailwind emits `.text-left` before `.text-center` before `.text-right` at
+ * equal specificity (all single-class), so the LAST one in the stylesheet wins
+ * regardless of class-attribute order — a class string that *contains*
+ * `text-left` can still render centered or right-aligned.
+ *
+ * This file contains the existence proof: `TH_NUMERIC_CLASS` is
+ * `` `${TH_CLASS} text-right` `` and therefore carries the `text-left` token
+ * while rendering right-aligned. A `toContain('text-left')` check would pass on
+ * it. Verified by mutation: hoisting `text-center` into `TD_CLASS` re-centers
+ * every row header — the exact UX-DR63 defect — and left a membership-based
+ * guard at 28/28 green.
+ */
+function alignmentTokensOf(element: Element): string[] {
+  return tokensOf(element).filter((token) => ALIGNMENT_TOKEN.test(token))
+}
+
 function clearStores(): void {
   useIncomeStore.setState({ incomeSources: [] })
   useExpenseStore.setState({ expenses: [] })
@@ -336,6 +370,75 @@ describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', 
     expect(within(incomeTable).getAllByRole('rowheader')).toHaveLength(120)
     expect(totalFor('Monthly income')).toHaveTextContent('1,200.00')
     expect(document.body.textContent).not.toMatch(/NaN/)
+  })
+})
+
+/**
+ * Row-header alignment (story 56.2, UX-DR63).
+ *
+ * `TH_CLASS` gives every COLUMN header `text-left`, but the row-header cells
+ * (`<th scope="row">`) carried only `${TD_CLASS} font-normal`. Neither
+ * Tailwind's Preflight (zero `text-align` declarations, no `th` reset — unlike
+ * Bootstrap) nor `global.css` resets the UA default, so those cells rendered
+ * CENTERED beneath a left-aligned header. The defect was at all three
+ * `scope="row"` call sites: `CashflowTable`, the savings goals table and
+ * `BalanceTable`.
+ *
+ * ⚠️ THIS IS A CLASS-TOKEN PIN, NOT A LAYOUT PROOF — the repo's accepted idiom
+ * (see the print-row guard above). jsdom computes no layout, and here it is
+ * worse than that: measured, jsdom returns `textAlign: ""` for BOTH a column
+ * `<th>` and a row `<th>` (it models `th { font-weight: bold }` but not the
+ * centering), and `vitest.config.ts` sets no `css` option while
+ * `vitest.setup.ts` never imports `global.css`, so no Tailwind utility exists
+ * in this environment at all. A `getComputedStyle(th).textAlign` assertion
+ * would read `""` before AND after the fix — a guard that cannot fail. The
+ * computed-style proof lives in `e2e/report-print.spec.ts`, where the real
+ * stylesheet loads.
+ *
+ * ⚠️ Pins BOTH SIDES to `text-left`, not just the rows. A rows-only check would
+ * stay green if a later edit centered the COLUMN header instead — the same
+ * misalignment, mirrored. (It pins each side to the literal rather than
+ * comparing them to each other: two cells that agree on `text-center` would be
+ * mutually aligned but still wrong against `TH_CLASS`'s documented intent.)
+ *
+ * ⚠️ EXCLUSIVITY, not membership — see `alignmentTokensOf`. Asserting merely
+ * that `text-left` is present accepts a class string that also carries
+ * `text-center`, which renders centered because Tailwind emits the competing
+ * utility later at equal specificity. That hole was real in this guard's first
+ * version and is now covered by arm M5.
+ */
+describe('FinancialSummaryReport — table column alignment (story 56.2, UX-DR63)', () => {
+  it('left-aligns every row-header cell to match its column header', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    const tables = screen.getAllByRole('table')
+    // ⚠️ Non-vacuity. `getAllByRole` throws on zero matches, but a loop over a
+    // one-table render would silently assert far less than this claims to.
+    // `seedTypicalData()` yields exactly five: Income, Expenses (CashflowTable),
+    // Investments, Debts (BalanceTable) and Goals and accounts.
+    expect(tables).toHaveLength(5)
+
+    for (const table of tables) {
+      const caption = table.querySelector('caption')?.textContent ?? '(no caption)'
+
+      // The Name column is first in all three renderers.
+      const columnHeader = within(table).getAllByRole('columnheader')[0]
+      expect(alignmentTokensOf(columnHeader), `${caption}: first column header`).toEqual([
+        'text-left',
+      ])
+
+      // ⚠️ `queryAllByRole`, not `getAllByRole`: the getter THROWS on zero
+      // matches, which would make the count assertion below unreachable —
+      // a non-vacuity check that could itself never fail.
+      const rowHeaders = within(table).queryAllByRole('rowheader')
+      expect(rowHeaders.length, `${caption}: row header count`).toBeGreaterThan(0)
+      for (const cell of rowHeaders) {
+        expect(alignmentTokensOf(cell), `${caption}: row header "${cell.textContent}"`).toEqual([
+          'text-left',
+        ])
+      }
+    }
   })
 })
 
