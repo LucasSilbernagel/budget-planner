@@ -264,8 +264,9 @@ function PlanCard({
                 // normal text — while blue-600 measures 5.17:1. Measured at 320px in
                 // a real browser during story 31-1; AC-7 outranks the convention.
                 'bg-blue-600 text-white hover:bg-blue-700'
-              : // gray-700, NOT the gray-800 that `reports/FinancialSummaryReport.tsx:230`
-                // uses for its outline button: that one sits on the page canvas, this one
+              : // gray-700, NOT the gray-800 that the print button in
+                // `reports/FinancialSummaryReport.tsx` (`dark:bg-gray-800`)
+                // uses: that one sits on the page canvas, this one
                 // sits ON a `.surface` (gray-800) card, where gray-800 would make it vanish.
                 'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600'
           }`}

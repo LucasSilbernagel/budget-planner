@@ -192,12 +192,43 @@ describe('FinancialSummaryReport — content', () => {
     expect(totalFor('Total saved')).toHaveTextContent('3,000.00')
   })
 
-  it('stamps the report with the generated date and the currency in effect', () => {
+  /**
+   * Story 56.1 (UX-DR61, UX-DR62 as amended): the report renders the user's
+   * figures and their date, but no currency note and no privacy disclaimer.
+   *
+   * The disclaimer lived inside the `data-print-hide` row, so it only ever
+   * appeared ON SCREEN — removing it changes the screen, not the printout. The
+   * currency note was inside the article and did print.
+   *
+   * ⚠️ The removals are ABSENCE assertions, and absence is vacuous on its own:
+   * with unseeded stores the component renders the "There is nothing to report
+   * yet" branch, which satisfies every `not.toMatch` below while proving
+   * nothing. So each one seeds real data and anchors on the report having
+   * actually rendered — the <h1> plus a figure — before asserting what is gone.
+   *
+   * ⚠️ The absence regexes are deliberately BROADER than the exact copy that
+   * was deleted. Pinning the old sentence verbatim would let the note return
+   * under any rewording ("Amounts in $", "No currency symbol shown") while
+   * staying green. Verified safe: the word "currency" appears in no remaining
+   * rendered string, and the symbols-mode figures render as `$5,433.33` with no
+   * `USD` anywhere.
+   */
+  it('renders the generated-at stamp but no currency note or privacy disclaimer', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
-    expect(
-      screen.getByText(/generated 2026-08-08 · amounts shown without a currency symbol/i)
-    ).toBeInTheDocument()
+
+    // Positive anchor: the report really did render its figures.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Financial summary')
+    expect(totalFor('Monthly income')).toHaveTextContent('5,433.33')
+
+    // UX-DR62 as amended: the date is RETAINED — a filed printout has to be
+    // datable. It is asserted inside the article, which is what prints.
+    const article = document.querySelector('#financial-summary-report') as HTMLElement
+    expect(within(article).getByText(/generated 2026-08-08/i)).toBeInTheDocument()
+
+    expect(document.body.textContent).not.toMatch(/currency/i)
+    expect(document.body.textContent).not.toMatch(/amounts\b/i)
+    expect(document.body.textContent).not.toMatch(/nothing is sent anywhere to produce it/i)
   })
 
   it('formats through the selected currency when symbols mode is on (FR34)', () => {
@@ -206,7 +237,14 @@ describe('FinancialSummaryReport — content', () => {
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     expect(totalFor('Monthly income')).toHaveTextContent('$5,433.33')
-    expect(screen.getByText(/amounts in usd/i)).toBeInTheDocument()
+
+    // Story 56.1: the currency note is gone in SYMBOLS mode too — the branch
+    // the currency-less test above cannot reach — while the date survives in
+    // both modes.
+    expect(document.body.textContent).not.toMatch(/currency/i)
+    expect(document.body.textContent).not.toMatch(/amounts\b/i)
+    expect(document.body.textContent).not.toMatch(/\bUSD\b/i)
+    expect(screen.getByText(/generated 2026-08-08/i)).toBeInTheDocument()
   })
 })
 
@@ -340,6 +378,32 @@ describe('FinancialSummaryReport — printing and privacy', () => {
     expect(button.closest('[data-print-hide]')).not.toBeNull()
     // …and must sit OUTSIDE the report article, which is what gets printed.
     expect(button.closest('#financial-summary-report')).toBeNull()
+  })
+
+  it('keeps the print control at the end of its row now that it stands alone', () => {
+    // Story 56.1 removed the disclaimer that used to sit opposite this button.
+    // `justify-between` on a single child silently left-aligns it, so the row
+    // was switched to `justify-end`. Nothing else pins button placement.
+    //
+    // ⚠️ The row is addressed DIRECTLY, not via the button's `parentElement`.
+    // A future story adding a second "Print / Save as PDF" button would make
+    // `getByRole(..., { name })` throw on multiple matches BEFORE this
+    // assertion ran — the guard would fail for the wrong reason, and the
+    // obvious repair (`getAllByRole(...)[0]`) would quietly hand the placement
+    // assertion to whoever wrote it. Querying the row is child-count-agnostic.
+    //
+    // ⚠️ This is a class-TOKEN pin, not a layout proof — jsdom computes no
+    // layout. `flex` is asserted alongside `justify-end` because `justify-*` is
+    // inert outside a flex/grid container, and `justify-between` is asserted
+    // absent so the exact regression this replaced cannot come back.
+    seedTypicalData()
+    const { container } = render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    const row = container.querySelector('[data-print-hide]') as HTMLElement
+    expect(row).not.toBeNull()
+    const tokens = row.className.split(/\s+/)
+    expect(tokens).toEqual(expect.arrayContaining(['flex', 'justify-end']))
+    expect(tokens).not.toContain('justify-between')
   })
 
   it('exposes the report subtree under the id the print stylesheet targets', () => {

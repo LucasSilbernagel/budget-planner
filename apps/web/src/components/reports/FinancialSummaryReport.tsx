@@ -52,7 +52,7 @@ import {
   buildFinancialSummary,
 } from '../../lib/report/build-financial-summary'
 import { useBalanceEntries } from '../../stores/balanceStore'
-import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
+import { useFormattedAmount } from '../../stores/currencyStore'
 import { useExpenses } from '../../stores/expenseStore'
 import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
@@ -191,8 +191,14 @@ function UnreadableNote({ count }: { count: number }): React.ReactElement | null
 
 export interface FinancialSummaryReportProps {
   /**
-   * Overrides the report date. Supplied by tests so the rendered header is
-   * deterministic; production passes nothing and the report stamps today.
+   * Overrides the report date. Supplied by tests so both the model and the
+   * rendered "Generated <date>" stamp are deterministic; production passes
+   * nothing and the report stamps today.
+   *
+   * Story 56.1 removed the currency note that used to share this line, but the
+   * date itself is retained deliberately — see the UX-DR62 amendment: a printed
+   * summary with no date cannot be distinguished from an older printout of the
+   * same figures.
    */
   generatedAt?: Date
 }
@@ -205,7 +211,6 @@ export function FinancialSummaryReport({
   const balances = useBalanceEntries()
   const savings = useSavingsGoals()
   const format = useFormattedAmount()
-  const { mode, currency } = useCurrencyPreferences()
 
   const model: FinancialSummaryReportModel = useMemo(
     () =>
@@ -219,20 +224,16 @@ export function FinancialSummaryReport({
     [income, expenses, balances, savings, generatedAt]
   )
 
-  const currencyNote =
-    mode === 'none' || currency === 'NONE'
-      ? 'Amounts shown without a currency symbol'
-      : `Amounts in ${currency}`
-
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
       {/* `data-print-hide`: the control that triggers the print must not appear
           on the printed page itself. */}
-      <div data-print-hide className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-body">
-          This summary is built in your browser from the data on this device. Nothing is sent
-          anywhere to produce it.
-        </p>
+      {/* Story 56.1 (UX-DR61): `justify-end`, not `justify-between`. The row
+          once held a privacy disclaimer on the left and the button on the
+          right; with the disclaimer gone, `justify-between` would drift the
+          lone button to the left edge. `flex-wrap` and `gap-3` are inert with a
+          single child and are kept for story 56.4's second print button. */}
+      <div data-print-hide className="mb-6 flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
           onClick={() => window.print()}
@@ -247,9 +248,12 @@ export function FinancialSummaryReport({
           <h1 id="report-heading" className="text-2xl font-bold text-heading">
             Financial summary
           </h1>
-          <p className="mt-1 text-sm text-muted">
-            Generated {model.generatedAtISO} · {currencyNote}
-          </p>
+          {/* Story 56.1 / UX-DR62 as AMENDED (Lucas, 2026-09-17): the currency
+              note that shared this line is gone, but the date stays. This is a
+              document people print and file — without a date, two printouts
+              months apart are indistinguishable. It sits INSIDE the <article>
+              so it prints. */}
+          <p className="mt-1 text-sm text-muted">Generated {model.generatedAtISO}</p>
         </header>
 
         {/* ⚠️ "Nothing to report" means nothing was STORED — never merely that
