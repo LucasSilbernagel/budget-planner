@@ -197,3 +197,66 @@ describe('ProfileList avatar icon (story 54.2)', () => {
     expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
   })
 })
+
+/**
+ * Story 54.3 (FR80): the card is not a second profile switcher.
+ *
+ * ⚠️ WHY THESE EXIST AT ALL. Before this story, NO test anywhere in `src` or `e2e`
+ * asserted the card's "Switch to" button — so deleting it broke nothing red, and a
+ * green suite would have proved nothing about the removal. Absence has to be
+ * asserted deliberately or it is not covered.
+ *
+ * ⚠️ Each absence probe is paired with a positive control in the same test. A
+ * `queryByRole` against a card that never rendered returns `null` just as happily
+ * as one against a card that rendered without the button — the control proves the
+ * query was aimed at a real, rendered card.
+ *
+ * ⚠️ The probes use `queryByRole('button', { name: /switch/i })`, NOT
+ * `queryByText`. `name` accepts a regex, so this catches a relabelled button
+ * ("Switch", "Switch profile") as a full-string `'Switch to'` would not — and,
+ * unlike a text query, it also catches an icon-only button whose name comes from
+ * `aria-label` and has no text node at all. `queryByText` additionally THROWS on
+ * multiple matches instead of failing cleanly, so a switcher returning on two
+ * cards would error rather than report an assertion failure.
+ */
+describe('ProfileList has no per-card switcher (story 54.3)', () => {
+  afterEach(() => {
+    useProfileStore.getState().reset()
+  })
+
+  const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
+  const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
+
+  it('offers no "Switch to" on a NON-ACTIVE card, which is where it used to appear', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    // Positive control, scoped to the card itself: Business is rendered AND is
+    // the non-active one — exactly the `!isActive` condition that used to render
+    // "Switch to". Asserting "Active Profile" appears *somewhere* would not prove
+    // that; an inverted active-card rule would satisfy it just as well.
+    const bizCard = screen.getByRole('button', { name: 'Edit Business' }).closest('div.bg-white')
+    if (!bizCard) throw new Error('Business card not found')
+    expect(within(bizCard).queryByText('Active Profile')).toBeNull()
+
+    const mainCard = screen
+      .getByRole('button', { name: 'Edit Main Profile' })
+      .closest('div.bg-white')
+    if (!mainCard) throw new Error('Main card not found')
+    expect(within(mainCard).getByText('Active Profile')).toBeInTheDocument()
+
+    expect(within(bizCard).queryByRole('button', { name: /switch/i })).toBeNull()
+  })
+
+  it('offers no "Switch to" on any card, under either active selection', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'biz' })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.getByRole('button', { name: 'Edit Main Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Business' })).toBeInTheDocument()
+
+    // `queryAllByRole` (not `queryBy`) so a switcher returning on BOTH cards
+    // reports an empty-array assertion failure instead of a multiple-match throw.
+    expect(screen.queryAllByRole('button', { name: /switch/i })).toHaveLength(0)
+  })
+})

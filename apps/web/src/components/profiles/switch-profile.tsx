@@ -75,7 +75,18 @@ export function SwitchProfileDropdown() {
     setIsOpen(false)
   }
 
-  if (!activeProfile || profiles.length <= 1) {
+  // ⚠️ Never hide the ONLY switcher just because `activeProfileId` resolves to
+  // nothing (a corrupt/stale persisted blob, or an id from another device).
+  // Before story 54.3 the cards' `!isActive` branch rendered "Switch to" on every
+  // card, so an orphaned id still had an escape hatch; 54.3 removed that, and
+  // hiding this dropdown too would leave a multi-profile user with no way back
+  // except a sync pull hitting `reconcileActiveProfile` — which a free, offline
+  // or lapsed user never gets. Fall back to the default profile for DISPLAY only.
+  // `profiles[0]` is `T | undefined` under `noUncheckedIndexedAccess`, so the
+  // narrowing below is real, not ceremonial.
+  const current = activeProfile ?? profiles.find((p) => p.isDefault) ?? profiles[0]
+
+  if (!current || profiles.length <= 1) {
     return null
   }
 
@@ -91,13 +102,13 @@ export function SwitchProfileDropdown() {
       >
         <div
           className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-lg ${getProfileColor(
-            activeProfile.id
+            current.id
           )}`}
         >
-          {getProfileIcon(activeProfile)}
+          {getProfileIcon(current)}
         </div>
         <div className="flex flex-col items-start">
-          <span className="text-sm font-medium text-gray-900">{activeProfile.name}</span>
+          <span className="text-sm font-medium text-gray-900">{current.name}</span>
           {hasMultipleProfiles && (
             <span className="text-xs text-gray-500">
               {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
@@ -130,8 +141,12 @@ export function SwitchProfileDropdown() {
                 type="button"
                 key={profile.id}
                 onClick={() => handleSwitch(profile.id)}
+                // ⚠️ Compared against the REAL `activeProfile`, not the display
+                // fallback above: when the active id resolves to nothing, no row
+                // should claim to be active. An orphaned state shows a usable
+                // switcher with nothing ticked, rather than ticking a lie.
                 className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                  profile.id === activeProfile.id ? 'bg-blue-50' : ''
+                  profile.id === activeProfile?.id ? 'bg-blue-50' : ''
                 }`}
               >
                 <div
@@ -147,7 +162,7 @@ export function SwitchProfileDropdown() {
                     {profile.description || 'No description'}
                   </p>
                 </div>
-                {profile.id === activeProfile.id && (
+                {profile.id === activeProfile?.id && (
                   <svg
                     aria-hidden="true"
                     className="w-4 h-4 text-blue-600"
@@ -165,47 +180,12 @@ export function SwitchProfileDropdown() {
             ))}
           </div>
 
-          {/* Footer with manage link */}
-          <div className="px-4 py-2 border-t border-gray-200">
-            <a
-              href="/profiles"
-              className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              Manage Profiles →
-            </a>
-          </div>
+          {/* No footer link: this dropdown's only call site is `profiles-page.tsx`,
+              so a "Manage Profiles →" link to `/profiles` was always a same-page
+              no-op (story 54.3, FR81). The scrollable list above ends the menu;
+              the container's `py-2` supplies the bottom padding. */}
         </div>
       )}
     </div>
-  )
-}
-
-// Export a simpler version for the navbar
-export function SwitchProfileSimple() {
-  const { activeProfile } = useProfilesWithActive()
-  const hasMultipleProfiles = useHasMultipleProfiles()
-
-  if (!activeProfile || !hasMultipleProfiles) {
-    return null
-  }
-
-  const color = profileColor(activeProfile.id)
-  const icon = resolveProfileIcon(activeProfile)
-
-  return (
-    <a
-      href="/profiles"
-      className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
-    >
-      <div
-        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-lg ${color}`}
-      >
-        {icon}
-      </div>
-      <div className="flex flex-col">
-        <span className="text-sm font-medium text-gray-900">{activeProfile.name}</span>
-        <span className="text-xs text-gray-500">Active Profile</span>
-      </div>
-    </a>
   )
 }

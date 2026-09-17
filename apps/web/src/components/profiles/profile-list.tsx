@@ -2,7 +2,9 @@
  * Profile List Component
  *
  * Displays a list of user profiles with options to manage them.
- * Shows active profile indicator and allows switching between profiles.
+ * Shows the active-profile indicator and offers Edit/Delete per card. It does NOT
+ * switch profiles: since story 54.3 (FR80) `SwitchProfileDropdown` is the app's
+ * one profile-switching control.
  *
  * Architecture: React with Tailwind CSS
  * State Management: Zustand via useActiveProfile hook
@@ -11,7 +13,6 @@
 import {
   useHasMultipleProfiles,
   useProfileManager,
-  useProfileSwitcher,
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
@@ -150,7 +151,6 @@ function ProfileCard({
   color,
   icon,
 }: ProfileCardProps) {
-  const { switchToProfile } = useProfileSwitcher()
   const hasMultipleProfiles = useHasMultipleProfiles()
 
   return (
@@ -214,18 +214,11 @@ function ProfileCard({
         </div>
       )}
 
-      {/* Actions */}
+      {/* Actions — status display plus Edit/Delete. The card is deliberately NOT a
+          switcher (story 54.3, FR80): `SwitchProfileDropdown` is the app's one
+          profile-switching control, so a per-card "Switch to" was a second way to
+          do the same thing. */}
       <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
-        {!isActive && (
-          <button
-            type="button"
-            onClick={() => switchToProfile(profile.id)}
-            className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
-          >
-            Switch to
-          </button>
-        )}
-
         {/* Edit button - every profile, including the default and a lone one (story 54.1).
             The profile's name is in the accessible name so several cards' Edit
             buttons are distinguishable; the visible "Edit" is contained in it. */}
