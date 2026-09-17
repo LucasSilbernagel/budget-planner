@@ -92,11 +92,19 @@ export function SwitchProfileDropdown() {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Dropdown button */}
+      {/* Dropdown button.
+          ⚠️ The dark hover is `gray-700/50`, not the solid `gray-700` this story's
+          mapping table first prescribed (code review 54.5). This button carries the
+          "N profiles" count in `text-muted` — gray-400 in dark — and gray-400 on
+          solid gray-700 measures 4.06:1, under AA. It fails ONLY while hovered, so
+          a resting-state contrast check never sees it. Blending to 50% (#2B3544)
+          lifts it to 4.88:1. The menu ROWS below keep the solid gray-700 hover
+          because their text is `text-heading` / `text-body` (9.37 and 7.00 on it),
+          not muted. */}
       <button
         type="button"
         onClick={toggleDropdown}
-        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+        className="flex items-center gap-2 px-3 py-2 surface border border-default rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors shadow-sm"
         aria-expanded={isOpen}
         aria-haspopup="true"
       >
@@ -108,16 +116,16 @@ export function SwitchProfileDropdown() {
           {getProfileIcon(current)}
         </div>
         <div className="flex flex-col items-start">
-          <span className="text-sm font-medium text-gray-900">{current.name}</span>
+          <span className="text-sm font-medium text-heading">{current.name}</span>
           {hasMultipleProfiles && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-muted">
               {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
             </span>
           )}
         </div>
         <svg
           aria-hidden="true"
-          className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -128,10 +136,10 @@ export function SwitchProfileDropdown() {
 
       {/* Dropdown menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50">
+        <div className="absolute right-0 mt-2 w-64 surface rounded-xl shadow-lg border border-default py-2 z-50">
           {/* Header */}
-          <div className="px-4 py-2 border-b border-gray-200">
-            <p className="text-sm font-medium text-gray-700">Switch Profile</p>
+          <div className="px-4 py-2 border-b border-default">
+            <p className="text-sm font-medium text-label">Switch Profile</p>
           </div>
 
           {/* Profile list */}
@@ -145,8 +153,8 @@ export function SwitchProfileDropdown() {
                 // fallback above: when the active id resolves to nothing, no row
                 // should claim to be active. An orphaned state shows a usable
                 // switcher with nothing ticked, rather than ticking a lie.
-                className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                  profile.id === activeProfile?.id ? 'bg-blue-50' : ''
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                  profile.id === activeProfile?.id ? 'bg-blue-50 dark:bg-blue-950/40' : ''
                 }`}
               >
                 <div
@@ -157,15 +165,20 @@ export function SwitchProfileDropdown() {
                   {getProfileIcon(profile)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{profile.name}</p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="text-sm font-medium text-heading truncate">{profile.name}</p>
+                  {/* ⚠️ `text-body`, not `text-muted` like the card's description
+                      (story 54.5). This row can sit on the `bg-blue-50` active
+                      tint, where `text-muted`'s light value (gray-500) measures
+                      4.44:1 — under AA. gray-600 measures 6.94:1 on the tint and
+                      7.56:1 on the plain row, so one token covers both states. */}
+                  <p className="text-xs text-body truncate">
                     {profile.description || 'No description'}
                   </p>
                 </div>
                 {profile.id === activeProfile?.id && (
                   <svg
                     aria-hidden="true"
-                    className="w-4 h-4 text-blue-600"
+                    className="w-4 h-4 text-accent"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >

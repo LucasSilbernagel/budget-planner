@@ -17,26 +17,15 @@ import {
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
 import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
-import { canonicalizeCurrency } from '@budget-planner/core'
 import { useState } from 'react'
 import { EditProfileDialog } from './edit-profile'
 
-// Profile color options for visual distinction
-// Profile icon options (simple SVG icons)
-// Format date for display (module-scoped so both ProfileList and ProfileCard can use it)
-const formatDate = (dateString: string | undefined) => {
-  // Validate date string before parsing
-  if (!dateString) return 'Invalid date'
-
-  const date = new Date(dateString)
-  if (Number.isNaN(date.getTime())) return 'Invalid date'
-
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+// ⚠️ No `formatDate` and no `canonicalizeCurrency` import since story 54.5
+// (UX-DR60): the card's "Currency:" and "Created:" meta rows were its only
+// callers, so both became dead the moment those rows went. `canonicalizeCurrency`
+// itself lives on — `stores/profileStore.ts` and `stores/currencyStore.ts` still
+// use it, and `packages/core/src/format/__tests__/currency.test.ts` still proves
+// the CAD/AUD/MXN -> USD consolidation directly. Only this file's import is gone.
 
 interface ProfileListProps {
   onCreateNewProfile?: () => void
@@ -71,8 +60,8 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Your Profiles</h2>
-        <span className="text-sm text-gray-500">
+        <h2 className="text-lg font-semibold text-heading">Your Profiles</h2>
+        <span className="text-sm text-muted">
           {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -80,7 +69,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
       {/* Profile list */}
       {profiles.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500 mb-4">No profiles yet</p>
+          <p className="text-muted mb-4">No profiles yet</p>
           <button
             type="button"
             onClick={onCreateNewProfile ? onCreateNewProfile : () => {}}
@@ -120,8 +109,8 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
 
       {/* Multiple profiles notice */}
       {!hasMultipleProfiles && (
-        <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-          <p className="text-sm text-gray-600">
+        <div className="mt-6 p-4 surface-inset rounded-lg">
+          <p className="text-sm text-body">
             💡 <strong>Tip:</strong> Create additional profiles to organize your finances for
             different purposes (e.g., personal, business, investments).
           </p>
@@ -155,10 +144,10 @@ function ProfileCard({
 
   return (
     <div
-      className={`bg-white border rounded-xl p-5 transition-all duration-200 ${
+      className={`surface border rounded-xl p-5 transition-all duration-200 ${
         isActive
           ? 'border-blue-500 shadow-lg shadow-blue-500/10'
-          : 'border-gray-200 hover:border-gray-300'
+          : 'border-default hover:border-gray-300 dark:hover:border-gray-600'
       }`}
     >
       {/* Profile header */}
@@ -173,36 +162,26 @@ function ProfileCard({
         {/* Profile info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900 truncate">{profile.name}</h3>
+            <h3 className="font-semibold text-heading truncate">{profile.name}</h3>
             {profile.isDefault && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+              <span className="text-xs surface-inset text-body px-2 py-0.5 rounded-full">
                 Default
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 truncate">
-            {profile.description || 'No description'}
-          </p>
+          <p className="text-sm text-muted truncate">{profile.description || 'No description'}</p>
         </div>
       </div>
 
-      {/* Profile meta */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-500">Currency:</span>
-          <span className="font-medium text-gray-900">
-            {canonicalizeCurrency(profile.currency || 'NONE')}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-500">Created:</span>
-          <span className="font-medium text-gray-900">{formatDate(profile.createdAt)}</span>
-        </div>
-      </div>
+      {/* No "Currency:" / "Created:" meta rows since story 54.5 (UX-DR60). Neither
+          told the user anything actionable: a profile's currency is not read for
+          display formatting anywhere (story 54.1 checked, which is why the create
+          and edit dialogs dropped the field), and its creation date never drove a
+          decision. The card is name, description, status and actions. */}
 
       {/* Active indicator */}
       {isActive && (
-        <div className="mt-4 flex items-center gap-2 text-sm text-green-600">
+        <div className="mt-4 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
           <svg aria-hidden="true" className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
@@ -218,7 +197,7 @@ function ProfileCard({
           switcher (story 54.3, FR80): `SwitchProfileDropdown` is the app's one
           profile-switching control, so a per-card "Switch to" was a second way to
           do the same thing. */}
-      <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
+      <div className="mt-4 pt-4 border-t border-default flex items-center gap-2">
         {/* Edit button - every profile, including the default and a lone one (story 54.1).
             The profile's name is in the accessible name so several cards' Edit
             buttons are distinguishable; the visible "Edit" is contained in it. */}
@@ -226,7 +205,7 @@ function ProfileCard({
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${profile.name}`}
-          className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
+          className="text-sm text-accent hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
         >
           Edit
         </button>
@@ -237,7 +216,7 @@ function ProfileCard({
             type="button"
             onClick={onDelete}
             disabled={isDeleting}
-            className="text-sm text-red-600 hover:text-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+            className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
           >
             {isDeleting ? 'Deleting...' : 'Delete'}
           </button>

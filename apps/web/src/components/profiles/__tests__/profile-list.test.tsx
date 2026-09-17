@@ -3,65 +3,17 @@ import { useProfileStore } from '@/stores/profileStore'
 import { fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProfileList } from '../profile-list'
+import { RETIRED_LIGHT_ONLY_TOKENS, collectClassTokens } from './retired-tokens'
 
-/**
- * ProfileList currency-display tests (story 8-2, FR26 — code-review P1).
- *
- * A legacy profile persisted with a now-consolidated dollar code (`CAD`/`AUD`/
- * `MXN`) must render its canonical representative (`USD`) in the card, since the
- * shrunk selector no longer offers the retired code. Non-consolidated codes are
- * displayed unchanged. The app never converts currency — this is a display-only
- * relabel of an identical-rendering code.
+/*
+ * ⚠️ The `ProfileList currency display (story 8-2)` describe that stood here was
+ * deleted by story 54.5 (UX-DR60) along with the card's "Currency:" meta row it
+ * probed. Its three tests were the only place `canonicalizeCurrency`'s CAD/AUD ->
+ * USD consolidation was asserted through a component — but NOT the only place it
+ * is asserted: `packages/core/src/format/__tests__/currency.test.ts:472-476`
+ * proves the same mapping directly, so the behaviour is still covered. Only the
+ * render path lost coverage, and that render path no longer exists.
  */
-describe('ProfileList currency display (story 8-2)', () => {
-  afterEach(() => {
-    useProfileStore.getState().reset()
-  })
-
-  const seed = (currency: string) => {
-    useProfileStore.setState({
-      profiles: [
-        {
-          id: 'p1',
-          userId: 'u1',
-          name: 'Legacy Profile',
-          isDefault: true,
-          currency,
-        },
-      ],
-      activeProfileId: 'p1',
-    })
-  }
-
-  const currencyValue = () => {
-    const label = screen.getByText('Currency:')
-    // The rendered code lives in the sibling <span> within the same meta row.
-    const row = label.parentElement as HTMLElement
-    return within(row).getByText(/^[A-Z]{3}$|^NONE$/).textContent
-  }
-
-  it('renders a legacy CAD profile as the canonical USD', () => {
-    seed('CAD')
-    renderWithProviders(<ProfileList />)
-
-    expect(currencyValue()).toBe('USD')
-    expect(screen.queryByText('CAD')).toBeNull()
-  })
-
-  it('renders a legacy AUD profile as the canonical USD', () => {
-    seed('AUD')
-    renderWithProviders(<ProfileList />)
-
-    expect(currencyValue()).toBe('USD')
-  })
-
-  it('leaves a non-consolidated currency (EUR) displayed unchanged', () => {
-    seed('EUR')
-    renderWithProviders(<ProfileList />)
-
-    expect(currencyValue()).toBe('EUR')
-  })
-})
 
 /**
  * Edit action (story 54.1, FR77).
@@ -235,13 +187,17 @@ describe('ProfileList has no per-card switcher (story 54.3)', () => {
     // the non-active one — exactly the `!isActive` condition that used to render
     // "Switch to". Asserting "Active Profile" appears *somewhere* would not prove
     // that; an inverted active-card rule would satisfy it just as well.
-    const bizCard = screen.getByRole('button', { name: 'Edit Business' }).closest('div.bg-white')
+    // ⚠️ `div.surface`, not `div.bg-white`: story 54.5 moved the card background
+    // onto the semantic token, and this selector went red for it. A card locator
+    // pinned to a presentational class breaks on any theming change — the throw
+    // below is what makes that break loud instead of a silent empty match.
+    const bizCard = screen.getByRole('button', { name: 'Edit Business' }).closest('div.surface')
     if (!bizCard) throw new Error('Business card not found')
     expect(within(bizCard).queryByText('Active Profile')).toBeNull()
 
     const mainCard = screen
       .getByRole('button', { name: 'Edit Main Profile' })
-      .closest('div.bg-white')
+      .closest('div.surface')
     if (!mainCard) throw new Error('Main card not found')
     expect(within(mainCard).getByText('Active Profile')).toBeInTheDocument()
 
@@ -258,5 +214,216 @@ describe('ProfileList has no per-card switcher (story 54.3)', () => {
     // `queryAllByRole` (not `queryBy`) so a switcher returning on BOTH cards
     // reports an empty-array assertion failure instead of a multiple-match throw.
     expect(screen.queryAllByRole('button', { name: /switch/i })).toHaveLength(0)
+  })
+})
+
+/**
+ * Story 54.5 (UX-DR59, UX-DR60): dark-mode legibility and card declutter.
+ *
+ * ⚠️ WHY A CLASS SWEEP AND NOT AN E2E TEST. `/profiles` renders this component
+ * only for an ACTIVE premium session, and the Playwright preview runtime cannot
+ * mint one — `e2e/profiles-premium.spec.ts:10-14` states it outright, and that
+ * spec asserts only the locked upgrade surface. `/profiles` is likewise absent
+ * from `e2e/theme-page-coverage.spec.ts`'s hand-maintained `PAGES`. So there is
+ * no browser-level route to this UI, and the jsdom class assertions below are the
+ * automated proof; the rendered two-theme check is manual and recorded in the
+ * story's Debug Log.
+ *
+ * ⚠️ WHAT A TOKEN SWEEP DOES AND DOES NOT PROVE. It proves the class is present,
+ * not that it renders the colour — jsdom compiles no Tailwind. Story 54.2's
+ * review made exactly this point about a dark-mode test that asserted only colour
+ * tokens and would have passed against the defect. The contrast ratios behind
+ * these tokens are computed in the story, not here.
+ */
+
+describe('ProfileList dark-mode tokens (story 54.5)', () => {
+  afterEach(() => {
+    useProfileStore.getState().reset()
+  })
+
+  const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
+  const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
+
+  it('gives the "Your Profiles" heading a themed token (AC-1)', () => {
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    const { container } = renderWithProviders(<ProfileList />)
+
+    const heading = container.querySelector('h2')
+    if (!heading) throw new Error('missing "Your Profiles" heading')
+    expect(heading.textContent).toBe('Your Profiles')
+    expect([...heading.classList]).toContain('text-heading')
+    expect([...heading.classList]).not.toContain('text-gray-900')
+  })
+
+  it('puts the card body, divider and actions on semantic tokens (AC-2)', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    const card = screen.getByRole('button', { name: 'Edit Business' }).closest('div.surface')
+    if (!card) throw new Error('Business card not found')
+    expect([...card.classList]).not.toContain('bg-white')
+    // The non-active card's border: themed, not the light-only gray-200.
+    expect([...card.classList]).toContain('border-default')
+
+    const edit = screen.getByRole('button', { name: 'Edit Business' })
+    expect([...edit.classList]).toContain('text-accent')
+    expect([...edit.classList]).not.toContain('text-blue-600')
+
+    // The action-row divider — named in this test's title and, until the code
+    // review, never actually asserted here. Only the generic sweep's absence of
+    // `border-gray-100` covered it, so a regression to `border-t border-gray-100`
+    // left this named test green.
+    const divider = card.querySelector('div.border-t')
+    if (!divider) throw new Error('action-row divider not found')
+    expect([...divider.classList]).toContain('border-default')
+    expect([...divider.classList]).not.toContain('border-gray-100')
+
+    const del = screen.getByRole('button', { name: 'Delete' })
+    expect([...del.classList]).toContain('dark:text-red-400')
+
+    // ⚠️ VARIANT-PREFIXED PAIRS THE SWEEP CANNOT SEE (code review 54.5). The sweep
+    // matches whole tokens, so `hover:text-blue-800` is not a retired token and a
+    // MISSING `dark:hover:` twin slips through silently. `pricing-page.test.tsx`
+    // records a prior review catching exactly this. Measured consequence if the
+    // dark twin goes: Edit's hover becomes blue-800 on gray-800 = 1.68:1 and
+    // Delete's becomes red-700 on gray-800 = 2.27:1 — the label vanishes under
+    // the pointer, with the whole suite still green.
+    expect([...edit.classList]).toContain('dark:hover:text-blue-200')
+    expect([...del.classList]).toContain('dark:hover:text-red-300')
+    expect([...card.classList]).toContain('dark:hover:border-gray-600')
+  })
+
+  it("pairs the active indicator's green with a dark variant (AC-3)", () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    const indicator = screen.getByText('Active Profile').closest('div')
+    if (!indicator) throw new Error('active indicator not found')
+    expect([...indicator.classList]).toContain('dark:text-green-400')
+    // ⚠️ green-700, not the green-600 that stood here: green-600 on white
+    // measures 3.30:1, under AA. green-700 measures 5.02:1.
+    expect([...indicator.classList]).toContain('text-green-700')
+    expect([...indicator.classList]).not.toContain('text-green-600')
+  })
+
+  it('leaves no light-only colour token anywhere in the rendered list (AC-2)', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    const { container } = renderWithProviders(<ProfileList />)
+
+    const root = container.firstElementChild
+    if (!(root instanceof HTMLElement)) throw new Error('missing ProfileList root')
+    // Positive control: the sweep is looking at a real, populated tree, not an
+    // empty one that would pass every `not.toContain` for free.
+    expect(within(root).getByText('Business')).toBeInTheDocument()
+
+    const classes = collectClassTokens(root)
+    // ⚠️ THE CONTROL THAT MAKES THE LOOP BELOW MEAN ANYTHING (code review 54.5).
+    // Every assertion in it is a `not.toContain`, so an EMPTY `classes` array
+    // passes all 14 for free. Asserting that some text rendered proves the tree is
+    // populated; it does NOT prove class collection worked. This does.
+    expect(classes.length).toBeGreaterThan(0)
+    expect(classes).toContain('surface')
+
+    for (const retired of RETIRED_LIGHT_ONLY_TOKENS) {
+      expect(classes, `retired light-only token "${retired}" survived`).not.toContain(retired)
+    }
+  })
+
+  it('sweeps the single-profile branch too, where the tip box renders (AC-2)', () => {
+    // The "💡 Tip" box renders only when there is ONE profile, so the sweep above
+    // never sees it. It carried `bg-gray-100` + `text-gray-600`.
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    const { container } = renderWithProviders(<ProfileList />)
+
+    const root = container.firstElementChild
+    if (!(root instanceof HTMLElement)) throw new Error('missing ProfileList root')
+    expect(within(root).getByText(/Create additional profiles/)).toBeInTheDocument()
+
+    const classes = collectClassTokens(root)
+    // ⚠️ THE CONTROL THAT MAKES THE LOOP BELOW MEAN ANYTHING (code review 54.5).
+    // Every assertion in it is a `not.toContain`, so an EMPTY `classes` array
+    // passes all 14 for free. Asserting that some text rendered proves the tree is
+    // populated; it does NOT prove class collection worked. This does.
+    expect(classes.length).toBeGreaterThan(0)
+    expect(classes).toContain('surface')
+
+    for (const retired of RETIRED_LIGHT_ONLY_TOKENS) {
+      expect(classes, `retired light-only token "${retired}" survived`).not.toContain(retired)
+    }
+  })
+
+  it('sweeps the empty-state branch too (AC-2)', () => {
+    // Third branch: no profiles at all. `text-gray-500` lived here.
+    useProfileStore.setState({ profiles: [], activeProfileId: null })
+    const { container } = renderWithProviders(<ProfileList />)
+
+    const root = container.firstElementChild
+    if (!(root instanceof HTMLElement)) throw new Error('missing ProfileList root')
+    expect(within(root).getByText('No profiles yet')).toBeInTheDocument()
+
+    const classes = collectClassTokens(root)
+    // ⚠️ THE CONTROL THAT MAKES THE LOOP BELOW MEAN ANYTHING (code review 54.5).
+    // Every assertion in it is a `not.toContain`, so an EMPTY `classes` array
+    // passes all 14 for free. Asserting that some text rendered proves the tree is
+    // populated; it does NOT prove class collection worked. This does.
+    expect(classes.length).toBeGreaterThan(0)
+    // No card in this branch, so anchor on the empty state's own token instead.
+    expect(classes).toContain('text-muted')
+
+    for (const retired of RETIRED_LIGHT_ONLY_TOKENS) {
+      expect(classes, `retired light-only token "${retired}" survived`).not.toContain(retired)
+    }
+  })
+})
+
+/**
+ * Story 54.5 (UX-DR60): the card drops its currency and created-at metadata.
+ *
+ * ⚠️ NOTHING IN THE REPO COVERED "Created:" — a repo-wide grep at `d2f7c20` found
+ * it only in the component. "Currency:" was referenced by exactly one test helper
+ * (the story 8-2 describe deleted above). So these absence assertions are the
+ * only witnesses to the removal, and each is proven red by a mutation arm.
+ *
+ * ⚠️ Each probe is paired with a positive control in the same test: a
+ * `queryByText` against a card that never rendered returns `null` just as happily
+ * as one against a card rendered without the row.
+ */
+describe('ProfileList card metadata removal (story 54.5)', () => {
+  afterEach(() => {
+    useProfileStore.getState().reset()
+  })
+
+  const main = {
+    id: 'main',
+    userId: 'u1',
+    name: 'Main Profile',
+    isDefault: true,
+    currency: 'EUR',
+    description: 'Everyday spending',
+    createdAt: '2026-01-15T10:00:00.000Z',
+  }
+
+  it('shows no "Currency:" row (AC-4)', () => {
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    // Positive control: the card IS rendered, with the content that survives.
+    expect(screen.getByText('Main Profile')).toBeInTheDocument()
+    expect(screen.getByText('Everyday spending')).toBeInTheDocument()
+
+    expect(screen.queryByText('Currency:')).toBeNull()
+    // The value is gone too, not just its label.
+    expect(screen.queryByText('EUR')).toBeNull()
+  })
+
+  it('shows no "Created:" row (AC-4)', () => {
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.getByRole('button', { name: 'Edit Main Profile' })).toBeInTheDocument()
+
+    expect(screen.queryByText('Created:')).toBeNull()
+    // The formatted date `formatDate` used to emit for this `createdAt`.
+    expect(screen.queryByText('Jan 15, 2026')).toBeNull()
   })
 })

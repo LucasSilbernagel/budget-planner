@@ -14,9 +14,13 @@
  * write; the sync bridge is fire-and-forget and a no-op without a sync handle,
  * so nothing on this page blocks on the network.
  *
- * Layout follows `profile-list.tsx`'s structure but NOT its styling — that file
- * hard-codes light-only classes (`bg-white`, `text-gray-900`) and would be
- * unreadable in dark mode. Surfaces here use the `surface`/`text-*` tokens.
+ * Layout follows `profile-list.tsx`'s structure, and since story 54.5 so does its
+ * styling: both use the `surface`/`text-*` semantic tokens. ⚠️ This note used to
+ * say the opposite — that `profile-list.tsx` "hard-codes light-only classes
+ * (`bg-white`, `text-gray-900`) and would be unreadable in dark mode". That was
+ * true when it was written and 54.5 made it false; it is corrected here rather
+ * than left to mislead the next reader into copying a workaround for a problem
+ * that no longer exists.
  */
 
 import type { CategoryKind } from '@budget-planner/db'
