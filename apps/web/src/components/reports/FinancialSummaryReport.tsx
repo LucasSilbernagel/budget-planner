@@ -129,6 +129,32 @@ const SECTION_CLASS = 'surface border-default mt-6 rounded-lg border p-4 sm:p-6'
 const SECTION_HEADING_CLASS = 'text-lg font-semibold text-heading'
 
 /**
+ * The print button's appearance, in ONE place (story 56.4).
+ *
+ * ⚠️ Two buttons render this — above the document and at the end of it — and
+ * they are the same control, so they must look the same: same focus ring, same
+ * dark-mode variants, same hit area. A second copy of this string would be two
+ * things that eventually disagree, and the one further from the eye would be
+ * the one left behind. A test asserts the two class attributes are EQUAL, which
+ * is a real guard only because this constant is what makes it true.
+ */
+const PRINT_BUTTON_CLASS =
+  'rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+
+/**
+ * The row shape both print buttons sit in — each adds its own vertical margin.
+ *
+ * ⚠️ `justify-end` is the load-bearing token (story 56.1: the row once held a
+ * disclaimer opposite the button, and `justify-between` on a lone child drifts
+ * it to the left edge); `flex` is what makes `justify-*` do anything at all.
+ * `flex-wrap` and `gap-3` are INERT while each row holds a single child — they
+ * are kept so the two rows stay one shape, and they are NOT what keeps the
+ * button usable at 320px. That is the `px-4` page gutter and the button's own
+ * intrinsic width.
+ */
+const PRINT_ROW_CLASS = 'flex flex-wrap items-center justify-end gap-3'
+
+/**
  * A whole-percent rendering, or an em-dash when there is nothing to measure
  * against. Never renders `NaN%` — the model guarantees `null` in that case
  * rather than a division result.
@@ -358,13 +384,11 @@ export function FinancialSummaryReport({
           once held a privacy disclaimer on the left and the button on the
           right; with the disclaimer gone, `justify-between` would drift the
           lone button to the left edge. `flex-wrap` and `gap-3` are inert with a
-          single child and are kept for story 56.4's second print button. */}
-      <div data-print-hide className="mb-6 flex flex-wrap items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-        >
+          single child and are kept because story 56.4's second print button
+          shares this row SHAPE — it did not land in this row. It has its own,
+          at the end of the document. */}
+      <div data-print-hide className={`mb-6 ${PRINT_ROW_CLASS}`}>
+        <button type="button" onClick={() => window.print()} className={PRINT_BUTTON_CLASS}>
           Print / Save as PDF
         </button>
       </div>
@@ -681,6 +705,32 @@ export function FinancialSummaryReport({
                 </p>
               )}
             </section>
+
+            {/* Story 56.4 (FR83). The same action as the button above the
+                document, repeated where the reading ends — someone who has
+                just read to the bottom of the summary should not have to
+                scroll back to the top to print it.
+
+                ⚠️ This one sits INSIDE the <article>, unlike the top button,
+                so `data-print-hide` is the ONLY thing keeping it off paper.
+                That is sound and already precedented: the rule in
+                `global.css` is global within `@media print`, and 56.3's
+                period control depends on exactly it. The top button's own
+                test still asserts it lies outside this subtree — that
+                invariant is now stated per button rather than for all of
+                them, and a guard below pins this half.
+
+                ⚠️ Deliberately inside this branch, not beside the
+                `</article>`. On the "There is nothing to report yet"
+                document there is nothing to scroll past, so a second button
+                would sit a few centimetres below the first; gating here also
+                avoids restating the emptiness condition and letting the two
+                drift apart. */}
+            <div data-print-hide className={`mt-6 ${PRINT_ROW_CLASS}`}>
+              <button type="button" onClick={() => window.print()} className={PRINT_BUTTON_CLASS}>
+                Print / Save as PDF
+              </button>
+            </div>
           </>
         )}
       </article>

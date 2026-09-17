@@ -81,6 +81,52 @@ function totalFor(label: string): HTMLElement {
 }
 
 /**
+ * The print button's accessible name.
+ *
+ * ⚠️ A REGEX, not a string: `getByRole`'s `name` is a FULL-STRING match when
+ * given a string, so a later label change would turn these queries into throws
+ * rather than silent passes — and the repo's standing lesson is the mirror case
+ * (an absence probe against a renamed label going quietly green).
+ */
+const PRINT_BUTTON_NAME = /print \/ save as pdf/i
+
+/**
+ * The print buttons, and each one addressed by WHERE IT LIVES (story 56.4).
+ *
+ * Since 56.4 there are TWO buttons carrying this name — one above the document
+ * and one at the end of it — so the singular `getByRole` these tests used
+ * throws on multiple matches.
+ *
+ * ⚠️ They are distinguished by article containment, NEVER by array index.
+ * `getAllByRole(...)[0]` binds the assertion to DOM order and reads as an
+ * arbitrary number at the call site; `closest('#financial-summary-report')`
+ * states the actual distinction — the top button sits outside the printed
+ * subtree, the bottom one inside it.
+ */
+function printButtons(): HTMLElement[] {
+  return screen.getAllByRole('button', { name: PRINT_BUTTON_NAME })
+}
+
+function topPrintButton(): HTMLElement {
+  const button = printButtons().find((element) => !element.closest('#financial-summary-report'))
+  if (!button) {
+    // An explicit throw, because `find` returns `undefined` and the failure
+    // would otherwise surface as a type error on `.click()` — illegible, and
+    // indistinguishable from the button having moved.
+    throw new Error('No print button outside #financial-summary-report')
+  }
+  return button
+}
+
+function bottomPrintButton(): HTMLElement {
+  const button = printButtons().find((element) => element.closest('#financial-summary-report'))
+  if (!button) {
+    throw new Error('No print button inside #financial-summary-report')
+  }
+  return button
+}
+
+/**
  * An element's class attribute as TOKENS.
  *
  * Membership is asserted against this array, never as a substring of the raw
@@ -449,8 +495,7 @@ describe('FinancialSummaryReport — printing and privacy', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    const button = screen.getByRole('button', { name: /print \/ save as pdf/i })
-    button.click()
+    topPrintButton().click()
 
     expect(printSpy).toHaveBeenCalledTimes(1)
     printSpy.mockRestore()
@@ -466,21 +511,29 @@ describe('FinancialSummaryReport — printing and privacy', () => {
 
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
-    screen.getByRole('button', { name: /print \/ save as pdf/i }).click()
+    topPrintButton().click()
 
     expect(fetchSpy).not.toHaveBeenCalled()
     printSpy.mockRestore()
   })
 
-  it('keeps the print control out of the printed output', () => {
+  it('keeps the top print control out of the printed output', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     // The print stylesheet hides `[data-print-hide]`; the button must carry it,
     // or the report prints its own button.
-    const button = screen.getByRole('button', { name: /print \/ save as pdf/i })
+    const button = topPrintButton()
     expect(button.closest('[data-print-hide]')).not.toBeNull()
-    // …and must sit OUTSIDE the report article, which is what gets printed.
+    // …and this one must sit OUTSIDE the report article, which is what gets
+    // printed.
+    //
+    // ⚠️ Scoped to the TOP button since story 56.4. "Print controls live
+    // outside the printed subtree" was true of the only control that existed
+    // when this was written; the bottom button deliberately sits inside the
+    // article and relies on `data-print-hide` alone, exactly as 56.3's period
+    // control does. The invariant is now per-button — see the 56.4 block below,
+    // which asserts the other half rather than leaving it unstated.
     expect(button.closest('#financial-summary-report')).toBeNull()
   })
 
@@ -490,11 +543,14 @@ describe('FinancialSummaryReport — printing and privacy', () => {
     // was switched to `justify-end`. Nothing else pins button placement.
     //
     // ⚠️ The row is addressed DIRECTLY, not via the button's `parentElement`.
-    // A future story adding a second "Print / Save as PDF" button would make
-    // `getByRole(..., { name })` throw on multiple matches BEFORE this
-    // assertion ran — the guard would fail for the wrong reason, and the
-    // obvious repair (`getAllByRole(...)[0]`) would quietly hand the placement
-    // assertion to whoever wrote it. Querying the row is child-count-agnostic.
+    // Story 56.4 has since added the second "Print / Save as PDF" button this
+    // anticipated: `getByRole(..., { name })` now throws on multiple matches,
+    // and the obvious repair (`getAllByRole(...)[0]`) would have quietly handed
+    // the placement assertion to whoever wrote it. Querying the row directly is
+    // child-count-agnostic, so this guard survived that story untouched — and
+    // it still resolves to the TOP row, because `querySelector` returns the
+    // first `[data-print-hide]` in document order and 56.4's row comes last.
+    // The bottom row has its own guard in the 56.4 block below.
     //
     // ⚠️ This is a class-TOKEN pin, not a layout proof — jsdom computes no
     // layout. `flex` is asserted alongside `justify-end` because `justify-*` is
@@ -518,6 +574,146 @@ describe('FinancialSummaryReport — printing and privacy', () => {
     expect(within(article as HTMLElement).getByRole('heading', { level: 1 })).toHaveTextContent(
       'Financial summary'
     )
+  })
+})
+
+describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', () => {
+  it('offers a second print button at the end of the document (AC-1, AC-4)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // Exactly two: a third would mean a stray copy, and one would mean the
+    // feature is gone. Both halves matter, so the count is asserted rather
+    // than merely "more than one".
+    expect(printButtons()).toHaveLength(2)
+
+    // The bottom one comes AFTER the Savings section in document order — it is
+    // the end-of-document affordance, not a duplicate of the top control.
+    // `compareDocumentPosition` reads the real DOM order rather than trusting
+    // the order `getAllByRole` happened to return.
+    //
+    // ⚠️ `& DOCUMENT_POSITION_FOLLOWING` ALONE IS NOT ENOUGH, and that is the
+    // whole reason for the second assertion. The DOM returns
+    // `CONTAINED_BY | FOLLOWING` (20) for a DESCENDANT, so the FOLLOWING bit is
+    // set for a button nested INSIDE the Savings section too — which would put
+    // it on a `.surface` card mid-document, `dark:bg-gray-800` on
+    // `dark:bg-gray-800`. Found independently by all three review layers,
+    // 2026-09-17. Asserting `closest('section')` is null is what makes this a
+    // claim about the end of the document rather than "somewhere after the
+    // Savings heading".
+    const savings = screen.getByRole('heading', { name: 'Savings' }).closest('section')
+    expect(savings).not.toBeNull()
+    const button = bottomPrintButton()
+    expect(
+      (savings as HTMLElement).compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(button.closest('section')).toBeNull()
+  })
+
+  it('gives the bottom button the same row shape as the top one (AC-6)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // ⚠️ 56.1's placement guard does NOT cover this row: it reaches the row via
+    // `container.querySelector('[data-print-hide]')`, which is the FIRST match
+    // in document order — always the top row. Without this test, dropping
+    // `${PRINT_ROW_CLASS}` from the bottom wrapper leaves all other guards
+    // green while the button silently left-aligns, which is exactly the
+    // UX-DR61 regression 56.1 fixed on the top row.
+    const row = bottomPrintButton().closest('[data-print-hide]') as HTMLElement
+    expect(row).not.toBeNull()
+    const tokens = tokensOf(row)
+    expect(tokens).toEqual(expect.arrayContaining(['flex', 'justify-end']))
+    // `justify-*` is inert outside a flex/grid container, so `flex` above is
+    // load-bearing; and the container the disclaimer once needed must not come
+    // back here either.
+    expect(tokens).not.toContain('justify-between')
+  })
+
+  it('renders the bottom button in the all-unreadable branch too (AC-5)', () => {
+    // The third state of the gating ternary: rows EXIST but none can be read,
+    // so `isEmpty` is true while `totalUnreadableCount > 0` — the document
+    // still renders its sections, so it still ends with a print control.
+    // Without this the gate could be narrowed to "the budget has rows" and
+    // nothing would go red.
+    useIncomeStore.setState({
+      incomeSources: [incomeRow('i1', 'Corrupt', 100_000, 'fortnightly')],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.getByText(/none of your saved entries could be read/i)).toBeInTheDocument()
+    expect(printButtons()).toHaveLength(2)
+  })
+
+  it('hands the document to the print dialog from the bottom button too (AC-4)', () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // ⚠️ The BOTTOM button specifically. The existing guard above proves only
+    // the top one calls `print()`; a bottom button wired to nothing would sail
+    // through it.
+    bottomPrintButton().click()
+
+    expect(printSpy).toHaveBeenCalledTimes(1)
+    printSpy.mockRestore()
+  })
+
+  it('keeps the bottom button off paper while sitting inside the article (AC-2)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    const button = bottomPrintButton()
+    // `global.css` hides `[data-print-hide]` under `@media print`, and that
+    // rule is global — it applies inside the printed subtree too, which is
+    // what 56.3's period control already relies on. Without the attribute this
+    // button prints itself onto the user's own report.
+    expect(button.closest('[data-print-hide]')).not.toBeNull()
+    // Non-vacuity: this really is the in-article one, so the assertion above
+    // is about the new button and not a second reading of the top row.
+    expect(button.closest('#financial-summary-report')).not.toBeNull()
+  })
+
+  it('does not repeat itself on a report with nothing to print (AC-5)', () => {
+    // Every store empty → "There is nothing to report yet". There is nothing
+    // to scroll past, so a second print button would sit centimetres below the
+    // first. `queryAllByRole` because the getter throws on zero matches, which
+    // would fail for the wrong reason if the count ever hit 0.
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.getByText(/there is nothing to report yet/i)).toBeInTheDocument()
+    expect(screen.queryAllByRole('button', { name: PRINT_BUTTON_NAME })).toHaveLength(1)
+  })
+
+  it('still offers both buttons when the sections exist but hold no figures (AC-5)', () => {
+    // The other branch: a report whose every section renders its own empty
+    // copy still renders the document, so the end-of-document button belongs
+    // there. Without this, "gated on content" could have shipped as "gated on
+    // the budget having rows".
+    useBalanceStore.setState({ entries: [balanceRow('b1', 'ISA', 'investment', 100_000)] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(screen.getByText(/no income or expenses have been added/i)).toBeInTheDocument()
+    expect(printButtons()).toHaveLength(2)
+  })
+
+  it('renders the two buttons with identical class attributes (AC-6)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    // Non-vacuity first: two EMPTY class attributes would also compare equal,
+    // and a failure here should read as "the classes vanished", not as a
+    // divergence.
+    expect(topPrintButton().className).toMatch(/\S/)
+    // Equality, not a token spot-check: focus ring, dark-mode variants, border
+    // and padding all have to match, and enumerating them would pin some while
+    // leaving the rest free to drift.
+    //
+    // ⚠️ What this observes is EQUALITY, not a single source. Two byte-identical
+    // literals pass it just as well; `PRINT_BUTTON_CLASS` is what keeps them
+    // equal, and only the component can state that. The title says what the
+    // assertion sees.
+    expect(bottomPrintButton().className).toBe(topPrintButton().className)
   })
 })
 
