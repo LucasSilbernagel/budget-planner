@@ -18,7 +18,7 @@ import {
   sanitizeMoneyInput,
 } from '@budget-planner/core'
 import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react'
 import { sanitizeWithCaret } from '../../lib/sanitized-input'
 import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
@@ -890,10 +890,17 @@ function InputField({
     }
   }
 
+  // Associate the label with its control (story `forecast-2`). `useId` keeps the
+  // pairing unique across the seven call sites without threading an id prop.
+  const inputId = useId()
+
   return (
     <div>
-      <label className="block text-sm font-medium text-label mb-1">{label}</label>
+      <label htmlFor={inputId} className="block text-sm font-medium text-label mb-1">
+        {label}
+      </label>
       <input
+        id={inputId}
         type={type}
         value={internalValue}
         onChange={handleChange}
@@ -929,6 +936,15 @@ function FinancialItemRow({
   // wrong in neutral mode and for non-USD currencies).
   const { mode, currency } = useCurrencyPreferences()
 
+  // Associate each label with its control (story `forecast-2`). The event row has
+  // been associated since `forecast-1`; this story closed the rest — the FOUR
+  // default financial-item rows (1 income + 3 expenses) here, and the seven
+  // `InputField` call sites above, which include Current Savings and Current
+  // Investments. Before this story none of those were named to assistive tech.
+  const nameId = useId()
+  const amountId = useId()
+  const frequencyId = useId()
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value)
     // Validate: ensure value is a valid number and not negative
@@ -945,8 +961,11 @@ function FinancialItemRow({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-label mb-1">Name</label>
+          <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
+            Name
+          </label>
           <input
+            id={nameId}
             type="text"
             value={item.name}
             onChange={(e) => onUpdate('name', e.target.value)}
@@ -957,7 +976,9 @@ function FinancialItemRow({
 
         {/* Amount */}
         <div>
-          <label className="block text-sm font-medium text-label mb-1">Amount</label>
+          <label htmlFor={amountId} className="block text-sm font-medium text-label mb-1">
+            Amount
+          </label>
           <div className="relative">
             {mode === 'symbol' && (
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
@@ -965,6 +986,7 @@ function FinancialItemRow({
               </span>
             )}
             <input
+              id={amountId}
               type="number"
               value={item.amount / 100}
               onChange={handleAmountChange}
@@ -980,8 +1002,11 @@ function FinancialItemRow({
 
         {/* Frequency */}
         <div>
-          <label className="block text-sm font-medium text-label mb-1">Frequency</label>
+          <label htmlFor={frequencyId} className="block text-sm font-medium text-label mb-1">
+            Frequency
+          </label>
           <select
+            id={frequencyId}
             value={item.frequency}
             onChange={(e) => onUpdate('frequency', e.target.value)}
             className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
@@ -1028,16 +1053,106 @@ function OneTimeEventRow({
   // Currency-mode-aware amount prefix (see FinancialItemRow) — never a literal `$`.
   const { mode, currency } = useCurrencyPreferences()
 
+  /**
+   * Direction is held locally and the stored `amount` stays SIGNED (story
+   * `forecast-1`): negative is money out. Keeping the sign on the wire means the
+   * engine (`calculateFinancialForecast` already sums signed amounts) and the
+   * saved `scenarioData` JSON both need no change.
+   *
+   * ⚠️ The sign is authoritative WHENEVER THE AMOUNT IS NON-ZERO, so direction is
+   * derived from it and cannot drift out of step with what the engine will do.
+   * State is needed only for `amount: 0`, where the sign carries no information —
+   * a new event starts there, and without a remembered choice, picking "Money
+   * out" and then typing would silently produce an inflow.
+   *
+   * (An earlier revision held direction purely in state and claimed it "cannot be
+   * derived from the sign on every render". That was overstated — it is
+   * underivable only at zero — and it left a second source of truth that the
+   * zero case could genuinely desynchronise across a reload.)
+   */
+  const [pendingDirection, setPendingDirection] = useState<'in' | 'out'>(
+    event.amount < 0 ? 'out' : 'in'
+  )
+  const direction: 'in' | 'out' =
+    event.amount !== 0 ? (event.amount < 0 ? 'out' : 'in') : pendingDirection
+
+  /**
+   * The input holds a MAGNITUDE, which is why it keeps `min={0}` — a minus sign
+   * never has to be typed into a money field.
+   *
+   * ⚠️ `cents === 0` is returned unnegated on purpose: `-0` is not `< 0`, so a
+   * stored `-0` would reload as "Money in", and `JSON.stringify` flattens it to
+   * `0` anyway. Normalising here keeps sign and direction in agreement.
+   */
+  const signed = (cents: number, dir: 'in' | 'out') =>
+    dir === 'out' && cents !== 0 ? -cents : cents
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value)
-    // Validate: ensure value is a valid number and not negative
-    if (Number.isNaN(value) || value < 0) {
-      onUpdate(event.id, 'amount', 0)
-    } else {
-      const cents = Math.round(value * 100)
-      onUpdate(event.id, 'amount', cents)
+    const raw = e.target.value
+    const value = parseFloat(raw)
+
+    if (Number.isNaN(value)) {
+      /**
+       * Mid-edit: the field is empty, or holds a lone "-" (which an
+       * `<input type="number">` reports as `""` — badInput).
+       *
+       * ⚠️ DO NOT WRITE STATE HERE. The earlier version called
+       * `onUpdate(…, 0)` on every such keystroke. `updateOneTimeEvent` always
+       * builds a new object, so that re-rendered this controlled input, and
+       * React resets a number input's DOM value when the committed value is 0
+       * and `element.value` is `""` — wiping the "-" the user had just typed
+       * before the digits arrived. The minus was then never seen by this
+       * handler at all, and the feature only worked for a paste or an
+       * insertion in front of existing digits.
+       *
+       * Leaving state untouched keeps the partial entry in the DOM. The row is
+       * already 0 if nothing was entered, and a real clear is committed by the
+       * next parseable keystroke.
+       */
+      /**
+       * MEASURED in Chromium (throwaway Playwright probe, story `forecast-2`):
+       * typing `-500` keystroke-by-keystroke yields
+       *   raw="" badInput=true  ->  "-5"  ->  "-50"  ->  "-500"
+       * ending at amount -50000, direction "out". So the minus IS delivered, on
+       * the SECOND keystroke, as a parseable negative — this branch's job is only
+       * to get out of the way on the first.
+       *
+       * The `startsWith('-')` below is therefore belt-and-braces: Chromium reports
+       * `""` for a lone minus, so it does not fire there. It covers a UA that
+       * reports the partial `"-"` instead.
+       */
+      if (raw.startsWith('-') && direction !== 'out') setPendingDirection('out')
+      return
     }
+
+    /**
+     * ⚠️ A TYPED MINUS SELECTS "Money out" — it does not erase the entry
+     * (story `forecast-2`).
+     *
+     * This field holds a magnitude, so the old handler clamped any negative to 0
+     * and silently discarded the digits. With a Money in / Money out control
+     * sitting beside it, reaching for the familiar accounting convention
+     * (`-500` for an outflow) became the natural wrong guess — and the punishment
+     * was losing what you typed. Interpret it as the intent it obviously is.
+     */
+    const cents = Math.round(Math.abs(value) * 100)
+    const nextDirection = value < 0 ? 'out' : direction
+    if (nextDirection !== direction) setPendingDirection(nextDirection)
+    onUpdate(event.id, 'amount', signed(cents, nextDirection))
   }
+
+  const handleDirectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value === 'out' ? 'out' : 'in'
+    setPendingDirection(next)
+    // Re-sign whatever is already entered, so flipping direction after typing
+    // does not require re-typing the amount.
+    onUpdate(event.id, 'amount', signed(Math.abs(event.amount), next))
+  }
+
+  const amountId = `event-amount-${event.id}`
+  const directionId = `event-direction-${event.id}`
+  const yearId = `event-year-${event.id}`
+  const nameId = `event-name-${event.id}`
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const year = Math.max(1, Math.min(maxYear, parseInt(e.target.value, 10) || 1))
@@ -1046,22 +1161,45 @@ function OneTimeEventRow({
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-label mb-1">Event Name</label>
+          <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
+            Event Name
+          </label>
           <input
+            id={nameId}
             type="text"
             value={event.name}
             onChange={(e) => onUpdate(event.id, 'name', e.target.value)}
             className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
-            placeholder="Bonus, Windfall, etc."
+            // Direction-neutral since story `forecast-1`: this row models money
+            // out as well as in, so an inflow-only example would misdescribe it.
+            placeholder="Bonus, house deposit, etc."
           />
+        </div>
+
+        {/* Direction (story `forecast-1`) */}
+        <div>
+          <label htmlFor={directionId} className="block text-sm font-medium text-label mb-1">
+            Direction
+          </label>
+          <select
+            id={directionId}
+            value={direction}
+            onChange={handleDirectionChange}
+            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded text-sm"
+          >
+            <option value="in">Money in</option>
+            <option value="out">Money out</option>
+          </select>
         </div>
 
         {/* Amount */}
         <div>
-          <label className="block text-sm font-medium text-label mb-1">Amount</label>
+          <label htmlFor={amountId} className="block text-sm font-medium text-label mb-1">
+            Amount
+          </label>
           <div className="relative">
             {mode === 'symbol' && (
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
@@ -1069,8 +1207,10 @@ function OneTimeEventRow({
               </span>
             )}
             <input
+              id={amountId}
               type="number"
-              value={event.amount / 100}
+              // Magnitude only — `direction` carries the sign.
+              value={Math.abs(event.amount) / 100}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
@@ -1084,8 +1224,11 @@ function OneTimeEventRow({
 
         {/* Year */}
         <div>
-          <label className="block text-sm font-medium text-label mb-1">Year</label>
+          <label htmlFor={yearId} className="block text-sm font-medium text-label mb-1">
+            Year
+          </label>
           <input
+            id={yearId}
             type="number"
             value={event.year}
             onChange={handleYearChange}

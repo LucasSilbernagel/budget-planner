@@ -104,3 +104,44 @@ describe('ForecastList reload affordance (bug-3 AC-4)', () => {
     }
   })
 })
+
+describe('Total Growth sign (story forecast-1)', () => {
+  /**
+   * The `+` prefix on Total Growth used to be hard-coded. That survived only
+   * because a negative `totalGrowth` needed expenses to exceed income; once a
+   * one-time event could be an OUTFLOW, a single "Money out" row produced one
+   * trivially, and `formatCurrency` emits its own `-` — so the cell rendered
+   * `+-40,000.00` for exactly the scenario the new Overview copy advertises.
+   */
+  const negativeGrowth: SavedForecast = {
+    ...sampleForecast,
+    id: 'saved-negative',
+    name: 'House deposit',
+    result: {
+      ...sampleForecast.result,
+      summary: {
+        startingNetWorth: 1000000,
+        endingNetWorth: -3000000,
+        totalGrowth: -4000000,
+        averageAnnualGrowth: -400000,
+      },
+    },
+  }
+
+  it('renders a negative total growth without a "+-" prefix', () => {
+    render(<ForecastList forecasts={[negativeGrowth]} onDelete={vi.fn()} onLoad={vi.fn()} />)
+
+    // The mocked formatter renders cents/100 with two decimals, so -4000000 is
+    // "-40000.00". The bug produced "+-40000.00".
+    expect(screen.queryByText(/\+-/)).toBeNull()
+    expect(screen.getByText('-40000.00')).toBeInTheDocument()
+  })
+
+  it('still renders a "+" for positive growth', () => {
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
+
+    // Positive control: the guard is conditional, not a blanket removal of the
+    // plus sign. Without this, deleting the `+` entirely would pass the test above.
+    expect(screen.getByText('+40000.00')).toBeInTheDocument()
+  })
+})

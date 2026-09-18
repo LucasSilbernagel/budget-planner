@@ -19,10 +19,32 @@ export interface ForecastingScenario {
   incomeGrowthRate: number // Annual growth rate as decimal (e.g., 0.05 for 5%)
   // Expense adjustments (percentage changes)
   expenseGrowthRate: number // Annual growth rate as decimal
-  // New recurring income/expenses
+  /**
+   * ⚠️⚠️ THESE TWO ARE A PERSISTENCE CARRIER, NOT AN ENGINE INPUT.
+   *
+   * `calculateFinancialForecast` never reads them — it projects from the
+   * `currentData` argument. What they actually do is carry the Scenario
+   * Builder's income/expense rows into the saved `scenarioData` JSON so a
+   * forecast can be reopened: written in `scenario-builder.tsx` on save, read
+   * back by its `itemsFromSaved` on reload.
+   *
+   * So: **do not cite them as scenario-expressive** (story 57.1 did, in three
+   * comments, and shipped copy promising situations the engine cannot model),
+   * and **do not delete them as dead** (the follow-up nearly did; deleting them
+   * breaks saved-forecast reload). The same items travel under two names for
+   * two different purposes. If that is ever unified, the save format and the
+   * `version` column both need a plan.
+   */
   newIncome?: NormalizableFinancialItem[]
   newExpenses?: NormalizableFinancialItem[]
-  // One-time events (year, amount)
+  /**
+   * One-time events, keyed to a projection year. **`amount` is SIGNED**:
+   * positive is money in, negative is money out (story `forecast-1`). The
+   * engine simply sums them into that year's net income, so both directions
+   * work and always have; it was the Scenario Builder's input that clamped
+   * everything to >= 0 until `forecast-1` added an explicit direction control.
+   * Pinned both ways in `__tests__/forecasting.test.ts`.
+   */
   oneTimeEvents?: Array<{ year: number; amount: number }>
 }
 
@@ -81,7 +103,18 @@ export function calculateFinancialForecast(
   const baselineNetIncome = calculateNetPeriodIncome(currentData.income, currentData.expenses)
 
   for (let year = 1; year <= years; year++) {
-    // Baseline calculation
+    // Apply the period's net income BEFORE recording the row, so the row reports
+    // a CLOSING balance (story `forecast-2`). See the projection loop below for
+    // the full rationale — the two loops must agree on WHEN a row is taken, or
+    // baseline and projection are not comparable at all.
+    //
+    // ⚠️ They still disagree on WHAT they model: this loop never grows
+    // investments while the projection compounds them at 7%, so with an empty
+    // scenario the two series diverge from the first plotted point. Pre-existing;
+    // recorded in `deferred-work.md`.
+    currentSavings += baselineNetIncome
+    // Simple investment growth (no compounding in baseline)
+
     const baselineYear: YearlyForecast = {
       year,
       income: calculateTotalIncome(currentData.income),
@@ -92,10 +125,6 @@ export function calculateFinancialForecast(
       netWorth: currentSavings + currentInvestments,
     }
     baseline.push(baselineYear)
-
-    // Increment savings and investments by net income
-    currentSavings += baselineNetIncome
-    // Simple investment growth (no compounding in baseline)
   }
 
   // Calculate projection with scenario adjustments
@@ -124,6 +153,36 @@ export function calculateFinancialForecast(
 
     const totalNetIncome = netIncome + oneTimeForYear
 
+    /**
+     * ⚠️ APPLY THIS YEAR'S FLOW BEFORE RECORDING THE ROW (story `forecast-2`).
+     *
+     * These two statements used to come AFTER the push, which made every row
+     * report an OPENING balance while its `netIncome` was that year's flow —
+     * two different instants in one record. The visible consequences:
+     *   - year 1's `netWorth` was identical to `summary.startingNetWorth`, so a
+     *     forecast appeared to achieve nothing in its first year;
+     *   - a one-time event seemed to land a year late in the balance series;
+     *   - an event in the FINAL year never landed at all — `endingNetWorth` and
+     *     `totalGrowth` were byte-identical to the baseline — so a cost dated to
+     *     the last forecast year, the most natural place for a planned purchase,
+     *     was invisible in both the chart and the summary;
+     *   - N years of saving accumulated only N-1 times, and investments
+     *     compounded only N-1 times.
+     *
+     * A row now reports the balance at the END of its year. `startingNetWorth`
+     * is still the pre-projection figure, so `totalGrowth` spans the full term.
+     *
+     * ⚠️ "This year's flow" is the loop's framing, NOT the arithmetic's:
+     * `calculateNetPeriodIncome` normalises to a MONTHLY figure, and this loop
+     * adds one of them per iteration. Every savings figure is therefore about a
+     * twelfth of what a year's surplus would be. That predates this change and
+     * is recorded in `deferred-work.md`; do not read the wording above as a
+     * claim that the period is correct.
+     */
+    projSavings += totalNetIncome
+    // Investment growth with compounding
+    projInvestments = Math.round(projInvestments * 1.07) // Assume 7% return
+
     const yearProjection: YearlyForecast = {
       year,
       income: calculateTotalIncome(adjustedIncome),
@@ -134,11 +193,6 @@ export function calculateFinancialForecast(
       netWorth: projSavings + projInvestments,
     }
     projection.push(yearProjection)
-
-    // Update savings and investments for next year
-    projSavings += totalNetIncome
-    // Investment growth with compounding
-    projInvestments = Math.round(projInvestments * 1.07) // Assume 7% return
   }
 
   // Calculate summary

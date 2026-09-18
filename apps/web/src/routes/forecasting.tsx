@@ -370,16 +370,22 @@ function ForecastingPage(): React.ReactElement {
             copy in view, can tell straight away whether this is the tool they
             want. ⚠️ Every situation named must be expressible by what
             `calculateFinancialForecast` actually READS: the two growth rates and
-            `oneTimeEvents`, which is the only dated input and is INFLOW-ONLY (it
-            is added to net income, and the builder clamps negatives to 0).
-            `newIncome`/`newExpenses` are declared but never read. So a one-off
-            COST, a house purchase and an early retirement are all out — each
-            needs an outflow or a change dated to a chosen year. Keep this in
-            step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
+            `oneTimeEvents`, which is the only DATED input. Its `amount` is SIGNED
+            and simply summed into that year's net income, so since story
+            `forecast-1` — which added the Money in / Money out control — an
+            event can be an OUTFLOW as well as an inflow.
+            `newIncome`/`newExpenses` are not read BY THE CALCULATION — they are
+            the save format for the builder's rows, so do not cite them as
+            scenario-expressive and do not delete them either.
+            So a one-off cost IS claimable; a house purchase and an early
+            retirement are still out, because each needs a RECURRING change dated
+            to a chosen year and recurring items carry no start/end year. (A house
+            DEPOSIT is fine — it is a single dated outflow; the mortgage is not.)
+            Keep this in step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
             No positional wording ("below"): the intro renders on every tab, and
             the builder is only on the first one. */}
         <p data-testid="forecasting-intro" className="text-body mb-6 max-w-3xl">
-          Wondering how a raise, steadily rising bills or a one-off windfall would change things?
+          Wondering how a raise, steadily rising bills or a big one-off cost would change things?
           Build it out here and see how your finances track over the years ahead.
         </p>
 

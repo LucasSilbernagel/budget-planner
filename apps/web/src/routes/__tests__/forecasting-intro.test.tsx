@@ -1,5 +1,9 @@
 /**
- * The `/forecasting` page intro (story 57.1, FR86, AC-3).
+ * The `/forecasting` page intro (story 57.1, FR86, AC-3; copy amended by `forecast-1`).
+ *
+ * ⚠️ The intro named "a one-off windfall" until story `forecast-1` made outflows
+ * enterable; it now names "a big one-off cost", the situation 57.1 originally wanted
+ * and had to retract in review because the tool could not model it.
  *
  * ⚠️ THIS IS THE FIRST TEST THAT RENDERS `ForecastingPage` AT ALL. Before story
  * 57.1 the route had no unit coverage, and its entitled surface is unreachable in
@@ -58,7 +62,7 @@ const ForecastingPage = Route.options.component as () => React.ReactElement
  * test matched "…a big one-off cos" and never asserted the question mark at all.
  */
 const INTRO_SENTENCE =
-  'Wondering how a raise, steadily rising bills or a one-off windfall would change things?'
+  'Wondering how a raise, steadily rising bills or a big one-off cost would change things?'
 
 /** The second sentence, pinned separately so it cannot be dropped unnoticed. */
 const INTRO_SECOND_SENTENCE =
@@ -138,7 +142,7 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
     // has to stand on its own. Positive control first: the element really has prose
     // in it, so the assertions below cannot pass vacuously.
     expect(text.length).toBeGreaterThan(40)
-    expect(text).toMatch(/windfall/i)
+    expect(text).toMatch(/one-off cost/i)
 
     // Two distinct properties, asserted separately.
     // (a) No reference to copy that lives on another page.

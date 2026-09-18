@@ -302,9 +302,16 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                   isAnimationActive={config.animate}
                 />
 
-                {/* Reference line at current net worth */}
+                {/* Reference line at the user's CURRENT net worth.
+                    ⚠️ Read from `summary.startingNetWorth`, never from the first
+                    row (story `forecast-2`). It used to be `chartData[0]
+                    ?.baselineNetWorth`, which was right only by accident: while
+                    rows reported an OPENING balance, row 1 happened to equal the
+                    starting figure. Once rows became CLOSING balances that line
+                    silently moved one year's flow up the axis — contradicting
+                    the "Starting Net Worth" card rendered just below it. */}
                 <ReferenceLine
-                  y={chartData[0]?.baselineNetWorth}
+                  y={result?.summary.startingNetWorth}
                   label={{ value: 'Starting', fill: chartColors.axis, fontSize: 10 }}
                   stroke="#9ca3af"
                   strokeDasharray="3 3"

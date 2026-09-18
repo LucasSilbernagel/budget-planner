@@ -147,22 +147,29 @@ describe('HomePage premium discovery', () => {
     // it exists to break on OVERPROMISING drift, not merely on any edit.
     //
     // ⚠️ Each situation named must be expressible by what the engine actually READS
-    // (`core/finance/forecasting.ts:105-142`), which is LESS than `ForecastingScenario`
+    // (`core/finance/forecasting.ts:87-219`), which is LESS than `ForecastingScenario`
     // declares:
     //   - `incomeGrowthRate` / `expenseGrowthRate` — compound from year 1.
-    //   - `oneTimeEvents: {year, amount}` — the only DATED input, and INFLOW-ONLY:
-    //     added to net income (`:125`), negatives clamped to 0 by the builder
-    //     (`scenario-builder.tsx:1034-1038`, `min={0}`, placeholder "Bonus, Windfall").
-    //   - `newIncome`/`newExpenses` are declared (`:23-24`) but NEVER READ; the builder
-    //     passes the same items as `currentData`, so they are baseline, not a delta.
-    // So: a raise ✅, rising bills ✅, a one-off windfall ✅.
+    //   - `oneTimeEvents: {year, amount}` — the only DATED input. `amount` is SIGNED
+    //     and the engine sums it into that year's net income (`:154`). Since story
+    //     `forecast-1` the builder can enter money OUT as well as in.
+    //   - `newIncome`/`newExpenses` are NOT READ BY THE CALCULATION (`:38-39`) — they
+    //     are the SAVE FORMAT for the builder's rows. Do not cite them as
+    //     scenario-expressive, and do not delete them: reload depends on them.
+    // So: a raise ✅, rising bills ✅, a one-off windfall ✅, a one-off cost ✅.
     //
-    // ⚠️ DO NOT re-add any of these — each was checked against the engine and fails:
-    // "a big one-off cost" and "a house purchase" (both need an OUTFLOW event, which
-    // cannot be entered), and "early retirement" (needs income to STOP at a chosen
-    // year; `/retirement` is a separate page). The first two shipped in this story's
-    // first draft and were caught in review — they are the precise overpromise this
-    // pin exists to prevent, and a green suite did not notice them.
+    // ⚠️ STILL NOT CLAIMABLE, and do not re-add: "a house purchase" and "an early
+    // retirement". Both need a RECURRING change dated to a chosen year (a mortgage
+    // from year 5; income stopping at retirement), and recurring items carry no
+    // start/end year. (A house DEPOSIT is fine — a single dated outflow. It is the
+    // mortgage that is not expressible.)
+    //
+    // History, stated accurately: "a house purchase" and "a big one-off cost"
+    // shipped in story 57.1's first draft and were caught in review — the precise
+    // overpromise this pin exists to prevent, which a green suite did not notice.
+    // "Early retirement" came from Epic 57's prose and was dropped BEFORE that
+    // draft, never shipped. The one-off cost became claimable later, in story
+    // `forecast-1`, which is why it is now in the copy above.
     //
     // ⚠️ This assertion is a full-string `getByText`, so it breaks on ANY edit to the
     // copy, not selectively on overpromises. It is a tripwire, not a judge: what makes
@@ -172,7 +179,7 @@ describe('HomePage premium discovery', () => {
 
     expect(
       screen.getByText(
-        'See how a raise, rising bills or a one-off windfall plays out over the years ahead'
+        'See how a raise, rising bills or a big one-off cost plays out over the years ahead'
       )
     ).toBeInTheDocument()
   })

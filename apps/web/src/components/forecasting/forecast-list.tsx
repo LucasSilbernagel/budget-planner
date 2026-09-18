@@ -373,8 +373,16 @@ export function ForecastList({
                     <div className="text-sm font-semibold text-subheading">
                       {formatCurrency(forecast.result.summary.endingNetWorth)}
                     </div>
+                    {/* ⚠️ The `+` is conditional (story `forecast-1`). It used to be
+                        hard-coded, which was survivable only while a negative
+                        `totalGrowth` needed expenses to exceed income; a single
+                        "Money out" one-time event now makes one trivially, and
+                        `formatCurrency` emits its own leading `-` — so the cell
+                        rendered `+-40,000.00`. Same guard as
+                        `projection-chart.tsx`'s `{isPositive ? '+' : ''}`. */}
                     <div className="text-xs text-muted mt-1">
-                      +{formatCurrency(forecast.result.summary.totalGrowth)}
+                      {forecast.result.summary.totalGrowth >= 0 ? '+' : ''}
+                      {formatCurrency(forecast.result.summary.totalGrowth)}
                     </div>
                   </td>
 

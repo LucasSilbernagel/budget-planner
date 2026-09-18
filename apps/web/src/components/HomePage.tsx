@@ -1534,22 +1534,23 @@ function LockedTileContent({
  * (story 57.1, FR86), so a user can tell when they would open it before clicking
  * in. Every situation it names must be expressible by the shipped engine, and the
  * engine is SMALLER than `ForecastingScenario`'s interface suggests. What
- * `calculateFinancialForecast` actually reads (`core/finance/forecasting.ts:105-142`):
+ * `calculateFinancialForecast` actually reads (`core/finance/forecasting.ts:87-219`; the projection loop is `:130-196`):
  *   1. `incomeGrowthRate` — compounds from year 1 over the user's income items.
  *   2. `expenseGrowthRate` — likewise over expenses.
- *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input, and INFLOW-ONLY:
- *      it is ADDED (`netIncome + oneTimeForYear`, `:125`) and the builder clamps a
- *      negative amount to 0 (`scenario-builder.tsx:1034-1038`, `min={0}`, placeholder
- *      "Bonus, Windfall, etc.").
- * ⚠️ `newIncome`/`newExpenses` are declared on the interface (`:23-24`) but **never
- * read** — the builder passes the same items as both `currentData` and `newIncome`,
- * so they are baseline, not a dated delta. Do not cite them as scenario-expressive.
+ *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input. `amount` is SIGNED
+ *      and simply added (`netIncome + oneTimeForYear`, `:154`); since story
+ *      `forecast-1` the builder offers an explicit Money in / Money out direction,
+ *      so an outflow is enterable.
+ * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** (`:38-39`) — they
+ * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
+ * them as scenario-expressive, and do not delete them as dead.
  *
- * So a raise, rising bills and a one-off windfall are all expressible. **A one-off
- * COST, a house purchase and an early retirement are NOT** — each needs either an
- * outflow event or a change dated to a chosen year, and the engine has neither.
- * (`/retirement` is a separate page for the last of those.) The copy must also not
- * claim a side-by-side comparison of two saved forecasts — no such view exists.
+ * So a raise, rising bills, a one-off windfall and a one-off cost are expressible.
+ * **A house purchase and an early retirement are NOT** — each needs a RECURRING
+ * change dated to a chosen year (a mortgage from year 5; income stopping at
+ * retirement), and recurring items carry no start or end year. (`/retirement` is a
+ * separate page for the last of those.) The copy must also not claim a side-by-side
+ * comparison of two saved forecasts — no such view exists.
  *
  * The copy is pinned verbatim by `HomePage.test.tsx`'s "57.1" test. ⚠️ That pin is a
  * full-string `getByText`, so it breaks on ANY edit, not selectively on overpromises;
@@ -1586,7 +1587,7 @@ function PremiumFeatureLabel(): React.ReactElement {
     <span className="flex flex-col">
       <span className="font-medium text-subheading">Advanced Forecasting</span>
       <span className="text-sm text-muted">
-        See how a raise, rising bills or a one-off windfall plays out over the years ahead
+        See how a raise, rising bills or a big one-off cost plays out over the years ahead
       </span>
     </span>
   )
