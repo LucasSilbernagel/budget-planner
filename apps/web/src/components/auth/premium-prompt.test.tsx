@@ -31,7 +31,7 @@ import { PremiumPrompt } from './premium-prompt'
 /** The exact benefit strings the prompt must list — and only these. */
 const CANONICAL_BENEFITS = [
   'Multi-Device Data Sync',
-  'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
+  'Advanced Forecasting — Raises, Rising Bills & One-Off Costs',
   'Custom User Profiles',
   'Financial Summary Report',
   'Custom Categories & Category Breakdown',

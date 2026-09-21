@@ -75,7 +75,13 @@ export interface PremiumPromptProps {
  */
 export const PREMIUM_FEATURES: Record<PremiumBenefitId, string> = {
   sync: 'Multi-Device Data Sync',
-  forecasting: 'Advanced Forecasting — What-If Scenarios You Can Save & Reload',
+  // ⚠️ Situation-named, and DELIBERATELY still a terse name rather than a
+  // sentence (see the docblock above): this row sits beside the `/forecasting`
+  // prompt's own message, which names the same three situations, so the two no
+  // longer disagree about what the tool is for. Kept SHORTER than the wording it
+  // replaced ("… — What-If Scenarios You Can Save & Reload") so the five-row list
+  // cannot grow against the 320×480 fit. Decided 2026-09-21 (`forecast-3` review).
+  forecasting: 'Advanced Forecasting — Raises, Rising Bills & One-Off Costs',
   profiles: 'Custom User Profiles',
   report: 'Financial Summary Report',
   categories: 'Custom Categories & Category Breakdown',
@@ -210,7 +216,16 @@ function PremiumPromptContent({
             .
           </p>
         )}
-        <p className="text-gray-600 dark:text-gray-400 text-sm">{message}</p>
+        {/* `data-testid` so a caller's message can be asserted on its OWN element.
+            Without it the only handle is the whole card, and a page-wide text read
+            sweeps in the benefit list below — which made a `/forecasting` guard
+            satisfiable by copy it was not meant to be reading (`forecast-3` review). */}
+        <p
+          data-testid="premium-prompt-message"
+          className="text-gray-600 dark:text-gray-400 text-sm"
+        >
+          {message}
+        </p>
       </div>
 
       {/* Features List */}

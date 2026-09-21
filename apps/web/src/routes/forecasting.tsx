@@ -49,9 +49,24 @@ export const Route = createFileRoute('/forecasting')({
     meta: [
       { title: 'Forecasting · Longhand Budget' },
       {
+        /* ⚠️ Keep this in step with the `forecasting-intro` paragraph and the
+           free user's `PremiumPrompt` message below — all three describe the
+           same mechanism to different audiences, and story 57.1 rewrote only
+           the intro, leaving these two promising a vaguer, bigger tool than
+           the engine is. Every situation named here must be expressible by
+           what `calculateFinancialForecast` actually READS: the two growth
+           rates and `oneTimeEvents` (signed since `forecast-1`, so an outflow
+           counts). A house MORTGAGE and an early retirement are still out —
+           each needs a recurring change dated to a chosen year, and recurring
+           items carry no start/end year.
+           ⚠️ That rule is a JUDGEMENT the tests only SPOT-CHECK: the guard in
+           `forecasting-intro.test.tsx` denies exactly two phrases (`mortgage`,
+           `early retirement`). "A new car loan from 2030" or "retiring at 55"
+           would sail through it. Apply the rule yourself; do not read a green
+           suite as proof a new situation is modellable. */
         name: 'description',
         content:
-          'Advanced tools for modeling your financial future with saved, reloadable scenarios.',
+          'Model how a raise, rising bills or a one-off cost changes your finances over the years ahead — with saved, reloadable scenarios.',
       },
     ],
   }),
@@ -348,9 +363,25 @@ function ForecastingPage(): React.ReactElement {
   if (!status.hasAccess) {
     return (
       <div className="min-h-screen surface-sunken flex items-center justify-center p-4">
+        {/* The free user's pitch for this page. Named situations, not "advanced
+            tools" — same set as the intro, the meta description above, and the
+            `PREMIUM_FEATURES.forecasting` bullet the prompt lists directly below
+            this message. All four are constrained by the same rule: only what the
+            engine READS (and the tests spot-check that rule, they do not enforce
+            it — see the meta comment above).
+            ⚠️ `featureName` feeds `forecasting-intro.test.tsx`'s free-user
+            positive control (`/advanced forecasting/i`). It is NOT the only
+            source of that match: MEASURED on the real free branch, the regex
+            matches TWO elements — this `featureName` span and the benefit `<li>`
+            rendered from `PREMIUM_FEATURES.forecasting` (`premium-prompt.tsx`),
+            because RTL matches an element on its own direct text nodes. So
+            dropping `featureName` would NOT make that control vacuous; the `<li>`
+            still matches. Reword either one and the control still holds, but
+            reword BOTH and the free-user absence test loses its control and
+            starts passing for the wrong reason. */}
         <PremiumPrompt
           featureName="Advanced Forecasting"
-          message="Access advanced financial forecasting, including scenario modeling and saved, reloadable forecasts for deeper what-if planning."
+          message="See how a raise, rising bills or a big one-off cost would change your finances over the years ahead — and save each scenario to reopen later."
           asDialog={false}
         />
       </div>
@@ -442,11 +473,21 @@ function PageHeader(): React.ReactElement {
     <header className="surface border-b border-default sticky top-0 z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center justify-between">
+          {/* ⚠️ NO SUBTITLE HERE — DELIBERATE, and the deletion is the point.
+              This header used to carry "Advanced tools for modeling your
+              financial future", which sat directly above story 57.1's
+              `forecasting-intro` paragraph, so the page opened with two stacked
+              taglines saying the same thing at different levels of vagueness.
+              57.1 flagged it and left the call to Lucas; DECIDED 2026-09-21 —
+              delete the subtitle, keep the intro. The `<h1>` plus the Premium
+              badge identify the page; the intro does the explaining, and it is
+              the one that names situations the engine can actually model.
+              This header is `sticky`, so every line here costs vertical space on
+              a phone for the whole scroll.
+              ⚠️ Do NOT "restore the missing subtitle" — its absence is pinned by
+              `__tests__/forecasting-intro.test.tsx`. */}
           <div>
             <h1 className="text-2xl font-bold text-subheading">Financial Forecasting</h1>
-            <p className="text-muted text-sm mt-1">
-              Advanced tools for modeling your financial future
-            </p>
           </div>
           <div className="flex items-center space-x-4">
             <PremiumBadge />
