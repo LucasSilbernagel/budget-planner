@@ -64,8 +64,17 @@ const defaultStatus: PremiumAccessStatus = {
  * check). A signed-out seed resolves to a not-authenticated, no-access status.
  * Access requires an *active* subscription; every other state is fail-closed to
  * no access, matching {@link checkPremiumAccessServer}.
+ *
+ * ⚠️ Its `hasAccess` field and `lib/premium/entitlement.ts`'s `isEntitledSeed`
+ * are THE SAME RULE, written twice (story 58.2). This one is not refactored to
+ * call the other because it builds a five-field object on the hot path of every
+ * premium gate in the app. **Exported solely so `entitlement.test.ts` can assert
+ * the two agree for real** — an earlier version of that test recomputed the
+ * predicate inline and could never go red, which is exactly the drift it claimed
+ * to prevent. If that parity test fails, these two have diverged; fix the code,
+ * not the test.
  */
-function seedToStatus(seed: SessionSeed | null): PremiumAccessStatus {
+export function seedToStatus(seed: SessionSeed | null): PremiumAccessStatus {
   if (!seed) {
     return defaultStatus
   }

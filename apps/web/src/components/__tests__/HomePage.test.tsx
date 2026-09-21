@@ -16,7 +16,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderWithRouter } from '@/test/utils'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type SessionSeed, SessionSeedProvider } from '../../context/session-seed'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import {
   useBalanceStore,
@@ -2026,5 +2027,230 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     const netWorth = screen.getByTestId('overview-net-worth')
     expect(netWorth).toHaveTextContent('0.00')
     expect(netWorth.textContent).not.toMatch(/NaN/)
+  })
+})
+
+/**
+ * The Overview's Premium Features section is tier-conditional (story 58.2, FR88).
+ *
+ * Once story 58.1 put Forecasting, Profiles, Report and Categories in a paid
+ * user's nav, the section became a second copy of a menu they already have. D1
+ * (Lucas, 2026-09-20) hides the WHOLE section — heading included — for an
+ * entitled session, rather than filtering four of the five boxes out of it.
+ *
+ * ⚠️⚠️ THE TIER HERE IS THE SESSION SEED, NOT THE `usePremiumAccess` MOCK. Those
+ * are two different signals and this file only ever drove the second one. Every
+ * OTHER test in this file renders with no `SessionSeedProvider`, so the seed is
+ * `null`, the gate reads "not entitled" and the section renders in full — which
+ * is why they all still pass unchanged while asserting `hasAccess: true`. That
+ * is a FIDELITY GAP, not coverage: those tests exercise the GATE's entitled
+ * branch, not a paid user's page. This block is the only test of what a paying
+ * user actually sees.
+ *
+ * ⚠️ Absence is most of what this block asserts, and absence assertions are the
+ * easiest thing in this repo to satisfy by accident — an empty render, a crash
+ * and a correct trim are indistinguishable to `queryBy… === null`. Every
+ * assertion below is paired with a positive anchor in the SAME render.
+ */
+describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', () => {
+  /**
+   * Every benefit's visible TITLE, derived from the shipped map, never literals.
+   *
+   * ⚠️ The inner `span`, not the outer one. Each label renders
+   * `<span class="flex flex-col"><span>Title</span><span>subtitle</span></span>`,
+   * so the outer element's `textContent` is title+subtitle concatenated — which
+   * is why `benefit-set-parity.test.tsx` matches it with `toContain` rather than
+   * equality. These assertions need the title alone so they can use exact text
+   * queries in both directions (present for free, absent for paid).
+   */
+  function benefitTitles(): ReadonlyArray<readonly [PremiumBenefitId, string]> {
+    return PREMIUM_BENEFIT_IDS.map((id) => {
+      const Label = OVERVIEW_BENEFITS[id].label
+      const { container, unmount } = render(<Label />)
+      const spans = container.querySelectorAll('span')
+      const title = spans[1]?.textContent ?? ''
+      unmount()
+      // Two guards, because the index is structural: the label must have an
+      // inner title span at all, and the title must not be the SUBTITLE. A bare
+      // length check would not notice `[1]` drifting onto the sub-text, in which
+      // case every absence/presence assertion below would silently test the
+      // wrong string.
+      expect(spans.length, `"${id}" label must wrap a title + subtitle`).toBeGreaterThanOrEqual(3)
+      expect(title.length, `"${id}" must render a non-empty title`).toBeGreaterThan(0)
+      expect(title, `"${id}" title looks like a subtitle`).not.toMatch(/\s\w+\s\w+\s\w+\s\w+\s/)
+      return [id, title] as const
+    })
+  }
+
+  /**
+   * Every benefit's visible title.
+   *
+   * ⚠️ Built inside `beforeAll`, not at describe-collection time. The first
+   * version ran `render`/`expect` while the describe body was being evaluated,
+   * which calls a component as a plain function (breaking the moment a label
+   * uses a hook) and aborts the whole FILE rather than one test on failure.
+   * (Code review, 2026-09-21.)
+   */
+  let BENEFIT_TITLES: ReadonlyArray<readonly [PremiumBenefitId, string]> = []
+  beforeAll(() => {
+    BENEFIT_TITLES = benefitTitles()
+  })
+
+  function paidSeed(overrides: Partial<SessionSeed> = {}): SessionSeed {
+    return {
+      isAuthenticated: true,
+      userId: 'u1',
+      email: 'u1@example.test',
+      subscriptionStatus: 'active',
+      ...overrides,
+    }
+  }
+
+  function renderWithSeed(seed: SessionSeed | null) {
+    return render(
+      <SessionSeedProvider seed={seed}>
+        <HomePage />
+      </SessionSeedProvider>
+    )
+  }
+
+  /**
+   * The positive anchor every absence assertion in this block leans on: proof
+   * the page rendered at all. Deliberately NOT part of the premium section.
+   */
+  function expectPageRendered(): void {
+    expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
+  }
+
+  it.each(['active', 'lifetime'] as const)(
+    'renders no section, no heading and none of the five boxes for a %s session',
+    (subscriptionStatus) => {
+      mockStatus({ hasAccess: true, subscriptionStatus, isAuthenticated: true })
+      renderWithSeed(paidSeed({ subscriptionStatus }))
+
+      expectPageRendered()
+
+      expect(screen.queryByRole('heading', { name: 'Premium Features', level: 2 })).toBeNull()
+
+      // Per-benefit, not a count: a count-only assertion passes against the
+      // wrong subset surviving, which is the defect shape FR88 itself names.
+      //
+      // ⚠️ The TITLE is the load-bearing probe. Only `sync` carries a
+      // `premium-benefit-*` testid — the route-backed branch renders a bare
+      // `<div key={id}>` (see HomePage.tsx) — so asserting that testid absent
+      // for the other four is trivially true even on a FREE render and proves
+      // nothing. That vacuous loop shipped and was caught in code review
+      // (2026-09-21); the testid is now asserted only where it exists.
+      for (const [, title] of BENEFIT_TITLES) {
+        expect(screen.queryByText(title), `"${title}" must not render`).toBeNull()
+      }
+      expect(screen.queryByTestId('premium-benefit-sync')).toBeNull()
+
+      // D1 hides the section outright, so none of the gate's three render
+      // states may appear either — not the locked button, not the skeleton,
+      // and not the unlocked links.
+      expect(screen.queryAllByTestId('premium-gate-locked')).toHaveLength(0)
+      expect(screen.queryAllByTestId('premium-gate-skeleton')).toHaveLength(0)
+      for (const [name, href] of OPENABLE_ROUTES) {
+        expect(screen.queryByRole('link', { name }), `${href} must not be linked`).toBeNull()
+      }
+    }
+  )
+
+  it('hides Multi-device sync too — the accepted cost of D1 (AC-3)', () => {
+    // ⚠️ NOT an oversight, and the reason this gets its own named test rather
+    // than riding along in the loop above. Sync has no route, so it cannot move
+    // to the nav; hiding the section removes the ONLY user-visible mention of
+    // multi-device sync anywhere in the app. Lucas chose this (D1, option b)
+    // with that cost stated. The named follow-up is a real sync status
+    // indicator, which has never existed — NOT reinstating this section.
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    renderWithSeed(paidSeed())
+
+    expectPageRendered()
+    expect(screen.queryByTestId('premium-benefit-sync')).toBeNull()
+    expect(screen.queryByText('Multi-device sync')).toBeNull()
+  })
+
+  // ⚠️ The SEED is what is under test here — it drives the new gate. The
+  // `mockStatus` on each row drives the GATES INSIDE the section, and is set to
+  // the tier that seed would really resolve to, so the fixture is coherent: an
+  // earlier version labelled a row "past_due" while mocking a free/signed-out
+  // status, which read as a contradiction (code review, 2026-09-21). A null or
+  // signed-out seed genuinely yields no access; `past_due`/`canceled` are
+  // authenticated but unentitled.
+  it.each([
+    ['a null seed (resolver could not verify)', null, { isAuthenticated: false }],
+    [
+      'an unauthenticated seed',
+      { isAuthenticated: false, userId: null, email: null, subscriptionStatus: null },
+      { isAuthenticated: false },
+    ],
+    ['a free session', { subscriptionStatus: 'free' as const }, { isAuthenticated: true }],
+    ['a past_due session', { subscriptionStatus: 'past_due' as const }, { isAuthenticated: true }],
+    ['a canceled session', { subscriptionStatus: 'canceled' as const }, { isAuthenticated: true }],
+  ])('renders the full section, all five boxes, for %s (AC-6)', (_label, overrides, tier) => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', ...tier })
+    renderWithSeed(overrides === null ? null : paidSeed(overrides as Partial<SessionSeed>))
+
+    expectPageRendered()
+    expect(screen.getByRole('heading', { name: 'Premium Features', level: 2 })).toBeInTheDocument()
+
+    // The free-tier set is UNCHANGED — asserted per benefit and in canonical
+    // order, not merely "more than the paid count".
+    for (const [, title] of BENEFIT_TITLES) {
+      expect(screen.getByText(title)).toBeInTheDocument()
+    }
+    expect(screen.getAllByTestId('premium-gate-locked')).toHaveLength(GATED_COUNT)
+    expect(screen.getAllByText('Premium')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
+  })
+
+  it('⚠️ FAILS OPEN on a null seed — the direction is the OPPOSITE of the nav, deliberately', () => {
+    // GlobalNav fails CLOSED: an unverified session gets the free nav. This gate
+    // fails OPEN: an unverified session is SHOWN the section. Both are
+    // fail-safe and they point opposite ways because the harm is asymmetric —
+    // fail-closed here would leave a paid user whose seed failed to resolve with
+    // no nav entries AND no boxes, i.e. no route to any of the four pages, which
+    // is the precise stranding FR88's sequencing exists to prevent. After story
+    // 58.2 the nav is the ONLY paid route to all four, so there is no fallback.
+    //
+    // Pinned as its own test because "harmonising the two directions" is a
+    // plausible future tidy-up that would ship exactly that bug.
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    renderWithSeed(null)
+
+    expectPageRendered()
+    expect(
+      screen.getByRole('heading', { name: 'Premium Features', level: 2 }),
+      'a null seed must FAIL OPEN and still show the section'
+    ).toBeInTheDocument()
+
+    // ⚠️ THE ASSERTION THAT ACTUALLY TESTS THE RATIONALE. Showing the heading is
+    // not the point — the point is that the user retains a ROUTE. An earlier
+    // version stopped at the heading, so it would have passed against a section
+    // rendering five inert boxes (code review, 2026-09-21). With the tier
+    // resolved, every route-backed benefit must be a working link.
+    for (const [name, href] of OPENABLE_ROUTES) {
+      expect(screen.getByRole('link', { name }), `${href} must stay reachable`).toHaveAttribute(
+        'href',
+        href
+      )
+    }
+  })
+
+  it('leaves the canonical benefit set at five keys (AC-7)', () => {
+    // The canonical set still has all five entries and OVERVIEW_BENEFITS still
+    // has all five keys, so the `Record` compile-error guarantee and every
+    // cross-surface parity check are unaffected by this story.
+    //
+    // ⚠️ RENAMED: this was titled "the gate is section-level, not per-benefit",
+    // which it does NOT test — a per-benefit `.filter()` inside the JSX map
+    // would leave both constants untouched and pass (code review, 2026-09-21).
+    // What actually pins section-level-ness is the pair of assertions in the
+    // paid tests above: the HEADING must be absent and SYNC must be absent, and
+    // a per-benefit filter over the route-backed four satisfies neither. Mutation
+    // arm 5 implements that rejected design and turns them red.
+    expect(PREMIUM_BENEFIT_IDS).toHaveLength(5)
+    expect(Object.keys(OVERVIEW_BENEFITS).sort()).toEqual([...PREMIUM_BENEFIT_IDS].sort())
   })
 })

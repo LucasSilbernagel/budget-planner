@@ -2,6 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useSessionSeed } from '../../context/session-seed'
+import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 
 /**
@@ -281,6 +282,30 @@ const PREMIUM_DESTINATIONS: readonly NavItem[] = [
 ]
 
 /**
+ * The four premium ROUTES this nav carries for an entitled session — exported
+ * for one test, deliberately (story 58.2, AC-1).
+ *
+ * ⚠️⚠️ WHY THIS EXPORT EXISTS. Story 58.2 removed the Overview cards and the
+ * `/settings` tiles that used to link these same four pages, so **this nav is now
+ * the ONLY route a paying user has to any of them.** The same four routes are
+ * still written out twice in the codebase — here, and as `OVERVIEW_BENEFITS`'
+ * `href` values in `HomePage.tsx` — with nothing tying the two lists together.
+ * Rename a route on one side and a paid user loses the nav entry while the free
+ * tier keeps advertising a page that no longer resolves; nothing else in the
+ * suite can see that.
+ *
+ * `__tests__/premium-route-parity.test.ts` is what ties them. Re-deriving this
+ * list inside that test instead would assert nothing, which is why the export is
+ * the right call here rather than a smell.
+ *
+ * Exported as the routes alone, not the items: the LABELS deliberately diverge
+ * from the Overview's `featureName` strings (decision D1 of story 58.1 — see
+ * `PREMIUM_DESTINATIONS`' docblock), and a test that pinned those together would
+ * fail on correct code.
+ */
+export const PREMIUM_NAV_ROUTES: readonly string[] = PREMIUM_DESTINATIONS.map((item) => item.to)
+
+/**
  * The sheet an entitled session gets: the free list with the premium block
  * spliced in BEFORE Settings (decision D3).
  *
@@ -473,7 +498,12 @@ export function GlobalNav() {
    * driven, so the nav would paint 7 items and then flip to 11 — reintroducing
    * exactly the hydration reflow story 31.4 removed, on the element whose whole
    * design premise is "the first painted frame is the final frame". Mirror its
-   * PREDICATE (`seedToStatus`), do not call the hook.
+   * PREDICATE, do not call the hook.
+   *
+   * The predicate itself now lives in `lib/premium/entitlement.ts` (story 58.2):
+   * story 58.2 needed the same rule on the Overview and on `/settings`, and four
+   * hand-written copies of a fail-closed check is how they drift apart. The
+   * behaviour here is unchanged — this is the same expression, imported.
    *
    * Fail-closed in all three directions: a `null` seed means the resolver could
    * not verify the session (unverified, NOT entitled), an unauthenticated seed
@@ -482,17 +512,19 @@ export function GlobalNav() {
    * transient resolver error sees the free nav for that page load and self-heals
    * on the next, which is the right way round.
    *
+   * ⚠️ The NAV fails closed; the Overview and Settings gates added by story 58.2
+   * fail OPEN with the same predicate, because hiding their sections from an
+   * unverified paid session would leave it no route to those pages at all. Both
+   * are fail-safe and they point opposite ways on purpose — see
+   * `entitlement.ts`. Do not "harmonise" the two directions.
+   *
    * ⚠️ Accepted consequence: the root loader caches the seed with
    * `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps the free nav
    * until a full reload. Every other seed consumer already behaves this way. Do
    * not "fix" it with a reactive read — that is the flash above.
    */
   const seed = useSessionSeed()
-  const [isEntitled] = useState(
-    () =>
-      seed?.isAuthenticated === true &&
-      (seed.subscriptionStatus === 'active' || seed.subscriptionStatus === 'lifetime')
-  )
+  const [isEntitled] = useState(() => isEntitledSeed(seed))
 
   const visibleMoreDestinations = useMemo(() => {
     const destinations = isEntitled ? MORE_DESTINATIONS_ENTITLED : MORE_DESTINATIONS

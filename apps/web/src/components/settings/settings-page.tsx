@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { useSessionSeed } from '../../context/session-seed'
+import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { AccountSection } from './account-section'
 import { CategoriesSection } from './categories-section'
 import { CurrencyToggle } from './currency-toggle'
@@ -31,6 +34,36 @@ import { ThemeToggle } from './theme-toggle'
  * code-splittable — a route module must export only `Route` to be split.
  */
 export function SettingsPage() {
+  /**
+   * Whether this session already reaches Report and Categories from the nav, and
+   * so should not be shown their Settings tiles too (story 58.2, decision D2).
+   *
+   * ⚠️ Read from the SSR seed as a `useState` INITIALIZER, never reactively —
+   * `session-seed.tsx` states that contract. `usePremiumAccess()` is the wrong
+   * tool here for the same reasons as on the Overview: its no-seed path starts
+   * `isLoading: true`, so these sections would render and then vanish after the
+   * client round-trip resolved.
+   *
+   * ⚠️⚠️ FAILS **OPEN**, the opposite of `GlobalNav` — on purpose. After story
+   * 58.2 the nav is the ONLY route a paid user has to /report and /categories,
+   * because these tiles were their last remaining fallback. Failing CLOSED on an
+   * unverified seed would therefore leave a paid user with no route to either
+   * page; showing them a section they do not need is merely redundant.
+   * Do NOT "harmonise" this with the nav's direction. See
+   * `lib/premium/entitlement.ts`.
+   *
+   * ⚠️ Failing open improves the odds of a route, it does not guarantee one: the
+   * sections' own tiles are `PremiumFeatureGate`s, which with a null seed resolve
+   * through a client round-trip that may fail too. Overclaim corrected in code
+   * review (2026-09-21).
+   *
+   * ⚠️ The gate is HERE, at the call sites, and not inside `ReportSection` /
+   * `CategoriesSection`: those stay tier-blind, so their own suites keep covering
+   * all three tier states, and this page holds one tier read instead of two.
+   */
+  const sessionSeed = useSessionSeed()
+  const [reachesPremiumFromNav] = useState(() => isEntitledSeed(sessionSeed))
+
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
       <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
@@ -89,13 +122,33 @@ export function SettingsPage() {
 
       {/* Premium financial summary report — story 30-3. Surfaced-but-locked for
           free visitors (the /report route gates independently), and placed after
-          Local data so the two data-facing controls sit together. */}
-      <ReportSection />
+          Local data so the two data-facing controls sit together.
+
+          ⚠️ FREE-TIER ONLY SINCE STORY 58.2 (decision D2). Story 58.1 put Report
+          in a paid user's nav, so this tile became a second copy of a menu entry
+          they already have. What survives here is the discovery + upgrade pitch,
+          which only has a job for someone who has not bought it yet.
+
+          ⚠️⚠️ DO NOT MOVE THIS SECTION'S PRIVACY SENTENCE ONTO /report. Hiding
+          this section takes "The summary is assembled in your browser — nothing
+          is sent anywhere to produce it" away from a paid user, and re-homing it
+          to the report page is the obvious repair — it is what story 57.1
+          correctly did for /forecasting. It is WRONG here: story 56.1 / UX-DR62
+          removed that disclaimer from the report DELIBERATELY, and
+          `reports/__tests__/FinancialSummaryReport.test.tsx` pins its ABSENCE
+          with `not.toMatch`. Re-adding it reverses a shipped decision and turns
+          that guard red. The claim survives for paid users in
+          `content/docs/features.md`. (Story 58.2 AC-5. Generalisable: before
+          relocating any copy, grep for a pinned absence of it.) */}
+      {!reachesPremiumFromNav && <ReportSection />}
 
       {/* Premium custom categories — story 30.4b. Surfaced-but-locked for free
           visitors (the /categories route gates independently). Placed after the
-          report so the two gated entry points sit together. */}
-      <CategoriesSection />
+          report so the two gated entry points sit together.
+
+          ⚠️ FREE-TIER ONLY SINCE STORY 58.2 (decision D2), same reasoning as the
+          report section above. */}
+      {!reachesPremiumFromNav && <CategoriesSection />}
 
       {/* Account controls (sign-out + self-serve deletion) — story 10-5.
           Renders only for authenticated users; free/unauthenticated visitors

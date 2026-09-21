@@ -13,7 +13,8 @@ import type {
   FinancialDataPoint,
   RechartsDataItem,
 } from '@budget-planner/core/finance/visualization'
-import React, { Suspense, useCallback, useMemo } from 'react'
+import React, { Suspense, useCallback, useMemo, useState } from 'react'
+import { useSessionSeed } from '../context/session-seed'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
@@ -24,6 +25,7 @@ import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { lazyWithRetry } from '../lib/lazy-with-retry'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
+import { isEntitledSeed } from '../lib/premium/entitlement'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import {
@@ -150,6 +152,48 @@ const ASSET_COLOR = '#D97706'
 const REMAINING_INCOME_COLOR = '#9CA3AF'
 
 export function HomePage() {
+  /**
+   * Whether this session already reaches its premium pages from the nav, and so
+   * should not be shown the Overview's copy of them (story 58.2, FR88).
+   *
+   * ⚠️ Read from the SSR seed as a `useState` INITIALIZER, never reactively —
+   * `session-seed.tsx` states that contract. Reading once means the first painted
+   * frame is already correct and a later provider value cannot remove a section
+   * out from under the user.
+   *
+   * ⚠️⚠️ `usePremiumAccess()` is the obvious reuse and is WRONG here, for two
+   * independent reasons. (1) It would re-add the SIXTH tier subscription that
+   * story 41.1 deliberately deleted to hold this section at five — each is an
+   * uncached server round-trip when the seed is null. (2) Its no-seed path starts
+   * `isLoading: true`, so the section would render and then VANISH when the
+   * round-trip resolved: a whole section disappearing after first paint, on the
+   * page stories 31.4 and 38.2 fought to keep stable.
+   *
+   * ⚠️⚠️ THIS GATE FAILS **OPEN**, WHICH IS THE OPPOSITE OF `GlobalNav`'S — ON
+   * PURPOSE. The nav withholds entries from an unverified session; this shows the
+   * section to one. Both are fail-safe and the harm is asymmetric: after story
+   * 58.2 the nav is the ONLY route a paid user has to Forecasting, Profiles,
+   * Report and Categories, so failing CLOSED here would leave a paid user whose
+   * seed failed to resolve with no nav entries AND no cards. Showing a paying
+   * user four cards they do not need is merely redundant.
+   * Do NOT "harmonise" the two directions. See `lib/premium/entitlement.ts`.
+   *
+   * ⚠️ Failing open IMPROVES the odds of a route; it does not guarantee one —
+   * the tiles here are `PremiumFeatureGate`s, and with a null seed they resolve
+   * via a client round-trip that may fail too, in which case they render locked.
+   * The guarantee wording in the first version of this comment was an overclaim
+   * (code review, 2026-09-21). Fail-open rescues the SSR-only outage, which is
+   * the common one.
+   *
+   * ⚠️ Accepted consequence, shared with the nav: the root loader caches the seed
+   * with `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps seeing
+   * this section until a full reload. The nav keeps the free nav in the same
+   * window, so both surfaces stay consistent with each other — which is a reason
+   * not to "fix" only one of them.
+   */
+  const sessionSeed = useSessionSeed()
+  const [reachesPremiumFromNav] = useState(() => isEntitledSeed(sessionSeed))
+
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
   // Rows carry a category uuid, never a name (story 30.4b). Both pies group by
@@ -1020,17 +1064,56 @@ export function HomePage() {
               moved it into `ui/InfoTooltip` so Income and Expenses share it. */}
 
           {/* Premium features — discoverable but locked for free users (story
-              7-2, FR24). Paid users get the working link; everyone else sees the
-              feature with a lock badge and an upgrade prompt. Enforcement stays
-              server-side (the /forecasting loader + session gate). */}
+              7-2, FR24). Enforcement stays server-side (the /forecasting loader
+              + session gate).
+
+              ⚠️⚠️ SINCE STORY 58.2 (FR88) THIS WHOLE SECTION IS FREE-TIER ONLY.
+              Story 58.1 put Forecasting, Profiles, Report and Categories into a
+              paid user's nav, at which point four of these five boxes became a
+              second copy of a menu they already have — so for an entitled session
+              the section does not render at all. What survives here is the
+              UPGRADE PITCH: each box's sub-text explains what a locked feature is
+              for, which a nav label alone cannot carry, and that job only exists
+              for someone who has not bought it yet.
+
+              DECISION D1 (Lucas, 2026-09-20): hide the ENTIRE <section>, heading
+              included — not four of the five boxes. The alternative (keep the
+              section holding only Multi-device sync) was considered and rejected
+              as a "Premium Features" heading over one inert row.
+
+              ⚠️ ACCEPTED COST OF D1, recorded so it is not mistaken for a bug:
+              sync has no route, so it cannot move to the nav, and this box was
+              the ONLY place that showed a signed-in user their sync STATE. What
+              remains are sales and reference surfaces a paid user has little
+              reason to revisit — /pricing (`pricing-page.tsx`) and the /docs
+              feature list (`content/docs/features.md`) both still describe the
+              feature. Nothing anywhere reports whether sync is ON or WORKING:
+              SyncProvider renders nothing, no /settings section mentions it, and
+              AuthIndicator's "Premium" marker speaks to the TIER, not to sync.
+              The named follow-up is a REAL SYNC STATUS INDICATOR, which has
+              never existed. Do NOT "fix" this by reinstating the section.
+
+              ⚠️ The first version of this comment claimed the box was the only
+              user-visible mention of sync ANYWHERE. That was false — /pricing and
+              /docs both mention it — and a guard test had pinned the false
+              wording into place. Caught in code review (2026-09-21). The claim
+              above is the narrower, true one, and it is the one that justifies
+              D1's cost.
+
+              ⚠️ The gate is SECTION-LEVEL, deliberately: there is no filter over
+              PREMIUM_BENEFIT_IDS and there must not be one. The map is iterated
+              unchanged inside a branch that simply does not run for an entitled
+              session, so the Record's five-key exhaustiveness guarantee and every
+              cross-surface parity check are untouched by this change. */}
           {/* Padding tightened on mobile (story 19-4, UX-DR32): p-4 sm:p-6 keeps
               the desktop (≥640px) spacing while reclaiming vertical space on
               phones. Only this <section>'s padding changes here — its contents
               are Epic 20's surface, kept untouched to avoid a merge collision. */}
-          <section className="surface rounded-lg shadow-md p-4 sm:p-6">
-            <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
+          {!reachesPremiumFromNav && (
+            <section className="surface rounded-lg shadow-md p-4 sm:p-6">
+              <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
 
-            {/* One chassis, one benefit set (story 30-1, FR51). Every box below
+              {/* One chassis, one benefit set (story 30-1, FR51). Every box below
                 shares PREMIUM_BOX_BASE so the section reads as a single set;
                 only the route-backed tiles add the interactive extras.
 
@@ -1106,84 +1189,85 @@ export function HomePage() {
                 SkeletonBlock while loading, a <button> when locked and a <div>
                 when entitled. The wrapper is the one stable handle, so assertions
                 about the BOX's own classes must reach inside it. */}
-            <div className="space-y-3">
-              {PREMIUM_BENEFIT_IDS.map((id) => {
-                const benefit = OVERVIEW_BENEFITS[id]
-                const Label = benefit.label
+              <div className="space-y-3">
+                {PREMIUM_BENEFIT_IDS.map((id) => {
+                  const benefit = OVERVIEW_BENEFITS[id]
+                  const Label = benefit.label
 
-                // Listed only — nothing to activate. No benefit is in this state
-                // today; the branch exists so that adding one is a decision rather
-                // than a default. See `OverviewBenefit`.
-                //
-                // ⚠️ THIS MARKUP RENDERS NO LOCK BADGE, AND THAT IS AN OPEN
-                // QUESTION, NOT A DECISION. It sits under a comment stating BADGE
-                // ON EVERY BENEFIT, so as written it would violate that rule the
-                // moment it gained a member. Story 33.1 fed sync's badge from a
-                // standalone `usePremiumAccess()` read; story 41.1 deleted that
-                // read along with `SyncLockBadge`, and deliberately did NOT
-                // reintroduce a second tier subscription for a branch with no
-                // members (AC-9 holds this section at five). Whoever adds the
-                // first `'none'` benefit must resolve this: either it takes a
-                // badge — and then this arm needs a tier signal, which means
-                // deciding where it comes from — or UX-DR39's rule is amended
-                // again to exclude non-activatable benefits. Do not add a member
-                // without answering that.
-                //
-                // What will NOT catch this for you: the free-tier badge-count
-                // assertion in HomePage.test.tsx goes red, but it reports a count,
-                // pointing nowhere near this branch. The loading and entitled
-                // renders of a `'none'` member are covered by nothing at all.
-                if (benefit.activation === 'none') {
-                  return (
-                    <div
-                      key={id}
-                      className={`${PREMIUM_BOX_BASE} surface-inset`}
-                      data-testid={`premium-benefit-${id}`}
-                    >
-                      <LockedTileContent label={<Label />} chevronHidden />
-                    </div>
-                  )
-                }
+                  // Listed only — nothing to activate. No benefit is in this state
+                  // today; the branch exists so that adding one is a decision rather
+                  // than a default. See `OverviewBenefit`.
+                  //
+                  // ⚠️ THIS MARKUP RENDERS NO LOCK BADGE, AND THAT IS AN OPEN
+                  // QUESTION, NOT A DECISION. It sits under a comment stating BADGE
+                  // ON EVERY BENEFIT, so as written it would violate that rule the
+                  // moment it gained a member. Story 33.1 fed sync's badge from a
+                  // standalone `usePremiumAccess()` read; story 41.1 deleted that
+                  // read along with `SyncLockBadge`, and deliberately did NOT
+                  // reintroduce a second tier subscription for a branch with no
+                  // members (AC-9 holds this section at five). Whoever adds the
+                  // first `'none'` benefit must resolve this: either it takes a
+                  // badge — and then this arm needs a tier signal, which means
+                  // deciding where it comes from — or UX-DR39's rule is amended
+                  // again to exclude non-activatable benefits. Do not add a member
+                  // without answering that.
+                  //
+                  // What will NOT catch this for you: the free-tier badge-count
+                  // assertion in HomePage.test.tsx goes red, but it reports a count,
+                  // pointing nowhere near this branch. The loading and entitled
+                  // renders of a `'none'` member are covered by nothing at all.
+                  if (benefit.activation === 'none') {
+                    return (
+                      <div
+                        key={id}
+                        className={`${PREMIUM_BOX_BASE} surface-inset`}
+                        data-testid={`premium-benefit-${id}`}
+                      >
+                        <LockedTileContent label={<Label />} chevronHidden />
+                      </div>
+                    )
+                  }
 
-                // Activatable, no page to open (story 41.1, UX-DR45). Same gate,
-                // same dialog, same badge as the route-backed tiles — the ONLY
-                // differences are that the entitled branch is inert rather than a
-                // link, and that no "Open →" appears in any state.
-                if (benefit.activation === 'prompt') {
+                  // Activatable, no page to open (story 41.1, UX-DR45). Same gate,
+                  // same dialog, same badge as the route-backed tiles — the ONLY
+                  // differences are that the entitled branch is inert rather than a
+                  // link, and that no "Open →" appears in any state.
+                  if (benefit.activation === 'prompt') {
+                    return (
+                      <div key={id} data-testid={`premium-benefit-${id}`}>
+                        <PremiumFeatureGate
+                          featureName={benefit.featureName}
+                          className={PREMIUM_BOX_INTERACTIVE}
+                          locked={<LockedTileContent label={<Label />} />}
+                        >
+                          <div className={`${PREMIUM_BOX_BASE} surface-inset`}>
+                            <LockedTileContent label={<Label />} chevronHidden />
+                          </div>
+                        </PremiumFeatureGate>
+                      </div>
+                    )
+                  }
+
                   return (
-                    <div key={id} data-testid={`premium-benefit-${id}`}>
+                    <div key={id}>
                       <PremiumFeatureGate
                         featureName={benefit.featureName}
                         className={PREMIUM_BOX_INTERACTIVE}
                         locked={<LockedTileContent label={<Label />} />}
                       >
-                        <div className={`${PREMIUM_BOX_BASE} surface-inset`}>
-                          <LockedTileContent label={<Label />} chevronHidden />
-                        </div>
+                        <a href={benefit.href} className={PREMIUM_BOX_INTERACTIVE}>
+                          <Label />
+                          <span className="text-sm font-medium text-accent whitespace-nowrap">
+                            Open →
+                          </span>
+                        </a>
                       </PremiumFeatureGate>
                     </div>
                   )
-                }
-
-                return (
-                  <div key={id}>
-                    <PremiumFeatureGate
-                      featureName={benefit.featureName}
-                      className={PREMIUM_BOX_INTERACTIVE}
-                      locked={<LockedTileContent label={<Label />} />}
-                    >
-                      <a href={benefit.href} className={PREMIUM_BOX_INTERACTIVE}>
-                        <Label />
-                        <span className="text-sm font-medium text-accent whitespace-nowrap">
-                          Open →
-                        </span>
-                      </a>
-                    </PremiumFeatureGate>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+                })}
+              </div>
+            </section>
+          )}
         </main>
 
         {/* The version and the in-app "Contact" link now live in the global

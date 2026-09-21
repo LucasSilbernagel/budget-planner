@@ -91,6 +91,42 @@ describe('AC-7 guard: the premium-section rule comment states the shipped rule',
     expect(normalized).toContain('EVERY BENEFIT IS ALSO ACTIVATABLE')
   })
 
+  it('states that the section is free-tier only since story 58.2 (FR88)', () => {
+    // ⚠️ THE HALF THAT MOVED THIS TIME, which is the question this file's
+    // docblock says every amendment must ask. Story 58.2 made the whole section
+    // conditional on tier: an entitled session, which now reaches these pages
+    // from the nav, does not render it at all. Every assertion above survived
+    // that change untouched — they describe what the section CONTAINS, and 58.2
+    // changed WHO SEES IT. A guard pinned only to the surviving half is silent
+    // about the half that changed; that is how this file stayed green across two
+    // prior reversals.
+    //
+    // Count-free, per the docblock rule: "free-tier only", never "one box" or
+    // "four of five".
+    expect(normalized).toContain('THIS WHOLE SECTION IS FREE-TIER ONLY')
+  })
+
+  it('records that hiding the section costs sync its only STATE surface', () => {
+    // The accepted cost of decision D1, pinned because an unexplained absence
+    // reads as a bug to the next reader — and because the tempting "fix" is to
+    // reinstate the section, which would undo the story. The comment must keep
+    // naming the real follow-up (a sync status indicator) instead.
+    //
+    // ⚠️ THIS ASSERTION PINNED A FALSE CLAIM UNTIL 2026-09-21. It required the
+    // comment to say the box was the "ONLY user-visible mention of multi-device
+    // sync" anywhere in the app — refuted by `pricing-page.tsx` ("Multi-device
+    // sync, securely stored in the EU") and `content/docs/features.md`, both
+    // readable by a paid user. A guard that forces a false statement to stay in
+    // the source is worse than no guard: it defends the error. The true and
+    // sufficient claim is about STATE — nothing tells a user whether sync is on
+    // or working — so that is what is pinned now.
+    expect(normalized).toMatch(/ONLY place that showed a signed-in user their sync STATE/i)
+    expect(normalized).toMatch(/REAL SYNC STATUS INDICATOR/i)
+
+    // And the false version must not come back.
+    expect(normalized).not.toMatch(/ONLY user-visible mention of multi-device sync/i)
+  })
+
   it('no longer claims sync is never gate-wrapped', () => {
     // Story 33.1's exact reasoning, which is now false. Scoped to the sync rule
     // rather than banning the words outright, for the same reason as the 20-2
