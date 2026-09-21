@@ -1,3 +1,4 @@
+import { type SessionSeed, SessionSeedProvider } from '@/context/session-seed'
 import { renderWithRouter, screen, within } from '@/test/utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -654,5 +655,226 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       '/retirement',
       '/settings',
     ])
+  })
+})
+
+/**
+ * Story 58.1 (FR87) — the nav is tier-aware.
+ *
+ * A paid session gets four extra sheet destinations; every other session gets
+ * exactly the nav it got before this story. The tier comes from the SSR session
+ * seed, read ONCE as a `useState` initializer (`session-seed.tsx:14-16`), so the
+ * first painted frame is already correct — the same mechanism `usePremiumAccess`
+ * uses, and the reason this could not be built on `usePremiumAccess` itself,
+ * whose no-seed path fires a client round-trip and would flash 7 items then 11.
+ *
+ * ⚠️ These counts (11 / 7) do not contradict the "STAY 7" warning at the top of
+ * this file. That warning is about VIEWPORT — jsdom applies no media queries, so
+ * every anchor is in the DOM regardless of which ones a 320px browser hides
+ * behind the More trigger. This block varies TIER, which changes what is
+ * rendered at all, at every width.
+ *
+ * ⚠️ Geometry is NOT asserted here and cannot be: jsdom loads no Tailwind and
+ * computes no layout. The 11-anchor desktop row and 7-row sheet are measured for
+ * real in `e2e/nav-tier-aware.paid.spec.ts`, against a server booted with a paid
+ * seed. Neither half proves the other: this file proves the nav RENDERS the
+ * destinations, that spec proves the CSS SURVIVES them.
+ */
+describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
+  const seedWith = (overrides: Partial<SessionSeed> = {}): SessionSeed => ({
+    isAuthenticated: true,
+    userId: 'u1',
+    email: 'u1@example.test',
+    subscriptionStatus: 'active',
+    ...overrides,
+  })
+
+  const renderWithSeed = (seed: SessionSeed | null, path = '/') =>
+    renderWithRouter(
+      <SessionSeedProvider seed={seed}>
+        <GlobalNav />
+      </SessionSeedProvider>,
+      { path }
+    )
+
+  const nav = () => screen.findByRole('navigation', { name: /primary/i })
+
+  const sheetLabels = (navEl: HTMLElement): (string | undefined)[] => {
+    const lists = [...navEl.querySelectorAll('ul')]
+    const sheet = lists[1]
+    return [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
+  }
+
+  /** The four destinations this story adds, with the labels D1 settled on. */
+  const PREMIUM: readonly [label: string, href: string][] = [
+    ['Forecasting', '/forecasting'],
+    ['Profiles', '/profiles'],
+    ['Report', '/report'],
+    ['Categories', '/categories'],
+  ]
+
+  const FREE_SHEET = ['Balance Tracking', 'Retirement', 'Settings']
+  const PAID_SHEET = [
+    'Balance Tracking',
+    'Retirement',
+    'Forecasting',
+    'Profiles',
+    'Report',
+    'Categories',
+    'Settings',
+  ]
+
+  describe('an entitled session', () => {
+    it('renders eleven anchors', async () => {
+      renderWithSeed(seedWith())
+      expect(within(await nav()).getAllByRole('link')).toHaveLength(11)
+    })
+
+    it('puts the four premium rows between Retirement and Settings, in order (D3)', async () => {
+      renderWithSeed(seedWith())
+      // The ORDER is the assertion, not the count: a count-only check passes
+      // against four premium rows appended after Settings, which is the exact
+      // layout D3 rejected.
+      expect(sheetLabels(await nav())).toEqual(PAID_SHEET)
+    })
+
+    it.each(PREMIUM)('links %s to %s', async (label, href) => {
+      renderWithSeed(seedWith())
+      const link = within(await nav()).getByRole('link', { name: label, exact: true })
+      expect(link).toHaveAttribute('href', href)
+    })
+
+    it('treats a lifetime purchase as entitled too', async () => {
+      renderWithSeed(seedWith({ subscriptionStatus: 'lifetime' }))
+      expect(within(await nav()).getAllByRole('link')).toHaveLength(11)
+    })
+
+    it('tags every new <li> with its route for the pre-paint CSS hook', async () => {
+      renderWithSeed(seedWith())
+      const tagged = [...(await nav()).querySelectorAll('li[data-nav-path]')].map((li) =>
+        li.getAttribute('data-nav-path')
+      )
+      expect(tagged).toEqual([
+        '/',
+        '/income',
+        '/expenses',
+        '/savings',
+        '/balance',
+        '/retirement',
+        '/forecasting',
+        '/profiles',
+        '/report',
+        '/categories',
+        '/settings',
+      ])
+    })
+
+    it('scopes every new icon to mobile with `sm:hidden`', async () => {
+      renderWithSeed(seedWith())
+      const navEl = await nav()
+      const icons = [...navEl.querySelectorAll('svg')]
+      // Twelve: 4 bar tabs + More + 7 sheet rows. Without `sm:hidden` each new
+      // icon grows the DESKTOP nav, and nothing else in the suite would catch it.
+      expect(icons).toHaveLength(12)
+      for (const icon of icons) {
+        expect(tokens(icon), 'a premium icon is missing `sm:hidden`').toContain('sm:hidden')
+        expect(icon).toHaveAttribute('aria-hidden', 'true')
+      }
+      expect(navEl.querySelectorAll('[data-nav-label]')).toHaveLength(12)
+    })
+
+    it.each(PREMIUM)('marks the More trigger active on %s', async (label, href) => {
+      renderWithSeed(seedWith(), href)
+      const navEl = await nav()
+      // Both halves: the row itself is current, AND the tab that discloses it
+      // shows it. `isMoreActive` reading a different list from the rendered rows
+      // is the specific regression this catches.
+      expect(within(navEl).getByRole('link', { name: label, exact: true })).toHaveAttribute(
+        'aria-current',
+        'page'
+      )
+      expect(tokens(within(navEl).getByRole('button'))).toContain('bg-green-50')
+    })
+  })
+
+  describe('every non-entitled session is unchanged from before this story', () => {
+    const NOT_ENTITLED: readonly [name: string, seed: SessionSeed | null][] = [
+      ['a free subscriber', seedWith({ subscriptionStatus: 'free' })],
+      ['a past_due subscriber', seedWith({ subscriptionStatus: 'past_due' })],
+      ['a canceled subscriber', seedWith({ subscriptionStatus: 'canceled' })],
+      ['a null subscription status', seedWith({ subscriptionStatus: null })],
+      [
+        'a signed-out session',
+        { isAuthenticated: false, userId: null, email: null, subscriptionStatus: null },
+      ],
+      // The resolver-errored case. A null seed is UNVERIFIED, never entitled —
+      // fail closed, or a transient blip hands out the paid nav.
+      ['no seed at all (resolver errored)', null],
+      // Fail-closed by construction, not by luck of what the resolver emits: a
+      // malformed seed claiming `active` while not authenticated must not pass.
+      [
+        'an unauthenticated seed claiming active',
+        { isAuthenticated: false, userId: null, email: null, subscriptionStatus: 'active' },
+      ],
+    ]
+
+    it.each(NOT_ENTITLED)('gives %s the unchanged seven-anchor nav', async (_name, seed) => {
+      renderWithSeed(seed)
+      const navEl = await nav()
+      expect(within(navEl).getAllByRole('link')).toHaveLength(7)
+      expect(sheetLabels(navEl)).toEqual(FREE_SHEET)
+    })
+
+    it.each(NOT_ENTITLED)('shows %s no premium destination', async (_name, seed) => {
+      renderWithSeed(seed)
+      const navEl = await nav()
+      // Absence per destination, not just a count: a count stays 7 if one
+      // premium row leaked in while an existing one dropped out.
+      for (const [, href] of PREMIUM) {
+        expect(navEl.querySelector(`a[href="${href}"]`), `${href} leaked into the free nav`).toBe(
+          null
+        )
+      }
+    })
+  })
+
+  describe('tier and the Retirement preference are independent filters', () => {
+    afterEach(() => {
+      usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
+    })
+
+    // The product case neither the tier tests nor the story 35.2 block covers:
+    // both conditions act on ONE list, so testing each alone leaves the
+    // combination untested.
+    it('gives an entitled session with the planner hidden ten anchors and six rows', async () => {
+      usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
+      renderWithSeed(seedWith())
+      const navEl = await nav()
+
+      expect(within(navEl).getAllByRole('link')).toHaveLength(10)
+      expect(sheetLabels(navEl)).toEqual([
+        'Balance Tracking',
+        'Forecasting',
+        'Profiles',
+        'Report',
+        'Categories',
+        'Settings',
+      ])
+    })
+
+    it('does not mark the More trigger active on /retirement while it is hidden', async () => {
+      usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
+      renderWithSeed(seedWith(), '/retirement')
+      expect(tokens(within(await nav()).getByRole('button'))).not.toContain('bg-green-50')
+    })
+  })
+
+  it('never adds Multi-device sync, in either tier (AC-7)', async () => {
+    for (const seed of [seedWith(), null]) {
+      const { unmount } = renderWithSeed(seed)
+      const navEl = await nav()
+      expect(within(navEl).queryByRole('link', { name: /sync/i })).not.toBeInTheDocument()
+      unmount()
+    }
   })
 })

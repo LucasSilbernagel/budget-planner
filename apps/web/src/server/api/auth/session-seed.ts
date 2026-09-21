@@ -33,6 +33,54 @@ import type { SessionSeed } from '../../../context/session-seed'
 
 export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
   async (): Promise<SessionSeed | null> => {
+    // ⚠️ DEV-ONLY TEST SEAM (story 58.1, D2 — guarded by AC-9 and by
+    // `session-seed-dev-seam.guard.test.ts`, which explains it in full).
+    //
+    // Playwright cannot otherwise render an entitled session at all: it boots
+    // `pnpm dev` with no database and no auth fixture, so every "paid" geometry
+    // assertion would measure the FREE nav while passing. `GlobalNav`'s paid
+    // branch reads nothing but this seed, so overriding it here — and only here
+    // — makes that measurement real.
+    //
+    // `import.meta.env.DEV` is a BUILD-TIME literal, so a production build
+    // resolves this to `false && …` and drops the branch and its string
+    // entirely: the override is absent from the bundle, not merely unreachable.
+    // It is written first so a production runtime never even reads the variable.
+    // Do not rewrite it as a NODE_ENV comparison — that is a runtime string, and
+    // the branch would survive into production.
+    //
+    // This grants a seed only: never a signed cookie, never a DB user, never an
+    // authenticated server-side request. It is not a way to sign in.
+    if (import.meta.env.DEV && process.env['E2E_SESSION_SEED']) {
+      // ⚠️ The try/catch lives INSIDE the gate, not around it, and that placement
+      // is load-bearing. With the gate outside, `import.meta.env.DEV` → `false`
+      // eliminates only the `if` body; the surrounding `try`/`catch` is not dead
+      // code, so its message string survives into the production bundle. The
+      // branch was still unreachable, but a bare literal is indistinguishable
+      // from a real leak to the CI grep that guards this (AC-9) — and a guard
+      // that cannot tell those apart is no guard. Everything that names the
+      // variable now sits inside the eliminated block.
+      //
+      // Shape-checked as well as parsed: a malformed value would otherwise throw
+      // straight out of the ROOT loader and break every route on the dev server
+      // with a SyntaxError naming nothing. A bad value now logs and falls through
+      // to `null`, which consumers already treat as "unverified".
+      try {
+        const parsed: unknown = JSON.parse(process.env['E2E_SESSION_SEED'])
+        if (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          typeof (parsed as SessionSeed).isAuthenticated === 'boolean'
+        ) {
+          return parsed as SessionSeed
+        }
+        console.error('Dev session override is not a valid seed object; ignoring it')
+      } catch (error) {
+        console.error('Dev session override is not valid JSON; ignoring it:', error)
+      }
+      return null
+    }
+
     try {
       // Dynamically imported inside the extracted server handler so neither the
       // framework server entry nor the session resolver leaks into the client.

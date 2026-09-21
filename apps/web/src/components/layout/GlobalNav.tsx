@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useSessionSeed } from '../../context/session-seed'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 
 /**
@@ -8,12 +9,33 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  *
  * Mounted once in `routes/__root.tsx` so every route carries the same primary
  * navigation — replacing the ad-hoc, inconsistent per-page "Back to Home / View
- * X" footer link blocks each page used to hand-roll. Exposes the seven top-level
- * sections — eight until story 43.3 (FR69) removed the free Net Worth projection
- * page. The premium *Forecasting* entry is intentionally NOT duplicated
- * here: it stays surfaced-but-locked on the Home dashboard via the Story 7-2
+ * X" footer link blocks each page used to hand-roll.
+ *
+ * ## How many destinations — it depends on the TIER since story 58.1
+ *
+ * A free or signed-out session sees SEVEN top-level sections (eight until story
+ * 43.3 (FR69) removed the free Net Worth projection page). An ENTITLED session
+ * sees ELEVEN: the same seven plus Forecasting, Profiles, Report and Categories.
+ * Every "seven" below describes the free nav unless it says otherwise.
+ *
+ * ⚠️ This REVERSES a named scope decision, and the reversal is recorded rather
+ * than the old text being quietly deleted. Until 2026-09-14 this docblock read:
+ * "The premium *Forecasting* entry is intentionally NOT duplicated here: it stays
+ * surfaced-but-locked on the Home dashboard via the Story 7-2
  * `PremiumFeatureGate`, so the primary nav needs no second premium gate to
- * maintain (scope decision, 2026-07-03).
+ * maintain (scope decision, 2026-07-03)."
+ *
+ * That decision was correct about its cost and wrong about its benefit. A paying
+ * user's ONLY route to four of the five premium features was a dashboard card
+ * they had to remember, which is a discoverability failure that outweighs the
+ * maintenance cost of one tier read (FR87, decision Lucas 2026-09-14). The
+ * "second premium gate" it feared is deliberately not what shipped: this
+ * component gates nothing. It reads the already-resolved SSR seed and chooses a
+ * LIST. Every route keeps its own server-side gate, unchanged — a user who
+ * reaches `/report` by typing the URL is authorised there, not here.
+ *
+ * `Multi-device sync` is the one premium benefit still absent: it has no route to
+ * link to, so it stays Overview-only in both tiers.
  *
  * Active state is driven by TanStack Router `<Link>` `activeProps` (not a
  * hand-rolled `useLocation` comparison), which applies both the active styling
@@ -24,8 +46,10 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  *
  * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
  *
- * There is exactly one `<nav>`, one OUTER `<ul>`, seven `<a>` and one `<button>`
- * in the DOM at every viewport. Desktop (>= 640px) is the unprefixed cascade —
+ * There is exactly one `<nav>`, one OUTER `<ul>`, one `<button>` and — since
+ * story 58.1 — seven `<a>` for a free session or eleven for an entitled one, in
+ * the DOM at every viewport. The COUNT varies by tier; the STRUCTURE never does.
+ * Desktop (>= 640px) is the unprefixed cascade —
  * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
  * bar via `max-sm:` utilities. No JavaScript decides the layout, so the first
  * painted frame is already the final frame and there is no hydration race left
@@ -86,8 +110,10 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * "Retirement" alone). Measured label widths in the app's real font stack
  * decided the count: 5 columns give 64px tracks (comfortable), 8 give 40px
  * (overflowing). So the bar shows FIVE cells — Overview, Income, Expenses,
- * Savings and a "More" trigger — and the remaining three destinations live in a
- * sheet that More discloses. The bar is now 56.75px.
+ * Savings and a "More" trigger — and the remaining destinations live in a
+ * sheet that More discloses: three for a free session, seven for an entitled one
+ * since story 58.1. The bar is now 56.75px, and the tier cannot change that —
+ * 58.1 touched only the sheet list, never `PRIMARY_TABS`.
  *
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
  * `<li>`, dissolved at >= 640px with `sm:contents` on BOTH the wrapper `<li>`
@@ -95,8 +121,8 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * bar and re-listing the sheet's share in a mobile-only sheet — puts those
  * destination labels in the DOM TWICE, which is the dual-render rejected above.
  * Measured against a flat control at 1280px (when the nav held EIGHT items; it
- * holds seven since 43.3), the nested structure laid out all 8 anchors with ZERO
- * geometry mismatches. It is not free, though:
+ * holds seven free / eleven entitled since 58.1), the nested structure laid out
+ * all 8 anchors with ZERO geometry mismatches. It is not free, though:
  * `display: contents` flattens the LAYOUT tree but NOT the ACCESSIBILITY tree,
  * so the desktop AX tree gains one nesting level (`list > 4 listitem`, then
  * `listitem > list > 4 listitem`). A nested list inside a nav is valid and
@@ -139,8 +165,25 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * `e2e/nav-responsive-css.spec.ts` and `e2e/chrome-320.spec.ts` guard all of it.
  */
 
-/** Registered route paths the nav links to — a subset of the app's route tree. */
-type NavPath = '/' | '/income' | '/expenses' | '/savings' | '/balance' | '/retirement' | '/settings'
+/**
+ * Registered route paths the nav links to — a subset of the app's route tree.
+ *
+ * ⚠️ Closed on purpose. Adding a destination without extending this union is a
+ * `tsc` error, which is how exhaustiveness is proven here rather than by review
+ * (the pattern stories 35.2 and 43.3 both record).
+ */
+type NavPath =
+  | '/'
+  | '/income'
+  | '/expenses'
+  | '/savings'
+  | '/balance'
+  | '/retirement'
+  | '/forecasting'
+  | '/profiles'
+  | '/report'
+  | '/categories'
+  | '/settings'
 
 interface NavItem {
   label: string
@@ -170,10 +213,16 @@ const PRIMARY_TABS: readonly NavItem[] = [
 ]
 
 /**
- * The three destinations behind the mobile "More" trigger.
+ * The three destinations behind the mobile "More" trigger for a FREE session.
+ *
+ * ⚠️ Since story 58.1 this is the free-tier BASE, not the whole sheet. An
+ * entitled session renders `MORE_DESTINATIONS_ENTITLED` below, which splices four
+ * premium destinations into this list. Keep this array literally unchanged when
+ * adding a premium destination — that is what makes "the free nav did not move"
+ * provable by reading the diff.
  *
  * At >= 640px these are ordinary items of the one desktop row — `sm:contents`
- * dissolves both the wrapper `<li>` and this nested list, so the seven anchors
+ * dissolves both the wrapper `<li>` and this nested list, so the free nav's seven anchors
  * lay out exactly as they did before this story.
  *
  * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69). Every
@@ -196,6 +245,64 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
   // and dark-mode controls that used to be scattered across page headers and the
   // footer.
   { label: 'Settings', to: '/settings', Icon: SettingsIcon },
+]
+
+/**
+ * The four premium destinations an ENTITLED session additionally sees (story
+ * 58.1, FR87).
+ *
+ * ⚠️ The labels are deliberately SHORTER than these features' names elsewhere in
+ * the app (decision D1, 2026-09-20). `OVERVIEW_BENEFITS[*].featureName` calls
+ * them "Custom Profiles", "Financial Summary Report" and "Custom Categories";
+ * the nav calls them Profiles, Report and Categories. That is not drift:
+ *
+ *   - A nav label tracks the PAGE, not the benefit pitch — the rule story 43.2
+ *     applied when it renamed Balance -> Balance Tracking to match that page's
+ *     own H1. This nav has always spoken that way (`Savings`, not "Savings
+ *     Goals"; `Income`, not "Income Sources").
+ *   - The benefit names carry 67 characters against these 35. The desktop row is
+ *     one wrapped flex row, so label text is row height for every paying user on
+ *     every page.
+ *
+ * Verified when this shipped: `benefit-set-parity.test.tsx` polices the canonical
+ * benefit set across /pricing, the upgrade prompt, the Overview grid, the route
+ * map, `features.md` and `pricing.md` — it does not reference this file, so the
+ * two vocabularies cannot collide. Do not "fix" them into agreement.
+ *
+ * ⚠️ `Multi-device sync` is NOT here and cannot be: it has `activation: 'prompt'`
+ * with no route to link to (`HomePage.tsx`), so it stays Overview-only in both
+ * tiers.
+ */
+const PREMIUM_DESTINATIONS: readonly NavItem[] = [
+  { label: 'Forecasting', to: '/forecasting', Icon: ForecastingIcon },
+  { label: 'Profiles', to: '/profiles', Icon: ProfilesIcon },
+  { label: 'Report', to: '/report', Icon: ReportIcon },
+  { label: 'Categories', to: '/categories', Icon: CategoriesIcon },
+]
+
+/**
+ * The sheet an entitled session gets: the free list with the premium block
+ * spliced in BEFORE Settings (decision D3).
+ *
+ * ⚠️ Not a concatenation. FR87 said "appended", which would leave Settings
+ * stranded in the middle of a paying user's list; Settings stays last, where it
+ * is for everyone else. The insertion point is found by route rather than by a
+ * hard-coded index so reordering `MORE_DESTINATIONS` cannot silently move it.
+ */
+const SETTINGS_POSITION = MORE_DESTINATIONS.findIndex((item) => item.to === '/settings')
+if (SETTINGS_POSITION === -1) {
+  // ⚠️ Not defensive noise. `findIndex` returning -1 makes `slice(0, -1)` and
+  // `slice(-1)` still "work" — they would splice the premium block before
+  // whatever happens to be last, silently, with no crash and no missing item.
+  // The by-route lookup above protects against REORDERING; only this protects
+  // against REMOVAL. Throwing at module load turns a silent misplacement into an
+  // immediate, obvious failure.
+  throw new Error('GlobalNav: MORE_DESTINATIONS must contain a /settings entry')
+}
+const MORE_DESTINATIONS_ENTITLED: readonly NavItem[] = [
+  ...MORE_DESTINATIONS.slice(0, SETTINGS_POSITION),
+  ...PREMIUM_DESTINATIONS,
+  ...MORE_DESTINATIONS.slice(SETTINGS_POSITION),
 ]
 
 /**
@@ -244,7 +351,7 @@ const TAB_LINK_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:h-full max-sm:min-h-
 const SHEET_ROW_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
 /**
- * The active treatment, applied by `<Link activeProps>` on the seven anchors and
+ * The active treatment, applied by `<Link activeProps>` on every destination anchor and
  * by hand on the More trigger (which is not a route — see `isMoreActive`).
  */
 const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -352,13 +459,47 @@ export function GlobalNav() {
    * paint the deterministic default (visible).
    */
   const showRetirementPlanner = useShowRetirementPlanner()
-  const visibleMoreDestinations = useMemo(
+
+  /**
+   * Whether this session sees the four premium destinations (story 58.1, FR87).
+   *
+   * ⚠️ Read from the SSR seed as a `useState` INITIALIZER, never reactively —
+   * `session-seed.tsx` states that contract, and here it is what makes the first
+   * painted frame already correct. The seed is resolved server-side by the root
+   * loader, so SSR and the first client render agree and there is no flash.
+   *
+   * ⚠️⚠️ `usePremiumAccess()` is the obvious reuse and is WRONG here. Its no-seed
+   * path fires a client round-trip in an effect and its status is `setState`-
+   * driven, so the nav would paint 7 items and then flip to 11 — reintroducing
+   * exactly the hydration reflow story 31.4 removed, on the element whose whole
+   * design premise is "the first painted frame is the final frame". Mirror its
+   * PREDICATE (`seedToStatus`), do not call the hook.
+   *
+   * Fail-closed in all three directions: a `null` seed means the resolver could
+   * not verify the session (unverified, NOT entitled), an unauthenticated seed
+   * never qualifies however its status reads, and only `active`/`lifetime` count
+   * — `free`/`past_due`/`canceled` get the free nav. A paid user hitting a
+   * transient resolver error sees the free nav for that page load and self-heals
+   * on the next, which is the right way round.
+   *
+   * ⚠️ Accepted consequence: the root loader caches the seed with
+   * `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps the free nav
+   * until a full reload. Every other seed consumer already behaves this way. Do
+   * not "fix" it with a reactive read — that is the flash above.
+   */
+  const seed = useSessionSeed()
+  const [isEntitled] = useState(
     () =>
-      showRetirementPlanner
-        ? MORE_DESTINATIONS
-        : MORE_DESTINATIONS.filter((item) => item.to !== '/retirement'),
-    [showRetirementPlanner]
+      seed?.isAuthenticated === true &&
+      (seed.subscriptionStatus === 'active' || seed.subscriptionStatus === 'lifetime')
   )
+
+  const visibleMoreDestinations = useMemo(() => {
+    const destinations = isEntitled ? MORE_DESTINATIONS_ENTITLED : MORE_DESTINATIONS
+    return showRetirementPlanner
+      ? destinations
+      : destinations.filter((item) => item.to !== '/retirement')
+  }, [isEntitled, showRetirementPlanner])
 
   const isMoreActive = visibleMoreDestinations.some((item) => item.to === pathname)
 
@@ -727,6 +868,90 @@ function RetirementIcon({ className }: { className: string }): React.ReactElemen
         strokeLinejoin="round"
         strokeWidth={2}
         d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  )
+}
+
+// The four premium destinations' glyphs (story 58.1). Same house style as every
+// icon above — decorative, stroked, 24x24 — and rendered with `sm:hidden` by the
+// same sheet-row call site, so they carry the identical desktop-growth risk.
+
+function ForecastingIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+      />
+    </svg>
+  )
+}
+
+function ProfilesIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+      />
+    </svg>
+  )
+}
+
+function ReportIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+      />
+    </svg>
+  )
+}
+
+function CategoriesIcon({ className }: { className: string }): React.ReactElement {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
       />
     </svg>
   )

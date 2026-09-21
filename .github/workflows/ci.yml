@@ -89,6 +89,37 @@ jobs:
       - name: Validate deploy-workflow invariants
         run: python3 scripts/validate-deploy-workflow.py
 
+      # Story 58.1 (AC-9). `getSessionSeed` carries a dev-only override that
+      # fabricates an entitled session from E2E_SESSION_SEED so Playwright can
+      # measure the paid nav. It is gated on `import.meta.env.DEV`, which Vite
+      # replaces at build time, so a production build should not contain it at
+      # all.
+      #
+      # "Should" is the reason this step exists. The unit guard
+      # (`session-seed-dev-seam.guard.test.ts`) asserts the SOURCE SHAPE and
+      # cannot see the bundle; a change to how the server bundle is produced
+      # could stop eliminating the branch while every test stays green. This
+      # builds the real thing and greps it.
+      #
+      # ⚠️ The positive control is not optional. A grep that finds nothing
+      # because it searched the wrong directory looks exactly like a pass, so we
+      # first assert a string that MUST be present.
+      - name: Dev-only session seam is absent from a production build
+        run: |
+          set -euo pipefail
+          pnpm --filter web build
+          if ! grep -rq "getSessionSeed" apps/web/dist/; then
+            echo "::error::Positive control failed - 'getSessionSeed' not found in apps/web/dist/."
+            echo "The grep is not reaching the build output, so a clean result would prove nothing."
+            exit 1
+          fi
+          if grep -rq "E2E_SESSION_SEED" apps/web/dist/; then
+            echo "::error::SECURITY: the dev-only session seam survived into the production build."
+            grep -rn "E2E_SESSION_SEED" apps/web/dist/ || true
+            exit 1
+          fi
+          echo "OK: positive control present, E2E_SESSION_SEED absent from apps/web/dist/."
+
   unit-tests:
     name: Unit tests (Vitest)
     runs-on: ubuntu-latest

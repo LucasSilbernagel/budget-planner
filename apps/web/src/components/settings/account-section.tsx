@@ -1,5 +1,4 @@
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
-import { useRouter } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
@@ -48,7 +47,6 @@ async function fetchCurrentUser(): Promise<CurrentUser | null> {
 }
 
 export function AccountSection() {
-  const router = useRouter()
   const [authState, setAuthState] = useState<AuthState>({ status: 'loading' })
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -75,9 +73,29 @@ export function AccountSection() {
     }
   }, [])
 
+  /**
+   * Leave the signed-in session behind — with a FULL DOCUMENT LOAD, not a
+   * client-side navigation.
+   *
+   * ⚠️ `router.invalidate()` + `router.navigate()` is not enough, and story 58.1's
+   * code review caught why. The root route stays mounted across a client
+   * navigation, so anything that read the SSR session seed ONCE as a `useState`
+   * initializer keeps its signed-in value. Since 58.1 that includes `GlobalNav`,
+   * which would go on showing a paid user's Forecasting / Profiles / Report /
+   * Categories entries to a session that has just signed out — while
+   * `AuthIndicator`, which refetches `/api/auth/me` per navigation, already reads
+   * "Sign in". Two halves of the same header bar disagreeing.
+   *
+   * A document load re-runs the root loader, so every seed consumer re-derives
+   * from the now-absent session. This is the right instrument for sign-out
+   * regardless: it also drops all in-memory store state, which is what a user
+   * leaving a shared machine expects.
+   *
+   * ⚠️ Do NOT "fix" the nav instead by making it read the seed reactively — that
+   * re-creates the first-paint flash `GlobalNav`'s docblock exists to prevent.
+   */
   const signOutTo = async (): Promise<void> => {
-    await router.invalidate()
-    await router.navigate({ to: '/' })
+    globalThis.location.assign('/')
   }
 
   const handleSignOut = async (): Promise<void> => {

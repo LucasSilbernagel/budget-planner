@@ -212,6 +212,20 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   //   after  43.2 (DejaVu)        815px                920px
   //   after  43.3 (DejaVu)        717px                821px
   //
+  // ⚠️ Every figure in this table and in this file's tests is the FREE nav (7
+  // anchors). Story 58.1 made the nav tier-aware, so an ENTITLED session has
+  // ELEVEN anchors and different numbers entirely — including no single-row
+  // threshold at any width. Those figures are MEASURED AND MAINTAINED IN ONE
+  // PLACE, `nav-tier-aware.paid.spec.ts`; deliberately not repeated here, because
+  // a width copied into a second file is exactly the drift this comment block
+  // already records three times over.
+  //
+  // ⚠️ Note for whoever next measures an intrinsic width, in either file: the
+  // header is capped by `sm:max-w-6xl`, so `flex-wrap: nowrap` ALONE lets the
+  // anchors shrink and reports roughly the container width back at you. 58.1 hit
+  // this and recorded a figure ~93px below the truth before catching it. Pin
+  // `flex-shrink: 0` and lift the cap as well.
+  //
   // The row still WRAPS at all three tested widths (640/700/760): it needs an
   // 821px VIEWPORT before it becomes one row. ⚠️ Note the two columns are not
   // interchangeable — the intrinsic width (717px) is the row's own content, while

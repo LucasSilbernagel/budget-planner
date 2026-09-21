@@ -14,15 +14,23 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { navigate, invalidate, purgeLocalFinancialData } = vi.hoisted(() => ({
-  navigate: vi.fn(),
-  invalidate: vi.fn(),
+const { purgeLocalFinancialData } = vi.hoisted(() => ({
   purgeLocalFinancialData: vi.fn(),
 }))
-vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate, invalidate }),
-}))
 vi.mock('@/lib/account/purge-local-financial-data', () => ({ purgeLocalFinancialData }))
+
+/**
+ * Sign-out is a FULL DOCUMENT LOAD, not a router navigation (story 58.1 review).
+ *
+ * ⚠️ This used to mock `useRouter` and assert `navigate({ to: '/' })`. That was
+ * changed because a client-side navigation keeps the root route mounted, so every
+ * consumer that reads the SSR session seed once as a `useState` initializer keeps
+ * its signed-in value — since 58.1 that includes `GlobalNav`, which went on
+ * showing a paid user's premium destinations to a session that had just signed
+ * out. Asserting the document load is asserting the thing that actually clears
+ * that state, so the assertion is on `location.assign`, not on a router spy.
+ */
+const assign = vi.fn()
 
 import { AccountSection } from './account-section'
 
@@ -46,9 +54,13 @@ function stubFetch({ user, deleteOk }: { user: unknown; deleteOk?: boolean }) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // jsdom's `location.assign` is not implemented and logs "Not implemented:
+  // navigation" if called for real, so it is replaced rather than spied.
+  vi.stubGlobal('location', { ...globalThis.location, assign })
 })
 afterEach(() => {
   global.fetch = originalFetch
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -100,7 +112,7 @@ describe('AccountSection', () => {
     // Purge must be scoped to the deleted user so the durable sync queue
     // (bp-sync-queue-<userId>) is cleared too.
     await waitFor(() => expect(purgeLocalFinancialData).toHaveBeenCalledWith('user-42'))
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/' }))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'))
   })
 
   it('shows a VISIBLE inline error (dialog closed) and does NOT sign out when erasure fails', async () => {
@@ -118,7 +130,7 @@ describe('AccountSection', () => {
     // The dialog must close on failure so the inline error is not occluded by the overlay.
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(purgeLocalFinancialData).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
+    expect(assign).not.toHaveBeenCalled()
   })
 })
 
