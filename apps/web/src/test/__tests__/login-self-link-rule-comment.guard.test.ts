@@ -87,7 +87,16 @@ describe('AC-7 guard: the sign-in-page rule comment states the shipped rule', ()
     // its own reads as an oversight to be corrected; the distinction between
     // wayfinding and account status is what tells the next author it was a
     // decision.
-    expect(source).toContain('an account-status affordance, not navigation')
+    //
+    // ⚠️ AMENDED by story 59.3. The cluster gained an action (the account
+    // menu's Sign out), so "an account-STATUS affordance" became incomplete.
+    // The half that carries the UX-DR28 reasoning, "not navigation", stayed
+    // TRUE: the menu holds no destinations, by decision (FR90, FR99). The pin
+    // moved to the amended sentence rather than being deleted, so removing the
+    // reason still fails here.
+    expect(source).toContain(
+      "an account affordance (its status, plus the account menu's Sign out), not navigation"
+    )
   })
 
   it('records that the loading and authenticated branches are deliberately untouched', () => {

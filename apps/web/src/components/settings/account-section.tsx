@@ -1,4 +1,5 @@
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
+import { returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
@@ -73,36 +74,21 @@ export function AccountSection() {
     }
   }, [])
 
-  /**
-   * Leave the signed-in session behind — with a FULL DOCUMENT LOAD, not a
-   * client-side navigation.
-   *
-   * ⚠️ `router.invalidate()` + `router.navigate()` is not enough, and story 58.1's
-   * code review caught why. The root route stays mounted across a client
-   * navigation, so anything that read the SSR session seed ONCE as a `useState`
-   * initializer keeps its signed-in value. Since 58.1 that includes `GlobalNav`,
-   * which would go on showing a paid user's Forecasting / Profiles / Report /
-   * Categories entries to a session that has just signed out — while
-   * `AuthIndicator`, which refetches `/api/auth/me` per navigation, already reads
-   * "Sign in". Two halves of the same header bar disagreeing.
-   *
-   * A document load re-runs the root loader, so every seed consumer re-derives
-   * from the now-absent session. This is the right instrument for sign-out
-   * regardless: it also drops all in-memory store state, which is what a user
-   * leaving a shared machine expects.
-   *
-   * ⚠️ Do NOT "fix" the nav instead by making it read the seed reactively — that
-   * re-creates the first-paint flash `GlobalNav`'s docblock exists to prevent.
-   */
-  const signOutTo = async (): Promise<void> => {
-    globalThis.location.assign('/')
-  }
-
+  // Sign-out is the shared implementation in `lib/account/sign-out.ts` (story
+  // 59.3), also called by the chrome's account menu. Its docblock records why
+  // it is a full document load and not a client-side navigation.
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const handleSignOut = async (): Promise<void> => {
+    // No re-entry guard here: `disabled` stops a second click and `signOut()`
+    // dedupes at module level (which is also what stops the chrome's Sign out
+    // from firing a second POST while this one is in flight).
+    setIsSigningOut(true)
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
+      await signOut()
     } finally {
-      await signOutTo()
+      // Reset, so a sign-out that timed out rather than navigating leaves the
+      // button usable (review: a hung POST disabled it permanently).
+      setIsSigningOut(false)
     }
   }
 
@@ -138,7 +124,7 @@ export function AccountSection() {
     await purgeLocalFinancialData(userId)
     setIsConfirmOpen(false)
     try {
-      await signOutTo()
+      returnToSignedOutHome()
     } catch (error) {
       // Account is already gone; a redirect hiccup must not become a false error.
       console.error('Account deleted, but sign-out redirect failed', error)
@@ -188,7 +174,8 @@ export function AccountSection() {
           <button
             type="button"
             onClick={handleSignOut}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:text-gray-300 dark:hover:bg-gray-700"
+            disabled={isSigningOut}
+            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             Sign out
           </button>

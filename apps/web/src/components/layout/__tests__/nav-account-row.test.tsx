@@ -1,4 +1,4 @@
-import { renderWithRouter, screen, within } from '@/test/utils'
+import { renderWithRouter, screen, userEvent, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SessionSeedProvider } from '../../../context/session-seed'
@@ -151,5 +151,65 @@ describe('Nav + account row (story 19-3)', () => {
       [...sheet.querySelectorAll('a')].map((a) => a.getAttribute('href')),
       'the More sheet holds something other than its three destinations'
     ).toEqual(['/balance', '/retirement', '/settings'])
+  })
+})
+
+/**
+ * The signed-in row (story 59.3). The account menu is the newest temptation to
+ * fold an account affordance into the nav: it is a disclosure, like More, and
+ * sits in the same bar. It must stay OUTSIDE `<nav>` (so the landmark still
+ * holds exactly its section links) and OUTSIDE the More sheet, and its Sign out
+ * must never become a nav row (UX record 2026-09-21, §3: "Do not put Sign out
+ * in the More sheet").
+ *
+ * A FREE signed-in user, so the nav's link count is the same seven as above:
+ * an entitled seed would add the four premium destinations and change the
+ * number for a reason unrelated to this invariant.
+ */
+describe('Nav + account row, signed in (story 59.3)', () => {
+  const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' }
+
+  it('keeps the account menu and its Sign out out of the nav and out of the More sheet', async () => {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/auth/me')) {
+        return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+    const user = userEvent.setup()
+    renderWithRouter(
+      <SessionSeedProvider seed={{ isAuthenticated: true, ...USER }}>
+        <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
+          <GlobalNav />
+          <AuthIndicator />
+        </div>
+      </SessionSeedProvider>
+    )
+
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+    await user.click(trigger)
+    const signOut = screen.getByRole('button', { name: 'Sign out' })
+
+    expect(nav.contains(trigger), 'the account menu trigger was folded into <nav>').toBe(false)
+    expect(nav.contains(signOut), 'Sign out was folded into <nav>').toBe(false)
+    // The sheet is a nav descendant, so `nav.contains` above already covers it;
+    // this pins the tempting SPECIFIC place (story 31.5's sheet) and fails
+    // loudly rather than throwing if the sheet stops being the second <ul>.
+    const lists = [...nav.querySelectorAll('ul')]
+    expect(lists, 'expected the bar list and the nested More sheet').toHaveLength(2)
+    expect(lists[1].contains(signOut), 'Sign out was folded into the More sheet').toBe(false)
+    expect(within(nav).getAllByRole('link')).toHaveLength(7)
+    // ZERO, and that is the right number. The nav's only control, More, is a
+    // `<summary>`, which has NO role in testing-library (story 59.2, measured),
+    // so it is not counted. Both account-menu controls are real `<button>`s, so
+    // either one inside the nav would make this 1 or 2.
+    expect(within(nav).queryAllByRole('button')).toHaveLength(0)
+
+    // And outside the live region: an interactive control there announces
+    // spuriously on every navigation.
+    const status = screen.getByRole('status', { name: /account status/i })
+    expect(status.contains(trigger)).toBe(false)
+    expect(status.contains(signOut)).toBe(false)
   })
 })

@@ -9,11 +9,20 @@ import { expect, test } from '@playwright/test'
  * misses client render"): against the real route tree with no session, the strip
  * resolves to the "Sign in" affordance and never leaks a Premium marker.
  *
- * The preview runtime cannot mint a real signed-in session (no test session +
- * the premium-check Buffer gap), so the SIGNED-IN states — email + the
- * active-only "Premium" marker — are covered by the unit suite
- * (`auth-indicator.test.tsx`). Here we assert the signed-out path e2e and that
- * the strip adds no 320px horizontal overflow.
+ * The e2e servers mint no real session, so this file asserts the SIGNED-OUT
+ * path and that the strip adds no 320px horizontal overflow. The signed-in
+ * states ARE renderable in e2e since story 59.2: `mockSignedIn()`
+ * (`helpers/nav-more.ts`) mocks `/api/auth/me`, and the account menu (story
+ * 59.3) is covered that way in `account-menu.spec.ts` / `.paid.spec.ts`. This
+ * docblock used to say they could only be unit-tested.
+ *
+ * ⚠️ Since story 59.3 the STRIP and the labelled `role="status"` region are two
+ * elements. The strip is the outer row (`[data-auth-indicator]`), which owns
+ * the chrome and the height reserve; the region is a child of it, holding only
+ * non-interactive content, because the account menu cannot live inside a live
+ * region. On `/login` a signed-out region is EMPTY, so its width is 0 and
+ * Playwright reports it hidden. Assertions about the strip's box therefore
+ * measure the row; assertions about the region check it is attached.
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
@@ -114,8 +123,14 @@ test('drops the "Sign in" affordance on /login while the Overview keeps it', asy
 
   const onLogin = page.getByRole('status', { name: /account status/i })
   // The strip itself survives — removing the region would trade a dead link for
-  // a collapsed strip, which is what the height test below measures.
-  await expect(onLogin).toBeVisible()
+  // a collapsed strip. The region is empty here (width 0), so it is checked for
+  // PRESENCE; the strip it sits in is what must be visible (story 59.3).
+  //
+  // ⚠️ Since 59.3 the height test below measures the ROW, which carries its own
+  // reserve, so it would stay green if the region vanished. The region's
+  // survival is carried by this `toBeAttached()` alone — do not weaken it.
+  await expect(onLogin).toBeAttached()
+  await expect(page.locator('[data-auth-indicator]')).toBeVisible()
   await expect(onLogin.getByRole('link', { name: /sign in/i })).toHaveCount(0)
 
   // And the page's own sign-in card is untouched: this story removes the
@@ -145,17 +160,21 @@ for (const viewport of [
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
+    // The STRIP is the outer row since story 59.3 (see the docblock); the
+    // labelled region inside it is what holds the link.
+    const strip = page.locator('[data-auth-indicator]')
     const home = page.getByRole('status', { name: /account status/i })
     // Anti-vacuity: if the link were absent here too, equal heights would prove
     // nothing about removing it.
     await expect(home.getByRole('link', { name: /sign in/i })).toBeVisible()
-    const homeBox = await home.boundingBox()
+    const homeBox = await strip.boundingBox()
 
     await page.goto('/login')
     await page.waitForLoadState('networkidle')
     const login = page.getByRole('status', { name: /account status/i })
+    await expect(login).toBeAttached()
     await expect(login.getByRole('link', { name: /sign in/i })).toHaveCount(0)
-    const loginBox = await login.boundingBox()
+    const loginBox = await strip.boundingBox()
 
     expect(homeBox, 'the strip has no box on /').not.toBeNull()
     expect(loginBox, 'the strip has no box on /login').not.toBeNull()

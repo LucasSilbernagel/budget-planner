@@ -27,7 +27,7 @@
  * things in each. Read the enclosing describe before chasing an AC number.
  */
 
-import { act, render, renderWithRouter, screen, waitFor, within } from '@/test/utils'
+import { act, render, renderWithRouter, screen, userEvent, waitFor, within } from '@/test/utils'
 import {
   Link,
   Outlet,
@@ -41,7 +41,38 @@ import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
+
+/**
+ * Story 59.3 (AC-7): the account menu's Sign out goes through the ONE shared
+ * implementation. Wrapped, not replaced, exactly as in
+ * `settings/account-section.test.tsx`: the real body still runs, and the spy
+ * proves the menu reaches it rather than a copy.
+ */
+vi.mock('@/lib/account/sign-out', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/account/sign-out')>()
+  return {
+    ...real,
+    signOut: vi.fn(real.signOut),
+    returnToSignedOutHome: vi.fn(real.returnToSignedOutHome),
+  }
+})
+
+import { resetSignOutStateForTests, signOut } from '@/lib/account/sign-out'
 import { AuthIndicator } from '../auth-indicator'
+
+/**
+ * The labelled live region.
+ *
+ * ⚠️ Since story 59.3 a signed-in user's email is in the DOM up to THREE times:
+ * the `sr-only` copy in this region (what a screen reader hears), the VISIBLE
+ * copy in the account-menu trigger, and the panel's "Signed in as …" line while
+ * open. An unscoped `getByText(email)` therefore throws "multiple elements".
+ * Scope to the element whose claim the assertion makes: announced = this
+ * region; visible and truncating = the trigger.
+ */
+const accountStatus = () => screen.getByRole('status', { name: /account status/i })
+/** The same region, awaited: `renderWithRouter` mounts after the router loads. */
+const findAccountStatus = () => screen.findByRole('status', { name: /account status/i })
 
 const originalFetch = global.fetch
 
@@ -100,6 +131,9 @@ function renderSeeded(seed: SessionSeed | null, path?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // `signOut()` dedupes at module level; a suite that holds the logout POST
+  // open would otherwise leave that promise pending for every later test.
+  resetSignOutStateForTests()
 })
 afterEach(() => {
   global.fetch = originalFetch
@@ -191,7 +225,9 @@ describe('AuthIndicator', () => {
       renderWithRouter(<AuthIndicator />)
 
       // Wait for the session to resolve (email present) before asserting absence.
-      expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+      expect(
+        await within(await findAccountStatus()).findByText('user@example.com')
+      ).toBeInTheDocument()
       expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
     }
   )
@@ -238,7 +274,9 @@ describe('AuthIndicator', () => {
     }) as typeof global.fetch
 
     const { router } = renderWithNavigableRouter()
-    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(
+      await within(await findAccountStatus()).findByText('user@example.com')
+    ).toBeInTheDocument()
     expect(screen.getByText(/^premium$/i)).toBeInTheDocument()
 
     // Session ends elsewhere (e.g. a client-side sign-out): /api/auth/me now
@@ -268,6 +306,11 @@ describe('AuthIndicator', () => {
   // email can never truncate and the nav wraps to 2-3 rows instead (measured).
   // Class TOKENS, because jsdom computes no layout. The rendered row is pinned
   // with a mocked signed-in session in `e2e/nav-more-disclosure.paid.spec.ts`.
+  //
+  // Story 59.3: the row chrome, `data-auth-indicator` and `sm:min-w-0` moved
+  // from the status region to a new OUTER row, because the account-menu
+  // trigger must sit OUTSIDE the live region. The email that truncates is now
+  // the VISIBLE one, inside the trigger; the region's copy is `sr-only`.
   it('lets the strip yield width on the desktop row so a long email truncates', async () => {
     stubFetch({
       user: {
@@ -276,16 +319,21 @@ describe('AuthIndicator', () => {
         subscriptionStatus: 'active',
       },
     })
-    renderWithRouter(<AuthIndicator />)
-    await screen.findByText('a.long.address@example.test')
-    const strip = screen.getByRole('status', { name: /account status/i })
-    const stripTokens = [...strip.classList]
-    expect(stripTokens, 'the strip cannot shrink below its content on desktop').toContain(
+    const { container } = renderWithRouter(<AuthIndicator />)
+    await within(await findAccountStatus()).findByText('a.long.address@example.test')
+    const row = container.querySelector('[data-auth-indicator]') as HTMLElement
+    expect(row, 'the outer row carries `data-auth-indicator`').not.toBeNull()
+    expect(row.contains(accountStatus()), 'the status region sits inside the row').toBe(true)
+    const rowTokens = [...row.classList]
+    expect(rowTokens, 'the strip cannot shrink below its content on desktop').toContain(
       'sm:min-w-0'
     )
-    expect(stripTokens, '`min-w-0` must stay desktop-only').not.toContain('min-w-0')
-    const email = screen.getByText('a.long.address@example.test')
+    expect(rowTokens, '`min-w-0` must stay desktop-only').not.toContain('min-w-0')
+    const trigger = screen.getByRole('button', { name: 'Account menu' })
+    const email = within(trigger).getByText('a.long.address@example.test')
     expect([...email.classList]).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
+    // The trigger itself must be allowed to shrink, or the email never can.
+    expect([...trigger.classList]).toContain('min-w-0')
   })
 })
 
@@ -324,7 +372,9 @@ describe('AuthIndicator — "Upgrade" affordance (UX review, 2026-09-14)', () =>
     })
     renderWithRouter(<AuthIndicator />)
 
-    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(
+      await within(await findAccountStatus()).findByText('user@example.com')
+    ).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Upgrade' })).not.toBeInTheDocument()
   })
 })
@@ -341,7 +391,9 @@ describe('AuthIndicator — SSR seed (story UX-1)', () => {
 
     // The resolved state appears even though `/api/auth/me` never resolves, so it
     // is the SSR seed — not a round-trip — driving the first paint (no flip).
-    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(
+      await within(await findAccountStatus()).findByText('user@example.com')
+    ).toBeInTheDocument()
     expect(screen.getByText(/^premium$/i)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
   })
@@ -355,7 +407,9 @@ describe('AuthIndicator — SSR seed (story UX-1)', () => {
       subscriptionStatus: 'free',
     })
 
-    expect(await screen.findByText('user@example.com')).toBeInTheDocument()
+    expect(
+      await within(await findAccountStatus()).findByText('user@example.com')
+    ).toBeInTheDocument()
     expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
   })
 
@@ -595,5 +649,337 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
       await router.navigate({ to: '/' })
     })
     expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument()
+  })
+})
+
+/**
+ * The account menu (story 59.3, FR99).
+ *
+ * A signed-in user can sign out from the chrome. The trigger is a disclosure
+ * `<button aria-expanded>` (decision D1, Lucas 2026-09-22: NOT `<details>`,
+ * whose one benefit, JS-off reach, cannot apply to a fetch-based sign-out),
+ * and its panel is rendered ONLY while open. That is what makes the absence
+ * assertions below mean something: a closed `<details>` keeps its content in
+ * jsdom, where every query would still find it (story 59.2's silent greens).
+ *
+ * ⚠️ jsdom computes no layout and applies no media queries. Everything about
+ * SIZE, the mobile panel direction and occlusion is measured in
+ * `e2e/account-menu.spec.ts` / `.paid.spec.ts`. Here: structure, ARIA,
+ * behaviour, and class TOKENS.
+ */
+describe('AuthIndicator — account menu (story 59.3)', () => {
+  const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
+  const trigger = () => screen.getByRole('button', { name: 'Account menu' })
+  /** The panel, found through the id the OPEN trigger controls. Null when closed. */
+  const panel = () => {
+    const id = trigger().getAttribute('aria-controls')
+    return id === null ? null : document.getElementById(id)
+  }
+
+  async function renderSignedIn(user: Record<string, string> = USER) {
+    stubFetch({ user })
+    const result = renderWithRouter(<AuthIndicator />)
+    await within(await findAccountStatus()).findByText(user.email)
+    return result
+  }
+
+  it('offers a closed "Account menu" disclosure beside, not inside, the live region', async () => {
+    await renderSignedIn()
+
+    const button = trigger()
+    // EXACT name: the email is announced by the status region, and a compound
+    // name would break every full-string `getByRole` probe (AC-2).
+    expect(button).toHaveAccessibleName('Account menu')
+    expect(button).toHaveAttribute('type', 'button')
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(button).not.toHaveAttribute('aria-haspopup')
+    // No `aria-controls` while closed: the panel does not exist, and pointing
+    // at a missing id is a dangling IDREF (review finding).
+    expect(button).not.toHaveAttribute('aria-controls')
+    // Closed = absent, not merely hidden.
+    expect(document.querySelector('[role="dialog"], hr')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^sign out$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^sign out$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    // An interactive control inside a polite live region announces spuriously.
+    expect(accountStatus().contains(button)).toBe(false)
+    expect(accountStatus().querySelector('button, a, [tabindex]')).toBeNull()
+  })
+
+  it('shows [avatar][email][chevron] in the trigger and keeps the Premium pill outside it', async () => {
+    await renderSignedIn()
+
+    const button = trigger()
+    expect(within(button).getByText('U')).toBeInTheDocument()
+    expect(within(button).getByText('user@example.com')).toBeInTheDocument()
+    expect(button.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+
+    // Story 11-3's always-visible tier signal (WCAG 1.4.1): never behind a click.
+    const pill = within(accountStatus()).getByText(/^premium$/i)
+    expect(button.contains(pill)).toBe(false)
+    // The region still announces the email, via an `sr-only` copy.
+    const announced = within(accountStatus()).getByText('user@example.com')
+    expect([...announced.classList]).toContain('sr-only')
+  })
+
+  it('renders no trigger for a signed-out visitor or while the session is loading', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />)
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument()
+  })
+
+  it('renders no trigger in the loading state', async () => {
+    stubFetchPending()
+    renderWithRouter(<AuthIndicator />)
+    await screen.findByRole('status')
+    expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument()
+  })
+
+  it('opens to exactly "Signed in as {email}", a separator and Sign out', async () => {
+    const { container } = await renderSignedIn()
+    const user = userEvent.setup()
+
+    await user.click(trigger())
+
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true')
+    // Now that it is open, `aria-controls` appears AND resolves.
+    expect(trigger().getAttribute('aria-controls')).toBeTruthy()
+    const open = panel()
+    expect(open, 'aria-controls does not resolve to the panel').not.toBeNull()
+    const el = open as HTMLElement
+    expect(el).toHaveTextContent(/^Signed in as user@example\.com\s*Sign out$/)
+    expect(el.querySelectorAll('hr')).toHaveLength(1)
+    // One action, no destinations (FR90: Profiles/Report/Categories/Settings
+    // stay in the nav).
+    expect(within(el).getAllByRole('button')).toHaveLength(1)
+    expect(within(el).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+    expect(within(el).queryAllByRole('link')).toHaveLength(0)
+    // The panel is not a second live region (e2e/clear-local-data.spec.ts:65).
+    expect(accountStatus().contains(el)).toBe(false)
+    expect(container.querySelectorAll('[role="status"], [aria-live]')).toHaveLength(1)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    // Disclosure convention: opening does not move focus into the panel.
+    expect(trigger()).toHaveFocus()
+    // Tab reaches the panel next, in DOM order.
+    await user.tab()
+    expect(within(el).getByRole('button', { name: 'Sign out' })).toHaveFocus()
+  })
+
+  it('toggles closed on a second click', async () => {
+    await renderSignedIn()
+    const user = userEvent.setup()
+    await user.click(trigger())
+    await user.click(trigger())
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+    expect(panel()).toBeNull()
+  })
+
+  it('closes on Escape and returns focus to the trigger', async () => {
+    await renderSignedIn()
+    const user = userEvent.setup()
+    await user.click(trigger())
+    await user.tab()
+    await user.keyboard('{Escape}')
+    expect(panel()).toBeNull()
+    expect(trigger()).toHaveFocus()
+  })
+
+  it('closes on Escape WITHOUT stealing focus a control outside the menu already holds', async () => {
+    stubFetch({ user: USER })
+    renderWithRouter(
+      <>
+        <AuthIndicator />
+        <button type="button">elsewhere</button>
+      </>
+    )
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+    await user.click(trigger())
+    screen.getByRole('button', { name: 'elsewhere' }).focus()
+    await user.keyboard('{Escape}')
+    expect(panel()).toBeNull()
+    expect(screen.getByRole('button', { name: 'elsewhere' })).toHaveFocus()
+  })
+
+  it('closes on a press outside the menu, and not on a press inside the panel', async () => {
+    stubFetch({ user: USER })
+    renderWithRouter(
+      <>
+        <AuthIndicator />
+        <button type="button">elsewhere</button>
+      </>
+    )
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+    await user.click(trigger())
+
+    // Inside: the "Signed in as" line is not interactive, and pressing it must
+    // not dismiss the panel it belongs to.
+    await user.click(within(panel() as HTMLElement).getByText(/signed in as/i))
+    expect(panel()).not.toBeNull()
+
+    // The Premium pill is in the cluster but NOT in the menu: that is outside.
+    await user.click(within(accountStatus()).getByText(/^premium$/i))
+    expect(panel()).toBeNull()
+
+    await user.click(trigger())
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' })
+    await user.click(elsewhere)
+    expect(panel()).toBeNull()
+    // Light dismiss must not yank focus off what the user pressed.
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('closes on navigation, and does not come back open after a sign-out and back in', async () => {
+    let currentUser: unknown = USER
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/auth/me')) {
+        return Promise.resolve(new Response(JSON.stringify({ user: currentUser }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+    const { router } = renderWithNavigableRouter()
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+
+    // Pathname change closes it.
+    await user.click(trigger())
+    expect(panel()).not.toBeNull()
+    await act(async () => {
+      await router.navigate({ to: '/other' })
+    })
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+
+    // Signed out elsewhere while open: the trigger goes, and the open state
+    // must not survive to a later sign-in.
+    await user.click(trigger())
+    currentUser = null
+    await act(async () => {
+      await router.navigate({ to: '/' })
+    })
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument()
+
+    currentUser = USER
+    await act(async () => {
+      await router.navigate({ to: '/other' })
+    })
+    await within(await findAccountStatus()).findByText(USER.email)
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  describe('Sign out', () => {
+    const assign = vi.fn()
+    beforeEach(() => {
+      vi.stubGlobal('location', { ...globalThis.location, assign })
+    })
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('signs out through the shared implementation: logout POST, then a document load to /', async () => {
+      await renderSignedIn()
+      const user = userEvent.setup()
+      await user.click(trigger())
+      await user.click(screen.getByRole('button', { name: 'Sign out' }))
+
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('/'))
+      expect(signOut).toHaveBeenCalledTimes(1)
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/auth/logout',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    // ⚠️ What this actually proves, corrected in review: `userEvent` does not
+    // dispatch a click to a DISABLED element, so this exercises the `disabled`
+    // attribute, not a re-entry guard inside the handler. That is the honest
+    // mechanism for a second CLICK. The other mechanism — one sign-out per app,
+    // covering a same-tick double dispatch and the `/settings` control — lives
+    // in `signOut()` itself and is tested in `lib/account/sign-out.test.ts`
+    // ("joins an in-flight sign-out instead of sending a second POST").
+    it('disables Sign out once activated, so a second click sends no second POST', async () => {
+      stubFetch({ user: USER })
+      // Hold the logout POST open so the button stays in its pending state.
+      const base = global.fetch
+      global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).includes('/api/auth/logout')
+          ? new Promise<Response>(() => {})
+          : base(input, init)
+      ) as typeof global.fetch
+      renderWithRouter(<AuthIndicator />)
+      await within(await findAccountStatus()).findByText(USER.email)
+      const user = userEvent.setup()
+      await user.click(trigger())
+      const button = screen.getByRole('button', { name: 'Sign out' })
+      await user.click(button)
+      await user.click(button)
+
+      const logoutCalls = vi
+        .mocked(global.fetch)
+        .mock.calls.filter(([input]) => String(input).includes('/api/auth/logout'))
+      expect(logoutCalls).toHaveLength(1)
+      expect(button).toBeDisabled()
+    })
+  })
+
+  // Class TOKENS: jsdom applies no Tailwind. The rendered geometry (≥28px
+  // target, the downward mobile panel, its stacking) is measured in e2e.
+  it('carries the target-size and panel-placement tokens', async () => {
+    await renderSignedIn()
+    const user = userEvent.setup()
+    // 28px, not 32: a 32px trigger grew the 320px strip from 32 to 33px
+    // (measured in e2e), which is the layout shift story 13-2 reserves against.
+    expect([...trigger().classList]).toEqual(expect.arrayContaining(['min-h-[1.75rem]', 'px-2']))
+    expect([...trigger().classList]).not.toContain('min-h-[2rem]')
+    await user.click(trigger())
+    const tokens = [...(panel() as HTMLElement).classList]
+    expect(tokens).toEqual(
+      expect.arrayContaining([
+        // Mobile: full-width, hanging DOWN from the top strip (the mirror of the
+        // nav sheet's `max-sm:bottom-full`), scrollable if the viewport is short.
+        'max-sm:inset-x-0',
+        'max-sm:top-full',
+        // Desktop: right-aligned under the trigger, above page content.
+        'sm:right-0',
+        'sm:top-full',
+        'z-40',
+        'absolute',
+        'overflow-y-auto',
+        // Opaque in both themes.
+        'bg-white',
+        'dark:bg-gray-800',
+      ])
+    )
+    expect([
+      ...within(panel() as HTMLElement).getByRole('button', { name: 'Sign out' }).classList,
+    ]).toEqual(expect.arrayContaining(['py-2', 'text-sm']))
+  })
+})
+
+// Decision D2 (Lucas, 2026-09-22): the trigger's email is hidden where it
+// measures under 24px, which for a Premium user is below 660px. The pill is
+// what takes the room, so a free user keeps the email at every desktop width.
+// Class TOKENS here; the measured widths live in ONE place,
+// `e2e/account-menu.paid.spec.ts` — deliberately not restated.
+describe('AuthIndicator — account menu email at narrow desktop widths (story 59.3, D2)', () => {
+  it.each([
+    ['active', true],
+    ['lifetime', true],
+    ['free', false],
+    ['past_due', false],
+    ['canceled', false],
+  ])('a %s user: email hidden below 660px = %s', async (subscriptionStatus, hidden) => {
+    stubFetch({ user: { userId: 'u', email: 'user@example.com', subscriptionStatus } })
+    renderWithRouter(<AuthIndicator />)
+    await within(await findAccountStatus()).findByText('user@example.com')
+    const email = within(screen.getByRole('button', { name: 'Account menu' })).getByText(
+      'user@example.com'
+    )
+    expect(email.classList.contains('sm:max-[659.98px]:hidden')).toBe(hidden)
+    // The pill and the rule read ONE predicate: hidden exactly when the pill shows.
+    expect(within(accountStatus()).queryByText(/^premium$/i) !== null).toBe(hidden)
   })
 })

@@ -271,8 +271,17 @@ test.describe('hydration', () => {
     // the link is in the server HTML from the first byte. The ordering was never
     // load-bearing — but a reader should not have to re-run that mutation to
     // find out, so the assertion now sits where it plainly cannot race.
+    //
+    // ⚠️ Story 59.3 split the strip in two: the outer row
+    // (`[data-auth-indicator]`) carries the chrome and the height reserve, and
+    // the labelled region is a child of it, because the new account-menu
+    // trigger cannot sit inside a live region. On `/login` the signed-out
+    // region has no children, so its width is 0 and Playwright calls it
+    // hidden. The precondition is unchanged in meaning: the region is present,
+    // and the strip it lives in is on screen.
     const indicator = page.getByRole('status', { name: /account status/i })
-    await expect(indicator).toBeVisible()
+    await expect(indicator).toBeAttached()
+    await expect(page.locator('[data-auth-indicator]')).toBeVisible()
 
     await page.waitForLoadState('networkidle')
 

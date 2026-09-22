@@ -79,6 +79,17 @@ for (const width of [640, 1024, 1280] as const) {
  * could shrink, and the nav, with the larger basis, wrapped first. Fixed by
  * `sm:shrink-0` on the nav plus `sm:min-w-0` on the account strip, so the email
  * truncates instead. Mutation-measured: remove either token and this goes red.
+ *
+ * ⚠️ RE-POINTED by story 59.3. The VISIBLE email moved into the account-menu
+ * trigger, and the status region keeps only an `sr-only` copy (1px wide). The
+ * old lookup, `strip.getByText(LONG_EMAIL)` inside the region, went on PASSING
+ * against 59.3's code while measuring that 1px copy: `1 < 335` and `1 > 0`. A
+ * silent green, seen green before this change and red after it under the
+ * mutation recorded in the story. It now measures the trigger's email.
+ *
+ * And 640px is no longer where to see the truncation: since 59.3 a Premium
+ * user's email is HIDDEN below 660px (decision D2). So the truncation is read
+ * at 660px. The widths themselves belong to `account-menu.paid.spec.ts`.
  */
 test('a signed-in Premium user with a long email gets ONE row at every desktop width', async ({
   page,
@@ -90,16 +101,22 @@ test('a signed-in Premium user with a long email gets ONE row at every desktop w
 
   // Precondition: this really is the signed-in cluster, with the Premium pill.
   const strip = page.getByRole('status', { name: /account status/i })
-  await expect(strip.getByText(LONG_EMAIL)).toHaveCount(1)
   await expect(strip.getByText('Premium', { exact: true })).toBeVisible()
+  const trigger = page.getByRole('button', { name: 'Account menu' })
+  const email = trigger.getByText(LONG_EMAIL, { exact: true })
+  await expect(email).toHaveCount(1)
 
-  // The mechanism, at the narrowest desktop width: the EMAIL gives way.
-  const email = await strip.getByText(LONG_EMAIL).evaluate((el) => ({
+  // Precondition only. What the email does across widths — hidden below 660px
+  // for a Premium user, truncated above it — is asserted with its measured
+  // table in `account-menu.paid.spec.ts`, which is the ONE place those numbers
+  // live. Review caught this block restating them.
+  await page.setViewportSize({ width: 660, height: 800 })
+  await expect(email).toBeVisible()
+  const width = await email.evaluate((el) => ({
     visible: el.clientWidth,
     full: el.scrollWidth,
   }))
-  expect(email.visible, 'the email did not truncate at 640px').toBeLessThan(email.full)
-  expect(email.visible, 'the email truncated to nothing at 640px').toBeGreaterThan(0)
+  expect(width.visible, 'the email did not truncate at 660px').toBeLessThan(width.full)
 
   expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
 })

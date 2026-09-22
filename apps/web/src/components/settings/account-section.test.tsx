@@ -32,6 +32,23 @@ vi.mock('@/lib/account/purge-local-financial-data', () => ({ purgeLocalFinancial
  */
 const assign = vi.fn()
 
+/**
+ * Story 59.3 (AC-7): sign-out lives in ONE shared module, called from here and
+ * from the chrome's account menu. The module is WRAPPED, not replaced: every
+ * export still runs its real body (so `assign` above still fires), and the
+ * spies prove this component reaches it through the shared function rather
+ * than a second copy. The same wrap is used in `auth-indicator.test.tsx`.
+ */
+vi.mock('@/lib/account/sign-out', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/account/sign-out')>()
+  return {
+    ...real,
+    signOut: vi.fn(real.signOut),
+    returnToSignedOutHome: vi.fn(real.returnToSignedOutHome),
+  }
+})
+
+import { resetSignOutStateForTests, returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
 import { AccountSection } from './account-section'
 
 const originalFetch = global.fetch
@@ -54,6 +71,7 @@ function stubFetch({ user, deleteOk }: { user: unknown; deleteOk?: boolean }) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetSignOutStateForTests()
   // jsdom's `location.assign` is not implemented and logs "Not implemented:
   // navigation" if called for real, so it is replaced rather than spied.
   vi.stubGlobal('location', { ...globalThis.location, assign })
@@ -113,6 +131,29 @@ describe('AccountSection', () => {
     // (bp-sync-queue-<userId>) is cleared too.
     await waitFor(() => expect(purgeLocalFinancialData).toHaveBeenCalledWith('user-42'))
     await waitFor(() => expect(assign).toHaveBeenCalledWith('/'))
+    // The post-deletion exit is the shared document-load helper (story 59.3).
+    expect(returnToSignedOutHome).toHaveBeenCalledTimes(1)
+    // NOT a second logout POST: the delete endpoint already cleared the session.
+    expect(signOut).not.toHaveBeenCalled()
+  })
+
+  // Story 59.3 (AC-7). There was no test of this button before: the only
+  // assertion was that it rendered.
+  it('signs out through the shared implementation: logout POST, then a document load to /', async () => {
+    stubFetch({
+      user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' },
+    })
+    const user = userEvent.setup()
+    render(<AccountSection />)
+
+    await user.click(await screen.findByRole('button', { name: /^sign out$/i }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'))
+    expect(signOut).toHaveBeenCalledTimes(1)
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/auth/logout',
+      expect.objectContaining({ method: 'POST' })
+    )
   })
 
   it('shows a VISIBLE inline error (dialog closed) and does NOT sign out when erasure fails', async () => {
