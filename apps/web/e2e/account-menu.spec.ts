@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  SESSION_SETTLE_MS,
   accountPanel,
   accountTrigger,
   openAccountMenu,
@@ -9,6 +10,7 @@ import {
   LONG_EMAIL,
   MORE_SUMMARY,
   isMoreOpen,
+  mockSessionThatCanEnd,
   mockSignedIn,
   openMore,
   sweepHeaderRow,
@@ -36,20 +38,22 @@ async function gotoSignedIn(
 ) {
   await mockSignedIn(page, { subscriptionStatus })
   await page.goto(path)
-  await expect(accountTrigger(page)).toBeVisible()
+  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
 }
 
 test('signs out end to end: one logout POST, then a document load to /', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   let logoutPosts = 0
+  const session = await mockSessionThatCanEnd(page, { subscriptionStatus: 'free' })
   await page.route('**/api/auth/logout', async (route) => {
     if (route.request().method() === 'POST') logoutPosts += 1
-    // The session ends: from here on the server reports nobody signed in.
-    await page.unroute('**/api/auth/me')
-    await page.route('**/api/auth/me', (r) => r.fulfill({ json: { user: null } }))
+    // The session ends: from here on the mock reports nobody signed in. A flag,
+    // not a re-route from inside a live route handler (`mockSessionThatCanEnd`).
+    session.signedOut = true
     await route.fulfill({ json: { success: true } })
   })
-  await gotoSignedIn(page, '/income')
+  await page.goto('/income')
+  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
   // A marker that only survives a CLIENT navigation. Its absence afterwards
   // proves a document load, which is the whole point of the shared sign-out
   // (`lib/account/sign-out.ts`): a client navigation keeps the seed-once nav
@@ -83,12 +87,20 @@ for (const width of [320, 1280] as const) {
   test(`the menu opens, holds Sign out and is painted over on no page at ${width}px`, async ({
     page,
   }) => {
+    // ⚠️ SIX full document loads, each one gated on the post-mount session
+    // fetch before the menu can be opened and swept. That does not fit the
+    // default 30s test budget on a loaded runner: both widths of this test
+    // flaked in CI run 35773034960 and again in 35782927398. `test.slow()`
+    // triples the budget; it does not weaken a single assertion below.
+    test.slow()
     await page.setViewportSize({ width, height: 800 })
     await mockSignedIn(page, { subscriptionStatus: 'free' })
     const problems: string[] = []
     for (const route of ROUTES) {
       await page.goto(route)
-      await expect(accountTrigger(page), `no trigger on ${route}`).toBeVisible()
+      await expect(accountTrigger(page), `no trigger on ${route}`).toBeVisible({
+        timeout: SESSION_SETTLE_MS,
+      })
       const panel = await openAccountMenu(page)
       await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
       await expect(panel).toContainText(`Signed in as ${LONG_EMAIL}`)
@@ -176,7 +188,7 @@ test('the 320px strip is the same height signed in as signed out (no layout shif
 
   await mockSignedIn(page, { subscriptionStatus: 'active' })
   await page.reload()
-  await expect(accountTrigger(page)).toBeVisible()
+  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
   const signedIn = await strip.boundingBox()
 
   expect(signedOut?.height ?? 0).toBeGreaterThan(0)
@@ -268,7 +280,7 @@ test('a FREE signed-in user with a long email keeps one header row and a legible
   await mockSignedIn(page, { subscriptionStatus: 'free' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
-  await expect(accountTrigger(page)).toBeVisible()
+  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
   // No Premium pill for a free user, so the email keeps the room the pill
   // would take, and the narrow-width hiding (Premium only) does not apply.
   const strip = page.getByRole('status', { name: /account status/i })
@@ -301,7 +313,7 @@ test('a PREMIUM signed-in cluster on the free nav also keeps the header to one r
   await mockSignedIn(page, { subscriptionStatus: 'active' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
-  await expect(accountTrigger(page)).toBeVisible()
+  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
   await expect(
     page.getByRole('status', { name: /account status/i }).getByText('Premium', { exact: true })
   ).toBeVisible()

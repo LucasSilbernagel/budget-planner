@@ -91,6 +91,23 @@ export async function moreExpandedInAxTree(page: Page): Promise<boolean | null> 
 export const LONG_EMAIL = 'alexandra.montgomery-whitfield@example.test'
 
 /**
+ * Hold the stubbed `/api/auth/me` for this many ms before fulfilling it.
+ *
+ * Defaults to 0, so it changes nothing unless asked for. It exists because a
+ * CI-only failure in this area is a RACE, and re-running locally cannot
+ * reproduce a race — delaying the stubbed fetch can. Measured with it, on
+ * `account-menu.paid.spec.ts` at 8000:
+ *
+ *   before this file's fixes: 2 failed, 5 passed
+ *   after:                    7 passed
+ *
+ * The 2 failures were the same assertion CI run 35782927398 failed on.
+ *
+ *   E2E_AUTH_DELAY_MS=8000 pnpm --filter web test:e2e e2e/account-menu.paid.spec.ts
+ */
+const AUTH_DELAY_MS = Number(process.env.E2E_AUTH_DELAY_MS ?? 0)
+
+/**
  * Render a SIGNED-IN account cluster (story 59.2 code review).
  *
  * The e2e servers have no real session, so `AuthIndicator`'s post-mount
@@ -107,9 +124,44 @@ export async function mockSignedIn(
     subscriptionStatus = 'active',
   }: { email?: string; subscriptionStatus?: string } = {}
 ) {
-  await page.route('**/api/auth/me', (route) =>
-    route.fulfill({ json: { user: { userId: 'e2e-signed-in', email, subscriptionStatus } } })
-  )
+  await page.route('**/api/auth/me', async (route) => {
+    if (AUTH_DELAY_MS > 0) await new Promise((r) => setTimeout(r, AUTH_DELAY_MS))
+    await route.fulfill({ json: { user: { userId: 'e2e-signed-in', email, subscriptionStatus } } })
+  })
+}
+
+/**
+ * A mocked session that a test can END mid-run, for sign-out flows.
+ *
+ * ⚠️ Why this exists rather than re-routing inside the logout handler: the two
+ * sign-out tests used to call `page.unroute()` + `page.route()` from INSIDE the
+ * logout route handler, i.e. they mutated the route table while a click was
+ * awaiting that very dispatch. In CI run 35782927398 the free-server sign-out
+ * click then hung for the full 30s test timeout, having already resolved the
+ * button as "visible, enabled and stable".
+ *
+ * ⚠️ That hang is NOT proven to be caused by the re-routing — a red run
+ * localises a failure, it does not explain one. This returns a flag the
+ * handler flips instead, which removes the re-entrancy as a variable without
+ * claiming it was the culprit.
+ */
+export async function mockSessionThatCanEnd(
+  page: Page,
+  {
+    email = LONG_EMAIL,
+    subscriptionStatus = 'active',
+  }: { email?: string; subscriptionStatus?: string } = {}
+): Promise<{ signedOut: boolean }> {
+  const session = { signedOut: false }
+  await page.route('**/api/auth/me', async (route) => {
+    if (AUTH_DELAY_MS > 0) await new Promise((r) => setTimeout(r, AUTH_DELAY_MS))
+    await route.fulfill({
+      json: {
+        user: session.signedOut ? null : { userId: 'e2e-signed-in', email, subscriptionStatus },
+      },
+    })
+  })
+  return session
 }
 
 /**
@@ -122,21 +174,30 @@ export async function sweepHeaderRow(
   { from = 640, to = 1400, step = 5 }: { from?: number; to?: number; step?: number } = {}
 ) {
   const failures: string[] = []
+  // ⚠️ The cluster is mounted by the post-mount session fetch, not by the SSR
+  // HTML on the free server. Without this gate the FIRST `page.evaluate` below
+  // could deref a null `[data-auth-indicator]` and die with a TypeError that
+  // says nothing about the header row — which is exactly what
+  // `account-menu.paid.spec.ts:209` did in CI run 35782927398.
+  await page.locator('[data-auth-indicator]').waitFor({ state: 'attached', timeout: 15_000 })
   for (let width = from; width <= to; width += step) {
     await page.setViewportSize({ width, height: 800 })
     const m = await page.evaluate((nav) => {
       const items = [...document.querySelectorAll(`${nav} > ul > li`)]
-      const cluster = document.querySelector('[data-auth-indicator]') as HTMLElement
+      const cluster = document.querySelector('[data-auth-indicator]')
       return {
         rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
         docOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        clusterRight: cluster.getBoundingClientRect().right,
+        // `null` is reported as a failure below, never dereferenced: the
+        // cluster can unmount mid-sweep if the session flips.
+        clusterRight: cluster ? cluster.getBoundingClientRect().right : null,
         innerWidth: document.documentElement.clientWidth,
       }
     }, NAV)
     if (m.rows !== 1) failures.push(`${width}px: ${m.rows} rows`)
+    if (m.clusterRight === null) failures.push(`${width}px: no account cluster in the document`)
     if (m.docOverflow > 0) failures.push(`${width}px: document overflows by ${m.docOverflow}px`)
-    if (m.clusterRight > m.innerWidth + 0.5)
+    if (m.clusterRight !== null && m.clusterRight > m.innerWidth + 0.5)
       failures.push(`${width}px: account cluster ends at ${m.clusterRight}`)
   }
   return failures

@@ -1,10 +1,16 @@
 import { expect, test } from '@playwright/test'
-import { accountTrigger, openAccountMenu } from './helpers/account-menu'
+import {
+  SESSION_SETTLE_MS,
+  accountTrigger,
+  expectSignedInAs,
+  openAccountMenu,
+} from './helpers/account-menu'
 import {
   LONG_EMAIL,
   MORE_PANEL,
   MORE_SUMMARY,
   isMoreOpen,
+  mockSessionThatCanEnd,
   mockSignedIn,
   openMore,
   sweepHeaderRow,
@@ -118,6 +124,11 @@ test('the trigger email is hidden where it would be an ellipsis, and grows with 
   await mockSignedIn(page, { subscriptionStatus: 'active' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
+  // ⚠️ Gate FIRST. The SSR seed paints a complete cluster carrying the SEED's
+  // email (`e2e-paid@example.test`) in the first frame, so waiting on the
+  // trigger alone would let this measure the wrong identity — or, as in CI run
+  // 35782927398, find no LONG_EMAIL at all and fail after 5s.
+  await expectSignedInAs(page, LONG_EMAIL)
   const email = accountTrigger(page).getByText(LONG_EMAIL, { exact: true })
   await expect(email).toHaveCount(1)
 
@@ -155,7 +166,7 @@ test('a paid signed-in cluster keeps the header to ONE row at every desktop widt
   await mockSignedIn(page, { subscriptionStatus: 'active' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
-  await expect(accountTrigger(page)).toBeVisible()
+  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
   expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
 })
 
@@ -190,19 +201,23 @@ test('a signed-in user signs out from the paid chrome too, at 2400px', async ({ 
   // viewport, where the header is capped by `max-w-6xl` rather than the window.
   await page.setViewportSize({ width: 2400, height: 900 })
   let logoutPosts = 0
+  const session = await mockSessionThatCanEnd(page, { subscriptionStatus: 'active' })
   await page.route('**/api/auth/logout', async (route) => {
     if (route.request().method() === 'POST') logoutPosts += 1
-    await page.unroute('**/api/auth/me')
-    await page.route('**/api/auth/me', (r) => r.fulfill({ json: { user: null } }))
+    // The session ends: from here on the mock reports nobody signed in. A flag,
+    // not a re-route from inside a live route handler (`mockSessionThatCanEnd`).
+    session.signedOut = true
     await route.fulfill({ json: { success: true } })
   })
-  await mockSignedIn(page, { subscriptionStatus: 'active' })
   await page.goto('/report')
   const panel = await openAccountMenu(page, { acrossHydration: true })
   await panel.getByRole('button', { name: 'Sign out' }).click()
 
   await expect(page).toHaveURL(/\/$/)
-  await expect(accountTrigger(page)).toHaveCount(0)
+  // ⚠️ This server's SSR seed is authenticated, so the reload REPAINTS the
+  // trigger and it is removed only once the post-mount fetch reports signed-out.
+  // The default 5s was not enough for that on CI (run 35782927398).
+  await expect(accountTrigger(page)).toHaveCount(0, { timeout: SESSION_SETTLE_MS })
   expect(logoutPosts, 'expected exactly one logout POST').toBe(1)
 })
 
@@ -216,7 +231,9 @@ test('a FREE signed-in cluster on the paid nav also keeps the header to one row'
   await mockSignedIn(page, { subscriptionStatus: 'free' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
-  await expect(accountTrigger(page)).toBeVisible()
+  // The seed is PAID, so the free cluster this test is about exists only after
+  // the mocked fetch lands. Gate on the identity, not just on the trigger.
+  await expectSignedInAs(page, LONG_EMAIL)
   await expect(
     page.getByRole('status', { name: /account status/i }).getByText('Premium', { exact: true })
   ).toHaveCount(0)

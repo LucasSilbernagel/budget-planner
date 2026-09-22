@@ -15,8 +15,43 @@
  */
 import { type Locator, type Page, expect } from '@playwright/test'
 
+/**
+ * How long to wait for the cluster to reflect the MOCKED session.
+ *
+ * ⚠️ Not a style choice. Every assertion about the cluster is really an
+ * assertion about the post-mount `fetch('/api/auth/me')` in
+ * `auth-indicator.tsx` having resolved AND re-rendered. That is hydration plus
+ * a round trip, and on a loaded CI runner it does not reliably finish inside
+ * Playwright's default 5s `expect` timeout: CI run 35782927398 failed
+ * `account-menu.paid.spec.ts:115` on both attempts with "13 × locator resolved
+ * to 0 elements", and left four more account-menu tests flaky. The default is
+ * right for a rendered fact; it is wrong for a network-gated one.
+ */
+export const SESSION_SETTLE_MS = 15_000
+
 export function accountTrigger(page: Page): Locator {
   return page.getByRole('button', { name: 'Account menu', exact: true })
+}
+
+/**
+ * Wait until the cluster shows the MOCKED identity, not a seeded one.
+ *
+ * ⚠️ On the `:5174` paid server the SSR seed paints a complete, authenticated
+ * cluster — with the SEED's email — in the first frame, so `accountTrigger`
+ * being visible proves nothing about whether `mockSignedIn()` has landed. A
+ * test that measures the email without this gate measures whichever identity
+ * won the race. That is how CI run 35782927398 failed, and had the two emails
+ * been similar enough it would have passed while measuring the wrong one.
+ *
+ * `toContainText` reads `textContent`, so this holds while the trigger's email
+ * span is `display:none` (the 640-660px premium hide), and scoping to the
+ * trigger skips the `sr-only` duplicate in the `role="status"` region.
+ */
+export async function expectSignedInAs(page: Page, email: string): Promise<void> {
+  await expect(
+    accountTrigger(page),
+    `the mocked session never reached the trigger: still not showing ${email}`
+  ).toContainText(email, { timeout: SESSION_SETTLE_MS })
 }
 
 /**
