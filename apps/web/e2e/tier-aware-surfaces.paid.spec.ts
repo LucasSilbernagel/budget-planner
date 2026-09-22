@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { MORE_SUMMARY } from './helpers/nav-more'
 
 /**
  * The Overview and Settings premium surfaces, on a REAL paid session
@@ -108,18 +109,30 @@ test.describe('the paid Overview drops the Premium Features section (D1)', () =>
     await goto(page, '/')
     await assertOverviewRendered(page)
 
+    // ⚠️⚠️ REACH, not presence (story 59.2). Since 59.2 these four rows sit in
+    // the nav's More `<details>` at EVERY width, closed by default. The CSS
+    // count this test used to make (`li[data-nav-path] a[href]` →
+    // `toHaveCount(1)`) still passes on rows a user cannot see: CSS locators
+    // match the content of a closed `<details>`. So the disclosure is opened
+    // the way a user opens it, and each row must then be a VISIBLE link whose
+    // href is the route. The per-route `data-nav-path` + href scoping is kept,
+    // because it catches a broken `to` with an intact attribute (code review,
+    // 2026-09-21).
+    await page.locator(MORE_SUMMARY).click()
     for (const route of ['/forecasting', '/profiles', '/report', '/categories']) {
-      // ⚠️ Assert the ANCHOR and its href, not just `li[data-nav-path=…]`. An
-      // earlier version counted the attribute alone, which a hidden item or a
-      // broken `to` with an intact `data-nav-path` would satisfy — and this is
-      // the ONLY e2e evidence that removing the cards is safe rather than a
-      // regression (code review, 2026-09-21).
       const link = page.locator(
         `nav[aria-label="Primary"] li[data-nav-path="${route}"] a[href="${route}"]`
       )
       await expect(link, `the nav must still reach ${route}`).toHaveCount(1)
+      await expect(link, `${route} is in the nav but a user cannot see it`).toBeVisible()
       await expect(link, `${route} must be an attached, non-empty anchor`).not.toBeEmpty()
     }
+    // And a user can actually FOLLOW one: the claim is a route, not a rendering.
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('link', { name: 'Report', exact: true })
+      .click()
+    await expect(page).toHaveURL(/\/report$/)
   })
 })
 

@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { MORE_PANEL, MORE_SUMMARY, NAV } from './helpers/nav-more'
 
 /**
  * Global chrome (Footer + mobile bottom nav) at 320px E2E (Story 18-2 / UX-DR23,
@@ -27,7 +28,8 @@ import { type Page, expect, test } from '@playwright/test'
  *     scoped to the `[data-nav-label]` span, which is what "the label is on one
  *     line" is actually a claim about.
  *   - The loop used to iterate all `nav a`. Three of those seven anchors are now
- *     the sheet's rows, which are `display: none` while the sheet is closed and
+ *     the sheet's rows, which were `display: none` while the sheet was closed
+ *     (hidden by the closed `<details>` since story 59.2) and
  *     therefore measure `height: 0` — so the >=44px assertion failed on the
  *     SHEET rather than on the bar. Every measurement here is scoped to the
  *     bar's own direct cells.
@@ -51,7 +53,6 @@ import { type Page, expect, test } from '@playwright/test'
  */
 
 const NARROW_WIDTH = 320
-const NAV = 'nav[aria-label="Primary"]'
 
 /** The four destinations that keep a cell in the bar. */
 const BAR_LABELS = ['Overview', 'Income', 'Expenses', 'Savings'] as const
@@ -60,8 +61,9 @@ const SHEET_LABELS = ['Balances', 'Retirement', 'Settings'] as const
 
 /**
  * The bar's own cells, structurally: anchors that are direct grandchildren of
- * the outer `<ul>`. The sheet's rows sit one level deeper (`> li > ul > li > a`),
- * so this selector cannot drift onto them however the sheet is styled.
+ * the outer `<ul>`. The sheet's rows sit deeper (`> li > details > ul > li > a`
+ * since story 59.2), so this selector cannot drift onto them however the sheet
+ * is styled. It also skips the More `<summary>`, which is measured separately.
  */
 const BAR_CELL_SELECTOR = `${NAV} > ul > li > a`
 
@@ -106,15 +108,18 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
     const cells = await readBarCells(page)
     expect(cells.map((c) => c.label)).toEqual([...BAR_LABELS])
 
-    // Exactly one More trigger, scoped and EXACT: Playwright name matching is
-    // substring by default, and the home page also carries a
-    // "More information about net worth" button, so an unscoped non-exact
-    // locator is a hard strict-mode failure on `/`.
-    await expect(nav.getByRole('button', { name: 'More', exact: true })).toHaveCount(1)
+    // Exactly one More trigger. Since story 59.2 it is a native `<summary>`,
+    // which Playwright gives NO role, so it is located by selector
+    // (`helpers/nav-more.ts`). Its label is pinned so the count cannot pass on
+    // some other `<summary>`.
+    await expect(page.locator(MORE_SUMMARY)).toHaveCount(1)
+    await expect(page.locator(MORE_SUMMARY)).toHaveText('More')
 
     // The negative claim this story is actually about: with the sheet closed the
-    // More destinations are not reachable in the bar. Role locators respect
-    // `display: none`; the CSS `locator('a')` count deliberately is NOT used here
+    // More destinations are not reachable in the bar. Role locators exclude the
+    // content of a CLOSED `<details>` (the sheet's mechanism since story 59.2;
+    // it was `display: none` before). The CSS `locator('a')` count
+    // deliberately is NOT used here
     // because it still returns every anchor (7 since 43.3) and would pass on a
     // bar that shows all of them.
     // ⚠️ POSITIVE CONTROL, added by story 59.1 — do not drop it. The absence
@@ -136,8 +141,8 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
     // Only ROLE locators exclude hidden nodes — which is exactly what makes the
     // absence loop below a real "not visible in the bar" check. Do not carry the
     // old claim forward; a text locator is a poor visibility assertion.
-    const sheetLabels = await nav
-      .locator(':scope > ul > li > ul > li > a')
+    const sheetLabels = await page
+      .locator(`${MORE_PANEL} > li > a`)
       .evaluateAll((els) => els.map((el) => el.textContent?.trim()))
     expect(
       sheetLabels,
@@ -165,15 +170,12 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
       expect(height, `"${label}" tap target is under 44px`).toBeGreaterThanOrEqual(44)
     }
 
-    // The More trigger is a cell too, and it is a <button> — every anchor-scoped
-    // sweep in this suite skips it.
-    const trigger = await page
-      .getByRole('navigation', { name: 'Primary' })
-      .getByRole('button', { name: 'More', exact: true })
-      .evaluate((el) => ({
-        height: Math.round(el.getBoundingClientRect().height),
-        overflows: el.scrollWidth > el.clientWidth,
-      }))
+    // The More trigger is a cell too, and it is not an anchor (a `<summary>`
+    // since story 59.2), so every anchor-scoped sweep in this suite skips it.
+    const trigger = await page.locator(MORE_SUMMARY).evaluate((el) => ({
+      height: Math.round(el.getBoundingClientRect().height),
+      overflows: el.scrollWidth > el.clientWidth,
+    }))
     expect(trigger.overflows, 'the More label overflows its cell at 320px').toBe(false)
     expect(trigger.height, 'the More tap target is under 44px').toBeGreaterThanOrEqual(44)
   })

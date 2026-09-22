@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { MORE_PANEL, MORE_SUMMARY, isMoreOpen, moreExpandedInAxTree } from './helpers/nav-more'
 
 /**
  * Global navigation E2E (story 11-1).
@@ -11,33 +12,43 @@ import { expect, test } from '@playwright/test'
  *  - AC-1/AC-4: the nav is present on a deep sub-page (replacing the removed
  *    per-page footer link blocks).
  *  - AC-2: the current route is marked `aria-current="page"`.
- *  - The core promise: from a deep sub-page you can reach another section in a
- *    single click without routing back through Home.
+ *  - The core promise: from a deep sub-page you can reach another section
+ *    without routing back through Home. Since story 59.2 that is one click for
+ *    the four bar tabs, and two (More, then the row) for everything else.
  *  - AC-3: the nav stays usable at a narrow (mobile/PWA) viewport.
  *  - Story 31.5: below `sm` only four destinations keep a bar cell; the other
- *    three are disclosed by a "More" trigger. The tests above run at the default
- *    desktop viewport, where `sm:contents` dissolves the sheet back into the one
- *    row and all seven destinations are ordinary links — which is why they are
- *    unchanged. The mobile half lives in the `describe` at the bottom.
+ *    three are disclosed by a "More" trigger. Since story 59.2 the SAME is true
+ *    at the default desktop viewport: `sm:contents` no longer dissolves the
+ *    panel into the row, so the tests above open More before reaching a panel
+ *    destination. The mobile half lives in the `describe` at the bottom; the
+ *    desktop dismissal, focus and JS-off coverage is in
+ *    `nav-more-disclosure.spec.ts`.
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
  */
 
-test('reaches another section from a deep sub-page in one click', async ({ page }) => {
+test('reaches another section from a deep sub-page without a detour through Home', async ({
+  page,
+}) => {
   await page.goto('/savings')
   await page.waitForLoadState('networkidle')
 
   const nav = page.getByRole('navigation', { name: 'Primary' })
   await expect(nav).toBeVisible()
 
-  // One click from Savings to the Balance Tracking page — no detour through the
-  // Home dashboard. (The nav entry reads "Balances" since 59.1; the PAGE keeps
-  // its longer name, deliberately — FR89.)
+  // From Savings to the Balance Tracking page with no detour through the Home
+  // dashboard: More, then the row. That was ONE click until story 59.2 put
+  // Balances behind the More disclosure at every width. (The nav entry reads
+  // "Balances" since 59.1; the PAGE keeps its longer name, deliberately — FR89.)
+  await page.locator(MORE_SUMMARY).click()
   await nav.getByRole('link', { name: 'Balances', exact: true }).click()
   await expect(page).toHaveURL(/\/balance$/)
 
-  // The destination is marked active in the hydrated DOM.
+  // The destination is marked active in the hydrated DOM. Choosing the row
+  // closed the panel, so reopen it to read the row.
+  await expect.poll(() => isMoreOpen(page)).toBe(false)
+  await page.locator(MORE_SUMMARY).click()
   await expect(nav.getByRole('link', { name: 'Balances', exact: true })).toHaveAttribute(
     'aria-current',
     'page'
@@ -54,16 +65,22 @@ test('marks the current section active and leaves others inactive', async ({ pag
   await expect(nav.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current')
 })
 
-test('reaches the Retirement Planner from the nav in one click', async ({ page }) => {
+test('reaches the Retirement Planner from the nav', async ({ page }) => {
   await page.goto('/income')
   await page.waitForLoadState('networkidle')
 
   // Story 15-1: /retirement was a docs-only nav-orphan; it is now a first-class
-  // nav destination, reachable in a single click and marked active on arrival.
+  // nav destination, marked active on arrival. It was a SINGLE click until story
+  // 59.2 moved it behind the More disclosure at every width.
   const nav = page.getByRole('navigation', { name: 'Primary' })
+  await page.locator(MORE_SUMMARY).click()
   await nav.getByRole('link', { name: 'Retirement' }).click()
   await expect(page).toHaveURL(/\/retirement$/)
 
+  // Wait for the close to commit before reopening, or the reopening click can
+  // land on a still-open panel and CLOSE it.
+  await expect.poll(() => isMoreOpen(page)).toBe(false)
+  await page.locator(MORE_SUMMARY).click()
   await expect(nav.getByRole('link', { name: 'Retirement' })).toHaveAttribute(
     'aria-current',
     'page'
@@ -76,6 +93,8 @@ test('reaches the consolidated settings surface from the nav', async ({ page }) 
   await page.waitForLoadState('networkidle')
 
   const nav = page.getByRole('navigation', { name: 'Primary' })
+  // Behind More since story 59.2, at every width.
+  await page.locator(MORE_SUMMARY).click()
   await nav.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/\/settings$/)
 
@@ -120,18 +139,19 @@ test('stays usable at a narrow mobile viewport', async ({ page }) => {
  * green through a broken implementation at ten call sites, and which was
  * measured PASSING on a sheet rendered entirely off-screen at y=-279.
  *
- * ⚠️ The More locator is scoped to the nav AND `exact: true`. Playwright name
- * matching is substring by default and the home page also carries a
- * "More information about net worth" button, so an unscoped, non-exact locator
- * is a hard strict-mode failure on `/`.
+ * ⚠️ Since story 59.2 the trigger is a native `<summary>`, which Playwright gives
+ * NO role, so `getByRole('button', { name: 'More' })` matches nothing. Its state
+ * is the `<details>`'s `open`, not `aria-expanded`. Both are read through
+ * `helpers/nav-more.ts`; see its docblock for what was measured.
  */
 test.describe('the More sheet at 320px (story 31.5)', () => {
   test.use({ viewport: { width: 320, height: 720 } })
 
   const navOf = (page: import('@playwright/test').Page) =>
     page.getByRole('navigation', { name: 'Primary' })
-  const moreOf = (page: import('@playwright/test').Page) =>
-    navOf(page).getByRole('button', { name: 'More', exact: true })
+  const moreOf = (page: import('@playwright/test').Page) => page.locator(MORE_SUMMARY)
+  const expectOpen = (page: import('@playwright/test').Page, open: boolean, message?: string) =>
+    expect.poll(() => isMoreOpen(page), message).toBe(open)
 
   test('reaches the Retirement Planner through the sheet and marks it current', async ({
     page,
@@ -140,13 +160,14 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await page.waitForLoadState('networkidle')
 
     const nav = navOf(page)
-    // Closed: role locators respect `display: none`, so the destination really
-    // is unreachable before the disclosure is opened.
+    // Closed: role locators exclude the content of a closed `<details>` (story
+    // 59.2), so the destination really is unreachable before the disclosure is
+    // opened.
     await expect(nav.getByRole('link', { name: 'Retirement', exact: true })).toHaveCount(0)
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'false')
+    await expectOpen(page, false)
 
     await moreOf(page).click()
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
 
     // Tap through — the claim is reachability, not visibility.
     await nav.getByRole('link', { name: 'Retirement', exact: true }).click()
@@ -155,7 +176,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
 
     // The sheet closed on selection, and the More TAB now carries the active
     // treatment — `activeProps` cannot do this, because More is not a route.
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'false')
+    await expectOpen(page, false)
     await moreOf(page).click()
     await expect(nav.getByRole('link', { name: 'Retirement', exact: true })).toHaveAttribute(
       'aria-current',
@@ -177,16 +198,17 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await page.waitForLoadState('networkidle')
 
     await moreOf(page).click()
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
 
     await navOf(page).getByRole('link', { name: 'Income', exact: true }).click()
     await expect(page).toHaveURL(/\/income$/)
     await page.waitForLoadState('networkidle')
 
-    await expect(
-      moreOf(page),
+    await expectOpen(
+      page,
+      false,
       'the sheet survived a bar-tab navigation and is covering the new page'
-    ).toHaveAttribute('aria-expanded', 'false')
+    )
     await expect(navOf(page).getByRole('link', { name: 'Retirement', exact: true })).toHaveCount(0)
   })
 
@@ -206,9 +228,9 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await moreOf(page).click()
 
     // A real focusable outside the nav and above the open sheet.
-    const target = await page.evaluate(() => {
+    const target = await page.evaluate((PANEL) => {
       const nav = document.querySelector('nav[aria-label="Primary"]')
-      const sheet = nav?.querySelector(':scope > ul > li > ul')
+      const sheet = document.querySelector(PANEL)
       if (!nav || !sheet) return null
       const sheetTop = sheet.getBoundingClientRect().top
       const el = [...document.querySelectorAll('a[href], button, input')].find((candidate) => {
@@ -220,39 +242,53 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
       el.setAttribute('data-focus-probe', '')
       const r = el.getBoundingClientRect()
       return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }
-    })
+    }, MORE_PANEL)
     expect(target, 'no focusable element outside the nav to press').not.toBeNull()
     const t = target as NonNullable<typeof target>
 
     await page.mouse.click(t.x, t.y)
 
-    const after = await page.evaluate(() => {
-      const nav = document.querySelector('nav[aria-label="Primary"]')
+    const after = await page.evaluate((SUMMARY) => {
+      const summary = document.querySelector(SUMMARY)
       return {
-        expanded: nav?.querySelector('button')?.getAttribute('aria-expanded'),
-        focusIsTrigger: document.activeElement === nav?.querySelector('button'),
+        open: (summary?.parentElement as HTMLDetailsElement | null)?.open,
+        // Anti-vacuity: before story 59.2 this compared against a `<button>`
+        // lookup, and with no button it would have compared against `null`,
+        // so the focus half could not fail. Assert the trigger exists first.
+        triggerFound: summary !== null,
+        focusIsTrigger: summary !== null && document.activeElement === summary,
         focusIsBody: document.activeElement === document.body,
       }
-    })
+    }, MORE_SUMMARY)
 
+    expect(after.triggerFound, 'the More <summary> is missing').toBe(true)
     // It still dismisses...
-    expect(after.expanded, 'the outside press no longer dismisses the sheet').toBe('false')
+    expect(after.open, 'the outside press no longer dismisses the sheet').toBe(false)
     // ...but it does not steal focus back to the trigger.
     expect(after.focusIsTrigger, 'dismissal stole focus from the element the user pressed').toBe(
       false
     )
   })
 
-  test('the trigger names the panel it controls', async ({ page }) => {
+  /**
+   * Rewritten for story 59.2. This test used to assert `aria-controls` on a
+   * `<button>`. The trigger is now a native `<summary>`, whose relationship to
+   * its panel and its expanded state come from the platform, so the claim is
+   * read from Chromium's REAL accessibility tree: `DisclosureTriangle "More"`,
+   * flipping `expanded`. An attribute read would find nothing to read, and the
+   * story forbids re-adding the ARIA by hand.
+   */
+  test('the platform exposes the trigger as a disclosure of its panel', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const controls = await moreOf(page).getAttribute('aria-controls')
-    expect(controls, 'the More trigger has no aria-controls').toBeTruthy()
+    expect(await moreExpandedInAxTree(page), 'no "More" disclosure in the AX tree').toBe(false)
+    await moreOf(page).click()
+    expect(await moreExpandedInAxTree(page)).toBe(true)
     // A disclosure, deliberately NOT a dialog: no `aria-modal`, no
     // `role="dialog"`, no focus trap, no scroll lock (see the GlobalNav
     // docblock for why `Modal` is not reusable here).
-    const panel = page.locator(`#${controls}`)
+    const panel = page.locator(MORE_PANEL)
     await expect(panel).toHaveCount(1)
     await expect(panel).not.toHaveAttribute('role', 'dialog')
     await expect(panel).not.toHaveAttribute('aria-modal', 'true')
@@ -266,16 +302,16 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
 
     // Escape
     await moreOf(page).click()
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
     await page.keyboard.press('Escape')
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'false')
+    await expectOpen(page, false)
     await expect(moreOf(page)).toBeFocused()
 
     // Outside press
     await moreOf(page).click()
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
     await page.mouse.click(160, 100)
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'false')
+    await expectOpen(page, false)
     await expect(moreOf(page)).toBeFocused()
   })
 
@@ -306,7 +342,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     // taller than 0px and so could not fail. Both endpoints are now measured AND
     // bounds-checked in both axes, so this test states its own preconditions
     // instead of trusting a layout constant.
-    const sheetBox = await page.locator('nav[aria-label="Primary"] > ul > li > ul').boundingBox()
+    const sheetBox = await page.locator(MORE_PANEL).boundingBox()
     expect(sheetBox, 'the open sheet has no box to release inside').not.toBeNull()
     const sheet = sheetBox as NonNullable<typeof sheetBox>
 
@@ -333,7 +369,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await page.mouse.move(releaseX, releaseY)
     await page.mouse.up()
 
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
   })
 
   /**
@@ -362,15 +398,15 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
 
     await moreOf(page).click()
 
-    const press = await page.evaluate(() => {
-      const sheet = document.querySelector('nav[aria-label="Primary"] > ul > li > ul')
+    const press = await page.evaluate((PANEL) => {
+      const sheet = document.querySelector(PANEL)
       if (!sheet) return null
       const r = sheet.getBoundingClientRect()
       // The panel's own `max-sm:py-1` strip, above the first row.
       const y = r.top + 2
       const hit = document.elementFromPoint(160, y)
       return { y, landsOnSheetItself: hit === sheet }
-    })
+    }, MORE_PANEL)
     expect(press, 'no sheet to press on').not.toBeNull()
     const p = press as NonNullable<typeof press>
     // Anti-vacuity: if this lands on a ROW the gesture becomes a link drag and
@@ -382,7 +418,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await page.mouse.move(160, 80)
     await page.mouse.up()
 
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
   })
 
   /**
@@ -405,7 +441,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     await page.waitForLoadState('networkidle')
 
     await moreOf(page).click()
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
 
     await page.evaluate(() => {
       const opts = { bubbles: true, clientX: 160, clientY: 80 }
@@ -418,10 +454,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
       target.dispatchEvent(new PointerEvent('pointerup', opts))
     })
 
-    await expect(
-      moreOf(page),
-      'a cancelled gesture left the outside-press flag armed'
-    ).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true, 'a cancelled gesture left the outside-press flag armed')
   })
 
   test('is fully keyboard operable', async ({ page }) => {
@@ -441,10 +474,18 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
     expect(reached, 'never reached the More trigger by tabbing').toBe(true)
 
     await page.keyboard.press('Enter')
-    await expect(moreOf(page)).toHaveAttribute('aria-expanded', 'true')
+    await expectOpen(page, true)
     // The rows become reachable in the same traversal once disclosed.
     await page.keyboard.press('Tab')
     await expect(navOf(page).getByRole('link', { name: 'Balances', exact: true })).toBeFocused()
+
+    // Space toggles too (AC-8), at this width as well as at 1280px. Back on the
+    // trigger, Space closes it.
+    await moreOf(page).focus()
+    await page.keyboard.press('Space')
+    await expectOpen(page, false)
+    await page.keyboard.press('Space')
+    await expectOpen(page, true)
   })
 
   /**
@@ -475,9 +516,9 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
 
     await moreOf(page).click()
 
-    const probe = await page.evaluate(() => {
+    const probe = await page.evaluate((PANEL) => {
       const nav = document.querySelector('nav[aria-label="Primary"]')
-      const sheet = nav?.querySelector(':scope > ul > li > ul')
+      const sheet = document.querySelector(PANEL)
       const bannerEl = document.querySelector('section[aria-label*="Install"]')
       if (!nav || !sheet || !bannerEl) return null
       const b = bannerEl.getBoundingClientRect()
@@ -495,7 +536,7 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
           return { label: a.textContent?.trim() ?? '', hitsSelf: a.contains(el) || a === el }
         }),
       }
-    })
+    }, MORE_PANEL)
 
     expect(probe, 'nav/sheet/banner not all present').not.toBeNull()
     const p = probe as NonNullable<typeof probe>

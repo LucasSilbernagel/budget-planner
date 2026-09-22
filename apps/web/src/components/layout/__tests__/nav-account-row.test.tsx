@@ -30,11 +30,17 @@ import { GlobalNav } from '../GlobalNav'
  * it would break this same invariant just as thoroughly as folding it into the
  * bar. Both are asserted below.
  *
- * ⚠️ The link counts here STAY 7. jsdom applies no media queries, so all seven
- * anchors resolve regardless of which three sit behind the More trigger in a real
- * browser; "fixing" these to 5 would turn correct tests red. Which four are in
- * the bar is a rendered fact, asserted in `e2e/chrome-320.spec.ts`. (It was EIGHT
- * until story 43.3 removed `/net-worth-projection` — the count tracks the nav.)
+ * ⚠️ The link counts here STAY 7, and they count DOM PRESENCE, not
+ * reachability. Since story 59.2 the three More destinations sit inside a native
+ * `<details>` at EVERY width, and a closed `<details>` hides them from a real
+ * browser's accessibility tree. jsdom does not: its default stylesheet has no
+ * closed-details rule, so `getAllByRole('link')` still resolves all seven.
+ * Before 59.2 the reason was that jsdom applies no media queries. The number is
+ * the same and the reason is not. "Fixing" these to 4 would turn correct tests
+ * red. Which destinations a user can actually reach is a rendered fact, asserted
+ * in `e2e/nav-more-disclosure.spec.ts` and `e2e/chrome-320.spec.ts`. (It was
+ * EIGHT until story 43.3 removed `/net-worth-projection`; the count tracks the
+ * nav.)
  *
  * ⚠️ Since 31.4 there is no `useIsNarrowViewport` branch to mock: one DOM
  * subtree carries both layouts, switched by `max-sm:` utilities. Mocking the
@@ -132,7 +138,8 @@ describe('Nav + account row (story 19-3)', () => {
     const signIn = await screen.findByRole('link', { name: /sign in/i })
 
     // The 31.5 shape: an outer bar list plus a nested sheet list inside its
-    // fifth <li>. With only five bar slots, the sheet is the new tempting place
+    // fifth <li> (inside that cell's `<details>` since story 59.2, at every
+    // width). With only five bar slots, the sheet is the new tempting place
     // to fold sign-in into — and it is a nav descendant, so doing so would push
     // the primary landmark to nine links exactly as the bar would.
     const lists = nav.querySelectorAll('ul')

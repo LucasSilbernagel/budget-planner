@@ -6,6 +6,7 @@ import {
   RETIREMENT_PLANNER_STORAGE_KEY,
   RETIREMENT_PLANNER_VERSION,
 } from '../src/stores/retirementPlannerStore'
+import { MORE_SUMMARY } from './helpers/nav-more'
 
 /**
  * The retirement plan survives a reload and a navigation (Story 44.1, FR71).
@@ -138,6 +139,9 @@ test.describe('retirement plan persistence', () => {
 
     await page.getByRole('link', { name: 'Income', exact: true }).first().click()
     await expect(page.locator(AGE)).toHaveCount(0)
+    // Retirement sits behind the nav's More disclosure at every width since
+    // story 59.2, so the real nav route is More, then the row.
+    await page.locator(MORE_SUMMARY).click()
     await page.getByRole('link', { name: 'Retirement', exact: true }).first().click()
 
     await expect(page.locator(AGE)).toHaveValue('42')

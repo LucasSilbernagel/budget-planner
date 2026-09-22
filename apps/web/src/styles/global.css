@@ -137,7 +137,7 @@
      Tailwind 3.4 with `@tailwind` directives: the layers are resolved at BUILD
      time into plain CSS, not native `@layer` blocks, so normal specificity still
      decides. This selector is 0-2-0 (two attribute selectors) and a `display`
-     utility like `sm:contents` is 0-1-0 (a media query adds no specificity), so
+     utility like `sm:block` is 0-1-0 (a media query adds no specificity), so
      this rule wins even though utilities are emitted later. An earlier version
      of this comment claimed the opposite; it was corrected in code review.
 
@@ -146,10 +146,13 @@
      `max-sm:min-w-0` and no display utility at all.
 
      Either way `e2e/nav-planner-visibility.spec.ts` asserts the first frame at
-     BOTH 320px and 1280px, because the failure mode would be asymmetric: at
-     >= 640px `sm:contents` on the ancestor list dissolves the sheet into the
-     desktop row, so a broken rule could hide the entry on mobile and reveal it
-     on desktop — which a narrow-only test reports as green. */
+     BOTH 320px and 1280px. Until story 59.2 the failure mode was asymmetric:
+     at >= 640px `sm:contents` dissolved the sheet into the desktop row, so a
+     broken rule could hide the entry on mobile and reveal it on desktop. Since
+     59.2 the entry sits in the nav's More `<details>` at both widths, closed on
+     the first frame. That does NOT make this rule redundant. The native
+     `<details>` toggle works BEFORE hydration, so a user who opens More in that
+     window sees exactly what this rule has or has not hidden. */
   [data-hide-retirement='1'] [data-nav-path='/retirement'] {
     display: none;
   }

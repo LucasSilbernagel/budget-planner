@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { MORE_PANEL, MORE_SUMMARY } from './helpers/nav-more'
 
 /**
  * Retirement planner visibility (story 35.2, FR55).
@@ -29,10 +30,17 @@ import { type Page, expect, test } from '@playwright/test'
  * here go red. If M4 ever comes back green, this suite is measuring the wrong
  * frame and the test is wrong, not the mutation.
  *
- * ⚠️ BOTH WIDTHS ARE ASSERTED, DELIBERATELY, because the failure mode is
- * ASYMMETRIC: at >= 640px `sm:contents` dissolves the nested sheet list into the
- * desktop row, so a broken suppression rule could hide the entry at 320px and
- * reveal it at 1280px — and a narrow-only suite reports that as green.
+ * ⚠️ BOTH WIDTHS ARE ASSERTED, DELIBERATELY. Until story 59.2 the failure mode
+ * was ASYMMETRIC: at >= 640px `sm:contents` dissolved the nested sheet list into
+ * the desktop row, so a broken suppression rule could hide the entry at 320px
+ * and reveal it at 1280px, and a narrow-only suite would report that as green.
+ * Since 59.2 the entry sits in a `<details>` panel that is CLOSED on the first
+ * frame at both widths, so on its own the closed panel already keeps it off
+ * screen. The CSS rule is still load-bearing, and the first-frame `display`
+ * reading below measures the RULE, not the panel. The native `<details>`
+ * toggle works BEFORE hydration, so a user who opens More in that window sees
+ * whatever the rule has not hidden. Both widths stay, because the panel is
+ * styled differently at each.
  * (An earlier version of this note blamed cascade-layer ordering. That was
  * wrong and was corrected in review: this is Tailwind 3.4, whose layers resolve
  * at build time, so the rule's 0-2-0 specificity beats a 0-1-0 display utility.)
@@ -106,7 +114,7 @@ async function firstFrameWith(page: Page, hidden: boolean, path: string): Promis
 
 for (const { label, width, height } of [
   { label: '320px (mobile bar + More sheet)', width: 320, height: 720 },
-  { label: '1280px (dissolved desktop row)', width: 1280, height: 800 },
+  { label: '1280px (desktop disclosure panel)', width: 1280, height: 800 },
 ]) {
   test.describe(`the hidden Retirement entry never paints — ${label}`, () => {
     test.use({ viewport: { width, height } })
@@ -169,9 +177,9 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
     await page.waitForLoadState('networkidle')
 
     const nav = page.locator(NAV)
-    await nav.getByRole('button').click()
+    await page.locator(MORE_SUMMARY).click()
 
-    const rows = nav.locator(':scope > ul > li > ul > li > a')
+    const rows = page.locator(`${MORE_PANEL} > li > a`)
     await expect(rows).toHaveCount(2)
     expect(await rows.allTextContents()).toEqual(['Balances', 'Settings'])
 
@@ -299,6 +307,10 @@ test.describe('the /retirement route with the planner hidden (AC-5, AC-6, AC-9)'
     // still suppressed by a stale pre-paint attribute" — which is precisely the
     // defect this assertion now guards (found in review by two independent
     // layers). The count form certified the broken build green.
+    // Since story 59.2 the entry lives behind More at this 1280px width too, and
+    // a row in a CLOSED `<details>` is never visible. Open the panel first, or
+    // this fails on a correctly restored entry.
+    await page.locator(MORE_SUMMARY).click()
     await expect(page.locator(RETIREMENT_LI)).toBeVisible()
   })
 

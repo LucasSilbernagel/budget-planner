@@ -194,10 +194,18 @@ export function AuthIndicator() {
       // this is a standalone top strip and needs its own border/bg, but on the
       // desktop row it inherits the shared chrome from the `__root.tsx` wrapper
       // so the nav and this indicator read as one bar (story 19-3).
+      //
+      // `sm:min-w-0` (story 59.2, code review): on the desktop row this strip is
+      // a flex item beside the nav, and a flex item's default `min-width: auto`
+      // is its CONTENT width. A long email therefore could not shrink, the
+      // `truncate` below never engaged, and the nav wrapped to 2-3 rows instead
+      // (measured: 3 rows at 640px). With it, the strip yields width and the
+      // email truncates. The nav is `sm:shrink-0` for the same reason. `sm:`
+      // only, so the 320px top strip is untouched.
       data-auth-indicator
       role="status"
       aria-label="Account status"
-      className="flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
+      className="flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm sm:min-w-0 max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {authState.status === 'loading' && (
         // Neutral placeholder: identical on server + first client render, holds

@@ -1,6 +1,6 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import type React from 'react'
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionSeed } from '../../context/session-seed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
@@ -47,9 +47,10 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  *
  * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
  *
- * There is exactly one `<nav>`, one OUTER `<ul>`, one `<button>` and — since
- * story 58.1 — seven `<a>` for a free session or eleven for an entitled one, in
- * the DOM at every viewport. The COUNT varies by tier; the STRUCTURE never does.
+ * There is exactly one `<nav>`, one OUTER `<ul>`, one More `<details>` with its
+ * `<summary>` (a `<button>` until story 59.2) and — since story 58.1 — seven
+ * `<a>` for a free session or eleven for an entitled one, in the DOM at every
+ * viewport. The COUNT varies by tier; the STRUCTURE never does.
  * Desktop (>= 640px) is the unprefixed cascade —
  * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
  * bar via `max-sm:` utilities. No JavaScript decides the layout, so the first
@@ -117,28 +118,41 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * 58.1 touched only the sheet list, never `PRIMARY_TABS`.
  *
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
- * `<li>`, dissolved at >= 640px with `sm:contents` on BOTH the wrapper `<li>`
- * and the nested `<ul>`. The obvious alternative — leaving every `<li>` in the
- * bar and re-listing the sheet's share in a mobile-only sheet — puts those
- * destination labels in the DOM TWICE, which is the dual-render rejected above.
- * Measured against a flat control at 1280px (when the nav held EIGHT items; it
- * holds seven free / eleven entitled since 58.1), the nested structure laid out
- * all 8 anchors with ZERO geometry mismatches. It is not free, though:
- * `display: contents` flattens the LAYOUT tree but NOT the ACCESSIBILITY tree,
- * so the desktop AX tree gains one nesting level (`list > 4 listitem`, then
- * `listitem > list > 4 listitem`). A nested list inside a nav is valid and
- * commonplace; it is recorded here because it IS a desktop semantic change,
- * even though desktop geometry and computed style are byte-identical.
+ * `<li>`. The obvious alternative — leaving every `<li>` in the bar and
+ * re-listing the sheet's share in a mobile-only sheet — puts those destination
+ * labels in the DOM TWICE, which is the dual-render rejected above.
  *
- * ⚠️⚠️ EVERY ICON CARRIES `sm:hidden`, and the nested `<ul>` MUST keep
- * `sm:contents`. Both are mobile-only concerns, and the entire test suite is
- * provably blind to losing either: measured, icons without `sm:hidden` grow the
- * desktop nav 52px -> 76px at 1280px (212 computed diffs) and the nested `<ul>`
- * without `sm:contents` grows it 52px -> 160px (140 diffs) — and in BOTH cases
- * zero tests went red, including the one named "the desktop cascade is
+ * ## The same disclosure at EVERY width (story 59.2, FR90)
+ *
+ * Until story 59.2 the nested list was DISSOLVED at >= 640px (`sm:contents` on
+ * the wrapper `<li>` and on the `<ul>`, `sm:hidden` on the trigger), so every
+ * destination was an item of one flat desktop row. That is what broke: story
+ * 58.1 added four premium anchors, and a paid user's row wrapped to TWO rows at
+ * every desktop width, which was measured and could not be closed by
+ * shrinking. The dissolve is gone. The row is Overview · Income · Expenses ·
+ * Savings · More at every width, in both tiers, and the other destinations are
+ * a disclosure panel: a sheet above the bar below `sm`, a dropdown under the
+ * trigger at `sm` and up. Accepted cost (decision, Lucas 2026-09-21): a free
+ * desktop user reaches Balances, Retirement and Settings in two clicks, not
+ * one. The row's measured widths live in ONE place,
+ * `e2e/nav-responsive-css.spec.ts`. Do not restate them here.
+ *
+ * ⚠️⚠️ It is a native `<details>`/`<summary>`, and that is the FAIL-OPEN
+ * requirement, not a styling choice (decision, Lucas 2026-09-21). Since story
+ * 58.2 this nav is a paying user's ONLY route to four pages, with no Overview
+ * card, no `/settings` tile and no footer link. The dissolve used to keep the
+ * desktop destinations reachable with JavaScript broken or not yet hydrated. A
+ * React-only disclosure would have lost that. The native toggle works with
+ * zero JavaScript, so it keeps it. `e2e/nav-more-disclosure{,.paid}.spec.ts`
+ * prove it with `javaScriptEnabled: false`.
+ *
+ * ⚠️⚠️ EVERY ICON CARRIES `sm:hidden`. Icons are a mobile-only concern, and
+ * the suite was provably blind to losing the token: measured, icons without
+ * `sm:hidden` grow the desktop nav 52px -> 76px at 1280px (212 computed diffs)
+ * and zero tests went red, including the one named "the desktop cascade is
  * untouched", because the merged-style partition never read `height`. It reads
  * `height` and `flex-direction` now, and `e2e/nav-responsive-css.spec.ts`
- * carries a full differential dump. Do not remove either token.
+ * carries a full differential dump. Do not remove the token.
  *
  * ⚠️ The sheet is `max-sm:absolute`, NOT `max-sm:fixed`. `bottom: 100%` on a
  * `fixed` box resolves against the VIEWPORT, not the nav: measured, that renders
@@ -222,9 +236,8 @@ const PRIMARY_TABS: readonly NavItem[] = [
  * adding a premium destination — that is what makes "the free nav did not move"
  * provable by reading the diff.
  *
- * At >= 640px these are ordinary items of the one desktop row — `sm:contents`
- * dissolves both the wrapper `<li>` and this nested list, so the free nav's seven anchors
- * lay out exactly as they did before this story.
+ * Since story 59.2 they sit behind More at EVERY width. Until then,
+ * `sm:contents` dissolved them into the one desktop row.
  *
  * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69). Every
  * "eight anchors" figure in this file dates from before that removal; the ones
@@ -272,9 +285,11 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
  *     43.2 applied it to (`Balance Tracking` -> `Balances`), so the rule can no
  *     longer be cited here — the brevity principle above is the live one, and
  *     matching an H1 is not a constraint on this file.
- *   - The benefit names carry 67 characters against these 35. The desktop row is
- *     one wrapped flex row, so label text is row height for every paying user on
- *     every page.
+ *   - The benefit names carry 67 characters against these 35. When D1 was
+ *     decided these labels were items of the desktop row, so label text was row
+ *     height for every paying user on every page. Since story 59.2 they are
+ *     rows of the More panel, which is as wide as its longest label. Brevity
+ *     still pays; it no longer decides the row count.
  *
  * Verified when this shipped: `benefit-set-parity.test.tsx` polices the canonical
  * benefit set across /pricing, the upgrade prompt, the Overview grid, the route
@@ -342,8 +357,9 @@ const MORE_DESTINATIONS_ENTITLED: readonly NavItem[] = [
 ]
 
 /**
- * The desktop appearance of a nav anchor — identical for a bar tab and a sheet
- * row, which is what keeps the >= 640px cascade byte-identical.
+ * The desktop appearance of a nav anchor, shared by a bar tab, a sheet row and
+ * (since story 59.2) the More trigger. The sheet row adds `sm:block` on top,
+ * because at >= 640px it is a row of a vertical panel, not an item of the bar.
  *
  * ⚠️ The two mobile variants below are built as SEPARATE strings from this
  * shared base; they are NOT produced by appending overrides to each other.
@@ -378,13 +394,19 @@ const TAB_LINK_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:h-full max-sm:min-h-
 /**
  * A sheet row: a full-width, left-aligned icon-beside-label row.
  *
+ * At >= 640px (story 59.2) it is a row of the dropdown panel: `sm:block` makes
+ * it fill the panel's width so the hover and active backgrounds span the row,
+ * and `sm:whitespace-nowrap` keeps a label on one line, so the panel sizes to
+ * its longest label instead of wrapping it. Both are `min-width: 640px`
+ * utilities, so neither applies to the mobile sheet at all.
+ *
  * Deliberately omits `max-sm:flex-row` / `max-sm:justify-start` /
  * `max-sm:text-left` — a flex container defaults to `row`, `normal` and `start`
  * respectively, so those tokens would be no-ops with no observable consequence
  * to guard, which is the "token with no possible assertion" this suite treats as
  * a missing guard rather than as coverage.
  */
-const SHEET_ROW_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset`
+const SHEET_ROW_CLASS = `${NAV_LINK_BASE} sm:block sm:whitespace-nowrap max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
 /**
  * The active treatment, applied by `<Link activeProps>` on every destination anchor and
@@ -393,30 +415,67 @@ const SHEET_ROW_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:min-h-[44px] max-sm
 const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 
 /**
- * The More trigger is a mobile-only ELEMENT, so per the composition rule it
- * takes base classes + `sm:hidden` rather than `max-sm:`-scoped ones. It must
- * not reach the desktop row: an eighth item there changes the widest-link right
- * edge that `e2e/nav-responsive-css.spec.ts` measures, whose premise is that the
- * row already overflows a 640px viewport on its own.
+ * The More trigger, a `<summary>`, at EVERY width since story 59.2.
  *
- * ⚠️ This sentence carried "the eight-item row already wants 778px" until story
- * 43.3. That figure was stale twice over: 43.2 measured the row at 753px (CI
- * fonts) BEFORE its own change and 815px after, and 43.3 then removed an item.
- * The live measurement lives in ONE place — `e2e/nav-responsive-css.spec.ts` —
- * so it cannot go stale in three files again. Do not restate a width here.
+ * Until 59.2 it was a mobile-only ELEMENT (base classes + `sm:hidden`) and must
+ * not reach the desktop row. It is a SHARED element now, so the composition rule
+ * for shared elements applies: the desktop look is `NAV_LINK_BASE` unprefixed,
+ * exactly like every desktop anchor, and the mobile bar cell it has always been
+ * is `max-sm:` variants APPENDED to it. That is `TAB_LINK_CLASS`'s mobile half
+ * with two differences: it adds `max-sm:w-full` (the cell is a grid track, not a
+ * link box) and omits `max-sm:break-words` ("More" is one short word). Its
+ * computed style in the 320px bar was diffed before and after the change: 30
+ * properties each of the cell, trigger, label and icon, plus every cell rect,
+ * byte-identical. The table is in story 59.2's completion notes.
+ *
+ * The disclosure triangle a `<summary>` draws by default comes from
+ * `display: list-item` in Chromium and Gecko, and from a
+ * `::-webkit-details-marker` pseudo-element in WebKit. This summary is never
+ * `list-item` (it is `inline-block` at >= 640px and `flex` below), so
+ * `list-none` is INERT today. It is kept as a guard in case a future display
+ * change makes it `list-item`. `[&::-webkit-details-marker]:hidden` is the one
+ * doing work, in WebKit only, and nothing in this chromium-only suite can
+ * observe it.
+ *
+ * ⚠️ No role, no `aria-expanded`, no `aria-controls`. Chromium already exposes a
+ * `<summary>` as a named, expandable disclosure (`DisclosureTriangle "More"`,
+ * `expanded`), measured through CDP, so hand-rolled ARIA would only
+ * duplicate it. Tests find it by selector, because Playwright and
+ * `@testing-library/dom` give `<summary>` NO role. See `e2e/helpers/nav-more.ts`.
+ *
+ * ⚠️ The desktop row's widths live in ONE place, `e2e/nav-responsive-css.spec.ts`.
+ * This comment used to carry a copy ("the eight-item row already wants 778px")
+ * that was stale twice over by story 43.3. Do not restate a width here.
  */
-const MORE_TRIGGER_CLASS =
-  'flex h-full min-h-[44px] w-full flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-[11px] font-medium leading-tight text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 sm:hidden dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none [&::-webkit-details-marker]:hidden max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:w-full max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
 /**
- * The sheet panel itself.
+ * The sheet panel itself: an out-of-flow overlay at EVERY width since story 59.2.
  *
- * `sm:contents` dissolves it into the desktop row. Below `sm` it is an
- * out-of-flow panel anchored to the top edge of the bar, and it needs its own
- * OPAQUE background in both themes for the same reason the bar does: it is
- * `absolute`, so page content passes underneath it. A dropped background
- * computes to `rgba(0, 0, 0, 0)` and the destinations sit on whatever scrolls
- * past.
+ * Two halves, deliberately separate strings of tokens. The `sm:` half is the
+ * desktop dropdown, anchored under the trigger by the cell's `sm:relative`. The
+ * `max-sm:` half is the mobile sheet, anchored to the top edge of the bar, and it
+ * is BYTE-IDENTICAL to what it was before 59.2 (pinned token-for-token in
+ * `GlobalNav.test.tsx`). So "the mobile sheet did not move" is provable by
+ * reading the diff. Until 59.2 the desktop half was `sm:contents`, which
+ * dissolved the panel into the row.
+ *
+ * Both halves need their own OPAQUE background in both themes for the same
+ * reason the bar does: the panel is `absolute`, so page content passes
+ * underneath it. A dropped background computes to `rgba(0, 0, 0, 0)` and the
+ * destinations sit on whatever scrolls past.
+ *
+ * ⚠️ `sm:z-40` IS LOAD-BEARING, and it was measured. Without it the desktop
+ * panel is a positioned box at `z-index: auto`, so positioned page content later
+ * in the DOM paints OVER it. `elementFromPoint` on the open panel's rows landed
+ * on `/pricing`'s plan cards and `/forecasting`'s page header, at 640px and at
+ * 1280px, while those rows had perfect rects and passed `toBeVisible()`.
+ * `e2e/nav-more-disclosure.paid.spec.ts` sweeps 13 routes for it at the top of
+ * each page, which is not every scroll position or overlay state. 40, not 50:
+ * `Modal` (z-50, rendered later) must stay above it, and at >= 640px the
+ * `InstallPrompt` banner sits at the bottom of the screen, nowhere near a
+ * dropdown hanging off the top bar. Below `sm` the stacking comes from the
+ * nav's own `max-sm:z-50` (see the component docblock).
  *
  * ⚠️ THE CAP AND THE SCROLL ARE NOT OPTIONAL, and code review caught their
  * absence. The panel's height is content-driven and it is anchored to the bar's
@@ -436,12 +495,13 @@ const MORE_TRIGGER_CLASS =
  * absorption cannot hide a regression.
  */
 const SHEET_PANEL_CLASS =
-  'sm:contents max-sm:absolute max-sm:inset-x-0 max-sm:bottom-full max-sm:max-h-[calc(100svh-5rem)] max-sm:overflow-y-auto max-sm:overscroll-contain max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:py-1 dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800'
+  'sm:absolute sm:left-0 sm:top-full sm:z-40 sm:mt-1 sm:min-w-[10rem] sm:max-h-[calc(100svh-6rem)] sm:overflow-y-auto sm:rounded-md sm:border sm:border-gray-200 sm:bg-white sm:py-1 sm:shadow-lg dark:sm:border-gray-700 dark:sm:bg-gray-800 max-sm:absolute max-sm:inset-x-0 max-sm:bottom-full max-sm:max-h-[calc(100svh-5rem)] max-sm:overflow-y-auto max-sm:overscroll-contain max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:py-1 dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800'
 
 export function GlobalNav() {
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const navRef = useRef<HTMLElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
+  const triggerRef = useRef<HTMLElement>(null)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
   /**
    * Whether the in-flight pointer gesture STARTED outside the nav.
    *
@@ -450,23 +510,18 @@ export function GlobalNav() {
    * persist) — 31.3 shipped exactly this bug. It is reset on every terminal
    * path, including `pointercancel`: a touch that turns into a scroll fires
    * `pointercancel` and never a `click`. The `triggerRef` above is NOT at risk
-   * for the same reason — the More button is always mounted, at every width and
-   * in both states.
+   * for the same reason — the More `<summary>` is always mounted, at every width
+   * and in both states.
    */
   const outsidePressRef = useRef(false)
-
-  /**
-   * `aria-controls` needs a stable id. React 19's `useId()` returns `_R_bd6_`
-   * (no colons), so it is a legal id AND a legal CSS selector — React 18's
-   * `:r0:` would not have been.
-   */
-  const panelId = useId()
 
   /**
    * The More tab's active state CANNOT come from `<Link activeProps>`: More is
    * not a route, so `activeProps` would silently mark nothing and the bar would
    * show NO active tab on three of seven destinations — worse orientation than
-   * the grid this replaced. `useRouterState` reads `router.stores.location`, the
+   * the grid this replaced. Since story 59.2 the same is true on DESKTOP, where
+   * those destinations moved behind More too, so this cue now carries "you are
+   * here" at every width. `useRouterState` reads `router.stores.location`, the
    * same store `<Link>`'s own active computation reads, through a `useStore`
    * whose `getServerSnapshot` and `getSnapshot` are the same synchronous read.
    * The store is seeded from `history.location` at router construction, BEFORE
@@ -594,14 +649,51 @@ export function GlobalNav() {
     setIsMoreOpen(false)
   }
 
+  /**
+   * Adopt a disclosure the user opened BEFORE hydration (story 59.2, AC-5).
+   *
+   * ⚠️ Measured at 59.2's context time, not reasoned. The server renders the
+   * `<details>` closed, and the native toggle works before React runs. That is
+   * the point of using `<details>`. A user who clicks More in that window leaves
+   * the DOM `open` while `useState(false)` hydrates as closed: React does not
+   * patch attribute mismatches, and the `toggle` event fired before any handler
+   * was attached. The panel is then visibly open with `isMoreOpen === false`, so
+   * the Escape and outside-press listeners above are never armed. (It self-heals
+   * on the next summary click, but only on that click.) Reading the DOM once on
+   * mount closes the gap. `e2e/nav-more-disclosure.spec.ts` holds every script
+   * back to put the click in that window.
+   */
+  useEffect(() => {
+    if (detailsRef.current?.open) setIsMoreOpen(true)
+  }, [])
+
   useEffect(() => {
     if (!isMoreOpen) return
 
     const isOutside = (target: EventTarget | null): boolean =>
       !(target instanceof Node) || !navRef.current?.contains(target)
 
+    // Whether a real focusable OUTSIDE the nav holds focus. `<body>`, `<html>`
+    // and null do not count: they are orphaned focus, which the trigger should
+    // reclaim. See the pointer handler below for why "is focus inside the
+    // nav?" is the wrong question.
+    const focusClaimedOutside = (): boolean => {
+      const active = document.activeElement
+      return (
+        active instanceof Node &&
+        active !== document.body &&
+        active !== document.documentElement &&
+        !navRef.current?.contains(active)
+      )
+    }
+
+    // ⚠️ Escape restores focus only if focus is in the nav or orphaned (story
+    // 59.2 code review). On desktop the panel is a small dropdown, so a keyboard
+    // user can Tab past it into the page with it still open. An unconditional
+    // restore then yanked focus from page content back to More whenever they
+    // pressed Escape, which was verified by probe on `/income`.
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMore()
+      if (event.key === 'Escape') closeMore(!focusClaimedOutside())
     }
     // Both halves are load-bearing: press-origin alone leaves an
     // outside-press -> inside-release gesture closing the sheet, and
@@ -621,13 +713,7 @@ export function GlobalNav() {
         // to restore and leave focus orphaned on `<body>`: precisely the defect
         // the restoration exists to prevent. Only a real focusable target
         // outside should win, so `<body>`/`<html>`/null all still restore.
-        const active = document.activeElement
-        const claimedByOutside =
-          active instanceof Node &&
-          active !== document.body &&
-          active !== document.documentElement &&
-          !navRef.current?.contains(active)
-        closeMore(!claimedByOutside)
+        closeMore(!focusClaimedOutside())
       }
     }
     const handlePointerCancel = () => {
@@ -661,16 +747,34 @@ export function GlobalNav() {
       // — so it owns its border-top and background there. `max-sm:z-50` (not
       // z-40) is what keeps the open sheet above the InstallPrompt banner; see
       // the docblock.
-      className="max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-50 max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
+      //
+      // ⚠️⚠️ `sm:shrink-0` is what makes the row ONE row for a SIGNED-IN user
+      // (story 59.2 code review, measured). The nav shares the header row with
+      // `AuthIndicator`, and both are flex items. Without it, a signed-in
+      // cluster (avatar + email + Premium pill, 399px at 640px with a long
+      // email) out-weighed the nav's flex basis. The nav absorbed the
+      // shortfall by WRAPPING, to 3 rows at 640px and 2 up to ~849px, and the
+      // email's `truncate` never engaged. With the nav held at its content
+      // width, the cluster yields instead (it is `sm:min-w-0`, in
+      // `auth-indicator.tsx`), so the email truncates. The e2e suite has no real
+      // session, so it only ever measured the signed-out "Sign in" cluster and
+      // was blind to this. `e2e/nav-more-disclosure.paid.spec.ts` now mocks
+      // `/api/auth/me` to render a signed-in cluster, and pins it.
+      className="sm:shrink-0 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-50 max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
-      {/* `flex-wrap` is LOAD-BEARING at >= 640px — do not remove it. It arrived
-          (commit d4f3ffb) to contain the eight items the nav then had, during the
-          old pre-hydration flash; the desktop bar is two rows in its own right
-          from 640px up to the single-row threshold recorded in
-          `e2e/nav-responsive-css.spec.ts`, above which it is one row. Nothing used to catch that —
-          `responsive-320.spec.ts` and
-          `global-nav.spec.ts` both sweep 320px only — so
-          `e2e/nav-responsive-css.spec.ts` now measures 640/700/760px.
+      {/* `flex-wrap` at >= 640px: INERT since story 59.2, and kept on purpose.
+          It arrived (commit d4f3ffb) to contain the eight items the nav then
+          had, and until 59.2 the desktop bar was two rows below a single-row
+          threshold. Since 59.2's code review the <nav> is `sm:shrink-0`, so the
+          list always gets its full content width and never wraps. At >= 640px
+          the thing that yields is now the account cluster, whose email
+          truncates. If the row ever outgrows the viewport minus the cluster's
+          minimum, the DOCUMENT overflows sideways; it does not wrap. That is
+          what the no-overflow assertions in `e2e/nav-responsive-css.spec.ts`
+          (640/700/760px) and the paid signed-in sweep catch. The measured
+          headroom lives there, in ONE place; do not restate it here.
+          `responsive-320.spec.ts` and `global-nav.spec.ts` both sweep 320px
+          only.
 
           ⚠️ This comment carried its own copy of the "row wants 778px …
           clearing only at 800px" figures until story 43.3. It was the THIRD copy
@@ -705,6 +809,13 @@ export function GlobalNav() {
               activeOptions={item.exact ? { exact: true } : undefined}
               className={TAB_LINK_CLASS}
               activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
+              // Closes the panel even when the tab is the CURRENT route (story
+              // 59.2 code review). The pathname-change close below never fires
+              // for a same-route click, and the press starts and ends inside
+              // the nav, so the outside-press guard correctly declines. The
+              // result was an open dropdown that survived a click on "Income"
+              // while on /income. `false`: the clicked link keeps its focus.
+              onClick={() => closeMore(false)}
             >
               <item.Icon className="h-6 w-6 sm:hidden" />
               {/* The label is wrapped so the line-count probe in
@@ -716,48 +827,84 @@ export function GlobalNav() {
             </Link>
           </li>
         ))}
-        {/* The fifth cell. `sm:contents` dissolves this wrapper at >= 640px so
-            its children rejoin the one desktop flex row; below `sm` it is the
-            More grid cell and the positioning context's nearest content. */}
-        <li className="max-sm:min-w-0 sm:contents">
-          <button
-            ref={triggerRef}
-            type="button"
-            aria-expanded={isMoreOpen}
-            aria-controls={panelId}
-            onClick={() => setIsMoreOpen((open) => !open)}
-            className={isMoreActive ? `${MORE_TRIGGER_CLASS} ${ACTIVE_CLASS}` : MORE_TRIGGER_CLASS}
+        {/* The fifth cell: the More disclosure, at every width (story 59.2).
+            Below `sm` it is the bar's fifth grid cell, and it is deliberately NOT
+            positioned there. The sheet must keep resolving `max-sm:absolute`
+            against the `max-sm:fixed` <nav>, which is what makes it full-width
+            and flush on top of the bar. At `sm` and up, `sm:relative` makes this
+            cell the containing block the dropdown hangs from. */}
+        <li className="max-sm:min-w-0 sm:relative">
+          <details
+            ref={detailsRef}
+            open={isMoreOpen}
+            onToggle={(event) => setIsMoreOpen(event.currentTarget.open)}
+            // `open` is controlled. Once hydrated, a click never toggles the DOM
+            // natively (the summary's `onClick` cancels it, below), so
+            // `onToggle` is NOT what keeps a click honest. Its job is every
+            // OTHER way the DOM `open` can change without React knowing: the
+            // browser opening a `<details>` for find-in-page, script setting
+            // `.open`, and a native toggle whose `toggle` task lands after
+            // hydration. React never writes `open` back unless the PROP
+            // changes, so without this such a change would leave the panel
+            // open with the dismissal listeners unarmed. Pinned by
+            // `GlobalNav.test.tsx` ("adopts an open it did not cause").
+            //
+            // `suppressHydrationWarning` is for ONE case: the pre-hydration
+            // click the mount effect above adopts. The server sent no `open`,
+            // the DOM has one, and React (dev only) reports the mismatch it
+            // will not patch. The suppression covers this element's own
+            // attributes, one level deep, so it cannot hide a mismatch
+            // anywhere else in the nav.
+            suppressHydrationWarning
+            className="max-sm:h-full"
           >
-            <MoreIcon className="h-6 w-6 sm:hidden" />
-            <span data-nav-label>More</span>
-          </button>
-          {/* ⚠️ The open/closed state is a `max-sm:`-scoped CLASS, never the
-              `hidden` ATTRIBUTE. `hidden={!isMoreOpen}` — the textbook
-              disclosure idiom — applies at EVERY width and would delete
-              Balances, Retirement and Settings from the DESKTOP nav
-              entirely. */}
-          <ul
-            id={panelId}
-            className={isMoreOpen ? SHEET_PANEL_CLASS : `${SHEET_PANEL_CLASS} max-sm:hidden`}
-          >
-            {visibleMoreDestinations.map((item) => (
-              <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
-                <Link
-                  to={item.to}
-                  className={SHEET_ROW_CLASS}
-                  activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
-                  // Wrapped, NOT passed by reference: `closeMore` takes an
-                  // optional `restoreFocus` flag, and React would pass its
-                  // MouseEvent into it — a truthy object, so it would happen to
-                  // work today and break silently the moment the default flips.
-                  onClick={() => closeMore()}
-                >
-                  <item.Icon className="h-6 w-6 sm:hidden" />
-                  <span data-nav-label>{item.label}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+            {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable — Enter and Space dispatch this same click (e2e/nav-more-disclosure.spec.ts and global-nav.spec.ts prove it at 1280px and 320px); a keydown handler would double-toggle */}
+            <summary
+              ref={triggerRef}
+              // ⚠️ Once hydrated, React owns the toggle, and the native one is
+              // cancelled. Measured, and caught by e2e: left native, a click
+              // opens the DOM synchronously, but `isMoreOpen` (and with it the
+              // Escape and outside-press listeners it gates) arrives only after
+              // the async `toggle` event and a paint. A press in that window
+              // was ignored. Driving the state from the click gives the timing
+              // the old `<button>` had. `e2e/nav-more-disclosure.spec.ts` pins it
+              // deterministically ("an outside press in the SAME task…"), which
+              // fails 5/5 without this handler. Keyboard activation of a `<summary>`
+              // dispatches this same `click`, so Enter and Space still work.
+              // Before hydration, and with JavaScript off, no handler is
+              // attached and the native toggle does the work. That is the whole
+              // reason this is a `<details>`.
+              onClick={(event) => {
+                event.preventDefault()
+                setIsMoreOpen((open) => !open)
+              }}
+              className={
+                isMoreActive ? `${MORE_TRIGGER_CLASS} ${ACTIVE_CLASS}` : MORE_TRIGGER_CLASS
+              }
+            >
+              <MoreIcon className="h-6 w-6 sm:hidden" />
+              <span data-nav-label>More</span>
+            </summary>
+            <ul className={SHEET_PANEL_CLASS}>
+              {visibleMoreDestinations.map((item) => (
+                <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
+                  <Link
+                    to={item.to}
+                    className={SHEET_ROW_CLASS}
+                    activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
+                    // Wrapped, NOT passed by reference: `closeMore` takes an
+                    // optional `restoreFocus` flag, and React would pass its
+                    // MouseEvent into it — a truthy object, so it would happen to
+                    // work today and break silently the moment the default flips.
+                    onClick={() => closeMore()}
+                  >
+                    <item.Icon className="h-6 w-6 sm:hidden" />
+                    <span data-nav-label>{item.label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </details>
         </li>
       </ul>
     </nav>

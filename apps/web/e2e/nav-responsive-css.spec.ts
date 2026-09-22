@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { MORE_SUMMARY } from './helpers/nav-more'
 
 /**
  * CSS-only responsive `GlobalNav` E2E (story 31.4, UX-DR38).
@@ -19,11 +20,13 @@ import { type Page, expect, test } from '@playwright/test'
  *     other spec in the suite measured only the settled DOM and was blind to it.
  *  2. **Desktop is untouched** (AC-3). Without a >= 640px assertion, a change
  *     that made the bar `fixed` at EVERY width passes every mobile test here.
- *     640px specifically guards `flex-wrap`, which is load-bearing on its own
- *     account: the desktop bar is already two rows from 640 to ~830px, and
- *     removing the class was measured at 138px of document overflow at 640px —
- *     invisible to `responsive-320.spec.ts` and `global-nav.spec.ts`, which
- *     both sweep 320px only.
+ *     640px specifically guards the narrow end of the desktop row. Until story
+ *     59.2 the row was two lines from 640px to ~857px and `flex-wrap` was what
+ *     held it (removing the class was measured at 138px of document overflow at
+ *     640px). Since 59.2 the row is five items and fits on one line at 640px,
+ *     with only 2.81px to spare under CI fonts (see the record below).
+ *     `responsive-320.spec.ts` and `global-nav.spec.ts` sweep 320px only, so
+ *     nothing else would see this.
  *  3. **The ink**, which no geometry assertion can see (AC-10). A reference
  *     implementation carrying 6px corners on every mobile cell AND a 2px focus
  *     ring painting OUTSET at x=-2/x=322 (off-screen on the 1st and 5th of the
@@ -38,13 +41,16 @@ import { type Page, expect, test } from '@playwright/test'
  *     cascade is untouched" included.
  *
  * ⚠️ Since 31.5 the nav holds TWO lists: the bar's outer `<ul>` and a nested
- * `<ul>` (the "More" sheet) inside its fifth `<li>`, dissolved at >= 640px with
- * `sm:contents`. Every helper here is anchored with `:scope >` rather than
- * `nav.querySelector('ul'|'a')`, which returns the first match in DOCUMENT
- * order and would silently start measuring sheet elements if the JSX were
- * reordered. And note that CSS queries match `display: none` elements: with the
- * sheet closed `nav a` still counts 8, so any count assertion must distinguish
- * bar from sheet structurally rather than by number.
+ * `<ul>` (the "More" sheet) inside its fifth `<li>`. It was dissolved at
+ * >= 640px with `sm:contents` until story 59.2. Since 59.2 it is the panel of
+ * that cell's `<details>` at every width. Every helper here is anchored with
+ * `:scope >` rather than `nav.querySelector('ul'|'a')`, which returns the first
+ * match in DOCUMENT order and would silently start measuring sheet elements if
+ * the JSX were reordered. And note that CSS queries match hidden elements: with
+ * the sheet closed `nav a` still counts 7 (a closed `<details>` hides its
+ * content from role locators and `checkVisibility()`, not from CSS), so any
+ * count assertion must distinguish bar from sheet structurally rather than by
+ * number.
  *
  * ⚠️ The 320px viewport is established BEFORE `page.goto` (via `test.use` /
  * `setViewportSize` in a fixture), never after. Resizing after navigation makes
@@ -65,9 +71,17 @@ interface NavSnapshot {
   position: string
   rect: { x: number; y: number; width: number; height: number; bottom: number }
   innerHeight: number
-  /** The sheet must be CLOSED on the first frame (story 31.5, AC-9). */
-  sheetDisplay: string
-  triggerExpanded: string | null
+  /**
+   * The sheet must be CLOSED on the first frame (story 31.5, AC-9).
+   *
+   * ⚠️ Since story 59.2 "closed" is the native `<details>` state, so it is read
+   * two ways, and computed `display` is NOT one of them. A closed `<details>`
+   * leaves its panel's own `display` untouched (`block`). Chromium hides the
+   * content through the `::details-content` slot instead, and
+   * `checkVisibility()` is what sees that.
+   */
+  sheetVisible: boolean | null
+  detailsOpen: boolean | null
   /**
    * The More tab's active treatment. It is DERIVED from the router location
    * rather than applied by `<Link activeProps>`, so unlike every other tab it
@@ -84,14 +98,15 @@ function readNav(page: Page): Promise<NavSnapshot | null> {
     const nav = document.querySelector(selector)
     if (!nav) return null
     const r = nav.getBoundingClientRect()
-    const sheet = nav.querySelector(':scope > ul > li > ul')
-    const trigger = nav.querySelector('button')
+    const details = nav.querySelector(':scope > ul > li > details') as HTMLDetailsElement | null
+    const sheet = details?.querySelector(':scope > ul') ?? null
+    const trigger = details?.querySelector(':scope > summary') ?? null
     return {
       position: globalThis.getComputedStyle(nav).position,
       rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
       innerHeight: globalThis.innerHeight,
-      sheetDisplay: sheet ? globalThis.getComputedStyle(sheet).display : 'MISSING',
-      triggerExpanded: trigger ? trigger.getAttribute('aria-expanded') : null,
+      sheetVisible: sheet ? sheet.checkVisibility() : null,
+      detailsOpen: details ? details.open : null,
       moreActive: trigger ? trigger.className.split(/\s+/).includes('bg-green-50') : false,
     }
   }, NAV)
@@ -114,14 +129,17 @@ test.describe('the mobile nav paints its final position on the first frame (AC-2
           const snapshot = nav
             ? (() => {
                 const r = nav.getBoundingClientRect()
-                const sheet = nav.querySelector(':scope > ul > li > ul')
-                const trigger = nav.querySelector('button')
+                const details = nav.querySelector(
+                  ':scope > ul > li > details'
+                ) as HTMLDetailsElement | null
+                const sheet = details?.querySelector(':scope > ul') ?? null
+                const trigger = details?.querySelector(':scope > summary') ?? null
                 return {
                   position: globalThis.getComputedStyle(nav).position,
                   rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
                   innerHeight: globalThis.innerHeight,
-                  sheetDisplay: sheet ? globalThis.getComputedStyle(sheet).display : 'MISSING',
-                  triggerExpanded: trigger ? trigger.getAttribute('aria-expanded') : null,
+                  sheetVisible: sheet ? sheet.checkVisibility() : null,
+                  detailsOpen: details ? details.open : null,
                   moreActive: trigger
                     ? trigger.className.split(/\s+/).includes('bg-green-50')
                     : false,
@@ -158,10 +176,12 @@ test.describe('the mobile nav paints its final position on the first frame (AC-2
       // user-initiated and initialised to closed precisely so the server render
       // and the first client render agree — a viewport-derived or effect-derived
       // open state would flash the sheet on every page load.
-      expect(dcl.sheetDisplay, 'the More sheet is not closed on the first painted frame').toBe(
-        'none'
+      // Both reads must be non-null: `null` means the `<details>` was not found,
+      // and a missing element must not pass as "closed".
+      expect(dcl.sheetVisible, 'the More sheet is not closed on the first painted frame').toBe(
+        false
       )
-      expect(dcl.triggerExpanded, 'the More trigger is not collapsed at first paint').toBe('false')
+      expect(dcl.detailsOpen, 'the More disclosure is not closed at first paint').toBe(false)
 
       // (c) The derived More-active state is already correct at first paint.
       expect(
@@ -202,76 +222,81 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
     })
   }
 
-  // `flex-wrap` is the only thing keeping the desktop items inside a 640px
-  // viewport. Re-measured for story 43.2, which widened the Balance label to
-  // "Balance Tracking" and so widened this row, then RE-MEASURED for story 43.3,
-  // which removed the "Net Worth" destination and narrowed it again:
+  // THE DESKTOP ROW — the single live record of its widths. The paid-tier
+  // figures live in `nav-tier-aware.paid.spec.ts`. Since story 59.2 both tiers
+  // have the SAME five-item row, so the numbers agree by construction; each
+  // file carries its own tier's measurement run.
   //
   //                        row's intrinsic width   single-row from
   //   before 43.2 (DejaVu)        753px                857px
   //   after  43.2 (DejaVu)        815px                920px
-  //   after  43.3 (DejaVu)        717px                821px   (threshold now stale — see below)
+  //   after  43.3 (DejaVu)        717px                821px   (stale by 59.1 — see below)
   //   after  59.1 (DejaVu)     661.19px                857px
+  //   after  59.2 (DejaVu)     441.58px                640px   (five items: one row everywhere)
+  //   after  59.2 (Noto)       425.13px                640px
   //
-  // ⚠️ Story 59.1 shortened the /balance label "Balance Tracking" -> "Balances",
-  // which is in THIS row too: at >= 640px `sm:contents` dissolves the sheet into
-  // it. Re-measured by `e2e/nav-intrinsic-width.measure.spec.ts`, which is now
-  // the harness these figures come from — run it, do not hand-roll a new one.
+  // Story 59.2 (FR90) took the More destinations OUT of the desktop row. Until
+  // then `sm:contents` dissolved the sheet into it, so every free destination
+  // was an item of this row. Now the row is Overview · Income · Expenses ·
+  // Savings · More at every width, and the other rows are an overlay panel.
+  // Measured by `e2e/nav-intrinsic-width.measure.spec.ts`, which 59.2 re-scoped
+  // from "every `nav a`" to the row's five flex items. The old version would
+  // have summed the hidden panel anchors and left out the `<summary>`. Run it;
+  // do not hand-roll a new one.
   //
-  // ⚠️⚠️ TWO things that re-measurement found, and only one of them is 59.1's:
-  //   - INTRINSIC width behaved exactly as the table predicts. Re-measuring with
-  //     the OLD label reproduced 716.63px against the recorded 717px, so the
-  //     harness and the historic figures agree. 59.1's rename is worth 55.44px.
-  //   - THE THRESHOLD COLUMN WAS ALREADY STALE BEFORE 59.1. With the OLD label
-  //     the row now needs a 913px viewport, not the recorded 821px. Intrinsic
-  //     width is a property of the nav alone; the threshold also depends on the
-  //     header row this list SHARES with `AuthIndicator`, and stories 58.1/58.2
-  //     changed that header without re-measuring here. So ~92px of the movement
-  //     predates this story and none of it is the rename.
-  //   Hence the honest comparison for 59.1 alone, both arms measured in one
-  //   session: 913px with "Balance Tracking" -> 857px with "Balances".
+  // SIGNED OUT (the "Sign in" + "Upgrade" cluster, which cannot shrink):
+  //   viewport   header inner   account cluster   available   headroom (DejaVu)
+  //    640px         640            195.61          444.39          2.81px
+  //    700px         700            195.61          504.39         62.81px
+  //    760px         760            195.61          564.39        122.81px
+  //   >= 1152px     1152 (cap)      195.61          956.39        514.81px
+  //   (Noto: cluster 189.80, headroom 25.07px at 640px.)
   //
-  // ⚠️ Every figure in this table and in this file's tests is the FREE nav (7
-  // anchors). Story 58.1 made the nav tier-aware, so an ENTITLED session has
-  // ELEVEN anchors and different numbers entirely — including no single-row
-  // threshold at any width. Those figures are MEASURED AND MAINTAINED IN ONE
-  // PLACE, `nav-tier-aware.paid.spec.ts`; deliberately not repeated here, because
-  // a width copied into a second file is exactly the drift this comment block
-  // already records three times over.
+  // SIGNED IN (story 59.2 code review; `/api/auth/me` mocked, long email,
+  // Premium pill, DejaVu). Before the fix the row WRAPPED: 3 rows at 640px and
+  // 2 up to ~849px. Neither header flex item was barred from shrinking, the
+  // nav had the larger basis, and it wrapped while the email's `truncate` never
+  // engaged. Now the nav is `sm:shrink-0` and the account strip `sm:min-w-0`, so
+  // the EMAIL yields: 50px of it is visible at 640px, 110px at 700, 210px at
+  // 800, and all 335px from ~1024px. The row is one line at every width. The
+  // signed-in cluster has no fixed width, so it gets no "available" column.
+  // Guarded by the signed-in sweeps in `nav-more-disclosure{,.paid}.spec.ts`,
+  // every 5px from 640 to 1400px.
   //
-  // ⚠️ Note for whoever next measures an intrinsic width, in either file: the
-  // header is capped by `sm:max-w-6xl`, so `flex-wrap: nowrap` ALONE lets the
-  // anchors shrink and reports roughly the container width back at you. 58.1 hit
-  // this and recorded a figure ~93px below the truth before catching it. Pin
-  // `flex-shrink: 0` and lift the cap as well.
+  // ⚠️⚠️ SIGNED OUT, THE 640px FIT IS TIGHT: 2.81px under CI fonts. And since
+  // the nav is `sm:shrink-0`, an overshoot no longer WRAPS the row. A row label
+  // that grows by ~3px makes the DOCUMENT overflow sideways at 640px, because
+  // the "Sign in"/"Upgrade" links cannot truncate the way an email can. So
+  // `flex-wrap` is INERT at >= 640px now, and it is the no-overflow assertions
+  // below (and the signed-out sweep) that catch an overshoot.
   //
-  // The row still WRAPS at all three tested widths (640/700/760): it needs an
-  // 821px VIEWPORT before it becomes one row. ⚠️ Note the two columns are not
-  // interchangeable — the intrinsic width (717px) is the row's own content, while
-  // the single-row threshold (821px) is the viewport it needs, and the ~104px gap
-  // is the wrapper's padding and gutters. Comparing 717px against a 760px viewport
-  // and concluding "it fits" is the mistake; the threshold is the number that
-  // predicts wrapping. Figures are CI-representative (`system-ui` -> DejaVu Sans);
-  // this repo's dev boxes resolve the narrower Noto Sans and measure
-  // 721 -> 780 -> 684 intrinsic / 822 -> 881 -> 785 single-row.
+  // ⚠️ "available" is `headerInner − accountCluster`, measured directly. It is
+  // NOT the list's `clientWidth`: since 59.2 the list sizes to its content,
+  // because the nav is not `flex-1` and the header is `justify-between`. See
+  // `helpers/nav-width.ts`.
+  //
+  // ⚠️ The 59.1 row of the table records a finding worth keeping. The THRESHOLD
+  // depends on the header this list shares with `AuthIndicator`, not just on the
+  // nav. Stories 58.1/58.2 changed that header without re-measuring here, and
+  // the 43.3 threshold (821px) had gone stale by ~92px before 59.1 noticed.
+  // Intrinsic width is a property of the nav alone; the threshold is not.
   //
   // ⚠️ Every figure above was MEASURED, at a viewport WIDER than the row, on the
   // build under test. Do not carry one forward as an estimate: 43.3 found two
   // further copies of the pre-43.2 "778px" in `GlobalNav.tsx` that had been stale
-  // for months. This comment is the single live record — do not duplicate it.
+  // for months. This comment is the single live record for the free row. Do not
+  // duplicate it.
   //
-  // ⚠️ The number this comment carried until 43.2 — "the row wants 778px …
-  // clearing only at 800px" — did NOT reproduce at 43.2's baseline under either
-  // font (753/857 DejaVu, 721/822 Noto). It was stale BEFORE this story, so it is
-  // replaced rather than adjusted. Measure with a viewport at least as wide as the
-  // row: setting `flex-wrap: nowrap` in a NARROWER one makes the anchors shrink
-  // (`flex-shrink` defaults to 1) and reports the container's width back at you.
+  // ⚠️ Note for whoever next measures an intrinsic width: `flex-wrap: nowrap`
+  // ALONE lets the items shrink and reports roughly the container width back at
+  // you (58.1: 990px, ~93px low), and the flex items are the `<li>`, not the
+  // `<a>` (59.1 read a two-word label as NARROWER than a one-word one).
   //
   // Both a document-level AND an element-level check are made: a scroll
   // container between the list and <html> would absorb the former (31.2), while
   // the latter cannot be absorbed.
   for (const width of [640, 700, 760]) {
-    test(`the desktop nav row wraps inside a ${width}px viewport (flex-wrap is load-bearing)`, async ({
+    test(`the desktop nav row is ONE row inside a ${width}px viewport, with no overflow`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 720 })
@@ -281,13 +306,17 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
       const measured = await page.evaluate((selector) => {
         const list = document.querySelector(`${selector} > ul`)
         if (!list) return null
-        // All seven anchors, deliberately: at >= 640px `sm:contents` dissolves
-        // the wrapper <li> and the nested <ul>, so every destination really is
-        // an item of this one row and every one of them must fit inside it.
-        const rights = [...list.querySelectorAll('a')].map((a) => a.getBoundingClientRect().right)
+        // The five ROW ITEMS, deliberately — not `list.querySelectorAll('a')`.
+        // Since story 59.2 that query also returns the three anchors inside the
+        // closed More panel, which are not in the row, and it skips the More
+        // `<summary>`, which is.
+        const items = [...list.querySelectorAll(':scope > li')]
+        const rights = items.map((li) => li.getBoundingClientRect().right)
         return {
+          items: items.length,
+          rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
           listOverflow: list.scrollWidth - list.clientWidth,
-          widestLinkRight: Math.max(...rights),
+          widestItemRight: Math.max(...rights),
           documentOverflow:
             document.documentElement.scrollWidth - document.documentElement.clientWidth,
           innerWidth: globalThis.innerWidth,
@@ -297,14 +326,19 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
 
       expect(measured, 'nav list not found').not.toBeNull()
       const m = measured as NonNullable<typeof measured>
-      expect(m.wrap, `the desktop nav row does not wrap at ${width}px`).toBe('wrap')
+      expect(m.items, 'the desktop row is not five items').toBe(5)
+      expect(m.rows, `the desktop nav row wraps at ${width}px`).toBe(1)
+      // Inert at >= 640px since the nav became `sm:shrink-0` (see the record
+      // above). It stays pinned because the token is still shipped, and the
+      // `GlobalNav.tsx` comment records why it was kept rather than removed.
+      expect(m.wrap, `the desktop nav row lost \`flex-wrap\` at ${width}px`).toBe('wrap')
       expect(
         m.listOverflow,
         `the nav list overflows its own box at ${width}px`
       ).toBeLessThanOrEqual(0)
       expect(
-        m.widestLinkRight,
-        `a nav link paints past the ${width}px viewport edge`
+        m.widestItemRight,
+        `a nav item paints past the ${width}px viewport edge`
       ).toBeLessThanOrEqual(m.innerWidth)
       expect(m.documentOverflow, `the document is wider than ${width}px`).toBeLessThanOrEqual(0)
     })
@@ -445,14 +479,14 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     const barCells = await read(`${NAV} > ul > li > a`)
     expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
 
-    const sheetRows = await read(`${NAV} > ul > li > ul > li > a`)
+    const sheetRows = await read(`${NAV} > ul > li > details > ul > li > a`)
     expect(sheetRows.map((r) => r.label)).toEqual(['Balances', 'Retirement', 'Settings'])
 
-    // The More trigger is a <button>, so every anchor sweep in this file misses
-    // it — including this one before 31.5 added the line below.
+    // The More trigger is not an anchor (a <button> until story 59.2, a
+    // <summary> since), so every anchor sweep in this file misses it —
+    // including this one before 31.5 added the line below.
     const triggerRadius = await page
-      .getByRole('navigation', { name: 'Primary' })
-      .getByRole('button', { name: 'More', exact: true })
+      .locator(MORE_SUMMARY)
       .evaluate((el) => globalThis.getComputedStyle(el).borderRadius)
 
     for (const { label, radius } of [...barCells, ...sheetRows]) {
@@ -586,14 +620,11 @@ for (const [theme, expected] of [
     }, theme)
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await page
-      .getByRole('navigation', { name: 'Primary' })
-      .getByRole('button', { name: 'More', exact: true })
-      .click()
+    await page.locator(MORE_SUMMARY).click()
 
     const bg = await page.evaluate(
       (selector) =>
-        globalThis.getComputedStyle(document.querySelector(`${selector} > ul > li > ul`))
+        globalThis.getComputedStyle(document.querySelector(`${selector} > ul > li > details > ul`))
           .backgroundColor,
       NAV
     )
@@ -610,14 +641,11 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
   test('the open sheet sits ON SCREEN, flush on top of the bar', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await page
-      .getByRole('navigation', { name: 'Primary' })
-      .getByRole('button', { name: 'More', exact: true })
-      .click()
+    await page.locator(MORE_SUMMARY).click()
 
     const measured = await page.evaluate((selector) => {
       const nav = document.querySelector(selector)
-      const sheet = nav.querySelector(':scope > ul > li > ul')
+      const sheet = nav.querySelector(':scope > ul > li > details > ul')
       const s = sheet.getBoundingClientRect()
       const n = nav.getBoundingClientRect()
       return {
@@ -703,13 +731,12 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
           document.documentElement.style.fontSize = `${px}px`
         }, root)
 
-        await page
-          .getByRole('navigation', { name: 'Primary' })
-          .getByRole('button', { name: 'More', exact: true })
-          .click()
+        await page.locator(MORE_SUMMARY).click()
 
         const measured = await page.evaluate((selector) => {
-          const sheet = document.querySelector(`${selector} > ul > li > ul`) as HTMLElement
+          const sheet = document.querySelector(
+            `${selector} > ul > li > details > ul`
+          ) as HTMLElement
           const r = sheet.getBoundingClientRect()
           const style = globalThis.getComputedStyle(sheet)
           return {
@@ -781,14 +808,11 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
   test('every sheet row is a >=44px target with an INSET focus ring', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await page
-      .getByRole('navigation', { name: 'Primary' })
-      .getByRole('button', { name: 'More', exact: true })
-      .click()
+    await page.locator(MORE_SUMMARY).click()
 
     const rows = await page.evaluate(
       (selector) =>
-        [...document.querySelectorAll(`${selector} > ul > li > ul > li > a`)].map((a) => {
+        [...document.querySelectorAll(`${selector} > ul > li > details > ul > li > a`)].map((a) => {
           // ⚠️ `lineCount` is NOT decoration, and story 43.2 proved it by mutation.
           // A sheet row is `display: flex` with a wrapping label, so a label too
           // wide for its box WRAPS instead of overflowing: `scrollWidth` never
@@ -841,7 +865,7 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
       await page.keyboard.press('Tab')
       const found = await page.evaluate((selector) => {
         const active = document.activeElement
-        if (!active?.closest(`${selector} > ul > li > ul`)) return null
+        if (!active?.closest(`${selector} > ul > li > details > ul`)) return null
         return globalThis.getComputedStyle(active).boxShadow
       }, NAV)
       if (found !== null) {
@@ -858,48 +882,83 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
 })
 
 /**
- * `sm:contents` on BOTH the wrapper `<li>` and the nested `<ul>` is what makes
- * the nested structure legal — it dissolves them into the one desktop flex row.
- * Measured by mutation: without it the desktop nav goes 52px -> 160px at 1280px
- * (140 computed diffs) and NOT ONE of the 69 tests across this file,
- * `global-nav.spec.ts` and `responsive-320.spec.ts` went red.
+ * The More disclosure is a REAL overlay in the desktop row at 1280px (story
+ * 59.2, AC-14).
+ *
+ * ⚠️ This test REPLACES "the nested sheet list DISSOLVES into the desktop row
+ * at 1280px", which asserted the exact opposite: `sm:contents` on the wrapper
+ * `<li>` and the nested `<ul>`, and a `display: none` trigger. That dissolve is
+ * what put a paid user's eleven anchors on two rows, and removing it is the
+ * story. The seam it watched is still the riskiest one in the nav, so the test
+ * is rewritten rather than deleted. Its original mutation record: without
+ * `sm:contents` the desktop nav went 52px -> 160px with no test red. It is kept
+ * as history.
+ *
+ * Mutation-measured for 59.2 at 1280px (Noto). This test goes RED on every arm:
+ *   (a) `sm:contents` re-added to the cell `<li>` AND the panel, on the NEW
+ *       source. It does NOT bring back seven flat anchors: the `<details>`
+ *       still hides the panel, so the CLOSED row is unchanged (5 items, nav
+ *       52px). OPEN, the panel lands in flow: the nav goes 52px -> 160px and
+ *       the page 1293px -> 1401px. Red on "the More cell dissolved into the
+ *       row".
+ *   (b) `sm:absolute` dropped from the panel: the open panel is IN FLOW. Red on
+ *       "the desktop panel is not an overlay".
+ *   (c) The whole pre-59.2 source: red on "incomplete" (there is no
+ *       `<details>` to find).
+ *   (d) `sm:contents` on the cell only: red on "the More cell dissolved".
+ * ⚠️ The cell check runs BEFORE the row-tops check on purpose. A
+ * `display: contents` `<li>` has an empty rect at y=0, so the row-tops check
+ * would also go red, but as a measurement artefact, not for the stated reason.
+ * Neither (a) nor (b) is visible to `DESKTOP_STYLES` below: a CLOSED panel
+ * contributes no height whether it is absolute or not, which is why the
+ * open-state half lives here.
  */
-test('the nested sheet list DISSOLVES into the desktop row at 1280px', async ({ page }) => {
+test('the More disclosure is a real overlay in the desktop row at 1280px', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
 
-  const measured = await page.evaluate((selector) => {
-    const nav = document.querySelector(selector)
-    const wrapper = nav.querySelector(':scope > ul > li:last-child')
-    const sheet = nav.querySelector(':scope > ul > li > ul')
-    const trigger = nav.querySelector('button')
-    const anchors = [...nav.querySelectorAll('a')]
-    return {
-      wrapperDisplay: globalThis.getComputedStyle(wrapper).display,
-      sheetDisplay: globalThis.getComputedStyle(sheet).display,
-      triggerDisplay: globalThis.getComputedStyle(trigger).display,
-      navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
-      // All seven anchors on ONE row: same y, ascending x, none clipped.
-      ys: [...new Set(anchors.map((a) => Math.round(a.getBoundingClientRect().y)))],
-      count: anchors.length,
-      // Icons are mobile-only elements; a stray one adds 24px to every cell.
-      visibleIcons: [...nav.querySelectorAll('svg')].filter(
-        (svg) => globalThis.getComputedStyle(svg).display !== 'none'
-      ).length,
-    }
-  }, NAV)
+  const read = () =>
+    page.evaluate((selector) => {
+      const nav = document.querySelector(selector) as HTMLElement
+      const items = [...nav.querySelectorAll(':scope > ul > li')] as HTMLElement[]
+      const cell = items.at(-1) as HTMLElement
+      const details = cell.querySelector(':scope > details') as HTMLDetailsElement | null
+      const panel = details?.querySelector(':scope > ul') as HTMLElement | null
+      const trigger = details?.querySelector(':scope > summary') as HTMLElement | null
+      return {
+        itemCount: items.length,
+        rowTops: [...new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))],
+        cellDisplay: getComputedStyle(cell).display,
+        found: details !== null && panel !== null && trigger !== null,
+        triggerDisplay: trigger ? getComputedStyle(trigger).display : 'MISSING',
+        panelPosition: panel ? getComputedStyle(panel).position : 'MISSING',
+        panelVisible: panel ? panel.checkVisibility() : null,
+        navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
+        bodyHeight: document.body.scrollHeight,
+        // Icons are mobile-only elements; a stray one adds 24px to every cell.
+        visibleIcons: [...nav.querySelectorAll('svg')].filter((svg) => svg.checkVisibility())
+          .length,
+      }
+    }, NAV)
 
-  expect(measured.wrapperDisplay, 'the sheet wrapper <li> did not dissolve').toBe('contents')
-  expect(measured.sheetDisplay, 'the nested <ul> did not dissolve').toBe('contents')
-  expect(measured.triggerDisplay, 'the mobile-only More trigger reached the desktop row').toBe(
-    'none'
-  )
-  // Seven anchors since story 43.3 removed the Net Worth destination (was 8).
-  expect(measured.count).toBe(7)
-  expect(measured.ys, 'the desktop nav is no longer one row').toHaveLength(1)
-  expect(measured.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
-  expect(measured.navHeight, 'the desktop nav grew — a dissolution or icon regression').toBe(52)
+  const closed = await read()
+  expect(closed.found, 'the More <details>/<summary>/<ul> is incomplete').toBe(true)
+  expect(closed.itemCount, 'the desktop row is not five items').toBe(5)
+  expect(closed.cellDisplay, 'the More cell dissolved into the row').not.toBe('contents')
+  expect(closed.rowTops, 'the desktop row wraps').toHaveLength(1)
+  expect(closed.triggerDisplay, 'the More trigger is hidden on desktop').not.toBe('none')
+  expect(closed.panelVisible, 'the panel is showing while closed').toBe(false)
+  expect(closed.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
+  expect(closed.navHeight, 'the desktop nav height moved — an icon or layout regression').toBe(52)
+
+  await page.locator(MORE_SUMMARY).click()
+  const open = await read()
+  expect(open.panelVisible, 'the panel did not open').toBe(true)
+  expect(open.panelPosition, 'the desktop panel is not an overlay').toBe('absolute')
+  expect(open.navHeight, 'opening the panel grew the bar — it is in flow').toBe(closed.navHeight)
+  expect(open.bodyHeight, 'opening the panel pushed the page down').toBe(closed.bodyHeight)
+  expect(open.visibleIcons, 'a panel-row icon is visible on desktop').toBe(0)
 })
 
 test('the desktop nav carries NO background of its own — the wrapper owns it', async ({ page }) => {
@@ -965,7 +1024,8 @@ function readMergedStyles(page: Page) {
       // Measured by mutation against a green control: icons rendered without
       // `sm:hidden` take the desktop nav 52px -> 76px at 1280px (every anchor
       // 36 -> 60px, 212 computed diffs) and the nested `<ul>` without
-      // `sm:contents` takes it 52px -> 160px (140 diffs) — and in BOTH cases
+      // `sm:contents` took it 52px -> 160px (140 diffs; the pre-59.2 dissolve,
+      // now replaced by an overlay panel) — and in BOTH cases
       // ZERO of the 69 tests across this file, `global-nav` and `responsive-320`
       // went red, including the test named "the desktop cascade is untouched"
       // directly below, because nothing anywhere read a height.
@@ -1031,7 +1091,9 @@ const DESKTOP_STYLES = {
   navZIndex: 'auto',
   navBorderTopWidth: '0px',
   // Unchanged from `main` at 1280px, and the assertion that finally has teeth
-  // against a stray icon or a dissolved-list regression.
+  // against a stray icon. ⚠️ Since story 59.2 it is BLIND to the panel: a closed
+  // `<details>` contributes no height whether its panel is an overlay or in
+  // flow. The open-panel half is "the More disclosure is a real overlay" above.
   navHeight: '52px',
   linkHeight: '36px',
   itemMinWidth: 'auto',

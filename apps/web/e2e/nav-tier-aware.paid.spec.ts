@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { MORE_PANEL, MORE_SUMMARY, NAV } from './helpers/nav-more'
 
 /**
  * The tier-aware nav, measured on a REAL paid session (story 58.1, AC-5/AC-6).
@@ -29,9 +30,11 @@ import { type Page, expect, test } from '@playwright/test'
  * `FONTCONFIG_FILE` before trusting any number measured locally.
  */
 
-const NAV = 'nav[aria-label="Primary"]'
-const MORE_TRIGGER = `${NAV} button`
-const SHEET = `${NAV} > ul > li > ul`
+// Since story 59.2 the trigger is a `<summary>` and the sheet is its
+// `<details>`'s panel — see `helpers/nav-more.ts` for why neither the old
+// `${NAV} button` nor `${NAV} > ul > li > ul` finds anything any more.
+const MORE_TRIGGER = MORE_SUMMARY
+const SHEET = MORE_PANEL
 const STORAGE_KEY = 'budget-planner-planner-visibility-v1'
 
 /** The free server, for the negative control. Absolute: this project's baseURL is :5174. */
@@ -43,7 +46,22 @@ async function gotoNav(page: Page, url = '/'): Promise<void> {
   await expect(page.locator(NAV)).toBeVisible()
 }
 
-/** Anchor count in the nav, regardless of which are CSS-hidden at this width. */
+/**
+ * ⚠️ Every `${SHEET} > li` count in this file is DOM PRESENCE too, for the same
+ * reason: CSS locators match the rows of a CLOSED `<details>`. They are the
+ * right instrument for "the seam rendered the paid list". Reach is proven in
+ * `tier-aware-surfaces.paid.spec.ts` and `nav-more-disclosure.paid.spec.ts`.
+ */
+
+/**
+ * Anchor count in the nav, regardless of which are CSS-hidden at this width.
+ *
+ * ⚠️ DOM PRESENCE, not reachability. It is a CSS count, so since story 59.2 it
+ * also counts the rows inside the CLOSED More `<details>`, at every width. That
+ * is the right instrument for "the seam rendered the paid list" and the wrong
+ * one for "a user can reach it" — `tier-aware-surfaces.paid.spec.ts` and
+ * `nav-more-disclosure.paid.spec.ts` prove reach.
+ */
 async function anchorCount(page: Page): Promise<number> {
   return page.locator(`${NAV} a`).count()
 }
@@ -85,137 +103,67 @@ test.describe('the paid nav really is the paid nav', () => {
 })
 
 /**
- * AC-6 — the desktop row at 11 anchors.
+ * The desktop row for a paid session — FIVE items, ONE row (story 59.2, FR90).
  *
- * ⚠️⚠️ MEASURED FINDING (story 58.1, re-measured by story 59.1, under CI fonts):
- * **the paid row has NO single-row width. It is two rows at every desktop
- * viewport.** Story 59.1 shortened one label and that is STILL true.
+ * ⚠️⚠️ THIS REPLACES A TWO-ROW RECORD. Until story 59.2 a paying user's eleven
+ * anchors wrapped to TWO rows (92px) at every desktop width. 59.1 measured the
+ * row as needing 1026.80px against 966px at the cap (DejaVu) — 60.80px short
+ * after its own rename, 116.23px before it — and recorded that no spacing
+ * change could close it. 59.2 closed it by moving the More destinations out of
+ * the row: the row is Overview · Income · Expenses · Savings · More in BOTH
+ * tiers, and the other seven rows are an overlay panel.
  *
- *   viewport   rows  list clientWidth (59.1, DejaVu)
- *   1024px      2         846px
- *   1152px      2         966px
- *   1280px      2         966px
- *   1440–2400   2         966px   (saturated)
+ * ⚠️ THE ROW'S WIDTHS ARE NOT REPEATED HERE. The free and paid rows are the
+ * same five items, so there is one measurement, and it lives in ONE place: the
+ * record in `nav-responsive-css.spec.ts` ("THE DESKTOP ROW"), produced by
+ * `nav-intrinsic-width.measure{,.paid}.spec.ts`. The paid run reproduces the
+ * free figures exactly (441.58px DejaVu), and that spec asserts the paid row
+ * fits and never wraps from 640 to 1400px. That covers signed-out AND signed-in
+ * clusters; the signed-in one was the review's finding D1, fixed with
+ * `sm:shrink-0` on the nav. This docblock keeps only what is PAID-specific.
  *
- * TRUE intrinsic width, measured at a 2400px viewport with `flex-wrap: nowrap`,
- * `flex-shrink: 0` ON THE `<li>` (see the trap below) AND the `max-w-6xl` cap
- * lifted. Both labels are measured in ONE page session, swapping only the
- * `/balance` label's text node, so the arms share viewport, fonts, tier and
- * hydration. (Controlled, not identical: the "before" arm is a text-node swap on
- * the post-change build, not the pre-change build. What actually validates it is
- * the agreement with 58.1's independent figures, noted below.)
+ * The open panel (1280px, DejaVu): 160px wide (`sm:min-w-[10rem]`), 7 × 36px
+ * rows = 262px tall, top at y=48, no horizontal overflow. (Free: 3 rows,
+ * 118px.) Paid is the tallest panel, so it carries the occlusion sweep in
+ * `nav-more-disclosure.paid.spec.ts`.
  *
- *                       anchors+gaps   + list px-4   = total needed   available   short by   rows
- *   DejaVu/CI  before      1050.23px       32px         1082.23px       966px     116.23px     2
- *   DejaVu/CI  AFTER        994.80px       32px         1026.80px       966px      60.80px     2
- *   Noto/dev   before      1004.75px       32px         1036.75px       965px      71.75px     2
- *   Noto/dev   AFTER        952.31px       32px          984.31px       965px      19.31px     2
+ * ⚠️ 58.1's "973" and 59.1's "966" "available" figures are SUPERSEDED, not
+ * reconciled. Both were the list's `clientWidth` while the 11-anchor row was
+ * saturated. The likeliest reason they differed by 7px is that the account
+ * cluster, itself a flex item, took a different width in the two
+ * measurements. That is REASONED, not measured: the saturated row no longer
+ * exists to measure. Nothing depends on either figure any more, because the
+ * row now sizes to its content and the headroom at the cap is hundreds of
+ * pixels.
  *
- * (The "anchors+gaps" column is kept because the record elsewhere quotes the gap
- * both ways — 1082.23 vs 966 INCLUDING the list's `px-4`, or 1050.23 vs 934
- * excluding it. Same shortfall; say which you mean.)
- *
- * So 59.1's rename ("Balance Tracking" -> "Balances") is worth a measured
- * **55.43px under CI fonts** (52.44px on Noto) — real, reproducible, and **NOT
- * enough**: 60.80px of shortfall remain and the row is still two rows at every
- * width. Closing it is story 59.2's job, not this rename's.
- *
- * ⚠️ Every figure above is 59.1's own measurement, INCLUDING the 846px at 1024px
- * that happens to equal 58.1's — it was re-measured, not carried forward.
- *
- * ⚠️ 58.1 recorded available as 973px where 59.1 measures **966px**, and the
- * 60.80px shortfall DOES depend on which you use (against 973 it would be 53.80).
- * So this is a live 7px uncertainty, not a rounding note — do not repeat 59.1's
- * first framing of it as "nothing depends on it". What is known: the delta
- * appears ONLY in the saturated rows (>= 1152px), while 1024px matches 58.1
- * exactly. That points at the capped header the list shares with `AuthIndicator`,
- * not at harness noise. 59.2 inherits this; resolve it there if the exact figure
- * matters, and quote 966px until then.
- *
- * ⚠️ `flex-wrap: nowrap` ALONE gives a WRONG answer here, and the first pass of
- * this measurement fell for it: the header is capped at `sm:max-w-6xl`, so with
- * shrink still enabled the anchors simply compress and the measurement reports
- * roughly the container's own width back at you (it read 990px — an artifact
- * ~93px below the truth, which made the shortfall look like a trivial 17px).
- * Disable shrink and lift the cap, or do not trust the number. This is the same
- * trap `nav-responsive-css.spec.ts` warns about for the 7-anchor row.
- *
- * ⚠️⚠️ AND THE SHARPER FORM OF IT, which cost story 59.1 three wrong runs:
- * **the flex ITEMS are the `<li>`, not the `<a>`.** `flex-shrink: 0` applied to
- * the anchors alone leaves every `<li>` free to compress, so a TWO-WORD label
- * WRAPS and then measures as its longest word. "Balance Tracking" read **58.3px**
- * that way — NARROWER than "Balances" at 63.14px — i.e. the harness reported that
- * shortening the label made the row WIDER, reproducibly and with zero drift
- * across an A/B/A cycle. A stable, repeatable number is not a correct one. Kill
- * shrink on the `li` (and pin `white-space: nowrap` on `[data-nav-label]`).
- *
- * The reason it never resolves is structural, not a matter of finding a wider
- * screen: `__root.tsx` caps the header row at `sm:max-w-6xl` (1152px) and shares
- * it with `AuthIndicator`, so the nav list saturates at **966px** of available
- * width. Widening the viewport past 1152px changes nothing.
- *
- * So the 7-anchor row's "single-row threshold" column (821px viewport, recorded in
- * `nav-responsive-css.spec.ts`) has no 11-anchor counterpart. Do not go looking
- * for one; it does not exist at any width.
- *
- * Consequence, accepted when this shipped: a paying user's desktop nav is 92px
- * tall instead of 52px, on every page. It is legible, overflows nothing and every
- * clearance guard passes — but it is a visible change and it was a decision, not
- * an oversight.
- *
- * ⚠️ A future story tempted to "reclaim" the single row should know the gap is
- * **60.80px under CI fonts after 59.1** (116.23px before it), not a rounding
- * error. The ten `gap-1` gutters are 40px in total and `px-4` is 32px, so
- * trimming spacing cannot close it — only shorter labels, fewer destinations, or
- * raising the `max-w-6xl` cap could, and the last of those moves every page's
- * content column. 59.1 took the "shorter labels" option as far as one label goes
- * and it was not enough. The row budget below is therefore a CEILING of 2, not a
- * pin at 2: it catches a third row without pretending one row is within reach.
- *
- * ⚠️ Every figure above was measured, not converted — the DejaVu ones under
- * `FONTCONFIG_FILE`, with a positive control confirming the override actually
- * reached Chromium. 59.1's control: the string **"Balance Tracking"** rendered in
- * an offscreen span at `500 14px system-ui` measures **118.58px under DejaVu vs
- * 110.84px under Noto**, and the whole-row totals differ accordingly (1082.23 vs
- * 1036.75 before the rename). Without that control a silently-ignored font
- * override is indistinguishable from a working one.
- *
- * ⚠️ The strongest check on these numbers is not repetition, it is AGREEMENT
- * BETWEEN INDEPENDENT PROBES. Two hold here: the span control's 118.58 − 63.14 =
- * 55.44 matches the whole-row saving of 55.43; and the harness reproduces 58.1's
- * separately-recorded totals (1082.23 vs 1083, 1036.75 vs 1037). 59.1's broken
- * harness passed neither, while being perfectly repeatable.
- *
- * ⚠️ THE HARNESS IS IN THE TREE: `e2e/nav-intrinsic-width.measure.paid.spec.ts`
- * (and `.measure.spec.ts` for the free row), sharing `e2e/helpers/nav-width.ts`.
- * Re-run those rather than writing a fourth one-off — 58.1's and 59.1's were both
- * deleted after recording, which is why 59.1 rebuilt the method wrong.
+ * ⚠️ Measuring the row again? `flex-wrap: nowrap` ALONE gives a wrong answer
+ * (58.1 read 990px, ~93px below the truth), and **the flex items are the `<li>`,
+ * not the `<a>`** (59.1 read a two-word label as NARROWER than a one-word one,
+ * reproducibly). Run the committed harness; do not write a new one.
  */
-test.describe('desktop cascade at 11 anchors (AC-6)', () => {
-  // ⚠️ Titled for what it MEASURES. An earlier title said "reports the intrinsic
-  // width" — it does not: the intrinsic figure in the docblock came from a
-  // separate one-off harness (nowrap + `flex-shrink: 0` + cap lifted) that is not
-  // encoded here, so that number has no regression guard and the title implied it
-  // did.
-  test('wraps to at most two rows at 1280px, with no overflow', async ({ page }) => {
+test.describe('the paid desktop row (story 59.2)', () => {
+  test('is ONE row of the same five items as the free row at 1280px, with no overflow', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 720 })
     await gotoNav(page)
 
     const measured = await page.evaluate((selector) => {
       const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
       if (!list) return null
-      const anchors = [...list.querySelectorAll('a')]
+      // The ROW ITEMS. `list.querySelectorAll('a')` would also count the seven
+      // rows inside the closed More panel, whose tops are not in the row.
+      const items = [...list.querySelectorAll(':scope > li')] as HTMLElement[]
       // Distinct top offsets = wrapped row count. Reading `height` alone cannot
       // distinguish one tall row from two short ones.
-      const rows = new Set(anchors.map((a) => Math.round(a.getBoundingClientRect().top)))
+      const rows = new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))
       return {
         rowCount: rows.size,
+        items: items.length,
         listHeight: Math.round(list.getBoundingClientRect().height),
-        anchors: anchors.length,
         listOverflow: list.scrollWidth - list.clientWidth,
         documentOverflow:
           document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        wrap: globalThis.getComputedStyle(list).flexWrap,
       }
     }, NAV)
 
@@ -223,37 +171,38 @@ test.describe('desktop cascade at 11 anchors (AC-6)', () => {
     const m = measured as NonNullable<typeof measured>
 
     // eslint-disable-next-line no-console -- the measurement IS the deliverable
-    console.log('[58.1 AC-6] 1280px paid row:', JSON.stringify(m))
+    console.log('[59.2] 1280px paid row:', JSON.stringify(m))
 
-    expect(m.anchors, 'not measuring the paid nav').toBe(11)
-    expect(m.wrap, 'flex-wrap is no longer containing the row').toBe('wrap')
-    // A CEILING, not a pin. Two rows is the measured, accepted state; three would
-    // be a real degradation of every page's header. If a future change closes the
-    // 60.80px gap (116.23px before story 59.1 shortened one label) and this drops
-    // to one row, update the table above — a pass at 1 row is an improvement,
-    // not a failure.
-    expect(m.rowCount, 'the paid desktop nav has grown past two rows').toBeLessThanOrEqual(2)
-    // Two-sided: the row must not overflow its own box, and the document must
-    // not gain a horizontal scrollbar because of it.
+    // The precondition this is the paid nav, not the free one: 11 anchors in the
+    // DOM (7 of them in the closed panel).
+    expect(await anchorCount(page), 'not measuring the paid nav').toBe(11)
+    expect(m.items, 'the paid row is not five items').toBe(5)
+    // A PIN at 1, tightened from the pre-59.2 ceiling of 2 — the direction that
+    // ceiling's own comment asked for ("a pass at 1 row is an improvement").
+    expect(m.rowCount, 'the paid desktop nav wraps').toBe(1)
+    // 52px is the one-row desktop nav; 92px was the two-row one.
+    expect(m.listHeight, 'the paid desktop nav is not one row tall').toBe(52)
     expect(m.listOverflow, 'the nav list overflows its own box at 1280px').toBeLessThanOrEqual(0)
     expect(m.documentOverflow, 'the document is wider than 1280px').toBeLessThanOrEqual(0)
   })
 
-  // The existing wrap guard's premise, re-checked at the new anchor count: four
-  // more anchors must not turn wrapping into overflow at the narrow end of the
-  // desktop cascade.
+  // The narrow end of the desktop cascade, where the signed-out fit is
+  // tightest (headroom in `nav-responsive-css.spec.ts`'s record).
   for (const width of [640, 700, 760]) {
-    test(`the paid row still wraps inside a ${width}px viewport`, async ({ page }) => {
+    test(`the paid row is one row inside a ${width}px viewport, with no overflow`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 720 })
       await gotoNav(page)
 
       const m = await page.evaluate((selector) => {
         const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
         if (!list) return null
-        const rights = [...list.querySelectorAll('a')].map((a) => a.getBoundingClientRect().right)
+        const items = [...list.querySelectorAll(':scope > li')] as HTMLElement[]
         return {
+          rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
           listOverflow: list.scrollWidth - list.clientWidth,
-          widestLinkRight: Math.max(...rights),
+          widestItemRight: Math.max(...items.map((li) => li.getBoundingClientRect().right)),
           innerWidth: globalThis.innerWidth,
           documentOverflow:
             document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -262,10 +211,11 @@ test.describe('desktop cascade at 11 anchors (AC-6)', () => {
 
       expect(m).not.toBeNull()
       const r = m as NonNullable<typeof m>
+      expect(r.rows, `the paid row wraps at ${width}px`).toBe(1)
       expect(r.listOverflow, `the nav list overflows its box at ${width}px`).toBeLessThanOrEqual(0)
       expect(
-        r.widestLinkRight,
-        `a nav link paints past the ${width}px viewport edge`
+        r.widestItemRight,
+        `a row item paints past the ${width}px viewport edge`
       ).toBeLessThanOrEqual(r.innerWidth)
       expect(r.documentOverflow, `the document is wider than ${width}px`).toBeLessThanOrEqual(0)
     })

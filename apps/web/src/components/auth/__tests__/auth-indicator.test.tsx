@@ -262,6 +262,31 @@ describe('AuthIndicator', () => {
     expect(await screen.findByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/login')
     expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
   })
+
+  // Story 59.2 (code review). On the desktop row this strip is a flex item beside
+  // the nav. Without `sm:min-w-0` its minimum is its content width, so a long
+  // email can never truncate and the nav wraps to 2-3 rows instead (measured).
+  // Class TOKENS, because jsdom computes no layout. The rendered row is pinned
+  // with a mocked signed-in session in `e2e/nav-more-disclosure.paid.spec.ts`.
+  it('lets the strip yield width on the desktop row so a long email truncates', async () => {
+    stubFetch({
+      user: {
+        userId: 'user-1',
+        email: 'a.long.address@example.test',
+        subscriptionStatus: 'active',
+      },
+    })
+    renderWithRouter(<AuthIndicator />)
+    await screen.findByText('a.long.address@example.test')
+    const strip = screen.getByRole('status', { name: /account status/i })
+    const stripTokens = [...strip.classList]
+    expect(stripTokens, 'the strip cannot shrink below its content on desktop').toContain(
+      'sm:min-w-0'
+    )
+    expect(stripTokens, '`min-w-0` must stay desktop-only').not.toContain('min-w-0')
+    const email = screen.getByText('a.long.address@example.test')
+    expect([...email.classList]).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
+  })
 })
 
 describe('AuthIndicator — "Upgrade" affordance (UX review, 2026-09-14)', () => {

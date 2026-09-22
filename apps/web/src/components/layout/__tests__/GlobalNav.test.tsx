@@ -1,5 +1,5 @@
 import { type SessionSeed, SessionSeedProvider } from '@/context/session-seed'
-import { renderWithRouter, screen, within } from '@/test/utils'
+import { fireEvent, renderWithRouter, screen, waitFor, within } from '@/test/utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { usePlannerVisibilityStore } from '../../../stores/plannerVisibilityStore'
@@ -39,16 +39,22 @@ import { GlobalNav } from '../GlobalNav'
 /**
  * Split into the two groups story 31.5 introduced — for READABILITY only.
  *
- * ⚠️⚠️ THE LINK COUNTS BELOW STAY 7 AND STAY GREEN. Do NOT "fix" them to 5.
- * jsdom applies no media queries, so `display: none` is never computed and
- * `getAllByRole('link')` resolves ALL SEVEN anchors regardless of which three are
- * behind the More trigger at 320px in a real browser. Every one of the seven
- * `it.each` rows passes unchanged too. Changing these counts to 5 would turn
- * correct, green tests red. (It was EIGHT until story 43.3 removed
+ * ⚠️⚠️ THE LINK COUNTS BELOW STAY 7 AND STAY GREEN. Do NOT "fix" them to 4.
+ * They prove the destinations are RENDERED. They do not prove a user can REACH
+ * them. Since story 59.2 the three More destinations sit inside a native
+ * `<details>` at EVERY width, and a closed `<details>` hides its content from a
+ * real browser's accessibility tree. jsdom does not: its default stylesheet
+ * (`jsdom/lib/jsdom/browser/default-stylesheet.js`) has no closed-details rule,
+ * so `getAllByRole('link')` still resolves all seven, and every `it.each` row
+ * below still passes. Before 59.2 the same count had a different reason: jsdom
+ * applies no media queries. (It was EIGHT until story 43.3 removed
  * `/net-worth-projection`; the count follows the nav, never the viewport.)
- * The bar-versus-sheet distinction is a rendered
- * fact, and it is asserted where it can actually be measured:
- * `e2e/chrome-320.spec.ts` and `e2e/nav-responsive-css.spec.ts`.
+ *
+ * Where openness DOES matter, this file uses jest-dom's `toBeVisible()`, which
+ * respects `details[open]`. That is the story 59.2 block at the bottom. What a
+ * user can actually reach is a rendered fact, asserted in
+ * `e2e/nav-more-disclosure.spec.ts`, `e2e/chrome-320.spec.ts` and
+ * `e2e/nav-responsive-css.spec.ts`.
  */
 const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
   [/^overview$/i, '/'],
@@ -204,8 +210,10 @@ describe('GlobalNav', () => {
     expect(listTokens).toContain('max-sm:gap-0')
     expect(listTokens).toContain('max-sm:px-0')
     expect(listTokens).toContain('max-sm:py-0')
-    // The desktop row is untouched (AC-3) — including `flex-wrap`, which is
-    // load-bearing at 640-830px in its own right, NOT a flash artefact.
+    // The desktop row is untouched (AC-3), including `flex-wrap`. Since story
+    // 59.2's review the nav is `sm:shrink-0`, so the token is inert at >= 640px
+    // and is kept deliberately (see the `GlobalNav.tsx` comment on the list).
+    // The row's measured headroom lives ONLY in `e2e/nav-responsive-css.spec.ts`.
     expect(listTokens).toEqual(
       expect.arrayContaining(['flex', 'flex-wrap', 'gap-1', 'px-4', 'py-2'])
     )
@@ -220,7 +228,9 @@ describe('GlobalNav', () => {
    * over: it puts four destination labels in the DOM TWICE — the dual-render
    * this component's docblock rejects — and it breaks jsdom multi-match and
    * Playwright strict mode alike. The compliant shape is a NESTED `<ul>` inside
-   * the fifth `<li>`, dissolved at >= 640px.
+   * the fifth `<li>`. Until story 59.2 that list was dissolved into the desktop
+   * row at >= 640px. Since 59.2 it sits inside the cell's `<details>` and is a
+   * disclosure panel at every width.
    */
   it('nests the More destinations in ONE list, with no duplicated label', async () => {
     renderWithRouter(<GlobalNav />)
@@ -251,68 +261,82 @@ describe('GlobalNav', () => {
     const hrefs = [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href'))
     expect(new Set(hrefs).size, 'a destination is duplicated in the nav DOM').toBe(hrefs.length)
 
-    // ⚠️⚠️ BOTH `sm:contents` tokens are load-bearing and the e2e suite was
-    // blind to losing them: measured, the nested list without `sm:contents`
-    // takes the desktop nav from 52px to 160px at 1280px (140 computed diffs)
-    // with ZERO of 69 tests red.
-    const wrapper = sheet.parentElement as HTMLElement
-    expect(wrapper.tagName).toBe('LI')
-    expect(tokens(wrapper), 'the sheet wrapper <li> does not dissolve on desktop').toContain(
-      'sm:contents'
-    )
-    expect(tokens(sheet), 'the nested <ul> does not dissolve on desktop').toContain('sm:contents')
+    // Story 59.2: the nested list is the panel of the fifth cell's `<details>`.
+    // Until 59.2 this asserted the OPPOSITE — two `sm:contents` tokens
+    // dissolving the list into the desktop row — and that dissolve is now the
+    // regression. Its absence is pinned in the story 59.2 block below.
+    const details = sheet.parentElement as HTMLElement
+    expect(details.tagName, 'the sheet list is not the panel of a <details>').toBe('DETAILS')
+    expect((details.parentElement as HTMLElement).tagName).toBe('LI')
   })
 
   /**
    * Story 31.5 — the More trigger. Every other sweep in this file misses it:
    * the chrome test reads only `nav.className`, and the colour-scoping test
-   * iterates `getAllByRole('link')`, which skips a `<button>` entirely.
+   * iterates `getAllByRole('link')`, which skips the trigger entirely.
+   *
+   * ⚠️ Story 59.2 made it a `<summary>` that reaches the desktop row, reversing
+   * this test's old title, "never reaches the desktop row". A `<summary>` has no
+   * role in `@testing-library/dom` (see the story 59.2 block), so it is found by
+   * selector and asserted non-null before anything else.
    */
-  it('exposes a single More trigger that never reaches the desktop row', async () => {
+  it('exposes a single More trigger, a <summary>, styled for both layouts', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    const buttons = within(nav).getAllByRole('button')
-    expect(buttons, 'expected exactly one <button> in the nav').toHaveLength(1)
-    const trigger = buttons[0]
+    const summaries = nav.querySelectorAll('details > summary')
+    expect(summaries, 'expected exactly one More <summary> in the nav').toHaveLength(1)
+    expect(nav.querySelectorAll('button'), 'a <button> survived in the nav').toHaveLength(0)
+    const trigger = summaries[0] as HTMLElement
     expect(trigger).toHaveAccessibleName('More')
-    expect(trigger).toHaveAttribute('type', 'button')
 
-    // A mobile-only ELEMENT takes base classes + `sm:hidden` (the composition
-    // rule in `ui/ResponsiveTable.tsx:31-39`). A ninth item in the desktop flex
-    // row would change the widest-link right edge that
-    // `e2e/nav-responsive-css.spec.ts` measures at 640/700/760px.
+    // A SHARED element now, so the composition rule for shared elements applies:
+    // desktop base + APPENDED `max-sm:` variants (`GlobalNav.tsx` docblock).
     const triggerTokens = tokens(trigger)
-    expect(triggerTokens, 'the More trigger reaches the desktop row').toContain('sm:hidden')
-    // Its own chrome, which no `nav.className` sweep can see.
-    expect(triggerTokens).toContain('flex-col')
-    expect(triggerTokens).toContain('min-h-[44px]')
-    expect(triggerTokens).toContain('text-[11px]')
+    // Desktop: the same look as every desktop anchor.
+    expect(triggerTokens).toEqual(
+      expect.arrayContaining(['inline-block', 'rounded-md', 'px-3', 'py-2', 'text-sm'])
+    )
+    // Mobile: the 64px bar cell it has always been, via `max-sm:` only.
+    expect(triggerTokens).toContain('max-sm:flex-col')
+    expect(triggerTokens).toContain('max-sm:min-h-[44px]')
+    expect(triggerTokens).toContain('max-sm:text-[11px]')
     expect(triggerTokens).toContain('focus-visible:ring-2')
-    expect(triggerTokens).toContain('focus-visible:ring-inset')
-
-    // Closed on the first render, so the server and client agree (AC-7).
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    const panelId = trigger.getAttribute('aria-controls')
-    expect(panelId, 'the More trigger has no aria-controls').toBeTruthy()
-    expect(nav.querySelector(`#${panelId}`), 'aria-controls names no element').not.toBeNull()
+    expect(triggerTokens).toContain('max-sm:focus-visible:ring-inset')
+    // The inset ring is for the flush mobile tracks only; desktop rings are outset.
+    expect(triggerTokens, '`ring-inset` leaked onto the desktop trigger').not.toContain(
+      'focus-visible:ring-inset'
+    )
   })
 
   /**
-   * Story 31.5 (AC-7) — the state is a `max-sm:`-scoped CLASS, never the
-   * `hidden` attribute.
+   * Story 59.2 — the closed state is the NATIVE `<details>` state, at every width.
    *
-   * ⚠️ `hidden={!isOpen}` is the textbook disclosure idiom and the first thing a
-   * dev reaches for. It applies at EVERY width, so it would delete Balance, Net
-   * Worth, Retirement and Settings from the DESKTOP nav entirely.
+   * ⚠️ THIS TEST'S CONTRACT INVERTED IN 59.2. It used to guard that the closed
+   * state did NOT hide the destinations on desktop: it was a `max-sm:`-scoped
+   * class, never the `hidden` attribute, because `hidden={!isOpen}` would have
+   * deleted them from the flat desktop row. Hiding them at every width is now
+   * the DESIGN (decision, Lucas 2026-09-21), and the old assertion
+   * ("no `hidden` attribute") would have stayed green while being meaningless.
+   *
+   * What still must not happen is a SECOND hiding mechanism layered on the
+   * native one. A `hidden` attribute or a `max-sm:hidden` class would keep the
+   * panel shut after the native toggle opened it, so it would never open with
+   * JavaScript off. The fail-open property (every route reachable with zero
+   * JavaScript) rests on the native toggle being the ONLY thing that hides it.
    */
-  it('hides the closed sheet with a max-sm: class, not the `hidden` attribute', async () => {
+  it('hides the closed panel natively at every width, and by nothing else', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const sheet = [...nav.querySelectorAll('ul')][1]
 
-    expect(sheet.hasAttribute('hidden'), 'the sheet uses the `hidden` attribute').toBe(false)
-    expect(tokens(sheet), 'the closed sheet is not hidden below `sm`').toContain('max-sm:hidden')
+    expect(sheet.hasAttribute('hidden'), 'the panel uses the `hidden` attribute').toBe(false)
+    expect(tokens(sheet), 'a class-based closed state is layered on the native one').not.toContain(
+      'max-sm:hidden'
+    )
+    expect(tokens(sheet)).not.toContain('hidden')
+    // Closed means hidden, and jest-dom can see it: it respects `details[open]`.
+    expect(within(sheet).getByRole('link', { name: /^balances$/i })).not.toBeVisible()
     // Out of flow against the `max-sm:fixed` nav — NOT `max-sm:fixed` itself,
     // which resolves `bottom: 100%` against the viewport and renders the sheet
     // entirely off the top of the screen (measured at y=-279).
@@ -483,7 +507,13 @@ describe('GlobalNav', () => {
    * the same store `<Link>` does, seeded before the first React render).
    */
   describe('the More tab is active on the four routes it owns', () => {
-    const moreTrigger = (nav: HTMLElement): HTMLElement => within(nav).getByRole('button')
+    // ⚠️ Non-null FIRST. The `.not.toContain` cases below would pass against a
+    // missing node, and `getByRole('button')` no longer finds the trigger at all.
+    const moreTrigger = (nav: HTMLElement): HTMLElement => {
+      const summary = nav.querySelector('details > summary')
+      expect(summary, 'the More <summary> is missing').not.toBeNull()
+      return summary as HTMLElement
+    }
 
     it.each(MORE_DESTINATIONS)('is active on %s (%s)', async (_label, href) => {
       renderWithRouter(<GlobalNav />, { path: href })
@@ -522,10 +552,10 @@ describe('GlobalNav', () => {
 /**
  * Story 35.2 (FR55) — the Retirement planner visibility preference.
  *
- * ⚠️ These counts are 7 and 8, and that does NOT contradict the "stay 8, stay
- * green" warning at the top of this file. That warning is about jsdom computing
- * no CSS: the four sheet anchors are always in the DOM because `display: none`
- * is never applied here. This block asserts something different in kind — with
+ * ⚠️ These counts are 6 and 7, and that does NOT contradict the "STAY 7"
+ * warning at the top of this file. That warning is about jsdom not hiding what a
+ * browser hides: the sheet anchors always resolve here, whether the panel is
+ * open or not (story 59.2). This block asserts something different in kind — with
  * the preference off, the Retirement `<li>` is NEVER RENDERED, so it is absent
  * from the DOM at every width, in jsdom and in a real browser alike.
  *
@@ -587,7 +617,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     expect(
       [...outer.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
     ).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
-    expect(within(nav).getAllByRole('button')).toHaveLength(1)
+    expect(nav.querySelectorAll('details > summary')).toHaveLength(1)
   })
 
   /**
@@ -604,8 +634,10 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     renderWithRouter(<GlobalNav />, { path: '/retirement' })
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
+    const summary = nav.querySelector('details > summary')
+    expect(summary, 'the More <summary> is missing').not.toBeNull()
     expect(
-      tokens(within(nav).getByRole('button')),
+      tokens(summary as HTMLElement),
       'the More tab claims a destination its sheet no longer holds'
     ).not.toContain('bg-green-50')
   })
@@ -669,10 +701,10 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
  * whose no-seed path fires a client round-trip and would flash 7 items then 11.
  *
  * ⚠️ These counts (11 / 7) do not contradict the "STAY 7" warning at the top of
- * this file. That warning is about VIEWPORT — jsdom applies no media queries, so
- * every anchor is in the DOM regardless of which ones a 320px browser hides
- * behind the More trigger. This block varies TIER, which changes what is
- * rendered at all, at every width.
+ * this file. That warning is about REACHABILITY: jsdom does not hide a closed
+ * `<details>` (story 59.2), so every anchor resolves whether or not a real
+ * browser would let a user reach it. This block varies TIER, which changes what
+ * is rendered at all, at every width.
  *
  * ⚠️ Geometry is NOT asserted here and cannot be: jsdom loads no Tailwind and
  * computes no layout. The 11-anchor desktop row and 7-row sheet are measured for
@@ -793,7 +825,9 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         'aria-current',
         'page'
       )
-      expect(tokens(within(navEl).getByRole('button'))).toContain('bg-green-50')
+      const summary = navEl.querySelector('details > summary')
+      expect(summary, 'the More <summary> is missing').not.toBeNull()
+      expect(tokens(summary as HTMLElement)).toContain('bg-green-50')
     })
   })
 
@@ -865,7 +899,9 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     it('does not mark the More trigger active on /retirement while it is hidden', async () => {
       usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
       renderWithSeed(seedWith(), '/retirement')
-      expect(tokens(within(await nav()).getByRole('button'))).not.toContain('bg-green-50')
+      const summary = (await nav()).querySelector('details > summary')
+      expect(summary, 'the More <summary> is missing').not.toBeNull()
+      expect(tokens(summary as HTMLElement)).not.toContain('bg-green-50')
     })
   })
 
@@ -876,5 +912,216 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       expect(within(navEl).queryByRole('link', { name: /sync/i })).not.toBeInTheDocument()
       unmount()
     }
+  })
+})
+
+/**
+ * Story 59.2 (FR90) — the More disclosure exists at EVERY width, as a native
+ * `<details>`/`<summary>`.
+ *
+ * ⚠️ How the trigger is found, and why not by role. `@testing-library/dom`
+ * resolves implicit roles through aria-query 5.3.0, which has NO entry for
+ * `summary`, so `getByRole('button')` finds nothing and `getAllByRole('button')`
+ * THROWS. (dom-accessibility-api does map `summary` to `button`, but `getByRole`
+ * never consults it; `toHaveAccessibleName` does, which is why that matcher still
+ * works on the element.) Everything here locates `details > summary`, and it
+ * asserts the element is non-null FIRST, so a `.not.toContain` can never pass
+ * against a missing node.
+ *
+ * ⚠️ jsdom does NOT hide the content of a closed `<details>` from `getByRole`
+ * (its default stylesheet has no closed-details rule). jest-dom's `toBeVisible()`
+ * DOES respect `details[open]`, so it is the one matcher here that can tell open
+ * from closed.
+ *
+ * ⚠️ WHO toggles `open` in these tests: React, not jsdom. jsdom does implement
+ * the native summary activation (a click on the first `<summary>` flips `open`
+ * synchronously, and `toggle` fires as a later task). But the component's
+ * `onClick` calls `preventDefault()`, which cancels that activation, and toggles
+ * its own state instead, and the `open` flip comes from React's re-render. The
+ * native path is exercised directly by "adopts an open it did not cause" below,
+ * which sets `.open` from script.
+ */
+describe('GlobalNav — the More disclosure at every width (story 59.2)', () => {
+  const parts = async () => {
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    const details = nav.querySelector('details')
+    const summary = nav.querySelector('details > summary')
+    const panel = nav.querySelector('details > ul')
+    expect(details, 'the More disclosure is not a <details>').not.toBeNull()
+    expect(summary, 'the <details> has no <summary> trigger').not.toBeNull()
+    expect(panel, 'the panel list is not inside the <details>').not.toBeNull()
+    return {
+      nav,
+      details: details as HTMLDetailsElement,
+      summary: summary as HTMLElement,
+      panel: panel as HTMLElement,
+    }
+  }
+
+  it('is a native disclosure in the fifth cell, closed on the first render', async () => {
+    renderWithRouter(<GlobalNav />)
+    const { nav, details, summary, panel } = await parts()
+
+    const outer = nav.querySelector('ul') as HTMLElement
+    const fifth = outer.querySelectorAll(':scope > li')[4]
+    expect(fifth?.firstElementChild, 'the <details> is not the fifth cell').toBe(details)
+    expect(details.firstElementChild, 'the <summary> must be the first child').toBe(summary)
+    expect(summary).toHaveAccessibleName('More')
+    // Closed on the first render, so the server and client agree.
+    expect(details.open).toBe(false)
+    expect(details).not.toHaveAttribute('open')
+    // Closed MEANS hidden now, at every width — by design.
+    expect(within(panel).getByRole('link', { name: /^balances$/i })).not.toBeVisible()
+  })
+
+  it('carries no hand-rolled ARIA — the platform supplies the expanded state', async () => {
+    renderWithRouter(<GlobalNav />)
+    const { summary, panel } = await parts()
+    for (const attr of ['role', 'aria-expanded', 'aria-controls', 'aria-haspopup', 'type']) {
+      expect(summary, `the summary carries a hand-rolled ${attr}`).not.toHaveAttribute(attr)
+    }
+    expect(panel).not.toHaveAttribute('role')
+    expect(panel).not.toHaveAttribute('aria-modal')
+    // No `<button>` survives in the nav: the trigger IS the summary.
+    expect(
+      within(screen.getByRole('navigation', { name: /primary/i })).queryAllByRole('button')
+    ).toHaveLength(0)
+  })
+
+  it('no longer dissolves into the desktop row, and overlays instead', async () => {
+    renderWithRouter(<GlobalNav />)
+    const { details, summary, panel } = await parts()
+    const cell = details.parentElement as HTMLElement
+
+    expect(tokens(cell), 'the fifth cell still dissolves at >= 640px').not.toContain('sm:contents')
+    expect(tokens(panel), 'the panel still dissolves at >= 640px').not.toContain('sm:contents')
+    expect(tokens(summary), 'the trigger is still hidden at >= 640px').not.toContain('sm:hidden')
+    // The desktop overlay's containing block is the CELL, and only at >= 640px:
+    // below `sm` the panel must keep resolving against the `max-sm:fixed` nav.
+    expect(tokens(cell)).toContain('sm:relative')
+    expect(tokens(cell)).not.toContain('relative')
+    expect(tokens(panel)).toEqual(
+      expect.arrayContaining([
+        'sm:absolute',
+        'sm:top-full',
+        'sm:left-0',
+        'sm:bg-white',
+        'dark:sm:bg-gray-800',
+        'sm:border',
+        'sm:shadow-lg',
+        'sm:overflow-y-auto',
+      ])
+    )
+    // Never positioned unprefixed: that would change the mobile sheet too.
+    for (const leaked of ['absolute', 'fixed', 'top-full', 'bg-white']) {
+      expect(tokens(panel), `\`${leaked}\` is unprefixed on the panel`).not.toContain(leaked)
+    }
+    // WebKit's disclosure marker is hidden. `list-none` is inert today (the
+    // summary is never `display: list-item`) and is pinned as a guard for a
+    // future display change. See the MORE_TRIGGER_CLASS docblock.
+    expect(tokens(summary)).toEqual(
+      expect.arrayContaining(['list-none', '[&::-webkit-details-marker]:hidden'])
+    )
+    // Story 59.2 code review: the nav keeps its content width on the desktop
+    // row, so a signed-in account cluster yields instead of wrapping the row.
+    const nav = screen.getByRole('navigation', { name: /primary/i })
+    expect(tokens(nav), 'the nav can shrink — a signed-in cluster will wrap it').toContain(
+      'sm:shrink-0'
+    )
+    expect(tokens(nav), '`shrink-0` must stay desktop-only').not.toContain('shrink-0')
+  })
+
+  it('keeps the mobile sheet half of the panel exactly as it was', async () => {
+    renderWithRouter(<GlobalNav />)
+    const { panel } = await parts()
+    const mobile = tokens(panel).filter(
+      (t) => t.startsWith('max-sm:') || t.startsWith('dark:max-sm:')
+    )
+    expect(mobile).toEqual([
+      'max-sm:absolute',
+      'max-sm:inset-x-0',
+      'max-sm:bottom-full',
+      'max-sm:max-h-[calc(100svh-5rem)]',
+      'max-sm:overflow-y-auto',
+      'max-sm:overscroll-contain',
+      'max-sm:border-t',
+      'max-sm:border-gray-200',
+      'max-sm:bg-white',
+      'max-sm:py-1',
+      'dark:max-sm:border-gray-700',
+      'dark:max-sm:bg-gray-800',
+    ])
+  })
+
+  it('opens on a summary click and closes on Escape, returning focus to the trigger', async () => {
+    renderWithRouter(<GlobalNav />)
+    const { details, summary, panel } = await parts()
+
+    fireEvent.click(summary)
+    expect(details.open).toBe(true)
+    await waitFor(() =>
+      expect(within(panel).getByRole('link', { name: /^balances$/i })).toBeVisible()
+    )
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(details.open).toBe(false))
+    expect(summary).toHaveFocus()
+  })
+
+  it('adopts an open it did not cause, so Escape still closes it', async () => {
+    // The native paths React does not drive: find-in-page, script, or a
+    // pre-hydration toggle whose event lands late. Only `onToggle` keeps state
+    // honest there. Without it the listeners stay unarmed and Escape is dead.
+    renderWithRouter(<GlobalNav />)
+    const { details } = await parts()
+    details.open = true
+    await waitFor(() =>
+      expect(within(details).getByRole('link', { name: /^balances$/i })).toBeVisible()
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() =>
+      expect(details.open, 'Escape did not close a script-opened panel').toBe(false)
+    )
+  })
+
+  it('closes when the CURRENT bar tab is clicked', async () => {
+    // Same-route click: no pathname change, and the press is inside the nav, so
+    // only the tab's own handler can close it (story 59.2 code review).
+    renderWithRouter(<GlobalNav />, { path: '/income' })
+    const { nav, details, summary } = await parts()
+    fireEvent.click(summary)
+    await waitFor(() => expect(details.open).toBe(true))
+    fireEvent.click(within(nav).getByRole('link', { name: /^income$/i }))
+    await waitFor(() =>
+      expect(details.open, 'the panel survived a same-route tab click').toBe(false)
+    )
+  })
+
+  it('Escape does not steal focus from page content outside the nav', async () => {
+    renderWithRouter(
+      <>
+        <GlobalNav />
+        <button type="button">Page action</button>
+      </>
+    )
+    const { details, summary } = await parts()
+    fireEvent.click(summary)
+    await waitFor(() => expect(details.open).toBe(true))
+    const pageButton = screen.getByRole('button', { name: 'Page action' })
+    pageButton.focus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(details.open).toBe(false))
+    expect(pageButton, 'Escape yanked focus from page content to the trigger').toHaveFocus()
+  })
+
+  it('closes when a row is chosen', async () => {
+    renderWithRouter(<GlobalNav />)
+    const { details, summary, panel } = await parts()
+    fireEvent.click(summary)
+    await waitFor(() =>
+      expect(within(panel).getByRole('link', { name: /^settings$/i })).toBeVisible()
+    )
+    fireEvent.click(within(panel).getByRole('link', { name: /^settings$/i }))
+    await waitFor(() => expect(details.open).toBe(false))
   })
 })
