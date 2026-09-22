@@ -173,7 +173,7 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
 
     const rows = nav.locator(':scope > ul > li > ul > li > a')
     await expect(rows).toHaveCount(2)
-    expect(await rows.allTextContents()).toEqual(['Balance Tracking', 'Settings'])
+    expect(await rows.allTextContents()).toEqual(['Balances', 'Settings'])
 
     for (const row of await rows.all()) {
       const box = await row.boundingBox()
@@ -188,6 +188,10 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
       // fixture renders the same rows in the planner-hidden (free-tier) shape, so
       // it needs the same line-count guard or it stays green for the wrong reason
       // on a wrapped label. Added by 43.2's code review.
+      // ⚠️ Premise currently dormant — story 59.1 removed the last multi-word
+      // sheet label ("Balance Tracking" -> "Balances"), so no label here can wrap
+      // at a space today. Keep the guard; see the fuller note in
+      // `e2e/nav-responsive-css.spec.ts`'s sheet-row test.
       const lineCount = await row.evaluate((a) => {
         const label = a.querySelector('[data-nav-label]')
         const range = document.createRange()

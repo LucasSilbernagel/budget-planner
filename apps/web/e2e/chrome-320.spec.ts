@@ -56,7 +56,7 @@ const NAV = 'nav[aria-label="Primary"]'
 /** The four destinations that keep a cell in the bar. */
 const BAR_LABELS = ['Overview', 'Income', 'Expenses', 'Savings'] as const
 /** The three that moved behind the More trigger (four until story 43.3). */
-const SHEET_LABELS = ['Balance Tracking', 'Retirement', 'Settings'] as const
+const SHEET_LABELS = ['Balances', 'Retirement', 'Settings'] as const
 
 /**
  * The bar's own cells, structurally: anchors that are direct grandchildren of
@@ -117,6 +117,33 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
     // `display: none`; the CSS `locator('a')` count deliberately is NOT used here
     // because it still returns every anchor (7 since 43.3) and would pass on a
     // bar that shows all of them.
+    // ⚠️ POSITIVE CONTROL, added by story 59.1 — do not drop it. The absence
+    // loop below is `toHaveCount(0)` on a full-string role match, so it passes
+    // for ANY string that matches nothing in the DOM: let a label here go stale
+    // (59.1 renamed "Balance Tracking" -> "Balances") and the probe stays green
+    // while guarding nothing. This proves the strings are the real sheet
+    // anchors first.
+    // ⚠️ Read the DOM, not `a:text-is(...)`. `:text-is` matches an element's OWN
+    // direct text nodes, and the label lives in a child `<span data-nav-label>`
+    // (`GlobalNav.tsx`), so `a:text-is("Balances")` matches NOTHING — it returns
+    // 0 on a fully VISIBLE anchor too. Verified in Playwright 1.61.1 both by
+    // probe (`a:text-is("Overview")` = 0 while visible; `span:text-is` = 1 while
+    // hidden) and in source: `shouldSkipForTextMatching` skips only SCRIPT /
+    // NOSCRIPT / STYLE / <head>, and `textIsEngine` matches `elementText.immediate`.
+    // ⚠️⚠️ VISIBILITY IS NOT THE REASON, though 59.1 first wrote that it was.
+    // Playwright's text engine does NOT skip `display: none`: `getByText`,
+    // `has-text` and `span:text-is` all match this sheet while it is hidden.
+    // Only ROLE locators exclude hidden nodes — which is exactly what makes the
+    // absence loop below a real "not visible in the bar" check. Do not carry the
+    // old claim forward; a text locator is a poor visibility assertion.
+    const sheetLabels = await nav
+      .locator(':scope > ul > li > ul > li > a')
+      .evaluateAll((els) => els.map((el) => el.textContent?.trim()))
+    expect(
+      sheetLabels,
+      'the sheet rows do not match SHEET_LABELS (stale label, reordered sheet, or a changed row count) — the absence loop below would be vacuous'
+    ).toEqual([...SHEET_LABELS])
+
     for (const label of SHEET_LABELS) {
       await expect(
         nav.getByRole('link', { name: label, exact: true }),

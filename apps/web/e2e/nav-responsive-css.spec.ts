@@ -210,7 +210,26 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   //                        row's intrinsic width   single-row from
   //   before 43.2 (DejaVu)        753px                857px
   //   after  43.2 (DejaVu)        815px                920px
-  //   after  43.3 (DejaVu)        717px                821px
+  //   after  43.3 (DejaVu)        717px                821px   (threshold now stale — see below)
+  //   after  59.1 (DejaVu)     661.19px                857px
+  //
+  // ⚠️ Story 59.1 shortened the /balance label "Balance Tracking" -> "Balances",
+  // which is in THIS row too: at >= 640px `sm:contents` dissolves the sheet into
+  // it. Re-measured by `e2e/nav-intrinsic-width.measure.spec.ts`, which is now
+  // the harness these figures come from — run it, do not hand-roll a new one.
+  //
+  // ⚠️⚠️ TWO things that re-measurement found, and only one of them is 59.1's:
+  //   - INTRINSIC width behaved exactly as the table predicts. Re-measuring with
+  //     the OLD label reproduced 716.63px against the recorded 717px, so the
+  //     harness and the historic figures agree. 59.1's rename is worth 55.44px.
+  //   - THE THRESHOLD COLUMN WAS ALREADY STALE BEFORE 59.1. With the OLD label
+  //     the row now needs a 913px viewport, not the recorded 821px. Intrinsic
+  //     width is a property of the nav alone; the threshold also depends on the
+  //     header row this list SHARES with `AuthIndicator`, and stories 58.1/58.2
+  //     changed that header without re-measuring here. So ~92px of the movement
+  //     predates this story and none of it is the rename.
+  //   Hence the honest comparison for 59.1 alone, both arms measured in one
+  //   session: 913px with "Balance Tracking" -> 857px with "Balances".
   //
   // ⚠️ Every figure in this table and in this file's tests is the FREE nav (7
   // anchors). Story 58.1 made the nav tier-aware, so an ENTITLED session has
@@ -427,7 +446,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
 
     const sheetRows = await read(`${NAV} > ul > li > ul > li > a`)
-    expect(sheetRows.map((r) => r.label)).toEqual(['Balance Tracking', 'Retirement', 'Settings'])
+    expect(sheetRows.map((r) => r.label)).toEqual(['Balances', 'Retirement', 'Settings'])
 
     // The More trigger is a <button>, so every anchor sweep in this file misses
     // it — including this one before 31.5 added the line below.
@@ -779,6 +798,14 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
           // lines at height 59 and this test stayed GREEN on every assertion it
           // had. So the two guards below cannot see a label that WRAPS — the exact
           // property 43.2's longer label needed verified.
+          // ⚠️ KEEP IT, but know its premise is currently dormant: story 59.1
+          // renamed "Balance Tracking" -> "Balances", the LAST multi-word sheet
+          // label in either tier. Every sheet label is now a single token, and a
+          // single token cannot wrap at a space — it can only overflow, which the
+          // `overflows` check already catches. So `lineCount` cannot fire for the
+          // failure it documents until a multi-word label returns (or CSS adds
+          // `overflow-wrap: anywhere` / `word-break`). It still pins one line, and
+          // a future sheet label WILL be multi-word again.
           //
           // ⚠️ That does NOT make `overflows` dead, and code review caught this
           // comment implying it was: an UNBREAKABLE token (no space to wrap at)
@@ -800,7 +827,7 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
       NAV
     )
 
-    expect(rows.map((r) => r.label)).toEqual(['Balance Tracking', 'Retirement', 'Settings'])
+    expect(rows.map((r) => r.label)).toEqual(['Balances', 'Retirement', 'Settings'])
     for (const { label, height, overflows, lineCount } of rows) {
       expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
       expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)

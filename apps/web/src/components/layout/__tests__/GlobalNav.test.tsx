@@ -58,7 +58,7 @@ const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
 ]
 
 const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
-  [/^balance tracking$/i, '/balance'],
+  [/^balances$/i, '/balance'],
   [/^retirement$/i, '/retirement'],
   [/^settings$/i, '/settings'],
 ]
@@ -242,7 +242,7 @@ describe('GlobalNav', () => {
       'Savings',
     ])
     expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual([
-      'Balance Tracking',
+      'Balances',
       'Retirement',
       'Settings',
     ])
@@ -564,7 +564,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const sheet = [...lists][1]
     expect(
       [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
-    ).toEqual(['Balance Tracking', 'Settings'])
+    ).toEqual(['Balances', 'Settings'])
   })
 
   it('drops exactly one icon and one label with the entry', async () => {
@@ -713,9 +713,9 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     ['Categories', '/categories'],
   ]
 
-  const FREE_SHEET = ['Balance Tracking', 'Retirement', 'Settings']
+  const FREE_SHEET = ['Balances', 'Retirement', 'Settings']
   const PAID_SHEET = [
-    'Balance Tracking',
+    'Balances',
     'Retirement',
     'Forecasting',
     'Profiles',
@@ -853,7 +853,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
       expect(within(navEl).getAllByRole('link')).toHaveLength(10)
       expect(sheetLabels(navEl)).toEqual([
-        'Balance Tracking',
+        'Balances',
         'Forecasting',
         'Profiles',
         'Report',

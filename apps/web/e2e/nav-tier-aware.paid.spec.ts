@@ -87,21 +87,50 @@ test.describe('the paid nav really is the paid nav', () => {
 /**
  * AC-6 — the desktop row at 11 anchors.
  *
- * ⚠️⚠️ MEASURED FINDING (story 58.1, under CI fonts): **the paid row has NO
- * single-row width. It is two rows at every desktop viewport.**
+ * ⚠️⚠️ MEASURED FINDING (story 58.1, re-measured by story 59.1, under CI fonts):
+ * **the paid row has NO single-row width. It is two rows at every desktop
+ * viewport.** Story 59.1 shortened one label and that is STILL true.
  *
- *   viewport   rows  list clientWidth  content span
- *   1024px      2         846px            787px
- *   1152px      2         973px            862px
- *   1280px      2         973px            862px
- *   1440–3200   2         973px            862px   (saturated)
+ *   viewport   rows  list clientWidth (59.1, DejaVu)
+ *   1024px      2         846px
+ *   1152px      2         966px
+ *   1280px      2         966px
+ *   1440–2400   2         966px   (saturated)
  *
  * TRUE intrinsic width, measured at a 2400px viewport with `flex-wrap: nowrap`,
- * `flex-shrink: 0` on every anchor AND the `max-w-6xl` cap lifted:
+ * `flex-shrink: 0` ON THE `<li>` (see the trap below) AND the `max-w-6xl` cap
+ * lifted. Both labels are measured in ONE page session, swapping only the
+ * `/balance` label's text node, so the arms share viewport, fonts, tier and
+ * hydration. (Controlled, not identical: the "before" arm is a text-node swap on
+ * the post-change build, not the pre-change build. What actually validates it is
+ * the agreement with 58.1's independent figures, noted below.)
  *
- *              anchor content   + list px-4   = total needed   available   short by
- *   DejaVu/CI      1051px          32px          1083px          973px      110px
- *   Noto/dev       1005px          32px          1037px          972px       65px
+ *                       anchors+gaps   + list px-4   = total needed   available   short by   rows
+ *   DejaVu/CI  before      1050.23px       32px         1082.23px       966px     116.23px     2
+ *   DejaVu/CI  AFTER        994.80px       32px         1026.80px       966px      60.80px     2
+ *   Noto/dev   before      1004.75px       32px         1036.75px       965px      71.75px     2
+ *   Noto/dev   AFTER        952.31px       32px          984.31px       965px      19.31px     2
+ *
+ * (The "anchors+gaps" column is kept because the record elsewhere quotes the gap
+ * both ways — 1082.23 vs 966 INCLUDING the list's `px-4`, or 1050.23 vs 934
+ * excluding it. Same shortfall; say which you mean.)
+ *
+ * So 59.1's rename ("Balance Tracking" -> "Balances") is worth a measured
+ * **55.43px under CI fonts** (52.44px on Noto) — real, reproducible, and **NOT
+ * enough**: 60.80px of shortfall remain and the row is still two rows at every
+ * width. Closing it is story 59.2's job, not this rename's.
+ *
+ * ⚠️ Every figure above is 59.1's own measurement, INCLUDING the 846px at 1024px
+ * that happens to equal 58.1's — it was re-measured, not carried forward.
+ *
+ * ⚠️ 58.1 recorded available as 973px where 59.1 measures **966px**, and the
+ * 60.80px shortfall DOES depend on which you use (against 973 it would be 53.80).
+ * So this is a live 7px uncertainty, not a rounding note — do not repeat 59.1's
+ * first framing of it as "nothing depends on it". What is known: the delta
+ * appears ONLY in the saturated rows (>= 1152px), while 1024px matches 58.1
+ * exactly. That points at the capped header the list shares with `AuthIndicator`,
+ * not at harness noise. 59.2 inherits this; resolve it there if the exact figure
+ * matters, and quote 966px until then.
  *
  * ⚠️ `flex-wrap: nowrap` ALONE gives a WRONG answer here, and the first pass of
  * this measurement fell for it: the header is capped at `sm:max-w-6xl`, so with
@@ -111,9 +140,18 @@ test.describe('the paid nav really is the paid nav', () => {
  * Disable shrink and lift the cap, or do not trust the number. This is the same
  * trap `nav-responsive-css.spec.ts` warns about for the 7-anchor row.
  *
+ * ⚠️⚠️ AND THE SHARPER FORM OF IT, which cost story 59.1 three wrong runs:
+ * **the flex ITEMS are the `<li>`, not the `<a>`.** `flex-shrink: 0` applied to
+ * the anchors alone leaves every `<li>` free to compress, so a TWO-WORD label
+ * WRAPS and then measures as its longest word. "Balance Tracking" read **58.3px**
+ * that way — NARROWER than "Balances" at 63.14px — i.e. the harness reported that
+ * shortening the label made the row WIDER, reproducibly and with zero drift
+ * across an A/B/A cycle. A stable, repeatable number is not a correct one. Kill
+ * shrink on the `li` (and pin `white-space: nowrap` on `[data-nav-label]`).
+ *
  * The reason it never resolves is structural, not a matter of finding a wider
  * screen: `__root.tsx` caps the header row at `sm:max-w-6xl` (1152px) and shares
- * it with `AuthIndicator`, so the nav list saturates at **973px** of available
+ * it with `AuthIndicator`, so the nav list saturates at **966px** of available
  * width. Widening the viewport past 1152px changes nothing.
  *
  * So the 7-anchor row's "single-row threshold" column (821px viewport, recorded in
@@ -126,18 +164,32 @@ test.describe('the paid nav really is the paid nav', () => {
  * an oversight.
  *
  * ⚠️ A future story tempted to "reclaim" the single row should know the gap is
- * **110px under CI fonts**, not a rounding error. The ten `gap-1` gutters are
- * 40px in total and `px-4` is 32px, so trimming spacing cannot close it — only
- * shorter labels, fewer destinations, or raising the `max-w-6xl` cap could, and
- * the last of those moves every page's content column. The row budget below is
- * therefore a CEILING of 2, not a pin at 2: it catches a third row without
- * pretending one row is within reach.
+ * **60.80px under CI fonts after 59.1** (116.23px before it), not a rounding
+ * error. The ten `gap-1` gutters are 40px in total and `px-4` is 32px, so
+ * trimming spacing cannot close it — only shorter labels, fewer destinations, or
+ * raising the `max-w-6xl` cap could, and the last of those moves every page's
+ * content column. 59.1 took the "shorter labels" option as far as one label goes
+ * and it was not enough. The row budget below is therefore a CEILING of 2, not a
+ * pin at 2: it catches a third row without pretending one row is within reach.
  *
- * ⚠️ Both rows of figures above were measured, not converted — the DejaVu ones
- * under `FONTCONFIG_FILE`, with a positive control confirming the override
- * actually reached Chromium (total anchor width 965px Noto vs 1011px DejaVu at
- * 1280px). Without that control a silently-ignored font override is
- * indistinguishable from a working one.
+ * ⚠️ Every figure above was measured, not converted — the DejaVu ones under
+ * `FONTCONFIG_FILE`, with a positive control confirming the override actually
+ * reached Chromium. 59.1's control: the string **"Balance Tracking"** rendered in
+ * an offscreen span at `500 14px system-ui` measures **118.58px under DejaVu vs
+ * 110.84px under Noto**, and the whole-row totals differ accordingly (1082.23 vs
+ * 1036.75 before the rename). Without that control a silently-ignored font
+ * override is indistinguishable from a working one.
+ *
+ * ⚠️ The strongest check on these numbers is not repetition, it is AGREEMENT
+ * BETWEEN INDEPENDENT PROBES. Two hold here: the span control's 118.58 − 63.14 =
+ * 55.44 matches the whole-row saving of 55.43; and the harness reproduces 58.1's
+ * separately-recorded totals (1082.23 vs 1083, 1036.75 vs 1037). 59.1's broken
+ * harness passed neither, while being perfectly repeatable.
+ *
+ * ⚠️ THE HARNESS IS IN THE TREE: `e2e/nav-intrinsic-width.measure.paid.spec.ts`
+ * (and `.measure.spec.ts` for the free row), sharing `e2e/helpers/nav-width.ts`.
+ * Re-run those rather than writing a fourth one-off — 58.1's and 59.1's were both
+ * deleted after recording, which is why 59.1 rebuilt the method wrong.
  */
 test.describe('desktop cascade at 11 anchors (AC-6)', () => {
   // ⚠️ Titled for what it MEASURES. An earlier title said "reports the intrinsic
@@ -177,8 +229,9 @@ test.describe('desktop cascade at 11 anchors (AC-6)', () => {
     expect(m.wrap, 'flex-wrap is no longer containing the row').toBe('wrap')
     // A CEILING, not a pin. Two rows is the measured, accepted state; three would
     // be a real degradation of every page's header. If a future change closes the
-    // 110px gap and this drops to one row, update the table above — a pass at 1
-    // row is an improvement, not a failure.
+    // 60.80px gap (116.23px before story 59.1 shortened one label) and this drops
+    // to one row, update the table above — a pass at 1 row is an improvement,
+    // not a failure.
     expect(m.rowCount, 'the paid desktop nav has grown past two rows').toBeLessThanOrEqual(2)
     // Two-sided: the row must not overflow its own box, and the document must
     // not gain a horizontal scrollbar because of it.

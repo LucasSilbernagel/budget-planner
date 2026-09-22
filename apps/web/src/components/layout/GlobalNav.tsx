@@ -232,10 +232,17 @@ const PRIMARY_TABS: readonly NavItem[] = [
  * 4x2 grid are left as history.
  */
 const MORE_DESTINATIONS: readonly NavItem[] = [
-  // Story 43.2 (UX-DR48): label renamed "Balance" -> "Balance Tracking" so the
-  // nav matches the page's own H1 (`BalancePage.tsx`). The route (`to`) is
-  // unchanged, so active-state/aria-current is unaffected.
-  { label: 'Balance Tracking', to: '/balance', Icon: BalanceIcon },
+  // ⚠️ Story 59.1 (FR89): label shortened "Balance Tracking" -> "Balances",
+  // REVERSING story 43.2 / UX-DR48, which had lengthened it from "Balance" so
+  // the nav would match the page's own H1. That reversal is the decision, not an
+  // oversight (Lucas, 2026-09-21): this nav label now deliberately DIVERGES from
+  // `BalancePage.tsx`'s H1, which still reads "Balance Tracking" and stays that
+  // way, as does every "Balance Tracking page" prose reference and both docs
+  // pages. The grounds are story 58.1's decision D1 — a paid user's desktop row
+  // is width-critical, and a nav label tracks the DESTINATION, not the page
+  // title. Do NOT "restore consistency" by lengthening this again.
+  // The route (`to`) is unchanged, so active-state/aria-current is unaffected.
+  { label: 'Balances', to: '/balance', Icon: BalanceIcon },
   // Retirement Planner (story 15-1): promoted from a docs-only, nav-orphan route
   // to a first-class destination. Story 43.3 (FR69) removed the free Net Worth
   // projection page it used to sit beside, so this is now the only
@@ -257,10 +264,14 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
  * them "Custom Profiles", "Financial Summary Report" and "Custom Categories";
  * the nav calls them Profiles, Report and Categories. That is not drift:
  *
- *   - A nav label tracks the PAGE, not the benefit pitch — the rule story 43.2
- *     applied when it renamed Balance -> Balance Tracking to match that page's
- *     own H1. This nav has always spoken that way (`Savings`, not "Savings
- *     Goals"; `Income`, not "Income Sources").
+ *   - A nav label names the DESTINATION as briefly as it can be named, not the
+ *     benefit pitch. This nav has always spoken that way (`Savings`, not
+ *     "Savings Goals"; `Income`, not "Income Sources").
+ *     ⚠️ This bullet used to cite story 43.2's "match the page's own H1" rule as
+ *     its precedent. Story 59.1 (FR89) REVERSED that rule for the very label
+ *     43.2 applied it to (`Balance Tracking` -> `Balances`), so the rule can no
+ *     longer be cited here — the brevity principle above is the live one, and
+ *     matching an H1 is not a constraint on this file.
  *   - The benefit names carry 67 characters against these 35. The desktop row is
  *     one wrapped flex row, so label text is row height for every paying user on
  *     every page.
@@ -656,8 +667,7 @@ export function GlobalNav() {
           (commit d4f3ffb) to contain the eight items the nav then had, during the
           old pre-hydration flash; the desktop bar is two rows in its own right
           from 640px up to the single-row threshold recorded in
-          `e2e/nav-responsive-css.spec.ts` (821px under CI fonts as of 43.3),
-          above which it is one row. Nothing used to catch that —
+          `e2e/nav-responsive-css.spec.ts`, above which it is one row. Nothing used to catch that —
           `responsive-320.spec.ts` and
           `global-nav.spec.ts` both sweep 320px only — so
           `e2e/nav-responsive-css.spec.ts` now measures 640/700/760px.
@@ -724,7 +734,7 @@ export function GlobalNav() {
           {/* ⚠️ The open/closed state is a `max-sm:`-scoped CLASS, never the
               `hidden` ATTRIBUTE. `hidden={!isMoreOpen}` — the textbook
               disclosure idiom — applies at EVERY width and would delete
-              Balance Tracking, Retirement and Settings from the DESKTOP nav
+              Balances, Retirement and Settings from the DESKTOP nav
               entirely. */}
           <ul
             id={panelId}
