@@ -88,11 +88,60 @@ describe('Footer', () => {
     expect(docs).toHaveAttribute('aria-current', 'page')
   })
 
-  it('does not mark Documentation current on a /docs sub-page (exact match, story 21-1)', async () => {
+  // Story 60.2 (FR92) INVERTED this test. It previously asserted the opposite —
+  // that Documentation was NOT marked on a sub-page — which is what story 21-1's
+  // `activeOptions={{ exact: true }}` produced. The flag is gone; the footer link
+  // now reports the SECTION the reader is in, so a reader inside an article sees
+  // Documentation marked current. Inverted rather than deleted: the direction it
+  // guards flipped, and deleting it would have left the old behaviour free to
+  // return unnoticed. The count test below overlaps it deliberately — this one
+  // names the behaviour, that one bounds it.
+  it('marks Documentation current on a /docs sub-page (story 60.2)', async () => {
     renderWithRouter(<Footer />, { path: '/docs/getting-started' })
-    // Contact resolving (always present) is the signal the router has settled.
-    await screen.findByRole('link', { name: /^contact$/i })
-    expect(screen.getByRole('link', { name: /documentation/i })).not.toHaveAttribute('aria-current')
+    // Wait on the assertion's own subject, not a bystander. A `<Link>` renders
+    // its `<a href>` on first paint whether or not the active state has been
+    // computed, so awaiting any other link proves nothing about location
+    // resolution — it only looked sufficient here because the previous version
+    // of this test asserted an ABSENCE, which passes before resolution too.
+    expect(
+      await screen.findByRole('link', { name: /documentation/i, current: 'page' })
+    ).toBeInTheDocument()
+  })
+
+  // Story 60.2: pins the SEGMENT boundary that the Footer docblock warns about.
+  // `/docsomething` starts with the same characters as `/docs` but is a
+  // different first segment, so the router must NOT mark Documentation there.
+  // Without this, both other /docs tests would pass equally under a naive
+  // `pathname.startsWith('/docs')`, and the docblock's capitalised warning
+  // against hand-rolling one would rest on nothing.
+  it('does not mark Documentation current on a path that merely starts with the same characters (story 60.2)', async () => {
+    renderWithRouter(<Footer />, { path: '/docsomething' })
+    const footer = await screen.findByRole('contentinfo')
+    expect(within(footer).getByRole('link', { name: /documentation/i })).not.toHaveAttribute(
+      'aria-current'
+    )
+  })
+
+  // Story 60.2: the five sibling entries (/pricing, /terms, /privacy, /refund,
+  // /contact) have no child routes — verified against the real route tree in
+  // `routeTree.gen.ts`, not assumed — and must not gain an active state from the
+  // switch to prefix matching. Asserting the COUNT of marked links covers all
+  // five in one assertion, and unlike five separate `.not.toHaveAttribute`
+  // absence probes it cannot silently pass if a link label is later renamed.
+  //
+  // The total is pinned first, and that order matters: a count of marked links
+  // alone would still read "exactly one" on a Footer that had stopped rendering
+  // its siblings entirely, which is the failure the comment above claims to
+  // cover. Seven = the six router links plus the external author link, which is
+  // a plain <a> and can never carry `aria-current`.
+  it('marks exactly one of the seven footer links current on a /docs sub-page (story 60.2)', async () => {
+    renderWithRouter(<Footer />, { path: '/docs/getting-started' })
+    const footer = await screen.findByRole('contentinfo')
+    const links = within(footer).getAllByRole('link')
+    expect(links).toHaveLength(7)
+    const marked = links.filter((link) => link.getAttribute('aria-current') === 'page')
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toHaveAccessibleName(/documentation/i)
   })
 
   it('displays a copyright notice for the current year (story 6-9)', async () => {

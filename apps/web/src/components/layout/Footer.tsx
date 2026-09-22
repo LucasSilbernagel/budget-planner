@@ -14,10 +14,35 @@ import { Link } from '@tanstack/react-router'
  * in-UI version, superseding the original FR13 / UX-DR5 requirement — the
  * `utils/version` module is retained but no longer rendered). The internal
  * links are TanStack Router `<Link>`s so the current footer page is marked
- * `aria-current="page"` and visually distinguished (UX-DR28), mirroring
- * `GlobalNav`. The `/docs` link uses `activeOptions={{ exact: true }}` so it is
- * not marked active while viewing an individual `/docs/$docId` page (the same
- * reasoning GlobalNav's root `/` link uses).
+ * `aria-current="page"` and visually distinguished (UX-DR28). The `aria-current`
+ * value and the active-link styling mirror `GlobalNav`; since story 60.2 the
+ * MATCHING RULE does not — see below.
+ *
+ * Story 60.2 (FR92): every link here matches by PREFIX, which is TanStack
+ * Router's default when `activeOptions` is omitted. This reverses story 21-1's
+ * `activeOptions={{ exact: true }}` on `/docs`, which left the Documentation
+ * link unmarked while an individual `/docs/$docId` article was open. The footer
+ * reports the SECTION the reader is in, not the exact route: a reader inside an
+ * article is in the documentation, and a wayfinding link that will only admit
+ * that on the index page tells them where they are not.
+ *
+ * ⚠️ Do NOT hand-roll a `pathname.startsWith('/docs')` equivalent if this is
+ * ever revisited. The router's non-exact test is SEGMENT-AWARE: it requires an
+ * exact length match or a `/` at the boundary, so `/docs` matches `/docs/foo`
+ * but NOT `/docsomething`. A bare `startsWith` would match both, which is a
+ * defect and not merely duplicated logic. That boundary is pinned by a test
+ * (`Footer.test.tsx`, "does not mark Documentation current on a path that
+ * merely starts with the same characters") rather than trusted to this comment.
+ *
+ * The rule lives in `@tanstack/react-router` (verified against 1.170.17) in TWO
+ * places with identical logic — an SSR branch and a post-hydration client branch
+ * in `dist/esm/link.js`. Deliberately no line numbers: the dependency spec is
+ * `^1.170.16`, so any range cited here rots on the next install. Search the file
+ * for `activeOptions?.exact ?? false` to find them.
+ *
+ * ⚠️ GlobalNav's root `/` link still needs `exact` and must keep it: every path
+ * starts with `/`, so prefix matching would mark Overview active on every page.
+ * That is why the flag survives there and not here.
  *
  * Kept deliberately minimal and unobtrusive: small, muted text in a semantic
  * `<footer>` (an implicit `contentinfo` landmark when it is a direct child of
@@ -30,17 +55,11 @@ type FooterPath = '/pricing' | '/docs' | '/terms' | '/privacy' | '/refund' | '/c
 interface FooterLink {
   label: string
   to: FooterPath
-  /**
-   * Match this route exactly. Only `/docs` needs it: it is the parent of
-   * `/docs/$docId`, so without `exact` the Documentation link would read as the
-   * current page while viewing an individual doc.
-   */
-  exact?: boolean
 }
 
 const FOOTER_LINKS: readonly FooterLink[] = [
   { label: 'Pricing', to: '/pricing' },
-  { label: 'Documentation', to: '/docs', exact: true },
+  { label: 'Documentation', to: '/docs' },
   { label: 'Terms of Service', to: '/terms' },
   { label: 'Privacy Policy', to: '/privacy' },
   { label: 'Refund Policy', to: '/refund' },
@@ -96,7 +115,6 @@ export function Footer() {
             <Link
               key={link.to}
               to={link.to}
-              activeOptions={link.exact ? { exact: true } : undefined}
               className={LINK_CLASS}
               activeProps={{ 'aria-current': 'page', className: ACTIVE_LINK_CLASS }}
             >
