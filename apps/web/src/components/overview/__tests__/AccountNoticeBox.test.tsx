@@ -77,16 +77,38 @@ describe('AccountNoticeBox — not yet dismissed', () => {
   })
 
   /**
-   * AC-5: the box's theming is untouched. These three tokens are what keeps it
-   * legible in dark mode; the story's only visual addition is the close button.
+   * The box's semantic theming (story 55.1 AC-5, extended by story 60.1 / FR91).
+   *
+   * ⚠️ THIS IS A RENAME FENCE, NOT PROOF THAT ANYTHING IS VISIBLE. jsdom loads
+   * no stylesheet, so `getComputedStyle` here cannot fail and a colour assertion
+   * in this file would be permanently green while describing nothing (project
+   * memory, `jsdom-computed-style-vacuous`). Worse, `styles/global.css:88-91`
+   * records that a class resolving to values something else already set is a
+   * silent no-op that "still passes lint, type-check and class-token
+   * assertions" — which is exactly what these assertions are. What actually
+   * proves the border renders, in both themes, is
+   * `e2e/overview-account-notice.spec.ts`'s "reads as its own block" block,
+   * which measures real computed values in a browser.
+   *
+   * The WIDTH class and the COLOUR classes are all required and all pinned: a
+   * Tailwind colour utility sets no width, so `border-gray-300` alone renders
+   * nothing without the bare `border` — that zero-width state IS the defect
+   * story 60.1 closed.
+   *
+   * ⚠️ `border-gray-300`/`dark:border-gray-700` rather than the `border-default`
+   * token is deliberate (Lucas, 2026-09-22): gray-200 on this canvas measures
+   * 1.18:1, gray-300 1.41:1. See the component docblock.
    */
-  it('keeps the surface-inset / text-body / text-muted theming (AC-5)', () => {
+  it('keeps the surface-inset / border / border-gray-300 / text-body / text-muted theming', () => {
     render(<AccountNoticeBox />)
 
     const box = screen.getByText(PILLARS).closest('[data-account-notice]') as HTMLElement
     expect(box).not.toBeNull()
     // Class TOKEN membership, not substring — `surface-inset-foo` must not pass.
     expect([...box.classList]).toContain('surface-inset')
+    expect([...box.classList]).toContain('border')
+    expect([...box.classList]).toContain('border-gray-300')
+    expect([...box.classList]).toContain('dark:border-gray-700')
     expect([...screen.getByText(PILLARS).classList]).toContain('text-body')
     expect([...screen.getByText(FRAMING).classList]).toContain('text-muted')
   })

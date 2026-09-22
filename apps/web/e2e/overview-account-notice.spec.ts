@@ -326,3 +326,184 @@ test.describe('in-session dismissal survives client-side navigation (AC-4)', () 
     ).toHaveLength(0)
   })
 })
+
+/**
+ * The notice reads as its own block (story 60.1, FR91).
+ *
+ * ⚠️⚠️ THIS IS THE ONLY LAYER THAT CAN SEE THIS DEFECT AT ALL. The bug is a
+ * COLOUR COLLISION: `surface-inset` is `bg-gray-50` and the page canvas
+ * `surface-sunken` is also `bg-gray-50`, so in light mode the box had the same
+ * background as the surface behind it and no border — visually there was no box,
+ * only floating text. jsdom loads no stylesheet, so `getComputedStyle` there
+ * returns the same empty value whatever the classes say: a colour assertion in
+ * the unit suite CANNOT FAIL and would be a permanently green sentence
+ * describing nothing (project memory, `jsdom-computed-style-vacuous`). The unit
+ * test's class-token check is a rename fence; this is the proof.
+ *
+ * ⚠️ AND A CLASS-TOKEN CHECK CANNOT COVER FOR IT. `styles/global.css:88-91`
+ * records that a class which resolves to values something else already set is a
+ * silent no-op that "still passes lint, type-check and class-token assertions".
+ * Only a rendered measurement distinguishes an applied border from a declared
+ * one.
+ *
+ * WHY THE FILL IS NOT THE FIX (story 60.1, D1). The separation is carried by the
+ * BORDER; the fill is deliberately unchanged in both themes. That is what keeps
+ * the dark theme — which was never broken (`gray-700/40` on `gray-900` reads
+ * correctly) — additive, and it is why the dismiss glyph's contrast pairs could
+ * be recomputed against an unchanged background.
+ *
+ * ⚠️ THE COLOUR IS `border-gray-300`, NOT THE `border-default` TOKEN, and that
+ * matters to the light arm below. `border-default` is gray-200, which measures
+ * only 1.18:1 against this gray-50 canvas; gray-300 measures 1.41:1. Chosen by
+ * Lucas during story 60.1's code review. There is a second reason the token was
+ * wrong here: under Tailwind 3 (this project is on 3.4.19) preflight already
+ * sets `border-color` to gray-200 on EVERY element, so a light-mode assertion of
+ * gray-200 passes whether or not any colour class is present — it could not
+ * distinguish `border-default` from preflight, and the original version of the
+ * light arm below misattributed preflight's value to the token. gray-300 is not
+ * a preflight default, so the light arm is now a real guard.
+ *
+ * WHAT PROVES THIS SUITE WORKS: run these two tests against a tree WITHOUT the
+ * border classes and both go red on the width quartet. That was observed for
+ * real at `c44068a`, before the fix was applied — the spec already existed and
+ * was run: `0px` on all four sides in both themes
+ * (`/tmp/claude-1000/60-1/red-at-c44068a.log`). The width quartet is the
+ * palette-independent half; the colour assertions guard the specific choice.
+ */
+const THEME_KEY = 'budget-planner-theme-prefs-v1'
+
+/** The page canvas the notice is rendered directly on (`HomePage.tsx:623`). */
+const CANVAS = '.surface-sunken'
+
+interface EdgeMeasurement {
+  boxBackground: string
+  canvasBackground: string
+  borderWidths: string[]
+  borderColors: string[]
+}
+
+async function measureEdge(page: Page, theme: 'light' | 'dark'): Promise<EdgeMeasurement> {
+  if (theme === 'dark') {
+    await page.addInitScript(
+      ([key]) => {
+        window.localStorage.setItem(key, JSON.stringify({ state: { theme: 'dark' }, version: 0 }))
+      },
+      [THEME_KEY]
+    )
+  }
+
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+
+  // The theme must actually be the one under test before anything is measured,
+  // or both arms would silently measure light mode.
+  // Anchored on word boundaries: a bare /dark/ would also match `not-dark` or
+  // `dark-ready` if a future class is added to <html>.
+  if (theme === 'dark') {
+    await expect(page.locator('html'), 'the dark seed did not take').toHaveClass(/\bdark\b/)
+  } else {
+    await expect(page.locator('html'), 'the light arm rendered dark').not.toHaveClass(/\bdark\b/)
+  }
+
+  const box = page.locator(BOX)
+  await expect(box, 'the notice was not visible, so nothing could be measured').toBeVisible()
+
+  return box.evaluate((el, canvasSel) => {
+    const canvas = el.closest(canvasSel)
+    if (!canvas) {
+      throw new Error(`the notice has no ${canvasSel} ancestor — the canvas moved`)
+    }
+    // ⚠️ The canvas is only "what is behind the box" while nothing between them
+    // paints its own background. Without this walk, a fill added to <header> (or
+    // any wrapper) would leave every assertion below passing while the premise
+    // "identically-coloured canvas" had quietly become false.
+    for (let node = el.parentElement; node && node !== canvas; node = node.parentElement) {
+      const bg = getComputedStyle(node).backgroundColor
+      if (bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+        throw new Error(
+          `an ancestor between the notice and ${canvasSel} paints ${bg}; the canvas measured below is not what is behind the box`
+        )
+      }
+    }
+    const boxStyle = getComputedStyle(el)
+    return {
+      boxBackground: boxStyle.backgroundColor,
+      canvasBackground: getComputedStyle(canvas).backgroundColor,
+      borderWidths: [
+        boxStyle.borderTopWidth,
+        boxStyle.borderRightWidth,
+        boxStyle.borderBottomWidth,
+        boxStyle.borderLeftWidth,
+      ],
+      borderColors: [
+        boxStyle.borderTopColor,
+        boxStyle.borderRightColor,
+        boxStyle.borderBottomColor,
+        boxStyle.borderLeftColor,
+      ],
+    }
+  }, CANVAS)
+}
+
+test.describe('the notice reads as its own block (story 60.1, FR91)', () => {
+  test('light mode: the box carries a visible edge against an identically-coloured canvas', async ({
+    page,
+  }) => {
+    const edge = await measureEdge(page, 'light')
+
+    // The premise of the defect, pinned so a later change to either token cannot
+    // quietly remove the reason this border exists. If these two ever diverge,
+    // re-read the component docblock rather than deleting the border.
+    expect(
+      edge.boxBackground,
+      'the box fill moved — story 60.1 deliberately left it identical to the canvas'
+    ).toBe('rgb(249, 250, 251)')
+    expect(edge.canvasBackground, 'the page canvas is no longer gray-50').toBe('rgb(249, 250, 251)')
+
+    // THE FIX, and the palette-independent half of it. At `c44068a` these were
+    // `0px` on all four sides.
+    expect(edge.borderWidths, 'the notice has no rendered border on some side').toEqual([
+      '1px',
+      '1px',
+      '1px',
+      '1px',
+    ])
+
+    // gray-300, NOT `border-default`'s gray-200. This assertion is only a real
+    // guard because gray-300 is not a preflight default: Tailwind 3 sets every
+    // element's `border-color` to gray-200, so the gray-200 version of this line
+    // passed with every colour class deleted.
+    expect(edge.borderColors, 'the light border is not gray-300').toEqual([
+      'rgb(209, 213, 219)',
+      'rgb(209, 213, 219)',
+      'rgb(209, 213, 219)',
+      'rgb(209, 213, 219)',
+    ])
+  })
+
+  test('dark mode: the fill is unchanged and the edge is additive', async ({ page }) => {
+    const edge = await measureEdge(page, 'dark')
+
+    // Dark mode was never the defect and story 60.1 does not move it:
+    // `gray-700/40` on `gray-900`, exactly as before.
+    expect(edge.boxBackground, 'the dark fill changed — it was gray-700/40 before 60.1').toBe(
+      'rgba(55, 65, 81, 0.4)'
+    )
+    expect(edge.canvasBackground, 'the dark canvas is no longer gray-900').toBe('rgb(17, 24, 39)')
+
+    expect(edge.borderWidths, 'the notice has no rendered border on some side').toEqual([
+      '1px',
+      '1px',
+      '1px',
+      '1px',
+    ])
+    // Unchanged from `border-default`'s dark half — this is the whole reason the
+    // dark theme is additive rather than altered.
+    expect(edge.borderColors, 'the dark border is not gray-700').toEqual([
+      'rgb(55, 65, 81)',
+      'rgb(55, 65, 81)',
+      'rgb(55, 65, 81)',
+      'rgb(55, 65, 81)',
+    ])
+  })
+})

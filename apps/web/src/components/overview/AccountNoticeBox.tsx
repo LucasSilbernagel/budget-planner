@@ -16,8 +16,56 @@ import {
  * source tree. The no-AI claim lives on the FRAMING line only, never on the
  * pillars line — stating it twice inside a two-line block reads as padding
  * (brand-1 AC-6, pinned in `HomePage.test.tsx`). Styled with theme-aware
- * semantic tokens (`surface-inset` / `text-body` / `text-muted`) so it stays
- * legible in dark mode, and it wraps rather than overflowing at 320px.
+ * semantic tokens (`surface-inset` / `border-default` / `text-body` /
+ * `text-muted`) so it stays legible in dark mode, and it wraps rather than
+ * overflowing at 320px.
+ *
+ * ⚠️ THE BORDER IS THE ONLY THING MAKING THIS A BOX IN LIGHT MODE (story 60.1,
+ * FR91), AND IT IS DELIBERATELY A `surface-inset` OUTLIER.
+ * `surface-inset`'s own docblock (`styles/global.css:52-54`) defines it as "a
+ * panel nested on a `.surface` card", and this is the one place it is applied to
+ * the PAGE CANVAS instead. That canvas is `surface-sunken` (`HomePage.tsx:623`)
+ * — and in light mode `surface-inset` and `surface-sunken` are the SAME colour,
+ * `bg-gray-50`. Measured at `c44068a`, before this border existed: box
+ * `rgb(249, 250, 251)` on canvas `rgb(249, 250, 251)`, with `border-width: 0px`
+ * and `border-color: rgb(229, 231, 235)` on all four sides. There was no box,
+ * only floating text.
+ *
+ * (`git grep surface-inset -- src` finds 64 non-test OCCURRENCES across 23
+ * files, but ~13 of those are prose in comments; the real className call sites
+ * elsewhere number about 50. Re-run the grep rather than trusting either
+ * number.)
+ *
+ * The fix is the border, NOT the fill. Swapping to `surface` would also work and
+ * would retire the outlier, but it would give a privacy footnote in the <header>
+ * the same visual weight as the real content cards in <main>, and it would move
+ * the DARK fill (`gray-700/40` -> `gray-800`) although dark mode was never
+ * broken. Leaving the fill alone is what keeps the dark theme additive and what
+ * lets the dismiss button's contrast pairs below be re-derived against an
+ * unchanged background. Do NOT edit the `surface-inset` token to "fix" this; the
+ * other call sites use it correctly.
+ *
+ * ⚠️ WHY A RAW `border-gray-300 dark:border-gray-700` PAIR AND NOT
+ * `border-default`. `border-default` is `border-gray-200 dark:border-gray-700`,
+ * and gray-200 on this gray-50 canvas measures only 1.18:1 — a hairline at that
+ * ratio is close to the "~1.05:1 … imperceptible in practice" step a previous
+ * review rejected outright at `styles/global.css:93-96`, and that review was
+ * judging a FULL-AREA FILL, which is far more perceptible than a 1px line at the
+ * same ratio. gray-300 measures 1.41:1 in light. The DARK half is byte-identical
+ * to `border-default`'s, so dark mode is unchanged. Decision by Lucas,
+ * 2026-09-22, during the story's code review. `routes/login.tsx` (:96, :128)
+ * still uses `border-default` for its notice panels — correctly, because those
+ * sit on a WHITE `.surface` card, not on this canvas.
+ *
+ * ⚠️ THE COLOUR CLASS AND THE WIDTH CLASS ARE BOTH REQUIRED. A Tailwind colour
+ * utility sets no width, so `border-gray-300` alone renders nothing; the bare
+ * `border` supplies the 1px. Note also that under **Tailwind 3** (this project
+ * is on 3.4.19) preflight sets `border-color: theme('borderColor.DEFAULT')` =
+ * gray-200 on EVERY element, which is why the `c44068a` measurement above shows
+ * a border colour at zero width — and why, before this story picked gray-300, a
+ * light-mode colour assertion could not tell `border-default` from preflight.
+ * Tailwind 4's preflight uses `currentColor` instead, so re-measure on upgrade.
+ * `e2e/overview-account-notice.spec.ts` measures both themes.
  *
  * ⚠️ THE TWO <p> TEXT NODES ARE PINNED BY AN SSR HTML SUBSTRING ASSERTION.
  * `e2e/loading-state.spec.ts`'s "SEO fence" asserts the server response
@@ -92,7 +140,10 @@ export function AccountNoticeBox() {
   }
 
   return (
-    <div data-account-notice className="surface-inset mt-4 rounded-lg p-3 text-sm">
+    <div
+      data-account-notice
+      className="surface-inset mt-4 rounded-lg border border-gray-300 p-3 text-sm dark:border-gray-700"
+    >
       {/* `min-w-0 flex-1` on the text column so the two sentences wrap instead
           of forcing the row wider than a 320px viewport (the constraint the
           story-27-5 copy has always carried). Mirrors
@@ -128,10 +179,26 @@ export function AccountNoticeBox() {
             Colour: `text-muted` is the semantic token (`text-gray-500
             dark:text-gray-400`), so the base state goes through the token
             system like the rest of the box. The hover pair stays raw because
-            this app has no hover-surface token; both combinations were measured
-            for SC 1.4.11 — gray-700 on gray-100 and gray-200 on gray-700 are
-            both far above 3:1, and the resting glyph is 4.8:1 light / ~6.4:1
-            dark against `surface-inset`. */}
+            this app has no hover-surface token; the hover combinations
+            gray-700-on-gray-100 and gray-200-on-gray-700 are both far above SC
+            1.4.11's 3:1.
+
+            Resting glyph against this box's fill, RECOMPUTED for story 60.1
+            (WCAG relative luminance, 2026-09-22):
+              light — gray-500 `#6b7280` on gray-50 `#f9fafb` = **4.63:1**
+              dark  — gray-400 `#9ca3af` on the COMPOSITE of `gray-700/40` over
+                      gray-900, i.e. rgb(32.2, 40.4, 55.8)      = **5.79:1**
+            Both clear 3:1 and 4.5:1.
+
+            ⚠️ These supersede the "4.8:1 light / ~6.4:1 dark" this comment
+            carried from story 55.1, which were wrong for the stated background:
+            4.83:1 is gray-500 on WHITE, not on gray-50, and the ~6.4 figure
+            ignored the 40% overlay (gray-400 on BARE gray-900 is 6.99:1).
+            Story 60.1's first draft asserted it had "re-checked" these while
+            actually inheriting them — caught in that story's code review. The
+            fill is unchanged by 60.1 (the border carries the fix), so these
+            ratios are a property of the box as it stands; if the fill ever
+            moves, recompute rather than re-affirming. */}
         <button
           type="button"
           onClick={dismiss}
