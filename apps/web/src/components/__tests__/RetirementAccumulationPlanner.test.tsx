@@ -1920,3 +1920,71 @@ describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Sto
     expect(screen.getByTestId('derived-current-saved')).not.toHaveTextContent('400,000.00')
   })
 })
+
+describe('RetirementAccumulationPlanner — what not to count toward desired income (story 65.1, FR100)', () => {
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  // Anchored at both ends so `toHaveTextContent` is an EQUALITY check on the
+  // element's own text. The bare-string form is a substring match, which is how
+  // an assertion like this goes quietly vacuous against a wrapper element.
+  const NOTE = /^Don't include expenses that will no longer be relevant in retirement\.$/
+  const PERIOD_HELP = /^The annual income you want in retirement$/
+
+  it('tells the user to leave out costs that will have ended by retirement', () => {
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    // ⚠️ Anchored on the DISTINGUISHING clause, not on "retirement" — that word
+    // appears dozens of times in this component, so a pin on it would survive a
+    // full rewrite of the sentence and guard nothing (Epic 23 record).
+    //
+    // ⚠️ Scoped to the note element rather than searched for over the whole
+    // page: an unscoped probe passes if the sentence appears ANYWHERE, attached
+    // to nothing.
+    expect(screen.getByTestId('desiredIncome-note')).toHaveTextContent(NOTE)
+  })
+
+  it('wires aria-describedby to the period help and the note, help first', () => {
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    const input = screen.getByLabelText('Desired Retirement Income')
+
+    // ⚠️ Before story 65.1 this attribute did not exist anywhere in the file:
+    // the help text was VISUALLY adjacent to the input but not associated with
+    // it, so the field's period never formed part of its description.
+    const describedBy = input.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+
+    // ⚠️ `aria-describedby` is an id LIST, and the attribute is worthless unless
+    // the ids RESOLVE. Asserting the string alone passes against a typo'd or
+    // stale id that announces nothing — the failure mode this test exists for.
+    const described = (describedBy ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((elementId) => document.getElementById(elementId))
+
+    expect(described).toHaveLength(2)
+    for (const element of described) {
+      expect(element).not.toBeNull()
+    }
+
+    // ⚠️ Both ids must land on the PARAGRAPHS themselves, not on any ancestor.
+    // `toHaveTextContent` with a plain string is a SUBSTRING match, so without
+    // this the whole assertion is vacuous against a wrapper: an outer `<div>`
+    // containing both paragraphs "has" each expected string, length is still 2
+    // and neither is null, so the test stays green while the field's real
+    // description would include the Income period select. Caught in review.
+    for (const element of described) {
+      expect(element?.tagName).toBe('P')
+    }
+
+    // Reading order: the period the figure is stated in, THEN what to leave out
+    // of it. A caveat announced before the unit it qualifies is the wrong way
+    // round. `incomeBasis` is reliably 'annual' here — the GLOBAL setup in
+    // `vitest.setup.ts` calls `resetPlan()` around every test (the file-local
+    // `resetStores` does NOT touch the planner store), so this is deterministic
+    // even though other tests in this file switch the basis to monthly.
+    //
+    expect(described[0]).toHaveTextContent(PERIOD_HELP)
+    expect(described[1]).toHaveTextContent(NOTE)
+  })
+})

@@ -914,6 +914,7 @@ function RetirementAccumulationPlannerInner() {
     id,
     label,
     help,
+    note,
     value,
     onChange,
     onUserEdit,
@@ -922,6 +923,15 @@ function RetirementAccumulationPlannerInner() {
     id: string
     label: string
     help: string
+    /**
+     * Standing guidance about what belongs in the figure, shown under `help`.
+     *
+     * REQUIRED, not optional, and deliberately so (story 65.1): this helper has
+     * exactly one caller, so an optional `note` would ship a false branch that
+     * no test could reach from outside the component. A second caller can make
+     * it optional then, with a real case to test both branches against.
+     */
+    note: string
     value: string
     onChange: React.Dispatch<React.SetStateAction<string>>
     /**
@@ -932,55 +942,76 @@ function RetirementAccumulationPlannerInner() {
      */
     onUserEdit?: () => void
     children?: React.ReactNode
-  }) => (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-label mb-2">
-        {label}
-      </label>
-      <div className="relative">
-        {mode === 'symbol' && (
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-            {currencySymbol(currency)}
-          </span>
-        )}
-        <input
-          type="text"
-          id={id}
-          name={id}
-          value={value}
-          onChange={(e) => {
-            // ⚠️ Latch AFTER sanitizing, and only if the value actually MOVED
-            // from what was on screen (story 44.1 code review). Latching first
-            // meant one rejected keystroke — a letter in a money field — silently
-            // and permanently ended the income seed for that user, across every
-            // future session, without changing a character on screen.
-            //
-            // ⚠️ Compare against `value`, the CURRENT state, not against
-            // `e.target.value`: the latter is the post-keystroke raw input, so a
-            // normal accepted keystroke leaves the two equal and the comparison
-            // inverts — the latch would then fire on exactly the rejected
-            // keystrokes it exists to ignore. (Caught in review of this fix.)
-            const sanitized = sanitizeMoneyChange(e.target, locale)
-            if (sanitized !== value) {
-              onUserEdit?.()
-            }
-            onChange(sanitized)
-          }}
-          onBlur={reEcho(onChange)}
-          inputMode="decimal"
-          placeholder="0.00"
-          className={inputClass(true)}
-          aria-label={label}
-          aria-required="true"
-        />
-      </div>
-      {/* Help sits directly under its own input, BEFORE any adjunct control:
+  }) => {
+    // ⚠️ Story 65.1. The help `<p>` below is VISUALLY adjacent to the input but
+    // was not associated with it, so its period ("annual"/"monthly") never
+    // reached assistive technology — it was never part of the field's
+    // description. Both paragraphs are described now, help first, in reading
+    // order, which is also their DOM order.
+    //
+    // Described UNCONDITIONALLY, mirroring the `income-amount-hint` wiring in
+    // `IncomePage`: that call site records that `aria-describedby` is an id
+    // LIST, and that making it conditional is where an announcement gets
+    // silently dropped.
+    const helpId = `${id}-help`
+    const noteId = `${id}-note`
+    return (
+      <div>
+        <label htmlFor={id} className="block text-sm font-medium text-label mb-2">
+          {label}
+        </label>
+        <div className="relative">
+          {mode === 'symbol' && (
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+              {currencySymbol(currency)}
+            </span>
+          )}
+          <input
+            type="text"
+            id={id}
+            name={id}
+            value={value}
+            onChange={(e) => {
+              // ⚠️ Latch AFTER sanitizing, and only if the value actually MOVED
+              // from what was on screen (story 44.1 code review). Latching first
+              // meant one rejected keystroke — a letter in a money field — silently
+              // and permanently ended the income seed for that user, across every
+              // future session, without changing a character on screen.
+              //
+              // ⚠️ Compare against `value`, the CURRENT state, not against
+              // `e.target.value`: the latter is the post-keystroke raw input, so a
+              // normal accepted keystroke leaves the two equal and the comparison
+              // inverts — the latch would then fire on exactly the rejected
+              // keystrokes it exists to ignore. (Caught in review of this fix.)
+              const sanitized = sanitizeMoneyChange(e.target, locale)
+              if (sanitized !== value) {
+                onUserEdit?.()
+              }
+              onChange(sanitized)
+            }}
+            onBlur={reEcho(onChange)}
+            inputMode="decimal"
+            placeholder="0.00"
+            className={inputClass(true)}
+            aria-label={label}
+            aria-required="true"
+            aria-describedby={`${helpId} ${noteId}`}
+          />
+        </div>
+        {/* Help sits directly under its own input, BEFORE any adjunct control:
           it carries the unit, and pushing it below the income-period selector
-          made it read as that select's help instead of this field's. */}
-      <p className="text-sm text-muted mt-1">{help}</p>
-      {children}
-    </div>
-  )
+          made it read as that select's help instead of this field's. The note
+          follows it for the same reason. */}
+        <p id={helpId} className="text-sm text-muted mt-1">
+          {help}
+        </p>
+        <p id={noteId} className="text-sm text-muted mt-1" data-testid={noteId}>
+          {note}
+        </p>
+        {children}
+      </div>
+    )
+  }
 
   // A derived, non-editable money figure (story 29.2). A called render helper for
   // the same reason `currencyField` is one — nothing is defined as a component in
@@ -1123,6 +1154,16 @@ function RetirementAccumulationPlannerInner() {
             id: 'desiredIncome',
             label: 'Desired Retirement Income',
             help: `The ${incomeBasis} income you want in retirement`,
+            // Story 65.1 (FR100). This field is SEEDED at half the user's current
+            // income (`DEFAULT_INCOME_REPLACEMENT_RATE`; read its docblock — since
+            // story 46.1 the income rows are take-home, so this is half of what
+            // reaches the bank account, NOT the textbook gross-replacement rule).
+            // That seed knows nothing about a mortgage, loan, tuition or commute
+            // that ends before the user retires. Overstating the figure costs a
+            // LATER retirement age, and nothing on the page said the number was
+            // theirs to reduce. The planner takes desired income as given and
+            // solves for the DATE, so this is the right place to say so.
+            note: "Don't include expenses that will no longer be relevant in retirement.",
             value: desiredIncomeInput,
             onChange: setDesiredIncomeInput,
             onUserEdit: () => markDesiredIncomeAuthored(locale),
