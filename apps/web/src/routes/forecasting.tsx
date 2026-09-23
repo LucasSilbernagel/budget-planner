@@ -94,6 +94,20 @@ export interface ScenarioInputs {
 }
 
 /**
+ * Whether this account has a profile that a forecast can be saved to.
+ *
+ * ⚠️⚠️ Four arms, because the single `string | null` this replaced conflated
+ * five distinct situations and the UI could only guess between them. `ready`
+ * carries the id so nothing has to re-derive it, and `none` is the ONLY arm that
+ * means "create a profile".
+ */
+type ProfileAvailability =
+  | { kind: 'loading' }
+  | { kind: 'ready'; profileId: string }
+  | { kind: 'none' }
+  | { kind: 'error' }
+
+/**
  * Saved forecast with metadata
  */
 export interface SavedForecast {
@@ -189,24 +203,68 @@ function ForecastingPage(): React.ReactElement {
   // re-loaded (an id-only key would not change → stale edits would survive).
   const [loadNonce, setLoadNonce] = useState(0)
 
-  // Handle tab change
+  // Handle tab change. Retires the save confirmation: it names a specific
+  // forecast, and leaving it up while the user works elsewhere lets it outlive
+  // the thing it describes (code review 62.2).
   const handleTabChange = useCallback((tab: ForecastingTab) => {
+    setSaveSuccess(null)
     setActiveTab(tab)
   }, [])
 
   // State for server-side forecasts
-  const [_isLoadingForecasts, setIsLoadingForecasts] = useState(false)
   const [serverForecasts, setServerForecasts] = useState<ForecastingProfileOutput[]>([])
-  // The user profile that newly-saved forecasts are attached to. Forecasting
-  // profiles require a real userProfiles UUID, so resolve the user's default
-  // profile up front rather than guessing an ID at save time.
-  const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null)
+  /**
+   * The user profile that newly-saved forecasts are attached to, as an EXPLICIT
+   * four-arm status (story 62.2, FR95).
+   *
+   * ⚠️⚠️ This used to be a bare `string | null`, and that `null` meant FIVE
+   * different things: the effect had not run yet, the account had zero profiles,
+   * the session had expired, premium was denied at the server boundary
+   * (`server/functions/profiles.ts:144-152`), or the fetch threw. The UI could not
+   * tell them apart, so the only feedback possible was a submit-time error that
+   * guessed — and guessed "create a profile" for all five.
+   *
+   * Only `none` means "create a profile". Keying a prompt on `null` again would
+   * flash that prompt on every page load during the fetch AND tell a user whose
+   * network blipped to create a profile they already have.
+   *
+   * ⚠️ There is deliberately no separate loading flag beside this. A
+   * `_isLoadingForecasts` state used to sit here, set on both edges and never
+   * read; `kind: 'loading'` is now the single answer to "is the client's profile
+   * data here yet", and a second flag would immediately start drifting from it.
+   */
+  const [profileState, setProfileState] = useState<ProfileAvailability>({ kind: 'loading' })
+  const defaultProfileId = profileState.kind === 'ready' ? profileState.profileId : null
+  /**
+   * Confirmation of the last successful save, rendered by the PAGE.
+   *
+   * ⚠️ It cannot live in `ScenarioBuilder`: a successful save switches to the
+   * "saved" tab, and the builder is CSS-hidden (never unmounted) whenever another
+   * tab is active — so a confirmation rendered inside it would be invisible at
+   * exactly the moment it is needed, while remaining perfectly findable in jsdom.
+   * A unit test asserting it there would pass against a message no user can see.
+   */
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  /**
+   * Whether a save is in flight, reported UP from the builder (code review 62.2).
+   *
+   * ⚠️ It exists to lock the tab strip. The failure alert renders inside the
+   * builder, and switching tabs CSS-hides that panel — where `focus()` is a no-op
+   * and a live region is never announced — so a user who tabbed away during a slow
+   * save learned nothing at all. Only FAILURE was lost this way; success forces
+   * its own tab switch.
+   *
+   * ⚠️⚠️ Because this DISABLES navigation, it must never latch. The builder drives
+   * it from the same `finally` that clears its own `isSaving`, so every exit path —
+   * resolve, reject, or a caller that throws — re-enables the tabs. Do not set it
+   * from anywhere else; a second writer is how this becomes a trap.
+   */
+  const [isSavingForecast, setIsSavingForecast] = useState(false)
 
   // Load the user's default profile and saved forecasts from the server on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        setIsLoadingForecasts(true)
         // In TanStack Start, the framework supplies the request context; for
         // client-side calls we pass the current location as the request.
         const request = new Request(window.location.href)
@@ -216,14 +274,38 @@ function ForecastingPage(): React.ReactElement {
         const { getProfiles } = await import('../server/functions/profiles')
         const profilesResult = await getProfiles(request)
         let resolvedProfileId: string | null = null
-        if (profilesResult.success && profilesResult.data && profilesResult.data.length > 0) {
+        if (!profilesResult.success) {
+          // ⚠️ NOT "no profile". `getProfiles` returns `success: false` for an
+          // expired session and for a premium denial at the server boundary, and
+          // this account may well have profiles it simply could not read.
+          setProfileState({ kind: 'error' })
+        } else if (!Array.isArray(profilesResult.data)) {
+          // ⚠️ A malformed success is an ERROR, not an empty account (code review
+          // 62.2). This used to be folded into the `none` branch below, which told
+          // a user with a well-stocked account that they had no profile — wrong
+          // advice about their own data, produced by a response shape the server
+          // does not actually emit today.
+          setProfileState({ kind: 'error' })
+        } else if (profilesResult.data.length === 0) {
+          // The ONLY branch that means the account genuinely has no profile: a
+          // well-formed success carrying an empty array. Soft-deleted tombstones
+          // are already excluded server-side (`profiles.ts:157-160`), so an empty
+          // list really is empty.
+          setProfileState({ kind: 'none' })
+        } else {
           const defaultProfile =
             profilesResult.data.find((p) => p.isDefault) ?? profilesResult.data[0]
-          // `length > 0` is checked above, so the `[0]` fallback is always a real
-          // element; narrowed rather than asserted.
-          if (defaultProfile) {
+          // ⚠️ Guard on the ID, not merely on the element (code review 62.2). The
+          // `find(...) ?? [0]` fallback with `length > 0` is ALWAYS truthy, so the
+          // old `if (defaultProfile)` was dead code and an empty `id` reached
+          // `{kind:'ready'}` — where `defaultProfileId` derives falsy and the save
+          // guard emits "No financial profile found", i.e. the one-message-for-
+          // everything defect this story removed, on the arm that claims success.
+          if (defaultProfile?.id) {
             resolvedProfileId = defaultProfile.id
-            setDefaultProfileId(resolvedProfileId)
+            setProfileState({ kind: 'ready', profileId: defaultProfile.id })
+          } else {
+            setProfileState({ kind: 'error' })
           }
         }
 
@@ -235,9 +317,22 @@ function ForecastingPage(): React.ReactElement {
           setServerForecasts(result.data)
         }
       } catch (error) {
+        // ⚠️ A throw is an ERROR arm, never the "no profile" arm. MEASURED on the
+        // e2e dev server: `getProfiles` throws `ReferenceError: Buffer is not
+        // defined` before it reaches the server at all, because Vite bundles the
+        // `pg` driver into the client in dev. Treating that as "you have no
+        // profiles" would have put wrong advice on screen for a bundling artifact.
+        // The log stays: it is the only record of WHICH error occurred, and it is
+        // explicitly not the user-facing feedback (that is the notice below).
         console.error('Failed to load forecasting data:', error)
-      } finally {
-        setIsLoadingForecasts(false)
+        // ⚠️⚠️ ONLY demote a state that is still UNRESOLVED (code review 62.2).
+        // This `try` wraps BOTH fetches. `getForecastingProfiles` runs AFTER the
+        // profile arm has been set, so an unconditional `{kind:'error'}` here let
+        // a failure of the SAVED-FORECAST LIST flip a perfectly good `ready` to
+        // `error` — disabling Save and stating "We could not check your financial
+        // profiles" about a check that had just succeeded. That was a REGRESSION
+        // against `581c3f8`, where the save still worked in exactly that case.
+        setProfileState((current) => (current.kind === 'loading' ? { kind: 'error' } : current))
       }
     }
 
@@ -255,8 +350,22 @@ function ForecastingPage(): React.ReactElement {
       result: ForecastingResult
       inputs: ScenarioInputs
     }): Promise<{ success: boolean; error?: string }> => {
+      // A new attempt retires the previous confirmation, so a failed retry can
+      // never sit beside a stale "Saved ..." banner.
+      setSaveSuccess(null)
+      // ⚠️ LAST LINE OF DEFENCE, NOT THE FEATURE. The builder already disables
+      // Save and explains itself for `none` and `error` (story 62.2, AC-1), so a
+      // user should never reach this. It still reports the RIGHT reason rather
+      // than one message for all four arms — the defect this story fixed.
       if (!defaultProfileId) {
-        const error = 'No financial profile found. Create a profile before saving forecasts.'
+        const error =
+          profileState.kind === 'loading'
+            ? 'Still checking your financial profiles. Try again in a moment.'
+            : profileState.kind === 'error'
+              ? 'We could not check your financial profiles, so the forecast was not saved.'
+              : 'No financial profile found. Create a profile before saving forecasts.'
+        // Not user feedback — the builder surfaces the returned `error`. Kept
+        // because it is the only record that a save was refused before it began.
         console.error('Cannot save forecast:', error)
         return { success: false, error }
       }
@@ -292,12 +401,22 @@ function ForecastingPage(): React.ReactElement {
           if (getResult.success && getResult.data) {
             setServerForecasts(getResult.data)
           }
+          // The tab switch is a real signal but it is NOT sufficient on its own —
+          // it is silent for assistive tech and easy to miss on a long page. The
+          // confirmation below names what was saved and is announced politely.
+          setSaveSuccess(forecast.name)
           setActiveTab('saved')
           return { success: true }
         }
 
         // A failed save (e.g. duplicate name hitting the unique constraint) must
         // be surfaced to the user, not silently swallowed.
+        // ⚠️ Both logs below are KEPT DELIBERATELY (story 62.2, AC-6) and neither
+        // is the user-facing feedback: the RETURNED `error` is, and the builder
+        // renders it beside the Save button. A console log is invisible to the
+        // user and invisible to the gate — `forecasting-intro.test.tsx:41-49`
+        // records, measured, that this suite does not fail on console errors. Do
+        // not cite either of these as "the user is informed".
         const error = result.error || 'Failed to save forecast'
         console.error('Failed to save forecast:', error)
         return { success: false, error }
@@ -307,12 +426,15 @@ function ForecastingPage(): React.ReactElement {
         return { success: false, error: message }
       }
     },
-    [defaultProfileId]
+    [defaultProfileId, profileState.kind]
   )
 
   // Handle deleting a forecast - uses server function
   const handleDeleteForecast = useCallback(
     async (id: string) => {
+      // The confirmation names a forecast by name; deleting one must not leave a
+      // banner claiming it was just saved (code review 62.2).
+      setSaveSuccess(null)
       try {
         // Import server function dynamically
         const { deleteForecastingProfile } = await import('../server/functions/forecastingProfiles')
@@ -344,6 +466,8 @@ function ForecastingPage(): React.ReactElement {
   // builder (via key + initialForecast), shows its projection immediately, and
   // switches to the builder tab so the user lands on the reloaded scenario.
   const handleLoadForecast = useCallback((forecast: SavedForecast) => {
+    // Reopening a different scenario retires the previous save confirmation.
+    setSaveSuccess(null)
     setLoadedForecast(forecast)
     setLoadNonce((n) => n + 1)
     setScenarioResult(forecast.result)
@@ -422,8 +546,31 @@ function ForecastingPage(): React.ReactElement {
 
         {/* Tabs */}
         <div className="mb-8">
-          <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} />
+          <TabNavigation
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            disabled={isSavingForecast}
+          />
         </div>
+
+        {/* Save confirmation (story 62.2, AC-5).
+            ⚠️ It lives HERE, outside the tab panel, and not in ScenarioBuilder —
+            a successful save switches to the "saved" tab, which CSS-hides the
+            builder, so a confirmation inside it would be invisible at the one
+            moment it matters. It is `polite`, not an alert, and does not take
+            focus: the tab switch has already moved the user's context, and the
+            failure arm (inside the builder, beside the button) is the one where
+            the user has something to act on. */}
+        {saveSuccess && (
+          <div
+            data-testid="save-success"
+            role="status"
+            aria-live="polite"
+            className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300"
+          >
+            Saved "{saveSuccess}" to My Forecasts.
+          </div>
+        )}
 
         {/* Tab Content */}
         <div className="surface rounded-xl shadow-lg p-4 sm:p-8">
@@ -438,6 +585,11 @@ function ForecastingPage(): React.ReactElement {
               initialForecast={loadedForecast}
               onSave={handleSaveForecast}
               onResultChange={setScenarioResult}
+              // The page owns the profile lookup; the builder only renders the
+              // answer. Passing the `kind` alone keeps the profile id off a
+              // component that has no business with it.
+              saveAvailability={{ kind: profileState.kind }}
+              onSavingChange={setIsSavingForecast}
             />
           </div>
 
@@ -516,6 +668,13 @@ function PremiumBadge(): React.ReactElement {
 interface TabNavigationProps {
   activeTab: ForecastingTab
   onTabChange: (tab: ForecastingTab) => void
+  /**
+   * Locks the tab strip while a save is in flight (code review 62.2). Switching
+   * tabs CSS-hides the builder, and the failure alert lives inside it — hidden,
+   * it is neither focusable nor announced, so a user who tabbed away during a
+   * slow save was never told the save had failed.
+   */
+  disabled?: boolean
 }
 
 const tabs: { id: ForecastingTab; label: string; description: string }[] = [
@@ -536,7 +695,11 @@ const tabs: { id: ForecastingTab; label: string; description: string }[] = [
   },
 ]
 
-function TabNavigation({ activeTab, onTabChange }: TabNavigationProps): React.ReactElement {
+function TabNavigation({
+  activeTab,
+  onTabChange,
+  disabled = false,
+}: TabNavigationProps): React.ReactElement {
   return (
     <div className="flex flex-col sm:flex-row gap-4">
       <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
@@ -545,7 +708,8 @@ function TabNavigation({ activeTab, onTabChange }: TabNavigationProps): React.Re
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            disabled={disabled}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
               activeTab === tab.id
                 ? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-100'

@@ -18,6 +18,7 @@ import {
   sanitizeMoneyInput,
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
+import { Link } from '@tanstack/react-router'
 import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react'
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
@@ -100,7 +101,46 @@ export interface ScenarioBuilderProps {
    * in the state initializers.
    */
   initialForecast?: SavedForecast | null
+  /**
+   * Whether a save can work at all, resolved by the PAGE (story 62.2, FR95).
+   *
+   * ⚠️ The builder must never resolve this itself. `routes/forecasting.tsx` owns
+   * the profile lookup; a second fetch from here would double the request and
+   * could disagree with the answer the save path actually uses.
+   *
+   * ⚠️ Optional, defaulting to `ready`, and that default is load-bearing: the
+   * `none` arm renders a `<Link>`, which needs a router in context. Every test in
+   * `scenario-builder.test.tsx` and `scenario-builder.seeding.dom.test.tsx` uses a
+   * bare `render()` with no router and omits this prop. Change the default and
+   * ~40 tests fail on a missing router, which looks like anything but the cause.
+   */
+  saveAvailability?: SaveAvailability
+  /**
+   * Reports whether a save is in flight so the PAGE can lock its tab strip
+   * (code review 62.2). Switching tabs CSS-hides this component, and the failure
+   * alert lives inside it — hidden, it is neither focusable nor announced.
+   *
+   * ⚠️ Driven from the same `finally` that clears `isSaving`, so it can never
+   * latch `true` and leave the user's navigation permanently disabled.
+   */
+  onSavingChange?: (isSaving: boolean) => void
 }
+
+/**
+ * Why a save may or may not be possible right now.
+ *
+ * ⚠️⚠️ These four arms exist because `defaultProfileId` used to be a bare
+ * `string | null`, and `null` meant FIVE different things: the effect had not run
+ * yet, the account had zero profiles, the session had expired, premium was denied
+ * at the server boundary, or the fetch threw. Only ONE of those is "go and create
+ * a profile". Collapsing them again reintroduces two defects at once — a prompt
+ * that flashes on every page load, and wrong advice for anyone whose fetch failed.
+ */
+export type SaveAvailability =
+  | { kind: 'loading' }
+  | { kind: 'ready' }
+  | { kind: 'none' }
+  | { kind: 'error' }
 
 /**
  * Form data for scenario configuration
@@ -137,6 +177,22 @@ const DEFAULT_FORM: ScenarioFormData = {
   expenseGrowthRate: 0,
   years: 10,
 }
+
+/**
+ * Copy for the blocked-save states (story 62.2, FR95).
+ *
+ * ⚠️ `NO_PROFILE_*` and `PROFILE_ERROR_*` must stay distinguishable. Telling a
+ * user whose profile fetch merely failed to "create a profile" is wrong advice
+ * about their own account, and it is indistinguishable from the real empty case
+ * unless the wording differs.
+ */
+const NO_PROFILE_NOTICE =
+  'Saving a forecast needs a financial profile, and this account does not have one yet.'
+const NO_PROFILE_SHORT = 'Needs a financial profile'
+const PROFILE_ERROR_NOTICE =
+  'We could not check your financial profiles, so saving is unavailable right now. Reload the page to try again.'
+const PROFILE_ERROR_SHORT = 'Profile check failed'
+const FALLBACK_SAVE_ERROR = 'Failed to save forecast'
 
 const FREQUENCY_OPTIONS = [
   { value: 'weekly' as const, label: 'Weekly' },
@@ -269,6 +325,8 @@ export function ScenarioBuilder({
   onSave,
   onResultChange,
   initialForecast,
+  saveAvailability = { kind: 'ready' },
+  onSavingChange,
 }: ScenarioBuilderProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
@@ -400,7 +458,77 @@ export function ScenarioBuilder({
   const [isCalculating, setIsCalculating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * The outcome of the last SAVE attempt — a separate slot from `error`, which
+   * belongs to the calculation (story 62.2, AC-9).
+   *
+   * ⚠️ They cannot share one slot. `calculateForecast` runs `setError(null)` on
+   * every debounced recompute, 500 ms after any input change — and 62.1's seeding
+   * effect fires one such recompute at hydration. A save outcome parked in `error`
+   * would be erased by the user's next keystroke, at the moment they most need it.
+   *
+   * Cleared alongside `error` in `calculateForecast` so a fresh calculation error
+   * can never sit beside a stale save error and contradict it. Editing a field
+   * after a failed save therefore dismisses the failure, which is correct: the
+   * user is acting on it.
+   *
+   * ⚠️ Failures only. A SUCCESS confirmation does not belong here — the page
+   * switches to the "saved" tab on success, which CSS-hides this whole component
+   * (`routes/forecasting.tsx:534`), so a success message rendered here would be
+   * invisible exactly when it is needed while still being findable in jsdom.
+   */
+  const [saveOutcome, setSaveOutcome] = useState<string | null>(null)
+  const saveOutcomeRef = useRef<HTMLDivElement>(null)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * Move focus onto the failure message once it mounts.
+   *
+   * ⚠️ `role="alert"` announces on INSERTION, not on content change. This node is
+   * NOT keyed, so React reuses it and swaps its text — which is exactly why
+   * `handleSave` clears `saveOutcome` before each attempt: that unmounts the alert
+   * in the "saving" commit so the post-await set REMOUNTS it, re-firing both the
+   * announcement and this effect.
+   *
+   * ⚠️⚠️ An earlier revision of this docblock claimed the node "is mounted fresh
+   * rather than having its text swapped". That was FALSE on both the same-text and
+   * changed-text paths, and without the clear-on-attempt a retry failing with the
+   * IDENTICAL message was an `Object.is` bail-out: no re-render, no re-insertion,
+   * no focus move — measured twice in code review 62.2, silent for screen readers.
+   *
+   * The focus move is what a keyboard user gets: the message sits immediately
+   * BEFORE the Save button in DOM order, so one Tab returns them to Save to retry.
+   */
+  useEffect(() => {
+    if (saveOutcome) {
+      saveOutcomeRef.current?.focus()
+    }
+  }, [saveOutcome])
+
+  /**
+   * A change of availability retires any save outcome (code review 62.2).
+   * Clicking Save during `loading` parks "Still checking your financial
+   * profiles. Try again in a moment." in `saveOutcome`; when the arm then
+   * resolves to `none`/`error` that message would otherwise sit there forever,
+   * telling the user to retry beside a permanently disabled button.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed deliberately on the arm alone — re-running when `saveOutcome` changes would erase the outcome the moment it is set.
+  useEffect(() => {
+    setSaveOutcome(null)
+  }, [saveAvailability.kind])
+
+  /**
+   * `none` and `error` both mean a save cannot succeed, so the affordance is
+   * disabled and says why. `loading` deliberately does NOT block: the window is a
+   * few hundred milliseconds, a disabled control with no explanation is worse than
+   * none, and the page's own save guard still refuses with an accurate message.
+   */
+  const saveBlockedReason =
+    saveAvailability.kind === 'none'
+      ? NO_PROFILE_SHORT
+      : saveAvailability.kind === 'error'
+        ? PROFILE_ERROR_SHORT
+        : null
 
   // Keep the latest onResultChange in a ref so the debounced recompute stays
   // correct even if a caller passes a non-memoized callback (review bug-3):
@@ -437,6 +565,9 @@ export function ScenarioBuilder({
   const calculateForecast = useCallback(async () => {
     setIsCalculating(true)
     setError(null)
+    // AC-9: a recompute retires the previous save outcome, so the user never sees
+    // a stale save error beside a fresh calculation error.
+    setSaveOutcome(null)
 
     try {
       const scenario: ForecastingScenario = {
@@ -630,6 +761,11 @@ export function ScenarioBuilder({
     if (isSaving) {
       return
     }
+    // The button is already disabled in this state; this is the belt to that
+    // braces, so a programmatic click cannot fire a save that is known to fail.
+    if (saveBlockedReason) {
+      return
+    }
 
     const scenario: ForecastingScenario = {
       name: formData.name,
@@ -648,7 +784,14 @@ export function ScenarioBuilder({
       scenario.oneTimeEvents = oneTimeEvents.map(({ id: _id, ...rest }) => rest)
     }
 
+    // ⚠️ Clear BEFORE the attempt (code review 62.2). Without this, a retry that
+    // fails with the identical message is an `Object.is` bail-out: the alert node
+    // is reused, nothing re-mounts, and neither the announcement nor the focus
+    // effect fires. Clearing here unmounts it for the "saving" commit so the
+    // post-await set is a genuine re-insertion.
+    setSaveOutcome(null)
     setIsSaving(true)
+    onSavingChange?.(true)
     try {
       const saveResult = await onSave({
         name: formData.name,
@@ -659,17 +802,32 @@ export function ScenarioBuilder({
         // forecast can be reopened faithfully (story bug-3).
         inputs: { savings, investments, years: formData.years },
       })
-      if (saveResult && !saveResult.success) {
-        setError(saveResult.error || 'Failed to save forecast')
-      } else {
-        setError(null)
-      }
+      // Failures land in `saveOutcome`, beside the button. Successes are reported
+      // by the PAGE, outside this component, because the page hides this component
+      // on success — see the `saveOutcome` docblock.
+      setSaveOutcome(
+        saveResult && !saveResult.success ? saveResult.error || FALLBACK_SAVE_ERROR : null
+      )
+    } catch (err) {
+      // `onSave` is a caller-supplied async function. Before this story a rejection
+      // propagated out of the click handler as an unhandled rejection and the user
+      // saw nothing at all — the page's own catch only covers ITS implementation,
+      // not a caller that throws before returning a result.
+      // ⚠️ `|| FALLBACK_SAVE_ERROR` covers an Error with an EMPTY message, which
+      // would otherwise be falsy and render no alert at all — the resolved-result
+      // arm above already guards this; the catch arm did not (code review 62.2).
+      setSaveOutcome((err instanceof Error && err.message) || FALLBACK_SAVE_ERROR)
     } finally {
       setIsSaving(false)
+      // Same `finally` as `isSaving`, so the page's tab lock cannot latch on any
+      // exit path — resolve, reject, or a caller that throws synchronously.
+      onSavingChange?.(false)
     }
   }, [
     result,
     isSaving,
+    saveBlockedReason,
+    onSavingChange,
     formData,
     incomeItems,
     expenseItems,
@@ -698,9 +856,40 @@ export function ScenarioBuilder({
         <p className="text-muted mt-1">Create and configure your financial forecasting scenario</p>
       </div>
 
-      {/* Error Message */}
+      {/* Saving is impossible before the user starts — say so here, not on submit.
+          ⚠️ This is the point of story 62.2: the condition is known at mount, and
+          reporting it only when the user presses Save (after building a whole
+          scenario) is the defect. The remedy is one click away on the `none` arm.
+          ⚠️ The `error` arm must NOT offer "create a profile" — an account whose
+          fetch merely failed already has profiles, and sending it to make another
+          is wrong advice about the user's own data. */}
+      {saveAvailability.kind === 'none' || saveAvailability.kind === 'error' ? (
+        <div
+          data-testid="save-blocked-notice"
+          className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-200 px-4 py-3 rounded-lg text-sm"
+        >
+          {saveAvailability.kind === 'none' ? (
+            <p>
+              {NO_PROFILE_NOTICE}{' '}
+              <Link to="/profiles" className="font-medium underline hover:no-underline">
+                Create a profile
+              </Link>
+            </p>
+          ) : (
+            <p>{PROFILE_ERROR_NOTICE}</p>
+          )}
+        </div>
+      ) : null}
+
+      {/* Calculation Error Message.
+          ⚠️ THIS SLOT IS THE CALCULATION'S, NOT THE SAVE'S (story 62.2, AC-9). A
+          save failure renders beside the Save button instead — roughly 250 lines
+          further down the form, which is exactly why it could not stay here. */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
+        <div
+          data-testid="calculation-error"
+          className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 px-4 py-3 rounded-lg text-sm"
+        >
           {error}
         </div>
       )}
@@ -948,15 +1137,41 @@ export function ScenarioBuilder({
             />
           </div>
 
-          <div className="mt-6 flex justify-end">
-            <button
-              type="button"
-              onClick={handleSave}
-              className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isCalculating || isSaving}
-            >
-              {isCalculating ? 'Calculating...' : isSaving ? 'Saving...' : 'Save Forecast'}
-            </button>
+          {/* The save outcome renders HERE, not at the top of the form.
+              ⚠️ Adjacency is structural, not cosmetic: the message shares this
+              immediate parent with the Save button, so a user who just pressed
+              Save cannot miss it, and it sits BEFORE the button in DOM order so a
+              single Tab from the focused message returns to Save to retry. */}
+          <div className="mt-6 space-y-3">
+            {saveOutcome && (
+              <div
+                ref={saveOutcomeRef}
+                data-testid="save-outcome"
+                role="alert"
+                tabIndex={-1}
+                className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 px-4 py-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {saveOutcome}
+              </div>
+            )}
+            {saveBlockedReason && (
+              <p
+                data-testid="save-blocked-reason"
+                className="text-sm text-amber-800 dark:text-amber-200 text-right"
+              >
+                {saveBlockedReason}
+              </p>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSave}
+                className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isCalculating || isSaving || saveBlockedReason !== null}
+              >
+                {isCalculating ? 'Calculating...' : isSaving ? 'Saving...' : 'Save Forecast'}
+              </button>
+            </div>
           </div>
         </section>
       )}
