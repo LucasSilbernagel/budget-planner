@@ -7,7 +7,7 @@
  * visible). Applying the preference "after client rehydration" — the discipline
  * the epic prescribed — is therefore precisely what produces the flash it asked
  * us to avoid: the entry paints, then vanishes, on every page load. Only a
- * synchronous `<head>` script beats first paint (`ThemeProvider` documents the
+ * synchronous `<head>` script beats first paint (`PlannerVisibilityProvider` documents the
  * same conclusion for the theme).
  *
  * The script is a raw string that runs before any module loads, so it cannot

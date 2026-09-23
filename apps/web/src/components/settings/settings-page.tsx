@@ -7,7 +7,6 @@ import { CurrencyToggle } from './currency-toggle'
 import { LocalDataSection } from './local-data-section'
 import { ReportSection } from './report-section'
 import { RetirementVisibilityToggle } from './retirement-visibility-toggle'
-import { ThemeToggle } from './theme-toggle'
 
 /**
  * Consolidated settings surface, rendered by the `/settings` route
@@ -15,15 +14,15 @@ import { ThemeToggle } from './theme-toggle'
  *
  * Before this story the display preferences were scattered: the `CurrencyToggle`
  * was duplicated in every page header (implying page scope even though it changes
- * currency globally) and the `ThemeToggle` was buried in the global
- * footer. This surface gives them one predictable home reached from the
- * persistent `GlobalNav` (story 11-1) — Consistency & standards; Recognition
- * rather than recall.
+ * currency globally) and a `ThemeToggle` was buried in the global footer. This
+ * surface gives them one predictable home reached from the persistent `GlobalNav`
+ * (story 11-1) — Consistency & standards; Recognition rather than recall.
  *
- * Both controls are the existing, unchanged `role="switch"` components, relocated
- * not rewritten. Exactly ONE `ThemeToggle` instance lives here (story 7-3
- * DECISION 2: a single gated instance avoids the `Modal` single-open assumption),
- * so this surface must never mount a second one.
+ * ⚠️ The dark-mode toggle that used to sit in this "Display" section was DELETED
+ * in story 61.1 (FR93), along with its store, provider and `<head>` bootstrap.
+ * The theme now follows the device's `prefers-color-scheme` and there is no
+ * in-app control that can disagree with it. Do not "restore" one: a second source
+ * of truth for the theme is the decision that story reversed.
  *
  * Design decision (UX, 2026-07-04): a dedicated route rather than a nav dropdown,
  * chosen for discoverability, clean mobile behaviour against the fixed bottom tab
@@ -89,9 +88,6 @@ export function SettingsPage() {
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               Applies everywhere amounts are shown.
             </p>
-          </div>
-          <div>
-            <ThemeToggle />
           </div>
           {/* Retirement planner visibility — story 35.2, FR55. Placed in
               "Display" because it governs what the navigation shows, not what

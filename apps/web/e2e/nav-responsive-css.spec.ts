@@ -575,12 +575,8 @@ for (const [theme, expected] of [
 ] as const) {
   test(`the mobile bar paints an opaque ${theme} background of its own`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.addInitScript((t) => {
-      globalThis.localStorage.setItem(
-        'budget-planner-theme-prefs-v1',
-        JSON.stringify({ state: { theme: t }, version: 0 })
-      )
-    }, theme)
+    // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`.
+    await page.emulateMedia({ colorScheme: theme })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
@@ -612,12 +608,8 @@ for (const [theme, expected] of [
 ] as const) {
   test(`the open More sheet paints an opaque ${theme} background of its own`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 })
-    await page.addInitScript((t) => {
-      globalThis.localStorage.setItem(
-        'budget-planner-theme-prefs-v1',
-        JSON.stringify({ state: { theme: t }, version: 0 })
-      )
-    }, theme)
+    // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`.
+    await page.emulateMedia({ colorScheme: theme })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await page.locator(MORE_SUMMARY).click()

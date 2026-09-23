@@ -81,7 +81,9 @@ describe('PlannerVisibilityProvider', () => {
    * ⚠️ Ordering guard. A plain `[value]`-dependency effect would apply the
    * DETERMINISTIC DEFAULT (visible) before rehydration and strip the attribute
    * the `<head>` script just set — reintroducing the flash. The provider
-   * rehydrates FIRST and applies from the resolved value, as ThemeProvider does.
+   * rehydrates FIRST and applies from the resolved value. (A deleted `ThemeProvider`
+   * was the original example; see the provider's own docblock, which now carries
+   * the ordering rationale directly.)
    */
   it('applies the PERSISTED value, not the pre-rehydration default', () => {
     localStorage.setItem(

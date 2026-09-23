@@ -36,7 +36,7 @@ model, because there is no model. This holds for every visitor on both tiers.
 - **Retirement modeling** using a safe-withdrawal projection.
 - **Currency display** with locale-aware formatting, or a currency-less mode
   for raw numbers — set on the **Settings** page.
-- **Dark mode** — a dark theme you can switch on from the Settings page.
+- **Dark mode** — the app follows your device's light or dark setting automatically.
 - **Local-first storage** — your data lives in your browser and never leaves
   your device on the Free tier.
 

@@ -370,8 +370,6 @@ test.describe('in-session dismissal survives client-side navigation (AC-4)', () 
  * (`/tmp/claude-1000/60-1/red-at-c44068a.log`). The width quartet is the
  * palette-independent half; the colour assertions guard the specific choice.
  */
-const THEME_KEY = 'budget-planner-theme-prefs-v1'
-
 /** The page canvas the notice is rendered directly on (`HomePage.tsx:623`). */
 const CANVAS = '.surface-sunken'
 
@@ -383,27 +381,22 @@ interface EdgeMeasurement {
 }
 
 async function measureEdge(page: Page, theme: 'light' | 'dark'): Promise<EdgeMeasurement> {
-  if (theme === 'dark') {
-    await page.addInitScript(
-      ([key]) => {
-        window.localStorage.setItem(key, JSON.stringify({ state: { theme: 'dark' }, version: 0 }))
-      },
-      [THEME_KEY]
-    )
-  }
+  // Story 61.1 (FR93): the theme follows the device, so this drives the media
+  // query rather than seeding a deleted preference store.
+  await page.emulateMedia({ colorScheme: theme })
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
 
   // The theme must actually be the one under test before anything is measured,
   // or both arms would silently measure light mode.
-  // Anchored on word boundaries: a bare /dark/ would also match `not-dark` or
-  // `dark-ready` if a future class is added to <html>.
-  if (theme === 'dark') {
-    await expect(page.locator('html'), 'the dark seed did not take').toHaveClass(/\bdark\b/)
-  } else {
-    await expect(page.locator('html'), 'the light arm rendered dark').not.toHaveClass(/\bdark\b/)
-  }
+  // ⚠️ Asserts the PAINTED canvas, not the lever. This used to check a `.dark`
+  // class on <html>; story 61.1 removed that class entirely, and re-reading the
+  // `colorScheme` we just emulated could not fail. `body` is bg-gray-50 light /
+  // bg-gray-900 dark.
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
   const box = page.locator(BOX)
   await expect(box, 'the notice was not visible, so nothing could be measured').toBeVisible()

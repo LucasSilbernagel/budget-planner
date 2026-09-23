@@ -288,10 +288,31 @@ describe('documentation content accuracy (story 10-4)', () => {
 
   it('the Features page lists Dark mode under the Free tier, not Premium (story 25-3)', () => {
     // Story 25-3 moved dark mode to Free: it must appear in the Free bullet list
-    // and NOT be advertised under Premium.
+    // and NOT be advertised under Premium. Still true after story 61.1 — dark
+    // mode remains a free CAPABILITY; only the in-app control is gone.
     const { freeTier, premium } = featureSections()
     expect(freeTier).toContain('dark mode')
     expect(premium).not.toContain('dark mode')
+  })
+
+  it('the Features page does not promise a dark-mode CONTROL on the Settings page (61.1, FR93)', () => {
+    // Story 61.1 deleted the toggle: the theme follows the device and there is no
+    // in-app setting. The line used to read "a dark theme you can switch on from
+    // the Settings page", and documentation promising a control that does not
+    // exist is the failure mode this project's record warns about most.
+    //
+    // ⚠️ The sibling test above cannot catch this. It asserts the lowercased
+    // substring 'dark mode' appears in the Free list, which stays green through
+    // almost any rewrite of the sentence — including one that still promises the
+    // toggle. This is the assertion that pins the claim rather than the topic.
+    const { freeTier } = featureSections()
+    const darkLine = freeTier.split('\n').find((line) => line.includes('dark mode')) ?? ''
+    expect(darkLine, 'the Dark mode bullet vanished — this guard now proves nothing').not.toBe('')
+    expect(darkLine).not.toContain('switch on')
+    expect(darkLine).not.toContain('settings page')
+    // And it says what DOES happen, so the bullet is not merely stripped of the
+    // false claim and left saying nothing.
+    expect(darkLine).toContain('device')
   })
 
   it('the Features page keeps Retirement modeling under the Free tier (story 13-1, AC-4)', () => {

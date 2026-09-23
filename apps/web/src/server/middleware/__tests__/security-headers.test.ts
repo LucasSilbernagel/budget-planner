@@ -6,14 +6,12 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../../lib/overview/no-flash-account-notice-script'
-import { NO_FLASH_THEME_SCRIPT } from '../../../lib/theme/no-flash-theme-script'
 import {
   ACCOUNT_NOTICE_SCRIPT_CSP_HASH,
   PERMISSIONS_POLICY,
   PLANNER_SCRIPT_CSP_HASH,
   REFERRER_POLICY,
   STRICT_TRANSPORT_SECURITY,
-  THEME_SCRIPT_CSP_HASH,
   applyHeadersToNextResult,
   applySecurityHeaders,
   buildContentSecurityPolicy,
@@ -101,7 +99,7 @@ describe('applySecurityHeaders', () => {
       expect(d['manifest-src']).toBe(`'self'`)
     })
 
-    it('allows exactly the real script origins (self, nonce, theme hash, Paddle, counter.dev) and no unsafe-inline for scripts', () => {
+    it('allows exactly the real script origins (self, nonce, bootstrap hashes, Paddle, counter.dev) and no unsafe-inline for scripts', () => {
       const d = parseCsp(csp ?? '')
       expect(d['script-src']).toContain(`'self'`)
       expect(d['script-src']).toContain(`'nonce-${TEST_NONCE}'`)
@@ -166,7 +164,6 @@ describe('applySecurityHeaders', () => {
     // assertion here computed independently of what the constants happen to contain.
     it('constrains every CSP hash constant to a bare sha256 token (39.2 review)', () => {
       const bareSha256 = /^sha256-[A-Za-z0-9+/]{43}=$/
-      expect(THEME_SCRIPT_CSP_HASH).toMatch(bareSha256)
       expect(PLANNER_SCRIPT_CSP_HASH).toMatch(bareSha256)
       expect(ACCOUNT_NOTICE_SCRIPT_CSP_HASH).toMatch(bareSha256)
     })
@@ -201,7 +198,7 @@ describe('applySecurityHeaders', () => {
     it('pins the ENTIRE production script-src, so no source can be added unnoticed (39.2 AC-5)', () => {
       const d = parseCsp(csp ?? '')
       expect(d['script-src']).toBe(
-        `'self' 'nonce-${TEST_NONCE}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`
+        `'self' 'nonce-${TEST_NONCE}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`
       )
     })
 
@@ -222,20 +219,12 @@ describe('applySecurityHeaders', () => {
       expect(csp ?? '').not.toContain('ethicalads')
     })
 
-    // AC-5: the sha256 pinned in the CSP must always match the exact script the
-    // route renders. Recompute independently from the shared source of truth so a
-    // future edit to NO_FLASH_THEME_SCRIPT that forgets to update the policy fails
-    // loudly here (a drifted hash = blocked theme bootstrap = flash). The theme
-    // script is authorized by this HASH, not the nonce, so __root.tsx stays untouched.
-    it('pins the sha256 of the EXACT inline theme script in script-src (AC-5, drift guard)', () => {
-      const expectedHash = `sha256-${createHash('sha256')
-        .update(NO_FLASH_THEME_SCRIPT, 'utf8')
-        .digest('base64')}`
-      const d = parseCsp(csp ?? '')
-      expect(d['script-src']).toContain(`'${expectedHash}'`)
-    })
+    // Story 61.1 removed what used to be the FIRST drift guard here, for the
+    // no-flash THEME bootstrap: that script is deleted and the theme is now pure
+    // CSS (`prefers-color-scheme`), so there is nothing left to authorize. The
+    // absence guard below replaces it — a retired hash is silent, not red.
 
-    // Story 35.2 — the SECOND inline bootstrap. Same drift guard, recomputed
+    // Story 35.2 — an inline bootstrap authorized by HASH. Drift guard, recomputed
     // independently: a future edit to NO_FLASH_PLANNER_SCRIPT that forgets the
     // policy blocks the script, and a blocked script means the Retirement entry
     // paints on the first frame for a user who turned it off.
@@ -247,7 +236,7 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain(`'${expectedHash}'`)
     })
 
-    // Story 55.1 — the THIRD inline bootstrap. Same drift guard, recomputed
+    // Story 55.1 — the other inline bootstrap. Same drift guard, recomputed
     // independently: a future edit to NO_FLASH_ACCOUNT_NOTICE_SCRIPT that forgets
     // the policy blocks the script, and a blocked script means the dismissed
     // "No account needed" box paints on the first frame for a user who closed it.
@@ -259,19 +248,40 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain(`'${expectedHash}'`)
     })
 
-    // Anti-vacuity: the three hashes must be DIFFERENT sources, not one hash
-    // asserted three times. If any two scripts were ever collapsed into one
-    // constant, their guards above would both pass while only one bootstrap
-    // actually shipped.
-    it('authorizes three distinct inline script hashes', () => {
-      const themeHash = createHash('sha256').update(NO_FLASH_THEME_SCRIPT, 'utf8').digest('base64')
+    // Anti-vacuity: the two hashes must be DIFFERENT sources, not one hash
+    // asserted twice. If the two scripts were ever collapsed into one constant,
+    // their guards above would both pass while only one bootstrap actually
+    // shipped. (Story 61.1 took this from three to two with the theme bootstrap.)
+    it('authorizes two distinct inline script hashes', () => {
       const plannerHash = createHash('sha256')
         .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
         .digest('base64')
       const accountNoticeHash = createHash('sha256')
         .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
         .digest('base64')
-      expect(new Set([themeHash, plannerHash, accountNoticeHash]).size).toBe(3)
+      expect(new Set([plannerHash, accountNoticeHash]).size).toBe(2)
+    })
+
+    /**
+     * Story 61.1, AC-5 — the RETIRED theme-bootstrap hash must be gone.
+     *
+     * ⚠️ This is the one assertion in this file that exists because its subject
+     * does NOT exist. Deleting a script and leaving its hash in `script-src`
+     * produces no error anywhere: the policy simply authorizes an inline script
+     * nobody ships, which is a standing permission for anyone who can reproduce
+     * that exact body. Nothing else here would notice — the exact-pin test above
+     * would have been "fixed" by pasting the stale hash back in.
+     *
+     * The hash is a LITERAL because its source is deleted; it cannot be
+     * recomputed from a constant that no longer exists. It is the sha256 of the
+     * script body as it shipped at `40cbb08`, verified against that git blob.
+     */
+    it('no longer authorizes the RETIRED theme bootstrap hash (61.1, AC-5)', () => {
+      const RETIRED_THEME_HASH = 'sha256-DzWHJTkK2Y+TrJj6ZKlur4j1LNH8wBr/KvpudOrBoWY='
+      // Asserted on the RAW header, not the parsed directive: a stale hash that
+      // somehow landed in a different directive is just as wrong, and this is the
+      // strictly broader check.
+      expect(csp ?? '').not.toContain(RETIRED_THEME_HASH)
     })
   })
 

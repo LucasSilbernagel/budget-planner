@@ -6,17 +6,41 @@
 @layer base {
   html {
     @apply antialiased;
+
+    /* Tell the browser the document supports both schemes so NATIVE chrome —
+       scrollbars, form controls, spinners, the canvas behind an overscroll —
+       follows the device preference too (story 61.1). Without this the page
+       darkens but the scrollbar stays light, which is the most visible remnant
+       of a half-applied theme. */
+    color-scheme: light dark;
   }
-  
+
   body {
     @apply text-gray-900 bg-gray-50;
   }
 
-  /* Dark theme canvas (story 7-3). Keyed off the `.dark` class the theme toggle
-     sets on <html> (Tailwind class strategy), so the root background/text darken
-     even on surfaces that have not yet been given their own `dark:` variants. */
-  .dark body {
-    @apply text-gray-100 bg-gray-900;
+  /* Dark theme canvas (story 7-3; re-keyed in story 61.1, FR93).
+     The root background/text darken even on surfaces that have not yet been
+     given their own `dark:` variants.
+
+     ⚠️ THIS IS A HAND-WRITTEN RULE, NOT A `dark:` UTILITY, and that distinction
+     is load-bearing. It used to be `.dark body`, matching the class the deleted
+     theme toggle set on <html>. `tailwind.config.js` now uses `darkMode: 'media'`,
+     so every `dark:` utility recompiled to this same media query automatically —
+     but a `.dark` selector would NOT have. Left as it was, nothing would ever add
+     the class, the canvas would stay light while every `dark:` utility went
+     dark, and the app would render dark cards on a white page.
+
+     ⚠️ THE GUARD IS `e2e/theme-dark-mode.spec.ts`, WHICH READS `document.body`.
+     Measured by mutation, because the obvious guess is wrong: reverting this rule
+     to `.dark body` leaves `e2e/theme-page-coverage.spec.ts` ENTIRELY GREEN. That
+     sweep asserts `.surface-sunken` / `.surface`, which are `dark:` UTILITIES —
+     they recompile to this same media query automatically and darken whatever
+     happens here. Only an assertion on <body> itself can see this rule. */
+  @media (prefers-color-scheme: dark) {
+    body {
+      @apply text-gray-100 bg-gray-900;
+    }
   }
 }
 
@@ -125,8 +149,9 @@
      attribute, so after a user turned the planner back on in the same session,
      React re-rendered the entry and this rule went on hiding it until a reload.
      `components/nav/PlannerVisibilityProvider` now removes the attribute when
-     the preference is on, mirroring how ThemeProvider syncs `.dark`. This rule
-     is authoritative only for the first frame, but it stays live, so the
+     the preference is on. (This used to cite `ThemeProvider` as the pattern it
+     mirrors; story 61.1 deleted that provider, so this stands alone now.) This
+     rule is authoritative only for the first frame, but it stays live, so the
      attribute must remain truthful for the whole document lifetime.
 
      ⚠️ `display: none` (not visibility/opacity) so the entry leaves the
@@ -230,7 +255,7 @@
   }
 
   /* ⚠️ Dark mode must never reach paper. Browsers omit background colours when
-     printing by default but KEEP text colour, so a `.dark` document would print
+     printing by default but KEEP text colour, so a DARK-THEMED document would print
      near-white text onto white paper — a page that looks blank. Forcing black on
      white here is what makes the report legible when printed from either theme;
      it is not cosmetic, and it is load-bearing in BOTH themes (light `.text-muted`

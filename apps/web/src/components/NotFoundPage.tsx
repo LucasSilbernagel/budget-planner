@@ -16,12 +16,12 @@ import { Link } from '@tanstack/react-router'
  * idiom is reproduced here rather than abstracted.
  *
  * Theme: this page is part of story 7.3's guaranteed dark-mode surface set (AC-2)
- * and carries `dark:` variants keyed off Tailwind's class strategy (the `.dark`
- * class the theme toggle sets on `<html>`). The variants are `dark:`
- * (class-driven) rather than `prefers-color-scheme`-driven, so the page follows
- * the in-app theme, not the OS. On the very first paint the no-flash `<head>`
- * script applies whatever theme is persisted; dark mode is free for every user
- * (story 25-3), so the chosen theme is simply honored — no tier check reverts it.
+ * and carries `dark:` variants. Since story 61.1 (FR93) those compile to
+ * `prefers-color-scheme` media queries (`tailwind.config.js` is
+ * `darkMode: 'media'`), so the page follows the DEVICE — correct on the first
+ * paint with no script, which matters here because this component renders on
+ * routes the router could not match. It previously followed an in-app toggle via
+ * a `.dark` class set by a `<head>` bootstrap; that whole chain is deleted.
  *
  * Scope note: the docs section keeps its own contextual not-found (`DocNotFound`
  * in `components/docs/doc-not-found.tsx`, wired as the `notFoundComponent` of

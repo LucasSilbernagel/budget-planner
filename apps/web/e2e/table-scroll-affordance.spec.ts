@@ -1,5 +1,5 @@
 import { type Locator, type Page, expect, test } from '@playwright/test'
-import { FINANCE_THEME_KEY, LONG_UNBROKEN_NAME, seedFinanceRows } from './helpers/seed-finance-rows'
+import { LONG_UNBROKEN_NAME, seedFinanceRows } from './helpers/seed-finance-rows'
 
 /**
  * Horizontal-scroll affordance on the finance tables (story 42.2, UX-DR46).
@@ -128,7 +128,7 @@ async function metrics(wrapper: Locator) {
 }
 
 /** A single short row per store: the table fits its wrapper with room to spare. */
-function seedShortRows([theme, themeKey]: readonly ['light' | 'dark', string]): void {
+function seedShortRows(): void {
   const now = '2026-08-11T00:00:00.000Z'
   const flow = (id: string, name: string, amount: number) => ({
     id,
@@ -152,7 +152,25 @@ function seedShortRows([theme, themeKey]: readonly ['light' | 'dark', string]): 
     'budget-planner-currency-prefs-v1',
     JSON.stringify({ state: { mode: 'symbol', currency: 'USD' }, version: 2 })
   )
-  localStorage.setItem(themeKey, JSON.stringify({ state: { theme }, version: 0 }))
+}
+
+/**
+ * Assert the requested colour scheme ACTUALLY reached the rendered page.
+ *
+ * ⚠️ Asserts a CONSEQUENCE (the painted canvas), never the lever. Story 61.1
+ * made the theme `prefers-color-scheme`, so `emulateMedia` is now the real
+ * input — but an assertion that merely re-reads the input you just set cannot
+ * fail, and this file previously polled `classList.contains('dark')` for exactly
+ * that reason. `body` is `bg-gray-50` light / `bg-gray-900` dark.
+ */
+async function expectSchemeApplied(
+  page: import('@playwright/test').Page,
+  scheme: 'light' | 'dark'
+): Promise<void> {
+  const expected = scheme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)'
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe(expected)
 }
 
 const OVERFLOW_ROUTES = ['/income', '/expenses', '/savings', '/balance'] as const
@@ -164,7 +182,7 @@ const OVERFLOW_ROUTES = ['/income', '/expenses', '/savings', '/balance'] as cons
 for (const route of OVERFLOW_ROUTES) {
   test(`${route} signposts horizontal overflow at 768px (AC-1)`, async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 })
-    await seedFinanceRows(page, 'light')
+    await seedFinanceRows(page)
     await page.goto(route)
     await page.waitForLoadState('networkidle')
     await page.addStyleTag({ content: WIDE_FONT })
@@ -209,14 +227,13 @@ for (const route of OVERFLOW_ROUTES) {
 // light glow for that reason; this case is what holds it there.
 test('an overflowing table signposts in DARK mode too (AC-1)', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 })
-  await seedFinanceRows(page, 'dark')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await seedFinanceRows(page)
   await page.goto('/income')
   await page.waitForLoadState('networkidle')
   await page.addStyleTag({ content: WIDE_FONT })
   await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-    .toBe(true)
+  await expectSchemeApplied(page, 'dark')
 
   const wrapper = wrapperOf(page)
   const m = await metrics(wrapper)
@@ -242,7 +259,7 @@ test('the affordance follows the scroll position, not merely the presence of ove
   page,
 }) => {
   await page.setViewportSize({ width: 768, height: 900 })
-  await seedFinanceRows(page, 'light')
+  await seedFinanceRows(page)
   await page.goto('/income')
   await page.waitForLoadState('networkidle')
   await page.addStyleTag({ content: WIDE_FONT })
@@ -275,20 +292,19 @@ for (const theme of ['light', 'dark'] as const) {
   test(`a table that fits paints no affordance (${theme}) (AC-6)`, async ({ page }) => {
     const surface = theme === 'dark' ? SURFACE_DARK : SURFACE_LIGHT
     await page.setViewportSize({ width: 768, height: 900 })
-    await page.addInitScript(seedShortRows, [theme, FINANCE_THEME_KEY] as const)
+    await page.emulateMedia({ colorScheme: theme })
+    await page.addInitScript(seedShortRows)
     await page.goto('/income')
     await page.waitForLoadState('networkidle')
     await page.addStyleTag({ content: WIDE_FONT })
     await expect(page.getByText('Pay').first()).toBeVisible()
 
-    // The theme actually took. `emulateMedia({colorScheme})` would be a no-op —
-    // this app reads a `.dark` class, never `prefers-color-scheme`
-    // (`nav-planner-visibility.spec.ts:206-225` records a story proving its dark
-    // half by nothing that way). The store is seeded, so ThemeProvider cannot
-    // strip it back on mount.
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-      .toBe(theme === 'dark')
+    // The theme actually took — asserted on the PAINTED canvas, not on the lever.
+    // ⚠️ Until story 61.1 this app read a `.dark` class and never
+    // `prefers-color-scheme`, so `emulateMedia({colorScheme})` was a no-op here;
+    // that is now the real and only input. The hazard has inverted, not gone:
+    // re-reading the scheme you just set would pass on a page that ignored it.
+    await expectSchemeApplied(page, theme)
 
     const wrapper = wrapperOf(page)
     const m = await metrics(wrapper)
@@ -318,7 +334,7 @@ for (const theme of ['light', 'dark'] as const) {
 for (const route of OVERFLOW_ROUTES) {
   test(`${route} scroll region is keyboard-reachable and scrolls (AC-5)`, async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 })
-    await seedFinanceRows(page, 'light')
+    await seedFinanceRows(page)
     await page.goto(route)
     await page.waitForLoadState('networkidle')
     await page.addStyleTag({ content: WIDE_FONT })
@@ -447,7 +463,7 @@ const BASELINE_SCROLL_WIDTH: Record<(typeof OVERFLOW_ROUTES)[number], number> = 
 for (const route of OVERFLOW_ROUTES) {
   test(`${route} affordance costs zero layout width at 768px (AC-8)`, async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 })
-    await seedFinanceRows(page, 'light')
+    await seedFinanceRows(page)
     await page.goto(route)
     await page.waitForLoadState('networkidle')
     await page.addStyleTag({ content: WIDE_FONT })
@@ -484,7 +500,7 @@ test('POSITIVE CONTROL: the pixel probe reports surface when the affordance is r
   // something incidental — cell text, a border, the scrollbar — and every
   // affordance assertion in this file is worthless.
   await page.setViewportSize({ width: 768, height: 900 })
-  await seedFinanceRows(page, 'light')
+  await seedFinanceRows(page)
   await page.goto('/income')
   await page.waitForLoadState('networkidle')
   await page.addStyleTag({ content: WIDE_FONT })

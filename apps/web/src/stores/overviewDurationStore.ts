@@ -121,7 +121,7 @@ export const useOverviewDurationStore = create<OverviewDurationState>()(
       // Deterministic default. This is the value rendered on the server and on
       // the first client paint, so it MUST NOT be derived from `navigator` / the
       // OS — a browser-derived default would cause a hydration mismatch (same
-      // discipline as currencyStore / themeStore). The persisted preference is
+      // discipline as currencyStore). The persisted preference is
       // applied after client rehydration (see lib/store-hydration).
       duration: DEFAULT_DURATION,
 
@@ -147,7 +147,7 @@ export const useOverviewDurationStore = create<OverviewDurationState>()(
   )
 )
 
-// Selector hooks (mirror currencyStore / themeStore idiom) for stable subscriptions.
+// Selector hooks (mirror the currencyStore idiom) for stable subscriptions.
 export const useOverviewDuration = () => useOverviewDurationStore((state) => state.duration)
 
 export const useSetOverviewDuration = () => useOverviewDurationStore((state) => state.setDuration)

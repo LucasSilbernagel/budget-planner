@@ -1,4 +1,4 @@
-import { useTheme } from '../stores/themeStore'
+import { usePrefersDarkScheme } from '../hooks/usePrefersDarkScheme'
 
 /**
  * Recharts chrome colors (axes, grid, tooltip) for the current theme (story
@@ -39,11 +39,20 @@ const DARK_CHART_COLORS: ChartColors = {
 }
 
 /**
- * Reads the persisted theme. The store uses `skipHydration`, so on the server
- * and first client paint this returns the default ('light'); Recharts only
- * paints after mount (it needs a measured width), by which point the store has
- * rehydrated — so the chart matches the rest of the page with no visible flash.
+ * Reads the DEVICE colour-scheme preference (story 61.1, FR93 — before that, a
+ * persisted theme store that story deleted).
+ *
+ * `usePrefersDarkScheme` resolves `false` on the server and the first client
+ * render, then updates after mount; Recharts only paints after mount (it needs a
+ * measured width), by which point the real preference is resolved — so the chart
+ * matches the rest of the page with no visible flash.
+ *
+ * ⚠️ This function is the ONLY reason the app still reads the colour scheme in
+ * JavaScript. Everything else is a `dark:` utility resolved by CSS. Recharts is
+ * the exception because it renders SVG chrome as inline presentation attributes,
+ * which no Tailwind variant can reach — and which no class-token assertion can
+ * catch when it regresses.
  */
 export function useChartColors(): ChartColors {
-  return useTheme() === 'dark' ? DARK_CHART_COLORS : LIGHT_CHART_COLORS
+  return usePrefersDarkScheme() ? DARK_CHART_COLORS : LIGHT_CHART_COLORS
 }

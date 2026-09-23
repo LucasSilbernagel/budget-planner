@@ -180,12 +180,9 @@ test.describe('the desktop panel in the dark theme', () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
   test('paints its own opaque dark background', async ({ page }) => {
-    await page.addInitScript(() => {
-      globalThis.localStorage.setItem(
-        'budget-planner-theme-prefs-v1',
-        JSON.stringify({ state: { theme: 'dark' }, version: 0 })
-      )
-    })
+    // Story 61.1 (FR93): the theme follows the device, so emulate the media
+    // query rather than seeding a preference store that no longer exists.
+    await page.emulateMedia({ colorScheme: 'dark' })
     await gotoSettled(page)
     await openMore(page)
     const bg = await page.locator(MORE_PANEL).evaluate((el) => getComputedStyle(el).backgroundColor)

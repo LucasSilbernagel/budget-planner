@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test'
  * Drives the REAL hydration path under the enforced Content-Security-Policy —
  * the surface that unit tests (pure header function) and SSR-HTML smoke cannot
  * reach. A CSP that is syntactically present but blocks the framework's inline
- * hydration scripts, the no-flash theme bootstrap, or Recharts is a FAILURE
+ * hydration scripts, the no-flash bootstraps, or Recharts is a FAILURE
  * (AC-2); the honest signal is the browser reporting zero
  * `securitypolicyviolation` events while every surface still works.
  *
@@ -15,7 +15,8 @@ import { expect, test } from '@playwright/test'
  * the unit tests.
  */
 
-const THEME_KEY = 'budget-planner-theme-prefs-v1'
+/** Mirrors `stores/plannerVisibilityStore.ts` — the key its <head> bootstrap reads. */
+const PLANNER_VISIBILITY_KEY = 'budget-planner-planner-visibility-v1'
 
 /** Registered before any page script so it catches violations from first paint. */
 function installViolationCollector() {
@@ -48,7 +49,7 @@ test('AC-1: the document response carries a strict Content-Security-Policy + the
   const csp = headers['content-security-policy']
   expect(csp, 'CSP header present on the document response').toBeTruthy()
 
-  // Strict script policy: a per-request nonce + the theme hash, no unsafe-inline.
+  // Strict script policy: a per-request nonce + the bootstrap hashes, no unsafe-inline.
   expect(csp).toMatch(/script-src [^;]*'nonce-[^']+'/)
   expect(csp).toMatch(/script-src [^;]*'sha256-[^']+'/)
   expect(csp).not.toMatch(/script-src [^;]*'unsafe-inline'/)
@@ -93,29 +94,47 @@ test('AC-1: the CSP nonce is per-request and matches the nonce rendered into the
   expect(metaNonce2).toBe(headerNonce2)
 })
 
-test('AC-2: the no-flash theme bootstrap executes under the CSP (hash-authorized inline script)', async ({
+/**
+ * AC-2, re-pointed by story 61.1 (FR93).
+ *
+ * This test used to prove the CSP admitted the no-flash THEME bootstrap, by
+ * seeding a dark preference and checking `.dark` reached <html> at first paint.
+ * That bootstrap is deleted — the theme is now a media query needing no script —
+ * so the same property is proven against a SURVIVING hash-authorized bootstrap:
+ * the planner-visibility one (story 35.2), which sets `data-hide-retirement="1"`
+ * on <html> before hydration.
+ *
+ * ⚠️ Re-pointed rather than deleted. This is the only e2e assertion that a
+ * hash-authorized inline script actually EXECUTES in a real browser under the
+ * real header; the unit tests can only prove the hash is in the policy string.
+ * Deleting it would have left that gap silently.
+ */
+test('AC-2: a no-flash bootstrap executes under the CSP (hash-authorized inline script)', async ({
   page,
 }) => {
   await page.addInitScript(installViolationCollector())
   await page.addInitScript(
     ([key]) => {
-      window.localStorage.setItem(key, JSON.stringify({ state: { theme: 'dark' }, version: 0 }))
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({ state: { showRetirementPlanner: false }, version: 0 })
+      )
       document.addEventListener('DOMContentLoaded', () => {
         ;(window as unknown as { __htmlAtDCL?: string }).__htmlAtDCL =
-          document.documentElement.className
+          document.documentElement.getAttribute('data-hide-retirement') ?? ''
       })
     },
-    [THEME_KEY]
+    [PLANNER_VISIBILITY_KEY]
   )
 
   await page.goto('/')
 
-  // If the strict script-src had blocked the inline bootstrap, `.dark` would
-  // never be applied at first paint.
-  const classAtFirstPaint = await page.evaluate(
+  // If the strict script-src had blocked the inline bootstrap, the attribute
+  // would never be applied at first paint.
+  const attrAtFirstPaint = await page.evaluate(
     () => (window as unknown as { __htmlAtDCL?: string }).__htmlAtDCL ?? ''
   )
-  expect(classAtFirstPaint).toContain('dark')
+  expect(attrAtFirstPaint).toBe('1')
   expect(await readViolations(page)).toEqual([])
 })
 

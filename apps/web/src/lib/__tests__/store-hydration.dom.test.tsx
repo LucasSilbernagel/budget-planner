@@ -29,7 +29,6 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useRetirementPlannerStore } from '../../stores/retirementPlannerStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { useTableSortStore } from '../../stores/tableSortStore'
-import { useThemeStore } from '../../stores/themeStore'
 import { StoreHydration } from '../store-hydration'
 
 /** Every persisted store, with the name used in failure output. */
@@ -41,7 +40,6 @@ const PERSISTED_STORES = [
   ['category', useCategoryStore],
   ['currency', useCurrencyStore],
   ['profile', useProfileStore],
-  ['theme', useThemeStore],
   ['overviewDuration', useOverviewDurationStore],
   // Story 35.2: a store missing from the list here is the story's Trap A — the
   // Retirement-visibility preference would persist correctly and never load, so

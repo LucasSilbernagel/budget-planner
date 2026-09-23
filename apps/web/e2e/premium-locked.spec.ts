@@ -100,8 +100,6 @@ test('free visitor sees Advanced Forecasting locked and can open the upgrade pro
   expect(overlay?.height).toBe(viewport?.height)
 })
 
-const THEME_KEY = 'budget-planner-theme-prefs-v1'
-
 /** Computed chassis styles of every premium benefit box, in DOM order. */
 function readBoxes(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
@@ -116,28 +114,29 @@ function readBoxes(page: import('@playwright/test').Page) {
 }
 
 /**
- * Load `/` with the theme preference SEEDED, and wait until it has painted.
+ * Load `/` with the device colour scheme EMULATED, and wait until it has painted.
  *
- * Seeding the persisted store is the only reliable way to reach dark mode here.
- * `ThemeProvider` re-applies the stored preference in its mount effect and calls
- * `classList.toggle('dark', false)`, so a hand-added `.dark` class survives only
- * ~530-600ms: a test that toggles it passes purely by finishing inside that
- * window, and fails on a machine ~40% slower with "box did not repaint in dark"
- * — a styling regression that does not exist. Seeding also removes the
- * transition-interpolation race, because the page paints the target theme from
- * its first frame rather than animating into it.
+ * ⚠️ Story 61.1 (FR93) made the theme `prefers-color-scheme`, so this sets the
+ * media query before navigation and the page paints the target theme on its
+ * first frame. That property is what matters here and it is worth stating why:
+ * this helper used to seed a persisted theme store, because hand-adding a
+ * `.dark` class survived only ~530-600ms before `ThemeProvider` stripped it —
+ * a test that toggled the class passed purely by finishing inside that window
+ * and failed on a machine ~40% slower with "box did not repaint in dark", a
+ * styling regression that did not exist. Emulating the media query keeps the
+ * paint-from-the-first-frame property (no transition-interpolation race) with no
+ * store and no provider to race against.
  */
 async function gotoWithTheme(page: import('@playwright/test').Page, theme: 'light' | 'dark') {
-  await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
-    THEME_KEY,
-    JSON.stringify({ state: { theme }, version: 0 }),
-  ] as const)
+  await page.emulateMedia({ colorScheme: theme })
   await page.goto('/')
   await expect(page.getByTestId('premium-benefit-sync')).toBeVisible()
   await expect(page.getByTestId('premium-gate-locked')).toHaveCount(GATED_COUNT)
+  // ⚠️ A CONSEQUENCE, not the lever: re-reading the scheme we just emulated could
+  // not fail. `body` is bg-gray-50 light / bg-gray-900 dark.
   await expect
-    .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-    .toBe(theme === 'dark')
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 }
 
 /**

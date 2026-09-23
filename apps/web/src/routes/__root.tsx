@@ -7,23 +7,21 @@ import { PlannerVisibilityProvider } from '../components/nav/PlannerVisibilityPr
 import { InstallPrompt } from '../components/pwa/InstallPrompt'
 import { RegisterSW } from '../components/pwa/RegisterSW'
 import { SyncProvider } from '../components/sync/SyncProvider'
-import { ThemeProvider } from '../components/theme/ThemeProvider'
 import { MetadataProvider } from '../context/metadata-context'
 import { type SessionSeed, SessionSeedProvider } from '../context/session-seed'
 import { buildAnalyticsScripts } from '../lib/analytics/counter'
 // Single source of truth for EACH inline no-flash bootstrap — the planner
-// visibility one (story 35.2), the account-notice one (story 55.1) and the theme
-// one (story sec-1). All three are shared with the CSP builder
-// (server/middleware/security-headers.ts), which hashes these exact strings to
-// pin the `script-src` — keep them imported, never re-inline any of them here
-// (a divergent copy would silently break the strict CSP).
-// ⚠️ These three imports are not contiguous: `organizeImports` sorts by path,
-// so `lib/nav` and `lib/overview` end up adjacent while `lib/store-hydration`
-// separates them from `lib/theme`. This comment governs all three.
+// visibility one (story 35.2) and the account-notice one (story 55.1). Both are
+// shared with the CSP builder (server/middleware/security-headers.ts), which
+// hashes these exact strings to pin the `script-src` — keep them imported, never
+// re-inline either of them here (a divergent copy would silently break the strict
+// CSP). This comment governs both.
+// ⚠️ There was a THIRD, the theme bootstrap (story sec-1). Story 61.1 deleted it:
+// the theme is now a `prefers-color-scheme` media query, resolved by the CSS
+// engine before the first frame with no script and no CSP hash.
 import { NO_FLASH_PLANNER_SCRIPT } from '../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../lib/overview/no-flash-account-notice-script'
 import { StoreHydration } from '../lib/store-hydration'
-import { NO_FLASH_THEME_SCRIPT } from '../lib/theme/no-flash-theme-script'
 import { getSessionSeed } from '../server/api/auth/session-seed'
 import appCss from '../styles/global.css?url'
 
@@ -138,30 +136,34 @@ function RootComponent() {
 function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSeed | null }) {
   return (
     // suppressHydrationWarning: the no-flash scripts mutate <html> before
-    // hydration — the theme one adds `.dark`, the planner-visibility one
-    // (story 35.2) adds `data-hide-retirement="1"`, and the account-notice one
-    // (story 55.1) adds `data-dismiss-account-notice="1"` — none of which the
-    // server HTML carries.
+    // hydration — the planner-visibility one (story 35.2) adds
+    // `data-hide-retirement="1"` and the account-notice one (story 55.1) adds
+    // `data-dismiss-account-notice="1"` — neither of which the server HTML
+    // carries. (Story 61.1 removed a third, the theme bootstrap: the theme is
+    // now pure CSS keyed off `prefers-color-scheme`, so there is nothing left to
+    // set before paint.)
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* Blocking, self-authored bootstraps — must run before the stylesheet
-            paints. All three are authorized in the CSP by sha256 HASH (not the
+            paints. Both are authorized in the CSP by sha256 HASH (not the
             per-request nonce), each derived from its own imported constant in
-            `server/middleware/security-headers.ts`, so none can silently
+            `server/middleware/security-headers.ts`, so neither can silently
             drift out of sync with the policy that allows it.
-            1. Theme (story 7-3, AC-4) — prevents a flash of light on a dark reload.
-            2. Planner visibility (story 35.2, AC-4) — prevents the Retirement nav
+            1. Planner visibility (story 35.2, AC-4) — prevents the Retirement nav
                entry painting for a user who turned it off. Necessary because every
                persisted store is `skipHydration: true`, so React cannot know the
                preference until after mount.
-            3. Overview account notice (story 55.1, AC-4) — prevents the dismissed
+            2. Overview account notice (story 55.1, AC-4) — prevents the dismissed
                "No account needed" box painting. Necessary for a different reason:
                the dismissal is per-browser localStorage, so the SERVER cannot know
                it and must render the box present (which the SEO fence in
                `e2e/loading-state.spec.ts` also requires); the component's own read
-               is in an effect, i.e. after first paint. */}
-        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
-        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
+               is in an effect, i.e. after first paint.
+
+            ⚠️ There used to be a THIRD, the theme bootstrap (story 7-3, AC-4).
+            Story 61.1 deleted it: the theme is now `prefers-color-scheme` in CSS,
+            which the browser resolves before the first frame with no script at
+            all. A bootstrap can be blocked or throw; a media query cannot. */}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_PLANNER_SCRIPT }} />
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
@@ -176,10 +178,6 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
             resolved state on the first frame instead of a placeholder that flips
             after a client round-trip. */}
         <SessionSeedProvider seed={seed}>
-          {/* Syncs the persisted theme onto <html class="dark"> (story 7-3;
-              dark mode moved to Free in story 25-3, so no tier fail-safe).
-              Renders nothing. */}
-          <ThemeProvider />
           {/* Keeps <html data-hide-retirement> in sync with the persisted
               planner preference (story 35.2). Required, not decorative: the
               <head> bootstrap only SETS the attribute, so without this the

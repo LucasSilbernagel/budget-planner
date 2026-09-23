@@ -502,16 +502,20 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     for (const theme of ['light', 'dark'] as const) {
       test(`${route} fits 320px with seeded rows (${theme})`, async ({ page }) => {
         await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-        await seedFinanceRows(page, theme)
+        await page.emulateMedia({ colorScheme: theme })
+        await seedFinanceRows(page)
 
         const response = await page.goto(route)
         expect(response?.ok(), `expected ${route} to load`).toBeTruthy()
         await page.waitForLoadState('networkidle')
 
-        // The theme actually took (see seedFinanceRows).
+        // The theme actually took. ⚠️ Asserts the PAINTED canvas, not the lever:
+        // story 61.1 made `prefers-color-scheme` the only theme input, and
+        // re-reading the scheme we just emulated could not fail. `body` is
+        // bg-gray-50 light / bg-gray-900 dark.
         await expect
-          .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-          .toBe(theme === 'dark')
+          .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+          .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
         // Anti-vacuous guard: an empty table would satisfy every check below
         // trivially. Prove the seeded row actually rendered first.
@@ -531,7 +535,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
     test(`${route} still renders as a real table at 1280px (AC-2)`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 720 })
-      await seedFinanceRows(page, 'light')
+      await seedFinanceRows(page)
 
       await page.goto(route)
       await page.waitForLoadState('networkidle')
@@ -735,7 +739,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   ] as const) {
     test(`${route} row Edit and Delete are operable at 320px`, async ({ page }) => {
       await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-      await seedFinanceRows(page, 'light')
+      await seedFinanceRows(page)
 
       await page.goto(route)
       await page.waitForLoadState('networkidle')
@@ -860,7 +864,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
       const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
       const names = expected.asc
       await page.setViewportSize({ width: 1280, height: 720 })
-      await seedFinanceRows(page, 'light')
+      await seedFinanceRows(page)
 
       await page.goto(route)
       await page.waitForLoadState('networkidle')
@@ -901,7 +905,8 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
         const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
         const names = expected.asc
         await page.setViewportSize({ width: 1280, height: 720 })
-        await seedFinanceRows(page, scheme)
+        await page.emulateMedia({ colorScheme: scheme })
+        await seedFinanceRows(page)
 
         await page.goto(route)
         await page.waitForLoadState('networkidle')
@@ -982,7 +987,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
     test(`${route} finance tables fit 768px`, async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 900 })
-      await seedFinanceRows(page, 'light')
+      await seedFinanceRows(page)
 
       await page.goto(route)
       await page.waitForLoadState('networkidle')
@@ -1436,19 +1441,21 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
       // actually differ from the light value, and it must not be transparent.
       const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
 
-      // Apply the class and confirm it STUCK — ThemeProvider applies the store's
-      // 'light' default once on mount and could otherwise strip it. Hydration is
-      // long finished by this point (we have already driven a <select>), so a
-      // poll on the class is enough and keeps the colour check below as the thing
-      // that reports a failure.
+      // Switch the device preference and confirm it REACHED THE PAINT. Story 61.1
+      // (FR93) made `prefers-color-scheme` the app's only theme input, so this
+      // emulates the media query; before that it added a `.dark` class that
+      // `ThemeProvider` could strip. Either way the guard must assert a painted
+      // consequence — polling `classList.contains('dark')` after adding the class
+      // yourself cannot fail, and under `darkMode: 'media'` it would pass on a
+      // page that rendered entirely light. `body` is bg-gray-900 in dark.
       //
       // ⚠️ Deliberately NOT `waitForFunction(colour !== light)`: that form makes a
       // theme-invariant colour fail as a 30s TIMEOUT instead of naming the defect.
       // Verified — it did exactly that before this was split (review 36.3).
-      await page.evaluate(() => document.documentElement.classList.add('dark'))
+      await page.emulateMedia({ colorScheme: 'dark' })
       await expect
-        .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-        .toBe(true)
+        .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+        .toBe('rgb(17, 24, 39)')
 
       await expect(hint).toBeVisible()
       const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
@@ -1503,10 +1510,10 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
 
     // Dark: assert the COLOUR, the one thing a theme actually changes here.
     const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
-    await page.evaluate(() => document.documentElement.classList.add('dark'))
+    await page.emulateMedia({ colorScheme: 'dark' })
     await expect
-      .poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
-      .toBe(true)
+      .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+      .toBe('rgb(17, 24, 39)')
     await expect(hint).toBeVisible()
     const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
     expect(darkColor, 'expenses hint colour is unchanged in dark mode').not.toBe(lightColor)
@@ -1516,7 +1523,7 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
     page,
   }) => {
     await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    await seedFinanceRows(page, 'light')
+    await seedFinanceRows(page)
     await page.goto('/balance')
     await page.waitForLoadState('networkidle')
     await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()

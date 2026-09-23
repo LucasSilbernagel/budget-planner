@@ -144,7 +144,6 @@ beforeAll(async () => {
     import('@/stores/categoryStore').then((m) => m.useCategoryStore),
     import('@/stores/currencyStore').then((m) => m.useCurrencyStore),
     import('@/stores/profileStore').then((m) => m.useProfileStore),
-    import('@/stores/themeStore').then((m) => m.useThemeStore),
     import('@/stores/overviewDurationStore').then((m) => m.useOverviewDurationStore),
     import('@/stores/plannerVisibilityStore').then((m) => m.usePlannerVisibilityStore),
     import('@/stores/tableSortStore').then((m) => m.useTableSortStore),

@@ -21,9 +21,12 @@ import { PLANNER_VISIBILITY_STORAGE_KEY } from '../../stores/plannerVisibilitySt
  * That
  * means the React-side filter in `GlobalNav` can only ever apply *after* mount.
  * Applying the preference "after client rehydration" is therefore exactly what
- * causes the flash, not what prevents it — the same conclusion
- * `components/theme/ThemeProvider` reaches for the theme. Only a synchronous
- * <head> script beats first paint.
+ * causes the flash, not what prevents it. Only a synchronous <head> script beats
+ * first paint. (A deleted `components/theme/ThemeProvider` once reached the same
+ * conclusion for the theme; story 61.1 made the theme a `prefers-color-scheme`
+ * media query, which needs no script at all — the CSS engine resolves it before
+ * the first frame. That option is not available here: this preference lives in
+ * localStorage, which CSS cannot read.)
  *
  * ⚠️ The rule is `=== false`, never falsiness. `'false'`, `0`, `null` and a
  * missing field all mean SHOW. This mirrors `coerceVisibility` in
@@ -38,7 +41,7 @@ import { PLANNER_VISIBILITY_STORAGE_KEY } from '../../stores/plannerVisibilitySt
  * truth in the store); the persisted `{ state: { showRetirementPlanner } }`
  * shape is still hard-parsed here because this runs before any module can load.
  *
- * Extracted to this leaf module (mirroring `lib/theme/no-flash-theme-script`) so
+ * Extracted to this leaf module so
  * the exact rendered script body is one importable source of truth shared by two
  * consumers that must never drift apart:
  *   1. `routes/__root.tsx` — renders it as an inline `<script>`.

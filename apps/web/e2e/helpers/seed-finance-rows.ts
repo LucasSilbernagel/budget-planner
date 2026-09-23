@@ -18,8 +18,6 @@ import type { Page } from '@playwright/test'
  * environment." Share the fixture, re-declare the font pin.
  */
 
-export const FINANCE_THEME_KEY = 'budget-planner-theme-prefs-v1'
-
 // A single unbroken 138-character run (46 x 3). Reachable in production: none of the
 // four name inputs has a `maxLength`. `overflow-wrap: break-word` does NOT
 // reduce min-content width, so an auto-layout table sizes to this whole run —
@@ -27,8 +25,16 @@ export const FINANCE_THEME_KEY = 'budget-planner-theme-prefs-v1'
 export const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspaces'.repeat(3)
 
 /**
- * Seed all four finance stores plus categories, currency (symbol mode, the
- * widest figures) and the theme.
+ * Seed all four finance stores plus categories and currency (symbol mode, the
+ * widest figures).
+ *
+ * ⚠️ This used to seed a THEME store too, and callers passed `'light' | 'dark'`.
+ * Story 61.1 (FR93) deleted that store: the theme now follows the device's
+ * `prefers-color-scheme`, so a spec that wants a dark run asks Playwright for one
+ * with `page.emulateMedia({ colorScheme: 'dark' })` (or the `colorScheme` fixture
+ * option) instead of writing localStorage. That is a faithful lever — it drives
+ * the same input a real user's OS drives — where the old seed drove an in-app
+ * preference that no longer exists.
  *
  * Store keys, wrapper shapes and versions are the CURRENT ones — note that
  * savings/balance break the `-v1` convention (colon-separated keys), currency
@@ -62,9 +68,9 @@ export const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspace
  * count. Header/cell parity is pinned in `category-assignment.test.tsx`, which
  * is the only layer that can render both tiers.
  */
-export async function seedFinanceRows(page: Page, theme: 'light' | 'dark'): Promise<void> {
+export async function seedFinanceRows(page: Page): Promise<void> {
   await page.addInitScript(
-    ([longName, themeValue, themeKey]) => {
+    ([longName]) => {
       const now = '2026-08-11T00:00:00.000Z'
 
       localStorage.setItem(
@@ -209,12 +215,7 @@ export async function seedFinanceRows(page: Page, theme: 'light' | 'dark'): Prom
         'budget-planner-currency-prefs-v1',
         JSON.stringify({ state: { mode: 'symbol', currency: 'USD' }, version: 2 })
       )
-
-      // Seed the theme STORE — never hand-add `.dark` to <html>: ThemeProvider
-      // re-applies the persisted preference shortly after mount and would strip
-      // a hand-added class, silently turning a dark test into a light one.
-      localStorage.setItem(themeKey, JSON.stringify({ state: { theme: themeValue }, version: 0 }))
     },
-    [LONG_UNBROKEN_NAME, theme, FINANCE_THEME_KEY] as const
+    [LONG_UNBROKEN_NAME] as const
   )
 }

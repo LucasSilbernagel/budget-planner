@@ -19,10 +19,17 @@
  * surfaced as a deletion failure. See account-section.tsx / local-data-section.tsx.
  *
  * Functional preference stores are intentionally NOT purged — they are not
- * personal financial data: `budget-planner-currency-prefs-v1` (currencyStore)
- * and `budget-planner-theme-prefs-v1` (themeStore). Display preferences are left
- * intact for both callers. The retirement PLAN is on the other side of that line
- * and IS purged — see the call below for why.
+ * personal financial data: `budget-planner-currency-prefs-v1` (currencyStore).
+ * Display preferences are left intact for both callers. The retirement PLAN is on
+ * the other side of that line and IS purged — see the call below for why.
+ *
+ * ⚠️ This list also named `budget-planner-theme-prefs-v1` (themeStore) until story
+ * 61.1 (FR93), which deleted that store: the theme follows the device's
+ * `prefers-color-scheme` and nothing persists a preference. Any such key left in a
+ * returning browser is inert and deliberately not cleaned up — see that story's
+ * AC-9. Do not add a purge step for it: this helper runs only on account deletion
+ * and local-data clearing, so it would not reach most browsers anyway, and the app
+ * is pre-launch with no real users carrying one.
  */
 
 import { useBalanceStore } from '@/stores/balanceStore'

@@ -21,10 +21,15 @@ import { type Page, expect, test } from '@playwright/test'
  *
  * In a real browser the pending render lasts about one frame. Blocking every
  * SCRIPT REQUEST leaves the page exactly as the server sent it, forever, while
- * the two inline `<head>` bootstraps still run — they are markup, not requests —
- * which is what makes the dark-theme arm possible at all
- * (`setJavaScriptEnabled(false)` would kill those too, and with them the `.dark`
- * class).
+ * the two inline `<head>` bootstraps still run — they are markup, not requests.
+ *
+ * ⚠️ That last clause used to end "…which is what makes the dark-theme arm
+ * possible at all (`setJavaScriptEnabled(false)` would kill those too, and with
+ * them the `.dark` class)". Story 61.1 (FR93) made that FALSE in both halves: the
+ * theme is a `prefers-color-scheme` media query, so the dark arm needs no script
+ * and there is no `.dark` class. Script-blocking is still the right lever for the
+ * PENDING state (it is what holds the skeleton still), but it is no longer load
+ * bearing for the theme.
  *
  * ⚠️ **This used to abort `**\/*client-entry*` and that was dev-only.** A
  * reviewer measured it: `client-entry` appears only in TanStack Start's dev
@@ -96,13 +101,6 @@ async function assertStillPending(page: Page, blocked: string[]): Promise<void> 
   await expect(page.getByTestId('overview-net-worth')).toHaveText('')
 }
 
-function seedDarkTheme() {
-  localStorage.setItem(
-    'budget-planner-theme-prefs-v1',
-    JSON.stringify({ state: { theme: 'dark' }, version: 0 })
-  )
-}
-
 interface Box {
   x: number
   y: number
@@ -121,7 +119,9 @@ async function open(
   { pending, width, dark }: { pending: boolean; width: number; dark: boolean }
 ): Promise<string[]> {
   await page.setViewportSize({ width, height: 900 })
-  if (dark) await page.addInitScript(seedDarkTheme)
+  // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`,
+  // so the dark arm emulates the media query instead of seeding a deleted store.
+  await page.emulateMedia({ colorScheme: dark ? 'dark' : 'light' })
   const blocked = pending ? blockScripts(page) : []
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   if (pending) {
@@ -129,6 +129,22 @@ async function open(
   } else {
     await expect(page.getByTestId('overview-net-worth')).toHaveText('$0.00')
   }
+
+  // ⚠️ The requested scheme actually REACHED THE PAINT. Without this the dark arm
+  // is indistinguishable from the light one: `emulateMedia` sets an input, and if
+  // the app ever stopped consuming it (a regression to a class strategy, a lost
+  // media query in `global.css`) both arms would measure light and every box
+  // comparison below would still pass. Story 61.1's AC-10 calls that the highest
+  // risk in the conversion, and this file was the one that shipped without the
+  // guard. `body` is bg-gray-50 light / bg-gray-900 dark.
+  //
+  // Asserted in BOTH states: the theme is pure CSS, so it is correct while
+  // scripts are blocked too — which is itself worth pinning, since it is the
+  // property that replaced the deleted <head> bootstrap.
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe(dark ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
+
   return blocked
 }
 

@@ -21,9 +21,13 @@
  *   - no / invalid session   → the authoritative signed-out seed (fail-closed).
  *   - resolver ERRORED       → `null` (UNVERIFIED, not "signed out"). A null seed
  *     makes the consumers fall back to their own client check, which sets the
- *     `error` signal `ThemeProvider` relies on to avoid destroying a paid user's
- *     persisted dark preference on a transient blip — and lets a genuinely paid
- *     user self-heal instead of being shown the free tier for the whole session.
+ *     `error` signal the premium consumers rely on to distinguish "unverified"
+ *     from "not entitled" on a transient blip — and lets a genuinely paid user
+ *     self-heal instead of being shown the free tier for the whole session.
+ *     (This used to cite `ThemeProvider` and a "persisted dark preference" as the
+ *     beneficiary. Story 61.1 deleted both; the theme has not been tier-dependent
+ *     since story 25-3, so that example was already stale before it became
+ *     impossible.)
  *     Collapsing errors into a signed-out `error:null` seed would defeat both
  *     (code review 2026-07-14).
  */

@@ -43,7 +43,6 @@ const PANEL = '[data-testid="retirement-model-panel"]'
  * green with the fix reverted.
  */
 const LEGEND = 'fieldset:has([data-testid="retirement-model-panel"]) > legend'
-const THEME_KEY = 'budget-planner-theme-prefs-v1'
 
 /** sRGB relative luminance, per WCAG 2.x. */
 function luminance([r, g, b]: readonly number[]): number {
@@ -102,17 +101,12 @@ function over(top: readonly number[], backdrop: readonly number[]): [number, num
 async function gotoPlanner(page: Page, width: number, theme?: 'light' | 'dark'): Promise<void> {
   await page.setViewportSize({ width, height: 900 })
   if (theme) {
-    // ⚠️ Seed the theme STORE. Never hand-add `.dark` to <html>: `ThemeProvider`
-    // re-applies the persisted preference after mount and would strip it,
-    // silently turning a dark test into a light one. `deferred-work.md:58`
-    // records `theme-page-coverage.spec.ts` failing for exactly that reason,
-    // which is why this file does not extend it.
-    await page.addInitScript(
-      ({ key, value }) => {
-        localStorage.setItem(key, JSON.stringify({ state: { theme: value }, version: 0 }))
-      },
-      { key: THEME_KEY, value: theme }
-    )
+    // ⚠️ Story 61.1 (FR93): the theme follows the DEVICE, so this drives the media
+    // query. It used to seed a theme STORE, because hand-adding a `.dark` class
+    // was stripped by `ThemeProvider` shortly after mount (`deferred-work.md:58`
+    // records `theme-page-coverage.spec.ts` failing exactly that way). Both the
+    // store and the provider are gone; `emulateMedia` is the real input now.
+    await page.emulateMedia({ colorScheme: theme })
   }
   await page.goto('/retirement')
   await page.waitForFunction(() => {
@@ -247,10 +241,15 @@ for (const width of [320, 1280]) {
 for (const theme of ['light', 'dark'] as const) {
   test(`the label is legible against the surface it sits on in ${theme} mode`, async ({ page }) => {
     await gotoPlanner(page, 1280, theme)
-    // ⚠️ Token membership, not a substring: `/^(?!.*dark).*$/` false-fails on any
-    // unrelated class that merely CONTAINS "dark" (`no-dark-flash`, `text-darkslate`).
-    const htmlClasses = await page.locator('html').evaluate((el) => [...el.classList])
-    expect(htmlClasses.includes('dark')).toBe(theme === 'dark')
+    // The theme actually took, asserted on the PAINTED canvas.
+    // ⚠️ This used to read `<html>`'s class list, with a note about token
+    // membership vs substring matching. Story 61.1 (FR93) removed that class
+    // entirely — the theme is `prefers-color-scheme` now — so the check moved to
+    // the thing the scheme actually changes. Re-reading the emulated colorScheme
+    // would not be an assertion at all. `body` is bg-gray-50 / bg-gray-900.
+    await expect
+      .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+      .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
     // ⚠️ The fix moved the label OFF `.surface-inset` and onto the card behind
     // it, so the background this is measured against is not the one it had

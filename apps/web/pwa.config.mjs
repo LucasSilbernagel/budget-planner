@@ -27,7 +27,14 @@ export const pwaManifest = {
   scope: '/',
   display: 'standalone',
   theme_color: '#16a34a', // accent green — matches favicon + apple-touch (story 6-5)
-  background_color: '#ffffff', // matches the app's light background (no dark mode until 7-3)
+  // ⚠️ A manifest `background_color` cannot be media-keyed, so this is one value
+  // for both schemes and it is the LIGHT one. Since story 61.1 (FR93) the app
+  // follows the device, so a dark-preference device gets a white install splash
+  // before the app paints gray-900. Left as-is deliberately: changing it would
+  // invert the problem for light-preference users, and the fix (a second
+  // `<meta name="theme-color" media="(prefers-color-scheme: dark)">` plus a
+  // decision on the splash) is its own story — see `deferred-work.md`.
+  background_color: '#ffffff',
   icons: [
     { src: '/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

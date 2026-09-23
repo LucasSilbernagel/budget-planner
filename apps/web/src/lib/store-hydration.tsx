@@ -10,7 +10,6 @@ import { useProfileStore } from '../stores/profileStore'
 import { useRetirementPlannerStore } from '../stores/retirementPlannerStore'
 import { useSavingsStore } from '../stores/savingsStore'
 import { useTableSortStore } from '../stores/tableSortStore'
-import { useThemeStore } from '../stores/themeStore'
 
 /**
  * Client-side rehydration for all persisted Zustand stores.
@@ -66,7 +65,6 @@ export function StoreHydration() {
       useCategoryStore,
       useCurrencyStore,
       useProfileStore,
-      useThemeStore,
       useOverviewDurationStore,
       usePlannerVisibilityStore,
       useTableSortStore,

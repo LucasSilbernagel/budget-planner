@@ -40,11 +40,18 @@ const NARROW = { width: 320, height: 900 }
 
 async function openNarrow(page: Page, route: string): Promise<void> {
   await page.setViewportSize(NARROW)
-  // ⚠️ `theme` is REQUIRED. Omitting it writes `{state:{}}` to the theme key and
-  // the store silently falls back to light — an accidental theme pin rather than
-  // a chosen one. `e2e/` is not type-checked (tsconfig.app.json is `src/**`
-  // only), so nothing catches the dropped argument; code review did.
-  await seedFinanceRows(page, 'light')
+  // ⚠️ `seedFinanceRows` takes NO theme argument. It used to, and this comment
+  // used to explain why omitting it was dangerous; story 61.1 (FR93) deleted the
+  // theme store, so the helper seeds finance rows only. The theme now follows the
+  // device — a spec that wants a dark run calls
+  // `page.emulateMedia({ colorScheme: 'dark' })` before `goto`. This spec is
+  // theme-agnostic and asks for nothing.
+  //
+  // ⚠️ `e2e/` is not type-checked (`tsconfig.app.json` is `src/**` only), so a
+  // stale extra argument is dropped silently rather than failing to compile —
+  // which is exactly how this call site survived 61.1's first pass and was caught
+  // in code review.
+  await seedFinanceRows(page)
   await page.goto(route)
   await page.addStyleTag({ content: WIDE_FONT })
   await page.waitForLoadState('networkidle')

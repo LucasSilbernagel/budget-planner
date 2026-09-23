@@ -3,14 +3,16 @@
  *
  * The consolidated home for the display preferences that used to be scattered
  * across page headers (currency) and the footer (theme). These assert the surface
- * actually hosts BOTH controls in one place, that the currency control's global
- * scope is spelled out (AC-2), and that exactly one theme toggle instance is
- * mounted (story 7-3 DECISION 2).
+ * hosts the currency control and that its global scope is spelled out (AC-2).
  *
- * Dark mode is free for every user (story 25-3), so the default tier here is a
- * free/unauthenticated visitor and the ThemeToggle still renders its live
- * `role="switch"`. The `usePremiumAccess` mock is retained only to keep any
- * incidental consumer deterministic; the currency control uses the real store.
+ * ⚠️ There used to be a dark-mode toggle here too, and a test pinning exactly one
+ * instance of it (story 7-3 DECISION 2). Story 61.1 (FR93) deleted the control:
+ * the theme follows the device's `prefers-color-scheme` and nothing in the app can
+ * disagree with it. That test is now inverted — it asserts the ABSENCE, with a
+ * positive control, rather than being deleted outright.
+ *
+ * The `usePremiumAccess` mock is retained only to keep any incidental consumer
+ * deterministic; the currency control uses the real store.
  */
 
 import { render, screen } from '@testing-library/react'
@@ -84,16 +86,30 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/applies everywhere amounts are shown/i)).toBeInTheDocument()
   })
 
-  it('hosts exactly one theme toggle instance (7-3 DECISION 2), live for a free user (25-3)', () => {
+  it('hosts NO dark-mode toggle — the theme follows the device (61.1, FR93)', () => {
     render(<SettingsPage />)
+
+    // POSITIVE CONTROL. `getAllByRole` THROWS when nothing matches (it is built
+    // with `getMissingError`), so a surface that rendered no switches at all
+    // already fails loudly on the next line — this is not the case that needs
+    // guarding, and an earlier version of this comment wrongly claimed it was.
+    //
+    // ⚠️ WHAT THIS DOES NOT CATCH, stated precisely so the next reader does not
+    // over-trust it: a dark-mode control RENAMED to "Appearance" or "Theme" would
+    // still satisfy both the throw-on-empty above and the `/dark mode/i` filter
+    // below, and the absence would read as success. Renames are guarded by the
+    // e2e case in `e2e/theme-dark-mode.spec.ts` plus the deletion of the component
+    // file itself, not here.
     const switches = screen.getAllByRole('switch')
-    // Two switches total: the currency-symbols switch and the dark-mode switch.
-    // Dark mode is free (25-3), so the switch is live for this free/unauthenticated
-    // user; exactly ONE dark-mode switch must be mounted.
+
+    // Story 7-3 DECISION 2 pinned exactly ONE dark-mode switch here. Story 61.1
+    // reversed that decision: the toggle, its store, its provider and its <head>
+    // bootstrap are all deleted, so a re-introduced control would be a second
+    // source of truth for the theme.
     const darkModeSwitches = switches.filter((el) =>
       /dark mode/i.test(el.getAttribute('aria-label') ?? el.textContent ?? '')
     )
-    expect(darkModeSwitches).toHaveLength(1)
+    expect(darkModeSwitches).toHaveLength(0)
   })
 
   // Story 17-2: the "Clear local data" control is for EVERY user, unlike the

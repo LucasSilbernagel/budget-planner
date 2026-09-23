@@ -19,9 +19,11 @@ import {
  * mounted" is precisely what produces the flash AC-4 forbids: the box paints,
  * then vanishes, on every single page load for a user who dismissed it — which
  * is the annoyance this story exists to remove. Only a synchronous <head>
- * script beats first paint. `lib/nav/no-flash-planner-visibility-script` and
- * `components/theme/ThemeProvider` reach the same conclusion for the
- * Retirement nav entry and the theme.
+ * script beats first paint. `lib/nav/no-flash-planner-visibility-script` reaches
+ * the same conclusion for the Retirement nav entry. (A third bootstrap did the
+ * same for the theme until story 61.1 replaced it with a `prefers-color-scheme`
+ * media query — CSS needs no script, but it also cannot read localStorage, which
+ * is why these two remain.)
  *
  * ⚠️ THE RULE IS `=== '1'`, NEVER TRUTHINESS, and it must stay byte-identical
  * to `wasAccountNoticeDismissed` in `./account-notice-dismissal`. If the two
@@ -52,8 +54,8 @@ import {
  * interpolated the same way) and left a duplicated sentinel that only two
  * hand-maintained parallel test tables kept honest. Corrected in code review.
  *
- * Extracted to this leaf module (mirroring `lib/theme/no-flash-theme-script`
- * and `lib/nav/no-flash-planner-visibility-script`) so the exact rendered
+ * Extracted to this leaf module (mirroring
+ * `lib/nav/no-flash-planner-visibility-script`) so the exact rendered
  * script body is one importable source of truth shared by two consumers that
  * must never drift apart:
  *   1. `routes/__root.tsx` — renders it as an inline `<script>`.

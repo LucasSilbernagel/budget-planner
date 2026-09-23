@@ -17,12 +17,17 @@ import { usePlannerVisibilityStore } from '../../stores/plannerVisibilityStore'
  * *removing* the entry, but the CSS layer silently outranked it for *restoring*
  * it. Two-layer mechanisms have to be two-way.
  *
- * The shape is copied from `components/theme/ThemeProvider`, which solves the
- * identical problem for `.dark` — including the ordering that matters:
- * REHYDRATE FIRST, then apply from the resolved value, then subscribe. A plain
- * `[value]`-dependency effect would apply the deterministic default (visible)
- * before rehydration and strip the attribute the `<head>` script just set —
- * reintroducing exactly the flash both mechanisms exist to prevent.
+ * The shape came from the former `components/theme/ThemeProvider`, which solved
+ * the identical problem for the `.dark` class — including the ordering that
+ * matters: REHYDRATE FIRST, then apply from the resolved value, then subscribe. A
+ * plain `[value]`-dependency effect would apply the deterministic default
+ * (visible) before rehydration and strip the attribute the `<head>` script just
+ * set — reintroducing exactly the flash this mechanism exists to prevent.
+ *
+ * ⚠️ That provider no longer exists to read: story 61.1 (FR93) made the theme a
+ * pure `prefers-color-scheme` media query and deleted the store, the provider and
+ * the bootstrap behind it. This component is now the ONLY place the pattern
+ * lives, so the ordering above is documented here rather than by reference.
  */
 export function PlannerVisibilityProvider(): null {
   useEffect(() => {

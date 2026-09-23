@@ -99,7 +99,7 @@ interface Axis {
  */
 async function gotoPlanner(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: 900 })
-  await seedFinanceRows(page, 'light')
+  await seedFinanceRows(page)
   await page.goto('/retirement')
   await page.waitForFunction(() => {
     const el = document.querySelector('#currentAge')

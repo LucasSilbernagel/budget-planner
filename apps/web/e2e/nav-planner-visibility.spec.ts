@@ -218,23 +218,27 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
     /**
      * The document must not scroll sideways at 320px in EITHER theme.
      *
-     * ⚠️ Dark mode here is driven by a `.dark` CLASS on `<html>`, not by a media
-     * query: `tailwind.config.js` sets `darkMode: 'class'` and nothing in the
-     * app reads `prefers-color-scheme`. An earlier version of this loop used
-     * `page.emulateMedia({ colorScheme })`, which flips a media query the app
-     * never consults — so both iterations measured the LIGHT theme and the
-     * "and dark" half of AC-8 was proven by nothing. Toggle the real class, and
-     * assert it actually took effect so this cannot silently regress to a no-op.
+     * ⚠️⚠️ THIS LOOP HAS BEEN VACUOUS ONCE ALREADY — READ BEFORE CHANGING IT.
+     * Originally it used `page.emulateMedia({ colorScheme })` while the app read
+     * a `.dark` CLASS and consulted no media query, so both iterations measured
+     * the LIGHT theme and the "and dark" half of AC-8 was proven by nothing. It
+     * was then rewritten to toggle the class.
+     *
+     * Story 61.1 (FR93) INVERTED that: `tailwind.config.js` is now
+     * `darkMode: 'media'`, nothing adds a `.dark` class, and the media query is
+     * the only input. So the class toggle became the no-op — and, worse, a SILENT
+     * one, because the old guard asserted `classList.contains('dark')`, which
+     * still passes on a page rendering light.
+     *
+     * The lesson both times is the same: assert a CONSEQUENCE, never the lever.
+     * `body` is `bg-gray-50` light / `bg-gray-900` dark, so the painted canvas is
+     * the thing that cannot lie about which theme rendered.
      */
-    for (const theme of ['light', 'dark']) {
-      await page.evaluate(
-        (t) => document.documentElement.classList.toggle('dark', t === 'dark'),
-        theme
-      )
-      expect(
-        await page.evaluate(() => document.documentElement.classList.contains('dark')),
-        `the .dark class did not follow the ${theme} setting — the theme leg is a no-op`
-      ).toBe(theme === 'dark')
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme })
+      await expect
+        .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+        .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
       // Re-assert the geometry per theme, not just the overflow: dark styling
       // changes borders and backgrounds, which is what could move a box.

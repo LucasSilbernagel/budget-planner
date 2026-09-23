@@ -8,15 +8,32 @@ import { expect, test } from '@playwright/test'
  * canvas" bug this story closes, which mocked unit tests and SSR-HTML smoke both
  * miss (project memory, 4-11).
  *
- * Verified by forcing the `.dark` class onto `<html>` after hydration (the "seed
- * the `.dark` class" approach the story's Testing standards prescribe). The theme
- * store is left at its 'light' default, so `ThemeProvider`'s mount effect applies
- * 'light' exactly once and then nothing changes the store — once our `.dark` class
- * is applied nothing strips it. Dark mode is free for every user (story 25-3), so
- * no tier check ever touches the theme; this tests the CSS/theming in isolation.
+ * Verified by emulating a dark DEVICE preference (story 61.1, FR93: the app is
+ * `darkMode: 'media'`, so `prefers-color-scheme` is its only theme input). Before
+ * 61.1 this forced a `.dark` class onto `<html>` after hydration and had to fight
+ * `ThemeProvider`'s mount effect for it; both the class and the provider are gone.
+ *
+ * This file asserts COMPUTED COLOURS on real pages, which is what makes it able
+ * to see a theme regression at all.
+ *
+ * ⚠️ WHAT IT DOES **NOT** COVER, measured rather than assumed. `styles/global.css`
+ * styles the page canvas (<body>) with a hand-written rule, not a `dark:` utility,
+ * and that rule had to be converted by hand when story 61.1 moved
+ * `tailwind.config.js` to `darkMode: 'media'`. Reverting that conversion leaves
+ * THIS FILE ENTIRELY GREEN: the `.surface-sunken` and `.surface` selectors below
+ * are `dark:` utilities, so they recompile to the media query automatically and
+ * darken no matter what the <body> rule does. Verified by mutation — 15/15 here
+ * passed while `theme-dark-mode.spec.ts` went red on three cases.
+ *
+ * So: the canvas guard is `e2e/theme-dark-mode.spec.ts`; this file guards the
+ * SURFACES. An earlier version of this comment claimed the opposite, which would
+ * have pointed the next reader at a test that cannot fail for that reason.
+ *
+ * Dark mode is free for every user (story 25-3), so no tier check ever touches
+ * the theme; this tests the CSS/theming in isolation.
  */
 
-// The palette the global.css tokens compile to under `.dark`.
+// The palette the global.css tokens compile to under a dark device preference.
 const CANVAS_DARK = 'rgb(17, 24, 39)' // gray-900 — .surface-sunken page canvas
 const CARD_DARK = 'rgb(31, 41, 55)' // gray-800 — .surface card
 
@@ -70,18 +87,10 @@ const PAGES = [
 
 for (const path of PAGES) {
   test(`${path} renders dark surfaces (no white-card-on-dark)`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto(path)
 
-    // Wait for the page body, then force `.dark` and hold it until the canvas is
-    // actually dark. Re-applying inside waitForFunction defeats the one-shot race
-    // with ThemeProvider's mount effect (which applies the store's 'light' default
-    // exactly once); after that the store never changes, so the class sticks.
     await expect(page.locator('.surface-sunken').first()).toBeVisible()
-    await page.waitForFunction((canvasDark) => {
-      document.documentElement.classList.add('dark')
-      const canvas = document.querySelector('.surface-sunken')
-      return !!canvas && getComputedStyle(canvas).backgroundColor === canvasDark
-    }, CANVAS_DARK)
 
     // The page canvas is the dark gray-900, not the light gray-50 it is by day.
     await expect(page.locator('.surface-sunken').first()).toHaveCSS('background-color', CANVAS_DARK)

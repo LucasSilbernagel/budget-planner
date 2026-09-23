@@ -8,8 +8,8 @@ import {
  * Retirement planner visibility toggle (story 35.2, FR55).
  *
  * A `role="switch"` control that flips the persisted visibility preference,
- * mirroring the accessible switch idiom in `settings/theme-toggle.tsx` and
- * `settings/currency-toggle.tsx`. There is no reusable Switch primitive in this
+ * mirroring the accessible switch idiom in `settings/currency-toggle.tsx` (story
+ * 61.1 deleted `settings/theme-toggle.tsx`, which was the other example). There is no reusable Switch primitive in this
  * repo — `components/ui/` holds no such component — so the idiom is duplicated
  * deliberately rather than invented.
  *

@@ -45,7 +45,7 @@ export const usePlannerVisibilityStore = create<PlannerVisibilityState>()(
       // Deterministic default. This is the value rendered on the server and on
       // the first client paint, so it MUST NOT be derived from `navigator` / the
       // OS — a browser-derived default would cause a hydration mismatch (same
-      // discipline as currencyStore / themeStore). The persisted preference is
+      // discipline as currencyStore). The persisted preference is
       // applied after client rehydration (see lib/store-hydration) and,
       // crucially, *before first paint* by the no-flash <head> script.
       showRetirementPlanner: DEFAULT_SHOW_RETIREMENT_PLANNER,
@@ -76,7 +76,7 @@ export const usePlannerVisibilityStore = create<PlannerVisibilityState>()(
   )
 )
 
-// Selector hooks (mirror currencyStore / themeStore idiom) for stable subscriptions.
+// Selector hooks (mirror the currencyStore idiom) for stable subscriptions.
 export const useShowRetirementPlanner = () =>
   usePlannerVisibilityStore((state) => state.showRetirementPlanner)
 

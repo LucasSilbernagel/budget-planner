@@ -20,33 +20,28 @@
 import { createHash } from 'node:crypto'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../lib/overview/no-flash-account-notice-script'
-import { NO_FLASH_THEME_SCRIPT } from '../../lib/theme/no-flash-theme-script'
-
-/**
- * sha256 of the exact inline no-flash theme script rendered at
- * `routes/__root.tsx` (a static, self-authored bootstrap). Derived from the
- * imported constant — the single source of truth — so it can never silently
- * drift out of sync with the script it authorizes (a drifted hash = blocked
- * bootstrap = theme flash). Pinned by a test (story sec-1, AC-5).
- *
- * The theme script is authorized in the CSP by this HASH (not the per-request
- * nonce) so `routes/__root.tsx` stays untouched and the drift guard keeps
- * working. TanStack Start's OWN inline scripts (stream barrier, scroll
- * restoration) are authorized by the per-request nonce instead — their content
- * is dynamic and cannot be hashed. Hash- and nonce-sources coexist in
- * `script-src`; an inline script is allowed if it matches EITHER, while an
- * injected XSS script matches neither.
- */
-export const THEME_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
-  .update(NO_FLASH_THEME_SCRIPT, 'utf8')
-  .digest('base64')}`
 
 /**
  * sha256 of the exact inline no-flash planner-visibility script rendered at
- * `routes/__root.tsx` (story 35.2). Same discipline as the theme hash above:
- * derived from the imported constant so it cannot drift out of sync with the
- * script it authorizes (a drifted hash = blocked bootstrap = the Retirement
- * entry flashes in before React removes it). Pinned by a test.
+ * `routes/__root.tsx` (story 35.2). Derived from the imported constant — the
+ * single source of truth — so it cannot drift out of sync with the script it
+ * authorizes (a drifted hash = blocked bootstrap = the Retirement entry flashes
+ * in before React removes it). Pinned by a test.
+ *
+ * The bootstraps are authorized in the CSP by HASH (not the per-request nonce)
+ * so `routes/__root.tsx` stays untouched and the drift guards keep working.
+ * TanStack Start's OWN inline scripts (stream barrier, scroll restoration) are
+ * authorized by the per-request nonce instead — their content is dynamic and
+ * cannot be hashed. Hash- and nonce-sources coexist in `script-src`; an inline
+ * script is allowed if it matches EITHER, while an injected XSS script matches
+ * neither.
+ *
+ * ⚠️ There used to be a THEME_SCRIPT_CSP_HASH here as well, the first of these
+ * (story sec-1, AC-5). Story 61.1 deleted the theme bootstrap, so its hash went
+ * with it — `script-src` now carries TWO static hashes, not three. A hash left
+ * behind for a script that no longer ships is not a test failure; it is a silent
+ * stale allowance, which is why `__tests__/security-headers.test.ts` asserts its
+ * ABSENCE rather than merely not asserting its presence.
  */
 export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
   .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
@@ -59,7 +54,7 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  * the script it authorizes (a drifted hash = blocked bootstrap = the dismissed
  * "No account needed" box flashes in before React removes it). Pinned by a test.
  *
- * ⚠️ This is the THIRD static hash, and it belongs in `script-src` ONLY. Do not
+ * ⚠️ This is the SECOND static hash, and it belongs in `script-src` ONLY. Do not
  * "help" by adding a `script-src-elem` directive: none is emitted today, that
  * directive OVERRIDES `script-src` for every script element, and the
  * "closes the DIRECTIVE SET" test in `__tests__/security-headers.test.ts`
@@ -76,8 +71,8 @@ export const ACCOUNT_NOTICE_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  * traces to a real loader; nothing else is permitted:
  *
  * - `script-src`   'self' + the per-request `'nonce-…'` (TanStack Start's inline
- *                  runtime scripts) + the inline theme script (by hash) + Paddle.js
- *                  CDN (`cdn.paddle.com`) and counter.dev analytics
+ *                  runtime scripts) + the two inline bootstraps (by hash) +
+ *                  Paddle.js CDN (`cdn.paddle.com`) and counter.dev analytics
  *                  (`cdn.counter.dev`). No `'unsafe-inline'`.
  * - `style-src`    'self' 'unsafe-inline' — React inline `style=` attributes and
  *                  Recharts-injected attribute styles are NOT coverable by a hash
@@ -123,7 +118,7 @@ export function buildContentSecurityPolicy(nonce: string): string {
   }
   return [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' '${THEME_SCRIPT_CSP_HASH}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
+    `script-src 'self' 'nonce-${nonce}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data:`,
     `font-src 'self' data:`,

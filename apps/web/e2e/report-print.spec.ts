@@ -20,13 +20,11 @@ import { expect, test } from '@playwright/test'
  * the SAME token classes the report component uses (`text-heading`, `text-body`,
  * `text-muted`, `surface`), and assert the computed result.
  *
- * That makes this a faithful test of the risk it targets — a `.dark` document
+ * That makes this a faithful test of the risk it targets — a dark-themed document
  * printing near-white text onto white paper — while the report's own markup and
  * figures are covered by `FinancialSummaryReport.test.tsx`. The gating and the
  * global chrome rules below ARE exercised against the real app.
  */
-
-const THEME_KEY = 'budget-planner-theme-prefs-v1'
 
 /** Injects a stand-in for the report subtree using the real token classes. */
 async function injectReportStub(page: import('@playwright/test').Page): Promise<void> {
@@ -64,23 +62,19 @@ async function computedColour(
 
 for (const theme of ['light', 'dark'] as const) {
   test(`report text prints as dark ink when the app is in ${theme} mode`, async ({ page }) => {
-    // ⚠️ Seed the theme STORE, never hand-add `.dark` to <html>: ThemeProvider
-    // re-applies the persisted preference shortly after mount and would strip a
-    // hand-added class, silently turning a dark-mode test into a light-mode one.
-    await page.addInitScript(
-      ([key, value]) => {
-        window.localStorage.setItem(key, JSON.stringify({ state: { theme: value }, version: 0 }))
-      },
-      [THEME_KEY, theme]
-    )
+    // ⚠️ Story 61.1 (FR93): the theme follows the DEVICE, so `emulateMedia` is
+    // the lever. It used to be a seeded localStorage store, and the comment here
+    // warned against hand-adding a `.dark` class that `ThemeProvider` would strip
+    // — that provider and that class are both gone.
+    await page.emulateMedia({ colorScheme: theme })
 
     await page.goto('/')
-    // Confirm the theme actually took, so a dark run cannot silently pass as light.
-    if (theme === 'dark') {
-      await expect(page.locator('html')).toHaveClass(/dark/)
-    } else {
-      await expect(page.locator('html')).not.toHaveClass(/dark/)
-    }
+    // Confirm the theme actually took, so a dark run cannot silently pass as
+    // light. ⚠️ Asserts the PAINTED canvas, not the lever: re-reading the scheme
+    // we just set could not fail. `body` is bg-gray-50 light / bg-gray-900 dark.
+    await expect
+      .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+      .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
     await injectReportStub(page)
     await page.emulateMedia({ media: 'print' })
@@ -104,14 +98,11 @@ test('report text is NOT forced to black on screen — the override is print-onl
 }) => {
   // Guards the blast radius of a global stylesheet: the print rules must not
   // leak into the screen rendering, or dark mode would break everywhere.
-  await page.addInitScript(
-    ([key]) => {
-      window.localStorage.setItem(key, JSON.stringify({ state: { theme: 'dark' }, version: 0 }))
-    },
-    [THEME_KEY]
-  )
+  await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')
-  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe('rgb(17, 24, 39)')
   await injectReportStub(page)
 
   await page.emulateMedia({ media: 'screen' })
@@ -145,14 +136,11 @@ test('printing another page leaves its colours untouched — the report rules ar
   // colour rule could ever have broken — it could not fail against the regression
   // it was named for. It now reads a COMPUTED colour, which is the property at
   // stake: the report's forced black-on-white must not reach any other page.
-  await page.addInitScript(
-    ([key]) => {
-      window.localStorage.setItem(key, JSON.stringify({ state: { theme: 'dark' }, version: 0 }))
-    },
-    [THEME_KEY]
-  )
+  await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/settings')
-  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe('rgb(17, 24, 39)')
 
   // ⚠️ Probe an element that INHERITS its colour from <body>, not a heading.
   // A first attempt read the <h1>, whose own `dark:text-white` class outranks any
