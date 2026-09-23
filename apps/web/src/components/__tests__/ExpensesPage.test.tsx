@@ -930,3 +930,255 @@ describe('ExpensesPage — mortgage guidance (36.3)', () => {
     expect(hintText(within(dialog).getByTestId('expense-mortgage-hint'))).toBe(EXPENSE_HINT)
   })
 })
+
+describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
+  /**
+   * The RATIFIED strings, pinned WHOLE, following the 36.3 precedent above.
+   *
+   * ⚠️ Anchored on the DISTINGUISHING clause, not on "retire" alone — Epic 23's
+   * lesson: a copy test that matches a generic word survives the rewrite it
+   * exists to catch. "ends before I retire" appears nowhere else in the repo.
+   *
+   * ⚠️ The word "must" is deliberately ABSENT, and that absence is load-bearing.
+   * The UX evaluation (2026-09-22, §c) rejected "must pay off before retirement"
+   * because *must* is a commitment that invites "am I on track to?", which needs
+   * amortization this app does not have — `calculateDebtMetrics` is dormant and
+   * `useDebtEntries` has zero callers. The copy states a prediction instead.
+   */
+  const LABEL = 'This expense ends before I retire'
+  const HELP =
+    "Tick this for a cost that will have stopped by the time you retire — a mortgage you'll have paid off, tuition, daycare or a commute. The retirement planner uses it to suggest what your income needs to cover."
+
+  const norm = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+  beforeEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+  })
+
+  it('offers the control, unticked, with its ratified label and help', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+
+    const box = within(dialog).getByRole('checkbox', { name: LABEL })
+    expect(box).not.toBeChecked()
+    // The help is ASSOCIATED, not merely adjacent — `aria-describedby`, the same
+    // wiring `BalancePage`'s sibling flag uses.
+    const describedBy = box.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    const help = document.getElementById(describedBy as string)
+    expect(help).not.toBeNull()
+    expect(norm(help as HTMLElement)).toBe(HELP)
+  })
+
+  it('⚠️ the copy never says "must" — it states a prediction, not a commitment', async () => {
+    // A guard on the UX decision: "must pay off before retirement" was the
+    // original proposal and was rejected, because *must* advertises a payoff check
+    // this app cannot perform.
+    //
+    // ⚠️ Reads the RENDERED copy, not this file's own constants. The second review
+    // round noted the previous version asserted on the `LABEL`/`HELP` literals
+    // declared above — self-referential, meaningful only via the separate test
+    // that binds them to the DOM.
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+    const box = within(dialog).getByRole('checkbox', { name: LABEL })
+    const help = document.getElementById(box.getAttribute('aria-describedby') as string)
+    const rendered = `${box.parentElement?.textContent ?? ''} ${help?.textContent ?? ''}`
+    expect(rendered.toLowerCase()).not.toContain('must')
+    // Non-vacuity: the copy this reads really is present.
+    expect(rendered.toLowerCase()).toContain('ends before i retire')
+  })
+
+  it('persists the flag on ADD', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByTestId('expense-name-input'), 'Mortgage')
+    await user.type(within(dialog).getByTestId('expense-amount-input'), '1800')
+    await user.click(within(dialog).getByRole('checkbox', { name: LABEL }))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Expense' }))
+
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses).toHaveLength(1)
+    })
+    expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(true)
+  })
+
+  it('leaves the flag false on an add where the box is untouched', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByTestId('expense-name-input'), 'Groceries')
+    await user.type(within(dialog).getByTestId('expense-amount-input'), '400')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Expense' }))
+
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses).toHaveLength(1)
+    })
+    expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(false)
+  })
+
+  it('⚠️ does NOT carry the previous entry’s tick into the next Add', async () => {
+    // ⚠️ This pins an OUTCOME across TWO reset paths, not one: `closeModal` clears
+    // the flag on submit and the `[isModalOpen, editingId]` effect clears it again
+    // when the modal re-opens to add. Deleting either alone leaves this green
+    // (second review round) — the redundancy is deliberate in the component, so
+    // the test asserts what the user sees rather than pretending to isolate one
+    // path. Same shape as `category-assignment`'s "found by mutation M32" test.
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    let dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByTestId('expense-name-input'), 'Mortgage')
+    await user.type(within(dialog).getByTestId('expense-amount-input'), '1800')
+    await user.click(within(dialog).getByRole('checkbox', { name: LABEL }))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Expense' }))
+    await waitFor(() => expect(useExpenseStore.getState().expenses).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('checkbox', { name: LABEL })).not.toBeChecked()
+  })
+
+  it('re-opens the edit form on the row’s existing tick', async () => {
+    const user = userEvent.setup()
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('checkbox', { name: LABEL })).toBeChecked()
+  })
+
+  it('⚠️⚠️ editing only the AMOUNT leaves the tick intact', async () => {
+    // THE regression this story is most likely to ship. `closeModal` resets every
+    // field and `handleSubmit` sends them all unconditionally, so a flag that
+    // `openEditModal` forgets to seed is silently written back as false when the
+    // user edits something else entirely. `categoryId` shipped exactly this
+    // defect once (code review 30.4b, annotated at ExpensesPage.tsx:265-270).
+    const user = userEvent.setup()
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    const dialog = screen.getByRole('dialog')
+    const amount = within(dialog).getByTestId('expense-amount-input')
+    await user.clear(amount)
+    await user.type(amount, '1900')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses[0].amount).toBe(190_000)
+    })
+    expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(true)
+  })
+
+  it('⚠️ UNTICKING on edit actually clears the flag', async () => {
+    // The opposite direction, and the one a "seed it and forget it" bug leaves
+    // broken: if the submit path sent the seeded value rather than the current
+    // state, ticking would work and unticking would not.
+    const user = userEvent.setup()
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('checkbox', { name: LABEL }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(false)
+    })
+  })
+
+  it('marks the row in the list, in words rather than colour alone', async () => {
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+    useExpenseStore
+      .getState()
+      .addExpense({ name: 'Groceries', amount: 40_000, frequency: 'monthly' })
+    const { container } = renderWithProviders(<ExpensesPage />)
+
+    const badges = container.querySelectorAll('[data-testid="expense-row-ends-before-retirement"]')
+    expect(badges).toHaveLength(1)
+    // WCAG 1.4.1: the marker must not be colour alone.
+    expect(norm(badges[0] as HTMLElement)).toBe('Ends before retirement')
+    // …and it sits with the row it describes.
+    const row = (badges[0] as HTMLElement).closest('tr')
+    expect(norm(row as HTMLElement)).toContain('Mortgage')
+  })
+
+  it.each([
+    [
+      'free',
+      { hasAccess: false, subscriptionStatus: 'free' as const },
+      ['Name', 'Amount', 'Frequency', 'Actions'],
+    ],
+    [
+      'entitled',
+      { hasAccess: true, subscriptionStatus: 'active' as const },
+      ['Name', 'Amount', 'Frequency', 'Category', 'Actions'],
+    ],
+  ])('⚠️ adds NO column — the header array is unchanged for a %s user', (_label, tier, expected) => {
+    // `category-assignment.test.tsx:615,636` pins this array exactly, across BOTH
+    // the Income and Expenses pages and four entitlement states, each followed by
+    // an `expectColumnParity` <th>/<td> count check. A new column would break
+    // eight tests on a page this story does not otherwise touch, so the marker
+    // lives INSIDE the Name cell. Pinned here too so the constraint is visible
+    // from the story that has to respect it.
+    // ⚠️ BOTH tiers are rendered now. Code review 65.2 found this asserted "at
+    // both tiers" while rendering only the default (free) one — and the Category
+    // column is premium-gated, so the entitled tier is precisely the arm where a
+    // sixth column would collide.
+    setTier(tier)
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+    const { container } = renderWithProviders(<ExpensesPage />)
+
+    const headers = [...container.querySelectorAll('thead th')].map((th) => norm(th as HTMLElement))
+    expect(headers).toEqual(expected)
+    const cells = container.querySelectorAll('tbody tr:first-child > td')
+    expect(cells).toHaveLength(headers.length)
+    // The badge is present regardless of tier — it lives in the Name cell.
+    expect(
+      container.querySelector('[data-testid="expense-row-ends-before-retirement"]')
+    ).not.toBeNull()
+  })
+})

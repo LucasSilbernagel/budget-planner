@@ -26,6 +26,11 @@ const SAVED_PLAN = {
   lifeExpectancyInput: '88',
   desiredIncomeInput: '55,000.00',
   desiredIncomeTouched: true,
+  // Story 65.2: the adopted "expenses ending before retirement" figure, in
+  // MONTHLY cents. Persisted so it survives the route change that unmounts the
+  // planner — held in component state it re-stranded the field in whichever
+  // basis it was adopted in, a 12x error in the plan's central number.
+  adoptedMonthlyCents: 240_000,
   desiredIncomeLocale: 'en-US',
   incomeBasis: 'monthly',
   annualReturnInput: '7.5',
@@ -284,6 +289,53 @@ describe('corrupt, absent and foreign payloads (AC-5)', () => {
     expect(useRetirementPlannerStore.getState().plan).toEqual(
       useRetirementPlannerStore.getInitialState().plan
     )
+  })
+})
+
+describe('the adopted figure (story 65.2)', () => {
+  /** Rehydrate a seeded blob and hand back the restored plan. */
+  async function restore(plan: unknown) {
+    seed(plan)
+    await useRetirementPlannerStore.persist.rehydrate()
+    return useRetirementPlannerStore.getState().plan
+  }
+
+  it('a pre-65.2 blob with no key at all restores as "never adopted", not as a crash', async () => {
+    // The no-version-bump claim, pinned. `coerceRetirementPlan` rebuilds every
+    // field from a default, so an older payload simply yields null — which is
+    // exactly "the user never adopted a figure". Same reasoning as the expense
+    // store's D3.
+    const { adoptedMonthlyCents: _absent, ...withoutKey } = SAVED_PLAN
+    expect((await restore(withoutKey)).adoptedMonthlyCents).toBeNull()
+  })
+
+  it.each([
+    ['a string', '240000'],
+    ['a negative', -1],
+    ['a fraction', 240_000.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['null', null],
+    ['an object', { cents: 240_000 }],
+  ])('refuses %s rather than carrying it to the render path', async (_label, value) => {
+    // This value is MULTIPLIED BY 12 during render (`toAnnualIncomeCents`, which
+    // THROWS outside the safe-integer range) and localStorage is user-editable,
+    // so a corrupt blob must degrade to "never adopted" rather than crash the
+    // whole retirement route.
+    expect(
+      (await restore({ ...SAVED_PLAN, adoptedMonthlyCents: value })).adoptedMonthlyCents
+    ).toBeNull()
+  })
+
+  it('refuses a value whose x12 leaves the safe-integer range', async () => {
+    const restored = await restore({ ...SAVED_PLAN, adoptedMonthlyCents: 800_000_000_000_000 })
+    expect(restored.adoptedMonthlyCents).toBeNull()
+  })
+
+  it('keeps a legitimate adopted figure', async () => {
+    expect(
+      (await restore({ ...SAVED_PLAN, adoptedMonthlyCents: 240_000 })).adoptedMonthlyCents
+    ).toBe(240_000)
   })
 })
 

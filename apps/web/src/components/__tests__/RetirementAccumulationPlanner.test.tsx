@@ -5,6 +5,7 @@ import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
+import { useRetirementPlannerStore } from '../../stores/retirementPlannerStore'
 import {
   RetirementAccumulationPlanner,
   describeSolverError,
@@ -1986,5 +1987,306 @@ describe('RetirementAccumulationPlanner — what not to count toward desired inc
     //
     expect(described[0]).toHaveTextContent(PERIOD_HELP)
     expect(described[1]).toHaveTextContent(NOTE)
+  })
+})
+
+describe('RetirementAccumulationPlanner — expenses that end before retirement (story 65.2, FR101)', () => {
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  /** The marked-expenses hint, whitespace-normalized (JSX joins source lines). */
+  const hint = (): string =>
+    (screen.getByTestId('desired-income-ending-expenses').textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+  // ⚠️ The frequency parameter is typed explicitly rather than inferred from a
+  // `'monthly' as const` default. That default typed the parameter as the LITERAL
+  // 'monthly', making `marked(10_000, 'weekly')` below a type error — and one no
+  // gate could ever catch, because `tsconfig.app.json` excludes `**/*.test.tsx`
+  // (code review 65.2; the same trap this file's own `investmentRow` note records).
+  type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annually'
+  const marked = (amount: number, frequency: Cadence = 'monthly', id = 'exp-m') => ({
+    ...expenseRow(amount, frequency, id),
+    endsBeforeRetirement: true,
+  })
+
+  it('shows nothing at all when no expense is marked', () => {
+    useExpenseStore.setState({ expenses: [expenseRow(420_000)] })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    expect(screen.queryByTestId('desired-income-ending-expenses')).not.toBeInTheDocument()
+  })
+
+  it('states both figures and the remainder, in the MONTHLY basis', async () => {
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+
+    // ⚠️ The adopt button is a child of this <p>, so its label is part of
+    // `textContent`. Pinned WHOLE rather than trimmed away: the sentence and the
+    // affordance it offers are one unit, and a suggestion whose action silently
+    // vanished would still pass a sentence-only assertion.
+    expect(hint()).toBe(
+      "Your expenses today are 4,200.00 a month. You've marked 1,800.00 a month as ending before retirement, leaving 2,400.00. Use this figure"
+    )
+  })
+
+  it('⚠️ converts BOTH figures to the ANNUAL basis when that is selected', async () => {
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.selectOptions(screen.getByLabelText('Income period'), 'annual')
+
+    // x12 of the monthly figures, and the noun follows.
+    expect(hint()).toBe(
+      "Your expenses today are 50,400.00 a year. You've marked 21,600.00 a year as ending before retirement, leaving 28,800.00. Use this figure"
+    )
+  })
+
+  it('⚠️ NORMALIZES a non-monthly marked expense rather than counting it as monthly', async () => {
+    const user = userEvent.setup()
+    // $100.00/week marked. MEASURED: core uses the EXACT fraction 52/12, not the
+    // rounded 4.333 in project-context.md — 10_000c x 52/12 = 43_333.33… ->
+    // round = 43_333c. The raw-sum answer (100.00) is pinned as wrong below.
+    useExpenseStore.setState({
+      expenses: [marked(10_000, 'weekly'), expenseRow(56_667, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    // ⚠️ `incomeBasis` DEFAULTS to annual, so the monthly figure has to be
+    // selected before it can be asserted on.
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+
+    expect(hint()).toContain("You've marked 433.33 a month")
+    expect(hint()).not.toContain("You've marked 100.00")
+  })
+
+  it('⚠️⚠️ renders the suggestion WITHOUT touching the desired-income field', async () => {
+    // The whole reason this control moved off the Balance Tracking page: a flag
+    // that silently rewrote the user's central figure would contradict
+    // `desiredIncomeTouched` and make the same tick produce different outcomes
+    // for two users, with nothing on screen to explain it (UX evaluation §b).
+    const user = userEvent.setup()
+    useIncomeStore.setState({ incomeSources: [incomeRow(1_000_000)] })
+    useExpenseStore.setState({ expenses: [marked(180_000)] })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
+    // Still the income-derived seed ($10,000/mo -> $120,000/yr -> half), NOT the
+    // expense-derived figure.
+    expect(income).toHaveValue('60,000.00')
+    expect(screen.getByTestId('desired-income-ending-expenses')).toBeInTheDocument()
+    // ⚠️ A real basis CHANGE, not a bare click — the second review round found the
+    // click exercised nothing, making this assertion identical to the one above.
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+    // Still the income-derived seed (re-expressed by the seed effect, because the
+    // value is UNTOUCHED) — never the expense-derived figure.
+    expect(income).toHaveValue('5,000.00')
+    expect(income).not.toHaveValue('2,400.00')
+  })
+
+  it('adopts the remainder on request, under the MONTHLY basis', async () => {
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+
+    await user.click(screen.getByRole('button', { name: 'Use this figure' }))
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
+  })
+
+  it('adopts the remainder on request, under the ANNUAL basis', async () => {
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.selectOptions(screen.getByLabelText('Income period'), 'annual')
+
+    await user.click(screen.getByRole('button', { name: 'Use this figure' }))
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('28,800.00')
+  })
+
+  it('⚠️⚠️ adopting MARKS THE FIELD AUTHORED, so the income seed cannot overwrite it', async () => {
+    // Without `markDesiredIncomeAuthored`, the seeding effect at :730-746 re-fires
+    // whenever `prefillDesiredIncomeCents` changes (it goes null -> real on every
+    // hydration) and silently replaces the adopted number. That is the exact
+    // failure `desiredIncomeTouched` was added for in story 44.1.
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+    await user.click(screen.getByRole('button', { name: 'Use this figure' }))
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
+
+    // Now make the income prefill appear, exactly as hydration does.
+    act(() => {
+      useIncomeStore.setState({ incomeSources: [incomeRow(1_000_000)] })
+    })
+
+    // ⚠️ Asserts the MECHANISM, not just the value: `desiredIncomeTouched` must be
+    // set, or this assertion could pass merely because the seed happened not to
+    // re-run in this harness.
+    expect(useRetirementPlannerStore.getState().plan.desiredIncomeTouched).toBe(true)
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
+  })
+
+  it('⚠️⚠️ REGRESSION (code review 65.2): a huge ticked expense does not crash the page', () => {
+    // A monthly amount that is a safe integer while its ×12 is not. The basis
+    // DEFAULTS to annual, so rendering put it through `toAnnualIncomeCents`, which
+    // THREW on the render path — taking all of `/retirement` to its ErrorBoundary,
+    // on every visit, until the row was edited from another page.
+    // ⚠️ Form-reachable: no `maxLength`, no digit cap, no bound in `parseFromInput`.
+    useExpenseStore.setState({ expenses: [marked(800_000_000_000_000)] })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    // The page renders, and the figure REFUSES rather than crashing.
+    expect(screen.getByLabelText('Desired Retirement Income')).toBeInTheDocument()
+    expect(hint()).toBe("We can't total your expenses, so we can't suggest a figure.")
+  })
+
+  it('⚠️⚠️ REGRESSION (code review 65.2): an ADOPTED figure follows a later basis switch', async () => {
+    // Adopting marks the field authored (AC-10, so the income seed cannot reclaim
+    // it) — but `desiredIncomeTouched` is ALSO what stops the seed effect
+    // re-expressing on a basis change, so the adopted value was stranded in the
+    // basis it was adopted in. Adopt 28,800.00/yr, switch to Monthly, and the
+    // field still read 28,800.00 — now solved as MONTHLY, a 12x overstatement —
+    // while the sentence beneath it correctly said 2,400.00 a month. Exactly the
+    // (untouched + monthly + an annual figure) trio story 44.1 fixed for the seed.
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    const field = screen.getByLabelText('Desired Retirement Income')
+    await user.click(screen.getByRole('button', { name: 'Use this figure' }))
+    expect(field).toHaveValue('28,800.00')
+
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+    expect(field).toHaveValue('2,400.00')
+
+    await user.selectOptions(screen.getByLabelText('Income period'), 'annual')
+    expect(field).toHaveValue('28,800.00')
+  })
+
+  it('⚠️⚠️ REGRESSION (second review round): the adopted figure still follows the basis AFTER A REMOUNT', async () => {
+    // THE case that defeated the first fix. `adoptedMonthlyCents` began as
+    // component state, so this closed the 12x defect only while the planner
+    // stayed MOUNTED — and `/retirement` unmounts on every route change, so one
+    // navigation brought the overstatement straight back. All three review layers
+    // found it independently and one measured it. The value is persisted now.
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    const first = renderWithProviders(<RetirementAccumulationPlanner />)
+    await user.click(screen.getByRole('button', { name: 'Use this figure' }))
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('28,800.00')
+
+    // ⚠️ Assert the MECHANISM, not just the outcome. Two attempts to prove this
+    // by mutation both failed to mutate what mattered (one disabled the load
+    // coercion, which zustand's in-memory state makes irrelevant across a
+    // remount; the other broke hook order and failed the file for an unrelated
+    // reason). The property that actually makes the fix work is that the adopted
+    // figure lives in the PERSISTED plan rather than in component state — so
+    // assert exactly that. `remaining` here is 2,400.00/mo = 240_000 cents.
+    expect(useRetirementPlannerStore.getState().plan.adoptedMonthlyCents).toBe(240_000)
+
+    // Leave the route and come back.
+    first.unmount()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('28,800.00')
+
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+    // Pre-fix this still read 28,800.00 — now solved as MONTHLY, a 12x plan.
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
+  })
+
+  it('⚠️ but a value the user TYPES is theirs — the adopted figure stops following', async () => {
+    // The other half of the fix: re-expressing must stop the moment the user
+    // authors their own number, or it would overwrite their edit on every switch.
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    await user.click(screen.getByRole('button', { name: 'Use this figure' }))
+    const field = screen.getByLabelText('Desired Retirement Income')
+    await user.clear(field)
+    await user.type(field, '5000')
+    // The same mechanism, cleared: typing disarms the re-expression.
+    expect(useRetirementPlannerStore.getState().plan.adoptedMonthlyCents).toBeNull()
+    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+    // Grouped by the blur re-echo, which is the existing money-field behaviour —
+    // the point is that it is still the USER'S number and was NOT replaced by the
+    // adopted figure when the basis changed.
+    expect(field).toHaveValue('5,000.00')
+    expect(field).not.toHaveValue('2,400.00')
+  })
+
+  it('⚠️ REFUSES rather than showing a confident wrong number when a row is corrupt', () => {
+    useExpenseStore.setState({
+      expenses: [
+        marked(180_000),
+        // A persisted STRING amount: `+` becomes a CONCATENATION and yields a
+        // large, plausible, finite integer with no NaN to flag it
+        // (deferred-work.md:1001).
+        { ...expenseRow(0, 'monthly', 'exp-bad'), amount: '240000' as unknown as number },
+      ],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(hint()).toBe("We can't total your expenses, so we can't suggest a figure.")
+    // No adopt control on the refusal arm — there is no figure to adopt.
+    expect(screen.queryByRole('button', { name: 'Use this figure' })).not.toBeInTheDocument()
+  })
+
+  it('⚠️ the nest-egg figures are untouched by a marked expense (the epic’s boundary)', () => {
+    // Epic 65 forbids this story from reaching the nest-egg base, which is
+    // assets-only and load-bearing (:334-350, deferred-work.md:1000). Marking an
+    // expense must move the DESIRED INCOME side only.
+    useBalanceStore.setState({ entries: [investmentRow(5_000_000, 'inv-1', { amount: 50_000 })] })
+    useExpenseStore.setState({ expenses: [marked(180_000)] })
+    const { container } = renderWithProviders(<RetirementAccumulationPlanner />)
+
+    // ⚠️ Read the FIGURES, not the whole page, and compare them across the flag.
+    // Code review 65.2 found the previous version captured `container.textContent`
+    // with the flag ON and then asserted only that a LABEL still existed — it never
+    // compared before to after, though its comment claimed to.
+    //
+    // ⚠️ WHICH ASSERTION DOES THE WORK, corrected in the second review round. The
+    // mutation `useTotalInvestmentBalance() + 180_000` is UNCONDITIONAL, so it
+    // shifts BOTH snapshots equally and `toBe(withFlag)` stays GREEN under it —
+    // what turns red is the `toContain('50,000.00')` pin. The earlier caption
+    // credited the comparison and was wrong. The three lines catch different
+    // mutations: the pin catches an unconditional change to the base, the
+    // comparison catches a FLAG-GATED one (the real AC-17 violation shape), and
+    // `not.toContain` catches the specific folded-in total.
+    const savingsSection = (): string =>
+      (container.querySelector('[data-testid="retirement-savings-position"]') ?? container)
+        .textContent ?? ''
+    const withFlag = savingsSection()
+    expect(withFlag).toContain('50,000.00')
+
+    act(() => {
+      useExpenseStore.setState({ expenses: [expenseRow(180_000)] })
+    })
+
+    expect(screen.queryByTestId('desired-income-ending-expenses')).not.toBeInTheDocument()
+    // The nest-egg figures are IDENTICAL with and without the flag. This is the
+    // assertion the old comment promised and did not make.
+    expect(savingsSection()).toBe(withFlag)
+    // …and the marked figure never reached the base in the first place.
+    expect(withFlag).not.toContain('51,800.00')
   })
 })

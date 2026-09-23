@@ -351,6 +351,35 @@ describe('Categories table (Story 30.4a)', () => {
     expect(balanceTracking.contributionRecordedAsExpense.default).toBe(false)
   })
 
+  it('expenses.endsBeforeRetirement is NOT NULL and defaults false (Story 65.2)', () => {
+    // FR101. The default is the whole migration-safety property: `false`
+    // reproduces today's behaviour exactly, so every pre-existing expense row
+    // stays counted in the retirement target and only a row the user explicitly
+    // ticks is offered for exclusion.
+    // ⚠️ CORRECTED in the second review round. This used to say `.default(true)`
+    // would make "every user's suggested retirement income silently drop to zero".
+    // That overstated it twice: a column default applies only to INSERTs that OMIT
+    // the column (and the bridge always sends an explicit boolean), and the
+    // suggestion is computed client-side from local rows, where the remainder
+    // reaches zero only if EVERY row is marked. The narrower real property is
+    // still worth pinning: `false` is what makes a row created outside the app's
+    // push path default to COUNTED rather than excluded.
+    expect(expenses.endsBeforeRetirement).toBeDefined()
+    expect(expenses.endsBeforeRetirement.getSQLType()).toBe('boolean')
+    expect(expenses.endsBeforeRetirement.notNull).toBe(true)
+    expect(expenses.endsBeforeRetirement.hasDefault).toBe(true)
+    expect(expenses.endsBeforeRetirement.default).toBe(false)
+  })
+
+  it('⚠️ endsBeforeRetirement is on expenses ONLY, never on incomeSources (Story 65.2)', () => {
+    // `updateEntity` spreads `operation.data` straight into `.set()` with no
+    // column whitelist, so the payload arms are split by entity. This pins the
+    // asymmetry the split defends: if `incomeSources` ever gains a same-named
+    // column, the split in `syncBridge.ts` is no longer merely tidy and its
+    // comment needs revisiting.
+    expect('endsBeforeRetirement' in incomeSources).toBe(false)
+  })
+
   it('categoryId is NULLABLE on both cashflow tables so uncategorized stays valid', () => {
     // This is the whole reason every pre-existing row survives the migration and
     // no form gains a required field. If either of these ever becomes notNull,

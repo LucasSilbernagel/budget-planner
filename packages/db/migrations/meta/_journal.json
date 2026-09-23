@@ -134,6 +134,13 @@
       "when": 1789654227789,
       "tag": "0018_panoramic_gunslinger",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790195243415,
+      "tag": "0019_natural_darkstar",
+      "breakpoints": true
     }
   ]
 }

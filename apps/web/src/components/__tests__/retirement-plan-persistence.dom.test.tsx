@@ -261,8 +261,13 @@ describe('the derived figures still derive (AC-8)', () => {
     })
 
     const parsed = JSON.parse(localStorage.getItem(RETIREMENT_PLANNER_STORAGE_KEY) as string)
+    // Story 65.2: `adoptedMonthlyCents` joins the persisted plan. This list is a
+    // TRIPWIRE, not bookkeeping — it fired when the field was added, which is the
+    // whole point: a new persisted key is a decision, and the derived figures
+    // below must stay OUT (they track other stores and would restore stale money).
     expect(Object.keys(parsed.state.plan).sort()).toEqual(
       [
+        'adoptedMonthlyCents',
         'annualReturnInput',
         'currentAgeInput',
         'desiredIncomeInput',

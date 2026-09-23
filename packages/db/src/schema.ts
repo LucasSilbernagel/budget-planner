@@ -245,6 +245,20 @@ export const expenses = pgTable(
     frequency: frequencyEnum('frequency').notNull(),
     // User-defined category (Story 30.4a, FR54); see incomeSources note above.
     categoryId: uuid('categoryId').references(() => categories.id),
+    // Story 65.2 (FR101): the user's statement that this expense ENDS before they
+    // retire, so the retirement planner can suggest what the desired income
+    // actually needs to cover. Defaults false = today's behaviour, unchanged.
+    // ⚠️ Named for the RULE, not the case. A commute that ends, daycare that
+    // ends, tuition that ends and a mortgage that ends are the same question, and
+    // one control answers all four — `isDebtPayoff` would answer only one and
+    // quietly imply the others do not count. `contributionRecordedAsExpense`
+    // below is the standing monument to getting this backwards (see its note and
+    // `contribution-flag-naming.guard.test.ts`): that name is now permanent
+    // because renaming it would be a six-gate sync change for no visible gain.
+    // ⚠️ This is a USER-SUPPLIED prediction, not an inference. Nothing the app
+    // can compute distinguishes a mortgage that ends in 2041 from rent that never
+    // does — the app has no amortization and `calculateDebtMetrics` is dormant.
+    endsBeforeRetirement: boolean('endsBeforeRetirement').notNull().default(false),
     // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
     sortOrder: integer('sortOrder').notNull().default(0),
     // Soft-delete tombstone (Story 4-18): see incomeSources note above.

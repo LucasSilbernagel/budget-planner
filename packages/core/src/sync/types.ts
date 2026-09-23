@@ -36,6 +36,14 @@ export const expenseSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+  // Story 65.2 (FR101): the user's statement that this expense ends before they
+  // retire. Defaults false = today's behaviour. ⚠️ SIX-GATED: mirrored in
+  // `syncOperationDataSchema` below (the gate that actually RUNS — this one is
+  // unexercised, see the note on `categorySchema`), in the server gate
+  // (apps/web/src/server/api/sync.ts), in the syncBridge payload whitelist, in
+  // the db column and its migration, and in the client types — or the field
+  // silently does not round-trip.
+  endsBeforeRetirement: z.boolean().default(false),
   userId: z.string().uuid(),
 })
 
@@ -118,6 +126,7 @@ export const userProfileSchema = z.object({
  * - targetAmount: > 0 for a goal, or null for a goal-less savings account (Story 16-1)
  * - monthlyContribution: must be >= 0
  * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
+ * - endsBeforeRetirement: boolean (Story 65.2); absent leaves it unchanged
  * - currentBalance: may be negative (debt balances) but must fit in int32
  */
 export const syncOperationDataSchema = z.object({
@@ -133,6 +142,17 @@ export const syncOperationDataSchema = z.object({
   // Story 45.1 (FR72): see balanceTrackingSchema above. Optional here because an
   // operation payload is partial; absent leaves the server value untouched.
   contributionRecordedAsExpense: z.boolean().optional(),
+  // Story 65.2 (FR101): the expense row's "this ends before I retire" flag.
+  //
+  // ⚠️⚠️ THIS GATE STRIPS UNDECLARED KEYS, and it is the one the story's epic
+  // left out of its five-gate list. `validateOperationData` runs it
+  // (synchronization.ts:116-117) BEFORE `queue.add()`, so omitting this line
+  // drops the flag from the payload before the operation is ever queued — with
+  // no error, no rejection, and a "successful" sync that silently discards the
+  // user's tick. Same trap `sortOrder` and `icon` each document below, hit for
+  // the third time. `.optional()` because an operation payload is partial; the
+  // bridge stamps an explicit `false` so an untick always lands.
+  endsBeforeRetirement: z.boolean().optional(),
   // Story 26.1: savings monthly allocation (nullable cents, >= 0) + mode. Bounds
   // mirror the DB (allocationMode NOT NULL default 'automatic'; monthlyAllocation
   // nullable). Absent from a payload is fine — both are optional here.

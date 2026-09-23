@@ -80,6 +80,72 @@ function toBaseVersion(updatedAt: unknown): number | undefined {
 }
 
 /**
+ * The columns shared by the two cash-flow entities (`incomeSource`, `expense`).
+ *
+ * ⚠️ Extracted by story 65.2 so the two cases could be SPLIT without duplicating
+ * the rationale below. They were one shared arm until this field arrived:
+ * `expenses` gained an `endsBeforeRetirement` column and `incomeSources` did not,
+ * and `updateEntity` spreads `operation.data` straight into `.set()` with no
+ * column whitelist.
+ *
+ * ⚠️ MEASURED, not assumed (story 65.2, decision D4): drizzle SILENTLY DROPS a
+ * key that is not a column — probed against `incomeSources`, the generated SQL
+ * was `update "incomeSources" set "name" = $1 …` with the unknown key absent, no
+ * throw. So a shared arm would NOT have broken income sync today. The split is
+ * for the latent trap, not a live one: a payload that declares a field the
+ * entity does not have is a key the server's `incomeSourceSchema` never declares,
+ * so any future `.strict()` there would break ALL income sync for a field that
+ * never meant anything on that entity.
+ */
+function cashflowPayload(entity: Record<string, unknown>, userId: string): Record<string, unknown> {
+  return {
+    name: entity['name'],
+    amount: entity['amount'],
+    frequency: entity['frequency'],
+    // ⚠️⚠️ DELIBERATELY PINNED TO NULL UNTIL THE SYNC-CREATE REPAIR LANDS
+    // (code review 30.4b, Lucas's call). REVERT THIS TO
+    // `entity['categoryId'] ?? null` in the same pass that repairs category
+    // sync — `category-sync-payload.test.ts` fails the moment you do, which
+    // is how the revert stays discoverable.
+    //
+    // Why: `categories.id` is a REAL foreign key on both cashflow tables
+    // (schema.ts), but category rows cannot reach the server at all (the
+    // server strips `profileId` on create, and the missing client `id`
+    // escalates to a permanent 23503 — see deferred-work.md). So forwarding
+    // a real category uuid points the FK at a row that cannot exist. The
+    // server's `updateEntity` does `.set({...data})` without filtering, so
+    // the op fails 23503 — taking the name/amount edit bundled with it —
+    // and because the failure is not marked `retryable: false`, the client
+    // burns its retry budget, pins status FAILED and OPENS THE CIRCUIT
+    // BREAKER, suppressing sync for EVERY OTHER ENTITY. 30.4a added the
+    // column; 30.4b's picker is what first makes a non-null value reachable.
+    //
+    // Explicit `null` rather than an omitted key: `updateEntity` is a
+    // partial `.set()`, so omitting would leave any prior server value in
+    // place, and null is always a valid FK. Category assignments therefore
+    // stay LOCAL-ONLY for now — which is exactly the status quo, since
+    // categories never reached the server in the first place.
+    categoryId: null,
+    // Story 34.1a (FR60): the row's explicit display position. Emitted
+    // UNCONDITIONALLY — never behind an `if` — because `updateEntity` does a
+    // PARTIAL `.set()`, so an omitted key silently leaves the previous server
+    // value in place and the reorder never lands. Note this function returns
+    // `Record<string, unknown>`, so a forgotten key is NOT a type error: gate 2
+    // is pinned by tests.
+    //
+    // ⚠️ PRECISION, corrected by code review 34.1a: "always emitted" describes
+    // this CODE, not the wire. `sortOrder` is optional on the client types, and
+    // `JSON.stringify` drops an `undefined`-valued key — so a row that somehow
+    // reached here unpositioned would still serialize WITHOUT the key, hitting
+    // exactly the partial-`.set()` hazard above. That is now prevented upstream
+    // rather than here: `stampMissingSortOrder` gives every pulled row a
+    // position on arrival, and the persist migrations backfill the rest.
+    sortOrder: entity['sortOrder'],
+    userId,
+  }
+}
+
+/**
  * Build the server-shaped operation payload for an entity type. The local store
  * item carries a free-tier `userId` (often `0`); the payload MUST carry the
  * authenticated session uuid instead, which the server also re-verifies against
@@ -95,51 +161,34 @@ export function toServerPayload(
   const entity = entityIn as Record<string, unknown>
   switch (entityType) {
     case 'incomeSource':
+      return cashflowPayload(entity, userId)
     case 'expense':
       return {
-        name: entity['name'],
-        amount: entity['amount'],
-        frequency: entity['frequency'],
-        // ⚠️⚠️ DELIBERATELY PINNED TO NULL UNTIL THE SYNC-CREATE REPAIR LANDS
-        // (code review 30.4b, Lucas's call). REVERT THIS TO
-        // `entity['categoryId'] ?? null` in the same pass that repairs category
-        // sync — `category-sync-payload.test.ts` fails the moment you do, which
-        // is how the revert stays discoverable.
+        ...cashflowPayload(entity, userId),
+        // Story 65.2 (FR101): the user's "this expense ends before I retire"
+        // flag. Emitted UNCONDITIONALLY — never behind an `if` — and coerced
+        // to a real boolean for the reason `contributionRecordedAsExpense`
+        // records below: `JSON.stringify` DROPS an `undefined`-valued key and
+        // `updateEntity` does a PARTIAL `.set()`, so an unstamped row would
+        // leave the previous server value in place. The user unticks the box,
+        // the local figure corrects, and every other device goes on excluding
+        // the expense from their retirement target. Forever, with no error.
         //
-        // Why: `categories.id` is a REAL foreign key on both cashflow tables
-        // (schema.ts), but category rows cannot reach the server at all (the
-        // server strips `profileId` on create, and the missing client `id`
-        // escalates to a permanent 23503 — see deferred-work.md). So forwarding
-        // a real category uuid points the FK at a row that cannot exist. The
-        // server's `updateEntity` does `.set({...data})` without filtering, so
-        // the op fails 23503 — taking the name/amount edit bundled with it —
-        // and because the failure is not marked `retryable: false`, the client
-        // burns its retry budget, pins status FAILED and OPENS THE CIRCUIT
-        // BREAKER, suppressing sync for EVERY OTHER ENTITY. 30.4a added the
-        // column; 30.4b's picker is what first makes a non-null value reachable.
+        // ⚠️ Rows persisted before this story carry no key at all (the client
+        // type declares it optional and no persist migration backfills it), so
+        // the coercion is the ordinary path here, not a defensive edge.
         //
-        // Explicit `null` rather than an omitted key: `updateEntity` is a
-        // partial `.set()`, so omitting would leave any prior server value in
-        // place, and null is always a valid FK. Category assignments therefore
-        // stay LOCAL-ONLY for now — which is exactly the status quo, since
-        // categories never reached the server in the first place.
-        categoryId: null,
-        // Story 34.1a (FR60): the row's explicit display position. Emitted
-        // UNCONDITIONALLY — never behind an `if` — because `updateEntity` does a
-        // PARTIAL `.set()`, so an omitted key silently leaves the previous server
-        // value in place and the reorder never lands. Note this function returns
-        // `Record<string, unknown>`, so a forgotten key is NOT a type error: gate 2
-        // is pinned by tests.
-        //
-        // ⚠️ PRECISION, corrected by code review 34.1a: "always emitted" describes
-        // this CODE, not the wire. `sortOrder` is optional on the client types, and
-        // `JSON.stringify` drops an `undefined`-valued key — so a row that somehow
-        // reached here unpositioned would still serialize WITHOUT the key, hitting
-        // exactly the partial-`.set()` hazard above. That is now prevented upstream
-        // rather than here: `stampMissingSortOrder` gives every pulled row a
-        // position on arrival, and the persist migrations backfill the rest.
-        sortOrder: entity['sortOrder'],
-        userId,
+        // ⚠️⚠️ `=== true`, NOT `?? false` — corrected by code review 65.2. Every
+        // READ path in the app insists on `=== true` because localStorage is
+        // user-editable and a persisted `"false"` STRING is truthy. `?? false`
+        // only coerces null/undefined, so it forwarded such a string UNCHANGED —
+        // and the client queue gate (`syncOperationDataSchema`, `z.boolean()`)
+        // then rejected the whole operation inside `validateOperationData`,
+        // BEFORE `queue.add`. The row showed as unmarked in the UI while every
+        // edit to it — including a rename or a reorder that merely spreads the
+        // bad value through — silently stopped syncing. `=== true` makes the
+        // write path agree with every read path.
+        endsBeforeRetirement: entity['endsBeforeRetirement'] === true,
       }
     case 'savingsGoal':
       return {

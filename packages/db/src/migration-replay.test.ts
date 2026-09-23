@@ -297,13 +297,14 @@ describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
-    // Story 54.2 (FR78): 18 -> 19 journal entries and 145 -> 146 statements, for
-    // migration 0018's single `ALTER TABLE "userProfiles" ADD COLUMN "icon"`.
+    // Story 65.2 (FR101): 19 -> 20 journal entries and 146 -> 147 statements, for
+    // migration 0019's single `ALTER TABLE "expenses" ADD COLUMN
+    // "endsBeforeRetirement"`. (Story 54.2 before it: 18 -> 19 and 145 -> 146.)
     // Both numbers are MEASURED from the run, never predicted — and they are
     // tripwires, not bookkeeping: they are what makes a migration that was
     // generated but never committed, or a hand-edited chain, fail loudly here.
-    expect(journal.entries.length).toBe(19)
-    expect(appliedStatements).toBe(146)
+    expect(journal.entries.length).toBe(20)
+    expect(appliedStatements).toBe(147)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {

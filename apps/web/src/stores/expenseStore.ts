@@ -40,6 +40,24 @@ interface ClientExpense {
   // forgot to stamp it is therefore NOT a compile error — the store tests pin
   // insert-at-bottom for each of the four lists individually instead.
   sortOrder?: number
+  /**
+   * Story 65.2 (FR101): the user's statement that this expense ENDS before they
+   * retire, so `/retirement` can suggest what the desired income actually needs
+   * to cover. Named for the RULE, not the case — daycare, tuition, a commute and
+   * a mortgage are all the same question.
+   *
+   * ⚠️ OPTIONAL, and deliberately so: rows persisted before this story carry no
+   * key at all, and no persist `migrate` step backfills one (decision D3). A
+   * bump would have to be idempotent because `migrate` runs on any version
+   * MISMATCH including a DOWNGRADE (see the persist note below), and there is
+   * nothing to gain — every read treats the flag as `=== true`, so an absent key
+   * is correctly "not marked". Mirrors how `contributionRecordedAsExpense` is
+   * read at `BalancePage.tsx:373` and `SavingsPage.tsx:141`.
+   *
+   * ⚠️ Never read this as truthy. `=== true` is the guard: localStorage is
+   * user-editable and a persisted `"false"` string is truthy.
+   */
+  endsBeforeRetirement?: boolean
   createdAt: string // ISO string for localStorage serialization
   updatedAt: string // ISO string for localStorage serialization
 }
@@ -50,6 +68,15 @@ interface ClientNewExpense {
   amount: number
   frequency: Frequency
   categoryId?: string | null
+  /**
+   * Story 65.2 (FR101). On the INPUT type as well as the row type, unlike
+   * `profileId` — which is deliberately absent here because "an edit form must
+   * never re-home a row". That reasoning does not apply to this field: changing
+   * it is exactly what the edit form exists to do, and a field absent from this
+   * type cannot be sent by `handleSubmit` at all, so the box could be unticked
+   * on screen and never cleared on the row.
+   */
+  endsBeforeRetirement?: boolean
 }
 
 // Define the type for our store state
@@ -74,6 +101,17 @@ const toClientExpense = (newExpense: ClientNewExpense): ClientExpense => ({
   // Explicitly null rather than undefined so the persisted shape matches the
   // v2 migration's backfill and the sync payload never carries `undefined`.
   categoryId: newExpense.categoryId ?? null,
+  // Story 65.2 (FR101): stamp an explicit boolean for the same reason
+  // `categoryId` is stamped — a newly created row should carry a real value
+  // rather than an absent key.
+  //
+  // ⚠️ CORRECTED in the second review round: this used to add "so the persisted
+  // shape is uniform and the sync payload never has to coerce", which its own next
+  // sentence contradicted. The shape is NOT uniform (pre-65.2 rows keep their
+  // absent key and no migration backfills one) and the bridge coerces on every
+  // push regardless. Stamping here narrows how often that matters; it does not
+  // remove the need for it.
+  endsBeforeRetirement: newExpense.endsBeforeRetirement ?? false,
   userId: newExpense.userId ?? 0, // Default to 0 for free tier (no auth)
   id: generateUUID(),
   createdAt: new Date().toISOString(),

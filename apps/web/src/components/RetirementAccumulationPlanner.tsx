@@ -19,6 +19,7 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import React, { useEffect, useMemo } from 'react'
+import { summarizeEndingExpenses } from '../lib/retirement-ending-expenses'
 import { parseAge, parseCurrencyToCents, parsePercentageToDecimal } from '../lib/retirement-parsers'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { useBalanceEntries, useTotalInvestmentBalance } from '../stores/balanceStore'
@@ -28,6 +29,7 @@ import { useIncomeSources } from '../stores/incomeStore'
 import {
   useMarkDesiredIncomeAuthored,
   useRetirementPlan,
+  useSetAdoptedMonthlyCents,
   useSetAnnualReturnInput,
   useSetCurrentAgeInput,
   useSetDesiredIncomeForLocale,
@@ -299,9 +301,16 @@ function chartHorizonYears(
  * already holds both, so it computes them instead. ⚠️ Since story 47.2 (FR74)
  * BOTH come from the investment rows on the Balance Tracking page: the accounts'
  * balance total, and the frequency-normalized total of their monthly
- * contributions. Income and expenses no longer reach this component's figures at
- * all — they survive only as the seed for the desired-income prefill. Four
- * editable fields remain.
+ * contributions. Income and expenses no longer reach this component's SOLVED
+ * figures at all.
+ *
+ * ⚠️ UPDATED BY STORY 65.2 (FR101). Expenses now feed a SECOND derived figure
+ * beside the desired-income field: the frequency-normalized monthly total of the
+ * rows the user has ticked as ending before they retire, offered as a one-tap
+ * suggestion. Both expense-derived figures — that suggestion and the older
+ * desired-income seed — live strictly in the PREFILL/SUGGESTION lane. Neither
+ * reaches the solver's inputs, and 47.2's decoupling of the SAVINGS figure from
+ * income and expenses is untouched. Four editable fields remain.
  *
  * Because the user can no longer correct either figure, two things follow that
  * would otherwise be optional. Both are floored at zero AT THE BINDING BOUNDARY,
@@ -634,6 +643,17 @@ function RetirementAccumulationPlannerInner() {
     }
   }, [incomeSources, expenses])
 
+  // Expenses the user has ticked as ending before they retire (story 65.2,
+  // FR101). Reads the PROFILE-SCOPED `expenses` above, never the raw store array
+  // — a derivation over the raw array puts another profile's money on screen,
+  // which is the defect story 54.4 closed.
+  //
+  // ⚠️ This is a SUGGESTION for a field the user authors. It is never an input to
+  // the solver, and it must never reach the nest-egg base (:334-350, audited and
+  // assets-only; `deferred-work.md:1000` records that folding new rows into that
+  // base revives a compounding question with no tripwire).
+  const endingExpenses = useMemo(() => summarizeEndingExpenses(expenses), [expenses])
+
   // ── The plan (story 44.1, FR71) ──────────────────────────────────────────
   // Held in a PERSISTED store rather than component state. `/retirement`
   // unmounts on every route change, so `useState` lost the whole plan on a nav
@@ -649,6 +669,7 @@ function RetirementAccumulationPlannerInner() {
     lifeExpectancyInput,
     desiredIncomeInput,
     desiredIncomeTouched,
+    adoptedMonthlyCents,
     desiredIncomeLocale,
     incomeBasis,
     annualReturnInput,
@@ -661,6 +682,14 @@ function RetirementAccumulationPlannerInner() {
   const setDesiredIncomeInput = useSetDesiredIncomeInput()
   const markDesiredIncomeAuthored = useMarkDesiredIncomeAuthored()
   const setDesiredIncomeForLocale = useSetDesiredIncomeForLocale()
+  /**
+   * ⚠️ PERSISTED, not component state — corrected in the second review round.
+   * Held in `useState` this closed the 12x basis defect only while `/retirement`
+   * stayed MOUNTED, and it unmounts on every route change, so one navigation
+   * brought the defect straight back. All three review layers found that
+   * independently and one measured it. See the store field's docblock.
+   */
+  const setAdoptedMonthlyCents = useSetAdoptedMonthlyCents()
   const setIncomeBasis = useSetIncomeBasis()
   const setAnnualReturnInput = useSetAnnualReturnInput()
   const setPostRetirementReturn = useSetPostRetirementReturn()
@@ -744,6 +773,30 @@ function RetirementAccumulationPlannerInner() {
     desiredIncomeTouched,
     setDesiredIncomeForLocale,
   ])
+
+  // Keep an ADOPTED figure expressed in whichever basis the field is showing
+  // (code review 65.2). Mirrors the seed effect above, but keyed on the adopted
+  // monthly figure rather than on `desiredIncomeTouched` — an adopted value is
+  // authored, so the seed effect deliberately will not touch it.
+  //
+  // ⚠️ Cleared the moment the user types (`onUserEdit` below), because from then
+  // on the number is theirs and re-expressing it would overwrite their edit.
+  useEffect(() => {
+    // ⚠️ `!desiredIncomeTouched` is a guard, not belt-and-braces: `resetPlan()`
+    // clears `desiredIncomeTouched` without clearing this field, and the second
+    // review round MEASURED both effects firing in one commit afterwards, with
+    // this one winning and leaving a value the seed would later overwrite. Not
+    // reachable from the shipped router (only Settings calls it, and the planner
+    // is unmounted then), but the store API allows it.
+    if (adoptedMonthlyCents === null || !desiredIncomeTouched) {
+      return
+    }
+    const next =
+      incomeBasis === 'annual'
+        ? toAnnualIncomeCents(adoptedMonthlyCents, 'monthly')
+        : adoptedMonthlyCents
+    setDesiredIncomeForLocale(formatForInputDisplay(next, locale), locale)
+  }, [adoptedMonthlyCents, desiredIncomeTouched, incomeBasis, locale, setDesiredIncomeForLocale])
 
   // ⚠️ A PERSISTED MONEY STRING MUST BE RE-EXPRESSED WHEN THE LOCALE CHANGES, OR
   // THE PLAN'S CENTRAL FIGURE SILENTLY RESCALES (story 44.1 code review).
@@ -889,6 +942,49 @@ function RetirementAccumulationPlannerInner() {
   }, [parsed])
 
   const formatAmount = (cents: number): string => formatCurrency(cents, { mode, currency, locale })
+
+  /**
+   * Re-express a MONTHLY cents figure in whichever basis the field is showing.
+   *
+   * ⚠️ Reuses {@link toAnnualIncomeCents} rather than writing a third conversion
+   * — it is the existing inverse of core's monthly conversion and it re-checks
+   * the safe-integer bound after the ×12, which a bare multiply would not. The
+   * helper deliberately returns MONTHLY cents (the repo's canonical unit) and
+   * leaves the basis question here, where `incomeBasis` lives.
+   */
+  const inBasisCents = (monthlyCents: number): number =>
+    incomeBasis === 'annual' ? toAnnualIncomeCents(monthlyCents, 'monthly') : monthlyCents
+
+  /** The period noun that goes with a figure stated in the current basis. */
+  const basisNoun = incomeBasis === 'annual' ? 'a year' : 'a month'
+
+  /**
+   * Adopt the suggested figure as the desired retirement income.
+   *
+   * ⚠️⚠️ BOTH halves are required. Writing the value without
+   * `markDesiredIncomeAuthored` leaves `desiredIncomeTouched` false, so the
+   * income-seed effect above re-fires on the next hydration — when
+   * `prefillDesiredIncomeCents` goes null -> real — and silently replaces the
+   * number the user just chose. That is precisely the failure story 44.1 added
+   * the flag for, and it would be invisible: every other restored field checks
+   * out, so the plan looks like it persisted while this one field quietly resets.
+   *
+   * ⚠️ SUGGEST, NEVER OVERWRITE. Nothing calls this except the user's click. An
+   * effect that wrote the field when a row was ticked would contradict
+   * `desiredIncomeTouched`'s established rule about who owns this value, and
+   * would make one checkbox produce different outcomes for two users with
+   * nothing on screen to explain why (UX evaluation 2026-09-22, §b).
+   */
+  const adoptEndingExpensesFigure = (remainingMonthlyCents: number): void => {
+    setDesiredIncomeForLocale(
+      formatForInputDisplay(inBasisCents(remainingMonthlyCents), locale),
+      locale
+    )
+    markDesiredIncomeAuthored(locale)
+    // Remember it in MONTHLY cents so the effect below can re-express it when the
+    // basis changes. See the field's docblock for the defect this closes.
+    setAdoptedMonthlyCents(remainingMonthlyCents)
+  }
 
   // One focus + tap-target convention for every control on the page (the chart's
   // old controls used `focus:outline-none focus:ring-2`, the planner's used
@@ -1082,7 +1178,11 @@ function RetirementAccumulationPlannerInner() {
           Two values the app already holds, shown rather than asked for. They sit
           above the input set because they are context for the plan, not part of
           filling it in. */}
-      <div>
+      {/* ⚠️ `data-testid` added by code review 65.2 so the AC-17 boundary test can
+          compare THESE figures across the marked-expense flag, rather than the
+          whole page (which necessarily differs, because the suggestion appears in
+          it). Epic 65 forbids any story in it from reaching the nest-egg base. */}
+      <div data-testid="retirement-savings-position">
         <h3 className="text-lg font-semibold text-subheading mb-4">Your Savings Position</h3>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {derivedField({
@@ -1166,22 +1266,82 @@ function RetirementAccumulationPlannerInner() {
             note: "Don't include expenses that will no longer be relevant in retirement.",
             value: desiredIncomeInput,
             onChange: setDesiredIncomeInput,
-            onUserEdit: () => markDesiredIncomeAuthored(locale),
+            onUserEdit: () => {
+              markDesiredIncomeAuthored(locale)
+              // The number is the user's from here on; stop re-expressing the
+              // adopted figure over the top of their edit (code review 65.2).
+              setAdoptedMonthlyCents(null)
+            },
             children: (
-              <div className="mt-2">
-                <label htmlFor="incomeBasis" className="block text-sm font-medium text-label mb-1">
-                  Income period
-                </label>
-                <select
-                  id="incomeBasis"
-                  value={incomeBasis}
-                  onChange={(e) => setIncomeBasis(e.target.value as IncomeBasis)}
-                  className={`w-full px-3 py-2 ${controlChrome}`}
-                >
-                  <option value="annual">Annual</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-              </div>
+              <>
+                <div className="mt-2">
+                  <label
+                    htmlFor="incomeBasis"
+                    className="block text-sm font-medium text-label mb-1"
+                  >
+                    Income period
+                  </label>
+                  <select
+                    id="incomeBasis"
+                    value={incomeBasis}
+                    onChange={(e) => setIncomeBasis(e.target.value as IncomeBasis)}
+                    className={`w-full px-3 py-2 ${controlChrome}`}
+                  >
+                    <option value="annual">Annual</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+
+                {/* Story 65.2 (FR101): what the user has said will not follow
+                    them into retirement.
+
+                    ⚠️ Rendered HERE, inside the field's own children, and that
+                    placement is the point. The UX evaluation's finding (b)
+                    against the original proposal was that the control and its
+                    effect were on different pages with nothing narrating the
+                    connection — so the figure belongs beside the number it is
+                    offering to change, not in a panel elsewhere.
+
+                    ⚠️ Nothing below writes the field. The button is the only
+                    path, and it is the user's click. */}
+                {endingExpenses.state !== 'none' && (
+                  <p
+                    className="mt-2 text-sm text-muted"
+                    data-testid="desired-income-ending-expenses"
+                  >
+                    {endingExpenses.state === 'unreadable' ? (
+                      // Mirrors the nest-egg refusal at :391-401 — REFUSE, do not
+                      // render a confident wrong number. A suggestion that is
+                      // silently missing money is worse than no suggestion.
+                      //
+                      // ⚠️ Wording widened in the second review round: this
+                      // refusal ALSO covers an out-of-range figure, where the
+                      // rows were read perfectly well and simply do not total to
+                      // something this field can express. "couldn't read" was
+                      // inaccurate for that arm. One state, honest for both.
+                      "We can't total your expenses, so we can't suggest a figure."
+                    ) : (
+                      <>
+                        Your expenses today are{' '}
+                        {formatAmount(inBasisCents(endingExpenses.totalMonthlyCents))} {basisNoun}.
+                        You've marked{' '}
+                        {formatAmount(inBasisCents(endingExpenses.markedMonthlyCents))} {basisNoun}{' '}
+                        as ending before retirement, leaving{' '}
+                        {formatAmount(inBasisCents(endingExpenses.remainingMonthlyCents))}.{' '}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            adoptEndingExpensesFigure(endingExpenses.remainingMonthlyCents)
+                          }
+                          className="underline font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          Use this figure
+                        </button>
+                      </>
+                    )}
+                  </p>
+                )}
+              </>
             ),
           })}
         </div>

@@ -119,6 +119,29 @@ export interface RetirementPlan {
    * field is an edit and not an un-edit.
    */
   postRetirementTouched: boolean
+  /**
+   * The MONTHLY cents the user last adopted from the "expenses ending before
+   * retirement" suggestion, or `null` if they never did (or have since typed).
+   *
+   * ⚠️⚠️ PERSISTED, and that is the whole point (story 65.2, second review round).
+   * Adopting must call `markDesiredIncomeAuthored`, or the income seed reclaims
+   * the number — but `desiredIncomeTouched` is ALSO what stops the seed effect
+   * re-expressing the field when the basis changes, so an adopted value was
+   * stranded in the basis it was adopted in: adopt 28,800.00 under Annual, switch
+   * to Monthly, and the field still read 28,800.00 while the sentence beneath it
+   * said 2,400.00 a month — a 12x overstatement of the plan's central figure.
+   *
+   * The first fix held this in COMPONENT state, which closed the defect only
+   * while `/retirement` stayed mounted — and it unmounts on every route change,
+   * so one navigation brought the 12x error straight back. All three review
+   * layers reached that independently and one MEASURED it. Persisting it beside
+   * the value it describes is what actually closes it.
+   *
+   * ⚠️ No version bump: `coerceRetirementPlan` rebuilds every field with a
+   * default, so a pre-65.2 blob simply yields `null` — which is exactly "never
+   * adopted". Same reasoning as the expense store's D3.
+   */
+  adoptedMonthlyCents: number | null
   /** Which retirement target model the plan solves for. */
   model: RetirementModel
 }
@@ -145,6 +168,7 @@ export const RETIREMENT_PLAN_DEFAULTS: RetirementPlan = {
   lifeExpectancyInput: '90',
   desiredIncomeInput: '',
   desiredIncomeTouched: false,
+  adoptedMonthlyCents: null,
   desiredIncomeLocale: '',
   incomeBasis: 'annual',
   annualReturnInput: '6.0',
@@ -177,6 +201,20 @@ function coerceString(value: unknown, fallback: string): string {
 
 function coerceBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
+}
+
+/**
+ * A persisted adopted figure, or `null`.
+ *
+ * Rejects anything that is not a non-negative safe integer whose ×12 is also a
+ * safe integer — the same bound `summarizeEndingExpenses` applies, because this
+ * value reaches the same `toAnnualIncomeCents` call on the render path.
+ */
+function coerceAdoptedCents(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    return null
+  }
+  return Number.isSafeInteger(value * 12) ? value : null
 }
 
 function coerceMember<T extends string>(value: unknown, valid: readonly T[], fallback: T): T {
@@ -218,6 +256,11 @@ export function coerceRetirementPlan(value: unknown): RetirementPlan {
       readField(record, 'desiredIncomeLocale'),
       d.desiredIncomeLocale
     ),
+    // ⚠️ Safe-integer, not merely finite: this value is multiplied by 12 on the
+    // render path (`toAnnualIncomeCents`, which THROWS outside the safe range),
+    // and localStorage is user-editable. A corrupt blob must degrade to "never
+    // adopted", not to a crash on the retirement route.
+    adoptedMonthlyCents: coerceAdoptedCents(readField(record, 'adoptedMonthlyCents')),
     incomeBasis: coerceMember(readField(record, 'incomeBasis'), VALID_INCOME_BASES, d.incomeBasis),
     annualReturnInput: coerceString(readField(record, 'annualReturnInput'), d.annualReturnInput),
     // ⚠️ Untouched means MIRRORING, and while mirroring the component reads the
@@ -264,6 +307,13 @@ interface RetirementPlannerStoreState {
    * bug this field exists to prevent.
    */
   setDesiredIncomeForLocale: (value: string, locale: string) => void
+  /**
+   * Record (or clear, with `null`) the adopted monthly figure.
+   *
+   * Cleared on the first accepted keystroke: from then on the number is the
+   * user's and re-expressing it would overwrite their edit.
+   */
+  setAdoptedMonthlyCents: (cents: number | null) => void
   setIncomeBasis: (basis: IncomeBasis) => void
   setAnnualReturnInput: StringSetter
   /**
@@ -329,6 +379,14 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
         set((current) => ({
           plan: { ...current.plan, desiredIncomeInput: value, desiredIncomeLocale: locale },
         }))
+      },
+
+      setAdoptedMonthlyCents: (cents) => {
+        set((current) =>
+          current.plan.adoptedMonthlyCents === cents
+            ? current
+            : { plan: { ...current.plan, adoptedMonthlyCents: cents } }
+        )
       },
 
       setIncomeBasis: (basis) => {
@@ -412,6 +470,9 @@ export const useMarkDesiredIncomeAuthored = () =>
 
 export const useSetDesiredIncomeForLocale = () =>
   useRetirementPlannerStore((state) => state.setDesiredIncomeForLocale)
+
+export const useSetAdoptedMonthlyCents = () =>
+  useRetirementPlannerStore((state) => state.setAdoptedMonthlyCents)
 
 export const useSetIncomeBasis = () => useRetirementPlannerStore((state) => state.setIncomeBasis)
 

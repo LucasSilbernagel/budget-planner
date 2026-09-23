@@ -181,6 +181,26 @@ const expenseSchema = z.object({
   categoryId: z.string().uuid().nullable().optional(),
   // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
+  // Story 65.2 (FR101): the "this expense ends before I retire" flag.
+  //
+  // ⚠️ What this declaration buys is VALIDATION, not stripping — the same
+  // correction `sortOrder` records above. `syncOperationSchema` declares `data:
+  // z.record(z.unknown())` and invokes this schema inside a `superRefine`, which
+  // DISCARDS its callback's return value, so `operation.data` reaches
+  // `applyOperation` unstripped and this `.default(false)` never lands. Declaring
+  // it is what makes a non-boolean get rejected HERE rather than at the UPDATE.
+  // ⚠️ Deliberately NOT on `incomeSourceSchema`: `incomeSources` has no such
+  // column, and `updateEntity` spreads `operation.data` straight into `.set()`.
+  //
+  // ⚠️ `.default(false)` is KEPT rather than narrowed to `.optional()`, a call
+  // code review 65.2 raised: the default is provably inert here (the Gate 4 test
+  // pins that `superRefine` discards it), so `.optional()` would state the real
+  // contract more honestly. It stays for symmetry with
+  // `contributionRecordedAsExpense` below, which is the established precedent for
+  // a boolean in this file — a lone exception would read as an oversight. If the
+  // `superRefine` is ever fixed to use its parse result, EVERY default in this
+  // file starts landing on partial updates and they must be reviewed together.
+  endsBeforeRetirement: z.boolean().default(false),
   userId: z.string().uuid(),
 })
 

@@ -186,6 +186,9 @@ export function ExpensesPage() {
   // `null` is a first-class, always-valid value here (AC-1): leaving a row
   // uncategorized must stay possible, so this field is never `required`.
   const [categoryId, setCategoryId] = useState<string | null>(null)
+  // Story 65.2 (FR101). Unticked is a permanently valid state, so this joins
+  // neither `computeErrors` nor the `FieldName` union below.
+  const [endsBeforeRetirement, setEndsBeforeRetirement] = useState(false)
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -226,6 +229,7 @@ export function ExpensesPage() {
         setAmount('')
         setFrequency('monthly')
         setCategoryId(null)
+        setEndsBeforeRetirement(false)
       }
       // Editing: fields are set by openEditModal
     }
@@ -253,6 +257,7 @@ export function ExpensesPage() {
     amount: number
     frequency: Frequency
     categoryId?: string | null
+    endsBeforeRetirement?: boolean
   }) => {
     setEditingId(source.id)
     setName(source.name)
@@ -268,6 +273,18 @@ export function ExpensesPage() {
     // unconditionally — writes null back. Editing an amount would silently
     // destroy the row's category, with the picker showing no sign of it.
     setCategoryId(source.categoryId ?? null)
+    // ⚠️ Load-bearing for the SAME reason as `categoryId` directly above, and the
+    // higher-traffic case: `handleSubmit` sends this field unconditionally, so
+    // without seeding it here, editing only the AMOUNT of a marked expense would
+    // silently un-mark it. `=== true` rather than truthy: rows persisted before
+    // 65.2 have no key, and localStorage is user-editable.
+    //
+    // ⚠️ CORRECTED BY CODE REVIEW 65.2: an earlier version of this comment said
+    // "the only visible consequence is a number changing on a different page".
+    // That was false in the same commit that wrote it — the row badge below makes
+    // the loss visible HERE too. The warning stands; its stated blast radius did
+    // not, and understating a defect's visibility is how it gets deprioritised.
+    setEndsBeforeRetirement(source.endsBeforeRetirement === true)
     clearErrors()
     setIsModalOpen(true)
   }
@@ -280,6 +297,7 @@ export function ExpensesPage() {
     setAmount('')
     setFrequency('monthly')
     setCategoryId(null)
+    setEndsBeforeRetirement(false)
     clearErrors()
   }
 
@@ -311,6 +329,12 @@ export function ExpensesPage() {
         amount: parseFromInput(amount, locale),
         frequency,
         categoryId,
+        // Story 65.2 (FR101): sent UNCONDITIONALLY, like every other field here.
+        // An `if (endsBeforeRetirement)` would make the untick unreachable —
+        // `updateExpense` merges `{...previous, ...updates}`, so an omitted key
+        // leaves the old `true` in place and the box would re-tick itself on the
+        // next open. Same partial-write hazard the sync payload documents.
+        endsBeforeRetirement,
       }
 
       if (editingId !== null) {
@@ -498,6 +522,31 @@ export function ExpensesPage() {
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Name</FieldLabel>
                             <div className="text-sm font-medium text-heading">{expense.name}</div>
+                            {/* Story 65.2 (FR101): marked rows are distinguishable
+                                without opening the form.
+
+                                ⚠️ INSIDE the Name cell, NOT a new column, and that
+                                is a hard constraint rather than a preference:
+                                `category-assignment.test.tsx:615,636` pins the
+                                header array EXACTLY, inside a loop over both this
+                                page and IncomePage x four entitlement states, each
+                                followed by an `expectColumnParity` <th>/<td> count
+                                check. A sixth column breaks eight tests on a page
+                                this story does not otherwise touch — and the
+                                Category column is already premium-gated, so the
+                                count legitimately varies by tier.
+
+                                ⚠️ Carries TEXT, not colour alone (WCAG 1.4.1), and
+                                `=== true` rather than truthy because pre-65.2 rows
+                                have no key and localStorage is user-editable. */}
+                            {expense.endsBeforeRetirement === true && (
+                              <span
+                                className="mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                                data-testid="expense-row-ends-before-retirement"
+                              >
+                                Ends before retirement
+                              </span>
+                            )}
                           </td>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Amount</FieldLabel>
@@ -698,6 +747,49 @@ export function ExpensesPage() {
               onChange={setCategoryId}
               idPrefix="expense"
             />
+
+            {/* Story 65.2 (FR101). Markup follows the sibling boolean flag at
+                `BalancePage.tsx:1131-1157` — `flex items-start gap-2`, `mt-0.5`
+                on the box, help wired through `aria-describedby`.
+
+                ⚠️ The STORED name is `endsBeforeRetirement`, naming the RULE and
+                not the case, and the label asks the same general question. The
+                UX evaluation (2026-09-22) moved this control here from the Debt
+                row precisely because the general form is the valuable one: a
+                commute that ends, daycare that ends, tuition that ends and a
+                mortgage that ends are one question, and a debt-shaped control
+                would answer only one of them while quietly implying the other
+                three do not count. See `BalancePage.tsx:1117-1129` for what it
+                costs to get this name wrong.
+
+                ⚠️ The copy deliberately avoids "must". "Must pay off before
+                retirement" was the original proposal and was rejected (§c of the
+                evaluation): *must* is a commitment, which invites "am I on track
+                to?" — a question needing amortization this app does not have
+                (`calculateDebtMetrics` is dormant, `useDebtEntries` has zero
+                callers). What the planner needs is a prediction, so the copy
+                states one. */}
+            <div>
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="endsBeforeRetirement"
+                  checked={endsBeforeRetirement}
+                  onChange={(e) => setEndsBeforeRetirement(e.target.checked)}
+                  className="mt-0.5 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-green-500 w-4 h-4 text-green-600"
+                  aria-describedby="expense-ends-before-retirement-help"
+                  data-testid="expense-ends-before-retirement"
+                />
+                <label htmlFor="endsBeforeRetirement" className="font-medium text-label text-sm">
+                  This expense ends before I retire
+                </label>
+              </div>
+              <p id="expense-ends-before-retirement-help" className="mt-1 text-muted text-xs">
+                Tick this for a cost that will have stopped by the time you retire — a mortgage
+                you'll have paid off, tuition, daycare or a commute. The retirement planner uses it
+                to suggest what your income needs to cover.
+              </p>
+            </div>
 
             <div className="flex justify-end gap-3 pt-4">
               <button

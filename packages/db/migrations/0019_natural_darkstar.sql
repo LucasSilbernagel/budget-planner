@@ -1,0 +1,1 @@
+ALTER TABLE "expenses" ADD COLUMN "endsBeforeRetirement" boolean DEFAULT false NOT NULL;
