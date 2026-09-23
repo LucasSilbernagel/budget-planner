@@ -179,32 +179,75 @@ export const useProfileStore = create<ProfileState>()(
         }
       },
 
-      // Remove a profile
+      /**
+       * Remove a profile.
+       *
+       * ⚠️⚠️ THIS IS THE REAL DELETION PATH, not `server/functions/profiles.ts`.
+       * That module's `deleteProfile` has ZERO production callers (story 63.2
+       * measured it by grepping the IMPORT, not the identifier); a user's click
+       * travels `profile-list.tsx` -> `useProfileManager().deleteProfile` -> here
+       * -> `syncEntityDelete` -> the sync push, whose handler enforces no
+       * default- or last-profile guard at all. So the guards below are the ones
+       * that actually decide what a user can delete.
+       *
+       * ⚠️ Story 63.2 (FR97) lifted the DEFAULT guard and kept the LAST-profile
+       * guard. Deleting the `isDefault` profile now promotes a survivor in the
+       * same operation, because migration 0017's partial unique index
+       * (`(userId) WHERE isDefault AND NOT isDeleted`) permits zero defaults and
+       * every consumer resolving one does it as `find(p => p.isDefault) ?? [0]`
+       * — a fallback that yields the WRONG profile rather than an error.
+       *
+       * ⚠️ The refusal below is SILENT to the user: nothing renders
+       * `useProfileError` (zero consumers as of story 63.2). The UI's job is to
+       * not offer a deletion this will refuse.
+       */
       removeProfile: (profileId: string) => {
         // Decide up front whether this removal will actually happen, so we only
-        // queue a server tombstone for a real delete (the guards below reject
-        // removing the last or the default profile).
+        // queue a server tombstone for a real delete (the last-profile guard
+        // below still rejects some calls).
         const before = get()
         const target = before.profiles.find((p) => p.id === profileId)
-        const willRemove = before.profiles.length > 1 && target !== undefined && !target.isDefault
+        // ⚠️ The `!target.isDefault` clause that used to sit here is GONE (63.2).
+        // Leaving it while the `set()` below removed the row would delete the
+        // default LOCALLY while queueing no tombstone — the profile returns on
+        // the next pull, on every device, with the local list looking correct.
+        const willRemove = before.profiles.length > 1 && target !== undefined
+
+        // The survivor that inherits `isDefault`, computed ONCE so the store
+        // write and the queued update cannot disagree. It is the profile that is
+        // active AFTER the deletion: the current one if it survives, otherwise
+        // the first survivor — the same choice the `set()` below makes for
+        // `activeProfileId`.
+        //
+        // ⚠️ They agree on every reachable input but are NOT the same expression,
+        // and an earlier comment here overclaimed that (code review). If
+        // `activeProfileId` names no profile at all — a corrupt or stale
+        // persisted blob — `survivors.find` misses and the promotion falls back
+        // to `survivors[0]` while `activeProfileId` stays stale, so the promoted
+        // profile is not the active one. That is the pre-existing orphaned-id
+        // case (story 63.1 AC-7), not something this story introduces.
+        const survivors = before.profiles.filter((profile) => profile.id !== profileId)
+        const nextActiveId =
+          before.activeProfileId === profileId ? survivors[0]?.id : before.activeProfileId
+        const promoted =
+          willRemove && target?.isDefault
+            ? survivors.find((profile) => profile.id === nextActiveId) ?? survivors[0]
+            : undefined
+
         set((state) => {
-          // Prevent deletion of the last profile
+          // Prevent deletion of the last profile (UNCHANGED by 63.2)
           if (state.profiles.length <= 1) {
             return {
               error: 'Cannot delete the last profile. Create a new profile first.',
             }
           }
 
-          // Prevent deletion of the default profile
-          const profileToDelete = state.profiles.find((p) => p.id === profileId)
-          if (profileToDelete?.isDefault) {
-            return {
-              error: 'Cannot delete the default profile.',
-            }
-          }
-
-          // Remove the profile
-          const newProfiles = state.profiles.filter((profile) => profile.id !== profileId)
+          // Remove the profile, promoting the survivor when the default went.
+          const newProfiles = state.profiles
+            .filter((profile) => profile.id !== profileId)
+            .map((profile) =>
+              promoted && profile.id === promoted.id ? { ...profile, isDefault: true } : profile
+            )
 
           // If the deleted profile was active, switch to the first remaining profile
           let newActiveProfileId = state.activeProfileId
@@ -220,7 +263,29 @@ export const useProfileStore = create<ProfileState>()(
         })
         // Paid tier: queue a tombstone only if a real removal occurred.
         if (willRemove && target) {
+          // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT, not a preference. The index
+          // covers LIVE rows only, so promoting before the old default is
+          // tombstoned leaves two rows satisfying `isDefault AND NOT isDeleted`
+          // and the push fails on a unique violation. Tombstone, then promote —
+          // and the push applies a batch's operations in array order (the
+          // apply loop in `server/api/sync.ts:processBatchSync`), so queue
+          // order is apply order.
+          // ⚠️ Since the code review the server also REPAIRS the invariant
+          // after any batch touching `userProfile`, so a reordering that
+          // rejects the promotion degrades to "a default was chosen for
+          // you" rather than to an account with none.
           syncEntityDelete('userProfile', target)
+          if (promoted) {
+            // ⚠️ Queued, not merely written above. A `set()` marks the flag
+            // locally and tells the server nothing, leaving the account with
+            // ZERO defaults server-side — invisible until another device pulls.
+            //
+            // ⚠️ Typed as `ClientProfile`, not inlined: `syncEntityUpdate` takes
+            // `ClientEntity` (`{ id, updatedAt? }`), so an object literal at the
+            // call site trips TS's excess-property check on `isDefault`.
+            const promotedRow: ClientProfile = { ...promoted, isDefault: true }
+            syncEntityUpdate('userProfile', promotedRow, promoted)
+          }
         }
       },
 

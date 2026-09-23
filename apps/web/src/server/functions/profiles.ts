@@ -350,7 +350,32 @@ export async function updateProfile(
 }
 
 /**
- * Delete a profile
+ * Delete a profile.
+ *
+ * ⚠️⚠️ THIS FUNCTION HAS NO PRODUCTION CALLER, and that is not a claim about
+ * what "should" call it — story 63.2 measured it with an IMPORT grep
+ * (`grep -rn "functions/profiles'" apps/web/src`), which returns only
+ * `getProfiles` (`routes/forecasting.tsx`) and `createDefaultProfileForUser`
+ * (`routes/api/webhooks/paddle.ts`, `routes/api/sync/changes.ts`).
+ *
+ * ⚠️ That grep pattern is the RECORD of how the claim was checked, not a
+ * complete one: `functions/profiles'` cannot see a relative import such as
+ * `from './profiles'`, which is how the tests in this directory import it. To
+ * re-check, use `grep -rnE "from ['\"](\.\./|\./)+(server/functions/)?profiles"`
+ * as well. The conclusion is unchanged — production importers are the three
+ * above — but the method as written would miss a future sibling module. A user's
+ * deletion travels `components/profiles/profile-list.tsx` ->
+ * `stores/profileStore.ts:removeProfile` -> `syncEntityDelete` -> the sync push,
+ * which SOFT-deletes (`server/api/sync.ts:681-710`) and enforces neither the
+ * default nor the last-profile rule.
+ *
+ * ⚠️ It is kept, not deleted: it is an authorisation boundary with a live
+ * premium-gate test, and it is where a non-sync deletion path would land. A
+ * WRONG guard left in an unreached boundary is a bug the next caller inherits —
+ * which is why story 63.2 relaxed the default rule here as well as in the store,
+ * rather than leaving the two to disagree.
+ *
+ * ⚠️ Unlike the sync path this performs a HARD delete of the profile row.
  */
 export async function deleteProfile(request: Request, profileId: string): Promise<ApiResult<void>> {
   try {
@@ -399,13 +424,9 @@ export async function deleteProfile(request: Request, profileId: string): Promis
       }
     }
 
-    // Prevent deletion of default profile
-    if (existingProfile.isDefault) {
-      return {
-        success: false,
-        error: 'Cannot delete the default profile',
-      }
-    }
+    // ⚠️ Story 63.2 (FR97) REMOVED the default-profile refusal that stood here.
+    // The default is deletable whenever another live profile exists; a survivor
+    // is promoted below so the account is never left with zero defaults.
 
     // Check if this is the user's last profile. Exclude soft-deleted tombstones
     // (Story 4-18) so the limit/last-profile check counts only live profiles.
@@ -414,12 +435,26 @@ export async function deleteProfile(request: Request, profileId: string): Promis
       .from(userProfiles)
       .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
 
+    // ⚠️ UNCHANGED by story 63.2, deliberately. Relaxing the default rule does
+    // not relax this one: a user with no profile at all has nowhere to put data.
     if (profileCount.length <= 1) {
       return {
         success: false,
         error: 'Cannot delete the last profile. Create a new profile first.',
       }
     }
+
+    // ⚠️ The server has no notion of the client's ACTIVE profile, so it cannot
+    // make the store's choice and does not try: it promotes the oldest surviving
+    // profile. When the deletion arrives through the normal client path the
+    // store has already promoted the active one and queued that update, so this
+    // is the fallback for a caller with no such context.
+    //
+    // ⚠️ The successor is selected INSIDE the transaction below, not from the
+    // `profileCount` snapshot above (code review). Choosing it out here let a
+    // concurrent deletion of that same profile turn the promotion into an
+    // `UPDATE ... WHERE id = <gone>` that matches zero rows while the
+    // transaction still committed — leaving the account with no default at all.
 
     // ⚠️ THERE IS NO CASCADE. Every FK in this schema is `ON DELETE no action`
     // (correction by code review 30.4a — this comment previously claimed
@@ -441,6 +476,41 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     await db.transaction(async (tx) => {
       await tx.delete(categories).where(eq(categories.profileId, profileId))
       await tx.delete(userProfiles).where(eq(userProfiles.id, profileId))
+
+      // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT (story 63.2). Migration 0017's
+      // `userProfiles_one_default_per_user` is UNIQUE on (userId) WHERE
+      // isDefault AND NOT isDeleted, so the successor can only be flagged once
+      // the old default's row is gone. Promote before the delete and this
+      // transaction aborts on a unique violation.
+      if (existingProfile.isDefault) {
+        // Re-read inside the transaction, excluding tombstones, so a profile
+        // deleted concurrently cannot be "promoted" into a no-op update.
+        const survivors = await tx
+          .select({ id: userProfiles.id, createdAt: userProfiles.createdAt })
+          .from(userProfiles)
+          .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+
+        // ⚠️ `createdAt` alone is NOT a total order: `createDefaultProfileForUser`
+        // can write profiles inside one transaction, so ties are real and "the
+        // oldest" would otherwise mean "whatever the planner returned first".
+        // The `id` tiebreak makes the choice reproducible — matching the repair
+        // in `server/api/sync.ts`.
+        const successor = [...survivors].sort(
+          (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
+        )[0]
+
+        if (!successor) {
+          // Unreachable given the last-profile guard above, but a promotion that
+          // silently finds nobody is exactly the failure this story exists to
+          // remove — so it fails loudly and rolls the deletion back.
+          throw new Error('Cannot delete the default profile: no surviving profile to promote')
+        }
+
+        await tx
+          .update(userProfiles)
+          .set({ isDefault: true, updatedAt: new Date() })
+          .where(and(eq(userProfiles.id, successor.id), eq(userProfiles.userId, userId)))
+      }
     })
 
     return {

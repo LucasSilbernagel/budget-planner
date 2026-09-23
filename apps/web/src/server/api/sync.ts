@@ -672,6 +672,50 @@ async function updateEntity(
 }
 
 /**
+ * Restore the "at least one default profile" invariant for one user.
+ *
+ * No-op unless the user has live profiles and none of them is the default, so
+ * it is safe to call after any batch that touched `userProfile`. See the call
+ * site for the three push shapes that can empty the set.
+ *
+ * ⚠️ The successor is the OLDEST live profile, tiebroken by `id`. The tiebreak
+ * is load-bearing rather than tidy: `createDefaultProfileForUser` can create
+ * profiles inside one transaction, so `createdAt` alone is not a total order and
+ * "the oldest" would otherwise mean "whatever the planner returned first" —
+ * which can differ between two devices repairing the same account.
+ */
+async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
+  const live = await db
+    .select({ id: userProfiles.id, createdAt: userProfiles.createdAt })
+    .from(userProfiles)
+    .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+
+  if (live.length === 0) return
+
+  const hasDefault = await db
+    .select({ id: userProfiles.id })
+    .from(userProfiles)
+    .where(
+      and(
+        eq(userProfiles.userId, userId),
+        eq(userProfiles.isDefault, true),
+        eq(userProfiles.isDeleted, false)
+      )
+    )
+  if (hasDefault.length > 0) return
+
+  const successor = [...live].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
+  )[0]
+  if (!successor) return
+
+  await db
+    .update(userProfiles)
+    .set({ isDefault: true, updatedAt: new Date() })
+    .where(and(eq(userProfiles.id, successor.id), eq(userProfiles.userId, userId)))
+}
+
+/**
  * Soft-delete an entity (Story 4-18).
  *
  * A hard `DELETE` removes the row entirely, so a later delta-by-updatedAt pull
@@ -1202,6 +1246,36 @@ export async function processBatchSync(
         userAgent
       )
     }
+  }
+
+  // ⚠️⚠️ INVARIANT REPAIR: an account must never end a batch with live profiles
+  // but NO default (story 63.2 code review, HIGH — reproduced against real
+  // PostgreSQL before this existed).
+  //
+  // Three separate pushes can empty the set, and none of them is an error the
+  // client can see:
+  //  1. A device that has not pulled since another device deleted the default
+  //     renames the promoted profile. `syncBridge` sends `isDefault` on EVERY
+  //     profile update and `updateEntity` spreads it into `.set()`, so an
+  //     ordinary RENAME re-sends `isDefault: false` and clears the flag. The
+  //     update arm of `checkConflict` only tests existence — it never compares
+  //     `baseVersion` — so nothing else stops it and the push reports success.
+  //  2. A delete+promote pair that arrives promotion-first: the promotion is
+  //     rejected by `userProfiles_one_default_per_user`, the tombstone applies.
+  //  3. The tombstone lands while its paired promotion is stranded by a
+  //     transient failure (recorded in `deferred-work.md`).
+  //
+  // Zero defaults is silent CORRUPTION, not an error: every consumer resolves
+  // the default as `find(p => p.isDefault) ?? data[0]`, so each device quietly
+  // falls back to an arbitrary profile and the user's data appears to change.
+  //
+  // ⚠️ A REPAIR, deliberately, and NOT a veto on demotion. The first design here
+  // rejected any demotion that would empty the set — which also broke the
+  // legitimate unset-then-set sequence (demote A, promote B in one batch), as
+  // its own positive-control test proved. Repairing after the batch leaves every
+  // valid ordering alone: a batch that ends with a default never triggers it.
+  if (operations.some((operation) => operation.entityType === 'userProfile')) {
+    await ensureUserHasDefaultProfile(user.id)
   }
 
   const endTime = Date.now()

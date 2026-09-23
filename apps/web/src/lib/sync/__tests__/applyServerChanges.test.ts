@@ -216,6 +216,35 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
     applyServerChangesToStores([incomeChange()])
     expect(useProfileStore.getState().activeProfileId).toBe('local-default')
   })
+
+  /**
+   * Story 63.2 (AC-9): the SECOND device, after a default was deleted elsewhere.
+   *
+   * ⚠️ This is the consumer that story 63.2 could break without any local test
+   * noticing. `reconcileActiveProfile` resolves with
+   * `active ?? find(p => p.isDefault) ?? realProfiles[0]` — a fallback that
+   * yields the WRONG profile rather than an error, so an account left with zero
+   * defaults lands the user on whichever profile happens to be first. That is
+   * silent, and it is why the deleting device must queue the promotion rather
+   * than write the flag locally.
+   *
+   * The device here has a stale active id, so it falls through to the `isDefault`
+   * arm — which is the only way to observe the promotion at all, since a device
+   * sitting on a valid profile keeps its own selection by design.
+   */
+  it('lands on the PROMOTED default after the old default was deleted elsewhere', () => {
+    applyServerChangesToStores([
+      // Array order puts the promoted profile SECOND on purpose: resolving by
+      // position rather than by the flag would pass with it first.
+      profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
+      profileChange(SERVER_PROFILE_DEFAULT, true, 'Promoted'),
+    ])
+
+    expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
+    const profiles = useProfileStore.getState().profiles
+    expect(profiles.filter((p) => p.isDefault)).toHaveLength(1)
+    expect(profiles.find((p) => p.isDefault)?.name).toBe('Promoted')
+  })
 })
 
 describe('applyServerChangesToStores — placeholder re-home on reconcile (Story 54.4, AC-6)', () => {

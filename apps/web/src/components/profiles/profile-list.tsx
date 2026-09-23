@@ -23,7 +23,8 @@ import {
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
 import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { EditProfileDialog } from './edit-profile'
 
 // ⚠️ No `formatDate` and no `canonicalizeCurrency` import since story 54.5
@@ -48,6 +49,36 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   // The profile whose Edit dialog is open (story 54.1) — any profile, not only the active one.
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
+  // The profile awaiting delete confirmation (story 63.2, FR97). The dialog is
+  // owned by the LIST, not by each card: it needs a focus target that outlives
+  // the card, and the card unmounts on confirm.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  // Where focus goes when the confirmation closes.
+  //
+  // ⚠️⚠️ A STABLE REF WHOSE `.current` IS MUTATED, and the shape is the whole
+  // point (code review). `Modal`'s restore is
+  // `finalFocusRef?.current ?? previouslyFocused`, read in an effect CLEANUP
+  // that closes over the props from the render in which the effect last ran —
+  // i.e. when the dialog OPENED. So passing `finalFocusRef` conditionally at
+  // close time is too late: the cleanup still sees whatever was passed at open.
+  // `.current`, by contrast, is dereferenced during the cleanup itself.
+  //
+  // Null on dismissal, so `Modal` falls back to its default and returns focus to
+  // the Delete button the user pressed — it is still mounted, and it is where
+  // they were. The heading only on confirm, where that button unmounts with its
+  // card and the default target would be detached.
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+
+  const pendingDeleteProfile = profiles.find((profile) => profile.id === pendingDeleteId) ?? null
+
+  // ⚠️ A pull can tombstone the pending profile while its dialog is open (code
+  // review). `isOpen` then flips false on its own, but `pendingDeleteId` would
+  // stay set — and if that id were ever re-delivered by a later pull the dialog
+  // would REOPEN with no user action. Clear it when its profile goes.
+  useEffect(() => {
+    if (pendingDeleteId && !pendingDeleteProfile) setPendingDeleteId(null)
+  }, [pendingDeleteId, pendingDeleteProfile])
 
   // Handle profile deletion
   const handleDelete = async (profileId: string) => {
@@ -56,10 +87,34 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     setDeletingId(profileId)
 
     try {
+      // ⚠️ `deleteProfile` resolves to the store's SYNCHRONOUS `removeProfile`
+      // (`useActiveProfile.ts:182-184`), so this `await` settles immediately and
+      // `deletingId` never represents an in-flight server call — the sync push is
+      // fire-and-forget behind `syncEntityDelete`.
+      //
+      // ⚠️ This `if` does NOT prevent a same-tick double submit, and an earlier
+      // version of this comment claimed it did (code review). `deletingId` is
+      // closure state: it cannot change between two calls in one tick, only on
+      // the next render. What actually prevents a second confirm is that
+      // `confirmDelete` clears `pendingDeleteId` first, which unmounts the
+      // dialog before its button can be pressed again.
       await deleteProfile(profileId)
     } finally {
       setDeletingId(null)
     }
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return
+    const profileId = pendingDeleteId
+    returnFocusRef.current = headingRef.current
+    setPendingDeleteId(null)
+    await handleDelete(profileId)
+  }
+
+  const cancelDelete = () => {
+    returnFocusRef.current = null
+    setPendingDeleteId(null)
   }
 
   // Get color for a profile (consistent based on ID hash)
@@ -70,7 +125,13 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-heading">Your Profiles</h2>
+        {/* ⚠️ `tabIndex={-1}` is what makes this a usable `finalFocusRef`: the
+            confirming Delete button unmounts with its card, so Modal's default
+            focus-restore would land on a detached node and focus would fall to
+            `<body>`. A heading is only programmatically focusable. */}
+        <h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-heading">
+          Your Profiles
+        </h2>
         <span className="text-sm text-muted">
           {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
         </span>
@@ -97,7 +158,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
               profile={profile}
               isActive={profile.id === activeProfileId}
               isDeleting={deletingId === profile.id}
-              onDelete={() => handleDelete(profile.id)}
+              onDelete={() => setPendingDeleteId(profile.id)}
               onEdit={() => setEditingProfileId(profile.id)}
               onSwitch={() => switchToProfile(profile.id)}
               color={profileColor(profile.id)}
@@ -106,6 +167,42 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
           ))}
         </div>
       )}
+
+      {/* Delete confirmation (story 63.2, FR97). Before this, `handleDelete` ran
+          straight off the click — a single stray press destroyed a profile.
+
+          ⚠️⚠️ THE WORDING PROMISES ONLY WHAT THE CODE DOES, and an earlier
+          version did not (code review). It said "and its data", justified by the
+          foreign-key failure in `server/functions/profiles.ts` — but that
+          function has ZERO callers, so its FK error can never reach a user. On
+          the path a deletion actually takes, NOTHING deletes the profile's
+          financial rows: `removeProfile` touches only `profileStore`, the sync
+          push tombstones only the profile row, and no other store is cleaned.
+          The rows stay live on every device, merely unreachable. So the message
+          says the entries stop being VISIBLE, which is true, instead of claiming
+          a destruction that does not happen. The orphaning is logged in
+          `deferred-work.md`; story 63.2 made it the common case by making the
+          original profile deletable.
+
+          ⚠️ `finalFocusRef` is passed ONLY when the user confirmed. `Modal`
+          honours it on EVERY close (`Modal.tsx`: `finalFocusRef?.current ??
+          previouslyFocused`), so passing it unconditionally sent a Cancel or
+          Escape to the page heading — losing a keyboard user's place among the
+          cards, when their Delete button was still mounted and is the correct
+          return target. It is needed only on confirm, where the card unmounts
+          and the default restore target would be detached. */}
+      <ConfirmDialog
+        isOpen={pendingDeleteProfile !== null}
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+        finalFocusRef={returnFocusRef}
+        title="Delete profile"
+        message={
+          pendingDeleteProfile
+            ? `Delete "${pendingDeleteProfile.name}"? Its entries will no longer be visible. This can't be undone.`
+            : ''
+        }
+      />
 
       {editingProfileId && (
         <EditProfileDialog
@@ -287,11 +384,22 @@ function ProfileCard({
           Edit
         </button>
 
-        {/* Delete button - only for non-default, non-last profiles */}
-        {!profile.isDefault && hasMultipleProfiles && (
+        {/* Delete button — every profile except the last one (story 63.2, FR97).
+            ⚠️ The `!profile.isDefault` clause that stood here is GONE: a user
+            could not delete their original profile and the UI gave no reason,
+            because the store's refusal is silent (nothing renders
+            `useProfileError`). The default is now deletable and a survivor is
+            promoted in `removeProfile`; only the LAST profile is withheld, which
+            `hasMultipleProfiles` expresses and the store still enforces.
+            ⚠️ The accessible name carries the profile's name, like Edit's. It has
+            to: several cards now show Delete, and a screen-reader user hearing
+            "Delete, Delete, Delete" cannot tell which is which. Absence probes
+            must therefore match `/^Delete /`, never the exact string 'Delete'. */}
+        {hasMultipleProfiles && (
           <button
             type="button"
             onClick={onDelete}
+            aria-label={`Delete ${profile.name}`}
             disabled={isDeleting}
             className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto inline-flex items-center min-h-[1.75rem] px-2 -mr-2 rounded"
           >

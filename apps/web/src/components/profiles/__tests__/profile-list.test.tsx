@@ -38,7 +38,10 @@ describe('ProfileList edit action (story 54.1)', () => {
 
     expect(screen.getByRole('button', { name: 'Edit Main Profile' })).toBeInTheDocument()
     // Positive control for the visibility rules left untouched: no Delete here.
-    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
+    // ⚠️ A REGEX since story 63.2, not `{ name: 'Delete' }`. Delete's accessible
+    // name now carries the profile name, so the old exact-string probe would
+    // pass against a rendered "Delete Main Profile" — a silent green.
+    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull()
   })
 
   it('offers Edit on both the default and a non-default profile', () => {
@@ -272,7 +275,13 @@ describe('ProfileList card is the switcher (story 63.1)', () => {
       .getByRole('button', { name: 'Switch to Business' })
       .closest('div.surface')
     if (!bizCard) throw new Error('Business card not found')
-    await user.click(within(bizCard).getByRole('button', { name: 'Delete' }))
+    await user.click(within(bizCard).getByRole('button', { name: 'Delete Business' }))
+    // ⚠️ Story 63.2 put a confirmation in front of the deletion, so the click
+    // alone no longer deletes. The test still has to reach a REAL deletion to
+    // keep its positive control (below), so it confirms.
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
 
     // ⚠️ POSITIVE CONTROL, added by code review (Edge Case Hunter, and MEASURED
     // by them). Without this line the test asserted only that the active id did
@@ -297,7 +306,10 @@ describe('ProfileList card is the switcher (story 63.1)', () => {
       .getByRole('button', { name: 'Switch to Business' })
       .closest('div.surface')
     if (!bizCard) throw new Error('Business card not found')
-    within(bizCard).getByRole('button', { name: 'Delete' }).focus()
+    within(bizCard).getByRole('button', { name: 'Delete Business' }).focus()
+    await user.keyboard('{Enter}')
+    // Story 63.2: confirm from the keyboard too, so this stays a real deletion.
+    within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }).focus()
     await user.keyboard('{Enter}')
 
     expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual(['main'])
@@ -505,7 +517,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
     expect([...divider.classList]).toContain('border-default')
     expect([...divider.classList]).not.toContain('border-gray-100')
 
-    const del = screen.getByRole('button', { name: 'Delete' })
+    const del = screen.getByRole('button', { name: 'Delete Business' })
     expect([...del.classList]).toContain('dark:text-red-400')
 
     // ⚠️ VARIANT-PREFIXED PAIRS THE SWEEP CANNOT SEE (code review 54.5). The sweep
@@ -652,5 +664,224 @@ describe('ProfileList card metadata removal (story 54.5)', () => {
     expect(screen.queryByText('Created:')).toBeNull()
     // The formatted date `formatDate` used to emit for this `createdAt`.
     expect(screen.queryByText('Jan 15, 2026')).toBeNull()
+  })
+})
+
+/**
+ * Story 63.2 (FR97): every deletion is confirmed, and the default profile is
+ * deletable once another profile exists.
+ *
+ * ⚠️⚠️ WHERE DELETION IS ACTUALLY ENFORCED, because the epic says otherwise.
+ * `server/functions/profiles.ts:deleteProfile` has ZERO production callers — the
+ * live path is this component -> `useProfileManager().deleteProfile` ->
+ * `profileStore.removeProfile` -> `syncEntityDelete` -> the sync push. The store
+ * is where the default guard lived and where it is lifted; the store-level
+ * consequences (promotion, tombstone ordering) are proven in
+ * `stores/__tests__/profile-deletion.dom.test.ts`, not here.
+ *
+ * ⚠️ Delete's accessible name now carries the profile name (`Delete Business`),
+ * matching Edit. It has to: the default card gained a Delete button, so a bare
+ * "Delete" is ambiguous to a screen-reader user AND to `getByRole`. Because
+ * `name` is a FULL-STRING match, every absence probe in this file was rewritten
+ * to `/^Delete /` rather than `'Delete'` — a probe for the old exact string would
+ * now pass for the wrong reason, which is the silent-green trap recorded in
+ * `budget-planner-icon-only-button-naming`.
+ */
+describe('ProfileList delete confirmation (story 63.2)', () => {
+  /**
+   * ⚠️ `reset()` restores DATA only; zustand keeps actions in the same state
+   * object, so a spied `removeProfile` would leak into every later test. Same
+   * hazard 63.1 hit with `switchProfile`, and it cost a real debugging cycle.
+   */
+  const REAL_REMOVE_PROFILE = useProfileStore.getState().removeProfile
+
+  afterEach(() => {
+    useProfileStore.setState({ removeProfile: REAL_REMOVE_PROFILE })
+    useProfileStore.getState().reset()
+  })
+
+  const main = {
+    id: 'main',
+    userId: 'u1',
+    name: 'Main Profile',
+    isDefault: true,
+    currency: 'NONE',
+  }
+  const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
+
+  it('asks first, and deletes nothing while the dialog is open', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    // The profile is still there: opening the dialog is not the deletion.
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual(['main', 'biz'])
+  })
+
+  it('deletes once Confirm is pressed', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual(['main'])
+  })
+
+  /**
+   * ⚠️⚠️ THE MECHANISM, NOT THE OUTCOME. "The profile is still listed" is an
+   * outcome the CORRECT code and a broken path both produce — a Cancel that
+   * called through to a `removeProfile` which then refused for an unrelated
+   * reason (last profile, missing id) leaves exactly the same list. That is the
+   * same-outcome vacuity mode mutation N3 found in 62.2. So the store ACTION is
+   * spied and proven un-called, with a positive control that it can record one.
+   */
+  for (const [label, dismiss] of [
+    [
+      'Cancel',
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.click(
+          within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+        )
+      },
+    ],
+    [
+      'Escape',
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.keyboard('{Escape}')
+      },
+    ],
+    // ⚠️ The backdrop arm was missing until the code review: AC-1 names Cancel,
+    // Escape AND a backdrop click, and only the first two were exercised.
+    // `Modal` routes an overlay click to `onClose` -> `onCancel`; inheriting the
+    // behaviour is not the same as pinning it.
+    [
+      'a backdrop click',
+      async (user: ReturnType<typeof userEvent.setup>) => {
+        const overlay = screen.getByRole('alertdialog').parentElement
+        if (!overlay) throw new Error('modal overlay not found')
+        await user.click(overlay)
+      },
+    ],
+  ] as const) {
+    it(`deletes NOTHING when the dialog is dismissed with ${label}`, async () => {
+      const user = userEvent.setup()
+      const removeProfile = vi.fn()
+      useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main', removeProfile })
+      renderWithProviders(<ProfileList />)
+
+      await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+      await dismiss(user)
+
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+      expect(removeProfile).not.toHaveBeenCalled()
+
+      // Positive control: the spy is wired and DOES record a real confirm, so its
+      // silence above means "not called", not "never reachable".
+      await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+      await user.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+      )
+      expect(removeProfile).toHaveBeenCalledWith('biz')
+    })
+  }
+
+  it('names the profile and states what is lost', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+
+    const dialog = screen.getByRole('alertdialog')
+    // The name is the whole point: a profile carries an entire financial data
+    // set, and "are you sure?" alone does not say WHICH one is about to go.
+    expect(dialog.textContent).toContain('Business')
+    expect(dialog.textContent).toMatch(/can(no|')t be undone|cannot be undone/i)
+  })
+
+  it('offers Delete on the DEFAULT profile once another profile exists (AC-2)', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'biz' })
+    renderWithProviders(<ProfileList />)
+
+    // The reversal: before 63.2 this button was withheld from the default card,
+    // and `profile-list.test.tsx:41` pinned its absence.
+    await user.click(screen.getByRole('button', { name: 'Delete Main Profile' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+
+    const state = useProfileStore.getState()
+    expect(state.profiles.map((p) => p.id)).toEqual(['biz'])
+    // …and the survivor inherits the flag, so the account is never default-less.
+    expect(state.profiles.find((p) => p.isDefault)?.id).toBe('biz')
+  })
+
+  /**
+   * ⚠️⚠️ FOCUS RETURN, BOTH BRANCHES — and this test exists because reasoning
+   * about it produced the WRONG fix first (code review).
+   *
+   * `Modal` restores with `finalFocusRef?.current ?? previouslyFocused` inside an
+   * effect CLEANUP, which closes over the props from the render where the effect
+   * last ran — the render that OPENED the dialog. So a `finalFocusRef` passed
+   * conditionally at close time is never seen. What IS read at cleanup time is
+   * `.current`, so the component passes one stable ref and mutates it.
+   *
+   * The two branches genuinely differ: on dismissal the Delete button is still
+   * mounted and is where the user was, so focus must go back to it; on confirm
+   * that button unmounts with its card and the default target would be detached.
+   */
+  it('returns focus to the Delete button when the dialog is dismissed', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    const trigger = screen.getByRole('button', { name: 'Delete Business' })
+    await user.click(trigger)
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    )
+
+    expect(trigger).toHaveFocus()
+  })
+
+  it('moves focus to the heading when the confirm removes the card', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+
+    // Not merely "not body": the heading specifically, because that is the
+    // element `finalFocusRef` names.
+    expect(screen.getByRole('heading', { name: 'Your Profiles' })).toHaveFocus()
+  })
+
+  it('still withholds Delete from a lone profile (AC-4, unchanged)', () => {
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    const { unmount } = renderWithProviders(<ProfileList />)
+
+    // ⚠️ A regex, not `{ name: 'Delete' }`: the labels now carry profile names,
+    // so the old exact-string probe would pass without proving anything.
+    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull()
+
+    // ⚠️ POSITIVE CONTROL for the probe itself. An absence assertion is only
+    // worth what its query is worth, and this one is a regex written in the same
+    // pass that renamed the buttons — so prove the regex CAN match before
+    // trusting that it found nothing.
+    unmount()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+    expect(screen.getAllByRole('button', { name: /^Delete / })).toHaveLength(2)
   })
 })

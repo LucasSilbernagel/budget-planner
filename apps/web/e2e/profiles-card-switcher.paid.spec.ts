@@ -122,7 +122,7 @@ for (const width of [320, 1280] as const) {
     expect(edit?.height ?? 0, 'Edit height').toBeGreaterThanOrEqual(28)
     expect(edit?.width ?? 0, 'Edit width').toBeGreaterThanOrEqual(28)
 
-    const del = await bizCard.getByRole('button', { name: 'Delete' }).boundingBox()
+    const del = await bizCard.getByRole('button', { name: 'Delete Business' }).boundingBox()
     expect(del?.height ?? 0, 'Delete height').toBeGreaterThanOrEqual(28)
     expect(del?.width ?? 0, 'Delete width').toBeGreaterThanOrEqual(28)
 
@@ -148,7 +148,7 @@ for (const width of [320, 1280] as const) {
       )
 
     expect(await hitAt(edit.x + edit.width / 2, edit.y + edit.height / 2)).toBe('Edit Business')
-    expect(await hitAt(del.x + del.width / 2, del.y + del.height / 2)).toBe('Delete')
+    expect(await hitAt(del.x + del.width / 2, del.y + del.height / 2)).toBe('Delete Business')
 
     // And the card BODY — the empty space that is not any of the three controls —
     // still reaches the switcher, which is what "the whole card, not a button on
