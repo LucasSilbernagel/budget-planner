@@ -143,24 +143,51 @@ test.describe('a fresh scenario seeds from the user own finances (62.1)', () => 
     // the seeded total reaches component state — and the saved scenario — while
     // the field on screen still reads the pre-seed value. Asserting the STATE
     // would miss it entirely; only a rendered value can see it.
+    // ⚠️ ANCHORED (code review 62.1). The first version used unanchored
+    // `/3[,.]?456/` and `/9[,.]?876/`, which match `345600.00` and `987600.00`
+    // just as happily — so a cents/dollars scale error, the single most likely
+    // mistake in a money seed, passed. The `not.toHaveValue(/^0(\.00)?$/)`
+    // controls were also useless in any currency mode that prefixes a symbol,
+    // since `$0.00` does not match `^0`. Compare parsed numbers instead.
     const savings = page.getByLabel('Current Savings')
     const investments = page.getByLabel('Current Investments')
-    await expect(savings).not.toHaveValue(/^0(\.00)?$/)
-    await expect(investments).not.toHaveValue(/^0(\.00)?$/)
-    // 345600 and 987600 cents, however the active currency mode formats them.
-    await expect(savings).toHaveValue(/3[,.]?456/)
-    await expect(investments).toHaveValue(/9[,.]?876/)
+    //
+    // ⚠️ `expect.poll`, not a bare `expect(await ...)` — MEASURED (code review
+    // 62.1). Since the seed is gated on `useIsInitialSyncPending`, a PAID
+    // session defers it until the first pull resolves (or times out), so the
+    // fields legitimately read `0.00` for a moment after the heading appears.
+    // A one-shot read raced that and failed at `0`; `toHaveValue` had hidden it
+    // only because that matcher auto-retries. The delay is the intended cost of
+    // not latching an empty seed on a fresh device — see the production comment.
+    const asNumber = async (locator: ReturnType<typeof page.getByLabel>) =>
+      Number((await locator.inputValue()).replace(/[^0-9.-]/g, ''))
+    await expect.poll(() => asNumber(savings)).toBeCloseTo(3456, 2)
+    await expect.poll(() => asNumber(investments)).toBeCloseTo(9876, 2)
   })
 
   test('a first paint on the real SSR document raises no hydration error', async ({ page }) => {
+    // ⚠️⚠️ `pageerror`, NOT `console` (code review 62.1). The first version of
+    // this test listened on `page.on('console')` and was a SILENT GREEN: React
+    // 19 does not warn about a hydration mismatch, it routes one through
+    // `onRecoverableError`, whose default implementation calls `reportError` —
+    // which Chromium raises as an uncaught exception and Playwright surfaces on
+    // `pageerror`. This repo had ALREADY MEASURED it: `e2e/hydration.spec.ts:30-34`
+    // records "console.error entries 0, pageerror entries 1", and that spec
+    // listens on `pageerror` (`:66`). Nothing in this app overrides
+    // `onRecoverableError`, so the console channel is permanently empty.
+    // `"did not match"` is React 18 phrasing and is kept only for the dev build.
     const hydrationErrors: string[] = []
-    page.on('console', (message) => {
-      if (message.type() !== 'error') return
-      const text = message.text()
-      // React reports a hydration mismatch through these two phrasings.
+    const record = (text: string) => {
       if (/hydrat/i.test(text) || /did not match/i.test(text) || /#418|#423|#425/.test(text)) {
         hydrationErrors.push(text)
       }
+    }
+    page.on('pageerror', (error) => record(String(error)))
+    // Kept as a second arm rather than a replacement: a dev build can still log
+    // a mismatch to the console, and listening to both cannot produce a false
+    // green. It was listening ONLY here that was wrong.
+    page.on('console', (message) => {
+      if (message.type() === 'error') record(message.text())
     })
 
     await seedOwnFinances(page)
@@ -183,9 +210,23 @@ test.describe('a fresh scenario seeds from the user own finances (62.1)', () => 
     await expect(page.getByRole('button', { name: '+ Add Income' })).toBeVisible()
     await expect(page.getByRole('button', { name: '+ Add Expense' })).toBeVisible()
 
+    // ⚠️ AC-1 pinned in a REAL BROWSER (code review 62.1). The record for this
+    // story originally claimed the blank growth-rate field was "MEASURED", but
+    // it was measured in jsdom only and the browser half was inferred. Since
+    // the fields are now `type="text"` they carry the string, and this is the
+    // observable a jsdom test cannot stand in for.
+    await expect(page.getByLabel('Income Growth Rate')).toHaveValue('0.00%')
+    await expect(page.getByLabel('Expense Growth Rate')).toHaveValue('0.00%')
+
+    // ⚠️ Assert EMPTINESS, not the absence of three specific strings (code
+    // review 62.1). The old form passed against a fallback that used any other
+    // names — including rows delivered by a sync pull. There are no row-name
+    // inputs at all on an empty builder; the placeholder identifies them.
+    await expect(page.locator('input[placeholder="Income/Expense name"]')).toHaveCount(0)
     const values = await inputValues(page)
     expect(values).not.toContain('Salary')
     expect(values).not.toContain('Rent/Mortgage')
+    expect(values).not.toContain('Utilities')
     expect(values).not.toContain('Groceries')
   })
 })

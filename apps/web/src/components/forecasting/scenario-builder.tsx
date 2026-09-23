@@ -19,7 +19,9 @@ import {
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
 import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react'
+import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
+import { isKnownFrequency } from '../../lib/readable-rows'
 import { sanitizeWithCaret } from '../../lib/sanitized-input'
 import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
 import { useTotalInvestmentBalance } from '../../stores/balanceStore'
@@ -45,8 +47,10 @@ export interface LocalFinancialItem extends NormalizableFinancialItem {
   id: string
   /**
    * ⚠️ Was missing, and every value of this type has carried it all along —
-   * `DEFAULT_INCOME`/`DEFAULT_EXPENSES` set it, `toLocalItems` defensively
-   * coerces it (`name: item.name ?? ''`), and the row editor reads and writes it.
+   * `itemsFromSaved` and `itemsFromStore` both coerce it defensively and the row
+   * editor reads and writes it. (This cited `DEFAULT_INCOME`/`DEFAULT_EXPENSES`,
+   * deleted by story 62.1, and `toLocalItems`, which has not existed for longer
+   * than that — corrected in code review 62.1.)
    * `NormalizableFinancialItem` (core) is deliberately just `{amount, frequency}`,
    * so the label belongs here, on the UI-local extension.
    */
@@ -212,8 +216,16 @@ function itemsFromSaved(
  * mints its own with `generateId`. The deterministic `-seeded-<index>` form
  * matches `itemsFromSaved` and cannot collide with a later `generateId` row.
  *
- * Values are coerced as defensively as `itemsFromSaved` does: a corrupt store
- * row must not seed a NaN amount or an uncontrolled input.
+ * ⚠️ Values are validated, not merely null-coalesced (corrected in code review
+ * 62.1). The parameter type says these fields are present and well-typed, but
+ * the rows come from localStorage and from the sync applier, neither of which
+ * validates — `lib/readable-rows.ts:7-15` records that hazard as live. So a `??`
+ * chain was parity with `itemsFromSaved` AND a gap: it catches `null`/`undefined`
+ * but waves through `'Monthly'`, `'quarterly'` or `''`, which then reach
+ * `validateFrequency` and throw, killing the whole forecast with an "Invalid
+ * frequency" banner and no indication of WHICH row is at fault — while the row's
+ * own `<select>` renders the corrupt value as "Weekly", so it is invisible.
+ * `isKnownFrequency` is the house predicate for this.
  */
 function itemsFromStore(
   rows: readonly { name: string; amount: number; frequency: Frequency }[],
@@ -221,9 +233,9 @@ function itemsFromStore(
 ): LocalFinancialItem[] {
   return rows.map((row, index) => ({
     id: `${prefix}-seeded-${index}`,
-    name: row.name ?? '',
+    name: typeof row.name === 'string' ? row.name : '',
     amount: Number.isFinite(row.amount) ? row.amount : 0,
-    frequency: row.frequency ?? 'monthly',
+    frequency: isKnownFrequency(row.frequency) ? row.frequency : 'monthly',
   }))
 }
 
@@ -344,16 +356,41 @@ export function ScenarioBuilder({
   const storeExpenses = useExpenses()
   const storeSavings = useTotalSavings()
   const storeInvestments = useTotalInvestmentBalance()
+
+  // ⚠️ A PAID USER ON A FRESH DEVICE (code review 62.1). `useStoresHydrated()`
+  // resolves off localStorage alone, which on a new browser is EMPTY while
+  // `ActiveSync`'s first-ever pull is still in flight over the network. Without
+  // this gate the builder seeds `[]`/`0`, latches `hasSeeded`, and the rows that
+  // arrive moments later reach `/income` but never the builder — landing the
+  // user in a state indistinguishable from the legitimate empty-user one, which
+  // is the exact silent failure this story's AC-9 exists to prevent.
+  //
+  // `useIsInitialSyncPending` is the house hook for this window and all five
+  // data pages already use it in the same `hydrated && !pending` shape. It takes
+  // the CALLER's own emptiness so a device with anything to seed is never gated.
+  const nothingToSeed =
+    storeIncome.length === 0 &&
+    storeExpenses.length === 0 &&
+    storeSavings === 0 &&
+    storeInvestments === 0
+  const isInitialSyncPending = useIsInitialSyncPending(nothingToSeed)
+  const readyToSeed = storesHydrated && !isInitialSyncPending
+
   const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
 
   useEffect(() => {
-    if (hasSeeded || !storesHydrated) return
+    if (hasSeeded || !readyToSeed) return
     setIncomeItems(itemsFromStore(storeIncome, 'income'))
     setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
-    setSavings(storeSavings)
-    setInvestments(storeInvestments)
+    // ⚠️ Both totals are raw `reduce(sum + currentBalance)` over persisted rows
+    // (`savingsStore.ts:70`, `balanceStore.ts:373`) with NO finiteness guard, so
+    // one corrupt row makes the whole total NaN. Every row `amount` is already
+    // guarded in `itemsFromStore`; these two were not (code review 62.1). An
+    // unguarded NaN reaches the money field AND the saved forecast's `inputs`.
+    setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
+    setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
     setHasSeeded(true)
-  }, [hasSeeded, storesHydrated, storeIncome, storeExpenses, storeSavings, storeInvestments])
+  }, [hasSeeded, readyToSeed, storeIncome, storeExpenses, storeSavings, storeInvestments])
 
   // State for results — seed from the loaded forecast so its summary shows
   // immediately, before the debounced recompute runs.
@@ -703,27 +740,57 @@ export function ScenarioBuilder({
           />
 
           {/* Income Growth Rate */}
+          {/* ⚠️ `type="text"`, NOT `type="number"` (code review 62.1). These fields
+              display through `formatPercentage`, i.e. the string "0.00%" — and a
+              number input REJECTS that outright, so `.value` was `''` and the
+              field rendered BLANK. Measured in jsdom and in Chromium:
+              `.value=[]` while `getAttribute('value')=[0.00%]`.
+              That was true before this story too, with 3%/2% silently applied
+              behind an empty box. `inputMode="decimal"` keeps the numeric
+              keypad on mobile; `min`/`max`/`step` are dropped because they are
+              inert on a text input and implying otherwise is worse than
+              omitting them.
+              ⚠️ This comment first claimed "clamping already lives in
+              `handleFormChange`". It does NOT — that handler is a pass-through
+              (`:476-481`) and nothing bounds a growth rate at either call site.
+              Nothing is LOST by dropping `min`/`max` (they never clamped a typed
+              value on a number input either; they gate the spinner and form
+              validation only), but the absence of clamping is pre-existing and
+              real. Caught re-reading my own comment during code review 62.1. */}
           <InputField
             label="Income Growth Rate"
             value={formData.incomeGrowthRate}
             onChange={(v) => handleFormChange('incomeGrowthRate', Number(v))}
-            type="number"
-            min={-1}
-            max={1}
-            step={0.01}
+            type="text"
+            inputMode="decimal"
             formatValue={formatPercentage}
             parseValue={(v) => parseFloat(v) / 100}
           />
 
           {/* Expense Growth Rate */}
+          {/* ⚠️ `type="text"`, NOT `type="number"` (code review 62.1). These fields
+              display through `formatPercentage`, i.e. the string "0.00%" — and a
+              number input REJECTS that outright, so `.value` was `''` and the
+              field rendered BLANK. Measured in jsdom and in Chromium:
+              `.value=[]` while `getAttribute('value')=[0.00%]`.
+              That was true before this story too, with 3%/2% silently applied
+              behind an empty box. `inputMode="decimal"` keeps the numeric
+              keypad on mobile; `min`/`max`/`step` are dropped because they are
+              inert on a text input and implying otherwise is worse than
+              omitting them.
+              ⚠️ This comment first claimed "clamping already lives in
+              `handleFormChange`". It does NOT — that handler is a pass-through
+              (`:476-481`) and nothing bounds a growth rate at either call site.
+              Nothing is LOST by dropping `min`/`max` (they never clamped a typed
+              value on a number input either; they gate the spinner and form
+              validation only), but the absence of clamping is pre-existing and
+              real. Caught re-reading my own comment during code review 62.1. */}
           <InputField
             label="Expense Growth Rate"
             value={formData.expenseGrowthRate}
             onChange={(v) => handleFormChange('expenseGrowthRate', Number(v))}
-            type="number"
-            min={-1}
-            max={1}
-            step={0.01}
+            type="text"
+            inputMode="decimal"
             formatValue={formatPercentage}
             parseValue={(v) => parseFloat(v) / 100}
           />

@@ -27,7 +27,7 @@
  * whose harness this borrows.
  */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
 import { hydrateRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
@@ -174,18 +174,68 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     expect(screen.queryByDisplayValue('Groceries')).toBeNull()
   })
 
+  /**
+   * ⚠️⚠️ THIS TEST WAS VACUOUS AND ITS TITLE NAMED THE DEFECT IT COULD NOT CATCH
+   * (code review 62.1, MEASURED). It asserted `.closest('div')` is non-null
+   * (always true for an input inside a div) and that an element found BY display
+   * value has that display value (a tautology). Forcing
+   * `frequency: 'monthly'` in `itemsFromStore` left the whole 5-file suite
+   * 49/49 GREEN — an implementation that flattened every weekly row to monthly,
+   * making the engine read $500/week as $500/month, would have shipped.
+   *
+   * The frequency `<select>` is the only thing that can see it.
+   */
   it('carries a non-monthly frequency through rather than flattening it', () => {
     useIncomeStore.setState({
       incomeSources: [incomeRow({ name: 'Freelance', amount: 50_000, frequency: 'weekly' })],
     })
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
-    const row = screen.getByDisplayValue('Freelance').closest('div')
-    expect(row).not.toBeNull()
-    // The store row's own frequency, NOT the monthly-normalized amount that
+    // The amount is the RAW figure, not the monthly-normalized one
     // `useTotalIncome` would have produced.
     expect(screen.getByDisplayValue('500')).toBeInTheDocument()
-    expect((screen.getByDisplayValue('Freelance') as HTMLInputElement).value).toBe('Freelance')
+    // ...and the frequency survives as `weekly`. This is the discriminating
+    // assertion the previous version lacked entirely.
+    const frequency = screen.getAllByRole('combobox').find((el) => el.closest('div'))
+    expect(frequency).toBeDefined()
+    expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe('weekly')
+  })
+
+  /**
+   * ⚠️ A corrupt `frequency` must not kill the forecast (code review 62.1).
+   * `??` only catches null/undefined; `'quarterly'` reached `validateFrequency`,
+   * which throws, blanking the whole builder behind an "Invalid frequency"
+   * banner that names no row — while the `<select>` rendered it as "Weekly".
+   */
+  it('falls back to monthly for a frequency the engine does not know', () => {
+    useIncomeStore.setState({
+      incomeSources: [incomeRow({ name: 'Odd', amount: 50_000, frequency: 'quarterly' as never })],
+    })
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    expect(screen.getByDisplayValue('Odd')).toBeInTheDocument()
+    expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe('monthly')
+  })
+
+  /**
+   * ⚠️ Both totals are raw `reduce(sum + currentBalance)` with no finiteness
+   * guard, so one corrupt row makes the total NaN — which reached the money
+   * field AND the saved forecast's `inputs` (code review 62.1). Every row
+   * `amount` was already guarded; these two were not.
+   */
+  it('seeds 0 rather than NaN when a stored balance is not finite', () => {
+    useSavingsStore.setState({
+      savingsGoals: [savingsGoal({ currentBalance: Number.NaN as number })],
+    })
+    useBalanceStore.setState({
+      entries: [investmentEntry({ currentBalance: undefined as unknown as number })],
+    })
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    // Positive control: the builder rendered at all.
+    expect(screen.getByDisplayValue('My Financial Forecast')).toBeInTheDocument()
+    expect(screen.getAllByDisplayValue('0.00').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByDisplayValue('NaN')).toBeNull()
   })
 
   /**
@@ -218,12 +268,18 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     const income = screen.getByLabelText('Income Growth Rate')
     const expense = screen.getByLabelText('Expense Growth Rate')
 
-    expect(income.getAttribute('value')).toBe('0.00%')
-    expect(expense.getAttribute('value')).toBe('0.00%')
-    // Positive control on the probe itself: the retired 3%/2% demo rates would
-    // have rendered here, so this pair is not vacuously green.
-    expect(income.getAttribute('value')).not.toBe('3.00%')
-    expect(expense.getAttribute('value')).not.toBe('2.00%')
+    // ⚠️ AC-1's visible clause is now actually MET: since code review 62.1 these
+    // are `type="text"`, so the DOM `.value` carries the string instead of the
+    // browser rejecting it and leaving the field blank. Assert `.value`, which
+    // is what the user sees — the attribute alone was the weaker observable the
+    // blank-field defect forced.
+    expect((income as HTMLInputElement).value).toBe('0.00%')
+    expect((expense as HTMLInputElement).value).toBe('0.00%')
+    // ⚠️ The two `.not.toBe('3.00%')` lines that stood here were labelled a
+    // "positive control" and were nothing of the sort — they are implied by the
+    // assertions above and cannot fail independently (code review 62.1). The
+    // real control is the AC-7 test below, which drives a loaded 0.05 through
+    // the same field and reads back `5.00%`.
   })
 
   it('hands a zero growth rate to onSave, not the retired 3%/2%', async () => {
@@ -299,6 +355,38 @@ describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => 
   })
 })
 
+/**
+ * The one-shot guard (62.1 AC-9).
+ *
+ * ⚠️⚠️ MEASURED VACUOUS BEFORE THIS (code review 62.1): no test changed a store
+ * after `render()`, so the property the production docblock calls "cannot run
+ * twice or overwrite the user's own edits" was pinned by nothing. Mutating the
+ * guard to re-seed on every store change for fresh scenarios left the whole
+ * 5-file suite 49/49 GREEN.
+ */
+describe('the seed happens once and never overwrites the user (62.1 AC-9)', () => {
+  it('does not re-seed over an edit when the stores change afterwards', async () => {
+    fillStores()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    // The seed landed.
+    const nameInput = screen.getByDisplayValue('Consulting')
+    // The user renames the row.
+    fireEvent.change(nameInput, { target: { value: 'My own edit' } })
+    expect(screen.getByDisplayValue('My own edit')).toBeInTheDocument()
+
+    // A later store change (a sync pull, a background write) must NOT clobber it.
+    await act(async () => {
+      useIncomeStore.setState({
+        incomeSources: [incomeRow({ id: 'inc-late', name: 'Arrived Later' })],
+      })
+    })
+
+    expect(screen.getByDisplayValue('My own edit')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Arrived Later')).toBeNull()
+  })
+})
+
 describe('the seed respects the active profile (62.1 AC-4)', () => {
   it('seeds only the active profile rows and totals', () => {
     useIncomeStore.setState({
@@ -322,7 +410,13 @@ describe('the seed respects the active profile (62.1 AC-4)', () => {
     expect(screen.getByDisplayValue('1000.00')).toBeInTheDocument()
   })
 
-  it('follows a profile switch', () => {
+  /**
+   * ⚠️ RENAMED in code review 62.1. This sets the active profile BEFORE `render`,
+   * so it pins "the seed reads whichever profile is active at mount" — NOT a
+   * switch. A post-mount switch does NOT reseed (`hasSeeded` latches); that gap
+   * is recorded in `deferred-work.md` rather than claimed as covered here.
+   */
+  it('seeds from whichever profile is active at mount', () => {
     useIncomeStore.setState({
       incomeSources: [
         incomeRow({ id: 'inc-a', name: 'A Salary', profileId: PROFILE_A }),
@@ -467,7 +561,10 @@ describe('the seed survives the rehydration race (62.1 AC-9)', () => {
       <ScenarioBuilder onSave={vi.fn()} />
     )
 
-    // The server could not know the user's data, and must not have guessed it.
+    // ⚠️ NOT an assertion about the implementation: `renderToString` runs after
+    // `beforeEach`'s `clearStores()` and before `fillStores()`, so no code path
+    // could put 'Consulting' here. Kept only to document the harness's ordering;
+    // it passes regardless of the code under test (code review 62.1).
     expect(serverHtml).not.toContain('Consulting')
     // ...but after hydration settles the builder shows it. A lazy initializer
     // fails HERE: it captured the empty hydration snapshot and never recovers.
