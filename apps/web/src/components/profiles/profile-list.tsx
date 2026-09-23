@@ -2,9 +2,14 @@
  * Profile List Component
  *
  * Displays a list of user profiles with options to manage them.
- * Shows the active-profile indicator and offers Edit/Delete per card. It does NOT
- * switch profiles: since story 54.3 (FR80) `SwitchProfileDropdown` is the app's
- * one profile-switching control.
+ * Each card IS the profile switcher (story 63.1, FR96): its header is a real
+ * activation `<button>`, with Edit/Delete as SIBLINGS of that button rather than
+ * children, so the card is switchable without nesting interactive content.
+ *
+ * ⚠️ This REVERSES story 54.3 (FR80), which removed the per-card "Switch to" and
+ * made `SwitchProfileDropdown` the one switcher. That component is deleted as of
+ * 63.1. FR80's "exactly one control lets a user switch the active profile" clause
+ * is UNCHANGED and still holds — the card is now that control.
  *
  * Architecture: React with Tailwind CSS
  * State Management: Zustand via useActiveProfile hook
@@ -13,6 +18,7 @@
 import {
   useHasMultipleProfiles,
   useProfileManager,
+  useProfileSwitcher,
   useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import type { ClientProfile } from '@/hooks/useActiveProfile'
@@ -34,6 +40,10 @@ interface ProfileListProps {
 export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   const { profiles, activeProfileId } = useProfilesWithActive()
   const { deleteProfile } = useProfileManager()
+  // ⚠️ The SAME call the deleted `SwitchProfileDropdown` made (story 63.1 AC-5).
+  // This story changes only which element invokes it — not the switch semantics,
+  // the store write or the sync-bridge behaviour downstream of it.
+  const { switchToProfile } = useProfileSwitcher()
   const hasMultipleProfiles = useHasMultipleProfiles()
   const [deletingId, setDeletingId] = useState<string | null>(null)
   // The profile whose Edit dialog is open (story 54.1) — any profile, not only the active one.
@@ -89,6 +99,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
               isDeleting={deletingId === profile.id}
               onDelete={() => handleDelete(profile.id)}
               onEdit={() => setEditingProfileId(profile.id)}
+              onSwitch={() => switchToProfile(profile.id)}
               color={profileColor(profile.id)}
               icon={resolveProfileIcon(profile)}
             />
@@ -127,6 +138,7 @@ interface ProfileCardProps {
   isDeleting: boolean
   onDelete: () => void
   onEdit: () => void
+  onSwitch: () => void
   color: string
   icon: string
 }
@@ -137,6 +149,7 @@ function ProfileCard({
   isDeleting,
   onDelete,
   onEdit,
+  onSwitch,
   color,
   icon,
 }: ProfileCardProps) {
@@ -144,17 +157,37 @@ function ProfileCard({
 
   return (
     <div
-      className={`surface border rounded-xl p-5 transition-all duration-200 ${
+      className={`surface border rounded-xl p-5 transition-all duration-200 relative ${
         isActive
           ? 'border-blue-500 shadow-lg shadow-blue-500/10'
           : 'border-default hover:border-gray-300 dark:hover:border-gray-600'
       }`}
     >
-      {/* Profile header */}
+      {/* Profile header (story 63.1, FR96).
+          ⚠️⚠️ STRETCHED LINK, and the structure is the whole point — chosen in
+          code review after TWO review layers independently found that the first
+          implementation destroyed this card's accessibility tree.
+          That version made the entire header one big `<button aria-label=…>`.
+          ARIA's `button` role is CHILDREN-PRESENTATIONAL: every descendant's role
+          is stripped, so the `<h3>` vanished from heading navigation and the
+          "Default" badge and the description were announced NOWHERE on the page —
+          they appear in no other surface. Neither jsdom (testing-library does not
+          model presentational children) nor Playwright can see that, which is why
+          it took a human-shaped review rather than a failing test.
+          Now only the NAME is the control. The heading, badge and description are
+          real content again, outside the button, and `after:absolute after:inset-0`
+          stretches the button's hit area over the whole card — so FR96's "the
+          whole card, not a button on it" still holds for a pointer.
+          ⚠️ The card is `relative` so that overlay resolves against IT. The actions
+          row below is `relative z-10` to sit ABOVE the overlay; without that the
+          overlay would swallow Edit and Delete. Hit-tested in the e2e, not assumed.
+          ⚠️ The old geometric non-overlap assertion is gone on purpose: here the
+          activation area overlaps the actions BY DESIGN, and z-order decides. The
+          e2e asks `elementFromPoint` what a tap actually lands on instead. */}
       <div className="flex items-start gap-3 mb-3">
         {/* Profile icon */}
         <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xl ${color}`}
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xl shrink-0 ${color}`}
         >
           {icon}
         </div>
@@ -162,7 +195,33 @@ function ProfileCard({
         {/* Profile info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-heading truncate">{profile.name}</h3>
+            <h3 className="font-semibold text-heading truncate">
+              <button
+                type="button"
+                // ⚠️ AC-3: the active card is not activatable TO ITSELF. No handler
+                // at all when active, rather than a handler that returns early —
+                // there is no silent no-op to mistake for a broken switch. The
+                // active card also gets NO stretch overlay, so its whole card is
+                // inert rather than being a card-sized target that does nothing.
+                onClick={isActive ? undefined : onSwitch}
+                aria-current={isActive ? 'true' : undefined}
+                // ⚠️ `aria-disabled`, NOT `disabled`. A `disabled` button leaves
+                // the tab order, and this control IS the profile's name — so
+                // `disabled` would make the one card a keyboard user most wants to
+                // confirm the only one they cannot reach.
+                aria-disabled={isActive ? 'true' : undefined}
+                aria-label={
+                  isActive ? `${profile.name} (current profile)` : `Switch to ${profile.name}`
+                }
+                className={`max-w-full truncate text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  isActive
+                    ? 'cursor-default'
+                    : "cursor-pointer after:absolute after:inset-0 after:content-['']"
+                }`}
+              >
+                {profile.name}
+              </button>
+            </h3>
             {profile.isDefault && (
               <span className="text-xs surface-inset text-body px-2 py-0.5 rounded-full">
                 Default
@@ -193,19 +252,37 @@ function ProfileCard({
         </div>
       )}
 
-      {/* Actions — status display plus Edit/Delete. The card is deliberately NOT a
-          switcher (story 54.3, FR80): `SwitchProfileDropdown` is the app's one
-          profile-switching control, so a per-card "Switch to" was a second way to
-          do the same thing. */}
-      <div className="mt-4 pt-4 border-t border-default flex items-center gap-2">
+      {/* Actions — Edit/Delete, SIBLINGS of the activation region above and never
+          nested inside it (story 63.1). That is what lets both stay independently
+          operable by mouse and keyboard while the card itself switches. */}
+      {/* ⚠️ `relative z-10` lifts this row ABOVE the name button's stretched
+          `::after` overlay. Without it the overlay covers Edit and Delete and
+          every click on them switches profile instead. The e2e hit-tests this
+          rather than inferring it from the class. */}
+      <div className="mt-4 pt-4 border-t border-default flex items-center gap-2 relative z-10">
         {/* Edit button - every profile, including the default and a lone one (story 54.1).
             The profile's name is in the accessible name so several cards' Edit
             buttons are distinguishable; the visible "Edit" is contained in it. */}
+        {/* ⚠️ `min-h-[1.75rem] px-2 inline-flex items-center` is the project's
+            28px target floor (the same recipe as `auth-indicator.tsx:393`), and
+            story 63.1 MEASURED that this button did not clear it: a bare text
+            button is 20px tall at every width, under both the project floor and
+            WCAG 2.2 SC 2.5.8's 24x24. It was under it before this story too —
+            the card becoming a control is simply what put a real bounding-box
+            measurement on it for the first time.
+            ⚠️ `items-center` VERTICALLY CENTRES the label in the 28px box; it is
+            NOT what creates the box. An earlier version of this comment claimed
+            `inline-flex` was load-bearing because "`min-h` alone on an inline box
+            does not make a box" — that was FALSE and the code review caught it. A
+            `<button>` is inline-BLOCK by UA default (Tailwind preflight does not
+            change its `display`), so `min-height` applies with or without it:
+            measured by dropping `inline-flex items-center` and re-running the
+            320px/1280px e2e floor assertions, which still passed. */}
         <button
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${profile.name}`}
-          className="text-sm text-accent hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
+          className="text-sm text-accent hover:text-blue-800 dark:hover:text-blue-200 transition-colors inline-flex items-center min-h-[1.75rem] px-2 -ml-2 rounded"
         >
           Edit
         </button>
@@ -216,7 +293,7 @@ function ProfileCard({
             type="button"
             onClick={onDelete}
             disabled={isDeleting}
-            className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+            className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-auto inline-flex items-center min-h-[1.75rem] px-2 -mr-2 rounded"
           >
             {isDeleting ? 'Deleting...' : 'Delete'}
           </button>

@@ -14,9 +14,13 @@ import {
  * `number` and derived its avatar with `profileId % PROFILE_COLORS.length`. Ids
  * have been uuid STRINGS since story 5-14, so that expression evaluated to `NaN`,
  * the lookup returned `undefined`, and every avatar in the profile switcher
- * rendered with no colour class and no emoji — on a component mounted at
- * `components/profiles/profiles-page.tsx:81`. Nothing failed, because
- * `components/profiles/__tests__/profiles-page.test.tsx` mocks `SwitchProfileDropdown` out.
+ * rendered with no colour class and no emoji. Nothing failed, because
+ * `components/profiles/__tests__/profiles-page.test.tsx` mocked `SwitchProfileDropdown` out.
+ *
+ * ⚠️ That component was DELETED by story 63.1 (FR96) — the profile cards are the
+ * switcher now — so the defect site above is history. These assertions are not:
+ * they pin the derivation itself, which `profile-list.tsx` still uses and which a
+ * future second avatar surface would have to match.
  *
  * A DOM test of the switcher would not have caught it either: the broken value
  * was `undefined`, which React simply omits from `className`, so the element

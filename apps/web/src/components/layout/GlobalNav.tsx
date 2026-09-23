@@ -485,8 +485,8 @@ const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none [&::-webki
  * was at y=-57.75, and the "Balance" row sat at y=-51 — off-screen, un-tappable
  * and unscrollable. The cap is expressed against the small viewport unit so a
  * mobile URL bar cannot invalidate it, and leaves room for the bar itself.
- * Both of the repo's other disclosed panels do the same (`Modal.tsx:113`,
- * `profiles/switch-profile.tsx:130`).
+ * The repo's other disclosed panel does the same (`Modal.tsx:113`). A third,
+ * `profiles/switch-profile.tsx`, also did, until story 63.1 deleted it.
  *
  * ⚠️ `overflow-y-auto` computes `overflow-x` to `auto` as well, which makes this
  * panel a HORIZONTAL scroll container that would silently absorb an overflowing
@@ -720,9 +720,12 @@ export function GlobalNav() {
       outsidePressRef.current = false
     }
 
-    // Gated on `isMoreOpen` — this is structurally the always-mounted document
-    // listener that `profiles/switch-profile.tsx:59-68` gets wrong, and it is
-    // acceptable here ONLY because it is gated.
+    // Gated on `isMoreOpen`. This is structurally the always-mounted document
+    // listener pattern, and it is acceptable here ONLY because it is gated. The
+    // repo's counter-example was `profiles/switch-profile.tsx`, whose Escape
+    // listener was attached unconditionally for the component's whole lifetime;
+    // story 63.1 deleted that component, so the warning is stated rather than
+    // pointed at.
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('pointerdown', handlePointerDown)
     document.addEventListener('pointerup', handlePointerUp)

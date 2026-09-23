@@ -1,7 +1,7 @@
 import { profileIcon } from '@/lib/profile-appearance'
 import { useProfileStore } from '@/stores/profileStore'
 import { fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProfileList } from '../profile-list'
 import { RETIRED_LIGHT_ONLY_TOKENS, collectClassTokens } from './retired-tokens'
 
@@ -149,74 +149,301 @@ describe('ProfileList avatar icon (story 54.2)', () => {
     expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
   })
 })
-
 /**
- * Story 54.3 (FR80): the card is not a second profile switcher.
+ * Story 63.1 (FR96): the card IS the switcher.
  *
- * ⚠️ WHY THESE EXIST AT ALL. Before this story, NO test anywhere in `src` or `e2e`
- * asserted the card's "Switch to" button — so deleting it broke nothing red, and a
- * green suite would have proved nothing about the removal. Absence has to be
- * asserted deliberately or it is not covered.
+ * ⚠️⚠️ THIS DESCRIBE REPLACES ONE THAT ASSERTED THE OPPOSITE. Story 54.3 (FR80)
+ * removed the per-card "Switch to" affordance and pinned its absence here with
+ * two tests (`ProfileList has no per-card switcher`). Those guards did exactly
+ * what they were written to do — they made this reversal a deliberate act rather
+ * than an accident — and 63.1 deletes them on purpose. FR80's "exactly one
+ * control lets a user switch the active profile" clause is still true and still
+ * in force; only WHICH control changes. See `epics.md` FR80/FR96.
  *
- * ⚠️ Each absence probe is paired with a positive control in the same test. A
- * `queryByRole` against a card that never rendered returns `null` just as happily
- * as one against a card that rendered without the button — the control proves the
- * query was aimed at a real, rendered card.
+ * ⚠️ 54.3's probes were `queryByRole('button', { name: /switch/i })` — a regex,
+ * chosen so a relabelled or icon-only button could not slip past. That breadth
+ * meant they went RED the moment the activation region below was implemented,
+ * BEFORE they were deleted. That red was the positive control proving they had
+ * been aimed at real rendered cards all along; it is recorded in the story's
+ * Debug Log rather than being papered over.
  *
- * ⚠️ The probes use `queryByRole('button', { name: /switch/i })`, NOT
- * `queryByText`. `name` accepts a regex, so this catches a relabelled button
- * ("Switch", "Switch profile") as a full-string `'Switch to'` would not — and,
- * unlike a text query, it also catches an icon-only button whose name comes from
- * `aria-label` and has no text node at all. `queryByText` additionally THROWS on
- * multiple matches instead of failing cleanly, so a switcher returning on two
- * cards would error rather than report an assertion failure.
+ * ⚠️ WHY A DEDICATED ACTIVATION REGION AND NOT A CLICKABLE CARD. A `<button>`
+ * wrapping the card would nest the Edit and Delete `<button>`s inside it, which
+ * is invalid HTML and behaves unpredictably. A `<div onClick>` on the card would
+ * need `role`, `tabIndex`, a key handler AND `stopPropagation` on both actions —
+ * and `stopPropagation` on `onClick` alone does not cover KEYBOARD activation of
+ * those actions, which is how that variant ships half-done. The header block is
+ * a real `<button>` and Edit/Delete are its SIBLINGS, so there is no nesting and
+ * no propagation to stop: the "does not also switch" tests below pass because of
+ * the DOM shape, not because of a handler that could regress silently.
  */
-describe('ProfileList has no per-card switcher (story 54.3)', () => {
+describe('ProfileList card is the switcher (story 63.1)', () => {
+  /**
+   * ⚠️⚠️ WHY THIS CAPTURES AND RESTORES THE ACTION, AND NOT JUST `reset()`.
+   * `reset()` (`profileStore.ts:255-263`) restores only the DATA — `profiles`,
+   * `activeProfileId`, `isLoading`, `error`. zustand keeps a store's ACTIONS in
+   * that same state object, so a test that swaps `switchProfile` for a spy (the
+   * AC-3 test below) leaves the spy in place for every test that follows, and
+   * `reset()` does not undo it.
+   *
+   * This was not theoretical: it cost a real debugging cycle. The AC-7 orphan
+   * test failed with `expected 'does-not-exist' to be 'biz'` and read exactly
+   * like a product defect in the recovery path — the store simply never moved.
+   * The switch had in fact been routed to the leaked spy. Restoring the real
+   * action here is what makes each test's store genuinely its own.
+   */
+  const REAL_SWITCH_PROFILE = useProfileStore.getState().switchProfile
+
   afterEach(() => {
+    useProfileStore.setState({ switchProfile: REAL_SWITCH_PROFILE })
     useProfileStore.getState().reset()
   })
 
   const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
   const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
 
-  it('offers no "Switch to" on a NON-ACTIVE card, which is where it used to appear', () => {
+  it('switches to a profile when its card is clicked', async () => {
+    const user = userEvent.setup()
     useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
     renderWithProviders(<ProfileList />)
 
-    // Positive control, scoped to the card itself: Business is rendered AND is
-    // the non-active one — exactly the `!isActive` condition that used to render
-    // "Switch to". Asserting "Active Profile" appears *somewhere* would not prove
-    // that; an inverted active-card rule would satisfy it just as well.
-    // ⚠️ `div.surface`, not `div.bg-white`: story 54.5 moved the card background
-    // onto the semantic token, and this selector went red for it. A card locator
-    // pinned to a presentational class breaks on any theming change — the throw
-    // below is what makes that break loud instead of a silent empty match.
-    const bizCard = screen.getByRole('button', { name: 'Edit Business' }).closest('div.surface')
-    if (!bizCard) throw new Error('Business card not found')
-    expect(within(bizCard).queryByText('Active Profile')).toBeNull()
+    expect(useProfileStore.getState().activeProfileId).toBe('main')
 
-    const mainCard = screen
-      .getByRole('button', { name: 'Edit Main Profile' })
-      .closest('div.surface')
-    if (!mainCard) throw new Error('Main card not found')
-    expect(within(mainCard).getByText('Active Profile')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Switch to Business' }))
 
-    expect(within(bizCard).queryByRole('button', { name: /switch/i })).toBeNull()
+    expect(useProfileStore.getState().activeProfileId).toBe('biz')
   })
 
-  it('offers no "Switch to" on any card, under either active selection', () => {
-    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'biz' })
+  // ⚠️ Enter and Space are asserted SEPARATELY and explicitly. They come free
+  // from the native `<button>`, which is the point — but "it is a button" is the
+  // implementation claim, not the requirement. AC-2 asks for keyboard operation,
+  // so the test asks the keyboard, and it would catch a later refactor to a
+  // `div[role=button]` that forgot its key handler.
+  for (const key of ['{Enter}', ' '] as const) {
+    it(`switches on keyboard activation (${key === ' ' ? 'Space' : 'Enter'})`, async () => {
+      const user = userEvent.setup()
+      useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+      renderWithProviders(<ProfileList />)
+
+      screen.getByRole('button', { name: 'Switch to Business' }).focus()
+      await user.keyboard(key)
+
+      expect(useProfileStore.getState().activeProfileId).toBe('biz')
+    })
+  }
+
+  /**
+   * ⚠️ These two run against a NON-ACTIVE card on purpose. On the active card a
+   * stray switch would be unobservable — the id is already that profile's, so
+   * the assertion would hold whether or not the action leaked. Against 'biz'
+   * while 'main' is active, a leak CHANGES the store, so the assertion can fail.
+   */
+  it('opens Edit without also switching to that card', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
     renderWithProviders(<ProfileList />)
 
-    expect(screen.getByRole('button', { name: 'Edit Main Profile' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit Business' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Edit Business' }))
 
-    // `queryAllByRole` (not `queryBy`) so a switcher returning on BOTH cards
-    // reports an empty-array assertion failure instead of a multiple-match throw.
-    expect(screen.queryAllByRole('button', { name: /switch/i })).toHaveLength(0)
+    // Positive control: the click really did land on Edit.
+    expect(screen.getByRole('dialog', { name: 'Edit Profile' })).toBeInTheDocument()
+    expect(useProfileStore.getState().activeProfileId).toBe('main')
+  })
+
+  it('opens Edit from the KEYBOARD without also switching', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    screen.getByRole('button', { name: 'Edit Business' }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByRole('dialog', { name: 'Edit Profile' })).toBeInTheDocument()
+    expect(useProfileStore.getState().activeProfileId).toBe('main')
+  })
+
+  it('does not switch when Delete is pressed', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    // 'biz' is non-default and the list has two profiles, so Delete renders.
+    const bizCard = screen
+      .getByRole('button', { name: 'Switch to Business' })
+      .closest('div.surface')
+    if (!bizCard) throw new Error('Business card not found')
+    await user.click(within(bizCard).getByRole('button', { name: 'Delete' }))
+
+    // ⚠️ POSITIVE CONTROL, added by code review (Edge Case Hunter, and MEASURED
+    // by them). Without this line the test asserted only that the active id did
+    // not move — which holds whether Delete deletes, no-ops, or is unwired. They
+    // proved it by replacing `onClick={onDelete}` with `onClick={() => {}}`: the
+    // test stayed GREEN. Asserting the deletion really happened is what gives the
+    // "…and did not also switch" half something to mean.
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual(['main'])
+    expect(useProfileStore.getState().activeProfileId).toBe('main')
+  })
+
+  // ⚠️ Added by code review. The task list claimed Edit AND Delete were covered
+  // "including via keyboard", and only Edit was — the Delete test above uses
+  // `user.click`. AC-2 says "clicking", so the AC was met and the CLAIM was not.
+  // Writing the missing test was cheaper than defending the gap.
+  it('deletes from the KEYBOARD without also switching', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    const bizCard = screen
+      .getByRole('button', { name: 'Switch to Business' })
+      .closest('div.surface')
+    if (!bizCard) throw new Error('Business card not found')
+    within(bizCard).getByRole('button', { name: 'Delete' }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual(['main'])
+    expect(useProfileStore.getState().activeProfileId).toBe('main')
+  })
+
+  /**
+   * AC-3: the ACTIVE card does not present itself as activatable.
+   *
+   * ⚠️ THE SAME-OUTCOME TRAP. "Clicking the active card leaves it active" is an
+   * outcome the CORRECT code and a broken no-op both produce — the id is already
+   * 'main', so a store assertion here cannot fail. So the MECHANISM is asserted
+   * instead: `switchProfile` is swapped for a spy in the store's own state (the
+   * actions live there alongside the data, and `useProfileSwitcher` reads them at
+   * render), and the test proves it was never called. Compare the positive
+   * control at the end, which proves the spy is wired and CAN record a call.
+   */
+  it('does not present the active card as activatable to itself', async () => {
+    const user = userEvent.setup()
+    const switchProfile = vi.fn()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main', switchProfile })
+    renderWithProviders(<ProfileList />)
+
+    const activeRegion = screen.getByRole('button', { name: 'Main Profile (current profile)' })
+    expect(activeRegion).toHaveAttribute('aria-current', 'true')
+    expect(activeRegion).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(activeRegion)
+    expect(switchProfile).not.toHaveBeenCalled()
+
+    // Positive control: the spy is real and records a genuine switch, so its
+    // silence above means "not called", not "never wired up".
+    await user.click(screen.getByRole('button', { name: 'Switch to Business' }))
+    expect(switchProfile).toHaveBeenCalledWith('biz')
+  })
+
+  // ⚠️ `aria-disabled`, NOT `disabled`. A `disabled` button is removed from the
+  // tab order, and the active profile's NAME lives inside this region — so
+  // `disabled` would make the one card a keyboard user most wants to confirm the
+  // only one they cannot reach. `aria-disabled` keeps it focusable and readable
+  // while announcing that there is nothing to activate.
+  it('keeps the active card focusable so its name is still reachable', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    const activeRegion = screen.getByRole('button', { name: 'Main Profile (current profile)' })
+    activeRegion.focus()
+    expect(activeRegion).toHaveFocus()
+  })
+
+  /**
+   * AC-7 — the escape hatch that 54.3's code review (Edge Case Hunter) found,
+   * re-homed onto the cards.
+   *
+   * ⚠️⚠️ WHY THIS TEST MOVED RATHER THAN DIED. An `activeProfileId` that resolves
+   * to NO profile — a corrupt or stale persisted blob, or an id minted on another
+   * device — used to leave a user with no switcher at all. `switch-profile.tsx`
+   * carried a deliberate guard against it (never hide the only switcher; fall
+   * back to the default for DISPLAY only) and `switch-profile.test.tsx` pinned
+   * it. 63.1 deletes both. Card-as-switcher very likely fixes the case for free,
+   * because every card is a control and there is no `!activeProfile` bail-out to
+   * hide behind — but "likely" is not a test, and deleting the file without
+   * re-homing the case would quietly re-open a defect a review already caught.
+   */
+  it('stays usable and recoverable when the active id resolves to no profile', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'does-not-exist' })
+    renderWithProviders(<ProfileList />)
+
+    // Nothing claims to be active, because nothing is.
+    expect(screen.queryByText('Active Profile')).toBeNull()
+    expect(screen.queryByRole('button', { name: /\(current profile\)$/ })).toBeNull()
+
+    // Every card is still an offered way back.
+    expect(screen.getByRole('button', { name: 'Switch to Main Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Switch to Business' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Switch to Business' }))
+    expect(useProfileStore.getState().activeProfileId).toBe('biz')
+
+    // Positive control for the two absence probes above: with a VALID active id
+    // the "Active Profile" marker and the current-profile region DO appear, so
+    // their earlier absence meant "nothing ticked", not "I misnamed the probe".
+    expect(screen.getByText('Active Profile')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Business (current profile)' })).toBeInTheDocument()
+  })
+
+  /**
+   * ⚠️⚠️ THE CARD'S CONTENT STAYS IN THE ACCESSIBILITY TREE (code review).
+   *
+   * The first implementation of this story made the whole card header one
+   * `<button aria-label=…>`. ARIA's `button` role is CHILDREN-PRESENTATIONAL:
+   * every descendant's role is stripped. So the `<h3>` disappeared from heading
+   * navigation, and the "Default" badge and the description were announced
+   * NOWHERE — they exist on no other surface. TWO independent review layers
+   * found it; no automated check could, because testing-library does not model
+   * presentational children and Playwright's snapshot did not either.
+   *
+   * The fix was structural: only the NAME is the button now, and the heading,
+   * badge and description are content again. These tests are the guard, and they
+   * assert the things that were LOST — a heading role, and text outside the
+   * control — rather than merely that the strings appear somewhere, which was
+   * true of the broken version too.
+   */
+  it('keeps the profile name a real level-3 heading', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.getByRole('heading', { level: 3, name: 'Business' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Main Profile' })).toBeInTheDocument()
+  })
+
+  it('keeps the description and the Default badge OUTSIDE the activation control', () => {
+    useProfileStore.setState({
+      profiles: [{ ...main, description: 'Everyday money' }, biz],
+      activeProfileId: 'main',
+    })
+    renderWithProviders(<ProfileList />)
+
+    const control = screen.getByRole('button', { name: 'Main Profile (current profile)' })
+
+    const description = screen.getByText('Everyday money')
+    expect(description).toBeInTheDocument()
+    // ⚠️ The discriminating assertion. In the broken version this text WAS in the
+    // document — it was simply inside the button, where ARIA hides it. Asserting
+    // presence alone would have passed against the defect.
+    expect(control.contains(description)).toBe(false)
+
+    const badge = screen.getByText('Default')
+    expect(control.contains(badge)).toBe(false)
+  })
+
+  // ⚠️ `SwitchProfileDropdown` returned `null` below two profiles, so a
+  // single-profile user saw no switcher at all. The card list has no such floor.
+  // This pins that the lone card reads as the current profile rather than
+  // inheriting the deleted component's hidden-control assumption.
+  it('presents a lone profile as current, not as something to switch to', () => {
+    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    expect(
+      screen.getByRole('button', { name: 'Main Profile (current profile)' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Switch to / })).toBeNull()
   })
 })
-
 /**
  * Story 54.5 (UX-DR59, UX-DR60): dark-mode legibility and card declutter.
  *

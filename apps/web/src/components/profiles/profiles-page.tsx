@@ -26,7 +26,6 @@
 import { PremiumPrompt } from '@/components/auth/premium-prompt'
 import { CreateProfileDialog } from '@/components/profiles/create-profile'
 import { ProfileList } from '@/components/profiles/profile-list'
-import { SwitchProfileDropdown } from '@/components/profiles/switch-profile'
 import { usePremiumAccess } from '@/hooks/usePremiumAccess'
 import { useState } from 'react'
 
@@ -77,9 +76,13 @@ export function ProfilesPage() {
             </p>
           </div>
 
-          {/* Active profile switcher */}
+          {/* ⚠️ No switcher control here since story 63.1 (FR96): the profile
+              CARDS below are the switcher. `SwitchProfileDropdown` sat beside this
+              button and is deleted — FR80's "exactly one control lets a user
+              switch the active profile" still holds, the card is now that control.
+              The wrapper is kept because "+ New Profile" is a header action and
+              63.2 adds no second one; it is a layout slot, not a leftover. */}
           <div className="flex items-center gap-4">
-            <SwitchProfileDropdown />
             <button
               type="button"
               onClick={() => setShowCreateDialog(true)}

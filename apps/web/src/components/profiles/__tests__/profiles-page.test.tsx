@@ -51,9 +51,9 @@ vi.mock('@/components/profiles/create-profile', () => ({
 vi.mock('@/components/profiles/profile-list', () => ({
   ProfileList: () => <div data-testid="profile-list" />,
 }))
-vi.mock('@/components/profiles/switch-profile', () => ({
-  SwitchProfileDropdown: () => <div data-testid="switch-profile" />,
-}))
+// ⚠️ No `switch-profile` mock since story 63.1 (FR96): that component is deleted
+// and the profile CARDS are the switcher. A `vi.mock` of a module that no longer
+// exists is not reliably loud, so it is removed rather than left sitting.
 
 import { ProfilesPage } from '../profiles-page'
 

@@ -469,8 +469,10 @@ const SIGN_OUT_CLASS =
  *
  * ⚠️ A DISCLOSURE, not a menu (UX record 2026-09-21, §4). No `role="menu"`
  * and no `aria-haspopup`: one action and a line of static text do not clear
- * the bar for the menu pattern, and `switch-profile.tsx`'s `aria-haspopup`
- * without a menu panel is the precedent NOT to copy.
+ * the bar for the menu pattern. The precedent NOT to copy was the profiles
+ * switcher's `aria-haspopup` without a menu panel — that component
+ * (`profiles/switch-profile.tsx`) was deleted by story 63.1, so the anti-pattern
+ * is named here rather than pointed at.
  *
  * ⚠️ A `<button aria-expanded>`, NOT the `<details>`/`<summary>` the nav's More
  * uses (decision D1, Lucas 2026-09-22). The nav chose `<details>` so its ROUTES
@@ -504,11 +506,12 @@ const SIGN_OUT_CLASS =
  * A compound name would therefore still match `/^Account menu/`-style probes.
  * The name is what it is by decision, not because tooling forces it.
  *
- * The dismissal machinery mirrors `GlobalNav.tsx`'s More disclosure, in
- * spirit and on purpose NOT `switch-profile.tsx`'s: Escape and an outside
- * press close it, focus returns to the trigger only when nothing else has
- * claimed it, the document listeners exist only while open, and any pathname
- * change closes it. Copied rather than shared, because extracting a hook would
+ * The dismissal machinery mirrors `GlobalNav.tsx`'s More disclosure: Escape and
+ * an outside press close it, focus returns to the trigger only when nothing else
+ * has claimed it, the document listeners exist only while open, and any pathname
+ * change closes it. (It was deliberately NOT modelled on the profiles switcher,
+ * whose listeners were always-on and unscoped; story 63.1 deleted that component,
+ * so only the good precedent remains.) Copied rather than shared, because extracting a hook would
  * reopen `GlobalNav.tsx`, which this story has no other reason to touch. A
  * shared hook is logged in `deferred-work.md`.
  */

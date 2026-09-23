@@ -3,15 +3,20 @@
  *
  * ## Why this is shared, and what it fixes
  *
- * Two components render a profile avatar. `profiles/profile-list.tsx` hashed the
- * uuid correctly; `profiles/switch-profile.tsx` typed the id as `number` and did
- * `profileId % PROFILE_COLORS.length` — and a profile id has been a uuid STRING
- * since story 5-14. `"a1b2…" % 8` is `NaN`, so `PROFILE_COLORS[NaN]` was
- * `undefined`: every avatar in the switcher rendered with no colour class and no
- * icon. Nothing caught it because `components/profiles/__tests__/profiles-page.test.tsx` mocks
- * `SwitchProfileDropdown` out entirely.
+ * Two components USED to render a profile avatar, and they drifted.
+ * `profiles/profile-list.tsx` hashed the uuid correctly; `profiles/switch-profile.tsx`
+ * typed the id as `number` and did `profileId % PROFILE_COLORS.length` — and a
+ * profile id has been a uuid STRING since story 5-14. `"a1b2…" % 8` is `NaN`, so
+ * `PROFILE_COLORS[NaN]` was `undefined`: every avatar in the switcher rendered
+ * with no colour class and no icon. Nothing caught it because
+ * `components/profiles/__tests__/profiles-page.test.tsx` mocked `SwitchProfileDropdown`
+ * out entirely.
  *
- * One implementation, used by both, so the two cannot drift again.
+ * ⚠️ HISTORY, NOT CURRENT CODE: story 63.1 (FR96) made the profile CARDS the
+ * switcher and DELETED `switch-profile.tsx`, so `profile-list.tsx` is now the only
+ * caller here. This module stays shared anyway — it is the pinned derivation the
+ * regression test below asserts, and a second avatar surface would otherwise
+ * re-open exactly the drift described above.
  *
  * ⚠️ The hash must stay stable: it is what makes a given profile keep the same
  * colour and emoji across renders and devices. Changing the algorithm reshuffles
