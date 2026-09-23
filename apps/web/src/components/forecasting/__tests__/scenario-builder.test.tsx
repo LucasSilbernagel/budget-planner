@@ -1,6 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SavedForecast } from '../../../routes/forecasting'
+import { useBalanceStore } from '../../../stores/balanceStore'
+import { useExpenseStore } from '../../../stores/expenseStore'
+import { useIncomeStore } from '../../../stores/incomeStore'
+import { useProfileStore } from '../../../stores/profileStore'
+import { useSavingsStore } from '../../../stores/savingsStore'
 import { ScenarioBuilder } from '../scenario-builder'
 
 /**
@@ -28,13 +33,126 @@ vi.mock('../../../stores/currencyStore', () => ({
   useCurrencyCode: () => mockCurrency.currency,
 }))
 
+const ISO = '2026-09-22T00:00:00.000Z'
+const PROFILE = 'profile-test'
+
+/**
+ * ⚠️ Story 62.1 (FR94) DELETED `DEFAULT_INCOME` / `DEFAULT_EXPENSES` /
+ * `DEFAULT_SAVINGS` / `DEFAULT_INVESTMENTS` — a fresh builder now seeds from the
+ * user's own stores.
+ *
+ * Every test below predates that and used those constants purely as scaffolding:
+ * they exercise currency parsing, money-input sanitization, labelling and
+ * zero-clamping, none of which care WHERE the starting values came from. Seeding
+ * the stores with the identical figures ($5,000 savings, $10,000 investments, a
+ * $5,000/mo Salary and the three expense rows) keeps every assertion below
+ * meaning exactly what it meant before, rather than re-baselining them to new
+ * numbers and losing the ability to compare against the pre-62.1 record.
+ *
+ * The seed lands during `render()` because RTL flushes effects inside `act`; see
+ * `scenario-builder.seeding.dom.test.tsx` for why it is an effect and not a lazy
+ * initializer.
+ */
+function seedBuilderStartingValues(): void {
+  useProfileStore.setState({ activeProfileId: PROFILE })
+  useIncomeStore.setState({
+    incomeSources: [
+      {
+        id: 'inc-1',
+        profileId: PROFILE,
+        userId: 0,
+        name: 'Salary',
+        amount: 500_000,
+        frequency: 'monthly',
+        categoryId: null,
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+    ],
+  })
+  useExpenseStore.setState({
+    expenses: [
+      {
+        id: 'exp-1',
+        profileId: PROFILE,
+        userId: 0,
+        name: 'Rent/Mortgage',
+        amount: 150_000,
+        frequency: 'monthly',
+        categoryId: null,
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+      {
+        id: 'exp-2',
+        profileId: PROFILE,
+        userId: 0,
+        name: 'Utilities',
+        amount: 20_000,
+        frequency: 'monthly',
+        categoryId: null,
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+      {
+        id: 'exp-3',
+        profileId: PROFILE,
+        userId: 0,
+        name: 'Groceries',
+        amount: 60_000,
+        frequency: 'monthly',
+        categoryId: null,
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+    ],
+  })
+  useSavingsStore.setState({
+    savingsGoals: [
+      {
+        id: 'goal-1',
+        profileId: PROFILE,
+        name: 'Savings',
+        targetAmount: 1_000_000,
+        currentBalance: 500_000,
+        allocationMode: 'manual',
+        monthlyAllocation: null,
+        sortOrder: 0,
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+    ],
+  })
+  useBalanceStore.setState({
+    entries: [
+      {
+        id: 'entry-1',
+        profileId: PROFILE,
+        type: 'investment',
+        name: 'Investments',
+        currentBalance: 1_000_000,
+        monthlyContribution: 0,
+        frequency: 'monthly',
+        sortOrder: 0,
+        createdAt: ISO,
+        updatedAt: ISO,
+      },
+    ],
+  })
+}
+
 beforeEach(() => {
   mockCurrency.mode = 'none'
   mockCurrency.currency = 'NONE'
   mockCurrency.locale = 'en-US'
+  seedBuilderStartingValues()
 })
 
 afterEach(() => {
+  useIncomeStore.setState({ incomeSources: [] })
+  useExpenseStore.setState({ expenses: [] })
+  useSavingsStore.setState({ savingsGoals: [] })
+  useBalanceStore.setState({ entries: [] })
   vi.clearAllMocks()
 })
 
@@ -152,13 +270,22 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     const olderRow: SavedForecast = { ...savedForecast, inputs: undefined }
     render(<ScenarioBuilder onSave={vi.fn()} initialForecast={olderRow} />)
 
-    // Name still seeds from the scenario, but the missing inputs fall back to the
-    // builder defaults (savings 500000 → 5000.00, investments 1000000 → 10000.00,
-    // years 10) instead of throwing.
+    // Name still seeds from the scenario, and the missing inputs fall back
+    // without throwing.
+    //
+    // ⚠️ AMENDED by story 62.1 (FR94). The fallback used to be the demo
+    // constants (savings 500000 → 5000.00, investments 1000000 → 10000.00);
+    // those are deleted, and the replacement is ZERO — deliberately NOT the live
+    // stores, which hold 5000.00/10000.00 here via `seedBuilderStartingValues`.
+    // Reading them for a LOADED forecast would silently re-baseline a scenario
+    // saved months ago to today's figures, which 62.1 AC-7 forbids. `years`
+    // still falls back to `DEFAULT_FORM.years`, which survives.
     expect(screen.getByDisplayValue('My Saved Plan')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('5000.00')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('10000.00')).toBeInTheDocument()
+    expect(screen.getAllByDisplayValue('0.00').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
+    // The live stores did not leak in.
+    expect(screen.queryByDisplayValue('5000.00')).toBeNull()
+    expect(screen.queryByDisplayValue('10000.00')).toBeNull()
   })
 })
 

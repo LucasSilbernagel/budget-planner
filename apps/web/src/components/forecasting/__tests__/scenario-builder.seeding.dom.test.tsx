@@ -1,0 +1,491 @@
+/**
+ * The scenario builder seeds a FRESH scenario from the user's own finances
+ * (story 62.1, FR94).
+ *
+ * ## ⚠️ Why the hydration case here is the one that matters
+ *
+ * Every one of the four seeding hooks is a zustand selector, and zustand passes
+ * `getInitialState` to React as `getServerSnapshot`. During the hydration pass
+ * React uses that snapshot, so `useIncomeSources()` and friends report
+ * EMPTY/ZERO on the first client render **however full localStorage is** — the
+ * distinction story 38.1 (BUG-F) turned on, measured in
+ * `hooks/useStoresHydrated.ts`'s docblock (`liveSavings=1` beside
+ * `snapshotSavings=0`).
+ *
+ * So a lazy `useState` initializer, which runs exactly once during that render,
+ * would capture the empty value and **never recover** — and an empty builder is
+ * indistinguishable from the legitimate empty-user state below. The seed is
+ * therefore an effect gated on `useStoresHydrated()`, and
+ * `hydrateAfterStoresFill` is what proves it: a test that merely `render()`s
+ * against populated stores CANNOT tell the two implementations apart, because
+ * RTL has no separate hydration pass.
+ *
+ * ## ⚠️ Filename
+ *
+ * `vitest.config.ts` selects the environment by filename. `.dom.test.tsx` keeps
+ * this in jsdom explicitly, matching `stores/__tests__/store-selector-hydration.dom.test.tsx`,
+ * whose harness this borrows.
+ */
+
+import { render, screen } from '@testing-library/react'
+import { act } from 'react'
+import { hydrateRoot } from 'react-dom/client'
+import { renderToString } from 'react-dom/server'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { __resetStoresHydratedForTests } from '../../../hooks/useStoresHydrated'
+import type { SavedForecast } from '../../../routes/forecasting'
+import { useBalanceStore } from '../../../stores/balanceStore'
+import { useExpenseStore } from '../../../stores/expenseStore'
+import { useIncomeStore } from '../../../stores/incomeStore'
+import { useProfileStore } from '../../../stores/profileStore'
+import { useSavingsStore } from '../../../stores/savingsStore'
+import { ScenarioBuilder } from '../scenario-builder'
+
+// Same currency stub as `scenario-builder.test.tsx`: a symbol-less, grouping-less
+// formatter so a displayed amount is exactly `cents / 100` to two places and the
+// assertions below read as money rather than as formatter output.
+vi.mock('../../../stores/currencyStore', () => ({
+  useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
+  useCurrencyPreferences: () => ({ mode: 'none', currency: 'NONE', locale: 'en-US' }),
+  useCurrencyMode: () => 'none',
+  useCurrencyCode: () => 'NONE',
+}))
+
+const NOW = '2026-09-22T00:00:00.000Z'
+const PROFILE_A = 'profile-a'
+const PROFILE_B = 'profile-b'
+
+function incomeRow(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'inc-1',
+    profileId: PROFILE_A,
+    userId: 0,
+    name: 'Consulting',
+    amount: 720_000, // $7,200
+    frequency: 'monthly' as const,
+    categoryId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...over,
+  }
+}
+
+function expenseRow(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'exp-1',
+    profileId: PROFILE_A,
+    userId: 0,
+    name: 'Mortgage',
+    amount: 210_000, // $2,100
+    frequency: 'monthly' as const,
+    categoryId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...over,
+  }
+}
+
+function savingsGoal(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'goal-1',
+    profileId: PROFILE_A,
+    name: 'Emergency fund',
+    targetAmount: 1_000_000,
+    currentBalance: 345_600, // $3,456
+    allocationMode: 'manual' as const,
+    monthlyAllocation: null,
+    sortOrder: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...over,
+  }
+}
+
+function investmentEntry(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'entry-1',
+    profileId: PROFILE_A,
+    type: 'investment' as const,
+    name: 'Index fund',
+    currentBalance: 987_600, // $9,876
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+    sortOrder: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...over,
+  }
+}
+
+function clearStores(): void {
+  useIncomeStore.setState({ incomeSources: [] })
+  useExpenseStore.setState({ expenses: [] })
+  useSavingsStore.setState({ savingsGoals: [] })
+  useBalanceStore.setState({ entries: [] })
+}
+
+/** The user's own finances, all under PROFILE_A. */
+function fillStores(): void {
+  useIncomeStore.setState({ incomeSources: [incomeRow()] })
+  useExpenseStore.setState({ expenses: [expenseRow()] })
+  useSavingsStore.setState({ savingsGoals: [savingsGoal()] })
+  useBalanceStore.setState({ entries: [investmentEntry()] })
+}
+
+beforeEach(() => {
+  clearStores()
+  useProfileStore.setState({ activeProfileId: PROFILE_A })
+  // ⚠️ Required: the gate's module flag is set by any earlier `render()` in this
+  // module instance, which would make the hydration case start RESOLVED and pass
+  // for the wrong reason.
+  __resetStoresHydratedForTests()
+})
+
+afterEach(() => {
+  clearStores()
+  vi.clearAllMocks()
+})
+
+describe('a fresh scenario seeds from the user own finances (62.1)', () => {
+  it('seeds savings and investments from the user totals, not from demo constants', () => {
+    fillStores()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    // $3,456 of savings and $9,876 of investments — and explicitly NOT the
+    // retired DEFAULT_SAVINGS ($5,000) / DEFAULT_INVESTMENTS ($10,000).
+    expect(screen.getByDisplayValue('3456.00')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('9876.00')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('5000.00')).toBeNull()
+    expect(screen.queryByDisplayValue('10000.00')).toBeNull()
+  })
+
+  it('seeds income and expense rows with their real name, amount and frequency', () => {
+    fillStores()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Mortgage')).toBeInTheDocument()
+    // Amounts arrive in cents and render through the row editor's own divisor.
+    expect(screen.getByDisplayValue('7200')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('2100')).toBeInTheDocument()
+    // The demo rows are gone for good.
+    expect(screen.queryByDisplayValue('Salary')).toBeNull()
+    expect(screen.queryByDisplayValue('Rent/Mortgage')).toBeNull()
+    expect(screen.queryByDisplayValue('Groceries')).toBeNull()
+  })
+
+  it('carries a non-monthly frequency through rather than flattening it', () => {
+    useIncomeStore.setState({
+      incomeSources: [incomeRow({ name: 'Freelance', amount: 50_000, frequency: 'weekly' })],
+    })
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    const row = screen.getByDisplayValue('Freelance').closest('div')
+    expect(row).not.toBeNull()
+    // The store row's own frequency, NOT the monthly-normalized amount that
+    // `useTotalIncome` would have produced.
+    expect(screen.getByDisplayValue('500')).toBeInTheDocument()
+    expect((screen.getByDisplayValue('Freelance') as HTMLInputElement).value).toBe('Freelance')
+  })
+
+  /**
+   * ⚠️⚠️ MEASURED, and it corrects this story's own AC-1 wording.
+   *
+   * AC-1 asks that the growth-rate fields "show 0.00%". They cannot, and never
+   * did: both are `<input type="number">` fed the string `formatPercentage`
+   * produces, so the browser rejects the value outright. Probed directly at
+   * implementation time:
+   *
+   *   incomeGrowth  .value=[]  getAttribute('value')=[0.00%]  type=number
+   *   expenseGrowth .value=[]  getAttribute('value')=[0.00%]
+   *
+   * The field renders BLANK. That is pre-existing — it rendered blank holding
+   * `3.00%` too — and this story makes it strictly better, because a blank field
+   * that means "no growth" is honest where a blank field silently applying 3%
+   * was not. Fixing the number/percent-string mismatch is a real defect but a
+   * different one; it changes a shared field's typing semantics and is outside
+   * FR94. Recorded in the story's Completion Notes, not silently absorbed.
+   *
+   * So the assertions below use the two observables that can actually tell 0
+   * from 0.03: the rendered `value` ATTRIBUTE, and the rate the builder hands to
+   * `onSave`. `getByDisplayValue('0.00%')` would never match, and asserting
+   * `queryByDisplayValue('3.00%')` is null would pass vacuously.
+   */
+  it('defaults both growth rates to zero', () => {
+    fillStores()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    const income = screen.getByLabelText('Income Growth Rate')
+    const expense = screen.getByLabelText('Expense Growth Rate')
+
+    expect(income.getAttribute('value')).toBe('0.00%')
+    expect(expense.getAttribute('value')).toBe('0.00%')
+    // Positive control on the probe itself: the retired 3%/2% demo rates would
+    // have rendered here, so this pair is not vacuously green.
+    expect(income.getAttribute('value')).not.toBe('3.00%')
+    expect(expense.getAttribute('value')).not.toBe('2.00%')
+  })
+
+  it('hands a zero growth rate to onSave, not the retired 3%/2%', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    fillStores()
+    render(<ScenarioBuilder onSave={onSave} />)
+
+    const saveButton = await screen.findByRole(
+      'button',
+      { name: /save forecast/i },
+      { timeout: 2000 }
+    )
+    saveButton.click()
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = onSave.mock.calls[0][0]
+    expect(saved.scenario.incomeGrowthRate).toBe(0)
+    expect(saved.scenario.expenseGrowthRate).toBe(0)
+  })
+})
+
+/**
+ * Each seeded source is counted ONCE (62.1 AC-8).
+ *
+ * `ForecastingScenario.newIncome` / `newExpenses` share the builder's rows under
+ * a second name, and the naming actively invites a double-count reading — story
+ * 57.1 shipped three comments that got it wrong. Verified here rather than
+ * argued: `calculateFinancialForecast` projects from its `currentData` argument
+ * alone and never reads those two fields (`forecasting.ts:23-37,85-100`).
+ */
+describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => {
+  it('reports the hand-computed year-1 figures', async () => {
+    fillStores() // one income row $7,200/mo, one expense row $2,100/mo
+    const onResultChange = vi.fn()
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResultChange} />)
+
+    await vi.waitFor(
+      () =>
+        expect(onResultChange).toHaveBeenCalledWith(
+          expect.objectContaining({ baseline: expect.any(Array) })
+        ),
+      { timeout: 2000 }
+    )
+    const result = onResultChange.mock.calls.at(-1)?.[0]
+    const yearOne = result.baseline[0]
+
+    // BY HAND: `calculateTotalIncome` is a raw sum of the rows' `amount`
+    // (forecasting.ts:224). One row at 720000 cents ⇒ 720000. A double count —
+    // the scenario's `newIncome` added on top of `currentData.income` — would
+    // report 1440000.
+    expect(yearOne.income, 'one $7,200/mo source ⇒ 720000, a double count ⇒ 1440000').toBe(720_000)
+    expect(yearOne.expenses, 'one $2,100/mo expense ⇒ 210000').toBe(210_000)
+    // `calculateNetPeriodIncome` is monthly-normalized: 720000 − 210000.
+    expect(yearOne.netIncome, '720000 − 210000').toBe(510_000)
+  })
+
+  it('doubles when a second identical source is seeded, rather than quadrupling', async () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        incomeRow({ id: 'inc-1', name: 'Consulting A' }),
+        incomeRow({ id: 'inc-2', name: 'Consulting B' }),
+      ],
+    })
+    const onResultChange = vi.fn()
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResultChange} />)
+
+    await vi.waitFor(() => expect(onResultChange).toHaveBeenCalled(), { timeout: 2000 })
+    const result = onResultChange.mock.calls.at(-1)?.[0]
+
+    // Two rows at 720000 ⇒ 1440000. The relational half is mechanism-independent:
+    // whatever the unit, N sources must scale linearly, not quadratically.
+    expect(result.baseline[0].income, 'two $7,200/mo sources ⇒ 1440000').toBe(1_440_000)
+  })
+})
+
+describe('the seed respects the active profile (62.1 AC-4)', () => {
+  it('seeds only the active profile rows and totals', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        incomeRow({ id: 'inc-a', name: 'A Salary', profileId: PROFILE_A }),
+        incomeRow({ id: 'inc-b', name: 'B Salary', profileId: PROFILE_B }),
+      ],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [
+        savingsGoal({ id: 'g-a', currentBalance: 100_000, profileId: PROFILE_A }),
+        savingsGoal({ id: 'g-b', currentBalance: 900_000, profileId: PROFILE_B }),
+      ],
+    })
+
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    expect(screen.getByDisplayValue('A Salary')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('B Salary')).toBeNull()
+    // $1,000 from profile A alone — not $10,000 from both.
+    expect(screen.getByDisplayValue('1000.00')).toBeInTheDocument()
+  })
+
+  it('follows a profile switch', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        incomeRow({ id: 'inc-a', name: 'A Salary', profileId: PROFILE_A }),
+        incomeRow({ id: 'inc-b', name: 'B Salary', profileId: PROFILE_B }),
+      ],
+    })
+    useProfileStore.setState({ activeProfileId: PROFILE_B })
+
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    expect(screen.getByDisplayValue('B Salary')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('A Salary')).toBeNull()
+  })
+})
+
+describe('a user with nothing recorded gets an empty builder (62.1 AC-6)', () => {
+  it('renders empty income and expense lists, never the demo rows', () => {
+    // Stores are already cleared by beforeEach — this is the empty user.
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    // ⚠️ Positive control FIRST: a bare "no demo rows" assertion passes just as
+    // happily on a builder that failed to render at all.
+    expect(screen.getByDisplayValue('My Financial Forecast')).toBeInTheDocument()
+
+    expect(screen.queryByDisplayValue('Salary')).toBeNull()
+    expect(screen.queryByDisplayValue('Rent/Mortgage')).toBeNull()
+    expect(screen.queryByDisplayValue('Utilities')).toBeNull()
+    expect(screen.queryByDisplayValue('Groceries')).toBeNull()
+    // Zero, not the retired demo constants.
+    expect(screen.getAllByDisplayValue('0.00').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByDisplayValue('5000.00')).toBeNull()
+    expect(screen.queryByDisplayValue('10000.00')).toBeNull()
+  })
+
+  it('still offers the add-row affordances', () => {
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: /add income/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add expense/i })).toBeInTheDocument()
+  })
+})
+
+describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', () => {
+  const savedForecast: SavedForecast = {
+    id: 'saved-1',
+    name: 'March Plan',
+    description: 'Saved months ago',
+    scenario: {
+      name: 'March Plan',
+      description: 'Saved months ago',
+      incomeGrowthRate: 0.05,
+      expenseGrowthRate: 0.03,
+      newIncome: [{ name: 'Saved Income', amount: 111_100, frequency: 'monthly' }],
+      newExpenses: [{ name: 'Saved Expense', amount: 222_200, frequency: 'monthly' }],
+      oneTimeEvents: [],
+    },
+    result: {
+      scenario: { name: 'March Plan', incomeGrowthRate: 0.05, expenseGrowthRate: 0.03 },
+      baseline: [],
+      projection: [],
+      summary: { startingNetWorth: 0, endingNetWorth: 0, totalGrowth: 0, averageAnnualGrowth: 0 },
+    },
+    inputs: { savings: 333_300, investments: 444_400, years: 15 },
+    createdAt: '2026-03-01T00:00:00Z',
+    updatedAt: '2026-03-01T00:00:00Z',
+  }
+
+  it('does NOT re-baseline to the live stores', () => {
+    // The live stores hold visibly different numbers. If any of them reaches the
+    // builder, a forecast saved in March has silently re-based to September.
+    fillStores()
+
+    render(<ScenarioBuilder onSave={vi.fn()} initialForecast={savedForecast} />)
+
+    expect(screen.getByDisplayValue('Saved Income')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Saved Expense')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('3333.00')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('4444.00')).toBeInTheDocument()
+    // Via the attribute, for the `type="number"` reason documented above.
+    expect(screen.getByLabelText('Income Growth Rate').getAttribute('value')).toBe('5.00%')
+
+    // Nothing from the live stores leaked in.
+    expect(screen.queryByDisplayValue('Consulting')).toBeNull()
+    expect(screen.queryByDisplayValue('Mortgage')).toBeNull()
+    expect(screen.queryByDisplayValue('3456.00')).toBeNull()
+    expect(screen.queryByDisplayValue('9876.00')).toBeNull()
+  })
+
+  it('falls back to zero, not to the live stores, for an older row with no saved inputs', () => {
+    fillStores()
+    const olderRow: SavedForecast = { ...savedForecast, inputs: undefined }
+
+    render(<ScenarioBuilder onSave={vi.fn()} initialForecast={olderRow} />)
+
+    expect(screen.getByDisplayValue('March Plan')).toBeInTheDocument()
+    // Two zeroed money fields (savings + investments), and the surviving
+    // DEFAULT_FORM.years of 10.
+    expect(screen.getAllByDisplayValue('0.00').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByDisplayValue('10')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('3456.00')).toBeNull()
+    expect(screen.queryByDisplayValue('9876.00')).toBeNull()
+  })
+})
+
+/**
+ * ⚠️⚠️ THE CASE A PLAIN `render()` CANNOT SEE (62.1 AC-9).
+ *
+ * Server-render against the pristine snapshot, fill the stores, then hydrate —
+ * the real ordering, borrowed from `store-selector-hydration.dom.test.tsx`.
+ * Under a lazy `useState` initializer the builder captures the hydration-pass
+ * snapshot (empty) and stays empty forever; under the effect gated on
+ * `useStoresHydrated()` it fills on the commit after mount.
+ */
+async function hydrateAfterStoresFill(element: React.ReactElement) {
+  const container = document.createElement('div')
+  container.innerHTML = renderToString(element)
+  document.body.appendChild(container)
+  const serverHtml = container.innerHTML
+
+  fillStores()
+
+  const recoverable: string[] = []
+  let root: ReturnType<typeof hydrateRoot> | undefined
+  await act(async () => {
+    root = hydrateRoot(container, element, {
+      onRecoverableError: (error) => recoverable.push(String(error)),
+    })
+  })
+
+  const clientHtml = container.innerHTML
+
+  await act(async () => {
+    root?.unmount()
+  })
+  container.remove()
+  return { recoverable, serverHtml, clientHtml }
+}
+
+describe('the seed survives the rehydration race (62.1 AC-9)', () => {
+  it('fills from the stores even though the hydration pass saw them empty', async () => {
+    const { serverHtml, clientHtml } = await hydrateAfterStoresFill(
+      <ScenarioBuilder onSave={vi.fn()} />
+    )
+
+    // The server could not know the user's data, and must not have guessed it.
+    expect(serverHtml).not.toContain('Consulting')
+    // ...but after hydration settles the builder shows it. A lazy initializer
+    // fails HERE: it captured the empty hydration snapshot and never recovers.
+    expect(
+      clientHtml,
+      'builder seeded empty and never recovered — the lazy-initializer failure mode'
+    ).toContain('Consulting')
+    expect(clientHtml).toContain('3456.00')
+  })
+
+  it('raises no recoverable hydration error (62.1 AC-10)', async () => {
+    const { recoverable, serverHtml, clientHtml } = await hydrateAfterStoresFill(
+      <ScenarioBuilder onSave={vi.fn()} />
+    )
+
+    expect(
+      recoverable,
+      `server html length ${serverHtml.length}, client html length ${clientHtml.length}`
+    ).toEqual([])
+  })
+})

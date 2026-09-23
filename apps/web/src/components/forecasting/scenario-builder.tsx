@@ -17,11 +17,16 @@ import {
   parseFromInput,
   sanitizeMoneyInput,
 } from '@budget-planner/core'
-import type { NormalizableFinancialItem } from '@budget-planner/core/finance'
+import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
 import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react'
+import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { sanitizeWithCaret } from '../../lib/sanitized-input'
 import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
+import { useTotalInvestmentBalance } from '../../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
+import { useExpenses } from '../../stores/expenseStore'
+import { useIncomeSources } from '../../stores/incomeStore'
+import { useTotalSavings } from '../../stores/savingsStore'
 
 // ============================================================================
 // Constants
@@ -108,46 +113,26 @@ interface ScenarioFormData {
 // Constants
 // ============================================================================
 
-const DEFAULT_INCOME: LocalFinancialItem[] = [
-  {
-    id: 'income-1',
-    name: 'Salary',
-    amount: 500000, // $5,000 in cents
-    frequency: 'monthly',
-  },
-]
-
-const DEFAULT_EXPENSES: LocalFinancialItem[] = [
-  {
-    id: 'expense-1',
-    name: 'Rent/Mortgage',
-    amount: 150000, // $1,500 in cents
-    frequency: 'monthly',
-  },
-  {
-    id: 'expense-2',
-    name: 'Utilities',
-    amount: 20000, // $200 in cents
-    frequency: 'monthly',
-  },
-  {
-    id: 'expense-3',
-    name: 'Groceries',
-    amount: 60000, // $600 in cents
-    frequency: 'monthly',
-  },
-]
-
+/**
+ * ⚠️ There are deliberately NO `DEFAULT_INCOME` / `DEFAULT_EXPENSES` /
+ * `DEFAULT_SAVINGS` / `DEFAULT_INVESTMENTS` constants any more (story 62.1,
+ * FR94). A fresh builder seeds from the user's own stores, and a user with
+ * nothing recorded gets an EMPTY builder — never a demo row.
+ *
+ * Do not reintroduce a `rows.length === 0 ? DEMO_ROWS : rows` fallback. It would
+ * restore the defect for exactly the users least able to recognise that the
+ * salary on screen is not theirs.
+ */
 const DEFAULT_FORM: ScenarioFormData = {
   name: 'My Financial Forecast',
   description: 'Projecting my financial situation over the next 10 years',
-  incomeGrowthRate: 0.03, // 3%
-  expenseGrowthRate: 0.02, // 2%
+  // ⚠️ Both ZERO since story 62.1 (FR94). The builder projects the user's real
+  // position by default and invents no growth; a rate is something the user opts
+  // into, not an assumption baked into every scenario they open.
+  incomeGrowthRate: 0,
+  expenseGrowthRate: 0,
   years: 10,
 }
-
-const DEFAULT_SAVINGS = 500000 // $5,000
-const DEFAULT_INVESTMENTS = 1000000 // $10,000
 
 const FREQUENCY_OPTIONS = [
   { value: 'weekly' as const, label: 'Weekly' },
@@ -210,6 +195,39 @@ function itemsFromSaved(
 }
 
 /**
+ * Build local (id-carrying) financial items from the user's own store rows, for
+ * a FRESH scenario (story 62.1, FR94).
+ *
+ * ⚠️ Fields are mapped EXPLICITLY rather than spread. `toNormalizableItems`
+ * above strips only `id`, so a spread would carry `profileId`, `userId`,
+ * `categoryId` and `position` into the scenario — and from there into the saved
+ * `newIncome`/`newExpenses` JSON, silently changing the save format.
+ *
+ * ⚠️ `amount`/`frequency` are passed through as the RAW pair the row carries.
+ * They are not monthly-normalized (`useTotalIncome` is the normalized hook and
+ * is deliberately not used here) — the engine normalizes downstream, so
+ * pre-normalizing would count every non-monthly row twice over.
+ *
+ * Ids are re-keyed rather than reused: store ids are uuids, while this component
+ * mints its own with `generateId`. The deterministic `-seeded-<index>` form
+ * matches `itemsFromSaved` and cannot collide with a later `generateId` row.
+ *
+ * Values are coerced as defensively as `itemsFromSaved` does: a corrupt store
+ * row must not seed a NaN amount or an uncontrolled input.
+ */
+function itemsFromStore(
+  rows: readonly { name: string; amount: number; frequency: Frequency }[],
+  prefix: string
+): LocalFinancialItem[] {
+  return rows.map((row, index) => ({
+    id: `${prefix}-seeded-${index}`,
+    name: row.name ?? '',
+    amount: Number.isFinite(row.amount) ? row.amount : 0,
+    frequency: row.frequency ?? 'monthly',
+  }))
+}
+
+/**
  * Rebuild local one-time events from a saved scenario. The persisted events may
  * carry a `name` (the builder writes one) even though `ForecastingScenario` types
  * `oneTimeEvents` as `{ year, amount }`; default the name when absent (e.g. an
@@ -251,12 +269,10 @@ export function ScenarioBuilder({
   // from it (the parent remounts this component via `key` on load, so these lazy
   // initializers run once per load); a fresh builder falls back to the defaults.
   const [incomeItems, setIncomeItems] = useState<LocalFinancialItem[]>(() =>
-    initialForecast ? itemsFromSaved(initialForecast.scenario.newIncome, 'income') : DEFAULT_INCOME
+    initialForecast ? itemsFromSaved(initialForecast.scenario.newIncome, 'income') : []
   )
   const [expenseItems, setExpenseItems] = useState<LocalFinancialItem[]>(() =>
-    initialForecast
-      ? itemsFromSaved(initialForecast.scenario.newExpenses, 'expense')
-      : DEFAULT_EXPENSES
+    initialForecast ? itemsFromSaved(initialForecast.scenario.newExpenses, 'expense') : []
   )
 
   // State for scenario configuration
@@ -271,20 +287,73 @@ export function ScenarioBuilder({
         }
       : DEFAULT_FORM
   )
-  // ⚠️ AUDITED for story 32.2 (FR59) and deliberately UNCHANGED: these are
-  // what-if SCENARIO inputs the user types, seeded from DEFAULT_SAVINGS /
-  // DEFAULT_INVESTMENTS, not reads of the savings or balance stores. The
-  // "Starting/Ending Net Worth" figures downstream describe the scenario, not
-  // the app's net worth, so the savings-inclusive definition does not apply here.
-  const [savings, setSavings] = useState<number>(
-    () => initialForecast?.inputs?.savings ?? DEFAULT_SAVINGS
-  )
+  // ⚠️ DECISION REVERSED by story 62.1 (FR94), replacing the story 32.2 / FR59
+  // audit note that stood here.
+  //
+  // 32.2 examined these two fields and deliberately left them on hard-coded demo
+  // constants, reasoning that they are what-if SCENARIO inputs the user types
+  // rather than reads of the savings or balance stores. That reasoning was not
+  // wrong — it was OUTRANKED. A builder that opens on a stranger's $5,000 asks
+  // the user to correct three rows before they can start, and the downstream
+  // "Starting/Ending Net Worth" wording still describes the scenario, so nothing
+  // 32.2 was protecting is lost by starting that scenario from the user's own
+  // position.
+  //
+  // A fresh builder therefore seeds from `useTotalSavings()` /
+  // `useTotalInvestmentBalance()` in the hydration effect below. `0` here is the
+  // pre-seed value, and it is also the final value for a LOADED forecast whose
+  // saved row predates persisted `inputs` — reading the live stores in that case
+  // would silently re-baseline a forecast saved months ago, which is exactly what
+  // AC-7 forbids.
+  const [savings, setSavings] = useState<number>(() => initialForecast?.inputs?.savings ?? 0)
   const [investments, setInvestments] = useState<number>(
-    () => initialForecast?.inputs?.investments ?? DEFAULT_INVESTMENTS
+    () => initialForecast?.inputs?.investments ?? 0
   )
   const [oneTimeEvents, setOneTimeEvents] = useState<OneTimeEvent[]>(() =>
     initialForecast ? eventsFromSaved(initialForecast.scenario.oneTimeEvents) : []
   )
+
+  // ── Seeding a FRESH scenario from the user's own finances (story 62.1, FR94) ──
+  //
+  // ⚠️⚠️ WHY THIS IS AN EFFECT AND NOT A LAZY `useState` INITIALIZER.
+  //
+  // All four hooks below are zustand selectors, and zustand passes
+  // `getInitialState` to React as `getServerSnapshot`. React uses that snapshot
+  // for the WHOLE hydration pass, so they report empty/zero on the first client
+  // render however full localStorage already is — the BUG-F distinction story
+  // 38.1 turned on, measured in `hooks/useStoresHydrated.ts`'s docblock
+  // (`liveSavings=1` beside `snapshotSavings=0`).
+  //
+  // A lazy initializer runs exactly once, during that render. It would capture
+  // the empty snapshot and NEVER RECOVER — and an empty builder is
+  // indistinguishable from the legitimate empty-user state, so the failure would
+  // be silent. `useStoresHydrated()` is the house gate for "has the client taken
+  // over yet"; it is `false` on the server and during hydration by construction
+  // and flips on the commit after mount, by which point these hooks report live
+  // data.
+  //
+  // ⚠️ `hasSeeded` starts TRUE for a loaded forecast, so this is a no-op on that
+  // path and cannot re-baseline a saved scenario (AC-7). It flips on the first
+  // seed, so this cannot run twice or overwrite the user's own edits.
+  //
+  // ⚠️ Known, accepted: the builder paints one commit with empty rows before the
+  // seed lands. That is a transient, not a hydration mismatch, and the 500 ms
+  // debounce means the chart never flickers.
+  const storesHydrated = useStoresHydrated()
+  const storeIncome = useIncomeSources()
+  const storeExpenses = useExpenses()
+  const storeSavings = useTotalSavings()
+  const storeInvestments = useTotalInvestmentBalance()
+  const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
+
+  useEffect(() => {
+    if (hasSeeded || !storesHydrated) return
+    setIncomeItems(itemsFromStore(storeIncome, 'income'))
+    setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
+    setSavings(storeSavings)
+    setInvestments(storeInvestments)
+    setHasSeeded(true)
+  }, [hasSeeded, storesHydrated, storeIncome, storeExpenses, storeSavings, storeInvestments])
 
   // State for results — seed from the loaded forecast so its summary shows
   // immediately, before the debounced recompute runs.
@@ -660,7 +729,21 @@ export function ScenarioBuilder({
           />
 
           {/* Current Savings */}
+          {/* ⚠️ `key` REMOUNTS this field when the story-62.1 seed lands, and it
+              is load-bearing, not cosmetic. `InputField` snapshots its display
+              string in a LAZY `useState` initializer and never resyncs when the
+              `value` prop changes (deliberately — there is no blur
+              re-formatter, so resyncing would fight the user mid-type). Without
+              the remount the seeded total reaches `savings` state and the SAVED
+              scenario, while the input on screen still reads the pre-seed
+              `0.00` — correct data, wrong thing displayed, and no test of the
+              state alone would see it.
+              Safe because `hasSeeded` flips exactly once, on the commit after
+              mount, long before anyone can type. The income/expense rows need no
+              equivalent: their `key` is the item id, so seeding remounts them
+              anyway. */}
           <InputField
+            key={`savings-${hasSeeded}`}
             label="Current Savings"
             value={savings}
             onChange={handleSavingsChange}
@@ -671,8 +754,10 @@ export function ScenarioBuilder({
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
           />
 
-          {/* Current Investments */}
+          {/* Current Investments — remounted on seed for the same reason as
+              Current Savings above. */}
           <InputField
+            key={`investments-${hasSeeded}`}
             label="Current Investments"
             value={investments}
             onChange={handleInvestmentsChange}
