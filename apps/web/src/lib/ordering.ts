@@ -21,6 +21,8 @@
  * keeps its own direct test coverage. Only its four store call sites are retired.
  */
 
+import { PG_INT32_MAX } from '@budget-planner/core/sync/types'
+
 /**
  * The minimal shape these helpers order by. Every field except `id` is optional
  * because the input is ultimately untrusted persisted JSON: a hand-edited
@@ -173,26 +175,72 @@ export function backfillSortOrder<T extends DisplayOrdered>(rows: readonly T[] |
  * the value inside the contract; a clamped collision is harmless because duplicates
  * are expected anyway and resolve via the read-time tiebreaker.
  *
- * Note: at the int32 ceiling `max + 1` would overflow the column; the sync gates
- * bound `sortOrder` to the Postgres `integer` maximum (2_147_483_647, declared as
- * a private constant in `packages/core/src/sync/types.ts`) and reject anything
- * above it — loudly at the server gate, but only as a swallowed `console.error`
- * on the client queue gate.
+ * ⚠️ THE RESULT IS ALSO BOUNDED ABOVE, at the Postgres `integer` maximum
+ * (story 66.4). The sync gates bound `sortOrder` to `PG_INT32_MAX`
+ * (2_147_483_647) and reject anything above it — loudly at the server gate, but
+ * only as a swallowed `console.error` on the client queue gate. The constant is
+ * IMPORTED from `packages/core/src/sync/types.ts`, which is the module that
+ * declares the rejecting gate, rather than re-declared here: a producer whose
+ * bound is a private copy of the literal is a bound that can drift away from the
+ * gate it exists to satisfy, and this repo has already paid for that once (the
+ * hand-mirrored currency enum that drifted to 11 of 21 and deadlocked sync).
  *
  * ⚠️⚠️ REACHING THAT DOES **NOT** REQUIRE ~2.1 BILLION INSERTS — an earlier version
  * of this note said so and was wrong (found in 48.2's review). The gate is
  * `.max(PG_INT32_MAX)` and zod's `.max` is **INCLUSIVE**, so `sortOrder:
- * 2_147_483_647` is a contractually VALID value for a pulled row; `applyServerChanges`
- * writes it unvalidated and `stampMissingSortOrder` stamps only MISSING positions, so
- * it reaches the store intact. **One** such row makes the next local add compute
+ * 2_147_483_647` is a contractually VALID value for a pulled row. Since 66.2
+ * `applyServerChanges` DOES validate a pulled row, but verdict-only and against
+ * schemas that do not declare `sortOrder` at all, so the value is written through
+ * unchanged; `stampMissingSortOrder` stamps only MISSING positions. It reaches the
+ * store intact. **One** such row makes the next local add compute
  * `max + 1 = 2_147_483_648`: the queue gate throws, `syncBridge` swallows it into a
  * `console.error`, and that row — and every later add in the list, via `max + 1` —
- * renders locally but silently never syncs. Logged in `deferred-work.md`.
+ * renders locally but silently never syncs. Logged in `deferred-work.md`, and
+ * CLOSED there by this story — the entry is marked FIXED, not open.
  *
- * ⚠️ This function does NOT itself clamp to that ceiling — it only clamps the
- * FLOOR to 0. Pre-existing and deliberately out of scope for story 48.2, which
- * removed the local `PG_INT32_MAX` constant along with the move-planning helpers
- * that were its only users.
+ * ⚠️⚠️ AT THE CEILING THE VALUE COLLIDES RATHER THAN RE-PACKING, and that was a
+ * decision, not an oversight (story 66.4, D1). Once a list contains a
+ * ceiling-valued row, every subsequent insert also sits at the ceiling, so
+ * positions stop being distinct at the bottom of that list.
+ *
+ * Why that is the right trade HERE: since story 48.2 removed manual reordering,
+ * `sortOrder` is purely INSERTION order, and colliding rows fall through to
+ * `createdAt` ASC then `id` ASC, which RECONSTRUCTS insertion order whenever the
+ * rows differ in `createdAt` — the ordinary case, since the only non-test callers
+ * of the four add actions are the four page form submits, and a person filling a
+ * form is far more than a millisecond apart. ⚠️ It does NOT hold when `createdAt`
+ * is absent (it is optional on {@link DisplayOrdered} — the input is untrusted
+ * persisted JSON) or when two devices disagree about the clock: a pulled row
+ * stamped by a device running fast can carry a `createdAt` newer than a local add
+ * made after it.
+ *
+ * ⚠️⚠️ BUT NOT "EXACTLY", AND THE DIFFERENCE WAS MEASURED, NOT REASONED.
+ * `createdAt` is `new Date().toISOString()` — MILLISECOND resolution — so rows
+ * created inside the same millisecond tie on it too and fall through to `id`, a
+ * random uuid. Story 66.4's own argument claimed "reproduces insertion order
+ * exactly"; its consequence test refuted that on the first green run, returning
+ * `['second','third','pulled']` for expenses and varying between runs. The
+ * accepted position is the narrower one: rows at the ceiling keep their positions
+ * inside the gate and survive, and their order is insertion order only when their
+ * timestamps differ. See `stores/__tests__/sort-order-ceiling.dom.test.ts`, which
+ * pins both halves.
+ *
+ * This is still overwhelmingly better than what it replaces — a list that stops
+ * syncing silently and permanently — and it is only reachable on a list already
+ * carrying a ceiling-valued row. The alternative, re-packing the list densely to
+ * 0..n-1, cannot be done from here (this function is pure `(rows) => number`): it
+ * would mean rewriting the array at all four store call sites and queueing N sync
+ * UPDATE operations. ⚠️ Those re-packed values would be `0..n-1` and therefore
+ * perfectly IN range — they would not trip the ceiling gate, and an earlier version
+ * of this note implied they would. The real cost of re-pack is scope and churn: a
+ * pure helper becomes a mutation across four call sites, N independently-failing
+ * operations replace one, and every row's position changes under last-write-wins.
+ * That is why it was rejected, not because the values would be refused.
+ *
+ * ⚠️ THE COST THIS ACCEPTS: `sortOrder` alone is no longer a usable sort key for
+ * a list that has reached the ceiling — the tiebreaker is load-bearing there. **If
+ * manual reordering is ever reintroduced, revisit this**, because at that point a
+ * collision would start discarding real user intent rather than reconstructing it.
  */
 export function nextSortOrder(rows: readonly DisplayOrdered[] | null): number {
   if (!Array.isArray(rows)) {
@@ -208,8 +256,13 @@ export function nextSortOrder(rows: readonly DisplayOrdered[] | null): number {
   if (max === null) {
     return 0
   }
-  // Clamp INTO the sync contract rather than emitting a value the gates reject.
-  return Math.max(0, Math.trunc(max) + 1)
+  // Clamp INTO the sync contract at BOTH ends rather than emitting a value the
+  // gates reject. ⚠️ The ORDER of the two clamps is immaterial while `0 <=
+  // PG_INT32_MAX` — measured across 11 inputs, none order-sensitive. An earlier
+  // version of this comment claimed the order was load-bearing for reaching `0`;
+  // that was a reasoned mechanism, not an observed one, and it was false. Both
+  // clamps are written out rather than nested for readability alone.
+  return Math.min(PG_INT32_MAX, Math.max(0, Math.trunc(max) + 1))
 }
 
 /**
@@ -230,7 +283,47 @@ export function nextSortOrder(rows: readonly DisplayOrdered[] | null): number {
  *
  * Deliberately NOT {@link backfillSortOrder}: renumbering every row would discard
  * positions the server DID supply. Unpositioned rows already sort last, so
- * assigning them values above the current max preserves the sorted order exactly.
+ * assigning them values above the current max preserves the sorted order —
+ * **but only BELOW saturation.**
+ *
+ * ⚠️⚠️ AT OR ABOVE THE CEILING THAT GUARANTEE DOES NOT HOLD, and this is the one
+ * place the 66.4 clamp changed behaviour rather than only bounding it. Found by
+ * the BLIND review layer; all twenty of the story's purpose-written tests dated
+ * their orphans NEWER than the ceiling row, so none of them could observe it.
+ * There is no headroom left above `PG_INT32_MAX`, so `max + 1` can no longer be
+ * strictly greater than `max`, and two things follow — both MEASURED:
+ *
+ *   (a) An orphan stamped AT the ceiling TIES with the ceiling row instead of
+ *       landing above it, so an OLDER orphan sorts FIRST:
+ *         stamp([{srv, MAX, 2026-05}, {old, -, 2025-01}])
+ *           -> [[srv, MAX], [old, MAX]]  which then READS as ["old", "srv"]
+ *       (below saturation the same input gives [[srv,7],[old,8]] -> ["srv","old"])
+ *
+ *   (b) A row persisted ABOVE the ceiling is never healed (this function leaves
+ *       positioned rows untouched, and the early return above skips a fully
+ *       positioned list entirely), so a new add at `MAX` renders ABOVE it:
+ *         nextSortOrder([{corrupt, 3e9}]) -> MAX, and the add reads FIRST.
+ *
+ * ⚠️ BOTH ARE ACCEPTED, DELIBERATELY (story 66.4 code review, Lucas's call).
+ * Neither is reachable from the server: the column is `integer`, so it cannot
+ * hold `3e9`, and both sync gates reject anything above `MAX` — a hand-edited
+ * localStorage blob is the only source, the same hostile-input class the FLOOR
+ * clamp was justified on. On such a list the pre-clamp behaviour was worse in the
+ * way that actually matters: the row AND every later add silently never synced.
+ * What remains is one row rendered out of place next to a row that cannot legally
+ * exist. Pinned by `__tests__/ordering.test.ts` so it is recorded, not latent.
+ *
+ * ⚠️⚠️ THE RUNNING COUNTER IS CLAMPED PER ROW, NOT ONLY AT ITS SEED (story 66.4).
+ * `next` starts from {@link nextSortOrder} — which is bounded — and then advances
+ * by one per unpositioned row. Bounding only the seed would fix the FIRST stamped
+ * row and leave the second at `PG_INT32_MAX + 1`, the third at `+2`, each of them
+ * a value the client queue gate throws on and `syncBridge` swallows.
+ *
+ * That pairing is not hypothetical: this function runs on the PULL path
+ * (`lib/sync/applyServerChanges.ts` -> `resortCollection`), which is the very path
+ * that delivers a ceiling-valued server row, and a pull mixing one positioned row
+ * with unpositioned ones is the ordinary pre-0013 shape. Clamping `nextSortOrder`
+ * alone would have left the defect reachable by its own primary route.
  */
 export function stampMissingSortOrder<T extends DisplayOrdered>(rows: readonly T[] | null): T[] {
   const sorted = sortByDisplayOrder(rows)
@@ -245,7 +338,9 @@ export function stampMissingSortOrder<T extends DisplayOrdered>(rows: readonly T
       return row
     }
     const stamped = { ...row, sortOrder: next }
-    next += 1
+    // Bounded per row — see the ceiling note above. Rows collide AT the ceiling
+    // and resolve via the read-time tiebreaker (decision D1 in story 66.4).
+    next = Math.min(PG_INT32_MAX, next + 1)
     return stamped
   })
 }

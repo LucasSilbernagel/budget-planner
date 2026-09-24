@@ -12,6 +12,7 @@
  * expectation from the thing it guards cannot fail).
  */
 
+import { PG_INT32_MAX } from '@budget-planner/core/sync/types'
 import { describe, expect, it } from 'vitest'
 import {
   type DisplayOrdered,
@@ -201,12 +202,77 @@ describe('nextSortOrder — append at the bottom', () => {
     expect(nextSortOrder([row('a', 1.5)])).toBe(2)
   })
 
+  /**
+   * ⚠️⚠️ THE UPPER BOUND IS ASSERTED SEPARATELY AND DELIBERATELY (story 66.4).
+   * Adding `PG_INT32_MAX` to the array below and stopping there is the obvious
+   * move and it is VACUOUS: the pre-66.4 return for that input is
+   * `2_147_483_648`, which IS an integer and IS `>= 0`, so both assertions in
+   * this test pass over the exact value the story exists to reject. A bound is
+   * only pinned by an assertion in the direction of the bound.
+   */
   it('always returns a non-negative integer for hostile inputs', () => {
     for (const hostile of [-5, -0.5, 1.5, -1_000_000]) {
       const next = nextSortOrder([row('x', hostile)])
       expect(Number.isInteger(next)).toBe(true)
       expect(next).toBeGreaterThanOrEqual(0)
     }
+  })
+
+  /**
+   * ⚠️⚠️ THE INT32 CEILING (story 66.4, FR105).
+   *
+   * `PG_INT32_MAX` is imported from the gate that rejects, NOT re-declared here.
+   * A test carrying its own copy of the bound would keep passing if the gate's
+   * bound moved — it would be a copy asserted against itself, which is a recorded
+   * failure mode in this repo (story 33.2).
+   *
+   * Reachability, so nobody re-derives the "needs 2.1 billion inserts" mistake
+   * that 48.2's review had to correct: zod's `.max` is INCLUSIVE, so a server row
+   * carrying `sortOrder: PG_INT32_MAX` is contractually VALID, and nothing on the
+   * pull path rewrites it (66.2's guard is verdict-only and does not even declare
+   * the key). ONE such row is the whole precondition.
+   */
+  it('clamps a ceiling-valued max to PG_INT32_MAX rather than overflowing it', () => {
+    expect(nextSortOrder([row('a', PG_INT32_MAX)])).toBe(PG_INT32_MAX)
+  })
+
+  it('clamps a max ALREADY above the ceiling back down to it', () => {
+    // A hostile or corrupt persisted row, not just the exact boundary.
+    expect(nextSortOrder([row('a', 3_000_000_000)])).toBe(PG_INT32_MAX)
+  })
+
+  it('never returns a value the sync gates would reject, at either end', () => {
+    for (const hostile of [-5, -0.5, 1.5, -1_000_000, PG_INT32_MAX, PG_INT32_MAX + 1, 9e15]) {
+      const next = nextSortOrder([row('x', hostile)])
+      expect(Number.isInteger(next)).toBe(true)
+      expect(next).toBeGreaterThanOrEqual(0)
+      expect(next).toBeLessThanOrEqual(PG_INT32_MAX)
+    }
+  })
+
+  it('still appends normally one step below the ceiling', () => {
+    // The clamp must not drag ordinary values up to the ceiling.
+    expect(nextSortOrder([row('a', PG_INT32_MAX - 2)])).toBe(PG_INT32_MAX - 1)
+  })
+
+  /**
+   * ⚠️⚠️ ACCEPTED BEHAVIOUR (b) — found by the repo-aware EDGE review layer.
+   *
+   * A row persisted ABOVE the ceiling is never healed: `stampMissingSortOrder`
+   * leaves positioned rows untouched and early-returns on a fully positioned list.
+   * The next add clamps to `MAX`, which is BELOW it, so the new row renders ABOVE
+   * the corrupt one — "append at the bottom" inverts for that list.
+   *
+   * Accepted for the same reason as (a): `3e9` cannot come from the `integer`
+   * column or past either gate, so only a hand-edited localStorage blob produces
+   * it — and pre-clamp that same add went to `3e9 + 1` and never synced at all.
+   */
+  it('an above-ceiling row is NOT healed, so the next add sorts above it', () => {
+    const rows = [row('corrupt', 3_000_000_000, '2025-01-01T00:00:00.000Z')]
+    const next = nextSortOrder(rows)
+    expect(next).toBe(PG_INT32_MAX)
+    const after = sortByDisplayOrder([...rows, row('added', next, '2026-06-01T00:00:00.000Z')])
+    expect(after.map((r) => r.id)).toEqual(['added', 'corrupt'])
   })
 })
 
@@ -269,5 +335,120 @@ describe('stampMissingSortOrder — self-healing for rows that arrive unposition
 
   it('returns [] for null/non-array input', () => {
     expect(stampMissingSortOrder(null)).toEqual([])
+  })
+
+  /**
+   * ⚠️⚠️ THE CLAMP IN `nextSortOrder` DOES NOT REACH THIS LOOP (story 66.4, AC-2).
+   *
+   * `stampMissingSortOrder` seeds `next` from `nextSortOrder` and then does a bare
+   * `next += 1` per unpositioned row. Bounding only the seed fixes the FIRST
+   * stamped row and leaves the second at `PG_INT32_MAX + 1`, the third at `+2`,
+   * and so on — every one of them a value the client queue gate throws on.
+   *
+   * This is not a hypothetical pairing. This function runs on the PULL path
+   * (`applyServerChanges.ts` -> `resortCollection`), which is the same path that
+   * delivers the ceiling-valued row in the first place, and a pull that mixes one
+   * positioned server row with unpositioned ones is the ordinary pre-0013 shape.
+   */
+  it('keeps every stamped position inside the int32 ceiling', () => {
+    const stamped = stampMissingSortOrder([
+      { id: 'at-ceiling', sortOrder: PG_INT32_MAX, createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'orphan-1', createdAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'orphan-2', createdAt: '2026-01-03T00:00:00.000Z' },
+      { id: 'orphan-3', createdAt: '2026-01-04T00:00:00.000Z' },
+    ])
+    for (const stampedRow of stamped) {
+      expect(stampedRow.sortOrder).toBeLessThanOrEqual(PG_INT32_MAX)
+      expect(stampedRow.sortOrder).toBeGreaterThanOrEqual(0)
+    }
+    // The server's authoritative position is still preserved, and the orphans
+    // collide AT the ceiling rather than overflowing past it (decision D1).
+    expect(stamped.map((r) => [r.id, r.sortOrder])).toEqual([
+      ['at-ceiling', PG_INT32_MAX],
+      ['orphan-1', PG_INT32_MAX],
+      ['orphan-2', PG_INT32_MAX],
+      ['orphan-3', PG_INT32_MAX],
+    ])
+  })
+
+  /**
+   * D1's READ-ORDER direction.
+   *
+   * ⚠️ THIS TEST IS REVERT-INSENSITIVE and must not be cited as clamp coverage.
+   * All three review layers flagged it. On pre-fix code the rows carry
+   * `MAX, MAX+1, MAX+2` — strictly ascending — so the expected order results
+   * either way. It guards the tiebreaker's direction, nothing about the ceiling.
+   * The clamp itself is pinned by `keeps every stamped position inside the int32
+   * ceiling` and by the dom file's gate-parse assertions, which DO go red on main.
+   *
+   * ⚠️ Note what this does and does NOT establish. The rows below carry DISTINCT
+   * `createdAt` values, so the tiebreaker has a real key to work with and
+   * reconstructs insertion order. Rows that collide at the ceiling AND share a
+   * `createdAt` millisecond fall through to `id` — a random uuid — and their
+   * order is arbitrary. Story 66.4 originally claimed the tiebreaker reproduced
+   * insertion order "exactly"; that was refuted by measurement, and the
+   * same-millisecond case is pinned in
+   * `stores/__tests__/sort-order-ceiling.dom.test.ts`.
+   */
+  it('collided ceiling rows with distinct timestamps READ in insertion order', () => {
+    const stamped = stampMissingSortOrder([
+      { id: 'at-ceiling', sortOrder: PG_INT32_MAX, createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'orphan-2', createdAt: '2026-01-03T00:00:00.000Z' },
+      { id: 'orphan-1', createdAt: '2026-01-02T00:00:00.000Z' },
+    ])
+    expect(sortByDisplayOrder(stamped).map((r) => r.id)).toEqual([
+      'at-ceiling',
+      'orphan-1',
+      'orphan-2',
+    ])
+  })
+
+  /**
+   * ⚠️⚠️ ACCEPTED BEHAVIOUR (a) — the saturation case the story's original twenty
+   * tests could not see, because every one of them dated its orphans NEWER than
+   * the ceiling row. Found by the BLIND review layer, which had no repo access.
+   *
+   * At the ceiling an orphan is stamped EQUAL to the ceiling row rather than above
+   * it, so the two TIE and `createdAt` decides — an OLDER orphan therefore sorts
+   * FIRST. This contradicts the "unpositioned rows sort last" promise, which now
+   * holds only below saturation, and the docblock says so.
+   *
+   * Accepted rather than fixed (Lucas, 2026-09-24): unreachable from the server
+   * (the column is int32 and both gates reject `> MAX`), and strictly better than
+   * the pre-clamp behaviour, where the whole list silently stopped syncing.
+   */
+  it('AT the ceiling an OLDER orphan ties and sorts FIRST — accepted, not fixed', () => {
+    const stamped = stampMissingSortOrder([
+      { id: 'srv', sortOrder: PG_INT32_MAX, createdAt: '2026-05-01T00:00:00.000Z' },
+      { id: 'old', createdAt: '2025-01-01T00:00:00.000Z' },
+    ])
+    // Stamped EQUAL, not above — there is no headroom left.
+    expect(stamped.map((r) => [r.id, r.sortOrder])).toEqual([
+      ['srv', PG_INT32_MAX],
+      ['old', PG_INT32_MAX],
+    ])
+    // ...so the read order inverts relative to the below-saturation contrast.
+    expect(sortByDisplayOrder(stamped).map((r) => r.id)).toEqual(['old', 'srv'])
+  })
+
+  it('BELOW saturation the same shape keeps the orphan LAST (the contrast)', () => {
+    const stamped = stampMissingSortOrder([
+      { id: 'srv', sortOrder: 7, createdAt: '2026-05-01T00:00:00.000Z' },
+      { id: 'old', createdAt: '2025-01-01T00:00:00.000Z' },
+    ])
+    expect(stamped.map((r) => [r.id, r.sortOrder])).toEqual([
+      ['srv', 7],
+      ['old', 8],
+    ])
+    expect(sortByDisplayOrder(stamped).map((r) => r.id)).toEqual(['srv', 'old'])
+  })
+
+  it('does not drag ordinary stamped positions up to the ceiling', () => {
+    const stamped = stampMissingSortOrder([
+      { id: 'server', sortOrder: 7, createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'orphan-1', createdAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'orphan-2', createdAt: '2026-01-03T00:00:00.000Z' },
+    ])
+    expect(stamped.map((r) => r.sortOrder)).toEqual([7, 8, 9])
   })
 })

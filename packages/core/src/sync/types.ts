@@ -17,8 +17,26 @@ import { FINANCE_TYPES } from '../services/balanceTracking'
  * (cents), so client-side validation must reject values the DB cannot store to
  * avoid "integer out of range" failures that would otherwise only surface at
  * persistence time and be retried forever.
+ *
+ * ⚠️ `PG_INT32_MAX` is EXPORTED (story 66.4). It is not exported for convenience:
+ * `nextSortOrder` (`apps/web/src/lib/ordering.ts`) has to clamp the position it
+ * computes to the SAME bound `syncOperationDataSchema.sortOrder` rejects on
+ * (`.max(PG_INT32_MAX)` below), and a producer whose bound is a separate copy of
+ * the literal is a bound that can silently drift away from its gate. This repo
+ * has already paid for that once, immediately below: the hand-mirrored currency
+ * enum drifted to 11 of 21 values and became a permanent sync lockout. Import
+ * this constant rather than re-declaring the number.
+ *
+ * ⚠️ SCOPE, stated precisely: this unifies the producer with the CLIENT gate
+ * below. The SERVER ingest gate still carries its own literals
+ * (`apps/web/src/server/api/sync.ts:125,136,190,209` for `sortOrder`, `:187` for
+ * `monthlyAllocation`), so client/server drift remains possible. Narrowing that
+ * gap would mean the server importing from core, which is a separate change.
+ *
+ * ⚠️ `PG_INT32_MIN` stays module-private — nothing outside this file needs it,
+ * and an unused export is a maintenance claim with no caller.
  */
-const PG_INT32_MAX = 2_147_483_647
+export const PG_INT32_MAX = 2_147_483_647
 const PG_INT32_MIN = -2_147_483_648
 
 /**
