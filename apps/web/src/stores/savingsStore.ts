@@ -8,6 +8,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
+import { registerProfileScopedCollection } from '../lib/profile-cascade'
 import { scopeToActiveProfile } from '../lib/profile-scope'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
@@ -340,3 +341,8 @@ export const useSavingsActions = () => ({
 // Uses string timestamps for proper serialization
 // Note: These types are for client-side storage; db package types are for database
 // Integration with core service layer for type safety and business logic
+
+// Declare this collection to the profile cascade (story 66.3, FR104). Deleting a
+// profile destroys the rows STRICTLY stamped with it; see `lib/profile-cascade.ts`
+// for why the stores register themselves instead of that module importing them.
+registerProfileScopedCollection(useSavingsStore, 'savingsGoals')

@@ -2,6 +2,7 @@ import type { CategoryKind } from '@budget-planner/db'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { registerProfileScopedCollection } from '../lib/profile-cascade'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID } from '../lib/uuid'
 import { useProfileStore } from './profileStore'
@@ -263,3 +264,8 @@ export const useLiveCategories = (): ClientCategory[] => {
   const categories = useCategoryStore((state) => state.categories)
   return useMemo(() => categories.filter((category) => !category.isDeleted), [categories])
 }
+
+// Declare this collection to the profile cascade (story 66.3, FR104). Deleting a
+// profile destroys the rows STRICTLY stamped with it; see `lib/profile-cascade.ts`
+// for why the stores register themselves instead of that module importing them.
+registerProfileScopedCollection(useCategoryStore, 'categories')

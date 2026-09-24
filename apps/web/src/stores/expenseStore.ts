@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { backfillSortOrder, nextSortOrder, sortByDisplayOrder } from '../lib/ordering'
+import { registerProfileScopedCollection } from '../lib/profile-cascade'
 import { scopeToActiveProfile } from '../lib/profile-scope'
 import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
@@ -397,3 +398,8 @@ export const useExpenseByFrequency = (frequency: Frequency): ClientExpense[] => 
 // Client-side persistence enabled via Zustand persist middleware
 // Data persists in localStorage across page refreshes
 // Dates are stored as ISO strings for proper serialization
+
+// Declare this collection to the profile cascade (story 66.3, FR104). Deleting a
+// profile destroys the rows STRICTLY stamped with it; see `lib/profile-cascade.ts`
+// for why the stores register themselves instead of that module importing them.
+registerProfileScopedCollection(useExpenseStore, 'expenses')

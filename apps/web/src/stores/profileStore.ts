@@ -11,6 +11,7 @@
 import { canonicalizeCurrency } from '@budget-planner/core'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { cascadeProfileRowRemoval } from '../lib/profile-cascade'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 
 // Profile type definition
@@ -197,9 +198,16 @@ export const useProfileStore = create<ProfileState>()(
        * every consumer resolving one does it as `find(p => p.isDefault) ?? [0]`
        * — a fallback that yields the WRONG profile rather than an error.
        *
-       * ⚠️ The refusal below is SILENT to the user: nothing renders
-       * `useProfileError` (zero consumers as of story 63.2). The UI's job is to
-       * not offer a deletion this will refuse.
+       * ⚠️ Story 66.3 (FR104) made the deletion DESTRUCTIVE. The profile's
+       * income, expenses, savings goals, balance entries and categories are
+       * removed locally by `cascadeProfileRowRemoval` below, and the server
+       * destroys the same rows as one consequence of the `userProfile` delete
+       * (`server/api/sync.ts:deleteProfileWithChildren`). Before 66.3 those rows
+       * stayed live on every device, merely unreachable.
+       *
+       * ⚠️ The refusal below is no longer silent: `useProfileError` is rendered
+       * by `components/profiles/profile-list.tsx` as of story 66.3 (AC-7). The
+       * UI's job is still to not OFFER a deletion this will refuse.
        */
       removeProfile: (profileId: string) => {
         // Decide up front whether this removal will actually happen, so we only
@@ -261,8 +269,27 @@ export const useProfileStore = create<ProfileState>()(
             error: null,
           }
         })
-        // Paid tier: queue a tombstone only if a real removal occurred.
+        // ⚠️⚠️ DESTROY the deleted profile's rows (story 66.3, D1/AC-1). Runs only
+        // for a real removal, so the last-profile refusal above leaves every row
+        // in place — a refused deletion must not destroy anything.
+        //
+        // ⚠️ AFTER the `set()`, not before: the cascade reads five OTHER stores
+        // and this store's write is what makes the deletion real. Ordering them
+        // the other way would leave the rows gone and the profile present if the
+        // guard above rejected the call.
+        //
+        // ⚠️ LOCAL ONLY — it queues nothing. See `lib/profile-cascade.ts` for why
+        // routing child deletes through `syncEntityDelete` is broken by
+        // construction for the common case (deleting a NON-active profile).
+        //
+        // Merged with the paid-tier queue below into ONE `willRemove` block so the
+        // two can never disagree about whether a deletion happened.
         if (willRemove && target) {
+          cascadeProfileRowRemoval(profileId)
+
+          // Paid tier: queue the profile tombstone. A no-op on the free tier
+          // (`syncEntityDelete` returns early with no bridge registered), so the
+          // cascade above is the whole deletion there.
           // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT, not a preference. The index
           // covers LIVE rows only, so promoting before the old default is
           // tombstoned leaves two rows satisfying `isDefault AND NOT isDeleted`

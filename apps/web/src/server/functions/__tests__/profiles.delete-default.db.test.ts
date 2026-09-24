@@ -35,7 +35,16 @@ vi.mock('@budget-planner/db', async (importOriginal) => {
 
 vi.mock('../../api/auth/paddle', () => ({ getCurrentUserSession: vi.fn() }))
 
-import { userProfiles, users } from '@budget-planner/db'
+import {
+  balanceTracking,
+  categories,
+  expenses,
+  forecastingProfiles,
+  incomeSources,
+  savingsGoals,
+  userProfiles,
+  users,
+} from '@budget-planner/db'
 import { and, eq } from 'drizzle-orm'
 import { getCurrentUserSession } from '../../api/auth/paddle'
 import { deleteProfile } from '../profiles'
@@ -97,6 +106,15 @@ afterAll(async () => {
 beforeEach(async () => {
   vi.clearAllMocks()
   signedInAsPaid()
+  // Children first — every FK here is `ON DELETE no action`, so the profile rows
+  // cannot go while anything references them (story 66.3 added child rows to
+  // this file).
+  await db.delete(forecastingProfiles).where(eq(forecastingProfiles.userId, USER))
+  await db.delete(incomeSources).where(eq(incomeSources.userId, USER))
+  await db.delete(expenses).where(eq(expenses.userId, USER))
+  await db.delete(categories).where(eq(categories.userId, USER))
+  await db.delete(savingsGoals).where(eq(savingsGoals.userId, USER))
+  await db.delete(balanceTracking).where(eq(balanceTracking.userId, USER))
   await db.delete(userProfiles).where(eq(userProfiles.userId, USER))
   await db.insert(userProfiles).values([
     {
@@ -188,5 +206,137 @@ describe('deleteProfile on the DEFAULT profile (story 63.2)', () => {
     const live = await liveProfiles()
     expect(live.find((p) => p.isDefault)?.id).toBe(P_DEFAULT)
     expect(live.filter((p) => p.isDefault)).toHaveLength(1)
+  })
+})
+
+/**
+ * The full child cascade (story 66.3, FR104, AC-5).
+ *
+ * ⚠️⚠️ BEFORE 66.3 THIS FUNCTION WAS BROKEN TWICE OVER and no test said so,
+ * because every existing case here deletes a profile that owns NOTHING. The
+ * `userProfiles` delete violated each child's `profileId` FK, and the
+ * `categories` delete violated `incomeSources.categoryId`/`expenses.categoryId`
+ * for any categorised row. Removing the six new `tx.delete` lines in
+ * `deleteProfile` turns these red and leaves the rest of the file green.
+ *
+ * ⚠️ This function still has ZERO production callers — a user's deletion travels
+ * the store and the sync push (`server/api/__tests__/sync-profile-cascade.db.test.ts`
+ * is that path's proof). It is tested because a WRONG guard left in an unreached
+ * authorisation boundary is a bug the next caller inherits.
+ */
+describe('deleteProfile destroys the profile’s children (story 66.3, AC-5)', () => {
+  const CAT_SECOND = 'e0000000-0000-4000-8000-000000000001'
+  const INCOME_SECOND = 'e0000000-0000-4000-8000-000000000002'
+  const EXPENSE_SECOND = 'e0000000-0000-4000-8000-000000000003'
+  const INCOME_THIRD = 'e0000000-0000-4000-8000-000000000004'
+
+  beforeEach(async () => {
+    await db
+      .insert(categories)
+      .values([
+        { id: CAT_SECOND, userId: USER, profileId: P_SECOND, name: 'Software', kind: 'expense' },
+      ])
+    await db.insert(incomeSources).values([
+      {
+        id: INCOME_SECOND,
+        userId: USER,
+        profileId: P_SECOND,
+        name: 'Consulting',
+        amount: 100_000,
+        frequency: 'monthly',
+      },
+      {
+        id: INCOME_THIRD,
+        userId: USER,
+        profileId: P_THIRD,
+        name: 'Royalties',
+        amount: 5_000,
+        frequency: 'annually',
+      },
+    ])
+    await db.insert(expenses).values([
+      {
+        id: EXPENSE_SECOND,
+        userId: USER,
+        profileId: P_SECOND,
+        name: 'Office',
+        amount: 90_000,
+        frequency: 'monthly',
+        // ⚠️ Categorised on purpose: this is the FK that made the old
+        // `categories`-only delete fail.
+        categoryId: CAT_SECOND,
+      },
+    ])
+    await db
+      .insert(savingsGoals)
+      .values([{ userId: USER, profileId: P_SECOND, name: 'Tax pot', currentBalance: 10_000 }])
+    await db.insert(balanceTracking).values([
+      {
+        userId: USER,
+        profileId: P_SECOND,
+        type: 'investment',
+        name: 'ISA',
+        currentBalance: 1_000,
+      },
+    ])
+    await db
+      .insert(forecastingProfiles)
+      .values([{ userId: USER, profileId: P_SECOND, name: 'Scenario', scenarioData: '{}' }])
+  })
+
+  it('succeeds for a profile that owns rows in all six child tables', async () => {
+    const result = await deleteProfile(request, P_SECOND)
+
+    expect(result.success).toBe(true)
+    expect((await liveProfiles()).map((p) => p.id).sort()).toEqual([P_DEFAULT, P_THIRD].sort())
+  })
+
+  it('removes every child row of the deleted profile', async () => {
+    await deleteProfile(request, P_SECOND)
+
+    for (const table of [
+      incomeSources,
+      expenses,
+      categories,
+      savingsGoals,
+      balanceTracking,
+      forecastingProfiles,
+    ]) {
+      const rows = await db.select().from(table).where(eq(table.profileId, P_SECOND))
+      expect(rows).toEqual([])
+    }
+  })
+
+  it('leaves another profile’s rows alone', async () => {
+    await deleteProfile(request, P_SECOND)
+
+    const rows = await db
+      .select({ id: incomeSources.id })
+      .from(incomeSources)
+      .where(eq(incomeSources.profileId, P_THIRD))
+    expect(rows.map((r) => r.id)).toEqual([INCOME_THIRD])
+  })
+
+  /**
+   * ⚠️ AC-5's second half. A genuine, reachable 23503: nothing stops an income
+   * row in profile B from citing a category owned by profile A, so deleting A
+   * removes a category B still references. The user must get a fixed string, not
+   * the driver's constraint name.
+   */
+  it('returns a GENERIC message when the delete fails, never the driver text', async () => {
+    await db
+      .update(incomeSources)
+      .set({ categoryId: CAT_SECOND })
+      .where(eq(incomeSources.id, INCOME_THIRD))
+
+    const result = await deleteProfile(request, P_SECOND)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('Failed to delete profile')
+    // The things that must NOT reach a user.
+    expect(result.error).not.toContain('constraint')
+    expect(result.error).not.toContain('incomeSources')
+    // And the deletion rolled back rather than half-applying.
+    expect((await liveProfiles()).map((p) => p.id)).toContain(P_SECOND)
   })
 })

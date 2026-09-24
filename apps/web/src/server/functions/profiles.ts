@@ -9,10 +9,20 @@
  * Authentication: Requires valid user session via Paddle
  */
 
+import { logger } from '@/lib/logger'
 import type { Currency } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import type { NewUserProfile, UserProfile } from '@budget-planner/db'
-import { categories, userProfiles, users } from '@budget-planner/db/src/schema'
+import {
+  balanceTracking,
+  categories,
+  expenses,
+  forecastingProfiles,
+  incomeSources,
+  savingsGoals,
+  userProfiles,
+  users,
+} from '@budget-planner/db/src/schema'
 import { and, eq, ne } from 'drizzle-orm'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
@@ -375,7 +385,8 @@ export async function updateProfile(
  * which is why story 63.2 relaxed the default rule here as well as in the store,
  * rather than leaving the two to disagree.
  *
- * ⚠️ Unlike the sync path this performs a HARD delete of the profile row.
+ * ⚠️ Unlike the sync path this performs a HARD delete of the profile row AND of
+ * every row it owns (story 66.3). The sync path tombstones the same set.
  */
 export async function deleteProfile(request: Request, profileId: string): Promise<ApiResult<void>> {
   try {
@@ -459,22 +470,38 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     // ⚠️ THERE IS NO CASCADE. Every FK in this schema is `ON DELETE no action`
     // (correction by code review 30.4a — this comment previously claimed
     // "cascade will delete related financial data", which has never been true).
-    // Children must be deleted explicitly, parent last, or Postgres raises
-    // 23503 and the raw driver message is returned to the UI.
+    // Children must be deleted explicitly, parent last, or Postgres raises 23503.
     //
-    // `categories` is deleted here because Story 30.4a made it a profile-scoped
-    // child: without this, deleting a profile that owns nothing but categories
-    // — a case that worked before this story — now fails.
+    // ⚠️⚠️ THE FULL CASCADE LANDED IN STORY 66.3 (FR104, AC-5). Until then this
+    // function deleted `categories` and the profile row and nothing else, so it
+    // was broken TWICE over: the `userProfiles` delete violated every child's
+    // `profileId` FK, and the `categories` delete violated
+    // `incomeSources.categoryId` / `expenses.categoryId` for any categorised row.
+    // The comment that stood here recorded the gap as a deferred PRODUCT decision
+    // ("'delete a profile' silently destroying its financial data is a product
+    // decision, not a defect fix"). That decision has now been taken — DESTROY,
+    // not reassign (66.3, D1) — so the gap is closed rather than re-logged.
     //
-    // ⚠️ The other profile-scoped children (incomeSources, expenses,
-    // savingsGoals, balanceTracking, forecastingProfiles) are NOT deleted here.
-    // That gap PRE-DATES this story: deleting a profile holding any of them has
-    // always failed on the FK. Recorded in deferred-work.md rather than fixed
-    // in a review pass, because "delete a profile" silently destroying its
-    // financial data is a product decision, not a defect fix.
+    // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT HERE, unlike the sync path's cascade.
+    // These are HARD deletes, so `server/api/account.ts:90-100` is the canonical
+    // order and the one non-obvious link is `categories`: it is referenced BY
+    // `incomeSources.categoryId` and `expenses.categoryId`, so it must come AFTER
+    // both, and it references `userProfiles.id`, so it must come BEFORE that. It
+    // is the only table in this list with a parent AND a child.
+    //
+    // ⚠️ The sync path (`server/api/sync.ts:deleteProfileWithChildren`) TOMBSTONES
+    // the same children instead, because a tombstone is the only thing a
+    // delta-by-updatedAt pull can carry to another device. The two paths destroy
+    // the same rows; they differ only in how, and that difference is forced by
+    // what each one has to propagate.
     // Wrap in transaction to ensure atomicity
     await db.transaction(async (tx) => {
+      await tx.delete(forecastingProfiles).where(eq(forecastingProfiles.profileId, profileId))
+      await tx.delete(incomeSources).where(eq(incomeSources.profileId, profileId))
+      await tx.delete(expenses).where(eq(expenses.profileId, profileId))
       await tx.delete(categories).where(eq(categories.profileId, profileId))
+      await tx.delete(savingsGoals).where(eq(savingsGoals.profileId, profileId))
+      await tx.delete(balanceTracking).where(eq(balanceTracking.profileId, profileId))
       await tx.delete(userProfiles).where(eq(userProfiles.id, profileId))
 
       // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT (story 63.2). Migration 0017's
@@ -517,9 +544,22 @@ export async function deleteProfile(request: Request, profileId: string): Promis
       success: true,
     }
   } catch (error) {
+    // ⚠️ NO RAW DRIVER MESSAGE REACHES THE USER (story 66.3, AC-5). This used to
+    // return `error.message`, so a Postgres 23503 arrived in the UI as
+    // `update or delete on table "userProfiles" violates foreign key constraint
+    // "incomeSources_profileId_userProfiles_id_fk" on table "incomeSources"` —
+    // naming internal tables and constraints for ANY failure, not just that one.
+    // The detail goes to the server log; the caller gets a fixed string.
+    //
+    // ⚠️ SCOPE: only this function's passthrough is closed. The same shape sits in
+    // six sibling functions in this file (`createProfile`, `getProfiles`,
+    // `getProfile`, `updateProfile`, `setDefaultProfile`,
+    // `createDefaultProfileForUser`) and is NOT this story's to fix — recorded so
+    // the next reader knows it was seen, not missed.
+    logger.error('Profile deletion failed', { profileId, error })
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to delete profile',
+      error: 'Failed to delete profile',
     }
   }
 }

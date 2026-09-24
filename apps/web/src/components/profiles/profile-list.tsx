@@ -17,6 +17,7 @@
 
 import {
   useHasMultipleProfiles,
+  useProfileError,
   useProfileManager,
   useProfileSwitcher,
   useProfilesWithActive,
@@ -46,6 +47,13 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
   // the store write or the sync-bridge behaviour downstream of it.
   const { switchToProfile } = useProfileSwitcher()
   const hasMultipleProfiles = useHasMultipleProfiles()
+  // ⚠️⚠️ THE REFUSAL CHANNEL, FINALLY RENDERED (story 66.3, FR104, AC-7).
+  // `profileStore` has written `error` since it was created and NOTHING read it:
+  // the last-profile refusal, `switchProfile`'s "Profile not found" and every
+  // other store-level rejection were silent, and 63.2's own docblock recorded
+  // that as a known gap ("zero consumers as of story 63.2"). 66.3 adds
+  // DESTRUCTIVE refusal paths, so leaving a second silent one was not an option.
+  const profileError = useProfileError()
   const [deletingId, setDeletingId] = useState<string | null>(null)
   // The profile whose Edit dialog is open (story 54.1) — any profile, not only the active one.
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
@@ -137,6 +145,20 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
         </span>
       </div>
 
+      {/* ⚠️ `role="alert"` so a refusal that arrives with no focus change is
+          announced — the store writes `error` from a click handler, and a silent
+          DOM insertion is what kept this channel invisible for three stories.
+          Rendered above the list, beside the cards the message is about. */}
+      {profileError && (
+        <p
+          role="alert"
+          data-testid="profile-error"
+          className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+        >
+          {profileError}
+        </p>
+      )}
+
       {/* Profile list */}
       {profiles.length === 0 ? (
         <div className="text-center py-12">
@@ -171,18 +193,39 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
       {/* Delete confirmation (story 63.2, FR97). Before this, `handleDelete` ran
           straight off the click — a single stray press destroyed a profile.
 
-          ⚠️⚠️ THE WORDING PROMISES ONLY WHAT THE CODE DOES, and an earlier
-          version did not (code review). It said "and its data", justified by the
-          foreign-key failure in `server/functions/profiles.ts` — but that
-          function has ZERO callers, so its FK error can never reach a user. On
-          the path a deletion actually takes, NOTHING deletes the profile's
-          financial rows: `removeProfile` touches only `profileStore`, the sync
-          push tombstones only the profile row, and no other store is cleaned.
-          The rows stay live on every device, merely unreachable. So the message
-          says the entries stop being VISIBLE, which is true, instead of claiming
-          a destruction that does not happen. The orphaning is logged in
-          `deferred-work.md`; story 63.2 made it the common case by making the
-          original profile deletable.
+          ⚠️⚠️ THE WORDING PROMISES EXACTLY WHAT THE CODE DOES, and story 66.3
+          changed BOTH in the same pass. Read the history, because the reasoning
+          REVERSES and a stale comment here is how a future story reverts this:
+
+          63.2 deliberately WEAKENED this sentence to "its entries will no longer
+          be visible". At the time that was the honest wording — nothing deleted
+          the profile's financial rows. `removeProfile` touched only
+          `profileStore`, the sync push tombstoned only the profile row, and the
+          one function that attempted more (`server/functions/profiles.ts`) had
+          zero callers. The rows stayed live on every device, merely unreachable.
+
+          66.3 (FR104) made the deletion REAL: `cascadeProfileRowRemoval` destroys
+          them locally, `deleteProfileWithChildren` tombstones them server-side,
+          and a pulled profile tombstone cascades on every other device. So the
+          63.2 wording became a lie in the user's FAVOUR — the worst direction for
+          it to be wrong in — and the sentence now names the data that is
+          destroyed and says permanently.
+
+          ⚠️ IRREVERSIBLE, and this product has no undo. That is what makes this
+          copy load-bearing rather than cosmetic.
+
+          ⚠⚠ THE LIST IS SIX ITEMS AND MUST STAY IN STEP WITH THE CASCADE. All
+          three review layers caught the first version of this sentence naming
+          only four — it omitted CATEGORIES and SAVED FORECASTS while the comment
+          above it claimed the wording promised exactly what the code does. Saved
+          forecasts are a paid feature a user deliberately names and saves, and
+          they are HARD-deleted (`forecastingProfiles` has no tombstone column).
+          63.2 avoided itemising at all, on purpose; once you switch to an
+          enumeration, an incomplete one is worse than none, and it fails in the
+          direction this copy exists to prevent. The sources of truth are
+          `PROFILE_CHILD_TABLES` + the `forecastingProfiles` delete in
+          `server/api/sync.ts`, and the five registrations feeding
+          `lib/profile-cascade.ts`. Change either and change this sentence.
 
           ⚠️ `finalFocusRef` is passed ONLY when the user confirmed. `Modal`
           honours it on EVERY close (`Modal.tsx`: `finalFocusRef?.current ??
@@ -199,7 +242,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
         title="Delete profile"
         message={
           pendingDeleteProfile
-            ? `Delete "${pendingDeleteProfile.name}"? Its entries will no longer be visible. This can't be undone.`
+            ? `Delete "${pendingDeleteProfile.name}"? Its income, expenses, savings goals, balances, categories and saved forecasts will be permanently deleted. This can't be undone.`
             : ''
         }
       />

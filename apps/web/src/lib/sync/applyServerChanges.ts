@@ -64,6 +64,7 @@ import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { stampMissingSortOrder } from '../ordering'
+import { cascadeProfileRowRemoval } from '../profile-cascade'
 
 /** Minimal structural view of a Zustand vanilla store used here. */
 interface StoreApi {
@@ -173,6 +174,44 @@ function applyOne(change: ServerChange): boolean {
 
   if (change.isDeleted) {
     store.setState({ [collection]: without })
+    // ⚠️⚠️ A PULLED profile tombstone cascades locally too (story 66.3, AC-8).
+    //
+    // Without this, the SECOND device is where the defect survives the fix. The
+    // device that pressed Delete cascades in `profileStore.removeProfile`, and
+    // the server cascades in `deleteProfileWithChildren` — but every OTHER device
+    // only ever sees this tombstone, because `getSyncChanges` filters each child
+    // table by the CLIENT's active `profileId` (strict equality,
+    // `server/api/sync.ts:getSyncChanges`). A device sitting on a different
+    // profile therefore NEVER pulls the child tombstones, and once the profile
+    // row is gone it can never make that profile active to ask for them: the rows
+    // would sit in its localStorage permanently, invisible only because
+    // `scopeToActiveProfile` hides them.
+    //
+    // So the tombstone is treated as the instruction it is — "this profile is
+    // gone" — and the same strict-equality cascade runs against local state. No
+    // child tombstones are needed, and none are pulled.
+    if (change.entityType === 'userProfile') {
+      // ⚠⚠ GUARDED, and the guard is not defensive padding (code review). The
+      // cascade writes FIVE persisted stores in a loop, and zustand's
+      // `createJSONStorage` does not wrap `setItem`, so a QuotaExceededError or a
+      // Safari-private SecurityError propagates out of `setState`. Unguarded, that
+      // throw escaped before `return true`, the batch loop's bare `catch` swallowed
+      // it, `appliedProfile` stayed FALSE and `reconcileActiveProfile` never ran —
+      // leaving stores 1..k cleared, k+1..5 intact, the profile row already gone
+      // and `activeProfileId` pointing at a profile that no longer exists, which
+      // `scopeToActiveProfile` then renders as an empty app. The pull cursor is
+      // persisted BEFORE the applier runs (`synchronization.ts:1631` then `:1635`),
+      // so the tombstone is never redelivered and nothing retries.
+      //
+      // Reporting the tombstone as applied is the right call even on failure: the
+      // profile row IS gone from the store above, so the active-profile repoint
+      // must happen regardless of how far the row cascade got.
+      try {
+        cascadeProfileRowRemoval(id)
+      } catch (error) {
+        console.error('[applyServerChanges] profile cascade failed', error)
+      }
+    }
     return true
   }
 

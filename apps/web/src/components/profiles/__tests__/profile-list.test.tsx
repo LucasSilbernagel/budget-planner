@@ -1,6 +1,6 @@
 import { profileIcon } from '@/lib/profile-appearance'
 import { useProfileStore } from '@/stores/profileStore'
-import { fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
+import { act, fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProfileList } from '../profile-list'
 import { RETIRED_LIGHT_ONLY_TOKENS, collectClassTokens } from './retired-tokens'
@@ -883,5 +883,110 @@ describe('ProfileList delete confirmation (story 63.2)', () => {
     useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
     renderWithProviders(<ProfileList />)
     expect(screen.getAllByRole('button', { name: /^Delete / })).toHaveLength(2)
+  })
+})
+
+/**
+ * The confirmation tells the truth about destruction, and refusals are visible
+ * (story 66.3, FR104, AC-6/AC-7).
+ */
+describe('ProfileList destructive-delete copy and error surface (story 66.3)', () => {
+  const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
+  const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
+
+  afterEach(() => {
+    useProfileStore.getState().reset()
+  })
+
+  /**
+   * ⚠️ ANCHORED ON THE DISTINGUISHING PHRASE, not on "delete" (Epic 23's rule).
+   * "This can't be undone" survived from 63.2 and matches BOTH wordings, so a
+   * test on it would stay green against the sentence this story replaced. The
+   * claim that changed is the one about what happens to the DATA.
+   */
+  it('promises permanent deletion of the data, not merely lost visibility', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog).toHaveTextContent('will be permanently deleted')
+    // ⚠⚠ ALL SIX, and the first version of this test pinned only four — locking
+    // in copy that failed to mention categories and saved forecasts before three
+    // review layers caught it. Assert each item separately so a dropped one names
+    // itself in the failure instead of hiding inside one long string.
+    for (const item of [
+      'income',
+      'expenses',
+      'savings goals',
+      'balances',
+      'categories',
+      'saved forecasts',
+    ]) {
+      expect(dialog).toHaveTextContent(item)
+    }
+    // ⚠️ The 63.2 wording pinned as ABSENT. Without this the new sentence could
+    // be appended alongside the old one and both assertions above would pass.
+    expect(dialog).not.toHaveTextContent('no longer be visible')
+  })
+
+  it('names the profile being deleted', async () => {
+    const user = userEvent.setup()
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
+    renderWithProviders(<ProfileList />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Business' }))
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Delete "Business"?')
+  })
+
+  /**
+   * ⚠️⚠️ AC-7. Before 66.3 `useProfileError` had ZERO renderers, so every
+   * store-level refusal was silent. Driven through the STORE rather than by
+   * rendering a prop, because the channel under test is the store field.
+   */
+  it('renders a store error where the user can see it', () => {
+    useProfileStore.setState({
+      profiles: [main, biz],
+      activeProfileId: 'main',
+      error: 'Cannot delete the last profile. Create a new profile first.',
+    })
+    renderWithProviders(<ProfileList />)
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Cannot delete the last profile')
+  })
+
+  /**
+   * ⚠️ NEGATIVE CONTROL. Without it, a component that rendered a permanent empty
+   * alert region would pass the test above.
+   */
+  it('renders no alert when there is no error', () => {
+    useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main', error: null })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.queryByTestId('profile-error')).toBeNull()
+  })
+
+  /**
+   * ⚠️ END TO END through the real store: the last-profile refusal is the one
+   * refusal a user can actually reach, and until this story it produced nothing
+   * on screen. `removeProfile` is called directly because the UI withholds
+   * Delete from a single-profile list — which is exactly why the refusal needs a
+   * surface: the UI is not the only caller.
+   */
+  it('surfaces the last-profile refusal raised by the real store', () => {
+    useProfileStore.setState({ profiles: [biz], activeProfileId: 'biz', error: null })
+    renderWithProviders(<ProfileList />)
+
+    expect(screen.queryByTestId('profile-error')).toBeNull()
+
+    act(() => {
+      useProfileStore.getState().removeProfile('biz')
+    })
+
+    expect(screen.getByTestId('profile-error')).toHaveTextContent('Cannot delete the last profile')
   })
 })

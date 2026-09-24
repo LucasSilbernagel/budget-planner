@@ -21,6 +21,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
+import { useExpenseStore } from '../expenseStore'
+import { useIncomeStore } from '../incomeStore'
 import { useProfileStore } from '../profileStore'
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
@@ -209,5 +211,103 @@ describe('free tier (no bridge registered)', () => {
     useProfileStore.setState({ profiles: [main, biz, side], activeProfileId: 'biz' })
     useProfileStore.getState().removeProfile('main')
     expect(handle.queueDelete).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The cascade (story 66.3, FR104, AC-1/AC-2).
+ *
+ * ⚠️⚠️ THIS DOCBLOCK ONCE DESCRIBED AN IMPORT CYCLE. THERE IS NONE, and the
+ * correction is left visible because the stale version survived the whole
+ * implementation pass and was caught by code review, not by its author.
+ *
+ * The first design had `lib/profile-cascade.ts` import all five domain stores,
+ * which all import `profileStore`, which imported the cascade — a cycle. Thunks
+ * stopped the TDZ `ReferenceError`, this file passed, and that was written up as
+ * proof the cycle was harmless. It was not:
+ * `components/sync/__tests__/cross-device-sync.db.test.tsx` imports every store in
+ * one `Promise.all` and Vite's module runner DEADLOCKED — a 12.8s suite became a
+ * 60s hook timeout with its tests silently SKIPPED. `profile-cascade.ts` now
+ * imports NO store (each store registers itself), so there is no cycle and this
+ * file is NOT a cycle tripwire.
+ *
+ * What it IS: the cascade exercised end-to-end THROUGH `profileStore.removeProfile`,
+ * rather than called directly as `lib/__tests__/profile-cascade.test.ts` does. It
+ * imports `useIncomeStore`/`useExpenseStore` itself, so it canNOT detect a MISSING
+ * registration — the registry guard tests in that other file cover that.
+ */
+describe('the cascade destroys the deleted profile’s rows (story 66.3, AC-1)', () => {
+  beforeEach(() => {
+    registerSyncBridge(handle)
+    useProfileStore.setState({ profiles: [main, biz, side], activeProfileId: 'main' } as never)
+    useIncomeStore.setState({
+      incomeSources: [
+        { id: 'i-biz', profileId: 'biz', name: 'Consulting', amount: 1, frequency: 'monthly' },
+        { id: 'i-main', profileId: 'main', name: 'Salary', amount: 2, frequency: 'monthly' },
+        { id: 'i-legacy', profileId: null, name: 'Legacy', amount: 3, frequency: 'monthly' },
+      ],
+    } as never)
+    useExpenseStore.setState({
+      expenses: [
+        { id: 'e-biz', profileId: 'biz', name: 'Office', amount: 1, frequency: 'monthly' },
+      ],
+    } as never)
+  })
+
+  it('removes them while the SURVIVING and UNSCOPED rows stay', () => {
+    useProfileStore.getState().removeProfile('biz')
+
+    expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toEqual(['i-main', 'i-legacy'])
+    expect(useExpenseStore.getState().expenses).toEqual([])
+  })
+
+  /**
+   * ⚠️⚠️ AC-2. The cascade queues NOTHING for the children: the ONLY delete on
+   * the wire is the profile's own. `SyncService.queueDelete` stamps
+   * `config.profileId` — the ACTIVE profile at queue time — so a child delete for
+   * a NON-active profile (the common case: you delete the one you are not on)
+   * would carry 'main' and resolve to "Entity not found" server-side, leaving the
+   * row live while the client showed it gone. The server cascade
+   * (`deleteProfileWithChildren`) is what removes them there.
+   */
+  it('queues ONE delete — the profile itself — and no child operations', () => {
+    useProfileStore.getState().removeProfile('biz')
+
+    expect(handle.queueDelete).toHaveBeenCalledTimes(1)
+    expect(handle.queueDelete).toHaveBeenCalledWith('userProfile', 'biz', expect.anything())
+  })
+
+  it('destroys NOTHING when the last-profile guard refuses the deletion', () => {
+    useProfileStore.setState({ profiles: [biz], activeProfileId: 'biz' } as never)
+
+    useProfileStore.getState().removeProfile('biz')
+
+    expect(useProfileStore.getState().profiles).toHaveLength(1)
+    expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toContain('i-biz')
+    expect(useExpenseStore.getState().expenses).toHaveLength(1)
+  })
+
+  /**
+   * ⚠️ NOT VACUOUS, and the shape is deliberate (the lesson this file already
+   * carries at `free tier (no bridge registered)`). The handle IS registered by
+   * the `beforeEach` above and this test UNREGISTERS it, and the paid test two
+   * cases up proves this same spy records a call — so its silence here means
+   * "the free tier queued nothing", not "nothing was ever wired up".
+   */
+  it('cascades on the FREE tier too, once the bridge is unregistered', () => {
+    clearSyncBridge()
+
+    useProfileStore.getState().removeProfile('biz')
+
+    expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toEqual(['i-main', 'i-legacy'])
+    expect(handle.queueDelete).not.toHaveBeenCalled()
+  })
+
+  // The domain stores are NOT covered by the file-level reset (which only knows
+  // `profileStore`), so clear them or these rows leak into every later test in
+  // the same worker.
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] } as never)
+    useExpenseStore.setState({ expenses: [] } as never)
   })
 })

@@ -32,6 +32,7 @@ import {
   balanceTracking,
   categories,
   expenses,
+  forecastingProfiles,
   incomeSources,
   savingsGoals,
   userProfiles,
@@ -699,6 +700,101 @@ async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
 }
 
 /**
+ * Every profile-scoped CHILD table, in the order `server/api/account.ts:90-100`
+ * deletes them (story 66.3, AC-4/AC-9).
+ *
+ * ⚠️ The child set is SIX tables, not the four "financial arrays" the epic names.
+ * `categories` became profile-scoped in story 30.4a and `forecastingProfiles`
+ * (saved forecasts, `routes/forecasting.tsx`) has always been — it is simply not
+ * a syncable entity, so no push can express an operation on it and it is easy to
+ * miss. `server/functions/profiles.ts` names it in a comment as a child it does
+ * not delete.
+ *
+ * ⚠️ `forecastingProfiles` is listed SEPARATELY below rather than here because it
+ * has NO `isDeleted` column (`packages/db/src/schema.ts:568-600`), so it cannot
+ * be tombstoned — see {@link deleteProfileWithChildren}.
+ */
+const PROFILE_CHILD_TABLES = [
+  incomeSources,
+  expenses,
+  categories,
+  savingsGoals,
+  balanceTracking,
+] as const
+
+/**
+ * Tombstone a profile AND everything it owns, atomically (story 66.3, AC-4/AC-9).
+ *
+ * ## The decision this implements
+ *
+ * Deleting a profile DESTROYS its rows; it does not re-home them onto a survivor
+ * (story 66.3, D1). Re-homing MERGES two ledgers and silently moves the
+ * survivor's totals — the one outcome profiles exist to prevent. `deleteAccount`
+ * (`server/api/account.ts`) is the destroy precedent at this exact shape.
+ *
+ * ## ⚠️⚠️ Tombstone for five, HARD DELETE for one, and the asymmetry is forced
+ *
+ * The five tables above are SOFT-deleted, matching {@link deleteEntity} and the
+ * rest of the push path: a tombstone is the only thing a delta-by-updatedAt pull
+ * can carry, so a hard delete would make the removal invisible to other devices
+ * by construction. `forecastingProfiles` has no `isDeleted` column at all, so it
+ * is hard-deleted — it is also unsyncable (absent from `entityTableMap`), so
+ * there is no pull that could have carried its tombstone anyway.
+ *
+ * ⚠️ FK ORDER IS NOT LOAD-BEARING HERE, and saying otherwise would be inherited
+ * as a false constraint. Every FK in this schema is `ON DELETE NO ACTION`
+ * (`grep -n onDelete packages/db/src/schema.ts packages/db/migrations/*.sql`
+ * returns zero hits), which is exactly why `deleteUserAccount` must order its
+ * HARD deletes — but an UPDATE that sets `isDeleted` removes no row and violates
+ * no constraint. The order above is kept only so the two cascades read the same
+ * way. The one genuinely constrained statement is the `forecastingProfiles`
+ * delete, and it is a leaf: nothing references it.
+ *
+ * ⚠️ The profile row itself is tombstoned LAST, inside the same transaction, so a
+ * failure part-way leaves the profile live rather than orphaning its children
+ * behind a deleted parent.
+ */
+async function deleteProfileWithChildren(
+  profileId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await db.transaction(async (tx) => {
+      const now = new Date()
+      for (const table of PROFILE_CHILD_TABLES) {
+        await tx
+          .update(table)
+          .set({ isDeleted: true, updatedAt: now })
+          .where(and(eq(table.userId, userId), eq(table.profileId, profileId)))
+      }
+
+      // ⚠️ HARD delete: no `isDeleted` column exists on this table. See above.
+      await tx
+        .delete(forecastingProfiles)
+        .where(
+          and(eq(forecastingProfiles.userId, userId), eq(forecastingProfiles.profileId, profileId))
+        )
+
+      await tx
+        .update(userProfiles)
+        .set({ isDeleted: true, updatedAt: now })
+        .where(and(eq(userProfiles.userId, userId), eq(userProfiles.id, profileId)))
+    })
+    return { success: true }
+  } catch (error) {
+    // ⚠️ The detail goes to the LOG, not into the envelope (code review). The
+    // envelope's `error` is discarded by `processBatchSync` today, so nothing
+    // reaches a user either way — but returning the raw driver text from the one
+    // path this story added, in the same story that closed exactly that leak in
+    // `server/functions/profiles.ts`, is an asymmetry that survives only until
+    // someone renders the envelope. Logging it also means a failed cascade is
+    // observable at all, which it was not.
+    logger.error('Profile cascade failed', { userId, profileId, error })
+    return { success: false, error: 'Failed to delete profile' }
+  }
+}
+
+/**
  * Soft-delete an entity (Story 4-18).
  *
  * A hard `DELETE` removes the row entirely, so a later delta-by-updatedAt pull
@@ -802,6 +898,67 @@ async function applyOperation(
         if (!entityExistsForDelete) {
           return { success: false, error: 'Entity not found' }
         }
+
+        if (entityType === 'userProfile') {
+          // ⚠️⚠️ THE LAST-PROFILE RULE, ON THE LIVE PATH (story 66.3, AC-3).
+          //
+          // Both pre-existing guards are OFF this path: `stores/profileStore.ts`
+          // is the client and is bypassable, and
+          // `server/functions/profiles.ts:deleteProfile` has zero production
+          // callers. So until this check, a hand-crafted or REPLAYED push could
+          // tombstone a user's last profile — leaving an account with nowhere to
+          // put data and `reconcileActiveProfile` early-returning on an empty
+          // profile list (`lib/sync/applyServerChanges.ts:316-319`), which
+          // strands `activeProfileId` on an id that no longer exists.
+          //
+          // ⚠️ This is a REFUSAL, and `ensureUserHasDefaultProfile` below stays a
+          // REPAIR. They are not the same kind of rule and must not be merged.
+          // The default-profile invariant is repairable — if a batch leaves the
+          // account with no default, the server picks one and everything
+          // continues — and the first version of that code DID veto, which broke
+          // the legitimate demote-A-then-promote-B sequence (recorded at the
+          // repair's call site, proven by its own positive control). "Zero live
+          // profiles" has no repair: there is nothing left to promote and
+          // inventing a replacement profile would be the server fabricating user
+          // data. So this one refuses and that one repairs.
+          const liveProfiles = await getLiveProfileIds(userId)
+          if (liveProfiles.length <= 1) {
+            // ⚠⚠ ACKNOWLEDGED, NOT TOMBSTONED — and the distinction is the whole
+            // point (code review, Lucas's call). The INVARIANT AC-3 exists for is
+            // "an account is never left with zero live profiles", and that holds
+            // here: nothing below runs, the profile stays live. What changes is
+            // the ENVELOPE.
+            //
+            // ⚠⚠ WHY NOT `success: false`. The first version returned a failure,
+            // and the code review measured where that lands: a `{success:false}`
+            // in a 200 envelope carries NO http status, so
+            // `features/api/client.ts:348` marks it `retryable: false` with no
+            // `statusCode`, and core files it under `unclassifiedFailedOperations`
+            // (`packages/core/src/sync/synchronization.ts:1103`) which `:1185-1194`
+            // DELIBERATELY KEEPS QUEUED — removal requires positive proof of
+            // permanence. So the op replays every cycle, `failedCount > 0` every
+            // time, `consecutiveFailures` climbs, the circuit breaker opens and
+            // the drain branch never runs. One refused delete killed all sync for
+            // that account. Before this story the same push SUCCEEDED, so the
+            // permanently-unsatisfiable op was new damage.
+            //
+            // A client asking to delete its last profile is already out of step
+            // with the server (its own guard would have stopped it). Acknowledging
+            // drains the queue; the next pull delivers the real profile list and
+            // corrects the client. Refusing forever corrects nothing.
+            logger.warn('Refused a delete that would leave the user with no profile', {
+              userId,
+              entityId,
+            })
+            return { success: true }
+          }
+
+          // ⚠️ NOT `deleteEntity` — the profile's children must go with it
+          // (AC-4/AC-9), in ONE transaction. `deleteEntity` tombstones the named
+          // row and nothing else, which is the defect this story closes.
+          return deleteProfileWithChildren(entityId, userId)
+        }
+
         return deleteEntity(entityType, entityId, userId, profileId)
       }
     }

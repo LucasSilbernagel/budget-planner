@@ -504,3 +504,117 @@ describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
     expect(stored?.icon).toBeNull()
   })
 })
+
+/**
+ * A pulled profile tombstone destroys that profile's local rows (story 66.3,
+ * AC-8).
+ *
+ * ⚠️⚠️ THIS IS THE SECOND-DEVICE ARM, and it is the layer the epic did not name.
+ * `getSyncChanges` filters every child table by the client's ACTIVE profileId, so
+ * a device on another profile pulls the profile tombstone and NONE of the child
+ * tombstones — and once the profile row is gone it can never make that profile
+ * active to ask for them. Pinned server-side by
+ * `server/api/__tests__/sync-profile-cascade.db.test.ts`.
+ */
+describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
+  const DOOMED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+
+  beforeEach(() => {
+    useProfileStore.setState({
+      profiles: [
+        { id: DOOMED, userId: SERVER_USER_ID, name: 'Business', isDefault: false, currency: 'EUR' },
+        { id: UUID_A, userId: SERVER_USER_ID, name: 'Main', isDefault: true, currency: 'EUR' },
+      ],
+      activeProfileId: UUID_A,
+    } as never)
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'i-doomed',
+          userId: 0,
+          profileId: DOOMED,
+          name: 'Consulting',
+          amount: 1,
+          frequency: 'monthly',
+        },
+        {
+          id: 'i-keeper',
+          userId: 0,
+          profileId: UUID_A,
+          name: 'Salary',
+          amount: 2,
+          frequency: 'monthly',
+        },
+        {
+          id: 'i-legacy',
+          userId: 0,
+          profileId: null,
+          name: 'Legacy',
+          amount: 3,
+          frequency: 'monthly',
+        },
+      ],
+    } as never)
+    useCategoryStore.setState({
+      categories: [
+        {
+          id: 'c-doomed',
+          userId: 0,
+          profileId: DOOMED,
+          name: 'Software',
+          kind: 'expense',
+          isDeleted: false,
+        },
+      ],
+    } as never)
+  })
+
+  it('removes the profile AND its rows, keeping the survivor and the unscoped row', () => {
+    applyServerChangesToStores([
+      {
+        entityType: 'userProfile',
+        entityId: DOOMED,
+        data: {},
+        isDeleted: true,
+        updatedAt: Date.now(),
+      } as ServerChange,
+    ])
+
+    expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([UUID_A])
+    expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toEqual([
+      'i-keeper',
+      'i-legacy',
+    ])
+    expect(useCategoryStore.getState().categories).toEqual([])
+  })
+
+  /**
+   * ⚠️ NEGATIVE CONTROL for the arm above — mislabelled a POSITIVE control in the
+   * first version (code review). A tombstone for a DIFFERENT entity type must not
+   * cascade; without this, a cascade that fired on EVERY tombstone would still
+   * pass the test above.
+   *
+   * ⚠⚠ It also asserts the income tombstone was genuinely APPLIED. Without that
+   * line the test proves nothing about the `entityType === 'userProfile'`
+   * condition it exists to guard: if `applyOne` returned early for any unrelated
+   * reason, nothing would cascade, nothing would be removed, and every remaining
+   * assertion here would still pass. A control that cannot fail is not a control.
+   */
+  it('does NOT cascade on a tombstone for any other entity type', () => {
+    applyServerChangesToStores([
+      {
+        entityType: 'incomeSource',
+        entityId: 'i-keeper',
+        data: {},
+        isDeleted: true,
+        updatedAt: Date.now(),
+      } as ServerChange,
+    ])
+
+    // The tombstone under test really was applied — this is what makes the two
+    // assertions below meaningful rather than vacuous.
+    expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).not.toContain('i-keeper')
+    expect(useCategoryStore.getState().categories.map((r) => r.id)).toEqual(['c-doomed'])
+    expect(useProfileStore.getState().profiles).toHaveLength(2)
+  })
+})
