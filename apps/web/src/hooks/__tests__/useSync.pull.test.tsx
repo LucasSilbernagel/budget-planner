@@ -42,6 +42,20 @@ const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 
 // Story 5-14: entity ids are client-generatable uuids shared across devices, so a
 // pulled change reconciles by the uuid string directly (no numeric coercion).
+/**
+ * ⚠️ The uuid the SERVER stamps on every row (story 66.2). Pulled rows are now
+ * validated against their entity schema before they enter a store, and the
+ * column is `uuid(...).notNull()` — so a fixture without a real `userId` is not
+ * a production-shaped server row and is correctly refused.
+ *
+ * ⚠️ `userId` was not the only gap in the profile fixture below: `currency` had
+ * to be added too, and it was independently load-bearing. `userProfileSchema`
+ * declares it `.nullable()` but NOT `.optional()`, so an ABSENT key is a refusal
+ * even though an explicit `null` is fine. The story's comment credited only
+ * `userId`; its code review caught the omission.
+ */
+const SERVER_USER_ID = '99999999-9999-4999-8999-999999999999'
+
 const INCOME_ID = '11111111-1111-4111-8111-111111111111'
 const INCOME_ID_2 = '22222222-2222-4222-8222-222222222222'
 
@@ -51,6 +65,7 @@ function incomeChange(overrides: Partial<ServerChange> = {}): ServerChange {
     entityId: INCOME_ID,
     data: {
       id: INCOME_ID,
+      userId: SERVER_USER_ID,
       name: 'Pulled Salary',
       amount: 123400,
       frequency: 'monthly',
@@ -165,7 +180,13 @@ describe('useSync pull wiring (Story 4-18)', () => {
               {
                 entityType: 'userProfile',
                 entityId: SERVER_PROFILE,
-                data: { id: SERVER_PROFILE, userId: 'u-1', name: 'Main Profile', isDefault: true },
+                data: {
+                  id: SERVER_PROFILE,
+                  userId: SERVER_USER_ID,
+                  name: 'Main Profile',
+                  isDefault: true,
+                  currency: 'NONE',
+                },
                 updatedAt: 1000,
                 isDeleted: false,
               },

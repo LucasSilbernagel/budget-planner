@@ -28,6 +28,15 @@ import { useIncomeStore } from '../../../stores/incomeStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { applyServerChangesToStores } from '../applyServerChanges'
 
+/**
+ * ⚠️ The uuid the SERVER sends (story 66.2). These fixtures carried `userId: 0`,
+ * the CLIENT STORE's free-tier type, which was never on the wire: the column is
+ * `uuid(...).notNull()` and `getSyncChanges` emits the row verbatim. The
+ * pull-path guard added by 66.2 is what surfaced it; the type-check never could,
+ * because test files are excluded from it.
+ */
+const SERVER_USER_ID = '11111111-1111-4111-8111-111111111111'
+
 const ID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const ID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const ID_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
@@ -37,7 +46,7 @@ const at = (day: string) => `2026-01-${day}T00:00:00.000Z`
 function incomeRow(id: string, name: string, sortOrder: number, createdAt: string) {
   return {
     id,
-    userId: 0,
+    userId: SERVER_USER_ID,
     name,
     amount: 1000,
     frequency: 'monthly' as const,
@@ -229,16 +238,21 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       change({
         entityType: 'expense',
         entityId: ID_B,
-        data: { ...incomeRow(ID_B, 'exp-2', 1, at('02')) },
+        // ⚠️ `endsBeforeRetirement` is a NOT NULL column, so a real pulled expense
+        // always carries it; `incomeRow` alone is not an expense-shaped row.
+        data: { ...incomeRow(ID_B, 'exp-2', 1, at('02')), endsBeforeRetirement: false },
       }),
       change({
         entityType: 'savingsGoal',
         entityId: ID_B,
         data: {
           id: ID_B,
+          userId: SERVER_USER_ID,
           name: 'sav-2',
           targetAmount: 1,
           currentBalance: 0,
+          // NOT NULL column; a pulled row always carries it (code review 66.2).
+          allocationMode: 'automatic',
           sortOrder: 1,
           createdAt: at('02'),
           updatedAt: at('02'),
@@ -249,11 +263,14 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
         entityId: ID_B,
         data: {
           id: ID_B,
+          userId: SERVER_USER_ID,
           type: 'investment',
           name: 'bal-2',
           currentBalance: 0,
           monthlyContribution: 0,
           frequency: 'monthly',
+          // NOT NULL column; a pulled row always carries it (code review 66.2).
+          contributionRecordedAsExpense: false,
           sortOrder: 1,
           createdAt: at('02'),
           updatedAt: at('02'),
@@ -296,11 +313,25 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
     applyServerChangesToStores([
       change({
         entityId: ID_A,
-        data: { id: ID_A, userId: 0, name: 'no-order-B', createdAt: at('02') },
+        data: {
+          id: ID_A,
+          userId: SERVER_USER_ID,
+          name: 'no-order-B',
+          amount: 1000,
+          frequency: 'monthly',
+          createdAt: at('02'),
+        },
       }),
       change({
         entityId: ID_B,
-        data: { id: ID_B, userId: 0, name: 'no-order-A', createdAt: at('01') },
+        data: {
+          id: ID_B,
+          userId: SERVER_USER_ID,
+          name: 'no-order-A',
+          amount: 1000,
+          frequency: 'monthly',
+          createdAt: at('01'),
+        },
       }),
     ])
 
@@ -314,11 +345,25 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
     applyServerChangesToStores([
       change({
         entityId: ID_A,
-        data: { id: ID_A, userId: 0, name: 'pulled-1', createdAt: at('01') },
+        data: {
+          id: ID_A,
+          userId: SERVER_USER_ID,
+          name: 'pulled-1',
+          amount: 1000,
+          frequency: 'monthly',
+          createdAt: at('01'),
+        },
       }),
       change({
         entityId: ID_B,
-        data: { id: ID_B, userId: 0, name: 'pulled-2', createdAt: at('02') },
+        data: {
+          id: ID_B,
+          userId: SERVER_USER_ID,
+          name: 'pulled-2',
+          amount: 1000,
+          frequency: 'monthly',
+          createdAt: at('02'),
+        },
       }),
     ])
 
@@ -339,7 +384,14 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
     applyServerChangesToStores([
       change({
         entityId: ID_B,
-        data: { id: ID_B, userId: 0, name: 'orphan', createdAt: at('02') },
+        data: {
+          id: ID_B,
+          userId: SERVER_USER_ID,
+          name: 'orphan',
+          amount: 1000,
+          frequency: 'monthly',
+          createdAt: at('02'),
+        },
       }),
     ])
     expect(useIncomeStore.getState().incomeSources.map((r) => [r.name, r.sortOrder])).toEqual([

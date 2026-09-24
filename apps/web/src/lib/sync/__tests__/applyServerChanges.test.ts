@@ -21,13 +21,33 @@ import { applyServerChangesToStores } from '../applyServerChanges'
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
+/**
+ * ⚠️ The uuid the SERVER sends (story 66.2).
+ *
+ * The `ServerChange.data` fixtures below used to carry a `userId` that could
+ * never have been on the wire: `0` on the income fixture, the string `'u-1'` on
+ * `profileChange` and both Story-54.2 fixtures. (The story's header first said
+ * "every fixture carried `userId: 0`"; its code review corrected that — two
+ * different wrong shapes, not one.) `0` is the CLIENT STORE's type for the free
+ * tier — `incomeSources.userId` is
+ * `uuid(...).notNull()` and `getSyncChanges` emits `data: row` verbatim, so a
+ * number was never on the wire. The fixtures were wrong about production, and
+ * `tsconfig.app.json` excludes test files from the type-check, so no compiler
+ * could ever have said so. Story 66.2's pull-path guard is what surfaced it.
+ *
+ * ⚠️ The `useXStore.setState(...)` fixtures further down still use `userId: 0`
+ * ON PURPOSE: those are LOCAL rows the applier never validates, and 0 is the
+ * correct client-store shape for them.
+ */
+const SERVER_USER_ID = '11111111-1111-4111-8111-111111111111'
+
 function incomeChange(overrides: Partial<ServerChange> = {}): ServerChange {
   return {
     entityType: 'incomeSource',
     entityId: UUID_A,
     data: {
       id: UUID_A,
-      userId: 0,
+      userId: SERVER_USER_ID,
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
@@ -120,9 +140,12 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
         entityId: UUID_B,
         data: {
           id: UUID_B,
+          userId: SERVER_USER_ID,
           name: 'Emergency fund',
           targetAmount: 1000000,
           currentBalance: 250000,
+          // NOT NULL column; a pulled row always carries it (code review 66.2).
+          allocationMode: 'automatic',
           createdAt: '2026-06-28T00:00:00.000Z',
           updatedAt: '2026-06-28T00:00:00.000Z',
         },
@@ -146,7 +169,7 @@ function profileChange(id: string, isDefault: boolean, name: string): ServerChan
     entityId: id,
     data: {
       id,
-      userId: 'u-1',
+      userId: SERVER_USER_ID,
       name,
       isDefault,
       currency: 'NONE',
@@ -443,7 +466,7 @@ describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
         entityId: SERVER_PROFILE_OTHER,
         data: {
           id: SERVER_PROFILE_OTHER,
-          userId: 'u-1',
+          userId: SERVER_USER_ID,
           name: 'Business',
           isDefault: false,
           currency: 'EUR',
@@ -465,7 +488,7 @@ describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
         entityId: SERVER_PROFILE_OTHER,
         data: {
           id: SERVER_PROFILE_OTHER,
-          userId: 'u-1',
+          userId: SERVER_USER_ID,
           name: 'Business',
           isDefault: false,
           currency: 'EUR',

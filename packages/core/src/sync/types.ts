@@ -22,8 +22,111 @@ const PG_INT32_MAX = 2_147_483_647
 const PG_INT32_MIN = -2_147_483_648
 
 /**
+ * Every value the `currency` PostgreSQL enum can hold.
+ *
+ * ⚠️⚠️ THIS MUST MIRROR `currencyEnum` IN `packages/db/src/schema.ts` EXACTLY, and
+ * a missing value is not a cosmetic gap — it is a lockout. Code review of story
+ * 66.2 found this list stopped at `NZD` (11 of 21) while the column had carried
+ * all 21 since migration `0001`. The write path is live and server-side:
+ * `routes/api/webhooks/paddle.ts`'s `mapProvidedCurrency` validates a checkout's
+ * currency against the FULL `currencyEnum.enumValues`, stores it on
+ * `users.currency`, and `server/functions/profiles.ts`'s
+ * `createDefaultProfileForUser` copies it onto the user's default profile.
+ *
+ * So once 66.2 made this schema a PULL gate, a user billed in any of the ten
+ * missing currencies had their DEFAULT PROFILE refused on arrival — and because
+ * `applyServerChangesToStores` then never sets `appliedProfile`,
+ * `reconcileActiveProfile` never runs, `ActiveSync` never registers the push
+ * bridge, and the free→paid seed never fires. A permanent client-side sync
+ * deadlock, reported only through a `console.warn`.
+ *
+ * Core cannot import `@budget-planner/db` at runtime (it is a devDependency, and
+ * the dependency direction is db → core, never the reverse), so this list is
+ * duplicated deliberately and pinned by a parity test in
+ * `__tests__/entity-schemas.test.ts` that imports the real enum. Do not edit one
+ * without the other; the test is what stops the drift recurring.
+ */
+export const SYNC_CURRENCIES = [
+  'NONE',
+  'USD',
+  'EUR',
+  'GBP',
+  'JPY',
+  'CAD',
+  'AUD',
+  'CHF',
+  'CNY',
+  'SEK',
+  'NZD',
+  'INR',
+  'BRL',
+  'MXN',
+  'KRW',
+  'SGD',
+  'HKD',
+  'NOK',
+  'DKK',
+  'PLN',
+  'TRY',
+] as const
+
+/**
  * Zod schemas for validating entity data payloads
  * These ensure data structure matches expected format for each entity type
+ *
+ * ## ⚠️⚠️ What these schemas are FOR (story 66.2, FR103) — read before editing one
+ *
+ * Until 66.2 these were declared-for-parity and imported by NOTHING. They are now
+ * the **PULL-path gate**: `apps/web/src/lib/sync/applyServerChanges.ts` validates
+ * every server row against the matching schema before writing it into a client
+ * store. That makes them the only gate in the whole sync contract that runs on
+ * the server→client direction — the other five all sit on push or at rest.
+ *
+ * Two consequences that are easy to get wrong:
+ *
+ *  1. **They model a COMPLETE row, not an operation payload.** That is exactly
+ *     why they, and not `syncOperationDataSchema`, are the pull gate: every field
+ *     in that schema is `.optional()`, so it accepts `{}` and can never catch a
+ *     row missing its required fields.
+ *  2. **They must accept every SHAPE the column allows** — every legal null, and
+ *     every enum value. A pulled row is the whole drizzle row, so it carries all
+ *     of them. Four of these schemas disagreed with their columns and would have
+ *     false-rejected the user's own data (`savingsGoalSchema.targetAmount`,
+ *     `userProfileSchema.description`, and `currency` twice over — nullability
+ *     AND a list that held 11 of the column's 21 values). ⚠️ A false rejection
+ *     here is worse than the corruption the gate exists to stop: it silently
+ *     refuses good rows. Before tightening any field, check the column.
+ *
+ *     ⚠️ VALUE RANGE is the one deliberate exception, and it is narrow.
+ *     `targetAmount` carries `.positive()`, which the column alone does not
+ *     require — it mirrors the server ingest gate (`server/api/sync.ts`), the
+ *     ONLY live write path to that column. It is safe *because* of that, not
+ *     because the database enforces it: the `savingsGoals_targetAmount_positive`
+ *     CHECK in `packages/db/src/schema.ts` has never been emitted to a migration
+ *     (0 of 8 — story 66.5's subject). Do not read the bound as evidence the
+ *     column is constrained, and do not add a bound that no write path enforces.
+ *
+ *
+ * ## ⚠️⚠️ The REQUIRED/NULLABLE rule — added by code review of 66.2
+ *
+ * A field here is **required iff its column is NOT NULL**, and `.nullable()` iff
+ * the column is nullable. `.default(x)` is BANNED on these schemas.
+ *
+ * Why: `.default(x)` makes a key OPTIONAL on input. The review measured
+ * `balanceTrackingSchema.safeParse({userId, type, name})` → **success**, parsed
+ * as `currentBalance: 0` — so a server row that simply OMITTED `currentBalance`
+ * passed the guard, entered the store with the key absent, and
+ * `stores/balanceStore.ts`'s `sum + entry.currentBalance` produced **NaN**. That
+ * is the same failure class this gate exists to stop, walking through the door
+ * next to the one it closed. A default is a sensible thing for a PUSH payload,
+ * where the client legitimately sends a partial row; it is never right for a
+ * pulled row, which came from `db.select()` and therefore carries every column.
+ *
+ * ⚠️ The applier consumes the VERDICT ONLY (`safeParse().success`) and never
+ * writes the parse output — `z.object` STRIPS undeclared keys, and these schemas
+ * do not declare `profileId`, `sortOrder`, `categoryId`, `isDeleted`,
+ * `createdAt` or `updatedAt`. Writing the output would delete them from every
+ * synced row. Pinned by `__tests__/entity-schemas.test.ts`.
  */
 export const incomeSourceSchema = z.object({
   name: z.string().min(1).max(255),
@@ -38,24 +141,27 @@ export const expenseSchema = z.object({
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
   // Story 65.2 (FR101): the user's statement that this expense ends before they
   // retire. Defaults false = today's behaviour. ⚠️ SIX-GATED: mirrored in
-  // `syncOperationDataSchema` below (the gate that actually RUNS — this one is
-  // unexercised, see the note on `categorySchema`), in the server gate
+  // `syncOperationDataSchema` below (the gate that runs on the way OUT; this one
+  // now runs on the way IN — see the block comment above), in the server gate
   // (apps/web/src/server/api/sync.ts), in the syncBridge payload whitelist, in
   // the db column and its migration, and in the client types — or the field
   // silently does not round-trip.
-  endsBeforeRetirement: z.boolean().default(false),
+  // ⚠️ REQUIRED, not `.default(false)` — the column is NOT NULL (see the
+  // REQUIRED/NULLABLE rule above); a pulled row always carries it.
+  endsBeforeRetirement: z.boolean(),
   userId: z.string().uuid(),
 })
 
 /**
  * Story 30.4a: user-defined category (FR54).
  *
- * ⚠️ Like its siblings above, this schema is currently UNEXERCISED — nothing
- * imports it. The gate that actually runs at queue time is
- * `syncOperationDataSchema` below (see `validateOperationData` in
- * synchronization.ts). It is declared anyway for parity, because the drift
- * between these mirrors and the flat schema is exactly how the documented
- * asymmetries in savingsGoalSchema arose. If you change one, change both.
+ * ⚠️ Like its siblings above, this schema runs on the PULL path (story 66.2) —
+ * it is no longer unexercised. The gate that runs at QUEUE time, on the way out,
+ * is still `syncOperationDataSchema` below (see `validateOperationData` in
+ * synchronization.ts). The two are mirrors in different directions, and the drift
+ * between them is exactly how the documented asymmetries in savingsGoalSchema
+ * arose. If you change one, consider both — but a difference that exists because
+ * one gate sees a whole ROW and the other a partial PAYLOAD is correct, not drift.
  */
 export const categorySchema = z.object({
   name: z.string().min(1).max(255),
@@ -65,39 +171,83 @@ export const categorySchema = z.object({
 
 export const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
-  targetAmount: z.number().int(),
-  currentBalance: z.number().int().default(0),
+  // ⚠️ NULLABLE, and that is load-bearing (story 66.2). The column is
+  // `integer('targetAmount')` with no NOT NULL: "null ⇒ savings account (no
+  // target); a positive int ⇒ goal" (story 16-1). This schema required a number
+  // until 66.2 gave it its first consumer — the PULL-path guard in
+  // `apps/web/src/lib/sync/applyServerChanges.ts` — at which point it would have
+  // rejected EVERY savings account the user owns. The bug was invisible for as
+  // long as nothing imported this file. `.positive()` mirrors the server ingest
+  // gate; `.max()` mirrors syncOperationDataSchema and the int32 column.
+  targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable(),
+  // ⚠️ REQUIRED and BOUNDED — `.default(0)` here let a row omit its balance
+  // entirely and NaN `getTotalSavings()`. NOT NULL column.
+  currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX),
   // Story 26.1: per-account allocation. `monthlyAllocation` is nullable cents
   // (0..int32). `allocationMode` is `.optional()` here (the client emits it via
   // syncBridge); the server gate uses `.default('automatic')` on ingest — an
   // intentional asymmetry, not an exact mirror. Bound matches syncOperationDataSchema.
   monthlyAllocation: z.number().int().min(0).max(PG_INT32_MAX).nullable().optional(),
-  allocationMode: z.enum(['manual', 'automatic']).optional(),
+  // ⚠️ REQUIRED — NOT NULL column (`default 'automatic'` is the DB's default
+  // for an INSERT, not permission for a pulled row to omit the key).
+  allocationMode: z.enum(['manual', 'automatic']),
   userId: z.string().uuid(),
 })
 
 export const balanceTrackingSchema = z.object({
   type: z.enum(FINANCE_TYPES),
   name: z.string().min(1).max(255),
-  currentBalance: z.number().int().default(0),
-  monthlyContribution: z.number().int().default(0),
-  // Story 16-2: cadence of the contribution (defaults to 'monthly'). Mirrors the
-  // server gate in apps/web/src/server/api/sync.ts.
-  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
+  // ⚠️ REQUIRED and BOUNDED. `.default(0)` here was the measured hole: a row
+  // omitting `currentBalance` passed the guard and NaN'd the net-worth figure via
+  // `stores/balanceStore.ts`. NOT NULL column; may be negative (debt balances).
+  currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX),
+  // ⚠️ REQUIRED — NOT NULL column, and non-negative by the (inert) CHECK.
+  monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX),
+  // Story 16-2: cadence of the contribution. ⚠️ REQUIRED — the column is NOT NULL
+  // with a DB-side default of 'monthly', which is not permission for a pulled row
+  // to omit the key. Mirrors the server gate in apps/web/src/server/api/sync.ts.
+  frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
   // Story 45.1 (FR72): the user's statement that this contribution is already
   // recorded as an expense, so the savings distributable pool must not subtract it
   // twice. Defaults false = today's arithmetic. ⚠️ TRIPLE-GATED: this must be
   // mirrored in the server gate (apps/web/src/server/api/sync.ts) and the
   // syncBridge payload whitelist, or the field silently does not round-trip.
-  contributionRecordedAsExpense: z.boolean().default(false),
+  // ⚠️ REQUIRED — NOT NULL column (see the REQUIRED/NULLABLE rule above).
+  contributionRecordedAsExpense: z.boolean(),
   userId: z.string().uuid(),
 })
 
 export const userProfileSchema = z.object({
   name: z.string().min(1).max(255),
-  description: z.string().max(500).optional(),
-  isDefault: z.boolean().default(false),
-  currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']),
+  // ⚠️ `.nullable()` AS WELL AS `.optional()` (story 66.2), and the distinction is
+  // the whole point: `.optional()` accepts an ABSENT KEY, never an explicit
+  // `null`. The column is `text('description')` — nullable — so a PULLED row
+  // carries `description: null` for every profile the user never described,
+  // which is most of them. This schema rejected all of them.
+  //
+  // ⚠️ Why the server gate (apps/web/src/server/api/sync.ts) is NOT changed to
+  // match: it only ever sees a PUSH payload, and `toServerPayload` OMITS the key
+  // when the value is null (`syncBridge.ts`, `if (entity['description'] != null)`),
+  // so a null never reaches it. Widening it would newly accept a "clear my
+  // description" operation the product does not have. The two gates sit on
+  // OPPOSITE paths and legitimately see different value sets — a deliberate
+  // asymmetry of the same kind `allocationMode` already documents, not drift to
+  // be tidied away.
+  description: z.string().max(500).nullable().optional(),
+  // ⚠️ REQUIRED — NOT NULL column (see the REQUIRED/NULLABLE rule above).
+  isDefault: z.boolean(),
+  // ⚠️ `.nullable()` for the same reason (story 66.2): `currencyEnum('currency')`
+  // carries `.default('NONE')` but NO `.notNull()`, so a stored null is legal and
+  // a pull delivers it.
+  //
+  // ⚠️⚠️ `.nullable()` and `.default('NONE')` are NOT interchangeable here, and
+  // the story originally recorded that they were — corrected by its code review.
+  // MEASURED on zod 3.25.76: `.default('NONE').safeParse(null)` → **false**;
+  // `.safeParse(undefined)` → true; `.nullable().safeParse(null)` → true.
+  // `.default()` substitutes for `undefined` ONLY, so swapping it in here would
+  // reject every null-currency profile and reinstate the exact false rejection
+  // this line was written to fix. The choice is forced, not stylistic.
+  currency: z.enum(SYNC_CURRENCIES).nullable(),
   // Story 54.2 (FR78): the user-chosen avatar emoji. Nullable because the column
   // is nullable and `null` ("never chosen", render the hash fallback) must
   // round-trip through a pull without a ZodError. Bounded to the varchar(16) the
@@ -183,9 +333,11 @@ export const syncOperationDataSchema = z.object({
   // category) share this one schema; `.min(0)` because positions are dense and
   // zero-based, and the backfill plus `max + 1` can never produce a negative.
   sortOrder: z.number().int().min(0).max(PG_INT32_MAX).optional(),
-  currency: z
-    .enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD'])
-    .optional(),
+  // ⚠️ Same list, same reason as the pull gate above: an 11-value list here
+  // rejects an EDIT to a profile whose currency the webhook legitimately stored.
+  // Pre-existing (this gate predates 66.2); fixed alongside it so the two cannot
+  // drift back apart.
+  currency: z.enum(SYNC_CURRENCIES).optional(),
   // Story 54.2 (FR78): the userProfile entity's chosen avatar emoji.
   //
   // ⚠️ This gate STRIPS undeclared keys, so omitting this line would drop `icon`

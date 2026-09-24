@@ -25,6 +25,7 @@ import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
+import { SYNC_CURRENCIES } from '@budget-planner/core/sync/types'
 import type { User } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import {
@@ -212,7 +213,13 @@ const userProfileSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().default(false),
-  currency: z.enum(['NONE', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NZD']),
+  // ⚠⚠ The FULL enum, via core's shared list. This gate carried an 11-value
+  // list until the code review of story 66.2: the `currency` column has held all
+  // 21 values since migration 0001, and `mapProvidedCurrency` in the Paddle
+  // webhook writes any of them. An 11-value list here rejects a legitimate EDIT
+  // to a profile the webhook itself created. Pre-existing; fixed alongside the
+  // pull gate so the two cannot drift apart again.
+  currency: z.enum(SYNC_CURRENCIES),
   // Story 54.2 (FR78): the user-chosen avatar emoji.
   //
   // ⚠️ This object is a HAND-MAINTAINED DUPLICATE of core's `userProfileSchema`

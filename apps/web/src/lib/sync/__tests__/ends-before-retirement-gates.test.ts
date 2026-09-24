@@ -270,15 +270,31 @@ describe('Gate 5 — the push payload carries the flag, in both directions', () 
 /**
  * GATE 2 — core's per-entity mirror (`expenseSchema`).
  *
- * ⚠️ UNEXERCISED by its own docblock (`types.ts:42-51`): nothing imports it. It
- * is changed and pinned anyway for the parity reason that docblock gives — the
- * drift between these mirrors and the flat schema is exactly how the documented
- * `savingsGoalSchema` asymmetries arose. "If you change one, change both."
+ * ⚠️⚠️ NO LONGER UNEXERCISED, and this test changed with it. When 65.2 wrote
+ * these cases, gate 2 was parity documentation that nothing imported, so
+ * `.default(false)` was harmless. Story 66.2 made gate 2 the PULL gate, and its
+ * code review then found `.default()` to be a hole rather than a convenience: a
+ * default makes the KEY OPTIONAL, so a server row that omitted the field passed
+ * the guard and entered the store with the key absent. The rule now is
+ * **required iff the column is NOT NULL**, and `expenses.endsBeforeRetirement`
+ * is NOT NULL — a pulled row always carries it.
+ *
+ * The flag is still six-gated and the parity obligation is unchanged; what moved
+ * is which behaviour is correct on the READ side. The push-side default lives on
+ * in `syncOperationDataSchema` and in `toServerPayload`'s unconditional `=== true`
+ * stamp, both still pinned below.
  */
 describe('Gate 2 — core’s per-entity expense mirror declares the flag', () => {
-  it('defaults the flag to false when omitted', async () => {
+  it('REFUSES a row that omits the flag (the pull gate wants a complete row)', async () => {
     const { expenseSchema } = await import('@budget-planner/core/sync/types')
-    expect(expenseSchema.parse(baseRow).endsBeforeRetirement).toBe(false)
+    expect(expenseSchema.safeParse(baseRow).success).toBe(false)
+  })
+
+  it('accepts an explicit false', async () => {
+    const { expenseSchema } = await import('@budget-planner/core/sync/types')
+    expect(
+      expenseSchema.parse({ ...baseRow, endsBeforeRetirement: false }).endsBeforeRetirement
+    ).toBe(false)
   })
 
   it('preserves an explicit true', async () => {

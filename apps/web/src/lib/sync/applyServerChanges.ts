@@ -17,9 +17,46 @@
  * number while a pulled row carries a uuid `userId`. That is harmless at runtime
  * (the value is only read back for display/aggregation) and is a separate concern
  * from the id unification this story delivers — out of scope here.
+ *
+ * ## Validation (Story 66.2, FR103)
+ *
+ * Every non-tombstone row is validated against its entity schema before it is
+ * written; a row that fails is refused and reported instead. ⚠️⚠️ This is the
+ * ONLY validation anywhere on the server → client direction. The gate it uses —
+ * core's per-entity mirrors — is one of six; the OTHER FIVE
+ * (`syncOperationDataSchema`, the server ingest schemas, the syncBridge payload
+ * whitelist, the DB columns, the client types) all sit on the PUSH path or at
+ * rest, so until 66.2 the authoritative server payload was trusted completely and
+ * written in verbatim.
+ *
+ * ⚠️ Three rules the guard depends on, each with a test that fails if it is
+ * broken (`__tests__/server-row-validation.test.ts`):
+ *
+ *   1. It runs AFTER the tombstone return. A tombstone is rebuilt from a
+ *      soft-deleted ROW and carries no meaningful payload; validating one would
+ *      stop deletes propagating — silent data resurrection.
+ *   2. It supplies a VERDICT ONLY. `change.data` is still written unchanged,
+ *      because `z.object` strips undeclared keys and the schemas declare neither
+ *      `profileId` nor `sortOrder`.
+ *   3. A refusal returns `false`, reusing the existing contract below, so a
+ *      rejected row cannot mark a collection touched (triggering a re-sort) nor
+ *      set `appliedProfile` (triggering an active-profile reconcile).
+ *
+ * ⚠️ The pull CURSOR is unaffected and cannot be affected from here: core
+ * persists it before calling this module, and the callback returns `void`. That
+ * is a deliberate, argued choice — see `__tests__/refused-row-cursor.test.ts`.
  */
 
 import type { ServerChange, SyncEntityType } from '@budget-planner/core'
+import {
+  balanceTrackingSchema,
+  categorySchema,
+  expenseSchema,
+  incomeSourceSchema,
+  savingsGoalSchema,
+  userProfileSchema,
+} from '@budget-planner/core/sync/types'
+import type { ZodTypeAny } from 'zod'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'
@@ -39,6 +76,23 @@ interface EntityBinding {
   store: StoreApi
   /** The state field that holds the entity array. */
   collection: string
+  /**
+   * The schema a PULLED row must satisfy before it is written (Story 66.2, FR103).
+   *
+   * These are core's per-entity mirrors. They were declared for parity and, until
+   * this story, imported by no PRODUCTION code (one spec already reached
+   * `expenseSchema` through a dynamic `await import` — the story first recorded
+   * the stronger "nothing", and its review corrected it); every other sync gate
+   * (`syncOperationDataSchema`, the server ingest schemas, the syncBridge
+   * whitelist) sits on the PUSH path or at rest, so before 66.2 no validation of
+   * any kind ran on the server → client direction.
+   *
+   * ⚠️ Why these and not `syncOperationDataSchema`: that schema models a PARTIAL
+   * operation payload — every field is `.optional()`, so it accepts `{}`. It
+   * cannot express "this row is complete", which is exactly what a pulled row
+   * has to be. See `packages/core/src/sync/types.ts` for the full note.
+   */
+  schema: ZodTypeAny
 }
 
 /**
@@ -46,12 +100,36 @@ interface EntityBinding {
  * uuid string now (Story 5-14), so no per-entity id-kind flag is needed.
  */
 const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
-  incomeSource: { store: useIncomeStore as unknown as StoreApi, collection: 'incomeSources' },
-  expense: { store: useExpenseStore as unknown as StoreApi, collection: 'expenses' },
-  savingsGoal: { store: useSavingsStore as unknown as StoreApi, collection: 'savingsGoals' },
-  balanceTracking: { store: useBalanceStore as unknown as StoreApi, collection: 'entries' },
-  userProfile: { store: useProfileStore as unknown as StoreApi, collection: 'profiles' },
-  category: { store: useCategoryStore as unknown as StoreApi, collection: 'categories' },
+  incomeSource: {
+    store: useIncomeStore as unknown as StoreApi,
+    collection: 'incomeSources',
+    schema: incomeSourceSchema,
+  },
+  expense: {
+    store: useExpenseStore as unknown as StoreApi,
+    collection: 'expenses',
+    schema: expenseSchema,
+  },
+  savingsGoal: {
+    store: useSavingsStore as unknown as StoreApi,
+    collection: 'savingsGoals',
+    schema: savingsGoalSchema,
+  },
+  balanceTracking: {
+    store: useBalanceStore as unknown as StoreApi,
+    collection: 'entries',
+    schema: balanceTrackingSchema,
+  },
+  userProfile: {
+    store: useProfileStore as unknown as StoreApi,
+    collection: 'profiles',
+    schema: userProfileSchema,
+  },
+  category: {
+    store: useCategoryStore as unknown as StoreApi,
+    collection: 'categories',
+    schema: categorySchema,
+  },
 }
 
 /**
@@ -74,6 +152,12 @@ function applyOne(change: ServerChange): boolean {
   // would be an orphan that no later change can ever target. Skip it rather than
   // corrupt the store. (Replaces the old numeric NaN guard, which is now moot.)
   if (!id) {
+    // ⚠️ Reported like any other refusal (code review 66.2): this path returned
+    // silently, so a row dropped for a missing id was invisible while a row
+    // dropped for a bad amount was not — an inconsistency in the one channel
+    // AC-5 asked for. `entityId` is the empty string here, so nothing
+    // identifying is lost by naming it.
+    reportRefusedRow(change, [{ path: ['entityId'], code: 'too_small' }])
     return false
   }
 
@@ -92,12 +176,79 @@ function applyOne(change: ServerChange): boolean {
     return true
   }
 
+  // ⚠️⚠️ Validate the server row BEFORE it enters the store (Story 66.2, FR103).
+  //
+  // Placed here deliberately — AFTER the `!id` guard and AFTER the tombstone
+  // return above. A tombstone is reconstructed from a soft-deleted ROW and is not
+  // required to carry a well-formed payload; validating one would stop deletes
+  // propagating across devices, which is a silent data-resurrection bug.
+  //
+  // ⚠️ The failure this stops is NOT a crash. A persisted STRING amount makes `+`
+  // a CONCATENATION, so the totals come out large, finite and entirely plausible
+  // with no `NaN` to flag them: `stores/savingsStore.ts` and
+  // `stores/balanceStore.ts` both sum raw persisted rows, and `useNetWorth` feeds
+  // the result straight to `netWorthFromTotals`. A finiteness check is not enough
+  // — the guard has to test `typeof === 'number'`, which `z.number()` does.
+  // (deferred-work.md:1031.)
+  const validation = binding.schema.safeParse(change.data)
+  if (!validation.success) {
+    reportRefusedRow(change, validation.error.issues)
+    return false
+  }
+
   // Insert the authoritative server row keyed by its shared uuid id. Deliberately
   // NOT profile-scoped (story 54.4): the server row carries its own `profileId`,
   // and reads — not writes — decide what is visible under the active profile.
+  //
+  // ⚠️⚠️ `change.data` is written UNCHANGED — the schema above supplies a VERDICT
+  // and nothing else. `z.object` STRIPS undeclared keys, and the entity schemas
+  // declare none of `profileId`, `sortOrder`, `categoryId`, `isDeleted`,
+  // `createdAt` or `updatedAt`. Writing `safeParse().data` instead would delete
+  // every synced row's profile scope (story 54.4) and its display position
+  // (story 34.1a) on the very next pull. Pinned by
+  // `__tests__/server-row-validation.test.ts`.
   const entity = { ...change.data, id }
   store.setState({ [collection]: [...without, entity] })
   return true
+}
+
+/**
+ * Report a server row that failed validation (Story 66.2, AC-5).
+ *
+ * ⚠️⚠️ This is a DEVELOPER channel and the story says so rather than pretending
+ * otherwise. There is no sync-status UI in this product: the whole of
+ * `useSync`'s return — `lastError`, `conflictCount`, `failedCount` — is consumed
+ * by `components/sync/ActiveSync.tsx`, which renders `null`. `useProfileError`
+ * has no renderer either, and `captureError` no-ops because `initErrorTracking`
+ * is called from nowhere. Routing a refusal into any of those would be a THIRD
+ * write-only channel, which is exactly what AC-5 forbids. A user-facing surface
+ * for "your device and the server disagree" does not exist and building one is
+ * out of this story's scope.
+ *
+ * ⚠️ `console.warn`, matching the established client-side idiom in
+ * `syncBridge.ts`'s `onQueueError` — NOT `lib/logger.ts`, which is server-only in
+ * practice and statically imports `@budget-planner/config` (dragging it into the
+ * client bundle is the 5-12 hazard).
+ *
+ * ⚠️ The row's VALUES are never logged — only its type, id and the failing field
+ * paths. `lib/logger.ts` redacts financial keys by name on the server; a
+ * client-side `console.warn` has no redaction pass at all, so money must not be
+ * put into the message in the first place. Issue `message` strings are dropped
+ * for the same reason: a future zod version or a custom refinement could embed
+ * the received value in one.
+ */
+/** The only part of a zod issue this reporter uses — see the no-values note above. */
+interface RefusalIssue {
+  path: readonly (string | number)[]
+  code: string
+}
+
+function reportRefusedRow(change: ServerChange, issues: readonly RefusalIssue[]): void {
+  console.warn('[applyServerChanges] refused a malformed server row', {
+    entityType: change.entityType,
+    entityId: change.entityId,
+    fields: issues.map((issue) => `${issue.path.join('.') || '(root)'}:${issue.code}`),
+  })
 }
 
 /**
