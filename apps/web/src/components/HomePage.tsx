@@ -1618,14 +1618,14 @@ function LockedTileContent({
  * (story 57.1, FR86), so a user can tell when they would open it before clicking
  * in. Every situation it names must be expressible by the shipped engine, and the
  * engine is SMALLER than `ForecastingScenario`'s interface suggests. What
- * `calculateFinancialForecast` actually reads (`core/finance/forecasting.ts:87-219`; the projection loop is `:130-196`):
+ * `calculateFinancialForecast` actually reads (`core/finance/forecasting.ts:145-293`; the projection loop is `:195-270`):
  *   1. `incomeGrowthRate` — compounds from year 1 over the user's income items.
  *   2. `expenseGrowthRate` — likewise over expenses.
  *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input. `amount` is SIGNED
- *      and simply added (`netIncome + oneTimeForYear`, `:154`); since story
+ *      and simply added (`netIncome * MONTHS_PER_YEAR + oneTimeForYear`, `:227`); since story
  *      `forecast-1` the builder offers an explicit Money in / Money out direction,
  *      so an outflow is enterable.
- * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** (`:38-39`) — they
+ * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** (`:96-97`) — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.
  *

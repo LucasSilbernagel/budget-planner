@@ -308,7 +308,7 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
  * a second name, and the naming actively invites a double-count reading — story
  * 57.1 shipped three comments that got it wrong. Verified here rather than
  * argued: `calculateFinancialForecast` projects from its `currentData` argument
- * alone and never reads those two fields (`forecasting.ts:23-37,85-100`).
+ * alone and never reads those two fields (`forecasting.ts:80-95,146-153`).
  */
 describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => {
   it('reports the hand-computed year-1 figures', async () => {
@@ -326,14 +326,26 @@ describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => 
     const result = onResultChange.mock.calls.at(-1)?.[0]
     const yearOne = result.baseline[0]
 
-    // BY HAND: `calculateTotalIncome` is a raw sum of the rows' `amount`
-    // (forecasting.ts:224). One row at 720000 cents ⇒ 720000. A double count —
-    // the scenario's `newIncome` added on top of `currentData.income` — would
-    // report 1440000.
-    expect(yearOne.income, 'one $7,200/mo source ⇒ 720000, a double count ⇒ 1440000').toBe(720_000)
-    expect(yearOne.expenses, 'one $2,100/mo expense ⇒ 210000').toBe(210_000)
-    // `calculateNetPeriodIncome` is monthly-normalized: 720000 − 210000.
-    expect(yearOne.netIncome, '720000 − 210000').toBe(510_000)
+    // BY HAND: a row's `income` is the monthly-normalized total lifted to a year.
+    // ⚠️ `yearOne` here is `result.baseline[0]`, so the figure is built from
+    // `baselineAnnualIncome` (`forecasting.ts:163`), NOT from the projection row's
+    // own expression at `:262`. The two agree only because a fresh scenario pins
+    // both growth rates to 0 — cite the baseline line, or a later growth default
+    // would make this comment quietly wrong.
+    // One `monthly` row at 720000 cents normalizes to 720000, so a year is
+    // 720000 × 12 = 8640000. A double count — the scenario's `newIncome` added on
+    // top of `currentData.income` — would report twice that, 17280000.
+    //
+    // ⚠️ These figures were 720000 / 210000 / 510000 until 2026-09-24, when the
+    // engine stopped reporting a MONTHLY flow on a YEARLY row. The relational
+    // point of these tests is unchanged and is what matters: N seeded sources must
+    // scale linearly, never quadratically.
+    expect(yearOne.income, 'one $7,200/mo source ⇒ 720000 × 12; a double count ⇒ 17280000').toBe(
+      8_640_000
+    )
+    expect(yearOne.expenses, 'one $2,100/mo expense ⇒ 210000 × 12').toBe(2_520_000)
+    // The flow is annual too: (720000 − 210000) × 12.
+    expect(yearOne.netIncome, '(720000 − 210000) × 12').toBe(6_120_000)
   })
 
   it('doubles when a second identical source is seeded, rather than quadrupling', async () => {
@@ -349,9 +361,11 @@ describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => 
     await vi.waitFor(() => expect(onResultChange).toHaveBeenCalled(), { timeout: 2000 })
     const result = onResultChange.mock.calls.at(-1)?.[0]
 
-    // Two rows at 720000 ⇒ 1440000. The relational half is mechanism-independent:
-    // whatever the unit, N sources must scale linearly, not quadratically.
-    expect(result.baseline[0].income, 'two $7,200/mo sources ⇒ 1440000').toBe(1_440_000)
+    // BY HAND: two `monthly` rows at 720000 normalize to 1440000, and a year of
+    // that is 1440000 × 12 = 17280000 (one row was 8640000, so exactly double).
+    // The relational half is mechanism-independent: whatever the unit, N sources
+    // must scale linearly, not quadratically.
+    expect(result.baseline[0].income, 'two $7,200/mo sources ⇒ 1440000 × 12').toBe(17_280_000)
   })
 })
 
