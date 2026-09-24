@@ -20,12 +20,39 @@ import {
 } from '../savingsAllocation.js'
 
 // Convenience builders keep the intent of each case obvious.
+//
+// ⚠️ Every builder here supplies a NON-NULL `targetAmount`, i.e. all of these are
+// GOALS. That is load-bearing, not incidental (Story 64.1): a target-less row is a
+// savings ACCOUNT and takes no part in the allocation, so a builder that omitted
+// the target would silently exclude every fixture in this file and re-baseline the
+// whole suite to a uniform, entirely plausible 0. The account cases are built
+// explicitly by `account()` / `manualAccount()` below so the two populations can
+// never be confused for one another.
+const GOAL_TARGET = 1_000_000
 const manual = (id: string, monthlyAllocation: number | null): AllocationAccount => ({
   id,
+  targetAmount: GOAL_TARGET,
   allocationMode: 'manual',
   monthlyAllocation,
 })
-const automatic = (id: string): AllocationAccount => ({ id, allocationMode: 'automatic' })
+const automatic = (id: string): AllocationAccount => ({
+  id,
+  targetAmount: GOAL_TARGET,
+  allocationMode: 'automatic',
+})
+/** A goal-less savings account in automatic mode — excluded from the solve (64.1). */
+const account = (id: string): AllocationAccount => ({
+  id,
+  targetAmount: null,
+  allocationMode: 'automatic',
+})
+/** A goal-less savings account carrying a manual amount — also excluded (64.1). */
+const manualAccount = (id: string, monthlyAllocation: number | null): AllocationAccount => ({
+  id,
+  targetAmount: null,
+  allocationMode: 'manual',
+  monthlyAllocation,
+})
 
 describe('calculateDistributablePool', () => {
   it('returns net period income when there are no contributions or manual allocations', () => {
@@ -103,7 +130,10 @@ describe('calculateDistributablePool', () => {
       incomeSources: [{ amount: 500000, frequency: 'monthly' }],
       expenses: [{ amount: 200000, frequency: 'monthly' }],
       investmentContributions: [],
-      savingsAccounts: [manual('m', null), { id: 'm2', allocationMode: 'manual' }],
+      savingsAccounts: [
+        manual('m', null),
+        { id: 'm2', targetAmount: GOAL_TARGET, allocationMode: 'manual' },
+      ],
     })
     // both manual amounts count as 0 → 300000
     expect(pool).toBe(300000)
@@ -278,7 +308,10 @@ describe('solveAutomaticAllocations', () => {
       expenses: [],
       investmentContributions: [],
       // no allocationMode field → resolveAllocationMode defaults to 'automatic'
-      savingsAccounts: [{ id: 'a' }, { id: 'b' }],
+      savingsAccounts: [
+        { id: 'a', targetAmount: GOAL_TARGET },
+        { id: 'b', targetAmount: GOAL_TARGET },
+      ],
     })
     expect(result.automaticAccountCount).toBe(2)
     expect(result.allocations).toEqual({ a: 300000, b: 300000 })
@@ -318,7 +351,12 @@ describe('solveAutomaticAllocations', () => {
   it('treats an unrecognized allocationMode as automatic (no account or money is dropped)', () => {
     // A corrupt/typo'd mode from untyped persisted JSON must not evaporate:
     // it is neither counted as a manual reservation nor excluded from the split.
-    const corrupt = { id: 'x', allocationMode: 'auto', monthlyAllocation: 999 } as AllocationAccount
+    const corrupt = {
+      id: 'x',
+      targetAmount: GOAL_TARGET,
+      allocationMode: 'auto',
+      monthlyAllocation: 999,
+    } as AllocationAccount
     const result = solveAutomaticAllocations({
       incomeSources: [{ amount: 600000, frequency: 'monthly' }],
       expenses: [],
@@ -345,6 +383,106 @@ describe('solveAutomaticAllocations', () => {
  * that user's pool must not move by a cent (epic AC-3). Cases 2 and 3 were written
  * before the implementation existed, for exactly that reason.
  */
+describe('account-balance entries take no part in the allocation (Story 64.1, FR98)', () => {
+  const income = [{ amount: 600_000, frequency: 'monthly' as const }]
+
+  it('an automatic ACCOUNT receives no share and is absent from `allocations`', () => {
+    const result = solveAutomaticAllocations({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [automatic('goal'), account('acct')],
+    })
+    expect(result.allocations).toEqual({ goal: 600_000 })
+    expect(result.automaticAccountCount).toBe(1)
+  })
+
+  it('⚠️ THE STORY IN ONE ASSERTION: adding an account does not reduce a goal’s share', () => {
+    // Shown RED against ad5d8c0, where the account halves the goal's share to
+    // 300_000. This is the assertion the epic asks for and the reason the story
+    // exists: an entry the user only wanted to record was quietly taking money.
+    const withoutAccount = solveAutomaticAllocations({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [automatic('goal')],
+    })
+    const withAccount = solveAutomaticAllocations({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [automatic('goal'), account('acct'), account('acct-2')],
+    })
+    expect(withAccount.allocations.goal).toBe(withoutAccount.allocations.goal)
+    expect(withAccount.allocations).not.toHaveProperty('acct')
+  })
+
+  it('a MANUAL account does not consume the manual deduction either', () => {
+    // The other half of the exclusion. Excluding only the automatic arm would
+    // leave this row shrinking a pool it can no longer receive from.
+    const pool = calculateDistributablePool({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [automatic('goal'), manualAccount('acct', 250_000)],
+    })
+    expect(pool).toBe(600_000)
+  })
+
+  it('a manual GOAL still consumes the deduction — the negative control', () => {
+    // Without this, the test above would pass just as well if the deduction had
+    // been removed altogether.
+    const pool = calculateDistributablePool({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [automatic('goal'), manual('fixed', 250_000)],
+    })
+    expect(pool).toBe(350_000)
+  })
+
+  it('an ABSENT targetAmount is an account too — `==`, not `===` (AC-5)', () => {
+    // `isSavingsAccount` uses loose equality on purpose: a row whose key is
+    // absent means the same as an explicit null. A strict `=== null` exclusion
+    // would keep allocating to this row.
+    const undefinedTarget = { id: 'acct', targetAmount: undefined } as unknown as AllocationAccount
+    const result = solveAutomaticAllocations({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [automatic('goal'), undefinedTarget],
+    })
+    expect(result.allocations).toEqual({ goal: 600_000 })
+  })
+
+  it('all-accounts-no-goals: pool is still reported, with nothing to receive it (AC-7)', () => {
+    // Must not divide by zero and must not zero the pool — the page's copy
+    // depends on a positive pool being reported with no recipients.
+    const result = solveAutomaticAllocations({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [account('a'), account('b'), manualAccount('c', 100_000)],
+    })
+    expect(result.distributablePool).toBe(600_000)
+    expect(result.automaticAccountCount).toBe(0)
+    expect(result.allocations).toEqual({})
+  })
+
+  it('a zero target is a GOAL, not an account — only an absent target excludes', () => {
+    // 0 is falsy but is not "no target"; `isSavingsAccount` is an absence check.
+    // Guards against an implementation reaching for `!targetAmount`.
+    const zeroTarget: AllocationAccount = { id: 'z', targetAmount: 0, allocationMode: 'automatic' }
+    const result = solveAutomaticAllocations({
+      incomeSources: income,
+      expenses: [],
+      investmentContributions: [],
+      savingsAccounts: [zeroTarget],
+    })
+    expect(result.allocations).toEqual({ z: 600_000 })
+  })
+})
+
 describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', () => {
   // One shared scenario, varied ONLY by the flag, so any difference in the
   // expected numbers is attributable to the flag and nothing else.

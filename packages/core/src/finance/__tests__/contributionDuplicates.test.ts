@@ -250,7 +250,7 @@ describe('the detector is fenced off from the pool calculation (AC-4)', () => {
         incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
         expenses: [{ amount: 50_000, frequency: 'monthly' }],
         investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
-        savingsAccounts: [{ id: 'a', allocationMode: 'automatic' }],
+        savingsAccounts: [{ id: 'a', targetAmount: 1_000_000, allocationMode: 'automatic' }],
       })
     ).toBe(200_000)
   })
@@ -266,7 +266,7 @@ describe('the detector is fenced off from the pool calculation (AC-4)', () => {
         incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
         expenses: [{ amount: 50_000, frequency: 'monthly' }],
         investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
-        savingsAccounts: [{ id: 'a', allocationMode: 'automatic' }],
+        savingsAccounts: [{ id: 'a', targetAmount: 1_000_000, allocationMode: 'automatic' }],
       })
     ).toBe(200_000)
   })

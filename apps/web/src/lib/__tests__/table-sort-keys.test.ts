@@ -157,16 +157,38 @@ describe('savings sort keys', () => {
     ])
   })
 
-  it('reads Monthly Allocation from the solver pool for AUTOMATIC accounts only', () => {
+  it('reads Monthly Allocation from the solver pool for AUTOMATIC goals only', () => {
     // Membership in `allocations` is what discriminates automatic from manual
-    // (story 26.3) — an automatic account's stored `monthlyAllocation` is not
+    // (story 26.3) — an automatic goal's stored `monthlyAllocation` is not
     // what its row displays.
+    //
+    // ⚠️ Every row here carries a NON-NULL target, i.e. all are goals. They used to
+    // pass `null`, which story 64.1 turned into "account" — and an account now keys
+    // as null, so all four expectations would have collapsed onto the same value and
+    // this case would have stopped discriminating anything. The account state is
+    // covered separately below.
     const extractors = createSavingsSortExtractors({ auto: 250_00 }, () => null)
-    expect(extractors.monthlyAllocation(goal('auto', null, 0, 999_00))).toBe(250_00)
-    expect(extractors.monthlyAllocation(goal('manual', null, 0, 30_00))).toBe(30_00)
+    expect(extractors.monthlyAllocation(goal('auto', 500_00, 0, 999_00))).toBe(250_00)
+    expect(extractors.monthlyAllocation(goal('manual', 500_00, 0, 30_00))).toBe(30_00)
     // A corrupt negative manual amount is floored at 0, matching the cell.
-    expect(extractors.monthlyAllocation(goal('manual-neg', null, 0, -5))).toBe(0)
-    expect(extractors.monthlyAllocation(goal('manual-null', null, 0, null))).toBe(0)
+    expect(extractors.monthlyAllocation(goal('manual-neg', 500_00, 0, -5))).toBe(0)
+    expect(extractors.monthlyAllocation(goal('manual-null', 500_00, 0, null))).toBe(0)
+  })
+
+  it('⚠️ keys a goal-less ACCOUNT as null so it never sorts by a figure it hides', () => {
+    // Story 64.1 code review. An account receives no allocation and renders “—”, but
+    // the extractor still fell through to its stored amount: measured descending, a
+    // stale 300.00 account sorted ABOVE a visible 100.00 goal, and two “—” rows were
+    // split by numbers neither of them showed. Null sorts last in both directions,
+    // matching how "No target" already behaves in the Target column.
+    const extractors = createSavingsSortExtractors({ 'acct-auto': 250_00 }, () => null)
+    expect(extractors.monthlyAllocation(goal('acct-stale', null, 0, 300_00))).toBeNull()
+    expect(extractors.monthlyAllocation(goal('acct-clean', null, 0, null))).toBeNull()
+    // Even an account that somehow reached `allocations` keys null — the row shows a
+    // dash either way, and the key must follow the cell.
+    expect(extractors.monthlyAllocation(goal('acct-auto', null, 0, null))).toBeNull()
+    // Negative control: the same stored amount on a GOAL still keys by its figure.
+    expect(extractors.monthlyAllocation(goal('goal-fixed', 500_00, 0, 300_00))).toBe(300_00)
   })
 
   it('places absent Progress last', () => {

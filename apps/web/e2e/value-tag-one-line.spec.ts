@@ -69,12 +69,42 @@ test.describe('Story 42.3 — value and tag on one line at 320px', () => {
     // ⚠️ Ids are hardcoded, so assert the fixture still has exactly these rows —
     // otherwise a third seeded row would be silently unchecked, which is the
     // "[0] indexing" hole in a different costume.
+    //
+    // ⚠️ Story 64.1: this enumerates rows by their Auto/Fixed PILL, and only a GOAL
+    // has one now. The seed holds two rows — `sav-1` (a manual goal) and `sav-2` (a
+    // goal-less account) — so exactly ONE id is expected here, not two. `sav-2` is
+    // not missing; it receives no allocation and therefore renders a dash with no
+    // pill, which the case below pins so its absence stays deliberate rather than
+    // becoming a silently unchecked row.
     const rowIds = await page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-testid^="savings-allocation-mode-"]')).map((el) =>
         (el.getAttribute('data-testid') ?? '').replace('savings-allocation-mode-', '')
       )
     )
-    expect(rowIds.sort()).toEqual(['sav-1', 'sav-2'])
+    expect(rowIds.sort()).toEqual(['sav-1'])
+
+    // The other half of the fixture: the account row's cell, pinned at 320px so
+    // "no pill" cannot quietly become "no cell" or "a stale figure".
+    const account = await page.evaluate(() => {
+      const amount = document.querySelector('[data-testid="savings-allocation-sav-2"]')
+      if (!amount) {
+        throw new Error('the account row rendered no allocation cell')
+      }
+      return {
+        text: amount.textContent?.trim() ?? '',
+        // ⚠️ The class, not a line count. A lone em dash occupies one glyph and
+        // CANNOT wrap, so `getClientRects().length === 1` holds however the cell is
+        // styled — it fails only on `display:none`. An earlier revision asserted it
+        // under the message "the account row dash wrapped at 320px", a failure that
+        // cannot occur; code review caught it. The class token is the real contract,
+        // and it is what keeps the cell correct if the dash is ever replaced by text.
+        nowrap: (amount.getAttribute('class') ?? '').includes('whitespace-nowrap'),
+        hasPill: Boolean(document.querySelector('[data-testid="savings-allocation-mode-sav-2"]')),
+      }
+    })
+    expect(account.text).toBe('—')
+    expect(account.hasPill, 'an account row must carry no Auto/Fixed pill').toBe(false)
+    expect(account.nowrap, 'the account row amount lost its nowrap protection').toBe(true)
 
     for (const id of rowIds) {
       const m = await page.evaluate((goalId) => {

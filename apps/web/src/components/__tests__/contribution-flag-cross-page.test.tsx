@@ -84,7 +84,11 @@ function seedIncomeExpensesAndGoal(): void {
       {
         id: 'auto-1',
         name: 'auto-1',
-        targetAmount: null,
+        // ⚠️ A GOAL (non-null target). Story 64.1 excludes goal-less savings
+        // ACCOUNTS from the allocation entirely, so a null target here would give
+        // this row no share and the case would stop measuring the contribution
+        // flag's effect on the pool — which is the only thing it is about.
+        targetAmount: 1_000_000,
         currentBalance: 0,
         allocationMode: 'automatic',
         monthlyAllocation: null,

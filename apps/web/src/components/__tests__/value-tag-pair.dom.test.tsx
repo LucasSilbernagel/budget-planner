@@ -142,10 +142,31 @@ describe('value/tag pairs on the Savings table', () => {
         )
       }
 
+      // ⚠️ Story 64.1: there are now TWO allocation-cell shapes, and which one a
+      // row gets is decided by whether it is a goal. A GOAL carries an Auto/Fixed
+      // pill. A goal-less ACCOUNT receives no allocation at all, so it renders a
+      // dash with NO pill — claiming either mode would be false. Both shapes still
+      // owe the nowrap amount and the pair wrapper asserted above; only the pill is
+      // conditional.
+      //
+      // ⚠️ Classified from the STORE, never from the rendered text. Keying off
+      // `textContent === '—'` would let the code grade its own homework: a GOAL that
+      // regressed to a dash-with-no-pill would be reclassified as an account and
+      // this loop would pass it. Code review caught exactly that.
+      const rowId = (id ?? '').replace('savings-allocation-', '')
+      const seeded = useSavingsStore.getState().savingsGoals.find((g) => g.id === rowId)
+      expect(seeded, `${id} matches no seeded savings row`).toBeDefined()
+      const isAccountRow = seeded?.targetAmount == null
       const tag = pair?.querySelector('[data-testid^="savings-allocation-mode-"]')
-      expect(tag, `${id} has no Auto/Fixed tag`).not.toBeNull()
-      for (const token of expectedTokens('RESPONSIVE_TAG_CLASS', RESPONSIVE_TAG_CLASS)) {
-        expect(tokens(tag?.getAttribute('class')), `${id} tag is missing ${token}`).toContain(token)
+      if (isAccountRow) {
+        expect(tag, `${id} is an account row and must carry NO Auto/Fixed tag`).toBeNull()
+      } else {
+        expect(tag, `${id} has no Auto/Fixed tag`).not.toBeNull()
+        for (const token of expectedTokens('RESPONSIVE_TAG_CLASS', RESPONSIVE_TAG_CLASS)) {
+          expect(tokens(tag?.getAttribute('class')), `${id} tag is missing ${token}`).toContain(
+            token
+          )
+        }
       }
     }
   })
@@ -197,12 +218,17 @@ describe('value/tag pairs on the Savings table', () => {
     )
     // ⚠️ This file's own docblock mandates a non-emptiness guard before any
     // `for…of` assertion loop, and this case shipped without one — caught in
-    // code review, one test after the doctrine was written. Two seeded rows
-    // give 2 amounts + 2 pills + 2 badges = 6 protected elements.
+    // code review, one test after the doctrine was written.
+    //
+    // The arithmetic, restated for Story 64.1: the two seeded rows are one GOAL
+    // and one ACCOUNT. They give 2 amounts + 2 badges, plus a mode pill for the
+    // GOAL ONLY — the account receives no allocation and so carries no Auto/Fixed
+    // pill — so 5 protected elements, not 6. The floor is stated as the exact
+    // expected count so that LOSING a protected element still fails here.
     expect(
       nowrapped.length,
       'no element carries whitespace-nowrap — this case would assert nothing'
-    ).toBeGreaterThanOrEqual(6)
+    ).toBe(5)
     for (const el of nowrapped) {
       const testId = el.getAttribute('data-testid') ?? ''
       const isTag =

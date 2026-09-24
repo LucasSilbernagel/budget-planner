@@ -196,7 +196,11 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
     const dialog = screen.getByRole('dialog')
 
     await user.type(screen.getByTestId('savings-name-input'), 'Rent Fund')
-    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    // ⚠️ A GOAL, with a real target. This case used to tick the account toggle
+    // purely to skip the target-amount validation — incidental convenience, never
+    // what the case is about. Story 64.1 hides the allocation controls for an
+    // account, so the shortcut now contradicts the behaviour under test.
+    await user.type(screen.getByTestId('savings-target-amount-input'), '5000')
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
 
     const amountInput = screen.getByTestId('savings-monthly-allocation-input')
@@ -222,7 +226,8 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
     const dialog = screen.getByRole('dialog')
 
     await user.type(screen.getByTestId('savings-name-input'), 'Flexible')
-    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    // A GOAL — see the note on the previous case.
+    await user.type(screen.getByTestId('savings-target-amount-input'), '5000')
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
     await user.type(screen.getByTestId('savings-monthly-allocation-input'), '999')
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'automatic')
@@ -278,14 +283,25 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     createdAt: ISO,
     updatedAt: ISO,
   })
+  // ⚠️⚠️ Story 64.1: `targetAmount` defaults to a NON-NULL target, i.e. every row
+  // built here is a GOAL. This default used to be `null`, which made all twelve
+  // fixtures in this suite savings ACCOUNTS. Once accounts stopped receiving
+  // allocations these cases went RED — and the trap is what comes next: every
+  // hand-computed figure (850.00, the 0.34/0.33/0.33 largest-remainder case,
+  // 1,300.00) had become a uniform, entirely plausible 0.00, so re-recording them
+  // to match would have restored green while deleting the whole of Story 26.3's
+  // coverage. Repairing the builder keeps the figures meaningful instead; the
+  // account cases are separate tests passing `targetAmount: null` explicitly.
+  const GOAL_TARGET = 10_000_00
   const savingsRow = (over: {
     id: string
     name?: string
+    targetAmount?: number | null
     allocationMode?: 'manual' | 'automatic'
     monthlyAllocation?: number | null
   }) => ({
     name: over.name ?? over.id,
-    targetAmount: null,
+    targetAmount: GOAL_TARGET as number | null,
     currentBalance: 0,
     allocationMode: 'automatic' as 'manual' | 'automatic',
     monthlyAllocation: null as number | null,
@@ -383,7 +399,13 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     renderWithProviders(<SavingsPage />)
 
     const summary = screen.getByTestId('savings-leftover-summary')
-    expect(summary).toHaveTextContent(/no automatic accounts/i)
+    // Story 64.1 (AC-9) reworded this. The fixture holds a manual GOAL, so
+    // "set a goal to Automatic" is advice the user can actually act on and is the
+    // arm that must render. Anchored on the distinguishing clause, not on
+    // "automatic" alone, which survives every rewrite of this sentence.
+    expect(summary).toHaveTextContent(/nothing is set to receive it/i)
+    expect(summary).toHaveTextContent(/Set a goal to .Automatic. to divide it up/i)
+    expect(summary).not.toHaveTextContent(/Add a savings goal with a target/i)
     expect(summary).not.toHaveTextContent(/split across 0/i)
     // No over-committed note when there are no automatic accounts to receive a split.
     expect(screen.queryByTestId('savings-overcommitted-note')).not.toBeInTheDocument()
@@ -443,6 +465,346 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
  * All three money fields on this page route through the shared core
  * `sanitizeMoneyInput` helper; these prove the wiring (AC-3).
  */
+/**
+ * Story 64.1 (FR98): an entry marked "just an account balance" is neither asked
+ * for a monthly allocation nor given one.
+ *
+ * The two halves are tested separately on purpose. Shipping only the form half
+ * would leave account rows silently taking an even share of every month's leftover
+ * funds with no visible control to explain it; shipping only the solver half would
+ * make them render "Fixed" beside a stale stored amount, because absence from
+ * `allocations` is this page's definition of manual mode.
+ */
+describe('SavingsPage — an account balance is not asked for an allocation (Story 64.1)', () => {
+  const ISO = '2026-01-01T00:00:00.000Z'
+  const accountRow = (over: {
+    id: string
+    allocationMode?: 'manual' | 'automatic'
+    monthlyAllocation?: number | null
+  }) => ({
+    name: over.id,
+    targetAmount: null as number | null,
+    currentBalance: 0,
+    allocationMode: 'automatic' as 'manual' | 'automatic',
+    monthlyAllocation: null as number | null,
+    createdAt: ISO,
+    updatedAt: ISO,
+    ...over,
+  })
+  const goalRow = (id: string) => ({
+    id,
+    name: id,
+    targetAmount: 1_000_000 as number | null,
+    currentBalance: 0,
+    allocationMode: 'automatic' as 'manual' | 'automatic',
+    monthlyAllocation: null as number | null,
+    createdAt: ISO,
+    updatedAt: ISO,
+  })
+
+  const resetStores = () => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  }
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  // ---- AC-1: the form hides both controls ----
+
+  it('hides the allocation mode select and the manual amount when the box is ticked', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+
+    // Present for a goal, and in manual mode the amount field is present too.
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    expect(screen.getByTestId('savings-monthly-allocation-input')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    expect(screen.queryByTestId('savings-allocation-mode-select')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
+  })
+
+  // ⚠️ PASSES ON BOTH SIDES of this story (measured: green against ad5d8c0, where
+  // the controls were never hidden at all). That is its job — it is the acceptance
+  // partner for the case above, so a hide implemented as a permanent removal fails
+  // here. Do not read it as evidence of the defect being fixed.
+  it('restores both controls when the box is unticked — the negative control', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    // Select manual FIRST, or the amount field is legitimately absent afterwards
+    // (automatic is the default) and "both controls" would be one control.
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+
+    expect(screen.getByTestId('savings-allocation-mode-select')).toBeInTheDocument()
+    expect(screen.getByTestId('savings-monthly-allocation-input')).toBeInTheDocument()
+  })
+
+  // ---- AC-2: the SAVE PATH neutralizes, not just the render ----
+
+  it('⚠️ persists no manual amount for an account, even though the control was hidden', async () => {
+    // Shown RED against ad5d8c0: `handleSubmit` sends `allocationMode` and
+    // `monthlyAllocation` UNCONDITIONALLY from component state, so hiding the
+    // controls does not stop the typed values being written. Before the fix this
+    // stored { allocationMode: 'manual', monthlyAllocation: 25000 }.
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Chequing')
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await user.type(screen.getByTestId('savings-monthly-allocation-input'), '250')
+    // Only NOW declare it an account, so a real value is sitting in form state.
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const goals = useSavingsStore.getState().savingsGoals
+    expect(goals).toHaveLength(1)
+    expect(goals[0]).toMatchObject({
+      name: 'Chequing',
+      targetAmount: null,
+      allocationMode: 'automatic',
+      monthlyAllocation: null,
+    })
+  })
+
+  // ---- AC-3: the untick behaviour is DEFINED (D1: preserve in session) ----
+
+  // ⚠️ ALSO GREEN AGAINST ad5d8c0 (measured), and deliberately so: D1 chose to keep
+  // the existing preserve-in-state behaviour rather than change it, mirroring
+  // `targetAmount`. This test pins a DECISION so a later "tidy-up" that clears the
+  // fields on tick has to argue with it; it is not a regression guard.
+  it('preserves the typed allocation in form state across a tick/untick (D1)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await user.type(screen.getByTestId('savings-monthly-allocation-input'), '250')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+
+    // Mirrors how `targetAmount` already behaves: hiding a field does not clear it,
+    // so unticking within the same modal session restores what the user typed.
+    expect(screen.getByTestId('savings-allocation-mode-select')).toHaveValue('manual')
+    // ⚠️ '250.00', not '250' — MEASURED, not assumed. Clicking the checkbox blurs
+    // the amount input, so `reformatAmountOnBlur` normalizes it on the way out. The
+    // preserved value is the reformatted one; asserting the raw '250' fails here and
+    // would have been read as the preservation itself being broken.
+    expect(screen.getByTestId('savings-monthly-allocation-input')).toHaveValue('250.00')
+  })
+
+  // ---- AC-4/AC-8: excluded from the solve, and the row says so ----
+
+  it('⚠️ an account row does not reduce a goal’s automatic share', () => {
+    // Shown RED against ad5d8c0, where the goal's share halves to 250.00.
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'i',
+          userId: 0,
+          name: 'Salary',
+          amount: 500_00,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
+    useSavingsStore.setState({ savingsGoals: [goalRow('goal-1'), accountRow({ id: 'acct-1' })] })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-allocation-goal-1')).toHaveTextContent('500.00')
+    expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/1 automatic account/)
+  })
+
+  it('⚠️ an account row shows a dash and NO mode pill, never its stale stored amount', () => {
+    // THE relocation guard. Excluding the row from `allocations` without this makes
+    // `goal.id in allocations` false, which this page reads as MANUAL — so the row
+    // would render "Fixed" beside 300.00, the exact unexplained figure the story
+    // removes, just moved from the solver into the table.
+    useSavingsStore.setState({
+      savingsGoals: [
+        accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-allocation-acct-1')).toHaveTextContent('—')
+    expect(screen.getByTestId('savings-allocation-acct-1')).not.toHaveTextContent('300.00')
+    expect(screen.queryByTestId('savings-allocation-mode-acct-1')).not.toBeInTheDocument()
+  })
+
+  // ⚠️ Green on both sides (measured). Without it, the dash assertion above would
+  // pass just as well if the allocation cell had been emptied for every row.
+  it('a GOAL still shows its figure and pill — the negative control for the dash', () => {
+    useSavingsStore.setState({ savingsGoals: [goalRow('goal-1')] })
+    renderWithProviders(<SavingsPage />)
+
+    expect(screen.getByTestId('savings-allocation-goal-1')).not.toHaveTextContent('—')
+    expect(screen.getByTestId('savings-allocation-mode-goal-1')).toHaveTextContent(/Auto/i)
+  })
+
+  // ---- AC-9: the remedy copy must be actionable ----
+
+  it('tells an accounts-only user to add a goal, not to use the control it hides', () => {
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'i',
+          userId: 0,
+          name: 'Salary',
+          amount: 500_00,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
+    useSavingsStore.setState({ savingsGoals: [accountRow({ id: 'acct-1' })] })
+    renderWithProviders(<SavingsPage />)
+
+    const summary = screen.getByTestId('savings-leftover-summary')
+    expect(summary).toHaveTextContent(/Add a savings goal with a target to divide it up/i)
+    // The old sentence pointed at a control that is now hidden for these very rows.
+    expect(summary).not.toHaveTextContent(/Set a goal to .Automatic./i)
+    expect(summary).not.toHaveTextContent(/Set an account to .Automatic./i)
+  })
+
+  // ---- code review: validation must not fire on a control the user cannot see ----
+
+  it('⚠️ saves an account after a NEGATIVE amount was typed, then hidden', async () => {
+    // Found by review. `computeErrors` gated its target-amount check on `!isAccount`
+    // but NOT its manual-amount check, so an error could be raised against a field
+    // the tick had just removed from the DOM: the dialog stays open, no `role="alert"`
+    // renders anywhere the user can see, and nothing saves. A leading '-' IS legal in
+    // `sanitizeMoneyInput` (`currency.ts:400-402` — "Sign is legal only in leading
+    // position"), so this is typeable, not merely a corrupt-data path.
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Chequing')
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await user.type(screen.getByTestId('savings-monthly-allocation-input'), '-5')
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useSavingsStore.getState().savingsGoals).toHaveLength(1)
+    expect(useSavingsStore.getState().savingsGoals[0]).toMatchObject({
+      targetAmount: null,
+      allocationMode: 'automatic',
+      monthlyAllocation: null,
+    })
+  })
+
+  it('still refuses a negative amount on a GOAL — the negative control', async () => {
+    // Without this, the guard above would pass just as well if the manual-amount
+    // validation had been deleted outright.
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const dialog = screen.getByRole('dialog')
+
+    await user.type(screen.getByTestId('savings-name-input'), 'Rent Fund')
+    await user.type(screen.getByTestId('savings-target-amount-input'), '5000')
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await user.type(screen.getByTestId('savings-monthly-allocation-input'), '-5')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
+
+    expect(screen.getByTestId('savings-monthly-allocation-error')).toBeInTheDocument()
+    expect(useSavingsStore.getState().savingsGoals).toHaveLength(0)
+    void dialog
+  })
+
+  // ---- code review: an account's form must not surface a server-set manual value ----
+
+  it('⚠️ unticking an edited account does not reveal a server-set manual amount', async () => {
+    // Found by review. `openEditModal` prefilled mode/amount for an account row too,
+    // so unticking presented "Manual / 300.00" as though the user had chosen it — a
+    // value the table only ever showed as "—". D1 preserves what the USER typed in
+    // this session; it was never meant to surface storage they never saw.
+    const user = userEvent.setup()
+    useSavingsStore.setState({
+      savingsGoals: [
+        accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+    await user.click(screen.getByRole('button', { name: 'Edit acct-1' }))
+    // The form opens with the box already ticked (null target). Untick it to reveal
+    // the controls and see what they were seeded with.
+    await user.click(screen.getByTestId('savings-is-account-toggle'))
+
+    expect(screen.getByTestId('savings-allocation-mode-select')).toHaveValue('automatic')
+    expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
+  })
+
+  it('a saved account reopens with a blank allocation — the reopen half of D1', () => {
+    // D1 is preserve-in-SESSION, reset-across-REOPEN. The record stated that; the
+    // audit found nothing pinned it. `openEditModal` resets by construction, so this
+    // guards the construction rather than discovering a defect.
+    useSavingsStore.setState({
+      savingsGoals: [
+        accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit acct-1' }))
+
+    expect(screen.getByTestId('savings-is-account-toggle')).toBeChecked()
+    expect(screen.queryByTestId('savings-allocation-mode-select')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
+  })
+
+  // ---- code review: the breakdown's account-skip was untested ----
+
+  it('⚠️ a stale manual ACCOUNT does not appear in the breakdown’s fixed-allocation line', () => {
+    // Found by review via mutation: deleting the account-skip in `manualTotal` left
+    // every shipped test green while the breakdown visibly contradicted the "Left
+    // over" figure it exists to explain (−400.00 against a 400.00 leftover).
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'i',
+          userId: 0,
+          name: 'Salary',
+          amount: 500_00,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [
+        goalRow('goal-1'),
+        accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
+        { ...goalRow('goal-fixed'), allocationMode: 'manual' as const, monthlyAllocation: 100_00 },
+      ],
+    })
+    renderWithProviders(<SavingsPage />)
+    // The breakdown is collapsed by default and its body is NOT in the DOM until
+    // opened (story 45.1), so any assertion about its contents must open it first.
+    fireEvent.click(screen.getByRole('button', { name: 'How is this worked out?' }))
+
+    // Only the manual GOAL's 100.00 is deducted; the account's 300.00 is not.
+    const manualLine = screen.getByTestId('breakdown-manual')
+    expect(manualLine).toHaveTextContent('100.00')
+    expect(manualLine).not.toHaveTextContent('400.00')
+    expect(manualLine).not.toHaveTextContent('300.00')
+  })
+})
+
 describe('SavingsPage money inputs reject non-numeric characters', () => {
   beforeEach(() => {
     useSavingsStore.setState({ savingsGoals: [] })
@@ -1232,10 +1594,17 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     createdAt: ISO,
     updatedAt: ISO,
   })
+  // ⚠️ Story 64.1 code review: this builder is named `autoGoal` but had
+  // `targetAmount: null`, which makes it a goal-less ACCOUNT — and accounts are now
+  // excluded from the allocation entirely. Every case in this 45.1 suite used it, so
+  // the rows were being skipped before the reducer's `Number.isFinite` check could
+  // run, and the pre-existing "a corrupt manual allocation does not render NaN"
+  // guard below went VACUOUS: measured green with that guard deleted, RED again once
+  // this target was restored. A non-null target is what the name always implied.
   const autoGoal = (id: string) => ({
     id,
     name: id,
-    targetAmount: null,
+    targetAmount: 1_000_000 as number | null,
     currentBalance: 0,
     allocationMode: 'automatic' as const,
     monthlyAllocation: null,

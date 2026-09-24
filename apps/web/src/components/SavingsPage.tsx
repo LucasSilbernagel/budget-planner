@@ -157,6 +157,20 @@ export function SavingsPage() {
     [incomeSources, expenses, contributionItems, savingsGoals]
   )
 
+  // Story 64.1: is there any row that CAN receive an allocation? Drives the
+  // zero-automatic remedy copy below. A goal-less account can never be one, so
+  // "set a goal to Automatic" is only actionable advice when a goal exists.
+  const hasAllocatableGoal = useMemo(
+    () => savingsGoals.some((goal) => goal.targetAmount != null),
+    [savingsGoals]
+  )
+  // Whether the "account balances don't receive allocations" half of the remedy is
+  // relevant at all: on an empty page it is noise about rows the user does not have.
+  const hasAccountRow = useMemo(
+    () => savingsGoals.some((goal) => goal.targetAmount == null),
+    [savingsGoals]
+  )
+
   // Story 45.1 (FR72): the derivation shown in the breakdown. Computed from the
   // SAME inputs the solver received, so the two cannot drift.
   const breakdown = useMemo(() => {
@@ -174,6 +188,13 @@ export function SavingsPage() {
       .filter((line) => !line.excluded)
       .reduce((sum, line) => sum + line.monthlyCents, 0)
     const manualTotal = savingsGoals.reduce((sum, goal) => {
+      // ⚠️ Story 64.1: skip goal-less accounts, mirroring core's
+      // `isExcludedFromAllocation`. They no longer consume the manual deduction,
+      // and this reducer explains the very figure the pool used — a divergence
+      // here would contradict itself on screen.
+      if (goal.targetAmount == null) {
+        return sum
+      }
       if ((goal.allocationMode ?? 'automatic') !== 'manual') {
         return sum
       }
@@ -339,7 +360,15 @@ export function SavingsPage() {
     }
     // Manual allocation must be non-negative. An automatic account ignores any
     // amount, so the check is skipped entirely in automatic mode.
-    if (allocationMode === 'manual') {
+    //
+    // ⚠️ Story 64.1 code review, HIGH: `!isAccount` is as load-bearing here as it is
+    // on the target check above. Without it, an error could be raised against a
+    // control the tick had just removed from the DOM — the dialog stayed open, no
+    // `role="alert"` rendered anywhere the user could see, and nothing saved. A
+    // leading '-' IS legal in `sanitizeMoneyInput` ('Sign is legal only in leading
+    // position', core `currency.ts:400-402`), so a negative is typeable, and
+    // `formatForInputDisplay` prefills one from a server-pulled row.
+    if (!isAccount && allocationMode === 'manual') {
       const allocationInCents = parseFromInput(monthlyAllocation, locale)
       if (allocationInCents < 0) {
         next.monthlyAllocation = 'Please enter a valid non-negative monthly allocation'
@@ -402,10 +431,16 @@ export function SavingsPage() {
     setCurrentBalance(formatForInputDisplay(goal.currentBalance, locale))
     // Allocation (Story 26.1): default a legacy row (no mode) to 'automatic'; only
     // prefill the amount for a manual account with a stored value.
-    const mode = goal.allocationMode ?? 'automatic'
+    // ⚠️ Story 64.1 code review: an ACCOUNT resets to the canonical 'automatic' /
+    // blank rather than echoing what storage happens to hold. A pulled or
+    // hand-edited row can carry `manual` + an amount that the table only ever
+    // displayed as “—”; prefilling it would present storage the user never saw as
+    // though they had chosen it, and one untick + Save would turn it into a real
+    // deduction. D1 preserves what the USER typed in this session — not this.
+    const mode = account ? 'automatic' : goal.allocationMode ?? 'automatic'
     setAllocationMode(mode)
     setMonthlyAllocation(
-      mode === 'manual' && goal.monthlyAllocation != null
+      !account && mode === 'manual' && goal.monthlyAllocation != null
         ? formatForInputDisplay(goal.monthlyAllocation, locale)
         : ''
     )
@@ -457,9 +492,23 @@ export function SavingsPage() {
         // Allocation (Story 26.1): store the mode; a manual account persists its
         // fixed amount (cents), an automatic account persists null (the leftover
         // share is computed, never stored) — ignoring any stale typed value.
-        allocationMode,
+        //
+        // ⚠️ Story 64.1 (FR98): an ACCOUNT BALANCE is neutralized here, not merely
+        // hidden above. This object literal sends every field unconditionally, so
+        // hiding a control does NOT stop its state being written — the trap story
+        // 65.2 hit with `endsBeforeRetirement` and `categoryId` hit before it
+        // (see ExpensesPage.tsx:265-270). Same shape as `targetAmount` two lines
+        // up: write the canonical "not applicable" value at the save site rather
+        // than trusting the absent control. 'automatic' + null is what a fresh row
+        // gets and is the only internally consistent pair for a row that receives
+        // nothing; persisting 'manual' with a null amount would be self-
+        // contradictory. The values survive in form state while the box is ticked,
+        // so unticking within the same modal session restores what was typed.
+        allocationMode: isAccount ? 'automatic' : allocationMode,
         monthlyAllocation:
-          allocationMode === 'manual' ? parseFromInput(monthlyAllocation, locale) : null,
+          !isAccount && allocationMode === 'manual'
+            ? parseFromInput(monthlyAllocation, locale)
+            : null,
       }
 
       if (editingId !== null) {
@@ -585,8 +634,17 @@ export function SavingsPage() {
                 ) : automaticAccountCount === 0 ? (
                   <>
                     <span className="font-semibold">{formatAmount(distributablePool)}/mo</span> is
-                    left over — no automatic accounts to split it. Set an account to “Automatic” to
-                    divide it up.
+                    left over — nothing is set to receive it.{' '}
+                    {/* ⚠️ Story 64.1: the remedy depends on what the user actually
+                        has. Telling someone whose only savings rows are account
+                        balances to "set an account to Automatic" points at a control
+                        this story HIDES for exactly those rows — an instruction they
+                        cannot follow. */}
+                    {hasAllocatableGoal
+                      ? 'Set a goal to “Automatic” to divide it up.'
+                      : hasAccountRow
+                        ? 'Add a savings goal with a target to divide it up — account balances don’t receive allocations.'
+                        : 'Add a savings goal with a target to divide it up.'}
                   </>
                 ) : (
                   <>
@@ -988,18 +1046,42 @@ export function SavingsPage() {
                         // Account (Story 16-1): null target ⇒ absent progress (not 0%).
                         const isAccountRow = goal.targetAmount == null
                         const progress = getSavingsProgress(goal.id)
-                        // Allocation (Story 26.3): an account is automatic iff the
-                        // solver placed it in `allocations` (every automatic account
-                        // is present, value may be 0); manual accounts are absent and
-                        // show their stored fixed amount. (`in` rather than
-                        // Object.hasOwn to stay within the tsconfig lib target; ids
-                        // are uuids, so no Object.prototype key can collide.)
+                        // Allocation (Story 26.3): a GOAL is automatic iff the solver
+                        // placed it in `allocations` (every automatic goal is present,
+                        // value may be 0); manual goals are absent and show their
+                        // stored fixed amount. (`in` rather than Object.hasOwn to stay
+                        // within the tsconfig lib target; ids are uuids, so no
+                        // Object.prototype key can collide.)
+                        //
+                        // ⚠️⚠️ Story 64.1 (FR98): there are THREE allocation states
+                        // now, not two, and here is why. An account is excluded from
+                        // the solve, so it is absent from `allocations` — which is
+                        // this code's definition of MANUAL. Render it through the
+                        // manual arm and it shows “Fixed” beside its stale persisted
+                        // `monthlyAllocation`: the unexplained figure this story
+                        // exists to delete, relocated from the solver into the table
+                        // and wearing a label that actively lies.
+                        //
+                        // ⚠️ The guards that actually prevent that are the two
+                        // `isAccountRow` gates in the cell below (the dash, and the
+                        // omitted pill) — MEASURED: removing them turns
+                        // "an account row shows a dash and NO mode pill" and
+                        // `value-tag-pair.dom` red. An earlier revision also tested
+                        // `!isAccountRow` here and a comment called that the guard;
+                        // it was inert — an account row is never in `allocations`, so
+                        // the conjunct could not change the result, and dropping it
+                        // left every test green. A no-op that reads as protection is
+                        // worse than no protection, so it is gone.
                         const isAutomatic = goal.id in allocations
                         // Clamp a (corrupt-data) negative manual amount to 0 so the row
                         // matches the solver, which floors manual allocations at 0.
-                        const effectiveAllocation = isAutomatic
-                          ? allocations[goal.id] ?? 0
-                          : Math.max(0, goal.monthlyAllocation ?? 0)
+                        // An account receives nothing, so its figure is 0 rather than a
+                        // stale stored amount kept alive for a cell that never shows it.
+                        const effectiveAllocation = isAccountRow
+                          ? 0
+                          : isAutomatic
+                            ? allocations[goal.id] ?? 0
+                            : Math.max(0, goal.monthlyAllocation ?? 0)
                         return (
                           <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
                             <td className={RESPONSIVE_CELL_CLASS}>
@@ -1049,14 +1131,20 @@ export function SavingsPage() {
                                   className={`text-muted text-sm ${RESPONSIVE_VALUE_NOWRAP_CLASS}`}
                                   data-testid={`savings-allocation-${goal.id}`}
                                 >
-                                  {formatAmount(effectiveAllocation)}
+                                  {isAccountRow ? '—' : formatAmount(effectiveAllocation)}
                                 </span>
-                                <span
-                                  className={`inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs ${RESPONSIVE_TAG_CLASS}`}
-                                  data-testid={`savings-allocation-mode-${goal.id}`}
-                                >
-                                  {isAutomatic ? 'Auto' : 'Fixed'}
-                                </span>
+                                {/* No mode pill on an account row: it is neither Auto
+                                  nor Fixed, and claiming either would be false. The
+                                  dash above carries the meaning on its own, matching
+                                  how the Target cell says "No target". */}
+                                {!isAccountRow && (
+                                  <span
+                                    className={`inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs ${RESPONSIVE_TAG_CLASS}`}
+                                    data-testid={`savings-allocation-mode-${goal.id}`}
+                                  >
+                                    {isAutomatic ? 'Auto' : 'Fixed'}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className={RESPONSIVE_STACKED_CELL_CLASS}>
@@ -1286,29 +1374,41 @@ export function SavingsPage() {
               )}
             </div>
 
-            {/* Monthly allocation mode (Story 26.1) */}
-            <div>
-              <label htmlFor="allocationMode" className="block mb-1 font-medium text-label text-sm">
-                Monthly Allocation
-              </label>
-              <select
-                id="allocationMode"
-                value={allocationMode}
-                onChange={(e) => setAllocationMode(e.target.value as AllocationMode)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
-                data-testid="savings-allocation-mode-select"
-              >
-                <option value="automatic">Automatic (even share of leftover funds)</option>
-                <option value="manual">Manual (a fixed amount each month)</option>
-              </select>
-              <p className="mt-1 text-faint text-xs">
-                {allocationMode === 'automatic'
-                  ? 'This account receives an even share of whatever is left over each month.'
-                  : 'This account gets the fixed amount you set below each month.'}
-              </p>
-            </div>
+            {/* Monthly allocation mode (Story 26.1). Hidden for an account balance
+              (Story 64.1, FR98): a row the user is not saving toward is asked for
+              no allocation strategy, and `handleSubmit` neutralizes the fields so
+              the hidden state cannot be persisted. Mirrors the Target Amount
+              field's `{!isAccount && …}` above. */}
+            {!isAccount && (
+              <div>
+                <label
+                  htmlFor="allocationMode"
+                  className="block mb-1 font-medium text-label text-sm"
+                >
+                  Monthly Allocation
+                </label>
+                <select
+                  id="allocationMode"
+                  value={allocationMode}
+                  onChange={(e) => setAllocationMode(e.target.value as AllocationMode)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 dark:bg-gray-700 dark:text-gray-100"
+                  data-testid="savings-allocation-mode-select"
+                >
+                  <option value="automatic">Automatic (even share of leftover funds)</option>
+                  <option value="manual">Manual (a fixed amount each month)</option>
+                </select>
+                <p className="mt-1 text-faint text-xs">
+                  {/* "goal", not "account": Story 64.1 means this helper renders
+                    only for goals, and the remedy sentence in the leftover summary
+                    now tells users that account balances receive no allocation. */}
+                  {allocationMode === 'automatic'
+                    ? 'This goal receives an even share of whatever is left over each month.'
+                    : 'This goal gets the fixed amount you set below each month.'}
+                </p>
+              </div>
+            )}
 
-            {allocationMode === 'manual' && (
+            {!isAccount && allocationMode === 'manual' && (
               <div>
                 <label
                   htmlFor="monthlyAllocation"
