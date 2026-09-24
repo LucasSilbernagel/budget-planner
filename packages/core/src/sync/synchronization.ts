@@ -287,6 +287,7 @@ export class SynchronizationService {
       pendingOperations: [],
       failedOperations: [],
       conflictOperations: [],
+      rejectedOperations: [],
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : false,
       retryCount: 0,
     }
@@ -1002,10 +1003,20 @@ export class SynchronizationService {
       let conflictCount = 0
       // Retryable (transient/5xx) failures — eligible for retry/re-queue.
       const failedOperations: SyncOperation[] = []
-      // Non-retryable (auth/4xx) failures — must NOT be retried; left in the
-      // queue and the circuit is opened so we stop hammering until conditions
-      // change (e.g. re-authentication).
-      const nonRetryableOperations: SyncOperation[] = []
+      // Non-retryable failures split by whether the OPERATION or the SESSION is
+      // the problem. Conflating them was a defect: a permanently-rejected op that
+      // stays queued is replayed every cycle, pins the status at FAILED and
+      // re-opens the circuit breaker, which suppresses retries for every OTHER
+      // entity (the symptom `stores/categoryStore.ts` guards against by hand).
+      //
+      // Auth-blocked (401/403): the op is VALID and only the session is not, so it
+      // stays queued and syncs after re-authentication. Removing it = data loss.
+      const authBlockedOperations: SyncOperation[] = []
+      // Rejected (any other non-retryable: 400/404/422, or a 200 envelope
+      // reporting failedCount): the server will never accept this operation, so it
+      // leaves the queue and is recorded in `state.rejectedOperations` instead of
+      // looping forever.
+      const rejectedOperations: SyncOperation[] = []
       const conflictOperations: SyncOperation[] = []
       const successfullyProcessed: SyncOperation[] = []
 
@@ -1030,8 +1041,14 @@ export class SynchronizationService {
             conflictOperations.push(operation)
             conflictCount++
           } else if (result.retryable === false) {
-            // Non-retryable failure (e.g. auth/validation). Do not retry.
-            nonRetryableOperations.push(operation)
+            // Non-retryable. Classify by status: only 401/403 mean "the session is
+            // wrong but the operation is fine", which is the one case that must
+            // stay queued. Everything else is a permanent reject.
+            if (result.statusCode === 401 || result.statusCode === 403) {
+              authBlockedOperations.push(operation)
+            } else {
+              rejectedOperations.push(operation)
+            }
             failedCount++
             this.state.lastError = result.error ?? 'Non-retryable sync failure'
           } else {
@@ -1083,11 +1100,28 @@ export class SynchronizationService {
         }
       }
 
+      // Remove PERMANENTLY REJECTED operations from the queue. Unlike the
+      // retryable branch above these are never re-queued: the server has refused
+      // them and replaying one blocks the whole queue. They are recorded in
+      // `state.rejectedOperations` so the loss stays visible rather than silent.
+      let recordableRejectedOps = rejectedOperations
+      if (rejectedOperations.length > 0) {
+        try {
+          await this.queue.removeBatch(rejectedOperations.map((op) => op.id))
+        } catch (removeError) {
+          this.log('Failed to remove rejected operations from queue:', removeError)
+          // Could not remove them — they are still queued, so do NOT report them
+          // as rejected-and-dropped; the next sync will try the removal again.
+          recordableRejectedOps = []
+        }
+      }
+
       // Update state
       this.state.lastSyncTimestamp = Date.now()
       this.state.pendingOperations = this.queue.getAll()
       this.state.failedOperations = [...this.state.failedOperations, ...requeuableFailedOps]
       this.state.conflictOperations = [...this.state.conflictOperations, ...conflictOperations]
+      this.state.rejectedOperations = [...this.state.rejectedOperations, ...recordableRejectedOps]
 
       // Determine final status
       if (failedCount > 0 || conflictCount > 0) {
@@ -1111,9 +1145,17 @@ export class SynchronizationService {
 
       // Non-retryable failures: open the circuit to stop auto-retrying an
       // operation that cannot succeed without external change (e.g. re-auth).
-      if (nonRetryableOperations.length > 0) {
+      //
+      // ⚠️ This is deliberately NOT an `else if` chain with the retry below. It
+      // used to be, and that stranded work: when one batch produced BOTH an
+      // auth-blocked op and a retryable one, opening the circuit consumed the
+      // branch and `scheduleRetry()` never ran, so the retryable op was removed
+      // from the queue (above) and then never re-queued — the local edit was lost
+      // on reload. The two decisions are independent and both must be evaluated.
+      if (authBlockedOperations.length > 0) {
         this.openCircuit()
-      } else if (
+      }
+      if (
         // Schedule retry only for retryable failures and only if retries remain.
         requeuableFailedOps.length > 0 &&
         this.state.retryCount < this.config.maxRetries
@@ -1210,12 +1252,27 @@ export class SynchronizationService {
     const now = Date.now()
     if (this.circuitBroken) {
       if (now < this.circuitBrokenUntil) {
-        // Circuit is still open, don't retry yet
+        // Circuit is open. DEFER the retry to just after the cooldown rather than
+        // dropping it.
+        //
+        // ⚠️ This used to `return`, which stranded work: by the time we get here
+        // the retryable operations have ALREADY been removed from the queue and
+        // live only in `state.failedOperations` (in memory). Returning left
+        // nothing to re-queue them, so they survived only until reload — the
+        // local edit was silently lost. Only `runRetry` reads
+        // `state.failedOperations`, so if no timer fires, nothing recovers them.
+        const delay = this.circuitBrokenUntil - now + this.config.retryDelay
         this.log(
           `Circuit breaker: Open until ${new Date(
             this.circuitBrokenUntil
-          ).toISOString()}. Retry skipped.`
+          ).toISOString()}. Retry deferred by ${delay}ms.`
         )
+        this.retryTimeout = setTimeout(() => {
+          // The cooldown has now elapsed; close the circuit and drain.
+          this.circuitBroken = false
+          this.consecutiveFailures = 0
+          void this.runRetry()
+        }, delay)
         return
       }
       // Cooldown period has passed, try to close the circuit

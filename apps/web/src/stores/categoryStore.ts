@@ -156,11 +156,13 @@ export const useCategoryStore = create<CategoryState>()(
         // ONLY store that keeps tombstones in local state, so unlike every
         // sibling a mutation can still "find" a row the server has already
         // dropped. Server-side `entityExists` filters `isDeleted = false`, so the
-        // op comes back `Entity not found` → `retryable: false` → it lands in
-        // `nonRetryableOperations`, which `synchronization.ts` never passes to
-        // `removeBatch`. It would then be retried forever, pin the sync status at
-        // FAILED, and re-open the circuit breaker every cycle — suppressing
-        // retries for EVERY other entity.
+        // op comes back `Entity not found` → `retryable: false`. That class of
+        // failure is now REMOVED from the queue and recorded in
+        // `state.rejectedOperations` (core `synchronization.ts`), so it no longer
+        // replays forever, pins the status at FAILED and re-opens the circuit
+        // breaker every cycle. This guard is still load-bearing: it stops the
+        // doomed operation being queued at all, so the user's rename does not
+        // silently land in the rejected bucket.
         if (!previous || previous.isDeleted) {
           return
         }

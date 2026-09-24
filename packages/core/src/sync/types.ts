@@ -387,6 +387,22 @@ export interface SyncState {
   /** Operations that have conflicts requiring resolution */
   conflictOperations: SyncOperation[]
 
+  /**
+   * Operations the server permanently REJECTED (a non-retryable failure that is
+   * not an auth failure: 400/404/422, or a 200 envelope reporting `failedCount`).
+   *
+   * These are removed from the queue, because replaying one forever pins the
+   * sync status at FAILED and re-opens the circuit breaker every cycle, which
+   * suppresses retries for every OTHER entity (see `synchronization.ts`). They
+   * are recorded here rather than dropped silently so the rejection stays
+   * observable — a removed operation is a local edit the server will never hold.
+   *
+   * ⚠️ Auth-blocked operations (401/403) are deliberately NOT routed here: the
+   * operation is valid and only the session is not, so it stays queued to sync
+   * after re-authentication. Removing it would be data loss.
+   */
+  rejectedOperations: SyncOperation[]
+
   /** Whether the device is currently online */
   isOnline: boolean
 

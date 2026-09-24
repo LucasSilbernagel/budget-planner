@@ -606,7 +606,8 @@ export async function getLiveProfileIds(userId: string): Promise<string[]> {
  * Whether a TOMBSTONED row with this id exists for this user. `entityExists`
  * treats tombstones as absent, so a create for a deleted id would otherwise
  * reach the INSERT and fail on the primary key — permanently, since the client
- * keeps non-retryable failures queued.
+ * removes non-retryable failures from the queue (recording them in
+ * `state.rejectedOperations`), while keeping auth-blocked ones queued.
  */
 async function tombstoneExists(
   entityType: keyof EntityTableMap,

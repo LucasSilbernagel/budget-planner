@@ -156,7 +156,8 @@ function deleteCategory(id: string): { affectedRowCount: number } {
   const existing = useCategoryStore.getState().getCategoryById(id)
   // Already tombstoned: do nothing at all. Re-running the cascade would enqueue
   // a second delete for a row the server has already dropped, which comes back
-  // non-retryable and is never removed from the queue. See categoryStore.
+  // non-retryable; it is now removed from the queue and recorded in
+  // `state.rejectedOperations` rather than replayed forever. See categoryStore.
   if (!existing || existing.isDeleted) {
     return { affectedRowCount: 0 }
   }
