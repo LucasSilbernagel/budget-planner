@@ -10,7 +10,7 @@
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
 import { getUserContext } from '../api/data/forecasting'
 import type { BatchSyncRequest, BatchSyncResponse } from '../api/sync'
-import { getSyncAuditLogs, getSyncHistory, getSyncStatus, processBatchSync } from '../api/sync'
+import { processBatchSync } from '../api/sync'
 
 /**
  * Server Function: Process a batch of sync operations
@@ -97,80 +97,7 @@ export async function syncBatch(request: Request): Promise<BatchSyncResponse> {
     }
   }
 
-  // Advisory-only request metadata for the audit log.
-  // SECURITY: `x-forwarded-for` is client-supplied and trivially spoofable, so it
-  // is NEVER used for a security decision — rate limiting keys on the
-  // authenticated `user.id` inside processBatchSync, not on this value. It is
-  // recorded as untrusted audit context only.
-  const forwardedFor = request.headers.get('x-forwarded-for') || ''
-  const advisoryIpAddress = forwardedFor.split(',').pop()?.trim() || ''
-  const userAgent = request.headers.get('user-agent')?.slice(0, 500) || '' // Limit length
-
-  return processBatchSync(data, user, advisoryIpAddress, userAgent)
-}
-
-/**
- * Resolve the authenticated user id from the request, or null when the request
- * carries no valid session.
- *
- * `request` is required: read endpoints must not be callable without a request
- * to authenticate against. An absent/invalid session resolves to null (the
- * caller returns a safe empty/pending result) rather than silently treating an
- * unauthenticated call as a successful empty read.
- */
-async function resolveAuthenticatedUserId(request: Request): Promise<string | null> {
-  try {
-    const userResult = await getUserContext(request)
-    if (!userResult.success || !userResult.data) {
-      return null
-    }
-    // UserSession exposes the id as `userId` (not `id`); the downstream read
-    // helpers key on it.
-    return userResult.data.userId
-  } catch {
-    // Authentication error (malformed request, bad token, etc.)
-    return null
-  }
-}
-
-/**
- * Server Function: Get sync history for the current user
- */
-export async function syncGetHistory(request: Request): Promise<ReturnType<typeof getSyncHistory>> {
-  const userId = await resolveAuthenticatedUserId(request)
-  if (!userId) {
-    return []
-  }
-  return getSyncHistory(userId)
-}
-
-/**
- * Server Function: Get sync audit logs for the current user
- */
-export async function syncGetAuditLogs(
-  request: Request
-): Promise<ReturnType<typeof getSyncAuditLogs>> {
-  const userId = await resolveAuthenticatedUserId(request)
-  if (!userId) {
-    return []
-  }
-  return getSyncAuditLogs(userId)
-}
-
-/**
- * Server Function: Get current sync status for the current user
- */
-export async function syncGetStatus(request: Request): Promise<ReturnType<typeof getSyncStatus>> {
-  const userId = await resolveAuthenticatedUserId(request)
-  if (!userId) {
-    return {
-      pendingCount: 0,
-      conflictCount: 0,
-      lastSyncTimestamp: null,
-      status: SyncStatusEnum.PENDING,
-    }
-  }
-  return getSyncStatus(userId)
+  return processBatchSync(data, user)
 }
 
 /**

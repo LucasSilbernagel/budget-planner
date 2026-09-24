@@ -73,22 +73,14 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     )
   }
 
-  // Client IP + UA for the audit log. x-forwarded-for can be spoofed; used for
-  // audit only, never for authorization.
-  const forwardedFor = request.headers.get('x-forwarded-for') || ''
-  const ipAddress = forwardedFor.split(',').pop()?.trim() || ''
-  const userAgent = request.headers.get('user-agent')?.slice(0, 500) || ''
-
   // 5) Process. processBatchSync owns validation, per-op ownership enforcement,
-  // the shared per-user rate limit (review D3), conflict detection, the DB writes
-  // and audit logging. We pass the SESSION user id mapped to `id` (never a
-  // client-supplied one).
-  const result = await processBatchSync(
-    body,
-    { id: session.data.userId, subscriptionStatus: session.data.subscriptionStatus },
-    ipAddress,
-    userAgent
-  )
+  // the shared per-user rate limit (review D3), conflict detection and the DB
+  // writes. We pass the SESSION user id mapped to `id` (never a client-supplied
+  // one).
+  const result = await processBatchSync(body, {
+    id: session.data.userId,
+    subscriptionStatus: session.data.subscriptionStatus,
+  })
 
   // The BatchSyncResponse body carries per-operation success/conflict/failure,
   // which the client transport (sendSyncOperation) maps to a ProcessOperationResult.

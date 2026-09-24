@@ -2,15 +2,20 @@
  * Sync API Endpoints
  *
  * Server API endpoints for handling synchronization operations.
- * Implements batch processing, conflict detection, and sync history tracking.
+ * Implements batch processing and conflict detection.
  *
  * Features:
  * - Batch sync operations
- * - Conflict detection and resolution
- * - Sync history tracking to DanubeData PostgreSQL
+ * - Conflict DETECTION (reported to the client; this module does not resolve them)
  * - Authentication validation
  * - Rate limiting
- * - Audit logging to DanubeData PostgreSQL
+ *
+ * ⚠️ There is deliberately NO sync-history or audit-log feature here. One was
+ * written, never worked, and was deleted by story 66.1 (FR102, 2026-09-24): the
+ * `syncHistory`/`syncAuditLogs` tables were never in `packages/db/src/schema.ts`,
+ * `db.execute()` was called with two arguments, and every failure was swallowed.
+ * Re-adding one means a schema migration plus drizzle `sql` templates that bind
+ * their parameters — a story with its own tests, not a helper dropped in here.
  *
  * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
  */
@@ -89,60 +94,6 @@ export interface SyncConflict {
   conflictType: string
   /** Suggested resolution */
   resolution?: SyncOperation
-}
-
-/**
- * Sync history entry - stored in database
- */
-export interface SyncHistoryEntry {
-  /** Unique ID for the sync session */
-  id: string
-  /** User ID */
-  userId: string
-  /** Device ID */
-  deviceId: string
-  /** Start timestamp */
-  startTimestamp: number
-  /** End timestamp */
-  endTimestamp: number
-  /** Number of operations synced */
-  operationsCount: number
-  /** Number of conflicts */
-  conflictCount: number
-  /** Number of failures */
-  failureCount: number
-  /** Final status */
-  status: SyncStatus
-  /** Error message if any */
-  error?: string
-}
-
-/**
- * Audit log entry for sync operations - stored in database
- */
-export interface SyncAuditLog {
-  /** Unique ID */
-  id: string
-  /** User ID */
-  userId: string
-  /** Operation ID */
-  operationId: string
-  /** Entity type */
-  entityType: string
-  /** Entity ID (uuid string since Story 5-14 — no serial-int ids remain) */
-  entityId: string
-  /** Operation type */
-  operationType: 'create' | 'update' | 'delete'
-  /** Timestamp */
-  timestamp: number
-  /** Whether the operation succeeded */
-  success: boolean
-  /** Error message if failed */
-  error?: string
-  /** IP address */
-  ipAddress?: string
-  /** User agent */
-  userAgent?: string
 }
 
 // ============================================================================
@@ -918,168 +869,6 @@ async function checkConflict(
 }
 
 // ============================================================================
-// Audit Logging (DanubeData PostgreSQL)
-// ============================================================================
-
-// Sync history table name
-// ⚠️⚠️ THE SYNC AUDIT TRAIL AND HISTORY ARE NON-FUNCTIONAL. READ BEFORE EDITING.
-//
-// Every `db.execute()` below is suppressed with `@ts-expect-error`, and the
-// suppression is the honest signal, not a workaround. Three independent problems,
-// all pre-existing (tracked in `deferred-work.md`):
-//
-//   1. `db.execute()` takes ONE argument. These calls pass a template string plus a
-//      params array in node-postgres style, so the `$1, $2, …` placeholders are
-//      never bound and Postgres would reject the statement outright.
-//   2. NEITHER TABLE EXISTS. `packages/db/src/schema.ts` defines 11 tables and
-//      `syncHistory`/`syncAuditLogs` are not among them, nor anywhere in that package.
-//   3. Every call site swallows the failure into a `logger.error` fallback, which is
-//      why none of this has ever surfaced.
-//
-// Left exactly as-is on purpose: story 38.3's type sweep chose the type-only route
-// here rather than quietly rewriting a subsystem. Fixing it properly means a schema
-// migration plus drizzle `sql` templates so parameters bind — a story with its own
-// tests, not the tail end of a type cleanup. When that lands, these directives will
-// start reporting "unused" and should be deleted with the fix.
-const SYNC_HISTORY_TABLE = 'syncHistory'
-const SYNC_AUDIT_TABLE = 'syncAuditLogs'
-
-/**
- * Log an audit entry to database
- */
-async function logAudit(
-  userId: string,
-  operationId: string,
-  entityType: string,
-  entityId: string,
-  operationType: 'create' | 'update' | 'delete',
-  success: boolean,
-  error?: string,
-  ipAddress?: string,
-  userAgent?: string
-): Promise<void> {
-  try {
-    await db.execute(
-      `
-      INSERT INTO ${SYNC_AUDIT_TABLE} (
-        id, userId, operationId, entityType, entityId, operationType, timestamp, success, error, ipAddress, userAgent
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-      )
-    `,
-      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
-      [
-        `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        userId,
-        operationId,
-        entityType,
-        entityId,
-        operationType,
-        Date.now(),
-        success,
-        error,
-        ipAddress,
-        userAgent,
-      ]
-    )
-  } catch (dbError) {
-    // Fallback to console log if database fails
-    // Sanitize error to avoid exposing sensitive database information
-    const sanitizedError = dbError instanceof Error ? dbError.message : String(dbError)
-    logger.error('[Audit DB Error]', {
-      id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      operationId,
-      entityType,
-      entityId,
-      operationType,
-      timestamp: Date.now(),
-      success,
-      error: sanitizedError,
-      ipAddress,
-      userAgent,
-    })
-  }
-}
-
-// ============================================================================
-// Sync History (DanubeData PostgreSQL)
-// ============================================================================
-
-/**
- * Record a sync history entry to database
- */
-async function recordSyncHistory(
-  userId: string,
-  deviceId: string,
-  startTimestamp: number,
-  endTimestamp: number,
-  operationsCount: number,
-  conflictCount: number,
-  failureCount: number,
-  status: SyncStatus,
-  error?: string
-): Promise<SyncHistoryEntry> {
-  try {
-    const historyEntry: SyncHistoryEntry = {
-      id: `sync-history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      deviceId,
-      startTimestamp,
-      endTimestamp,
-      operationsCount,
-      conflictCount,
-      failureCount,
-      status,
-      error,
-    }
-
-    await db.execute(
-      `
-      INSERT INTO ${SYNC_HISTORY_TABLE} (
-        id, userId, deviceId, startTimestamp, endTimestamp, operationsCount, conflictCount, failureCount, status, error
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-      )
-    `,
-      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
-      [
-        historyEntry.id,
-        historyEntry.userId,
-        historyEntry.deviceId,
-        historyEntry.startTimestamp,
-        historyEntry.endTimestamp,
-        historyEntry.operationsCount,
-        historyEntry.conflictCount,
-        historyEntry.failureCount,
-        historyEntry.status,
-        historyEntry.error,
-      ]
-    )
-
-    return historyEntry
-  } catch (dbError) {
-    // Fallback to console log if database fails
-    // Sanitize error to avoid exposing sensitive database information
-    const sanitizedError = dbError instanceof Error ? dbError.message : String(dbError)
-    const historyEntry: SyncHistoryEntry = {
-      id: `sync-history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      deviceId,
-      startTimestamp,
-      endTimestamp,
-      operationsCount,
-      conflictCount,
-      failureCount,
-      status,
-      error: `DB Error: ${sanitizedError}`,
-    }
-    logger.error('[SyncHistory DB Error]', { entry: historyEntry })
-    return historyEntry
-  }
-}
-
-// ============================================================================
 // Main API Functions
 // ============================================================================
 
@@ -1095,18 +884,12 @@ async function recordSyncHistory(
  *   may pass a session projection rather than a full DB row. NOTE: the session
  *   object exposes the user id as `userId`; callers MUST map it to `id` here or
  *   the per-operation ownership check silently compares against `undefined`.
- * @param ipAddress - Client IP address
- * @param userAgent - Client user agent
  * @returns Batch sync response
  */
 export async function processBatchSync(
   request: BatchSyncRequest,
-  user: Pick<User, 'id' | 'subscriptionStatus'>,
-  ipAddress?: string,
-  userAgent?: string
+  user: Pick<User, 'id' | 'subscriptionStatus'>
 ): Promise<BatchSyncResponse> {
-  const startTime = Date.now()
-
   // Validate request
   const validationResult = batchSyncRequestSchema.safeParse(request)
   if (!validationResult.success) {
@@ -1123,7 +906,7 @@ export async function processBatchSync(
     }
   }
 
-  const { operations, deviceId } = validationResult.data
+  const { operations } = validationResult.data
 
   // Tier gating: server-side sync is a paid-tier feature. Free (and canceled)
   // users must not be able to persist data to the server even with a valid
@@ -1195,17 +978,6 @@ export async function processBatchSync(
     // operations behind it.
     if (conflictCheck.hasConflict && conflictCheck.conflictType === 'create-create') {
       processedCount++
-      await logAudit(
-        user.id,
-        operation.id,
-        operation.entityType,
-        operation.entityId,
-        operation.type,
-        true,
-        'Create already applied',
-        ipAddress,
-        userAgent
-      )
       continue
     }
 
@@ -1220,19 +992,6 @@ export async function processBatchSync(
         conflictType: conflictCheck.conflictType || 'unknown',
       })
 
-      // Log the conflict (success: true because conflicts are expected scenarios)
-      await logAudit(
-        user.id,
-        operation.id,
-        operation.entityType,
-        operation.entityId,
-        operation.type,
-        true,
-        `Conflict: ${conflictCheck.conflictType}`,
-        ipAddress,
-        userAgent
-      )
-
       continue
     }
 
@@ -1241,35 +1000,9 @@ export async function processBatchSync(
 
     if (result.success) {
       processedCount++
-
-      // Log successful operation
-      await logAudit(
-        user.id,
-        operation.id,
-        operation.entityType,
-        operation.entityId,
-        operation.type,
-        true,
-        undefined,
-        ipAddress,
-        userAgent
-      )
     } else {
       failedCount++
       failedOperationIds.push(operation.id)
-
-      // Log failed operation
-      await logAudit(
-        user.id,
-        operation.id,
-        operation.entityType,
-        operation.entityId,
-        operation.type,
-        false,
-        result.error,
-        ipAddress,
-        userAgent
-      )
     }
   }
 
@@ -1313,26 +1046,6 @@ export async function processBatchSync(
     status = SyncStatusEnum.PARTIAL
   }
 
-  // Record sync history to database
-  const errorMessage =
-    failedCount > 0
-      ? 'Sync completed with errors'
-      : conflictCount > 0
-        ? 'Sync completed with conflicts'
-        : undefined
-
-  await recordSyncHistory(
-    user.id,
-    deviceId,
-    startTime,
-    endTime,
-    operations.length,
-    conflictCount,
-    failedCount,
-    status,
-    errorMessage
-  )
-
   return {
     success: failedCount === 0, // Success if no failures (conflicts are OK)
     processedCount,
@@ -1342,92 +1055,6 @@ export async function processBatchSync(
     failedOperationIds,
     serverTimestamp: endTime,
     status,
-  }
-}
-
-/**
- * Get sync history for a user from database
- */
-export async function getSyncHistory(userId: string): Promise<SyncHistoryEntry[]> {
-  try {
-    const result = await db.execute(
-      `
-      SELECT * FROM ${SYNC_HISTORY_TABLE} 
-      WHERE userId = $1 
-      ORDER BY startTimestamp DESC
-    `,
-      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
-      [userId]
-    )
-    // The query above cannot run (see the SYNC_HISTORY_TABLE note), so this cast is
-    // never exercised. Routed through `unknown` because `Record<string, unknown>[]`
-    // and `SyncHistoryEntry[]` genuinely do not overlap — asserting otherwise would
-    // be claiming a shape nothing produces.
-    return result.rows as unknown as SyncHistoryEntry[]
-  } catch {
-    return []
-  }
-}
-
-/**
- * Get sync audit logs for a user from database
- */
-export async function getSyncAuditLogs(userId: string): Promise<SyncAuditLog[]> {
-  try {
-    const result = await db.execute(
-      `
-      SELECT * FROM ${SYNC_AUDIT_TABLE} 
-      WHERE userId = $1 
-      ORDER BY timestamp DESC 
-      LIMIT 1000
-    `,
-      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
-      [userId]
-    )
-    // See the note on the history query above — same non-functional path.
-    return result.rows as unknown as SyncAuditLog[]
-  } catch {
-    return []
-  }
-}
-
-/**
- * Get current sync status for a user
- */
-export async function getSyncStatus(userId: string): Promise<{
-  pendingCount: number
-  conflictCount: number
-  lastSyncTimestamp: number | null
-  status: SyncStatus
-}> {
-  try {
-    // Get last sync from history
-    const result = await db.execute(
-      `
-      SELECT * FROM ${SYNC_HISTORY_TABLE} 
-      WHERE userId = $1 
-      ORDER BY startTimestamp DESC 
-      LIMIT 1
-    `,
-      // @ts-expect-error - unbound params; see the note at SYNC_HISTORY_TABLE
-      [userId]
-    )
-
-    const lastSync = result.rows[0] as SyncHistoryEntry | undefined
-
-    return {
-      pendingCount: 0, // Would be from pending operations table
-      conflictCount: 0, // Would be from conflicts table
-      lastSyncTimestamp: lastSync?.endTimestamp || null,
-      status: lastSync?.status || SyncStatusEnum.PENDING,
-    }
-  } catch {
-    return {
-      pendingCount: 0,
-      conflictCount: 0,
-      lastSyncTimestamp: null,
-      status: SyncStatusEnum.PENDING,
-    }
   }
 }
 
@@ -1852,49 +1479,15 @@ export async function getSyncChanges(
   return capChangesAtTimestampBoundary(safeChanges, cappedLimit)
 }
 
-/**
- * Resolve a conflict manually
- *
- * In a production implementation, this would allow the user to choose
- * which version of the data to keep when a conflict is detected.
- */
-export async function resolveConflict(
-  userId: string,
-  conflictId: string,
-  resolution: SyncOperation
-): Promise<{ success: boolean; error?: string }> {
-  // For now, apply the resolution operation
-  try {
-    const result = await applyOperation(resolution)
-    if (result.success) {
-      // Log the resolution
-      await logAudit(
-        userId,
-        conflictId,
-        resolution.entityType,
-        resolution.entityId,
-        resolution.type,
-        true,
-        'Conflict resolved',
-        undefined,
-        undefined
-      )
-    }
-    return result
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
-}
-
 // ============================================================================
 // Exports
 // ============================================================================
 
 export { RATE_LIMIT_CONFIG }
 
-// The five types are already exported at their declarations (`:42`, `:54`, `:78`,
-// `:96`, `:122`); re-exporting them here was a duplicate declaration, not an
-// additional export.
+// The remaining exported types (`BatchSyncRequest`, `BatchSyncResponse`,
+// `SyncConflict`) are already exported at their declarations; re-exporting them
+// here was a duplicate declaration, not an additional export. Line numbers are
+// deliberately omitted — the previous version of this comment cited five types at
+// five fixed lines, and story 66.1 both deleted two of them (`SyncHistoryEntry`,
+// `SyncAuditLog`) and shifted every line it named.

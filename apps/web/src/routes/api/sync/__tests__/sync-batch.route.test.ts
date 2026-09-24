@@ -157,12 +157,10 @@ describe('POST /api/sync/batch served boundary', () => {
     expect(response.status).toBe(200)
     // SECURITY: processBatchSync receives { id: <session userId>, subscriptionStatus }.
     // A client-supplied userId is never trusted as the authoritative identity.
-    expect(processBatchSync).toHaveBeenCalledWith(
-      sampleBatch,
-      { id: SESSION_USER_ID, subscriptionStatus: 'active' },
-      expect.any(String),
-      expect.any(String)
-    )
+    expect(processBatchSync).toHaveBeenCalledWith(sampleBatch, {
+      id: SESSION_USER_ID,
+      subscriptionStatus: 'active',
+    })
   })
 
   it('returns the BatchSyncResponse envelope the client transport consumes', async () => {
