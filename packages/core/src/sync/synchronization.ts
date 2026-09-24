@@ -64,6 +64,39 @@ const CIRCUIT_BREAKER_CONFIG = {
 }
 
 /**
+ * HTTP statuses that are POSITIVE evidence the server will never accept an
+ * operation, so it may be removed from the queue.
+ *
+ * ⚠️ This is an ALLOW-LIST on purpose, and inverting it is a data-loss bug.
+ * The earlier shape — "not 401/403 therefore permanent" — classified on the
+ * ABSENCE of a signal, and the dominant failure path carries no signal at all:
+ * `features/api/client.ts` maps any 200 envelope with `failedCount > 0` to
+ * `retryable: false` WITHOUT a `statusCode`, and the server reaches that
+ * envelope for transient causes because `applyOperation` and `createEntity`
+ * wrap their whole bodies in a blanket `catch` that turns a dropped connection,
+ * a statement timeout, a deadlock or a unique-constraint race into
+ * `{ success: false }`. Under the old rule a single DB blip deleted the user's
+ * queued edit from persisted storage forever. Contrast `synchronization.ts`'s
+ * own standing requirement a few lines above the batch loop: "NFR: Zero
+ * tolerance for data loss".
+ *
+ * 401 and 403 are excluded deliberately — they have their own buckets and both
+ * stay queued. 429 and 5xx never arrive here at all (`client.ts` marks them
+ * retryable). 408/425/413 are absent because they are transient or
+ * payload-shaped, not operation-shaped: a smaller batch or a later attempt can
+ * still succeed.
+ *
+ * Before ADDING a status here, confirm the server only ever emits it for an
+ * operation that is invalid on its own terms.
+ */
+const PERMANENT_REJECT_STATUS_CODES: ReadonlySet<number> = new Set([
+  400, // malformed operation body
+  404, // the route or target does not exist
+  409, // a genuine, server-declared conflict (not the conflict-detection path)
+  422, // the operation parsed but failed server-side validation
+])
+
+/**
  * Generates a unique ID for sync operations.
  *
  * Uses `crypto.randomUUID()` when available to guarantee uniqueness — the
@@ -1003,20 +1036,36 @@ export class SynchronizationService {
       let conflictCount = 0
       // Retryable (transient/5xx) failures — eligible for retry/re-queue.
       const failedOperations: SyncOperation[] = []
-      // Non-retryable failures split by whether the OPERATION or the SESSION is
-      // the problem. Conflating them was a defect: a permanently-rejected op that
-      // stays queued is replayed every cycle, pins the status at FAILED and
-      // re-opens the circuit breaker, which suppresses retries for every OTHER
-      // entity (the symptom `stores/categoryStore.ts` guards against by hand).
+      // Non-retryable failures split by WHY the server said no. Conflating them
+      // was a defect: a permanently-rejected op that stays queued is replayed
+      // every cycle, pins the status at FAILED and re-opens the circuit breaker,
+      // which suppresses retries for every OTHER entity.
       //
-      // Auth-blocked (401/403): the op is VALID and only the session is not, so it
+      // ⚠️ The split is deliberately ASYMMETRIC: an op only leaves the queue on
+      // POSITIVE evidence that the server will never accept it. Classifying on
+      // the ABSENCE of a status code was a data-loss bug — see
+      // `PERMANENT_REJECT_STATUS_CODES` for the full reasoning.
+      //
+      // Auth-blocked (401): the op is VALID and only the SESSION is not, so it
       // stays queued and syncs after re-authentication. Removing it = data loss.
       const authBlockedOperations: SyncOperation[] = []
-      // Rejected (any other non-retryable: 400/404/422, or a 200 envelope
-      // reporting failedCount): the server will never accept this operation, so it
-      // leaves the queue and is recorded in `state.rejectedOperations` instead of
-      // looping forever.
+      // Tier-blocked (403): the op is VALID and so is the session — the account
+      // simply no longer carries server sync (`routes/api/sync/batch.ts` returns
+      // 403 for `!PAID_SYNC_STATUSES.includes(subscriptionStatus)`). Re-auth
+      // cannot clear it, so unlike 401 this must NOT open the circuit every
+      // cycle; the data is kept for a user who may re-subscribe.
+      const tierBlockedOperations: SyncOperation[] = []
+      // Rejected (a status code that names a permanent rejection): the server has
+      // told us it will never accept this operation, so it leaves the queue.
       const rejectedOperations: SyncOperation[] = []
+      // Non-retryable but UNCLASSIFIED — `retryable: false` with no status code
+      // that proves permanence. Stays queued. This is the 200-envelope class
+      // (`features/api/client.ts` maps any `failedCount > 0` to `retryable:false`
+      // WITHOUT a status code), which the server produces for transient causes:
+      // `applyOperation`/`createEntity` collapse every thrown error — dropped
+      // connection, statement timeout, deadlock, constraint race — into it.
+      // Removing these deleted the user's edit permanently on the first blip.
+      const unclassifiedFailedOperations: SyncOperation[] = []
       const conflictOperations: SyncOperation[] = []
       const successfullyProcessed: SyncOperation[] = []
 
@@ -1041,13 +1090,19 @@ export class SynchronizationService {
             conflictOperations.push(operation)
             conflictCount++
           } else if (result.retryable === false) {
-            // Non-retryable. Classify by status: only 401/403 mean "the session is
-            // wrong but the operation is fine", which is the one case that must
-            // stay queued. Everything else is a permanent reject.
-            if (result.statusCode === 401 || result.statusCode === 403) {
+            // Non-retryable. Classify by status. Removal requires POSITIVE proof
+            // of permanence; anything else stays queued (see the bucket comments).
+            if (result.statusCode === 401) {
               authBlockedOperations.push(operation)
-            } else {
+            } else if (result.statusCode === 403) {
+              tierBlockedOperations.push(operation)
+            } else if (
+              result.statusCode !== undefined &&
+              PERMANENT_REJECT_STATUS_CODES.has(result.statusCode)
+            ) {
               rejectedOperations.push(operation)
+            } else {
+              unclassifiedFailedOperations.push(operation)
             }
             failedCount++
             this.state.lastError = result.error ?? 'Non-retryable sync failure'
@@ -1101,9 +1156,16 @@ export class SynchronizationService {
       }
 
       // Remove PERMANENTLY REJECTED operations from the queue. Unlike the
-      // retryable branch above these are never re-queued: the server has refused
-      // them and replaying one blocks the whole queue. They are recorded in
-      // `state.rejectedOperations` so the loss stays visible rather than silent.
+      // retryable branch above these are never re-queued: the server has named a
+      // status that proves it will never accept them, and replaying one blocks
+      // the whole queue.
+      //
+      // ⚠️ `state.rejectedOperations` records what was dropped, but NOTHING
+      // READS IT TODAY — not `useSync`, not any store, not any component. So a
+      // rejected operation is, at product level, discarded SILENTLY: the edit
+      // disappears from the outbox and the next sync reports success. Do not
+      // cite this array as a user-visible safety net until something renders it
+      // (tracked in `deferred-work.md`). It is also never emptied by any path.
       let recordableRejectedOps = rejectedOperations
       if (rejectedOperations.length > 0) {
         try {
@@ -1112,8 +1174,23 @@ export class SynchronizationService {
           this.log('Failed to remove rejected operations from queue:', removeError)
           // Could not remove them — they are still queued, so do NOT report them
           // as rejected-and-dropped; the next sync will try the removal again.
+          // ⚠️ If the removal failed because the underlying storage write failed
+          // (quota, private mode, blocked site data) the next attempt fails the
+          // same way and the op replays every cycle — the very loop this branch
+          // exists to break. Recorded in `deferred-work.md`.
           recordableRejectedOps = []
         }
+      }
+
+      // Non-retryable but unclassified ops are intentionally NOT removed and NOT
+      // re-queued: leaving them in the queue is the whole point, so they survive
+      // a transient server fault and go out again on the next sync. Logged so the
+      // "kept rather than dropped" decision is observable during debugging.
+      if (unclassifiedFailedOperations.length > 0) {
+        this.log(
+          `Keeping ${unclassifiedFailedOperations.length} non-retryable operation(s) with no permanent-rejection status; they stay queued for the next sync.`,
+          unclassifiedFailedOperations.map((op) => op.id)
+        )
       }
 
       // Update state
@@ -1143,8 +1220,8 @@ export class SynchronizationService {
 
       this.notifyStatusCallbacks()
 
-      // Non-retryable failures: open the circuit to stop auto-retrying an
-      // operation that cannot succeed without external change (e.g. re-auth).
+      // AUTH-blocked failures only: open the circuit to stop auto-retrying an
+      // operation that cannot succeed until the user re-authenticates.
       //
       // ⚠️ This is deliberately NOT an `else if` chain with the retry below. It
       // used to be, and that stranded work: when one batch produced BOTH an
@@ -1152,8 +1229,20 @@ export class SynchronizationService {
       // branch and `scheduleRetry()` never ran, so the retryable op was removed
       // from the queue (above) and then never re-queued — the local edit was lost
       // on reload. The two decisions are independent and both must be evaluated.
+      //
+      // ⚠️⚠️ TIER-blocked (403) is deliberately ABSENT from this condition. It
+      // used to be folded in with 401, which re-opened the circuit on EVERY sync
+      // for a downgraded account — reinstating, for a different status class, the
+      // exact "replayed forever, suppresses retries for every other entity" defect
+      // this whole split exists to remove. A 403 cannot be cleared by re-auth or
+      // by waiting, so a cooldown buys nothing; the ops stay queued for a user who
+      // may re-subscribe, and `consecutiveFailures` above still provides back-off.
       if (authBlockedOperations.length > 0) {
         this.openCircuit()
+      }
+      if (tierBlockedOperations.length > 0) {
+        this.state.lastError =
+          'Server sync is not included in your current plan. Your changes are saved on this device and will sync if you resubscribe.'
       }
       if (
         // Schedule retry only for retryable failures and only if retries remain.
@@ -1268,6 +1357,25 @@ export class SynchronizationService {
           ).toISOString()}. Retry deferred by ${delay}ms.`
         )
         this.retryTimeout = setTimeout(() => {
+          // ⚠️ Re-check the deadline instead of closing the circuit blind.
+          // `delay` was computed from the `circuitBrokenUntil` observed when this
+          // timer was ARMED, but `openCircuit()` can push that deadline out
+          // afterwards without clearing this handle — a later sync that produces
+          // auth-blocked ops and no requeuable ones never re-enters
+          // `scheduleRetry()`. The timer would then fire on the old schedule and
+          // drain inside a cooldown that was just extended, defeating the breaker
+          // under exactly the sustained failure it exists for.
+          if (Date.now() < this.circuitBrokenUntil) {
+            this.scheduleRetry()
+            return
+          }
+          // Re-check the retry budget too: it can be exhausted by another path
+          // during the wait, and `runRetry` increments `retryCount` BEFORE its
+          // own empty-check, so an unguarded fire burns an attempt for nothing.
+          if (this.state.retryCount >= this.config.maxRetries) {
+            this.log('Circuit cooldown elapsed but the retry budget is exhausted; not draining.')
+            return
+          }
           // The cooldown has now elapsed; close the circuit and drain.
           this.circuitBroken = false
           this.consecutiveFailures = 0

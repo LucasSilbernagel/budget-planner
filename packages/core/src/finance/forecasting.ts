@@ -37,7 +37,16 @@ import {
  * ⚠️ The same trade costs the `annually` frequency more than it costs `weekly`,
  * and it is a REGRESSION against the raw-sum helpers this replaced: an `annually`
  * row of 1200013 cents round-trips as `round(1200013/12) * 12` = 1200012, one cent
- * light, where a raw sum reported it exactly. Up to 11 cents per item per year.
+ * light, where a raw sum reported it exactly.
+ *
+ * The round-trip error is bounded by **-5..+6 cents per item per year**, and it
+ * can go EITHER WAY. Writing `x = 12k + r` with `r` in 0..11, `round(x/12)` is
+ * `k` for `r <= 5` (short by `r`) and `k+1` for `r >= 6` (OVER by `12 - r`).
+ * MEASURED over x = 1..2_000_000: the error range is exactly -5..+6.
+ * Counterexample to the "always light" reading: 1200018 -> 1200024, six cents
+ * HEAVY. (An earlier version of this docblock said "up to 11 cents" and framed
+ * the error as always light. 11 is the bound for TRUNCATION; `normalization.ts`
+ * uses `Math.round`, so that figure was wrong in both magnitude and sign.)
  * This matches the app-wide monthly-canonical convention already recorded in
  * `deferred-work.md` ("annual entries display a few cents below the entered
  * amount"), so forecasting is now consistent with the rest of the app rather than
@@ -55,8 +64,17 @@ import {
  *
  * Rows now use `calculateGrossPeriodIncome` / `calculateTotalPeriodExpenses`
  * (`./netIncome`) lifted by `MONTHS_PER_YEAR`, so the money fields share one
- * period and reconcile: `income - expenses === netIncome` minus that year's
- * one-time events.
+ * period and reconcile: `income - expenses === netIncome` **for the RECURRING
+ * terms only**.
+ *
+ * ⚠️ In any year matching a `oneTimeEvents` entry the row does NOT reconcile:
+ * `netIncome` carries `netIncome * 12 + oneTimeForYear` while `income` and
+ * `expenses` carry only the recurring annualized terms, so
+ * `income - expenses === netIncome - oneTimeForYear`. The annualization WIDENED
+ * this gap, because the recurring half is now 12x and the event half is not.
+ * Anything deriving a surplus or savings-rate from `row.income - row.expenses`
+ * gets a different number than `row.netIncome` in exactly the years a user cares
+ * about most. Pinned by the one-time-event test, which asserts the discrepancy.
  *
  * ⚠️ That reconciliation holds for the RECURRING terms in whole cents, but it is
  * NOT an unconditional integer-cents guarantee for the row: `oneTimeForYear` is
@@ -175,8 +193,18 @@ export function calculateFinancialForecast(
     // ⚠️ They still disagree on WHAT they model: this loop never grows
     // investments while the projection compounds them at 7%, so with an empty
     // scenario the two series diverge from the first plotted point. Pre-existing
-    // and recorded in `deferred-work.md` — note the annualization below makes the
-    // divergence numerically LARGER, since the flow driving it is now 12x.
+    // and recorded in `deferred-work.md`.
+    //
+    // ⚠️ The annualization does NOT change that divergence. With a flat scenario
+    // this loop adds `baselineAnnualNetIncome` and the projection adds
+    // `netIncome * MONTHS_PER_YEAR` — identical values, so the recurring flow
+    // cancels exactly and is not a term in the gap at any scale. The divergence
+    // is `investments_0 * (1.07^n - 1)`, i.e. the INVESTMENT term alone, and it
+    // is exactly zero when `investments` is zero. (An earlier version of this
+    // comment claimed the annualization made the divergence "numerically LARGER,
+    // since the flow driving it is now 12x". The forecasting tests assert the
+    // opposite: with a flat scenario the baseline and projection savings series
+    // are EQUAL. Twelve times zero is still zero.)
     currentSavings += baselineAnnualNetIncome
     // Simple investment growth (no compounding in baseline)
 

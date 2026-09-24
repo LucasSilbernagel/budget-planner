@@ -605,9 +605,13 @@ export async function getLiveProfileIds(userId: string): Promise<string[]> {
 /**
  * Whether a TOMBSTONED row with this id exists for this user. `entityExists`
  * treats tombstones as absent, so a create for a deleted id would otherwise
- * reach the INSERT and fail on the primary key — permanently, since the client
- * removes non-retryable failures from the queue (recording them in
- * `state.rejectedOperations`), while keeping auth-blocked ones queued.
+ * reach the INSERT and fail on the primary key.
+ *
+ * ⚠️ That failure would surface as a 200 envelope with `failedCount > 0` and NO
+ * status code, which the client now KEEPS QUEUED (it removes an operation only
+ * on a status code that proves permanent rejection). So without this guard the
+ * op replays every cycle rather than being dropped — a stuck queue, not a lost
+ * edit. Either way the guard is what stops it.
  */
 async function tombstoneExists(
   entityType: keyof EntityTableMap,

@@ -155,14 +155,22 @@ export const useCategoryStore = create<CategoryState>()(
         // ⚠️ `previous.isDeleted` is load-bearing (code review 30.4a). This is the
         // ONLY store that keeps tombstones in local state, so unlike every
         // sibling a mutation can still "find" a row the server has already
-        // dropped. Server-side `entityExists` filters `isDeleted = false`, so the
-        // op comes back `Entity not found` → `retryable: false`. That class of
-        // failure is now REMOVED from the queue and recorded in
-        // `state.rejectedOperations` (core `synchronization.ts`), so it no longer
-        // replays forever, pins the status at FAILED and re-opens the circuit
-        // breaker every cycle. This guard is still load-bearing: it stops the
-        // doomed operation being queued at all, so the user's rename does not
-        // silently land in the rejected bucket.
+        // dropped.
+        //
+        // ⚠️ Such an op does NOT come back as a non-retryable failure, and it is
+        // NOT removed from the queue. `checkConflict` runs BEFORE `applyOperation`
+        // server-side, and an update on a row `entityExists` cannot see returns
+        // `hasConflict: true` ('update-delete'), so the batch loop takes the
+        // conflict branch and `applyOperation`'s `Entity not found` is never
+        // reached. The transport checks `conflictCount` before `failedCount`, so
+        // the client routes it to `conflictOperations` — which no `removeBatch`
+        // covers. The server says so itself: "the client keeps the op queued
+        // forever (conflicts are never removed)".
+        //
+        // So this guard is MORE load-bearing than it looks: it is the only thing
+        // stopping a doomed rename entering a queue that will replay it forever,
+        // pinning the status at FAILED and eventually re-opening the circuit
+        // breaker for every other entity.
         if (!previous || previous.isDeleted) {
           return
         }

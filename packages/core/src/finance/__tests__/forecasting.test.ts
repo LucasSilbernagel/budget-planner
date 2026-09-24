@@ -438,12 +438,20 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
    *
    * `annually` is the one frequency whose round trip used to be EXACT: the deleted
    * raw-sum helper reported the entered amount verbatim. Going through monthly
-   * space costs up to 11 cents per item per year, because the monthly figure is
+   * space costs a few cents per item per year, because the monthly figure is
    * rounded before being lifted back. This is deliberate — it makes forecasting
    * agree with the app-wide monthly-canonical convention rather than be exact on
    * its own — and it is the trade named in the `MONTHS_PER_YEAR` docblock.
+   *
+   * ⚠️⚠️ The error goes BOTH WAYS and is bounded by -5..+6 cents, NOT "up to 11
+   * cents light". `normalization.ts` uses `Math.round`: writing `x = 12k + r`
+   * with `r` in 0..11, `round(x/12)` is `k` for `r <= 5` (short by `r`) and `k+1`
+   * for `r >= 6` (OVER by `12 - r`). 11 is the TRUNCATION bound. A code review
+   * found the old figure stated twice — here and in the module docblock — beside
+   * a derivation that correctly used `round()`, pinned by a fixture that cannot
+   * expose either error. Both arms are now pinned.
    */
-  it('loses up to 11 cents on an annually row, the accepted monthly-canonical cost', () => {
+  it('loses a cent on an annually row (r <= 5), the accepted monthly-canonical cost', () => {
     const r = calculateFinancialForecast(
       {
         income: [{ amount: 1_200_013, frequency: 'annually' as const }],
@@ -455,10 +463,31 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
       1
     )
 
-    // BY HAND: 1200013 / 12 = 100001.083… ⇒ round = 100001; × 12 = 1200012.
+    // BY HAND: 1200013 = 12 × 100001 + 1, so r = 1.
+    // 1200013 / 12 = 100001.083… ⇒ round = 100001; × 12 = 1200012.
     // One cent under the entered 1200013. NOT a bug; a pinned convention.
     expect(r.projection[0].income, 'round(1200013 / 12) × 12 = 1200012').toBe(1_200_012)
     expect(r.projection[0].income).toBeLessThan(1_200_013)
+  })
+
+  it('OVERSTATES an annually row by six cents when r >= 6 — the arm "always light" missed', () => {
+    const r = calculateFinancialForecast(
+      {
+        income: [{ amount: 1_200_018, frequency: 'annually' as const }],
+        expenses: [],
+        savings: 0,
+        investments: 0,
+      },
+      FLAT,
+      1
+    )
+
+    // BY HAND: 1200018 = 12 × 100001 + 6, so r = 6 — the worst overstatement.
+    // 1200018 / 12 = 100001.5 ⇒ round = 100002; × 12 = 1200024.
+    // Six cents ABOVE the entered amount. This is also the fixture that
+    // discriminates round from trunc: truncation would give 1200012 here.
+    expect(r.projection[0].income, 'round(1200018 / 12) × 12 = 1200024').toBe(1_200_024)
+    expect(r.projection[0].income).toBeGreaterThan(1_200_018)
   })
 
   /**

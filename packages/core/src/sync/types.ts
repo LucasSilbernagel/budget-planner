@@ -388,18 +388,26 @@ export interface SyncState {
   conflictOperations: SyncOperation[]
 
   /**
-   * Operations the server permanently REJECTED (a non-retryable failure that is
-   * not an auth failure: 400/404/422, or a 200 envelope reporting `failedCount`).
+   * Operations the server permanently REJECTED — a non-retryable failure whose
+   * status code is POSITIVE evidence of permanence (see
+   * `PERMANENT_REJECT_STATUS_CODES` in `synchronization.ts`).
    *
    * These are removed from the queue, because replaying one forever pins the
    * sync status at FAILED and re-opens the circuit breaker every cycle, which
-   * suppresses retries for every OTHER entity (see `synchronization.ts`). They
-   * are recorded here rather than dropped silently so the rejection stays
-   * observable — a removed operation is a local edit the server will never hold.
+   * suppresses retries for every OTHER entity.
    *
-   * ⚠️ Auth-blocked operations (401/403) are deliberately NOT routed here: the
-   * operation is valid and only the session is not, so it stays queued to sync
-   * after re-authentication. Removing it would be data loss.
+   * ⚠️⚠️ THIS FIELD IS WRITE-ONLY TODAY. Nothing reads it — not `useSync`, not
+   * any store, not any component — so a rejected operation IS dropped silently
+   * from the user's point of view: the edit leaves the outbox and the next sync
+   * reports success with nothing shown. Do not cite this array as evidence that
+   * the loss is surfaced; it records the loss for a future reader that does not
+   * exist yet. Wiring it into the UI is tracked in `deferred-work.md`.
+   * It is also never emptied by any path, so it grows for the service lifetime.
+   *
+   * ⚠️ Auth-blocked (401) and tier-blocked (403) operations are deliberately NOT
+   * routed here — both stay queued. So does any non-retryable failure with no
+   * status code proving permanence, which is the common 200-envelope shape the
+   * server returns for transient database faults.
    */
   rejectedOperations: SyncOperation[]
 
