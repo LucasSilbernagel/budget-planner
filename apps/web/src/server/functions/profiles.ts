@@ -340,7 +340,7 @@ export async function updateProfile(
         // `timestamp('updatedAt')` (`packages/db/src/schema.ts`), and drizzle's date
         // mapper calls `.toISOString()` on the value it is given — so handing it a
         // STRING throws at runtime. Every other `.set()` in the codebase passes a
-        // `Date` (e.g. `api/data/financialData.ts:223,272,402`); these were the odd
+        // `Date` (e.g. `server/api/sync.ts:698,826`); these were the odd
         // ones out.
         updatedAt: new Date(),
       })

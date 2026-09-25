@@ -106,7 +106,7 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     }
   }
 
-  // Active profile travels in a header (mirrors financialData.ts), scoping the
+  // Active profile travels in a header (set by `features/api/client.ts:236`), scoping the
   // profile-scoped entity reads. Optional — absent = all profiles for the user.
   const profileId = request.headers.get('x-profile-id') || undefined
 

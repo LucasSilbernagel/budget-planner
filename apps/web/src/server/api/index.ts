@@ -5,7 +5,7 @@
  * Organized by domain:
  * - auth/: Authentication and user management (Paddle OAuth)
  * - calculations/: Financial calculations (retirement, projections, etc.)
- * - data/: Financial data CRUD and synchronization
+ * - data/: premium forecasting + shared user-context helpers
  * - sync/: Multi-device synchronization
  *
  * Architecture: TanStack Start Server Functions for RPC-style backend communication
