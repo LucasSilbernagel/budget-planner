@@ -412,8 +412,8 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-24
-baseline_commit: 9f9ae1a  # 2026-09-24 reset to HEAD when `correct-course` opened BATCH 13 (was 99ea991, set for the now-closed epics 59-64). Tree is clean and epics 1-65 + forecast-1/2/3 are all committed, so this is a true baseline for the epic-66..68 + sec-3/cleanup-3 stories.
+last_updated: 2026-09-25
+baseline_commit: 821544f  # 2026-09-25 reset to HEAD by sprint-planning for BATCH 14 (was 9f9ae1a, set for the now-closed batch 13). Tree clean; epics 1-68 + all standalones committed.
 project: budget-planner
 project_key: NOKEY
 tracking_system: file-system
@@ -930,6 +930,36 @@ development_status:
 
   sec-3-stop-trusting-x-real-ip-and-reap-the-rate-limit-table: done  # ✅ **CODE-REVIEWED + CLOSED 2026-09-25 (Lucas), COMMITTED as `28327ae`, tree clean, pushed to `origin/main`.** Standalone key, NO epic rollup to close (same shape as `cleanup-3`). ⚠⚠ **THE COMMIT MESSAGE IS WRONG AND IS LEFT ALONE AS PUSHED HISTORY: `28327ae` says "completed sec-2" but its 11 files are ENTIRELY sec-3's** (`client-ip.ts`, `db-window.ts`, the new `interval-gate.ts`, migration `0021_tidy_jigsaw` + snapshot + journal, `schema.ts`, `migration-replay.test.ts`). sec-2 actually closed 2026-07-20 (`deferred-work.md:457`). Cite the SHA, never the subject line, when tracing this story. Closing gates, measured AFTER the review fixes on the tree now committed as `28327ae`: web **3303/221** exit 0, core **941/27**, db **275+7**, type-check **0/0/0/0**, Biome exit 0 / **607 files** / same **6 pre-existing** `suppressions/unused` warnings. NOT run and not claimed: e2e, full web under Node 20, clean-slate `tsc`, live PostgreSQL. Review verdict: 3 layers on Fable 5.1, **2 HIGH both CONFIRMED and FIXED**, 4 MEDIUM fixed, 4 items DEFERRED to `deferred-work.md:2133-2154` (all four verified written at close). The two source items this story closes are marked closed in place at `deferred-work.md:409` and `:411`. ⚠⚠⚠ **MIGRATION `0021` IS GENERATED + REPLAYED AGAINST PGlite, NEVER APPLIED TO A LIVE DATABASE — and it STACKS BEHIND `0020` (66.5), also never applied. TWO manual deploy steps are now pending, not one.** ⚠ The new index has NO parity guard: `migration-replay.test.ts:29` lists non-unique indexes under 'Still NOT compared', so the 22/156 literals prove 0021 EXISTS but nothing proves it still CONTAINS the index. # Prior context follows. **BATCH 13** (SCP 2026-09-24), standalone, lowest priority. Two halves. (1) `apps/web/src/server/rate-limit/client-ip.ts:76` returns `x-real-ip` after only a LENGTH check, once the trusted-hop logic above it declines to produce a client IP — so a spoofable header becomes the rate limiter's partition key. ⚠ The trusted-proxy-hop default is **0**; the story must state what that means for the deployed Rapids topology rather than assuming a hop count. Prove a forged header can no longer evade or poison another subject's window. (2) `rateLimits` has NO TTL and NO reaper — unbounded growth under a flood. ⚠ `account.ts:98` already deletes `rateLimits` by `userId` on account erasure; the reaper must not interfere. ⚠⚠ **The reaper's TRIGGER is an open design question, not an implementation detail**: there is no cron in this topology, and DanubeData metric alerts on `database`/`cache`/`app` have NO evaluator and NEVER FIRE — a scheduled-alert design is dead on arrival. Record why the chosen trigger works. ⚠ `rateLimits` is NOT synced.
   cleanup-3-remove-the-unreachable-financial-data-module-and-fix-the-migrations-readme: done  # **BATCH 13** (SCP 2026-09-24), standalone, lowest priority. (1) `apps/web/src/server/api/data/financialData.ts` is exported ONLY through the `server/api/data/index.ts:9` barrel and has no application consumer — delete it or wire it up, and record the decision. ⚠ It contains dead duplicate savings write paths modelling a required non-nullable target (`:561` `createSavingsGoal`, `:591` `updateSavingsGoal`) that CONTRADICT the live `/api/sync/*` path, which carries null through; confirm the live path is unaffected, and record that if `syncFinancialData` is ever wired for free->paid seeding these MUST be relaxed first or accounts silently drop goals on upgrade. (2) `packages/db/migrations/README.md` instructs the reader to run `0000_fix_users_id_type_to_uuid.sql` (`:9`, `:43`, `:78`) — **a file that does not exist**. ⚠ "Never read by X" is not "dead": check each symbol's SERIALIZATION path, not only its compute path, before deleting. ⚠ **CITATIONS CORRECTED at context time (2026-09-24):** `createSavingsGoal` is at **`:563`** and `updateSavingsGoal` at **`:606`**, not `:561`/`:591`; and the README names the phantom file at **FOUR** sites — `:9`, `:43`, `:78` AND **`:99`** — not the three listed above.
+
+  # BATCH 14 (added 2026-09-25 by sprint-planning; epics 69-74 / FR108-FR118, drafted from the 2026-09-25 feedback batch). Read each epic's **Notes:** block in epics.md before contexting — three of the eight feedback items rested on a premise that measured false.
+  epic-69: in-progress  # 69.1 contexted 2026-09-25. A Nav Bar That Shows Where Things Are. ⚠ The desktop nav width must be RE-MEASURED (69.2 shrinks the auth cluster, 69.3 adds anchors) — epic 58's figures cannot be inherited.
+  69-1-give-the-more-trigger-a-disclosure-affordance: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25, UNCOMMITTED, baseline `821544f`. 3 layers: 12 patches applied, 6 dismissed, 1 DEFERRED to 69.3 (cluster overlap at enlarged root fonts). Final gates: web 3326/221, tsc 0/0/0/0, Biome 0/608, e2e 467+4 exit 0. D2 (rotate on `[open]`, not state) proven by mutation control in BOTH e2e and unit.
+  69-2-move-settings-into-the-account-menu-and-slim-its-trigger: backlog  # ⚠⚠ Signed-out users would be STRANDED from /settings (currency, retirement toggle, Clear local data) — AC covers it. `auth-indicator.test.tsx:752` anchored regex WILL go red; rewrite, don't loosen.
+  69-3-return-balances-and-retirement-to-the-desktop-nav-bar: backlog  # ⚠ INHERITS a deferred 69.1 review finding: at enlarged root fonts the account cluster spills LEFT over the nav (69.1 dropped the list’s right padding). Stop the spill + add an elementFromPoint no-overlap guard. See deferred-work.md.
+  epic-69-retrospective: optional
+
+  epic-70: backlog  # Settings That Say What You Are Paying For.
+  70-1-record-and-display-the-plan-the-user-bought: backlog  # Needs a column + webhook + migration (users stores no priceId/interval). ⚠ THREE write sites incl. the re-key path `reconcileEmailCollision`.
+  70-2-make-the-sign-out-button-look-like-a-button: backlog
+  epic-70-retrospective: optional
+
+  epic-71: backlog  # The Retirement Toggle Means What It Says. WIDENS the toggle's contract from navigation-only — the settings copy must move with it.
+  71-1-hide-the-ends-before-retirement-question-when-the-planner-is-off: backlog
+  epic-71-retrospective: optional
+
+  epic-72: backlog  # Every Savings Entry Can Receive An Allocation. REVERSES 64.1/FR98 (decision taken, Lucas 2026-09-25).
+  72-1-allow-allocation-on-target-less-savings-entries: backlog  # ⚠⚠ Existing target-less rows were FORCED to automatic/null — lifting the exclusion silently starts them drawing a share. The story must state the backfill.
+  epic-72-retrospective: optional
+
+  epic-73: backlog  # A Stated Retention Period For Lapsed Accounts. 73.1 publishes, 73.2 enforces; 12 months is NOT yet confirmed.
+  73-1-publish-a-retention-period-for-lapsed-accounts: backlog
+  73-2-purge-lapsed-account-data-after-the-retention-window: backlog
+  epic-73-retrospective: optional
+
+  epic-74: backlog  # Sign-In That Works After An Account Is Recreated. Root cause NOT established.
+  74-1-diagnose-why-the-magic-link-is-not-delivered-and-fix-it: backlog  # ⚠ Do not let 74.2's throttle defect close this on the wrong cause (fixed 5/15min window self-heals).
+  74-2-clear-the-email-scoped-throttle-when-an-account-is-erased: backlog
+  epic-74-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

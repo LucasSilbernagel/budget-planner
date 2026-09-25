@@ -32,6 +32,75 @@ export const MORE_DETAILS = `${NAV} details`
 /** The panel list holding the More destinations (the sheet below 640px). */
 export const MORE_PANEL = `${NAV} details > ul`
 
+/**
+ * The desktop disclosure chevron inside the More trigger (story 69.1, FR108).
+ *
+ * Located by its marker, never by `svg`: the trigger also holds `MoreIcon`,
+ * which is `sm:hidden`, so an `svg` query would find the WRONG glyph at desktop
+ * and report it hidden.
+ */
+export const MORE_CHEVRON = `${MORE_SUMMARY} [data-disclosure-chevron]`
+
+/** What a test needs to know about the More chevron, read in one pass. */
+export interface ChevronState {
+  /** How many chevrons the trigger holds. 0 means the cue does not exist. */
+  count: number
+  /** `checkVisibility()` — false for `display:none`, which a count cannot see. */
+  visible: boolean
+  width: number
+  height: number
+  /** The computed `transform`, verbatim (`none`, or a `matrix(...)`). */
+  transform: string | null
+  /**
+   * The matrix's `a` component, rounded to 2dp: 1 unrotated, -1 at 180deg.
+   * `none` reads as 1. ⚠️ Read it through `expect.poll`: the chevron carries
+   * `transition-transform`, so a read mid-transition returns an interpolated
+   * matrix, not the end state.
+   */
+  a: number | null
+  /** The trigger's height, so a line box grown by an inline SVG is visible. */
+  triggerHeight: number
+}
+
+export async function readChevron(page: Page): Promise<ChevronState> {
+  return page.evaluate(
+    ([summarySel, chevronSel]) => {
+      const summary = document.querySelector(summarySel)
+      const chevrons = [...document.querySelectorAll(chevronSel)]
+      const el = chevrons[0] as SVGElement | undefined
+      const triggerHeight = summary?.getBoundingClientRect().height ?? 0
+      if (!el) {
+        return {
+          count: 0,
+          visible: false,
+          width: 0,
+          height: 0,
+          transform: null,
+          a: null,
+          triggerHeight,
+        }
+      }
+      const rect = el.getBoundingClientRect()
+      const transform = getComputedStyle(el).transform
+      let a = 1
+      if (transform && transform !== 'none') {
+        const m = /matrix\(([^)]+)\)/.exec(transform)
+        a = m ? Number(m[1].split(',')[0]) : Number.NaN
+      }
+      return {
+        count: chevrons.length,
+        visible: el.checkVisibility(),
+        width: rect.width,
+        height: rect.height,
+        transform,
+        a: Math.round(a * 100) / 100,
+        triggerHeight,
+      }
+    },
+    [MORE_SUMMARY, MORE_CHEVRON] as const
+  )
+}
+
 /** Whether the disclosure is open, read from the DOM `open` property. */
 export async function isMoreOpen(page: Page): Promise<boolean> {
   return page.locator(MORE_DETAILS).evaluate((el) => (el as HTMLDetailsElement).open)

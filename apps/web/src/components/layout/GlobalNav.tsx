@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionSeed } from '../../context/session-seed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
+import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
 
 /**
  * Persistent global navigation (story 11-1, Epic 11 UX review P0-a).
@@ -153,6 +154,12 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
  * untouched", because the merged-style partition never read `height`. It reads
  * `height` and `flex-direction` now, and `e2e/nav-responsive-css.spec.ts`
  * carries a full differential dump. Do not remove the token.
+ *
+ * ⚠️ ONE deliberate exception since story 69.1: the More trigger's disclosure
+ * CHEVRON is a DESKTOP-only element, so it carries the mirror token,
+ * `max-sm:hidden`, and must never gain `sm:hidden`. It is not an icon of a
+ * destination; see `MORE_CHEVRON_CLASS`. The icon-enumerating unit tests
+ * exclude it by its `data-disclosure-chevron` marker.
  *
  * ⚠️ The sheet is `max-sm:absolute`, NOT `max-sm:fixed`. `bottom: 100%` on a
  * `fixed` box resolves against the VIEWPORT, not the nav: measured, that renders
@@ -420,7 +427,9 @@ const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-
  * Until 59.2 it was a mobile-only ELEMENT (base classes + `sm:hidden`) and must
  * not reach the desktop row. It is a SHARED element now, so the composition rule
  * for shared elements applies: the desktop look is `NAV_LINK_BASE` unprefixed,
- * exactly like every desktop anchor, and the mobile bar cell it has always been
+ * like every desktop anchor, except `sm:pr-2` (story 69.1: 8px, not 12px, on
+ * the right, which with the list's dropped right padding pays for the
+ * chevron; see `MORE_CHEVRON_CLASS`), and the mobile bar cell it has always been
  * is `max-sm:` variants APPENDED to it. That is `TAB_LINK_CLASS`'s mobile half
  * with two differences: it adds `max-sm:w-full` (the cell is a grid track, not a
  * link box) and omits `max-sm:break-words` ("More" is one short word). Its
@@ -447,7 +456,49 @@ const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-
  * This comment used to carry a copy ("the eight-item row already wants 778px")
  * that was stale twice over by story 43.3. Do not restate a width here.
  */
-const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none [&::-webkit-details-marker]:hidden max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:w-full max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
+const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none sm:pr-2 [&::-webkit-details-marker]:hidden max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:w-full max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
+
+/**
+ * The More trigger's disclosure chevron: desktop only (story 69.1, FR108).
+ *
+ * Until 69.1 the desktop trigger was the bare word "More" (`MoreIcon` is
+ * `sm:hidden`), so nothing told a desktop user it opens anything. The glyph and
+ * its size/colour are SHARED with the account menu's trigger beside it
+ * (`ui/ChevronDownIcon.tsx`), so the header row carries one disclosure cue, not
+ * two.
+ *
+ * ⚠️⚠️ IT ROTATES ON THE `open` ATTRIBUTE, NEVER ON `isMoreOpen` (decision D2,
+ * Lucas 2026-09-25, which rewrote the epic's AC-3). The panel `<ul>` below is
+ * rendered unconditionally: what shows it is the native `open` attribute, and
+ * `isMoreOpen` is only a MIRROR of that attribute. They disagree in exactly the
+ * windows this component documents: with JavaScript off (React never runs, so
+ * state says "closed" forever while the native toggle shows the panel), a click
+ * before hydration, and find-in-page until `onToggle` lands. A state-driven
+ * chevron would point down over an open panel in the FAIL-OPEN case this
+ * `<details>` exists for. `e2e/nav-more-disclosure.spec.ts` proves the JS-off
+ * case ("the chevron turns with the NATIVE toggle").
+ *
+ * `max-sm:hidden`: a desktop-only ELEMENT (composition rule above), the mirror of
+ * the icons' `sm:hidden`. Below `sm` the ellipsis `MoreIcon` is the cue and the
+ * 64px bar cell has no room for a second glyph (decision D3). ⚠️⚠️ Do NOT give
+ * it `sm:hidden` to satisfy a test that enumerates the nav's icons: that hides
+ * it at every width this story exists for, and jsdom, which applies no
+ * stylesheet, stays green. Those tests exclude `[data-disclosure-chevron]`.
+ *
+ * `inline-block align-middle`: the desktop trigger is `inline-block`, so the
+ * SVG sits in the label's 20px line box. Baseline-aligned, a 16px glyph can
+ * grow that box and the trigger with it; the e2e test pins the trigger at 36px.
+ *
+ * Stays GRAY when More is active (green label on `bg-green-50`): the chevron
+ * says open-or-closed, not "you are here", and a green one would no longer
+ * match the account chevron. Do not tint it.
+ *
+ * Its ~20px (glyph + `ml-1`) is paid for by the list's dropped right padding
+ * (`pl-4`, not `px-4`) and the trigger's `sm:pr-2` (decision D1): the signed-out
+ * 640px row had almost no headroom before this story. The measured figures live
+ * ONLY in `e2e/nav-responsive-css.spec.ts`; do not restate them here.
+ */
+const MORE_CHEVRON_CLASS = `${DISCLOSURE_CHEVRON_CLASS} ml-1 inline-block align-middle max-sm:hidden group-open:rotate-180`
 
 /**
  * The sheet panel itself: an out-of-flow overlay at EVERY width since story 59.2.
@@ -789,9 +840,23 @@ export function GlobalNav() {
           Below `sm` the list becomes the 5-column grid (story 31.5): four
           destinations plus the More trigger, 64px tracks at 320px, each cell an
           icon-over-label stack. `max-sm:gap-0 max-sm:px-0 max-sm:py-0`
-          neutralise the desktop `gap-1 px-4 py-2`, which the mobile bar has
+          neutralise the desktop `gap-1 pl-4 py-2`, which the mobile bar has
           never carried: with them live the tracks shrink and the labels
           re-overflow.
+
+          ⚠️ `pl-4`, not `px-4`, since story 69.1 (decision D1): the list has no
+          RIGHT padding at >= 640px. Those 16px (plus the trigger's `sm:pr-2`)
+          pay for the More chevron, because the signed-out 640px row had almost
+          no headroom (the figure lives in `e2e/nav-responsive-css.spec.ts`
+          only). The account cluster's own `px-4` still separates the two at
+          the default font size. Putting `px-4` back overflows the document at
+          640px.
+
+          ⚠️ KNOWN, DEFERRED to story 69.3 (code review of 69.1): at an
+          ENLARGED root font the signed-out cluster spills LEFT over the nav,
+          and without this padding it covers the More chevron in narrow
+          windows (measured ~642-665px at an 18px root). The mode predates
+          69.1; 69.1 widened it. See `deferred-work.md`.
 
           Coupling to watch when the item split changes: `grid-cols-5` fixes the
           bar at exactly ONE row (~56.75px). Moving a destination out of the
@@ -804,7 +869,7 @@ export function GlobalNav() {
           the bar above the iOS home indicator (0 on non-notched devices, so the
           56.75px is exact there); the root reserve adds the same inset to stay
           in lockstep. */}
-      <ul className="flex flex-wrap gap-1 px-4 py-2 max-sm:grid max-sm:grid-cols-5 max-sm:gap-0 max-sm:px-0 max-sm:py-0">
+      <ul className="flex flex-wrap gap-1 py-2 pl-4 max-sm:grid max-sm:grid-cols-5 max-sm:gap-0 max-sm:px-0 max-sm:py-0">
         {PRIMARY_TABS.map((item) => (
           <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
             <Link
@@ -859,7 +924,10 @@ export function GlobalNav() {
             // attributes, one level deep, so it cannot hide a mismatch
             // anywhere else in the nav.
             suppressHydrationWarning
-            className="max-sm:h-full"
+            // `group` is what the chevron's `group-open:rotate-180` reads (story
+            // 69.1). No ancestor of the nav carries `group`, which matters:
+            // `.group[open] .group-open\:…` matches ANY open `.group` ancestor.
+            className="group max-sm:h-full"
           >
             {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable — Enter and Space dispatch this same click (e2e/nav-more-disclosure.spec.ts and global-nav.spec.ts prove it at 1280px and 320px); a keydown handler would double-toggle */}
             <summary
@@ -887,6 +955,10 @@ export function GlobalNav() {
             >
               <MoreIcon className="h-6 w-6 sm:hidden" />
               <span data-nav-label>More</span>
+              {/* The desktop disclosure cue (story 69.1, FR108). See
+                  `MORE_CHEVRON_CLASS` for why it rotates on the `open`
+                  attribute and never on `isMoreOpen`. */}
+              <ChevronDownIcon data-disclosure-chevron className={MORE_CHEVRON_CLASS} />
             </summary>
             <ul className={SHEET_PANEL_CLASS}>
               {visibleMoreDestinations.map((item) => (
@@ -923,7 +995,8 @@ export function GlobalNav() {
 // ⚠️⚠️ EVERY ONE IS RENDERED WITH `sm:hidden` BY ITS CALLER. Icons are a
 // mobile-only element; without that token the desktop nav grows 52px -> 76px at
 // 1280px and every anchor 36px -> 60px, for 212 computed diffs and ZERO failing
-// tests in the pre-31.5 suite.
+// tests in the pre-31.5 suite. (The desktop-only disclosure chevron, story 69.1,
+// is NOT one of these; it lives in `ui/ChevronDownIcon.tsx`.)
 
 function HomeIcon({ className }: { className: string }): React.ReactElement {
   return (

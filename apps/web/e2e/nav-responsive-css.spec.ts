@@ -234,6 +234,7 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   //   after  59.1 (DejaVu)     661.19px                857px
   //   after  59.2 (DejaVu)     441.58px                640px   (five items: one row everywhere)
   //   after  59.2 (Noto)       425.13px                640px
+  //   after  69.1 (DejaVu)     441.58px                640px   (UNCHANGED total; see below)
   //
   // Story 59.2 (FR90) took the More destinations OUT of the desktop row. Until
   // then `sm:contents` dissolved the sheet into it, so every free destination
@@ -251,6 +252,16 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   //    760px         760            195.61          564.39        122.81px
   //   >= 1152px     1152 (cap)      195.61          956.39        514.81px
   //   (Noto: cluster 189.80, headroom 25.07px at 640px.)
+  //
+  // Story 69.1 (FR108) added the More chevron and paid for it in the same row
+  // (decision D1). Measured 2026-09-25, DejaVu (fingerprint "Expenses" 66.72px),
+  // free AND paid runs identical: the five items grew 393.58 -> 409.58px (+16:
+  // the 16px glyph + `ml-1`, less the trigger's `sm:pr-2` saving 4) and the
+  // list's padding fell 32 -> 16px (`pl-4`, no right padding). So the row is
+  // still 441.58px, the 640px signed-out headroom is still 2.81px, and there is
+  // no wrapping width from 640 to 1400px. ⚠️ That the TOTAL is unchanged is the
+  // design, not an absence of change: the item sum and the padding moved by
+  // equal and opposite amounts.
   //
   // SIGNED IN (story 59.2 code review; `/api/auth/me` mocked, long email,
   // Premium pill, DejaVu). Before the fix the row WRAPPED: 3 rows at 640px and
@@ -431,7 +442,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
 
     // The exact tracks measured on the 31.5 mobile bar. This is the assertion
     // with teeth: `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so leaving ANY of
-    // the desktop `gap-1 px-4 py-2` un-neutralised resizes every track. The
+    // the desktop `gap-1 pl-4 py-2` un-neutralised resizes every track. The
     // 64px figure is also the fit budget the labels were chosen against —
     // `max-sm:px-1` leaves a 56px content box, and the widest bar label
     // ("Expenses", 48.45px at 11px) clears it by 3.8px per side.
@@ -439,7 +450,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     expect(m.gridTemplateColumns, 'the mobile grid is not 5 x 64px at 320px').toBe(
       '64px 64px 64px 64px 64px'
     )
-    expect(m.padding, 'the desktop `px-4 py-2` leaked onto the mobile bar').toBe('0px')
+    expect(m.padding, 'the desktop `pl-4 py-2` leaked onto the mobile bar').toBe('0px')
     // A grid with no gap declared computes `normal`, with `gap-0` it computes
     // `0px`; both render identically, and `gap-1` would compute `4px`.
     expect(['0px', 'normal'], 'the desktop `gap-1` leaked onto the mobile bar').toContain(m.gap)
@@ -929,8 +940,15 @@ test('the More disclosure is a real overlay in the desktop row at 1280px', async
         navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
         bodyHeight: document.body.scrollHeight,
         // Icons are mobile-only elements; a stray one adds 24px to every cell.
-        visibleIcons: [...nav.querySelectorAll('svg')].filter((svg) => svg.checkVisibility())
-          .length,
+        // ⚠️ ICONS only since story 69.1: the More trigger's disclosure chevron
+        // is the one svg that MUST be visible here, and it is counted
+        // separately below. Never satisfy this count by hiding the chevron.
+        visibleIcons: [...nav.querySelectorAll('svg:not([data-disclosure-chevron])')].filter(
+          (svg) => svg.checkVisibility()
+        ).length,
+        visibleChevrons: [...nav.querySelectorAll('svg[data-disclosure-chevron]')].filter((svg) =>
+          svg.checkVisibility()
+        ).length,
       }
     }, NAV)
 
@@ -942,6 +960,7 @@ test('the More disclosure is a real overlay in the desktop row at 1280px', async
   expect(closed.triggerDisplay, 'the More trigger is hidden on desktop').not.toBe('none')
   expect(closed.panelVisible, 'the panel is showing while closed').toBe(false)
   expect(closed.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
+  expect(closed.visibleChevrons, 'the More chevron is not visible on desktop (story 69.1)').toBe(1)
   expect(closed.navHeight, 'the desktop nav height moved — an icon or layout regression').toBe(52)
 
   await page.locator(MORE_SUMMARY).click()

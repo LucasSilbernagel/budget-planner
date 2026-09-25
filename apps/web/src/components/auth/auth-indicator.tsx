@@ -2,6 +2,7 @@ import { signOut } from '@/lib/account/sign-out'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
+import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
 
 /**
  * Persistent signed-in / Premium indicator (Story 13-2), and since story 59.3
@@ -650,11 +651,7 @@ function AccountMenu({
         >
           {email}
         </span>
-        <ChevronDownIcon
-          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400${
-            isOpen ? ' rotate-180' : ''
-          }`}
-        />
+        <ChevronDownIcon className={`${DISCLOSURE_CHEVRON_CLASS}${isOpen ? ' rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <div id={panelId} className={ACCOUNT_PANEL_CLASS}>
@@ -674,22 +671,5 @@ function AccountMenu({
         </div>
       )}
     </div>
-  )
-}
-
-// Hand-rolled inline SVG, the app's house style (there is no icons package;
-// see the note above `GlobalNav.tsx`'s icon components).
-function ChevronDownIcon({ className }: { className: string }): React.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-    </svg>
   )
 }

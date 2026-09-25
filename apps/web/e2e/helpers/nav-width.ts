@@ -78,9 +78,13 @@ export type IntrinsicMeasurement = {
   itemSum: number
   gapTotal: number
   listPadding: number
-  /** items + gaps, EXCLUDING the list's own `px-4`. */
+  /** items + gaps, EXCLUDING the list's own horizontal padding. */
   contentNeeded: number
-  /** items + gaps + the list's 32px `px-4` — the figure to compare against `available`. */
+  /**
+   * items + gaps + the list's horizontal padding (read from computed style:
+   * 32px of `px-4` until story 69.1, 16px of `pl-4` since) — the figure to
+   * compare against `available`.
+   */
   totalNeeded: number
   /** Independent probe 1: the list's own rendered width, cap lifted. Must equal `totalNeeded`. */
   renderedListWidth: number

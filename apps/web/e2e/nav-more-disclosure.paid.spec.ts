@@ -8,6 +8,7 @@ import {
   mockSignedIn,
   openMore,
   panelLabels,
+  readChevron,
   sweepHeaderRow,
 } from './helpers/nav-more'
 
@@ -236,3 +237,27 @@ for (const width of [640, 1280] as const) {
     expect(occluded, 'a panel row is painted over by page content').toEqual([])
   })
 }
+
+/**
+ * The More chevron for a PAID session (story 69.1, FR108). Story 69.3 PLANS
+ * to remove the More trigger from the FREE desktop row (nothing would be left
+ * behind it), which would make this the only tier with the cue at desktop.
+ * Not yet the case: the free twin lives in `nav-more-disclosure.spec.ts`.
+ */
+test('the paid More trigger carries a chevron that turns with the panel at 1280px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const closed = await readChevron(page)
+  expect(closed.count, 'the More trigger has no disclosure chevron').toBe(1)
+  expect(closed.visible, 'the chevron is hidden').toBe(true)
+  expect(closed.transform).toBe('none')
+  const chevronA = async () => (await readChevron(page)).a
+  await openMore(page)
+  await expect.poll(chevronA, { message: 'the chevron did not turn when opened' }).toBe(-1)
+  await page.keyboard.press('Escape')
+  await expect.poll(() => isMoreOpen(page)).toBe(false)
+  await expect.poll(chevronA, { message: 'the chevron stayed turned after Escape' }).toBe(1)
+})

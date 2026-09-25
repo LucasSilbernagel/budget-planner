@@ -3,6 +3,7 @@ import { fireEvent, renderWithRouter, screen, waitFor, within } from '@/test/uti
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { usePlannerVisibilityStore } from '../../../stores/plannerVisibilityStore'
+import { DISCLOSURE_CHEVRON_CLASS } from '../../ui/ChevronDownIcon'
 import { GlobalNav } from '../GlobalNav'
 
 /**
@@ -84,6 +85,15 @@ const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...
  * `src/test/responsive-table-tokens.ts:116`) and it works for both.
  */
 const tokens = (el: Element): string[] => [...el.classList]
+
+/**
+ * Every nav ICON, i.e. every svg except the desktop disclosure chevron (story
+ * 69.1). The icon tests require `sm:hidden`; the chevron must NOT have it.
+ * ⚠️ Never make those tests pass by adding `sm:hidden` to the chevron: it hides
+ * the chevron at every width it exists for, and jsdom (no stylesheet) cannot
+ * tell. `e2e/nav-more-disclosure.spec.ts` is what proves it visible.
+ */
+const ICON_SVG = 'svg:not([data-disclosure-chevron])'
 
 /**
  * Colour utilities, for the AC-5 guard below. Tailwind emits every `max-sm:`
@@ -205,7 +215,7 @@ describe('GlobalNav', () => {
     expect(listTokens).toContain('max-sm:grid')
     expect(listTokens).toContain('max-sm:grid-cols-5')
     // The three neutralisers. `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so any
-    // surviving desktop `gap-1 px-4 py-2` resizes every track and the labels
+    // surviving desktop `gap-1 pl-4 py-2` resizes every track and the labels
     // re-overflow. Measured in `e2e/nav-responsive-css.spec.ts`.
     expect(listTokens).toContain('max-sm:gap-0')
     expect(listTokens).toContain('max-sm:px-0')
@@ -214,9 +224,17 @@ describe('GlobalNav', () => {
     // 59.2's review the nav is `sm:shrink-0`, so the token is inert at >= 640px
     // and is kept deliberately (see the `GlobalNav.tsx` comment on the list).
     // The row's measured headroom lives ONLY in `e2e/nav-responsive-css.spec.ts`.
+    //
+    // ⚠️ `pl-4`, not `px-4`, since story 69.1 (decision D1): the list's right
+    // padding pays for the More chevron, because the signed-out 640px row had
+    // almost no headroom (the figure lives in that record, not here).
+    // `max-sm:px-0` still zeroes BOTH sides below `sm`, so
+    // the mobile bar is untouched. Putting `px-4` back overflows the document at
+    // 640px signed out.
     expect(listTokens).toEqual(
-      expect.arrayContaining(['flex', 'flex-wrap', 'gap-1', 'px-4', 'py-2'])
+      expect.arrayContaining(['flex', 'flex-wrap', 'gap-1', 'pl-4', 'py-2'])
     )
+    expect(listTokens, 'the list regained its right padding').not.toContain('px-4')
   })
 
   /**
@@ -268,6 +286,49 @@ describe('GlobalNav', () => {
     const details = sheet.parentElement as HTMLElement
     expect(details.tagName, 'the sheet list is not the panel of a <details>').toBe('DETAILS')
     expect((details.parentElement as HTMLElement).tagName).toBe('LI')
+  })
+
+  /**
+   * Story 69.1 (FR108): the desktop disclosure chevron. TOKEN-LEVEL ONLY —
+   * jsdom applies no stylesheet, so nothing here can prove the chevron is
+   * visible or that it turns. `e2e/nav-more-disclosure{,.paid}.spec.ts` does,
+   * including with JavaScript off. This pins the tokens those proofs rely on.
+   */
+  it('carries one desktop-only chevron that turns on the `open` attribute', async () => {
+    renderWithRouter(<GlobalNav />)
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+
+    const chevrons = nav.querySelectorAll('[data-disclosure-chevron]')
+    expect(chevrons, 'expected exactly one disclosure chevron in the nav').toHaveLength(1)
+    const chevron = chevrons[0] as Element
+    expect(
+      chevron.closest('details > summary'),
+      'the chevron is not in the More trigger'
+    ).not.toBeNull()
+    expect(chevron).toHaveAttribute('aria-hidden', 'true')
+    const chevronTokens = tokens(chevron)
+    expect(chevronTokens).toEqual(
+      expect.arrayContaining(['max-sm:hidden', 'group-open:rotate-180'])
+    )
+    expect(chevronTokens, 'the chevron is hidden at desktop').not.toContain('sm:hidden')
+    // AC-2: the SAME visual class as the account menu's chevron, not a copy.
+    expect(chevronTokens).toEqual(expect.arrayContaining(DISCLOSURE_CHEVRON_CLASS.split(' ')))
+    const details = nav.querySelector('details') as HTMLDetailsElement
+    expect(details, 'the <details> lost `group`').toHaveClass('group')
+    const summary = nav.querySelector('details > summary') as HTMLElement
+    expect(summary).toHaveAccessibleName('More')
+
+    // Rotation is the attribute's job, never state's (decision D2). Asserted
+    // OPEN as well as closed: a state-driven `isMoreOpen ? ' rotate-180'`
+    // is absent while closed, so a closed-only check could not fail on it
+    // (code review 2026-09-25).
+    expect(chevronTokens).not.toContain('rotate-180')
+    fireEvent.click(summary)
+    await waitFor(() => expect(details.open, 'the disclosure did not open').toBe(true))
+    expect(
+      tokens(nav.querySelector('[data-disclosure-chevron]') as Element),
+      'the chevron rotates from React state — it must read the `open` attribute'
+    ).not.toContain('rotate-180')
   })
 
   /**
@@ -362,7 +423,9 @@ describe('GlobalNav', () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    const icons = [...nav.querySelectorAll('svg')]
+    // ICONS only: the desktop disclosure chevron (story 69.1) is the one svg
+    // that must NOT carry `sm:hidden`, and it has its own test below.
+    const icons = [...nav.querySelectorAll(ICON_SVG)]
     // Eight: one per bar tab (4), one for More, one per sheet row (3). Was NINE
     // until story 43.3 removed the Net Worth destination and its icon.
     expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(8)
@@ -604,7 +667,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
 
     // Seven: four bar tabs, the More trigger, two sheet rows. (Eight until
     // story 43.3 removed the Net Worth destination.)
-    expect([...nav.querySelectorAll('svg')]).toHaveLength(7)
+    expect([...nav.querySelectorAll(ICON_SVG)]).toHaveLength(7)
     expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(7)
   })
 
@@ -804,7 +867,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     it('scopes every new icon to mobile with `sm:hidden`', async () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
-      const icons = [...navEl.querySelectorAll('svg')]
+      const icons = [...navEl.querySelectorAll(ICON_SVG)]
       // Twelve: 4 bar tabs + More + 7 sheet rows. Without `sm:hidden` each new
       // icon grows the DESKTOP nav, and nothing else in the suite would catch it.
       expect(icons).toHaveLength(12)

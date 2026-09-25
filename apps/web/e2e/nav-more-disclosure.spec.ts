@@ -10,6 +10,7 @@ import {
   moreExpandedInAxTree,
   openMore,
   panelLabels,
+  readChevron,
   sweepHeaderRow,
 } from './helpers/nav-more'
 
@@ -174,6 +175,77 @@ test('the header row holds at every desktop width, signed out AND signed in (fre
     page.getByRole('status', { name: /account status/i }).getByText(LONG_EMAIL)
   ).toHaveCount(1)
   expect(await sweepHeaderRow(page), 'the signed-in (free) header row broke').toEqual([])
+})
+
+/**
+ * The More trigger's disclosure chevron (story 69.1, FR108).
+ *
+ * Until 69.1 the desktop trigger was the bare word "More": `MoreIcon` is
+ * `sm:hidden`, so nothing said it opens anything. The chevron must be VISIBLE
+ * (a `display:none` from a stray `sm:hidden` is exactly what jsdom cannot see)
+ * and must turn with the panel.
+ *
+ * ⚠️ It turns on the `<details>` `open` ATTRIBUTE (`group-open:`), not on React
+ * state (decision D2, Lucas 2026-09-25). The attribute is what shows the panel,
+ * so it is the only source the cue cannot disagree with. The JS-off block below
+ * is the test a state-driven cue fails.
+ */
+for (const width of DESKTOP_WIDTHS) {
+  test.describe(`the More chevron at ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } })
+
+    test('is visible, decorative, and turns with the panel through every close path', async ({
+      page,
+    }) => {
+      await gotoSettled(page)
+      const closed = await readChevron(page)
+      expect(closed.count, 'the More trigger has no disclosure chevron').toBe(1)
+      expect(closed.visible, `the chevron is hidden at ${width}px`).toBe(true)
+      expect(closed.width, 'the chevron has no box').toBeGreaterThan(0)
+      expect(closed.transform, 'the chevron is rotated while the panel is closed').toBe('none')
+      // An inline 16px SVG can grow the 20px line box; the trigger stays 36px.
+      expect(closed.triggerHeight, 'the chevron grew the trigger').toBe(36)
+      // Still named "More" in the real AX tree: the chevron adds no text.
+      expect(await moreExpandedInAxTree(page), 'the trigger is no longer "More"').toBe(false)
+
+      const chevronA = async () => (await readChevron(page)).a
+
+      // Opened by click, closed by Escape.
+      await openMore(page)
+      await expect.poll(chevronA, { message: 'the chevron did not turn when opened' }).toBe(-1)
+      await page.keyboard.press('Escape')
+      await expect.poll(() => isMoreOpen(page)).toBe(false)
+      await expect.poll(chevronA, { message: 'the chevron stayed turned after Escape' }).toBe(1)
+
+      // Closed by an outside press on inert content.
+      await openMore(page)
+      await expect.poll(chevronA).toBe(-1)
+      await page.mouse.click(5, 780)
+      await expect.poll(() => isMoreOpen(page)).toBe(false)
+      await expect
+        .poll(chevronA, { message: 'the chevron stayed turned after an outside press' })
+        .toBe(1)
+
+      // Closed by navigating from a panel row.
+      await openMore(page)
+      await expect.poll(chevronA).toBe(-1)
+      await page
+        .getByRole('navigation', { name: 'Primary' })
+        .getByRole('link', { name: 'Settings', exact: true })
+        .click()
+      await expect(page).toHaveURL(/\/settings$/)
+      await expect.poll(() => isMoreOpen(page)).toBe(false)
+      await expect.poll(chevronA, { message: 'the chevron stayed turned after navigating' }).toBe(1)
+    })
+  })
+}
+
+test('the chevron is display:none on the mobile bar (decision D3)', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 })
+  await gotoSettled(page)
+  const chevron = await readChevron(page)
+  expect(chevron.count, 'the More trigger has no disclosure chevron').toBe(1)
+  expect(chevron.visible, 'the desktop chevron leaked onto the mobile bar').toBe(false)
 })
 
 test.describe('the desktop panel in the dark theme', () => {
@@ -476,6 +548,35 @@ test.describe('with JavaScript disabled', () => {
       }
     })
   }
+
+  // The case the epic's original AC-3 (drive the cue from `isMoreOpen`) gets
+  // wrong: with JS off React never runs, so state would say "closed" forever
+  // while the native toggle shows the panel.
+  test('the chevron turns with the NATIVE toggle at 1280px', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const closed = await readChevron(page)
+    expect(closed.count, 'the More trigger has no disclosure chevron').toBe(1)
+    expect(closed.transform).toBe('none')
+    await page.locator(MORE_SUMMARY).click()
+    await expect.poll(() => isMoreOpen(page), 'the native toggle did not open').toBe(true)
+    await expect
+      .poll(async () => (await readChevron(page)).a, {
+        message: 'the chevron points down over an OPEN panel with JavaScript off',
+      })
+      .toBe(-1)
+    expect((await readChevron(page)).visible, 'the chevron is hidden with JavaScript off').toBe(
+      true
+    )
+    // And back: the native toggle closes it, and the chevron follows.
+    await page.locator(MORE_SUMMARY).click()
+    await expect.poll(() => isMoreOpen(page), 'the native toggle did not close').toBe(false)
+    await expect
+      .poll(async () => (await readChevron(page)).a, {
+        message: 'the chevron stayed turned after the native toggle closed the panel',
+      })
+      .toBe(1)
+  })
 
   test('the server renders the disclosure closed', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })

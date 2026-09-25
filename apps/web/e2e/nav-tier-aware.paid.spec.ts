@@ -117,7 +117,8 @@ test.describe('the paid nav really is the paid nav', () => {
  * same five items, so there is one measurement, and it lives in ONE place: the
  * record in `nav-responsive-css.spec.ts` ("THE DESKTOP ROW"), produced by
  * `nav-intrinsic-width.measure{,.paid}.spec.ts`. The paid run reproduces the
- * free figures exactly (441.58px DejaVu), and that spec asserts the paid row
+ * free figures exactly (441.58px DejaVu, re-measured unchanged after story
+ * 69.1's chevron), and that spec asserts the paid row
  * fits and never wraps from 640 to 1400px. That covers signed-out AND signed-in
  * clusters; the signed-in one was the review's finding D1, fixed with
  * `sm:shrink-0` on the nav. This docblock keeps only what is PAID-specific.
