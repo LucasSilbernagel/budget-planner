@@ -146,6 +146,22 @@ export const users = pgTable(
     // re-signs each retry with a fresh `ts`, so the signature freshness window
     // filters nothing here (AC-2). NULL = no billing event processed yet.
     entitlementUpdatedAt: bigint('entitlementUpdatedAt', { mode: 'number' }),
+    // --- Email-change ordering (Story 68.1) ------------------------------------
+    //
+    // `emailUpdatedAt` is the ORDERING WATERMARK for `customer.updated`: the
+    // `occurred_at` (epoch ms) of the newest Paddle customer event that has
+    // changed this user's email. NULL = no email change processed yet.
+    //
+    // ⚠️ IT IS DELIBERATELY SEPARATE FROM `entitlementUpdatedAt`, AND SHARING
+    // ONE WOULD BE SILENT DATA LOSS. Every entitlement path gates on
+    // `entitlementUpdatedAt` being strictly older than the incoming event
+    // (webhooks/paddle.ts:347, :503, :760, and the `setWhere` at :418, :571).
+    // An email change that advanced that watermark would make a subsequent
+    // LEGITIMATE `subscription.*` / `transaction.*` carrying an earlier
+    // `occurred_at` look stale, and it would be DROPPED — so changing an email
+    // could silently cost the user the entitlement they are paying for. The two
+    // event streams are independent, so they order independently.
+    emailUpdatedAt: bigint('emailUpdatedAt', { mode: 'number' }),
     // The transaction that bought a `lifetime` grant, and its grand total in the
     // currency's lowest unit. Recorded at grant time so a later refund can be
     // judged FULL vs PARTIAL without a second Paddle API round trip (AC-1), and

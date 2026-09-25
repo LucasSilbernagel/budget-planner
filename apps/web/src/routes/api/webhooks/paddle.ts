@@ -4,11 +4,12 @@
  * TanStack Start server route (file-route `server.handlers`)
  * Endpoint: POST /api/webhooks/paddle
  *
- * Handles Paddle Billing subscription + transaction events and updates the
- * DB-authoritative `users.subscriptionStatus`. This is the ONLY account-creation
- * path for the paid tier (ADR-003): a first-seen `customer_id` is inserted here
- * (and given a default profile); the magic-link login (Story 5-16) only
- * re-authenticates existing users.
+ * Handles Paddle Billing subscription, transaction and customer events. It
+ * updates the DB-authoritative `users.subscriptionStatus`, and is the ONLY
+ * account-creation path for the paid tier (ADR-003): a first-seen `customer_id`
+ * is inserted here (and given a default profile); the magic-link login
+ * (Story 5-16) only re-authenticates existing users. A `customer.*` event is
+ * explicitly NOT an account-creation path.
  *
  * Data Sovereignty: processes webhooks and updates DanubeData PostgreSQL (Germany - EU).
  * Security: verifies the `Paddle-Signature` header (HMAC-SHA256 over `ts:rawBody`)
@@ -39,6 +40,26 @@
  * The asymmetry is deliberate: Paddle verifies payment, not email ownership, so
  * auto-adopting an entitled account would let a €39 checkout using someone
  * else's address take that account over.
+ *
+ * ─── Story 68.1: the email Paddle knows is the email that logs you in ────────
+ *
+ * Login is by email and only by email (`magic-link.ts` matches `lower(email)`
+ * with `isDeleted = false`), so a paying user who changes their billing email in
+ * Paddle was locked out with no recovery path in the product.
+ * `handleCustomerEmailChange` moves `users.email` on `customer.updated`.
+ *
+ * ⚠️ ITS COLLISION RULE IS THE OPPOSITE OF THE ONE ABOVE, and the difference is
+ * STRUCTURAL rather than a matter of taste. `reconcileEmailCollision` re-keys an
+ * unentitled colliding row because a first-seen `customer_id` is about to be
+ * INSERTED — exactly one row survives either way. On an email change BOTH rows
+ * already exist, so "freeing" the address would mean deleting or merging a
+ * second user's ledger. It therefore REFUSES UNCONDITIONALLY, whatever the
+ * other row's status (product owner, 2026-09-25), and reports via `captureError`
+ * so the stalemate can be reconciled by hand.
+ *
+ * Ordering runs on its OWN watermark, `users.emailUpdatedAt` — never
+ * `entitlementUpdatedAt`; see the handler for why sharing one would silently
+ * cost a user their entitlement.
  */
 
 import crypto from 'crypto'
@@ -58,12 +79,13 @@ import { currencyEnum, db } from '@budget-planner/db'
 import {
   type Currency,
   type SubscriptionStatus,
+  loginTokens,
   paddleAdjustments,
   users,
 } from '@budget-planner/db/src/schema'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 
 /** Mirror the body-size guard `routes/api/sync/batch.ts` applies (DoS guard). */
 const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024 // 1MB
@@ -280,6 +302,11 @@ async function reconcileEmailCollision(
       subscriptionStatus: grantedStatus,
       isDeleted: false,
       entitlementUpdatedAt: occurredAt,
+      // ⚠️ Story 68.1 review: the row is being adopted by a DIFFERENT Paddle
+      // customer, so any `emailUpdatedAt` it carries belongs to the PREVIOUS
+      // customer's event stream. Leaving it would let a foreign watermark drop
+      // the new customer's early `customer.updated` as stale.
+      emailUpdatedAt: null,
       ...(lifetime ?? {}),
     })
     .where(eq(users.id, byEmail.id))
@@ -782,10 +809,267 @@ async function handleAdjustment(
   return { ok: true }
 }
 
+/**
+ * The ordering predicate for a write to `users.emailUpdatedAt`: this row, and
+ * only while the stored watermark is still older than the event we are applying.
+ *
+ * It is carried INTO every UPDATE rather than only checked beforehand, so two
+ * concurrent deliveries cannot both pass a pre-read check and let the loser
+ * commit last.
+ */
+function emailWatermarkGuard(userId: string, occurredAt: number) {
+  return and(
+    eq(users.id, userId),
+    or(isNull(users.emailUpdatedAt), lt(users.emailUpdatedAt, occurredAt))
+  )
+}
+
+/** Advance the email watermark without touching the address itself. */
+async function stampEmailWatermark(
+  tx: WebhookTx,
+  userId: string,
+  occurredAt: number
+): Promise<void> {
+  await tx
+    .update(users)
+    .set({ emailUpdatedAt: occurredAt })
+    .where(emailWatermarkGuard(userId, occurredAt))
+}
+
+/**
+ * Handle a `customer.updated` email change (Story 68.1, FR107).
+ *
+ * Login here is by email and ONLY by email — `requestMagicLink`
+ * (`server/api/auth/magic-link.ts:70-74`) matches `lower(users.email)` with
+ * `isDeleted = false`, and `paddleId` is never a login input. So without this
+ * handler a paying user who updates their billing email in Paddle keeps the old
+ * address on their account, the new one matches nothing, and they are locked out
+ * with no recovery path in the product.
+ *
+ * ⚠️⚠️ A COLLISION REFUSES UNCONDITIONALLY (D1, product owner 2026-09-25) — it
+ * does NOT follow `reconcileEmailCollision`'s asymmetric rule above, and the
+ * difference is structural rather than a matter of taste. There, a first-seen
+ * `customer_id` is about to be INSERTED, so re-keying an unentitled colliding
+ * row leaves exactly one row either way. Here BOTH rows already exist, so
+ * "freeing" the address would mean deleting or merging a second user's ledger —
+ * on a webhook, for an account whose owner never asked. The accepted cost is
+ * that a user colliding with an abandoned account stays on their old address
+ * until it is reconciled by hand, which is why the `captureError` below is not
+ * optional: it is the only thing that reports the situation.
+ *
+ * Runs in the CALLER's transaction — the one that also claimed the event id, so
+ * a rollback releases the claim (Story 5-19; see `webhook-events.ts`).
+ */
+async function handleCustomerEmailChange(
+  tx: WebhookTx,
+  params: {
+    customerId: string
+    /** `data.email` from the payload — `customer.*` always carries it inline. */
+    email?: string
+    occurredAt: number
+  }
+): Promise<WriteResult> {
+  const { customerId, email, occurredAt } = params
+
+  // Normalize BEFORE validating (the `email.ts` contract, and the precedent at
+  // the subscription insert path): a whitespace-padded or 255-character address
+  // that is valid once trimmed must not be spuriously rejected.
+  const normalizedEmail = email ? normalizeEmail(email) : undefined
+  if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+    // TERMINAL, not `{ok:false}`. The address is in the payload, so retrying an
+    // identical delivery can never make it valid — this is the opposite of the
+    // subscription path, which returns 500 because the email may yet resolve via
+    // the customer API. Note `users.email` is varchar(254) while Paddle permits
+    // up to 1024, so an over-long address lands here rather than at the driver.
+    logger.error('Webhook: customer event carries no usable email; nothing written', {
+      customerId,
+    })
+    // ⚠️ Story 68.1 review: this leaves the account on an address the user may
+    // no longer control — the SAME lockout a collision produces, and it is
+    // reconciled the same way (by hand). It therefore needs the same signal;
+    // a `logger.error` alone made the one outcome nobody can see the one
+    // nobody gets told about.
+    captureError(new Error('Webhook: customer email unusable; account left on its old address'), {
+      scope: 'paddle-webhook',
+      customerId,
+    })
+    return { ok: true, terminal: true }
+  }
+
+  const [ours] = await tx
+    .select({
+      id: users.id,
+      email: users.email,
+      emailUpdatedAt: users.emailUpdatedAt,
+    })
+    .from(users)
+    .where(eq(users.paddleId, customerId))
+    .limit(1)
+
+  if (!ours) {
+    // A `customer.*` event is NOT an account-creation path (ADR-003; see the
+    // module docblock). The subscription and transaction paths own that, and
+    // minting a user from a customer event would create accounts for people who
+    // have never paid.
+    // ⚠️ ACCEPTED LOSS, decided 2026-09-25. The claim is KEPT, so if this event
+    // is a correction that arrives BEFORE the account-creating event, and that
+    // creating event then carries an INLINE email (the legacy
+    // `customer_email` / `customer.email` shape `resolveBuyerEmail` prefers),
+    // the correction is lost. `handleAdjustment` returns `{ok:false}` for the
+    // same "row not there yet" condition, and that was REJECTED here: retrying
+    // would 500 in a loop for every `customer.*` event belonging to anyone who
+    // never completes a checkout — a retry storm over the common case. The loss
+    // self-heals whenever the email is resolved via the customer API instead,
+    // which is the default shape.
+    logger.info('Webhook: customer event for a customer we do not know; ignoring', { customerId })
+    return { ok: true }
+  }
+
+  // Ordering. A replayed OLDER event must not put the stale address back and
+  // re-lock the account — arrival order is exactly what cannot be trusted.
+  if (!isFresherThanWatermark(ours.emailUpdatedAt, occurredAt)) {
+    logger.info('Webhook: ignoring out-of-order customer event', {
+      customerId,
+      occurredAt,
+      watermark: ours.emailUpdatedAt,
+    })
+    return { ok: true }
+  }
+
+  // ⚠️⚠️ THE WATERMARK IS ADVANCED FOR EVERY FRESHER EVENT WE DECIDE ON — not
+  // only for the ones that change the address. Story 68.1's review found the
+  // HIGH this closes: `customer.updated` also fires for name, locale and
+  // marketing-consent changes, so a no-op event is the COMMON case. An earlier
+  // version returned here WITHOUT stamping, which left the watermark NULL, and
+  // a genuinely older event delivered afterwards was then judged "fresher than
+  // nothing" and wrote a stale address back — re-locking the account this story
+  // exists to unlock. Stored `A`; Paddle t=10→`B`, t=15→`A`, t=20 name-only;
+  // delivered 20, 15, 10 ⇒ the row ended on `B`, which Paddle had abandoned.
+  //
+  // `emailUpdatedAt` therefore means "the newest customer event we have made a
+  // DECISION about", not "the last time the address changed".
+  if (ours.email === normalizedEmail) {
+    await stampEmailWatermark(tx, ours.id, occurredAt)
+    return { ok: true }
+  }
+
+  const [collision] = await tx
+    .select({
+      id: users.id,
+      paddleId: users.paddleId,
+      status: users.subscriptionStatus,
+      isDeleted: users.isDeleted,
+    })
+    .from(users)
+    // ⚠️ `lower(email)`, NOT `eq(email)` — decided 2026-09-25. This must be the
+    // SAME predicate the login path uses (`magic-link.ts:73`), or the write gate
+    // can miss a row the read would find: a mixed-case row stored before
+    // normalization existed is invisible to an exact match, the UPDATE then
+    // succeeds, and `requestMagicLink`'s `.limit(1)` with no ORDER BY would mint
+    // a token for an arbitrary one of two now-conflatable accounts.
+    // ⚠️ `reconcileEmailCollision` above still uses the exact-match shape. That
+    // is a KNOWN divergence inside this file, left alone because changing 5-19's
+    // shipped identity policy is outside this story's scope.
+    .where(sql`lower(${users.email}) = ${normalizedEmail}`)
+    .limit(1)
+
+  // ⚠️ `collision.id !== ours.id` IS LOAD-BEARING — and it became so only when
+  // the lookup above moved to `lower(email)` at review. Worth spelling out,
+  // because it was INERT before that and this comment used to say so:
+  //   - with the old exact `eq(email)`, the already-equal early return meant our
+  //     row's email always differed from `normalizedEmail` as a STRING, and
+  //     since `users.email` is unique the row found could never be ours. A
+  //     control confirmed it: a bare `if (collision)` reddened nothing.
+  //   - with `lower(email)`, a LEGACY MIXED-CASE row of our own (`Old@X`
+  //     against an incoming `old@x`) skips the early return — the strings
+  //     differ — and is then matched by the lookup. Dropping the conjunct would
+  //     refuse that account's own self-normalization as if it were someone
+  //     else's address.
+  // *Generalisable: widening a lookup's predicate can turn a dead guard live.*
+  //
+  // ⚠️ `isDeleted` is deliberately NOT consulted. The tombstone is not a
+  // licence (the same reasoning `reconcileEmailCollision` records), and under D1
+  // the refusal does not depend on the other row's status anyway.
+  if (collision && collision.id !== ours.id) {
+    logger.error(
+      'Webhook: refusing to move an account onto an email that belongs to another account',
+      {
+        customerId,
+        collidingPaddleId: collision.paddleId,
+        collidingStatus: collision.status,
+        collidingIsDeleted: collision.isDeleted,
+      }
+    )
+    captureError(new Error('Webhook: refused customer email change on an address collision'), {
+      scope: 'paddle-webhook',
+      customerId,
+      collidingPaddleId: collision.paddleId,
+      collidingStatus: collision.status,
+    })
+    // Stamp even though we refused: we HAVE decided on this event, and leaving
+    // the watermark behind would let an older intermediate address be applied
+    // afterwards (review finding). The delivery's own claim already prevents a
+    // replay of THIS event after a hand reconciliation, so the stamp costs
+    // nothing a genuinely newer event cannot overcome.
+    await stampEmailWatermark(tx, ours.id, occurredAt)
+    return { ok: true, terminal: true }
+  }
+
+  // ⚠️⚠️ `entitlementUpdatedAt` IS DELIBERATELY NOT WRITTEN HERE. Advancing it
+  // would make a later LEGITIMATE `subscription.*` / `transaction.*` carrying an
+  // earlier `occurred_at` — which a retry easily does — look stale and be
+  // dropped, so changing an email would silently cost the user the entitlement
+  // they are paying for. The two event streams order independently. Likewise
+  // `sessionsRevokedAt` is untouched: `validateSessionToken` re-reads this row
+  // every request, so live sessions simply start reporting the new address, and
+  // a forced logout would protect nobody (in a compromise the attacker already
+  // holds the new login key).
+  //
+  // A genuine concurrent race can still raise `users_email_unique` between the
+  // SELECT above and this UPDATE; that aborts the transaction, the caller
+  // returns 500, and the retry takes the collision branch with the other row now
+  // committed — self-healing in one retry.
+  await tx
+    .update(users)
+    .set({ email: normalizedEmail, emailUpdatedAt: occurredAt })
+    // ⚠️ The watermark predicate is repeated IN THE UPDATE, not just checked
+    // above (review finding). Two concurrent deliveries on two connections both
+    // read `emailUpdatedAt` before either commits, so both pass the check; the
+    // one that commits LAST would otherwise win regardless of `occurred_at`,
+    // leaving the older address stored against the newer watermark. This is the
+    // same defence `handleSubscriptionStatusUpdate`'s `setWhere` applies on its
+    // racing path. Not reachable from a test here: PGlite is a single
+    // in-process connection.
+    .where(emailWatermarkGuard(ours.id, occurredAt))
+
+  // A magic link minted for the OLD address is keyed on `userId`, so it would
+  // still sign into this account after the move (decided 2026-09-25: close it).
+  // The link was sent to a mailbox the user may no longer control, and
+  // `loginTokens` are not sessions — D3's "do not revoke" covers sessions only.
+  // A legitimate user mid-login simply re-requests.
+  await tx.delete(loginTokens).where(eq(loginTokens.userId, ours.id))
+
+  logger.info('Webhook: account email updated from a Paddle customer event', { customerId })
+  return { ok: true }
+}
+
 /** The `data` object of a Paddle Billing webhook event (the fields we read). */
 interface PaddleEventData {
+  /**
+   * The event subject's own id. Its MEANING is per event family: a transaction
+   * id on `transaction.*`, an adjustment id on `adjustment.*` — and on
+   * `customer.*` it is the CUSTOMER id (`ctm_…`), because those payloads carry
+   * no `customer_id` field at all. See the `eventId` note in `POST`.
+   */
   id?: string
+  /** Absent on every `customer.*` event — read `id` there instead. */
   customer_id?: string
+  /**
+   * Subscription status on `subscription.*`, transaction status on
+   * `transaction.*`, and `active | archived` on `customer.*` — where it is a
+   * property of the CUSTOMER RECORD and must never be read as an entitlement
+   * change (archiving a customer in Paddle does not cancel anything).
+   */
   status?: string
   currency_code?: string
   price_id?: string
@@ -970,7 +1254,29 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     // deduplicated — process it anyway and say so loudly: dropping a real paid
     // event is a worse failure than processing one twice, and every handler
     // below is still guarded by the ordering watermark.
-    const eventId = event.event_id ?? data.id
+    // ⚠️ THE FALLBACK IS WITHHELD FOR `customer.*` (Story 68.1, AC-8).
+    //
+    // ⚠️ CORRECTED AT REVIEW — an earlier version of this comment claimed that
+    // "on every other family `data.id` is a per-EVENT id". THAT IS FALSE.
+    // Paddle's OpenAPI pins `data.id` to `^sub_[a-z\d]{26}$` on `subscription.*`
+    // and to the transaction id on `transaction.*`: both are ENTITY ids, stable
+    // across that entity's whole lifecycle. So this fallback is unsafe for those
+    // families too, and the only reason it is scoped to `customer.*` here is
+    // that widening it is beyond this story — not that the others are sound.
+    // In practice Paddle always sends `event_id`, so none of this is live.
+    //
+    // For a customer event `data.id` is the CUSTOMER id (`ctm_…`) — the same
+    // value on every customer event for that customer, for the life of the
+    // account. Since
+    // `paddleWebhookEvents.eventId` is the PRIMARY KEY, letting it fall through
+    // would claim `ctm_…` on the first such delivery and then dismiss every
+    // later customer event for that customer as a duplicate, permanently; it
+    // would also make `customer.created` and `customer.updated` collide with
+    // each other. With no `event_id` the delivery is processed WITHOUT dedup and
+    // says so loudly below — which is the right trade here, because the email
+    // path is separately guarded by its own `emailUpdatedAt` watermark, so a
+    // replay is a no-op anyway.
+    const eventId = event.event_id ?? (eventType.startsWith('customer.') ? undefined : data.id)
     const parsedOccurredAt = parseOccurredAt(event.occurred_at)
     if (parsedOccurredAt === undefined) {
       logger.warn('Webhook: event carries no usable occurred_at; falling back to arrival time', {
@@ -1222,6 +1528,44 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       return json({ success: true })
     }
 
+    // --- Customer identity: the email Paddle knows is the email that logs you in
+    // (Story 68.1, FR107) --------------------------------------------------------
+    if (eventType === 'customer.updated') {
+      // ⚠️ `data.id`, NOT `data.customer_id` — a `customer.*` payload has no
+      // `customer_id` field, so reading one here would be a silent no-op.
+      const customerId = data.id
+
+      if (!customerId) {
+        logger.error('Webhook: customer event missing data.id', { eventType })
+        return json({ success: true })
+      }
+
+      const result = await runGuarded(customerId, (tx) =>
+        handleCustomerEmailChange(tx, {
+          customerId,
+          ...(data.email ? { email: data.email } : {}),
+          occurredAt,
+        })
+      )
+
+      if (!result.ok) {
+        logger.error('Webhook: customer email change failed to persist; returning 500 for retry', {
+          customerId,
+          eventType,
+        })
+        captureError(new Error('Webhook: customer email change failed to persist'), {
+          scope: 'paddle-webhook',
+          customerId,
+          eventType,
+        })
+        return json({ success: false, error: 'Failed to persist email change' }, { status: 500 })
+      }
+      return json({ success: true })
+    }
+
+    // `customer.created` stays UNHANDLED, deliberately: account creation belongs
+    // to the subscription and transaction paths (ADR-003), and a customer record
+    // exists in Paddle before any money has moved.
     logger.info('Webhook: unhandled event', { eventType })
     return json({ success: true })
   } catch (error) {

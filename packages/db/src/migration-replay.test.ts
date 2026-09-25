@@ -354,10 +354,16 @@ describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
-    // Story sec-3: 21 -> 22 journal entries and 155 -> 156 statements, for
+    // Story 68.1: 22 -> 23 journal entries and 156 -> 157 statements, for
+    // migration 0022's single `ALTER TABLE users ADD COLUMN emailUpdatedAt` —
+    // the `customer.updated` ordering watermark, deliberately separate from
+    // `entitlementUpdatedAt`. The +1 is MEASURED and is itself the check that
+    // regenerating the chain did not silently drop 0020's eight hand-written
+    // CHECK statements: a drop would have landed at 149, not 157.
+    // (Story sec-3 before it: 21 -> 22 journal entries and 155 -> 156 statements, for
     // migration 0021's single `CREATE INDEX rateLimits_windowStart_idx` — the
     // index the expired-window reaper's `WHERE windowStart < $1` needs, since
-    // the unique index leads with `scope` and cannot serve that range scan.
+    // the unique index leads with `scope` and cannot serve that range scan.)
     // (Story 66.5 before it: 20 -> 21 journal entries and 147 -> 155 statements,
     // for migration 0020's eight hand-written `ADD CONSTRAINT ... CHECK`. Story 65.2
     // before it: 19 -> 20 and 146 -> 147, for `expenses.endsBeforeRetirement`;
@@ -368,8 +374,8 @@ describe('clean-slate migration replay', () => {
     // ⚠️ They matter more since 0020 than before it: that migration is
     // hand-authored and `drizzle-kit generate` cannot reproduce it, so a
     // regeneration that drops all eight statements shows up HERE first.
-    expect(journal.entries.length).toBe(22)
-    expect(appliedStatements).toBe(156)
+    expect(journal.entries.length).toBe(23)
+    expect(appliedStatements).toBe(157)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {

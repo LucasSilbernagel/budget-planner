@@ -41,13 +41,21 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
-const { getPaddleConfig, assertPaddleProductionConfig, fetchPaddleCustomerEmail, captureError } =
-  vi.hoisted(() => ({
-    getPaddleConfig: vi.fn(),
-    assertPaddleProductionConfig: vi.fn(),
-    fetchPaddleCustomerEmail: vi.fn(),
-    captureError: vi.fn(),
-  }))
+const {
+  getPaddleConfig,
+  assertPaddleProductionConfig,
+  fetchPaddleCustomerEmail,
+  captureError,
+  sendMagicLinkEmail,
+} = vi.hoisted(() => ({
+  getPaddleConfig: vi.fn(),
+  assertPaddleProductionConfig: vi.fn(),
+  fetchPaddleCustomerEmail: vi.fn(),
+  captureError: vi.fn(),
+  // Story 68.1, AC-2: the lockout is only proven closed by driving
+  // `requestMagicLink` itself, so the mailer is the observation point.
+  sendMagicLinkEmail: vi.fn(),
+}))
 
 vi.mock('@budget-planner/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
@@ -64,9 +72,17 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
+vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 
+import { requestMagicLink } from '@/server/api/auth/magic-link'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
-import { paddleAdjustments, paddleWebhookEvents, userProfiles, users } from '@budget-planner/db'
+import {
+  loginTokens,
+  paddleAdjustments,
+  paddleWebhookEvents,
+  userProfiles,
+  users,
+} from '@budget-planner/db'
 import { eq } from 'drizzle-orm'
 import { POST } from '../paddle'
 
@@ -209,6 +225,8 @@ beforeEach(async () => {
   await db.delete(userProfiles)
   await db.delete(paddleWebhookEvents)
   await db.delete(paddleAdjustments)
+  // Story 68.1: BEFORE `users` — `loginTokens.userId` references it.
+  await db.delete(loginTokens)
   await db.delete(users)
 })
 
@@ -815,5 +833,483 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
     })
 
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+  })
+})
+
+/**
+ * Story 68.1 — a Paddle email change propagates to the account (FR107).
+ *
+ * ⚠️ WHY THESE LIVE HERE AND NOT IN `paddle.test.ts`: that file mocks
+ * `drizzle-orm`, which makes every `.where()` a no-op. Every assertion below
+ * depends on a `where` clause selecting the right row — the collision lookup,
+ * the watermark read, the update target — so written there they would pass
+ * against code that matched the wrong row, or every row.
+ *
+ * Decisions this pins, both taken by the product owner on 2026-09-25:
+ *  - D1: a collision REFUSES UNCONDITIONALLY. Story 5-19's
+ *    `reconcileEmailCollision` re-keys an UNENTITLED colliding row, which is
+ *    correct there (a first-seen customer is being INSERTED, so exactly one row
+ *    survives) and wrong here (both rows already exist, so freeing the address
+ *    means destroying a second ledger).
+ *  - D2: ordering runs on a SEPARATE `users.emailUpdatedAt` watermark.
+ */
+describe('Story 68.1 — customer.updated moves the login email', () => {
+  function customerUpdatedEvent(overrides: Record<string, unknown> = {}) {
+    return {
+      event_type: 'customer.updated',
+      data: {
+        // ⚠️ The customer id is `data.id` on this event family. There is NO
+        // `data.customer_id` on a `customer.*` payload — verified against
+        // Paddle's published schema, which pins `data.id` to `^ctm_[a-z\d]{26}$`
+        // and lists it as required.
+        id: 'ctm_1',
+        name: 'Jo Brown-Anderson',
+        email: 'new@example.test',
+        locale: 'en',
+        status: 'active',
+        marketing_consent: false,
+        ...overrides,
+      },
+    }
+  }
+
+  it('moves users.email to the new address and stamps emailUpdatedAt (AC-1)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    const [row] = await readUser('ctm_1')
+    expect(row.email).toBe('new@example.test')
+    expect(row.emailUpdatedAt).toBe(BASE_TIME + 5 * 60_000)
+  })
+
+  it('moves ONLY that user, leaving every bystander untouched (AC-1)', async () => {
+    // ⚠️ ADDED AFTER A POSITIVE CONTROL CAUGHT ITS ABSENCE. Deleting the
+    // UPDATE's row predicate — which would rewrite EVERY user's email to the
+    // incoming address — left every other test in this FILE green (49 of them
+    // at the time; this story contributes 17). Every successful-update case had
+    // exactly one user, and every case with two users refused before reaching
+    // the UPDATE, so the suite could not see it. The sibling subscription test
+    // one describe block up ('matches the UPDATE by customer_id, touching only
+    // that user') is the same guard for the same reason; this story needed its
+    // own and did not have one.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await seedUser({ paddleId: 'ctm_2', email: 'bystander@example.test' })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('new@example.test')
+    const [bystander] = await readUser('ctm_2')
+    expect(bystander.email).toBe('bystander@example.test')
+    expect(bystander.emailUpdatedAt).toBeNull()
+  })
+
+  it('normalizes the incoming address before storing it (AC-1)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    // Whitespace-padded and mixed case. `normalizeEmail` runs BEFORE
+    // `isValidEmail` (the email.ts contract), so this must be ACCEPTED and
+    // stored canonically — not rejected for its untrimmed shape.
+    await post({
+      ...customerUpdatedEvent({ email: '  NEW@Example.TEST  ' }),
+      occurred_at: at(5),
+    })
+
+    expect((await readUser('ctm_1'))[0].email).toBe('new@example.test')
+  })
+
+  it('closes the lockout: a magic link works at the NEW address and NOT the old (AC-2)', async () => {
+    // ⚠️ The assertion that actually matters. Reading the row back proves the
+    // column changed; it does NOT prove the user can get in, because
+    // `requestMagicLink` matches on `lower(email)` AND `isDeleted = false` and
+    // is a SILENT no-op for a miss. So this drives the real function against the
+    // same database the webhook just wrote.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    await requestMagicLink('new@example.test', 'https://app.test')
+    expect(sendMagicLinkEmail).toHaveBeenCalledTimes(1)
+    expect(sendMagicLinkEmail.mock.calls[0][0]).toBe('new@example.test')
+
+    sendMagicLinkEmail.mockClear()
+    await requestMagicLink('old@example.test', 'https://app.test')
+    expect(sendMagicLinkEmail).not.toHaveBeenCalled()
+  })
+
+  it('REFUSES when the address belongs to an ENTITLED account (AC-3)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await seedUser({
+      paddleId: 'ctm_other',
+      email: 'new@example.test',
+      subscriptionStatus: 'lifetime',
+    })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    // Terminal 200: the decision will never change on its own, so a 500 would
+    // be a retry storm.
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+    expect((await readUser('ctm_other'))[0].email).toBe('new@example.test')
+    expect(captureError).toHaveBeenCalled()
+  })
+
+  it('REFUSES when the address belongs to a FREE account too — D1 is unconditional (AC-3)', async () => {
+    // ⚠️ THIS is the test that distinguishes D1 from story 5-19's asymmetric
+    // rule. Under 5-19's policy an unentitled colliding row is ADOPTABLE, so a
+    // suite that only covered the entitled case would pass against the wrong
+    // behaviour. Here the refusal must hold whatever the other row's status is,
+    // because freeing the address would mean destroying that account's ledger.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await seedUser({
+      paddleId: 'ctm_other',
+      email: 'new@example.test',
+      subscriptionStatus: 'free',
+    })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+    expect((await readUser('ctm_other'))[0].email).toBe('new@example.test')
+    expect(captureError).toHaveBeenCalled()
+  })
+
+  it('REFUSES when the colliding row is soft-deleted — the tombstone is not a licence (AC-6)', async () => {
+    // ⚠️ MEASURED AND RECORDED: nothing in this product sets
+    // `users.isDeleted = true`. Every write to `users` is
+    // `webhooks/paddle.ts:277/362/514/772` plus `auth/paddle.ts:114`; none sets
+    // it true, and `:277` CLEARS it. Account erasure is a HARD DELETE, and the
+    // sync tombstones target profile-child tables, never `users`. So this
+    // fixture builds the row DIRECTLY because no code path produces it. This is
+    // a guard over an unreachable state, not a scenario a user reaches — it
+    // exists because four readers filter on the column and a future writer must
+    // not find a hole here.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await seedUser({ paddleId: 'ctm_other', email: 'new@example.test', isDeleted: true })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+    expect(captureError).toHaveBeenCalled()
+  })
+
+  it('a repeat of an address we already hold is not read as a collision (AC-3, AC-7)', async () => {
+    // ⚠️ RENAMED AFTER A POSITIVE CONTROL. This does NOT exercise the
+    // `collision.id !== ours.id` conjunct: the already-equal early return fires
+    // before the collision lookup runs, so what is proven here is that early
+    // return. The conjunct is covered instead by the legacy mixed-case test
+    // above, which became reachable once the lookup moved to `lower(email)`.
+    await seedUser({ paddleId: 'ctm_1', email: 'new@example.test' })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('new@example.test')
+    expect(captureError).not.toHaveBeenCalled()
+  })
+
+  it('ignores a replayed OLDER event arriving after a newer one (AC-5)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    // B (newer) is delivered first, then A (older) is retried afterwards —
+    // arrival order is exactly what cannot be trusted.
+    await post({
+      ...customerUpdatedEvent({ email: 'b@example.test' }),
+      event_id: 'evt_b',
+      occurred_at: at(20),
+    })
+    await post({
+      ...customerUpdatedEvent({ email: 'a@example.test' }),
+      event_id: 'evt_a',
+      occurred_at: at(10),
+    })
+
+    expect((await readUser('ctm_1'))[0].email).toBe('b@example.test')
+  })
+
+  it('rejects an equal timestamp, matching the strictly-newer contract (AC-5)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    await post({
+      ...customerUpdatedEvent({ email: 'first@example.test' }),
+      event_id: 'evt_1',
+      occurred_at: at(10),
+    })
+    await post({
+      ...customerUpdatedEvent({ email: 'second@example.test' }),
+      event_id: 'evt_2',
+      occurred_at: at(10),
+    })
+
+    expect((await readUser('ctm_1'))[0].email).toBe('first@example.test')
+  })
+
+  it('⚠️ does NOT advance entitlementUpdatedAt, so a later billing event still applies (D2)', async () => {
+    // ⚠️⚠️ THE MOST IMPORTANT TEST IN THIS STORY. If the handler wrote
+    // `entitlementUpdatedAt` instead of (or as well as) `emailUpdatedAt`, the
+    // email change would raise the entitlement watermark, and the
+    // `subscription.updated` below — which carries an EARLIER `occurred_at`,
+    // as a real retry easily can — would be judged stale and DROPPED. The user
+    // would change their email and silently lose the entitlement they pay for.
+    // Nothing that exercises the email path alone can see this.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test', subscriptionStatus: 'free' })
+
+    await post({ ...customerUpdatedEvent(), event_id: 'evt_email', occurred_at: at(50) })
+
+    const [afterEmail] = await readUser('ctm_1')
+    expect(afterEmail.email).toBe('new@example.test')
+    expect(afterEmail.emailUpdatedAt).toBe(BASE_TIME + 50 * 60_000)
+    expect(afterEmail.entitlementUpdatedAt).toBeNull()
+
+    await post({
+      ...subscriptionEvent({ customer_id: 'ctm_1', status: 'active' }),
+      event_id: 'evt_sub',
+      occurred_at: at(10),
+    })
+
+    const [afterSub] = await readUser('ctm_1')
+    expect(afterSub.subscriptionStatus).toBe('active')
+    expect(afterSub.email).toBe('new@example.test')
+  })
+
+  it('dismisses a duplicate delivery through the existing claim (AC-4)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    await post({
+      ...customerUpdatedEvent({ email: 'first@example.test' }),
+      event_id: 'evt_same',
+      occurred_at: at(10),
+    })
+    // Same event id, later timestamp, different address: if the claim were not
+    // doing the work, the watermark would let this through.
+    await post({
+      ...customerUpdatedEvent({ email: 'second@example.test' }),
+      event_id: 'evt_same',
+      occurred_at: at(20),
+    })
+
+    expect((await readUser('ctm_1'))[0].email).toBe('first@example.test')
+    const claims = await db.select().from(paddleWebhookEvents)
+    expect(claims).toHaveLength(1)
+  })
+
+  it('leaves the address alone but STILL ADVANCES the watermark (AC-7, AC-5)', async () => {
+    // ⚠️ THIS TEST PINNED A REAL DEFECT AND WAS REWRITTEN AT REVIEW. It used to
+    // assert `emailUpdatedAt` **toBeNull** — "don't churn the row" — which is
+    // the wrong contract and made the suite defend the bug. A no-op event
+    // (name / locale / marketing_consent, by far the commonest
+    // `customer.updated`) must still record that we have SEEN it, or a
+    // genuinely older event delivered afterwards is judged fresher than NULL.
+    // See the regression test below for the sequence that broke.
+    await seedUser({ paddleId: 'ctm_1', email: 'new@example.test' })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    const [row] = await readUser('ctm_1')
+    expect(row.email).toBe('new@example.test')
+    expect(row.emailUpdatedAt).toBe(BASE_TIME + 5 * 60_000)
+  })
+
+  it('⚠️ REGRESSION: a no-op event must not let a later OLDER event resurrect a dead address', async () => {
+    // ⚠️⚠️ THE DEFECT THE REVIEW FOUND, and the 49 tests written before it could
+    // not see. Paddle's history: t=10 → `b@`, t=15 → `a@`, t=20 a name-only
+    // change (email still `a@`). Delivery order 20, 15, 10 — arrival order is
+    // precisely what this whole mechanism exists to distrust.
+    //
+    // Before the fix the two no-op events returned without stamping, so the
+    // watermark stayed NULL, the t=10 event was judged "fresher than nothing",
+    // and the row ended on `b@` — an address Paddle had ABANDONED. The user
+    // types `a@`, matches nothing, and is locked out: the exact failure this
+    // story exists to close, reintroduced by the story itself.
+    await seedUser({ paddleId: 'ctm_1', email: 'a@example.test' })
+
+    await post({
+      ...customerUpdatedEvent({ email: 'a@example.test', name: 'Renamed' }),
+      event_id: 'evt_t20',
+      occurred_at: at(20),
+    })
+    await post({
+      ...customerUpdatedEvent({ email: 'a@example.test' }),
+      event_id: 'evt_t15',
+      occurred_at: at(15),
+    })
+    await post({
+      ...customerUpdatedEvent({ email: 'b@example.test' }),
+      event_id: 'evt_t10',
+      occurred_at: at(10),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.email).toBe('a@example.test')
+    expect(row.emailUpdatedAt).toBe(BASE_TIME + 20 * 60_000)
+  })
+
+  it('normalizes a LEGACY mixed-case row of our own instead of refusing it (AC-3)', async () => {
+    // ⚠️ ADDED AT REVIEW, and it only became reachable at review. Once the
+    // collision lookup moved to `lower(email)` to match the login predicate,
+    // our OWN legacy un-normalized row starts matching it: the equality early
+    // return does not fire (the strings differ by case), so the
+    // `collision.id !== ours.id` conjunct is what stops us refusing the
+    // account's own self-normalization. That conjunct was provably INERT under
+    // the old exact-match lookup.
+    await seedUser({ paddleId: 'ctm_1', email: 'New@Example.test' })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('new@example.test')
+    expect(captureError).not.toHaveBeenCalled()
+  })
+
+  it('REFUSES a collision with another account stored in a DIFFERENT CASE (AC-3)', async () => {
+    // ⚠️ ADDED AFTER CONTROL C10 STAYED GREEN. The legacy-normalization test
+    // above does NOT discriminate the `lower(email)` lookup — it uses our OWN
+    // row, which passes under an exact match too. This is the case that bites:
+    // the colliding row belongs to SOMEONE ELSE and is stored mixed-case.
+    //
+    // Under the old exact `eq(email)` the collision is invisible, the UPDATE
+    // succeeds, and `users_email_unique` allows it because varchar equality is
+    // case-sensitive — leaving two rows that differ only by case. Login matches
+    // on `lower(email)` with `.limit(1)` and NO `ORDER BY`, so it would then
+    // mint a magic link for an arbitrary one of two accounts.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await seedUser({ paddleId: 'ctm_other', email: 'New@Example.test' })
+
+    const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+    expect((await readUser('ctm_other'))[0].email).toBe('New@Example.test')
+    expect(captureError).toHaveBeenCalled()
+  })
+
+  it('invalidates pending magic links when the address moves', async () => {
+    // A link minted for the OLD mailbox is keyed on `userId`, so it would still
+    // sign into this account after the move. Decided 2026-09-25 to close that
+    // window; `loginTokens` are not sessions, so D3's "do not revoke" does not
+    // cover them.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await requestMagicLink('old@example.test', 'https://app.test')
+    expect(await db.select().from(loginTokens)).toHaveLength(1)
+
+    await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
+
+    expect(await db.select().from(loginTokens)).toHaveLength(0)
+  })
+
+  it('stamps the watermark even when it REFUSES, so an older address cannot follow', async () => {
+    // Without this, a refused NEWER event leaves no trace and an older
+    // intermediate address is applied afterwards — stranding the account on an
+    // address Paddle no longer holds.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+    await seedUser({ paddleId: 'ctm_other', email: 'taken@example.test' })
+
+    await post({
+      ...customerUpdatedEvent({ email: 'taken@example.test' }),
+      event_id: 'evt_refused',
+      occurred_at: at(20),
+    })
+    expect((await readUser('ctm_1'))[0].emailUpdatedAt).toBe(BASE_TIME + 20 * 60_000)
+
+    await post({
+      ...customerUpdatedEvent({ email: 'older@example.test' }),
+      event_id: 'evt_older',
+      occurred_at: at(10),
+    })
+
+    expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+  })
+
+  it('does not create an account for a customer we have never seen (AC-7)', async () => {
+    // ADR-003: the subscription and transaction paths are the ONLY
+    // account-creation paths. A `customer.*` event must never mint a user.
+    const res = await post({
+      ...customerUpdatedEvent({ id: 'ctm_unknown' }),
+      occurred_at: at(5),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await db.select().from(users)).toHaveLength(0)
+  })
+
+  it('does not read an archived customer as an entitlement change (AC-7)', async () => {
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test', subscriptionStatus: 'active' })
+
+    await post({
+      ...customerUpdatedEvent({ status: 'archived' }),
+      occurred_at: at(5),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.email).toBe('new@example.test')
+    expect(row.subscriptionStatus).toBe('active')
+  })
+
+  it('does not poison dedup when the envelope carries no event_id (AC-8)', async () => {
+    // ⚠️ `eventId = event.event_id ?? data.id` (paddle.ts). On `customer.*`,
+    // `data.id` is the `ctm_…` CUSTOMER id — the same value on every customer
+    // event for that customer, forever — and `paddleWebhookEvents.eventId` is
+    // the PRIMARY KEY. Letting the fallback through would claim `ctm_1` once
+    // and then dismiss every later customer event for that customer as a
+    // duplicate, permanently.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    const first = await POST({
+      request: signedRequest({
+        occurred_at: at(10),
+        event_type: 'customer.updated',
+        data: { id: 'ctm_1', email: 'first@example.test', status: 'active' },
+      }),
+    })
+    expect(first.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('first@example.test')
+
+    const second = await POST({
+      request: signedRequest({
+        occurred_at: at(20),
+        event_type: 'customer.updated',
+        data: { id: 'ctm_1', email: 'second@example.test', status: 'active' },
+      }),
+    })
+    expect(second.status).toBe(200)
+    // The one that matters: a SECOND idless customer event is still processed.
+    expect((await readUser('ctm_1'))[0].email).toBe('second@example.test')
+  })
+
+  it('answers 200, not a 500, when the address is unusable (AC-9)', async () => {
+    // Retrying an identical payload can never make it valid, so this is the
+    // opposite of the subscription path's `{ok:false}` → 500, which retries
+    // because the email may yet resolve via the customer API.
+    // ⚠️ RENAMED AT REVIEW: this proves "200, not 500". It CANNOT observe
+    // `terminal: true` — nothing in the codebase reads that field (13 write
+    // sites, zero readers), so a plain `{ ok: true }` is indistinguishable here.
+    await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
+
+    const unusable = ['', 'not-an-email', `${'a'.repeat(250)}@example.test`]
+    for (const [i, email] of unusable.entries()) {
+      const res = await post({
+        event_type: 'customer.updated',
+        event_id: `evt_bad_${i}`,
+        occurred_at: at(5 + i),
+        data: { id: 'ctm_1', status: 'active', email },
+      })
+      expect(res.status).toBe(200)
+      expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+    }
+
+    // ... and with the field absent entirely.
+    const missing = await post({
+      event_type: 'customer.updated',
+      event_id: 'evt_bad_missing',
+      occurred_at: at(9),
+      data: { id: 'ctm_1', status: 'active' },
+    })
+    expect(missing.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
   })
 })
