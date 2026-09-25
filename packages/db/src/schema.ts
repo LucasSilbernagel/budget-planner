@@ -571,6 +571,13 @@ export const rateLimits = pgTable(
   },
   (table) => ({
     userIdIdx: index('rateLimits_userId_idx').on(table.userId),
+    // Story sec-3: the expired-window reaper deletes on `windowStart` ALONE.
+    // The unique index below leads with `scope`, so a range scan on windowStart
+    // cannot use it. NOTE the honest scope of the benefit: under a heavy flood
+    // most rows are stale, so the planner will pick a seq scan regardless — the
+    // index pays off in STEADY STATE, where few rows are eligible and a seq scan
+    // over a large table would otherwise run on the auth hot path.
+    windowStartIdx: index('rateLimits_windowStart_idx').on(table.windowStart),
     // Atomic-upsert conflict target: one row per bucket.
     scopeSubjectWindowIdx: uniqueIndex('rateLimits_scope_subject_window_idx').on(
       table.scope,

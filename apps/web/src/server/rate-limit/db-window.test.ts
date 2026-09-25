@@ -10,15 +10,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Mode = 'fixed' | 'atomic' | 'throw' | 'empty'
+/** How the mocked `db.execute` (the sweep) behaves — Story sec-3. */
+type ExecuteMode = 'ok' | 'reject' | 'throwSync' | 'pending'
 
 const state = vi.hoisted(() => ({
   mode: 'fixed' as Mode,
+  executeMode: 'ok' as ExecuteMode,
   fixedCount: 1,
   serverCount: 0,
   captured: {
     values: undefined as Record<string, unknown> | undefined,
     conflictTarget: undefined as unknown,
     returning: undefined as Record<string, unknown> | undefined,
+    executed: [] as unknown[],
   },
 }))
 
@@ -29,6 +33,9 @@ vi.mock('@budget-planner/db', () => {
     subject: 'col:subject',
     windowStart: 'col:windowStart',
     requestCount: 'col:requestCount',
+    // Present so the AC-6 "no userId term" assertion has something to detect.
+    // Without this key `rateLimits.userId` is `undefined` and the guard is vacuous.
+    userId: 'col:userId',
   }
   const db = {
     insert: vi.fn(() => ({
@@ -50,6 +57,14 @@ vi.mock('@budget-planner/db', () => {
         }
       }),
     })),
+    execute: vi.fn((query: unknown) => {
+      state.captured.executed.push(query)
+      if (state.executeMode === 'throwSync') throw new Error('sweep exploded synchronously')
+      if (state.executeMode === 'reject') return Promise.reject(new Error('sweep failed'))
+      // Never settles — used to prove the decision does not await the sweep.
+      if (state.executeMode === 'pending') return new Promise(() => {})
+      return Promise.resolve(undefined)
+    }),
   }
   return { db, rateLimits }
 })
@@ -58,15 +73,47 @@ vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }))
 
-import { checkDbRateLimit } from './db-window'
+import { logger } from '@/lib/logger'
+import { __resetReapGateForTests, checkDbRateLimit } from './db-window'
 
 beforeEach(() => {
   vi.clearAllMocks()
   state.mode = 'fixed'
   state.fixedCount = 1
   state.serverCount = 0
-  state.captured = { values: undefined, conflictTarget: undefined, returning: undefined }
+  state.executeMode = 'ok'
+  state.captured = {
+    values: undefined,
+    conflictTarget: undefined,
+    returning: undefined,
+    executed: [],
+  }
+  // The sweep is gated to once per interval per process; without this the first
+  // test to trip it would silence every later one.
+  __resetReapGateForTests()
 })
+
+/**
+ * Flatten a drizzle `SQL` into readable text + its interpolated params.
+ *
+ * Shape MEASURED, not assumed: `queryChunks` holds StringChunk objects (which
+ * carry `value: string[]`) interleaved with the raw interpolated values.
+ */
+function renderSql(query: unknown): { text: string; params: unknown[] } {
+  const chunks = (query as { queryChunks?: unknown[] }).queryChunks ?? []
+  let text = ''
+  const params: unknown[] = []
+  for (const chunk of chunks) {
+    const value = (chunk as { value?: unknown } | null)?.value
+    if (Array.isArray(value)) {
+      text += value.join('')
+    } else {
+      params.push(chunk)
+      text += ` $${params.length} `
+    }
+  }
+  return { text: text.replace(/\s+/g, ' ').trim(), params }
+}
 
 describe('checkDbRateLimit — atomic upsert shape (AC-4)', () => {
   it('writes the row keyed by scope/subject and floors windowStart to the bucket boundary', async () => {
@@ -217,5 +264,160 @@ describe('checkDbRateLimit — DB-error degrade (AC-6)', () => {
     })
     expect(onDbError).toHaveBeenCalledOnce()
     expect(r).toEqual({ allowed: true, remaining: 42, degraded: true })
+  })
+})
+
+// ── Story sec-3: the expired-window reaper (AC-4, AC-5, AC-6) ────────────────
+describe('expired-window reaper', () => {
+  const ONE_HOUR_MS = 60 * 60 * 1000
+  const LONGEST_CONFIGURED_WINDOW_MS = 15 * 60 * 1000 // EMAIL_LIMIT, request.ts:32
+  const call = (now: number) =>
+    checkDbRateLimit({ scope: 'ip', subject: '203.0.113.5', windowMs: 60_000, maxAttempts: 5, now })
+
+  it('sweeps on the success path, with a cutoff OLDER than the longest window (AC-4)', async () => {
+    const now = 1_800_000_000_000
+    await call(now)
+
+    expect(state.captured.executed).toHaveLength(1)
+    const { params } = renderSql(state.captured.executed[0])
+
+    // ⚠️ The cutoff must reach the driver as an explicit UTC STRING. A raw
+    // `Date` here bypasses drizzle's column encoder and `pg` serializes it as
+    // LOCAL time with an offset, which PostgreSQL then discards for a
+    // `timestamp without time zone` column — MEASURED to delete every LIVE
+    // bucket under Europe/Berlin (production's region). Asserting on a `Date`
+    // object, as this test first did, is blind to that: the bug lives in the
+    // serialization, not in the value.
+    const cutoff = params.find((p): p is string => typeof p === 'string' && p.endsWith('Z'))
+    expect(cutoff, 'cutoff must be an ISO-8601 UTC string, not a Date').toBeDefined()
+    expect(new Date(cutoff as string).getTime()).toBe(now - ONE_HOUR_MS)
+    expect(params.some((p) => p instanceof Date)).toBe(false)
+
+    // The invariant that actually matters: a cutoff INSIDE the longest window
+    // would delete live buckets and hand the subject a fresh budget. Note this
+    // compares against a constant copied from `request.ts` — the REAL guard is
+    // the runtime check in `checkDbRateLimit` (see "DISABLES the sweep..."),
+    // because a copy asserted against itself cannot notice the original moving.
+    expect(now - new Date(cutoff as string).getTime()).toBeGreaterThan(LONGEST_CONFIGURED_WINDOW_MS)
+  })
+
+  it('compares with a STRICT < so a row exactly AT the cutoff survives (AC-4 boundary)', async () => {
+    await call(1_800_000_000_000)
+    const { text } = renderSql(state.captured.executed[0])
+    // `<=` would reap a row on the boundary. `<` errs toward keeping a row one
+    // sweep longer, which is the safe direction: over-keeping costs a row,
+    // over-deleting costs a subject its spent budget.
+    expect(text).toContain('<')
+    expect(text).not.toContain('<=')
+  })
+
+  it('carries NO userId term, so it cannot race account erasure on that predicate (AC-6)', async () => {
+    await call(1_800_000_000_000)
+    const { params } = renderSql(state.captured.executed[0])
+
+    // ⚠️ MUST assert on `params`, not on the rendered text. Every interpolated
+    // column arrives as a chunk that `renderSql` turns into `$n`, so a column
+    // NAME never appears in the text at all — an assertion like
+    // `expect(text).not.toContain('userId')` passes even with
+    // `AND ${rateLimits.userId} = ...` in the predicate. Review caught this:
+    // the earlier version of this test was vacuous and 20/20 stayed green
+    // against exactly the mutation it claimed to guard.
+    expect(params).toContain('col:windowStart')
+    expect(params).not.toContain('col:userId')
+  })
+
+  it('uses FOR UPDATE SKIP LOCKED so it can never deadlock with erasure (AC-6)', async () => {
+    await call(1_800_000_000_000)
+    const { text } = renderSql(state.captured.executed[0])
+    // Load-bearing, not an optimisation: `sync` rows carry BOTH a userId and a
+    // windowStart, so the reaper and account.ts:98 DO select overlapping rows.
+    // SKIP LOCKED makes the sweep step over rows erasure holds rather than wait
+    // on them, so PostgreSQL can never pick erasure as a deadlock victim.
+    expect(text).toContain('FOR UPDATE SKIP LOCKED')
+  })
+
+  it('sweeps at most ONCE per interval however many requests arrive (AC-5c)', async () => {
+    const now = 1_800_000_000_000
+    for (let i = 0; i < 25; i += 1) {
+      await call(now + i * 1000)
+    }
+    expect(state.captured.executed).toHaveLength(1)
+
+    // ...and sweeps again once the interval has elapsed.
+    await call(now + 15 * 60 * 1000 + 1)
+    expect(state.captured.executed).toHaveLength(2)
+  })
+
+  it('a REJECTED sweep does not fail the rate-limit decision (AC-5b)', async () => {
+    state.executeMode = 'reject'
+    state.fixedCount = 1
+    await expect(call(1_800_000_000_000)).resolves.toEqual({ allowed: true, remaining: 4 })
+    await Promise.resolve()
+    expect(logger.error).toHaveBeenCalledWith(
+      '[RateLimit] expired-window sweep failed',
+      expect.objectContaining({ error: 'sweep failed' })
+    )
+  })
+
+  it('a SYNCHRONOUSLY throwing sweep does not fail the decision either (AC-5b)', async () => {
+    state.executeMode = 'throwSync'
+    state.fixedCount = 1
+    await expect(call(1_800_000_000_000)).resolves.toEqual({ allowed: true, remaining: 4 })
+    expect(logger.error).toHaveBeenCalledWith(
+      '[RateLimit] expired-window sweep failed',
+      expect.objectContaining({ error: 'sweep exploded synchronously' })
+    )
+  })
+
+  it('does not AWAIT the sweep — a sweep that never settles does not delay it (AC-5a)', async () => {
+    state.executeMode = 'pending'
+    state.fixedCount = 1
+    // If the decision awaited the sweep this would hang and the test would time
+    // out rather than fail — which is itself the signal.
+    await expect(call(1_800_000_000_000)).resolves.toEqual({ allowed: true, remaining: 4 })
+  })
+
+  it('does NOT sweep on the DB-error path (no extra statement during an outage)', async () => {
+    state.mode = 'throw'
+    await checkDbRateLimit({
+      scope: 'ip',
+      subject: '203.0.113.5',
+      windowMs: 60_000,
+      maxAttempts: 5,
+      now: 1_800_000_000_000,
+    })
+    expect(state.captured.executed).toHaveLength(0)
+  })
+})
+
+// ── Review round 1: bounds and the self-enforcing cutoff invariant ───────────
+describe('reaper bounds and invariants', () => {
+  const call = (now: number, windowMs = 60_000) =>
+    checkDbRateLimit({ scope: 'ip', subject: '203.0.113.5', windowMs, maxAttempts: 5, now })
+
+  it('CAPS the sweep, so a concurrent account erasure cannot be blocked unboundedly', async () => {
+    await call(1_800_000_000_000)
+    const { text, params } = renderSql(state.captured.executed[0])
+    // SKIP LOCKED stops US waiting; it does NOT stop erasure waiting on us.
+    // A cap is what bounds how long erasure can be made to queue.
+    expect(text).toContain('LIMIT')
+    expect(params).toContain(5000)
+  })
+
+  it('DISABLES the sweep for a caller whose window is longer than the cutoff (AC-4)', async () => {
+    // Otherwise the reaper would delete that caller's LIVE buckets and hand the
+    // subject a fresh budget. Enforced in code, not by a constant copied into a
+    // test — a copy asserted against itself cannot catch a change to the real limit.
+    await call(1_800_000_000_000, 2 * 60 * 60 * 1000)
+    expect(state.captured.executed).toHaveLength(0)
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('window is longer than the reap cutoff'),
+      expect.objectContaining({ windowMs: 2 * 60 * 60 * 1000 })
+    )
+  })
+
+  it('still sweeps for a caller at the longest window actually configured (15 min)', async () => {
+    await call(1_800_000_000_000, 15 * 60 * 1000)
+    expect(state.captured.executed).toHaveLength(1)
   })
 })
