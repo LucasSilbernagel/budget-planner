@@ -175,7 +175,7 @@ export function calculateFinancialForecast(
 
   // Calculate baseline (current trends without scenario adjustments)
   let currentSavings = currentData.savings
-  const currentInvestments = currentData.investments
+  let currentInvestments = currentData.investments
   // Every figure a baseline row reports is ANNUAL: the monthly-normalized totals
   // are lifted to a year once, here, rather than per iteration.
   const baselineAnnualIncome = calculateGrossPeriodIncome(currentData.income) * MONTHS_PER_YEAR
@@ -190,23 +190,67 @@ export function calculateFinancialForecast(
     // the full rationale — the two loops must agree on WHEN a row is taken, or
     // baseline and projection are not comparable at all.
     //
-    // ⚠️ They still disagree on WHAT they model: this loop never grows
-    // investments while the projection compounds them at 7%, so with an empty
-    // scenario the two series diverge from the first plotted point. Pre-existing
-    // and recorded in `deferred-work.md`.
+    // ⚠️ They now also agree on WHAT they model (story 67.1, FR106). Until
+    // 2026-09-24 this loop never grew investments while the projection compounded
+    // them at 7%, so an EMPTY scenario split the two series from the first plotted
+    // point by `investments_0 * (1.07^n - 1)` — the investment term alone. Both
+    // loops now apply the same 7%, so a scenario with no adjustments produces two
+    // identical series and the "if nothing changes" line means what it says.
     //
-    // ⚠️ The annualization does NOT change that divergence. With a flat scenario
-    // this loop adds `baselineAnnualNetIncome` and the projection adds
-    // `netIncome * MONTHS_PER_YEAR` — identical values, so the recurring flow
-    // cancels exactly and is not a term in the gap at any scale. The divergence
-    // is `investments_0 * (1.07^n - 1)`, i.e. the INVESTMENT term alone, and it
-    // is exactly zero when `investments` is zero. (An earlier version of this
-    // comment claimed the annualization made the divergence "numerically LARGER,
-    // since the flow driving it is now 12x". The forecasting tests assert the
-    // opposite: with a flat scenario the baseline and projection savings series
-    // are EQUAL. Twelve times zero is still zero.)
+    // ⚠️ That equality is PINNED by the `investment compounding, both loops` block
+    // in `__tests__/forecasting.test.ts` (four tests: a whole-result `toEqual` on
+    // a flat scenario, the hand-derived 7% chain on the baseline rows, a rounding
+    // probe, and the cross-scenario invariant that the two investment series match
+    // for EVERY scenario, since no scenario lever touches investments).
+    //
+    // ⚠️ Three things about this statement are load-bearing and must stay in step
+    // with the projection's `Math.round(projInvestments * 1.07)` — search that
+    // identifier; every line number this comment has carried has rotted within
+    // days, twice inside story 67.1's own review: the RATE, the per-year
+    // `Math.round`, and the POSITION (after the flow, before the row is taken,
+    // because rows report CLOSING balances).
+    //
+    // ⚠️⚠️ THE FOUR TESTS ARE NOT EQUALLY SENSITIVE, and an earlier version of this
+    // comment claimed they were ("changing one loop without the other fails all
+    // four"). MEASURED, per lever:
+    //   · RATE (baseline 1.07 -> 1.06)          -> 4 of 4 red
+    //   · POSITION (move after `baseline.push`) -> 4 of 4 red, series shifted a year
+    //   · REMOVE the statement entirely          -> 4 of 4 red
+    //   · DROP the `Math.round` here             -> 1 of 4 red (the rounding probe ONLY)
+    //   · CARRY a fraction, round at the row     -> 1 of 4 red (the rounding probe ONLY)
+    //   · change the PROJECTION's rate alone     -> 3 of 4 red (the baseline-only
+    //     test reads `r.baseline` and cannot see it)
+    // The rounding lever is weak because the `toEqual` test's fixture is
+    // 1_000_000, and `1.07 x 1000000` (and the next two steps) are EXACT in
+    // IEEE-754 — so an unrounded baseline produces byte-identical output there.
+    // Only the rounding probe's own fixture can see it. The carry-a-fraction
+    // variant is worse still: it is INVISIBLE to 1_000_000 and to 333_333 alike,
+    // and diverges from per-year rounding for 44% of the first 2,000,000 starting
+    // balances — which is why that probe now runs on 100_007 and asserts the
+    // wrong chain explicitly. Do not infer suite sensitivity; the probe is the
+    // guard, and its fixture is load-bearing.
+    //
+    // ⚠️ The recurring flow was never a term in that old gap and is not one now.
+    // With a flat scenario this loop adds `baselineAnnualNetIncome` and the
+    // projection adds `netIncome * MONTHS_PER_YEAR` — identical values, so it
+    // cancels exactly at any scale. (An earlier version of this comment claimed
+    // the 2026-09-24 annualization made the divergence "numerically LARGER, since
+    // the flow driving it is now 12x". It did not, in either direction. Twelve
+    // times zero is still zero. `deferred-work.md` carried the same false claim
+    // and is corrected by this story.)
+    //
+    // ⚠️ STILL OPEN, and this line makes it load-bearing in one more place: the 7%
+    // is hard-coded with no parameter and no user control. `deferred-work.md`
+    // records it as a FOURTH logging (three before this story, re-anchored by it).
+    // Fixing it means deciding whether forecasting exposes its own rate control —
+    // its own story, not this one.
     currentSavings += baselineAnnualNetIncome
-    // Simple investment growth (no compounding in baseline)
+    // Compound investments at the SAME 7% the projection uses, in the SAME
+    // position (after the flow, before the row is taken) and with the SAME
+    // per-year `Math.round` as the projection's `projInvestments` statement
+    // (search that identifier — deliberately not cited by line).
+    // Any of the three drifting apart reopens the divergence this story closed.
+    currentInvestments = Math.round(currentInvestments * 1.07)
 
     const baselineYear: YearlyForecast = {
       year,

@@ -21,9 +21,12 @@
  *     regressions: they failed against the old loop order and pass against the
  *     new one. Arm F1 (revert the loop) reddens exactly those three.
  *
- * ⚠️ Every fixture here uses `investments: 0`, so nothing in this file observes
- * the projection's 7% compounding or the baseline's lack of it. The chart-side
- * consequence of that gap is recorded in `deferred-work.md`.
+ * ⚠️ Every fixture in the blocks BELOW uses `investments: 0`, so none of them
+ * observes the 7% compounding at all — multiply the investment term by zero and
+ * it vanishes. That blindness is what let the baseline's missing compounding
+ * survive the engine's entire life. The final block (`investment compounding,
+ * both loops`, story 67.1) is the only one with a non-zero fixture, and it is the
+ * only one that can see it. Do not zero those fixtures out.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -362,8 +365,10 @@ describe('calculateFinancialForecast — annual accumulation', () => {
     const r = calculateFinancialForecast(CURRENT_DATA, FLAT, YEARS)
 
     // BY HAND: the baseline sees no growth rates, so its flow is the same 1200000
-    // and its closing balances match the projection's exactly (investments are 0,
-    // so the projection's 7% compounding has nothing to act on).
+    // and its closing balances match the projection's exactly. (Investments are 0
+    // in this fixture, so the 7% compounding both loops now apply has nothing to
+    // act on either way — see the `investment compounding, both loops` block for
+    // the arm that can actually see it.)
     expect(r.baseline[0].netIncome, '100000 × 12').toBe(1_200_000)
     expect(r.baseline[0].savings, '100000 + 1200000').toBe(1_300_000)
     expect(r.baseline[0].income, '500000 × 12').toBe(6_000_000)
@@ -520,5 +525,134 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
 
     // ⚠️ And the BASELINE must NOT grow — it is the no-scenario comparison.
     expect(r.baseline[0].income, 'baseline ignores growth: 500000 × 12').toBe(6_000_000)
+  })
+})
+
+/**
+ * BOTH LOOPS COMPOUND INVESTMENTS AT 7% (story 67.1, FR106).
+ *
+ * ⚠️⚠️ WHY THIS BLOCK EXISTS AT ALL, AND WHY IT IS THE ONLY ONE THAT COULD CATCH
+ * THIS. Every other fixture in this file uses `investments: 0`. The defect was
+ * that the baseline loop hoisted `const currentInvestments` outside the year loop
+ * and never reassigned it, while the projection compounded at 7% — so with an
+ * EMPTY scenario the two series split from the first plotted point by
+ * `investments_0 * (1.07^n - 1)`, the investment term alone. Multiply that by zero
+ * and it vanishes, which is exactly why 937 green core tests said nothing about it
+ * for the engine's entire life. **A fixture with no investments passes before AND
+ * after this story and proves nothing.** Do not "simplify" these fixtures to zero.
+ *
+ * ⚠️ DIRECTION, and it was a product decision, not a coin toss (Lucas,
+ * 2026-09-24): the BASELINE grows at 7% too; the projection's `* 1.07` is
+ * untouched. `ForecastingScenario` has no investment field of any kind, so the 7%
+ * is an engine constant that NO scenario lever produces — "the projection's 7% is
+ * the scenario's own contribution" is factually false, not merely the less
+ * appealing reading. The baseline answers "what if I change nothing", not "what if
+ * my investments stop growing".
+ *
+ * ⚠️ The 7% itself remains hard-coded with no parameter and no user control. That
+ * is a separate, still-open item in `deferred-work.md`; this story makes it
+ * load-bearing on one more line rather than fixing it.
+ */
+describe('calculateFinancialForecast — investment compounding, both loops', () => {
+  /** As CURRENT_DATA, but with 10,000.00 invested so the 7% has something to act on. */
+  const INVESTED = { ...CURRENT_DATA, investments: 1_000_000 }
+
+  it('produces two IDENTICAL series for a scenario with no adjustments', () => {
+    const r = calculateFinancialForecast(INVESTED, FLAT, YEARS)
+
+    // FR106 in one assertion: an empty scenario changes nothing, so the "if
+    // nothing changes" line and the scenario line must agree in every field of
+    // every row — not merely in `savings`, which was already equal because the
+    // recurring flow cancels exactly (see the annualization block above).
+    expect(r.baseline).toEqual(r.projection)
+  })
+
+  it('grows the BASELINE investments year on year, not just the projection', () => {
+    const r = calculateFinancialForecast(INVESTED, FLAT, YEARS)
+
+    // BY HAND, compounding ONE YEAR AT A TIME from 1000000:
+    //   y1 = round(1000000 × 1.07) = round(1070000)   = 1070000
+    //   y2 = round(1070000 × 1.07) = round(1144900)   = 1144900
+    //   y3 = round(1144900 × 1.07) = round(1225043)   = 1225043
+    // Pre-fix the baseline reported 1000000 for all three.
+    expect(
+      r.baseline.map((b) => b.investments),
+      'iterative 7%, not a flat carry'
+    ).toEqual([1_070_000, 1_144_900, 1_225_043])
+
+    // ⚠️ POSITION IS LOAD-BEARING, and the array above is what pins it: a row
+    // reports a CLOSING balance (story `forecast-2`), so year 1 must ALREADY be
+    // grown. Compounding after the `baseline.push` shifts the whole series one
+    // year — MEASURED as [1000000, 1070000, 1144900] — which this `toEqual`
+    // catches at index 0. (A separate `.not.toBe(1_000_000)` assertion lived here
+    // and was removed: it could never fail independently of the array.)
+
+    // netWorth follows: savings (100000 + 1200000 × n) + investments.
+    expect(
+      r.baseline.map((b) => b.netWorth),
+      '1300000+1070000, 2500000+1144900, …'
+    ).toEqual([2_370_000, 3_644_900, 4_925_043])
+  })
+
+  it('rounds EVERY year, rather than carrying a fraction and rounding once', () => {
+    // ⚠️⚠️ THE FIXTURE *IS* THE TEST HERE, and the two obvious choices are both
+    // blind. MEASURED:
+    //   · 1_000_000 cannot see a rounding bug AT ALL — `1.07 × 1000000`,
+    //     `× 1070000` and `× 1144900` are each EXACT in IEEE-754, so the
+    //     unrounded chain is byte-identical to the rounded one. The whole-result
+    //     `toEqual` above therefore says NOTHING about rounding.
+    //   · 333_333 (this test's first fixture) catches "no rounding at all" but
+    //     NOT the realistic wrong implementation below: per-year rounding and
+    //     carry-then-round-on-row both give [356666, 381633, 408347].
+    // 100_007 separates them at year 2. That is the only reason it is the fixture.
+    const r = calculateFinancialForecast({ ...CURRENT_DATA, investments: 100_007 }, FLAT, YEARS)
+
+    // BY HAND, rounding at each step:
+    //   y1 = round(100007 × 1.07) = round(107007.49) = 107007
+    //   y2 = round(107007 × 1.07) = round(114497.49) = 114497
+    //   y3 = round(114497 × 1.07) = round(122511.79) = 122512
+    expect(r.baseline.map((b) => b.investments)).toEqual([107_007, 114_497, 122_512])
+    expect(r.projection.map((p) => p.investments)).toEqual([107_007, 114_497, 122_512])
+
+    // THE DISCRIMINATION, asserted rather than asserted-about. An implementation
+    // that keeps a FRACTIONAL accumulator and rounds only when the row is
+    // recorded (`v *= 1.07` … `investments: Math.round(v)`) yields
+    // [107007, 114498, 122513] — MEASURED, and it diverges from per-year rounding
+    // for 886,398 of the first 2,000,000 starting balances (44%), the smallest
+    // being 3 cents. Without this line the test's own title would be a claim it
+    // does not check.
+    expect(
+      r.baseline.map((b) => b.investments),
+      'carry-then-round-on-row would give [107007, 114498, 122513]'
+    ).not.toEqual([107_007, 114_498, 122_513])
+  })
+
+  it('keeps the investment series identical under a NON-flat scenario too', () => {
+    // ⚠️ This is what makes the deep-equal test above non-vacuous. No scenario
+    // lever touches investments — `ForecastingScenario` carries income growth,
+    // expense growth and one-time events, and nothing else — so the two
+    // investment series must agree for EVERY scenario, not only the empty one.
+    // Savings legitimately diverge here; investments must not.
+    const r = calculateFinancialForecast(
+      INVESTED,
+      {
+        ...FLAT,
+        incomeGrowthRate: 0.05,
+        expenseGrowthRate: 0.03,
+        oneTimeEvents: [{ year: 2, amount: -5_000_000 }],
+      },
+      YEARS
+    )
+
+    expect(r.baseline.map((b) => b.investments)).toEqual(r.projection.map((p) => p.investments))
+    expect(
+      r.baseline.map((b) => b.investments),
+      'the same 7% chain as the flat run'
+    ).toEqual([1_070_000, 1_144_900, 1_225_043])
+
+    // The control: this scenario really is non-flat, so the series are NOT equal
+    // overall. Without this, the assertion above could pass on a run that had
+    // silently collapsed to the flat case.
+    expect(r.baseline.map((b) => b.savings)).not.toEqual(r.projection.map((p) => p.savings))
   })
 })

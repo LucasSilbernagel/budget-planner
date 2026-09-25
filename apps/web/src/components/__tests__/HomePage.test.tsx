@@ -148,13 +148,13 @@ describe('HomePage premium discovery', () => {
     // it exists to break on OVERPROMISING drift, not merely on any edit.
     //
     // ⚠️ Each situation named must be expressible by what the engine actually READS
-    // (`core/finance/forecasting.ts:145-293`), which is LESS than `ForecastingScenario`
+    // (`core/finance/forecasting.ts:163-344`), which is LESS than `ForecastingScenario`
     // declares:
     //   - `incomeGrowthRate` / `expenseGrowthRate` — compound from year 1.
     //   - `oneTimeEvents: {year, amount}` — the only DATED input. `amount` is SIGNED
-    //     and the engine sums it into that year's net income (`:227`). Since story
+    //     and the engine sums it into that year's net income (`:278`). Since story
     //     `forecast-1` the builder can enter money OUT as well as in.
-    //   - `newIncome`/`newExpenses` are NOT READ BY THE CALCULATION (`:96-97`) — they
+    //   - `newIncome`/`newExpenses` are NOT READ BY THE CALCULATION (`:114-115`) — they
     //     are the SAVE FORMAT for the builder's rows. Do not cite them as
     //     scenario-expressive, and do not delete them: reload depends on them.
     // So: a raise ✅, rising bills ✅, a one-off windfall ✅, a one-off cost ✅.
