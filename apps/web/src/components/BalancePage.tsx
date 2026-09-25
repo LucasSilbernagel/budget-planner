@@ -1125,8 +1125,10 @@ export function BalancePage() {
                         pool. Renaming the field would be a five-gate sync change (core sync
                         types, the server schema, syncBridge, the db column and its migration,
                         and the balanceTracking validator) plus hand-written DDL, because
-                        drizzle-kit 0.23 does not track CHECK constraints — all for no
-                        user-visible gain. Pinned by `contribution-flag-naming.guard.test.ts`. */}
+                        drizzle-kit 0.23 emits no CHECK DDL — story 66.5's migration 0020 had
+                        to hand-write all eight constraints, and a rename would have to do the
+                        same — all for no user-visible gain. Pinned by
+                        `contribution-flag-naming.guard.test.ts`. */}
                     <div className="flex items-start gap-2">
                       <input
                         type="checkbox"

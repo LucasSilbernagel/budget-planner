@@ -31,10 +31,12 @@
  * keeps its exact behaviour and a NEW function sits beside it rather than
  * replacing it.
  *
- * ⚠️ `icon` has no CHECK constraint in the database (drizzle-kit 0.23 emits none
- * in this repo — see `packages/core/src/sync/types.ts`), so a stored value can be
- * any string. {@link isProfileIcon} is the real enforcement, applied at the render
- * boundary rather than trusted from the row.
+ * ⚠️ `icon` has no CHECK constraint in the database, so a stored value can be any
+ * string. ⚠️ The REASON changed with story 66.5 while the fact did not: CHECK
+ * constraints DO reach the database now (migration 0020), but no `check()` is
+ * declared for this column, so there is still nothing enforcing the eight-emoji
+ * set at rest. {@link isProfileIcon} remains the real enforcement, applied at the
+ * render boundary rather than trusted from the row.
  *
  * ⚠️ Colour stays hash-derived and is deliberately NOT selectable (story 54.2
  * scope): the user's report was about icons, and widening it would have pulled a

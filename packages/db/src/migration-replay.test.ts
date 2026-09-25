@@ -16,12 +16,18 @@
  * Compared against `schema.ts`, all derived from the Drizzle metadata rather
  * than a hardcoded list: table names, column names, normalised column types,
  * nullability, primary keys, foreign keys, column DEFAULTS, unique constraints,
- * unique indexes (name, columns and partial predicate), and ordered enum labels.
+ * unique indexes (name, columns and partial predicate), CHECK constraints (name
+ * and normalised predicate), and ordered enum labels.
+ *
+ * ⚠️ CHECK was on the "not compared" list until story 66.5, for a reason that has
+ * now expired: drizzle-kit 0.23.2 emits no CHECK DDL, so the migrations contained
+ * none and the assertion would have compared empty to empty and passed forever.
+ * Migration `0020` adds all eight by hand, so the comparison bites. It is
+ * hand-authored precisely because `drizzle-kit generate` will not reproduce it —
+ * which makes this test the tripwire for a regeneration that silently drops them.
  *
  * Still NOT compared: non-unique indexes (performance-only, and pre-launch there
- * are no users) and CHECK constraints — drizzle-kit 0.23.2 never emits CHECK, so
- * the migrations contain none and asserting them would compare empty to empty
- * and pass forever. See `deferred-work.md`.
+ * are no users).
  *
  * What this does NOT prove: the managed instance's minor version, its
  * extensions, its roles/grants, or TLS. Nor does it exercise `drizzle-kit`
@@ -168,6 +174,46 @@ function normalizeDefault(raw: string): string {
   return normalizeExpr(s)
 }
 
+/**
+ * Reduce a CHECK predicate to a spelling Drizzle and PostgreSQL can agree on.
+ *
+ * The two renderings of the same constraint are far apart. Drizzle emits
+ * `"savingsGoals"."targetAmount" IS NULL OR "savingsGoals"."targetAmount" > 0`;
+ * PostgreSQL echoes it back as
+ * `CHECK ((("targetAmount" IS NULL) OR ("targetAmount" > 0)))` — fully
+ * parenthesised per term, with implicit casts made explicit
+ * (`(email)::text <> ''::text`). `normalizeExpr` already handles the quoting,
+ * the qualifiers and the casts; what remains is the parenthesisation, and
+ * PostgreSQL adds it at every level.
+ *
+ * ⚠️ So this strips EVERY paren, which means it cannot see a difference in
+ * operator PRECEDENCE — `a OR b AND c` and `(a OR b) AND c` reduce alike. That
+ * is a deliberate trade and it is not left uncovered: `check-constraints.test.ts`
+ * proves each constraint's actual behaviour by asking the database to store rows
+ * it must refuse AND rows it must accept, which is a stronger statement about the
+ * predicate than any text match. This comparison's job is that the right
+ * constraints EXIST on the right tables with the right names; that one's is that
+ * they MEAN the right thing.
+ */
+function normalizeCheckExpr(raw: string): string {
+  // `pg_get_constraintdef` wraps the whole predicate in `CHECK (...)`.
+  const body = raw.trim().replace(/^CHECK\s*\(([\s\S]*)\)$/i, '$1')
+  return (
+    normalizeExpr(body)
+      .replace(/[()]/g, ' ')
+      // ⚠️ Re-space the comparison operators, and this line is load-bearing rather
+      // than cosmetic. `normalizeExpr`'s cast-stripping pattern ends in
+      // `[A-Za-z0-9_ ]*`, whose character class INCLUDES a space, so `::text <>`
+      // loses the separator with the cast and `(email)::text <> ''::text` reduces
+      // to `email<> ''` — which compares unequal to Drizzle's `email <> ''` for a
+      // reason that has nothing to do with the constraint. Grouping consecutive
+      // operator characters keeps `<>`, `>=` and `<=` whole.
+      .replace(/([<>=!]+)/g, ' $1 ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+}
+
 interface ExpectedColumn {
   type: string
   notNull: boolean
@@ -180,6 +226,7 @@ const expectedForeignKeys = new Map<string, Set<string>>()
 const expectedDefaults = new Map<string, Record<string, string>>()
 const expectedUniqueConstraints = new Map<string, string[]>()
 const expectedUniqueIndexes = new Map<string, string[]>()
+const expectedChecks = new Map<string, Record<string, string>>()
 
 for (const value of Object.values(schema)) {
   if (!is(value, PgTable)) continue
@@ -249,6 +296,16 @@ for (const value of Object.values(schema)) {
       })
       .sort()
   )
+
+  // Story 66.5: the eight `check()` declarations, keyed by the constraint name
+  // the migration must use. Derived from the metadata like everything else here,
+  // so a constraint added to `schema.ts` without a migration reddens this file
+  // rather than sitting in the code looking enforced.
+  const checks: Record<string, string> = {}
+  for (const check of config.checks) {
+    checks[check.name] = normalizeCheckExpr(renderSql(check.value))
+  }
+  expectedChecks.set(table, checks)
 }
 
 /**
@@ -297,14 +354,18 @@ describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
-    // Story 65.2 (FR101): 19 -> 20 journal entries and 146 -> 147 statements, for
-    // migration 0019's single `ALTER TABLE "expenses" ADD COLUMN
-    // "endsBeforeRetirement"`. (Story 54.2 before it: 18 -> 19 and 145 -> 146.)
+    // Story 66.5: 20 -> 21 journal entries and 147 -> 155 statements, for
+    // migration 0020's eight hand-written `ADD CONSTRAINT ... CHECK`. (Story 65.2
+    // before it: 19 -> 20 and 146 -> 147, for `expenses.endsBeforeRetirement`;
+    // story 54.2 before that: 18 -> 19 and 145 -> 146.)
     // Both numbers are MEASURED from the run, never predicted — and they are
     // tripwires, not bookkeeping: they are what makes a migration that was
     // generated but never committed, or a hand-edited chain, fail loudly here.
-    expect(journal.entries.length).toBe(20)
-    expect(appliedStatements).toBe(147)
+    // ⚠️ They matter more since 0020 than before it: that migration is
+    // hand-authored and `drizzle-kit generate` cannot reproduce it, so a
+    // regeneration that drops all eight statements shows up HERE first.
+    expect(journal.entries.length).toBe(21)
+    expect(appliedStatements).toBe(155)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {
@@ -391,7 +452,7 @@ describe('clean-slate migration replay', () => {
     }
   )
 
-  it('derived a non-zero set of defaults and unique rules (guards against asserting nothing)', () => {
+  it('derived a non-zero set of defaults, unique rules and CHECKs (guards against asserting nothing)', () => {
     // The failure shape the enum guard exists for, repeated here: if the
     // metadata walk above silently stopped finding defaults or uniques, the
     // per-table assertions below would compare {} to {} on every table that has
@@ -404,10 +465,45 @@ describe('clean-slate migration replay', () => {
     )
     const totalUniques = [...expectedUniqueConstraints.values()].reduce((n, u) => n + u.length, 0)
     const totalUniqueIndexes = [...expectedUniqueIndexes.values()].reduce((n, u) => n + u.length, 0)
+    // Story 66.5: EIGHT, and the exact number is the point. MEASURED at `0119528`:
+    // of the twelve tables, only FIVE declare a check at all (users 2,
+    // incomeSources 1, expenses 1, savingsGoals 3, balanceTracking 1) and seven
+    // declare none. So a collapsed derivation would compare {} to {} on those
+    // seven and only the five would notice — as five ordinary per-table failures
+    // rather than as "the metadata walk broke". The exact count also fails loudly
+    // when a ninth constraint is declared without a migration, which is the whole
+    // failure mode this story ended.
+    const totalChecks = [...expectedChecks.values()].reduce((n, c) => n + Object.keys(c).length, 0)
     expect(totalDefaults).toBeGreaterThan(0)
     expect(totalUniques).toBeGreaterThan(0)
     expect(totalUniqueIndexes).toBeGreaterThan(0)
+    expect(totalChecks).toBe(8)
   })
+
+  it.each([...expectedTables.keys()].sort())(
+    'lands %s with the CHECK constraints schema.ts declares',
+    async (table) => {
+      const result = await db.query<{ conname: string; def: string }>(
+        `SELECT con.conname, pg_get_constraintdef(con.oid) AS def
+           FROM pg_constraint con
+           JOIN pg_class cl ON cl.oid = con.conrelid
+           JOIN pg_namespace n ON n.oid = cl.relnamespace
+          WHERE con.contype = 'c' AND n.nspname = 'public' AND cl.relname = $1`,
+        [table]
+      )
+      // ⚠️⚠️ `contype = 'c'` EXACTLY, and this is not defensive typing. PGlite
+      // reports PostgreSQL 18, where NOT NULL constraints are catalogued in
+      // `pg_constraint` too, as `contype = 'n'` — measured at 95 of them in this
+      // schema. Widening the filter, or scanning `pg_get_constraintdef` for the
+      // word CHECK, would drown eight real rows in ninety-five irrelevant ones.
+      const actual = Object.fromEntries(
+        result.rows.map((r) => [r.conname, normalizeCheckExpr(r.def)])
+      )
+      // Whole-map comparison, for the reason the column assertion above gives:
+      // a constraint with the right NAME and a drifted PREDICATE must not pass.
+      expect(actual).toEqual(expectedChecks.get(table))
+    }
+  )
 
   it.each([...expectedTables.keys()].sort())(
     'lands %s with the column defaults schema.ts declares',

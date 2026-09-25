@@ -193,11 +193,14 @@ describe('summarizeEndingExpenses — REFUSES rather than guessing', () => {
     ['the marked row', { amount: -50_000, endsBeforeRetirement: true }, { amount: 100_000 }],
   ])('⚠️ refuses a NEGATIVE amount on %s (code review 65.2)', (_label, a, b) => {
     // `isReadableRow` checks `Number.isFinite` only, so a negative passes it.
-    // Reachable from hand-edited localStorage AND from a pull — the server's
-    // `expenseSchema.amount` is `z.number().int()` with no positivity bound and
-    // the drizzle CHECK constraints never reached a real database. Unrefused, a
-    // negative unmarked row rendered a NEGATIVE "your expenses today are …" and a
-    // negative marked row made the remainder EXCEED the total.
+    // ⚠️ Reachable from hand-edited localStorage, which never passes through the
+    // database at all — so migration 0020's `expenses_amount_positive` does NOT
+    // make this case unreachable and does NOT retire this test. (It does close
+    // the pull route: the server can no longer store a negative expense. The
+    // server's `expenseSchema.amount` is still `z.number().int()` with no
+    // positivity bound.) Unrefused, a negative unmarked row rendered a NEGATIVE
+    // "your expenses today are …" and a negative marked row made the remainder
+    // EXCEED the total.
     expect(summarizeEndingExpenses([row(a), row(b)])).toEqual({ state: 'unreadable' })
   })
 

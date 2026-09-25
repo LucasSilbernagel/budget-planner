@@ -117,12 +117,14 @@ export const SYNC_CURRENCIES = [
  *
  *     ⚠️ VALUE RANGE is the one deliberate exception, and it is narrow.
  *     `targetAmount` carries `.positive()`, which the column alone does not
- *     require — it mirrors the server ingest gate (`server/api/sync.ts`), the
- *     ONLY live write path to that column. It is safe *because* of that, not
- *     because the database enforces it: the `savingsGoals_targetAmount_positive`
- *     CHECK in `packages/db/src/schema.ts` has never been emitted to a migration
- *     (0 of 8 — story 66.5's subject). Do not read the bound as evidence the
- *     column is constrained, and do not add a bound that no write path enforces.
+ *     require — it mirrors the server ingest gate (`server/api/sync.ts`) AND, since
+ *     story 66.5 / migration 0020, a real database constraint
+ *     (`savingsGoals_targetAmount_positive`). ⚠️ That was NOT true when this note
+ *     was written: none of the eight declarations had ever been emitted to a
+ *     migration (0 of 8), so the bound was safe only because of the write path.
+ *     Both reasons now hold. Still do not add a bound that no write path enforces:
+ *     a bound the database rejects but nothing upstream catches becomes a stuck
+ *     sync queue, not a clean error (see `synchronization.ts`'s D1 note).
  *
  *
  * ## ⚠️⚠️ The REQUIRED/NULLABLE rule — added by code review of 66.2
@@ -200,7 +202,16 @@ export const savingsGoalSchema = z.object({
   targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable(),
   // ⚠️ REQUIRED and BOUNDED — `.default(0)` here let a row omit its balance
   // entirely and NaN `getTotalSavings()`. NOT NULL column.
-  currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX),
+  //
+  // ⚠️ `.min(0)`, NOT `PG_INT32_MIN` (story 66.5). This now mirrors a REAL database
+  // constraint — `savingsGoals_currentBalance_non_negative`, added by migration
+  // `0020` — so a pulled row carrying a negative balance is a row the server
+  // cannot be storing. Refusing it here is safe in a way that refusing on the
+  // PUSH path is not: `applyServerChanges` skips and reports a refused row, while
+  // a push-side rejection is kept queued forever and eventually stops all sync.
+  // ⚠️ Deliberately NOT mirrored onto `balanceTrackingSchema` below — debt
+  // balances are negative by design and that table has no such constraint.
+  currentBalance: z.number().int().min(0).max(PG_INT32_MAX),
   // Story 26.1: per-account allocation. `monthlyAllocation` is nullable cents
   // (0..int32). `allocationMode` is `.optional()` here (the client emits it via
   // syncBridge); the server gate uses `.default('automatic')` on ingest — an
@@ -219,7 +230,10 @@ export const balanceTrackingSchema = z.object({
   // omitting `currentBalance` passed the guard and NaN'd the net-worth figure via
   // `stores/balanceStore.ts`. NOT NULL column; may be negative (debt balances).
   currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX),
-  // ⚠️ REQUIRED — NOT NULL column, and non-negative by the (inert) CHECK.
+  // ⚠️ REQUIRED — NOT NULL column, and non-negative by a CHECK that is REAL since
+  // story 66.5 / migration 0020 (`balanceTracking_monthlyContribution_non_negative`).
+  // It was inert when this bound was written; the bound is now a mirror rather
+  // than the sole enforcement, and must not be loosened on that account.
   monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX),
   // Story 16-2: cadence of the contribution. ⚠️ REQUIRED — the column is NOT NULL
   // with a DB-side default of 'monthly', which is not permission for a pulled row
@@ -283,13 +297,20 @@ export const userProfileSchema = z.object({
  * Numeric bounds mirror the `check()` declarations in packages/db/schema.ts so
  * invalid amounts are rejected client-side instead of failing the INSERT/UPDATE.
  *
- * ⚠️ "mirror the DATABASE CHECK constraints" is what this said until story 49.1,
- * and it was false. drizzle-kit 0.23 does not emit CHECK constraints to
- * migrations, so NONE of the seven `check()` blocks in `schema.ts` has ever
- * reached a real database — verified across all sixteen migrations. These zod
- * bounds are therefore the ONLY enforcement in practice, not a second line of
- * defence behind one. Logged in `deferred-work.md`; do not weaken them on the
- * assumption the database will catch it.
+ * ⚠️ This claim has been wrong in BOTH directions and the current state is worth
+ * stating precisely. It said "mirror the DATABASE CHECK constraints" until story
+ * 49.1 corrected it to "the ONLY enforcement", because drizzle-kit 0.23 emits no
+ * CHECK DDL and none of the declarations had ever reached a real database. Story
+ * 66.5 / migration 0020 put all eight there by hand, so these bounds are once
+ * again a mirror — a FIRST line of defence in front of a real constraint.
+ *
+ * ⚠️⚠️ THAT MAKES THEM MORE LOAD-BEARING, NOT LESS. Do not weaken them on the
+ * assumption the database will catch it. A database rejection on the push path is
+ * not a clean refusal in this product: the server returns a 200 envelope with no
+ * status code, the client cannot prove the rejection is permanent, and
+ * `synchronization.ts` keeps the operation QUEUED — it replays until the circuit
+ * breaker opens and all sync for that account stops. These bounds are what stops
+ * a bad row ever being enqueued.
  * - amount: must be > 0
  * - targetAmount: > 0 for a goal, or null for a goal-less savings account (Story 16-1)
  * - monthlyContribution: must be >= 0

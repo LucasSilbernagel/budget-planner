@@ -103,9 +103,10 @@ describe('resolveProfileIcon (story 54.2)', () => {
   })
 
   /**
-   * The `icon` column has no CHECK constraint — drizzle-kit 0.23 emits none in
-   * this repo — so a row written by a future or misbehaving client can hold any
-   * string. The render boundary is the real enforcement.
+   * The `icon` column has no CHECK constraint — none is declared for it, and
+   * story 66.5 added no new declarations when it landed the eight that were. So a
+   * row written by a future or misbehaving client can hold any string, and the
+   * render boundary is the real enforcement.
    */
   it.each(['🦄', 'not-an-icon', '', '<script>alert(1)</script>'])(
     'falls back to the hash for a non-member stored value (%s)',

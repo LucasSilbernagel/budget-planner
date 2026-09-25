@@ -179,22 +179,38 @@ All TypeScript types are properly inferred from the Drizzle schema:
 - [x] updatedAt re-added to users table
 - [x] **isDeleted field added for soft-delete functionality**
 - [x] **All CASCADE delete constraints removed and replaced with RESTRICT**
-- [x] **CHECK constraints re-added for data integrity** (⚠️ re-added to `schema.ts`
-  ONLY — see the note under this list):
+- [x] **CHECK constraints enforced by the database** (declared in `schema.ts` AND
+  applied by migration `0020`, story 66.5 — all eight, not a subset):
+  - [x] users.email <> ''
+  - [x] users.paddleId <> ''
   - [x] incomeSources.amount > 0
   - [x] expenses.amount > 0
-  - [x] savingsGoals.targetAmount > 0
+  - [x] savingsGoals.targetAmount IS NULL OR > 0
   - [x] savingsGoals.currentBalance >= 0
+  - [x] savingsGoals.monthlyAllocation IS NULL OR >= 0
   - [x] balanceTracking.monthlyContribution >= 0
 
   ⚠️ `balanceTracking.maxContributionLimit > 0 (if provided)` was struck from this
   list by story 49.1 / FR75, which dropped the column (migration `0016`).
 
-  ⚠️ The remaining ticks describe `schema.ts`, NOT the database. drizzle-kit 0.23
-  does not emit CHECK constraints to migrations, so none of these constraints has
-  ever reached a `.sql` file — `grep -in check migrations/*.sql` matches nothing.
-  Logged in `deferred-work.md`; deliberately not fixed by 49.1, which is a removal
-  story and not a records audit.
+  ⚠️ `balanceTracking.currentBalance` is deliberately NOT constrained: debt
+  balances are negative by design. Only `savingsGoals.currentBalance` is bounded.
+
+  ⚠️⚠️ **HISTORY, because these ticks were false for a long time and the reason
+  still bites.** Until story 66.5 this list read "re-added for data integrity" and
+  described `schema.ts` only: drizzle-kit 0.23 emits no CHECK DDL, so
+  `grep -in check migrations/*.sql` matched nothing but a COMMENT across
+  `0000`–`0019`, and not one of the declarations had ever reached the database. A
+  2026-09-23 triage reported the figure as "7 of 8" precisely because it counted
+  that comment as DDL; the true figure was **0 of 8**, and the comment it matched
+  (`0016_neat_metal_master.sql:9`) states exactly that.
+
+  ⚠️⚠️ **Migration `0020` is HAND-AUTHORED and `drizzle-kit generate` will not
+  reproduce it.** Regenerate the chain and all eight statements vanish silently.
+  Two tests are the tripwire: `src/migration-replay.test.ts` asserts the
+  constraints exist with the predicates `schema.ts` declares (and pins the journal
+  entry and statement counts), and `src/check-constraints.test.ts` asks a real
+  PostgreSQL to store rows each constraint must refuse.
 - [x] Biome linting passes
 - [x] Schema validation tests created
 - [ ] Migrations generated (requires DATABASE_URL)

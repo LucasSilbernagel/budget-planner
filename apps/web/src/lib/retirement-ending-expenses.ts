@@ -116,15 +116,23 @@ export function summarizeEndingExpenses(rows: readonly unknown[]): EndingExpense
   //      number and ADOPT another, with nothing anywhere to flag it.
   //   2. A NEGATIVE amount passes it. Code review 65.2 found the comment that
   //      used to sit below claiming negatives were "unreachable today" because of
-  //      the schema CHECK and the form's validation. That was FALSE, and false
-  //      against this module's own stated threat model: localStorage is
-  //      user-editable (which is the whole reason the flag is read `=== true`),
-  //      the drizzle CHECK constraints have never reached a real database
-  //      (drizzle-kit 0.23 does not emit them), and the server's own
-  //      `expenseSchema.amount` is `z.number().int()` with no positivity bound —
-  //      so a negative row also arrives via a pull. Unrefused, one negative
-  //      unmarked row renders a NEGATIVE "your expenses today are …", and a
-  //      negative MARKED row makes the remainder exceed the total.
+  //      the schema CHECK and the form's validation. That was FALSE, and it rested
+  //      on THREE legs, of which story 66.5 removed exactly one:
+  //        (a) localStorage is user-editable (which is the whole reason the flag
+  //            is read `=== true`), and a row read from it NEVER PASSES THROUGH
+  //            THE DATABASE AT ALL — no constraint can reach it. Still true.
+  //        (b) the drizzle CHECK constraints had never reached a real database.
+  //            ⚠️ NO LONGER TRUE — migration 0020 added
+  //            `expenses_amount_positive`, so the server can no longer STORE a
+  //            negative expense.
+  //        (c) the server's own `expenseSchema.amount` is `z.number().int()` with
+  //            no positivity bound. Still true.
+  //      ⚠️⚠️ SO THE GUARD STAYS. Leg (a) alone is sufficient — the dominant path
+  //      into this module is the local store, not a pull — and re-deriving
+  //      "the database catches it now" from (b) would be the same error 65.2
+  //      corrected, merely inverted. Unrefused, one negative unmarked row renders
+  //      a NEGATIVE "your expenses today are …", and a negative MARKED row makes
+  //      the remainder exceed the total.
   if (
     rows.some((row) => !isReadableRow(row) || !Number.isSafeInteger(row.amount) || row.amount < 0)
   ) {

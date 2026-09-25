@@ -27,7 +27,12 @@ import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 // - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
 // - All monetary amounts use integer type (cents) for precision
 // - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
-// - Database-level CHECK constraints: Added directly in schema for positive amount validation
+// - Database-level CHECK constraints: declared here AND enforced by the database
+//   since story 66.5 / migration 0020. ⚠️ That migration is HAND-AUTHORED —
+//   drizzle-kit 0.23 emits no CHECK DDL, so `drizzle-kit generate` will not
+//   reproduce it and a regeneration silently drops all eight. The tripwires are
+//   `migration-replay.test.ts` (they exist, with these predicates) and
+//   `check-constraints.test.ts` (they refuse what they say they refuse).
 // - Timestamps use default mode (returns strings) for JSON serialization compatibility
 // - Indexes: paddleId has implicit index via unique constraint, explicit indexes added on userProfiles.userId, rateLimits.userId, forecastingProfiles
 // - Soft-delete: Users table has isDeleted flag; all foreign keys use RESTRICT (no CASCADE) to prevent accidental data loss
@@ -205,8 +210,11 @@ export const incomeSources = pgTable(
     // A unique index would make the losing insert fail at the database — the same
     // failure class deferred-work.md records for `categories`. Convergence comes
     // from the read-time tiebreaker instead (sortOrder -> createdAt -> id, all three
-    // device-independent). A CHECK would be inert regardless: drizzle-kit 0.23 emits
-    // none (see the note on savingsGoals.monthlyAllocation below).
+    // device-independent). ⚠️ A CHECK would not help here anyway, and the reason is
+    // no longer "it would be inert": since story 66.5 / migration 0020 a declared
+    // CHECK does reach the database. The point is that duplicate `sortOrder` values
+    // are LEGAL, so there is nothing for one to assert — uniqueness is what would be
+    // wrong, not enforcement.
     //
     // Deletes leave GAPS on purpose — max+1 is gap-tolerant, and reindexing would
     // emit N sync updates for a single deletion (decision 3).
@@ -326,9 +334,11 @@ export const savingsGoals = pgTable(
       sql`${table.currentBalance} >= 0`
     ),
     // Story 26.1: monthlyAllocation non-negative if provided (null = no manual
-    // amount). Doc-only, like the sibling checks — drizzle-kit 0.23 does not emit
-    // CHECK constraints to migrations; app-layer validation (validateSavingsGoal +
-    // the sync zod schemas) enforces the bound.
+    // amount). ⚠️ This was doc-only until story 66.5: drizzle-kit 0.23 emits no
+    // CHECK DDL, so the app-layer bounds (validateSavingsGoal + the sync zod
+    // schemas) were the ONLY enforcement. Migration 0020 adds it by hand, so the
+    // database now refuses a negative allocation too — the zod bounds are a first
+    // line of defence in front of it, not a substitute for it.
     monthlyAllocationNonNegative: check(
       'savingsGoals_monthlyAllocation_non_negative',
       sql`${table.monthlyAllocation} IS NULL OR ${table.monthlyAllocation} >= 0`
@@ -381,10 +391,17 @@ export const balanceTracking = pgTable(
       table.userId,
       table.profileId
     ),
-    // CHECK constraint: monthlyContribution must be non-negative.
+    // CHECK constraint: monthlyContribution must be non-negative. Enforced by the
+    // database since story 66.5 / migration 0020.
     // ⚠️ Story 49.1 removed `balanceTracking_maxContributionLimit_valid` alongside
-    // the column it guarded. Doc-only, like the sibling checks — drizzle-kit 0.23
-    // never emitted ANY of them to a migration, so nothing had to be dropped in SQL.
+    // the column it guarded and carried NO `DROP CONSTRAINT`. That was correct and
+    // stays correct: at the time drizzle-kit 0.23 had never emitted ANY check() to
+    // a migration, so there was nothing in SQL to drop. Migration 0020 adds the
+    // eight that still exist — it does not resurrect the one 49.1 deleted.
+    // ⚠️ `currentBalance` deliberately gets NO constraint on this table: debt
+    // balances are negative by design (see the column's note above). Only
+    // `savingsGoals.currentBalance` is bounded, and
+    // `check-constraints.test.ts` pins both halves of that asymmetry.
     monthlyContributionNonNegative: check(
       'balanceTracking_monthlyContribution_non_negative',
       sql`${table.monthlyContribution} >= 0`
@@ -414,11 +431,12 @@ export const userProfiles = pgTable(
     // makes this column invisible to every user who does not open the picker.
     //
     // ⚠️ NOT an enum and NOT CHECK-constrained, so the stored value is not
-    // trustworthy: drizzle-kit 0.23 does not emit CHECK constraints to migrations
-    // at all in this repo (see packages/core/src/sync/types.ts), so a constraint
-    // here would be documentation, not enforcement. The real gate is
-    // `isProfileIcon` at the render boundary, which falls back to the hash for
-    // anything that is not one of the eight known emoji.
+    // trustworthy. ⚠️ The REASON changed with story 66.5 even though the fact did
+    // not: CHECK constraints do now reach the database (migration 0020), so one
+    // here WOULD be enforcement — there simply isn't one, because no `check()` is
+    // declared for this column and 66.5 added no new declarations. The real gate
+    // is still `isProfileIcon` at the render boundary, which falls back to the
+    // hash for anything that is not one of the eight known emoji.
     //
     // 16 is comfortable for a multi-code-point emoji: '✈️' alone carries a
     // variation selector, and a flag or ZWJ sequence is longer still.

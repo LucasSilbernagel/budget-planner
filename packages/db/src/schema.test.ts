@@ -545,7 +545,14 @@ describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
  * `contributionRecordedAsExpense`) and reads `.foreignKeys`, `.indexes` and
  * `.uniqueConstraints`, but it never enumerates a table's full column list and
  * never touches `.checks`. So every CHECK constraint in this schema, and every
- * column not individually named above, was unguarded.
+ * column not individually named above, was unguarded HERE.
+ *
+ * ⚠️ Since story 66.5 they are guarded ELSEWHERE, and the distinction matters for
+ * anyone deciding what this file still owes: `migration-replay.test.ts` compares
+ * every table's CHECK constraints (name and normalised predicate) against these
+ * declarations, and `check-constraints.test.ts` proves each one refuses what it
+ * says it refuses. The block below remains the only place that pins THIS table's
+ * exact column set.
  *
  * Both assertions below are POSITIVE (exact sets), not bare absence checks: an
  * absence check on a column that is already gone can never fail again, which is
@@ -582,10 +589,14 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
   })
 
   it('declares exactly one CHECK constraint, the monthlyContribution bound', () => {
-    // ⚠️ These are declarations in `schema.ts` ONLY. drizzle-kit 0.23 does not emit
-    // CHECK constraints to migrations, so none of them exists in any database —
-    // which is precisely why 49.1's migration carries no DROP CONSTRAINT. See
-    // `migrations/0016_neat_metal_master.sql` and `deferred-work.md`.
+    // ⚠️ This asserts the DECLARATION in `schema.ts`. That it also reaches the
+    // database is asserted by `migration-replay.test.ts`, and that it behaves is
+    // asserted by `check-constraints.test.ts` — three different claims, kept in
+    // three places on purpose.
+    // ⚠️ The declarations were doc-only until story 66.5 / migration 0020, which
+    // is precisely why 49.1's migration carries no DROP CONSTRAINT: there was
+    // nothing in SQL to drop. See `migrations/0016_neat_metal_master.sql`, which
+    // is left unedited as the historical record it is.
     const checkNames = getTableConfig(balanceTracking)
       .checks.map((check) => check.name)
       .sort()

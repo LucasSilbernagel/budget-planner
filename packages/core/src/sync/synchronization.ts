@@ -12,6 +12,7 @@
  * - Retry logic for failed operations
  */
 
+import { z } from 'zod'
 import { LocalStorageSyncQueueStorage, SyncQueue, createSyncQueue } from './queue'
 import type {
   ChangesPulledCallback,
@@ -143,11 +144,79 @@ function stableStringify(value: unknown): string {
  * being persisted while still supporting create, update, and delete operations.
  *
  * @param data - The data payload to validate
+ * @param entityType - Selects the per-entity refinement below, for bounds the one
+ *   shared schema cannot express (story 66.5)
  * @returns The validated (and sanitized) data
- * @throws ZodError if a known field has the wrong type
+ * @throws ZodError if a known field has the wrong type, or if it breaks its
+ *   entity's own bound
  */
-function validateOperationData(data: Record<string, unknown>): Record<string, unknown> {
-  return syncOperationDataSchema.parse(data)
+function validateOperationData(
+  data: Record<string, unknown>,
+  entityType: SyncEntityType
+): Record<string, unknown> {
+  const parsed = syncOperationDataSchema.parse(data)
+  const refinement = perEntityRefinements[entityType]
+  if (refinement) {
+    // Throws a ZodError exactly as the schema above does, so the caller's
+    // handling is unchanged. The stripped `parsed` is what we return — the
+    // refinement supplies a verdict, never a rewrite.
+    refinement.parse(parsed)
+  }
+  return parsed
+}
+
+/**
+ * Per-entity bounds that `syncOperationDataSchema` structurally cannot express
+ * (Story 66.5, decision D1).
+ *
+ * ⚠️⚠️ WHY THIS EXISTS AT ALL. `syncOperationDataSchema` is ONE FLAT SCHEMA shared
+ * by every entity type, so a field two entities both carry gets ONE bound — the
+ * loosest of the two. `currentBalance` is that field: `savingsGoals` must be
+ * `>= 0`, but `balanceTracking` stores DEBT balances and must stay
+ * negative-capable, so the shared declaration is `.min(PG_INT32_MIN)` and the
+ * savings bound had nowhere to live. Narrowing the shared field would have
+ * rejected every debt row in the product.
+ *
+ * ⚠️⚠️ WHY IT MATTERS MORE THAN AN ORDINARY BOUND. Story 66.5 made
+ * `savingsGoals_currentBalance_non_negative` a REAL database constraint. In this
+ * product a constraint violation on the push path is not a clean rejection: the
+ * server catches the PG error and returns a 200 envelope with `failedCount > 0`
+ * and NO status code, the client marks it `retryable: false` with no
+ * `statusCode`, and this file's own `unclassifiedFailedOperations` handling
+ * DELIBERATELY KEEPS IT QUEUED (removal requires positive proof of permanence).
+ * The operation then replays every cycle until the circuit breaker opens and ALL
+ * sync for that account stops. Refusing here instead costs one un-synced row and
+ * a console error; letting it through costs the account's whole sync.
+ *
+ * Bounds that are already right in the shared schema do NOT belong here — this map
+ * is for invariants the shared schema cannot state, not a second copy of the ones it
+ * can. For the record, the five SYNCED constraints and where each is already gated
+ * (the two `users` checks are not synced, so they are not in this list):
+ *   - `incomeSources.amount > 0`      → `amount.positive()`
+ *   - `expenses.amount > 0`           → `amount.positive()`
+ *   - `savingsGoals.targetAmount`     → `targetAmount.positive().nullable()`
+ *   - `savingsGoals.monthlyAllocation`→ `monthlyAllocation.min(0).nullable()`
+ *   - `balanceTracking.monthlyContribution` → `monthlyContribution.min(0)`
+ * `savingsGoals.currentBalance` is the sixth and the only one the shared schema
+ * cannot express, which is why this map exists at all.
+ *
+ * ⚠️ An earlier version of this list omitted `targetAmount` and read as though the
+ * inventory were complete. Code review caught it.
+ */
+const perEntityRefinements: Partial<Record<SyncEntityType, z.ZodTypeAny>> = {
+  savingsGoal: z
+    .object({
+      // `.optional()` because an operation payload is partial — an update that
+      // does not touch the balance must not be rejected for omitting it.
+      currentBalance: z.number().int().min(0).optional(),
+    })
+    // ⚠️ `.passthrough()` is here for INTENT, not for behaviour, and code review was
+    // right that the original comment implied otherwise. A zod object STRIPS unknown
+    // keys by default rather than rejecting them, and this refinement's parse OUTPUT
+    // is discarded anyway (`validateOperationData` returns the shared schema's
+    // `parsed`), so removing it would change nothing today. It stays because it says
+    // what this object is: a judgement on ONE declared field, not a second schema.
+    .passthrough(),
 }
 
 /**
@@ -624,7 +693,7 @@ export class SynchronizationService {
 
     // Validate operation data payload against the sync operation schema
     // FIX: Added schema validation to prevent arbitrary data in sync operations
-    const validatedData = validateOperationData(data)
+    const validatedData = validateOperationData(data, entityType)
 
     const operation: SyncOperation = {
       id: generateOperationId(),
@@ -680,7 +749,7 @@ export class SynchronizationService {
 
     // Validate operation data payload against the sync operation schema
     // FIX: Added schema validation to prevent arbitrary data in sync operations
-    const validatedData = validateOperationData(data)
+    const validatedData = validateOperationData(data, entityType)
 
     const operation: SyncOperation = {
       id: generateOperationId(),
@@ -736,7 +805,7 @@ export class SynchronizationService {
     // For delete operations, data is typically empty; the permissive schema
     // accepts an empty payload and still rejects malformed data when provided.
     // FIX: Added schema validation to prevent arbitrary data in sync operations
-    const validatedData = validateOperationData(data)
+    const validatedData = validateOperationData(data, entityType)
 
     const operation: SyncOperation = {
       id: generateOperationId(),

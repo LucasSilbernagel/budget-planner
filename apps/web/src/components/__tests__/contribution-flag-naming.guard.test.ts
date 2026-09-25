@@ -13,7 +13,8 @@
  * treatment — skip the row from the savings distributable pool — so the flag's
  * BEHAVIOUR was already correct for both and only its label was wrong. Renaming the
  * field would be a five-gate sync change plus hand-written DDL (drizzle-kit 0.23
- * does not track CHECK constraints) for no user-visible gain.
+ * emits no CHECK DDL, so migration 0020's constraints are hand-authored and a
+ * rename would have to be too) for no user-visible gain.
  *
  * ## Why a guard rather than a comment alone
  *
@@ -45,7 +46,12 @@ describe('BalancePage — the D2 naming rationale is recorded at the control (St
     // appears throughout the file and would pass against a deleted comment.
     expect(source).toMatch(/mismatch\s+is\s+DELIBERATE/i)
     expect(source).toMatch(/five-gate\s+sync\s+change/i)
-    expect(source).toMatch(/drizzle-kit\s+0\.23\s+does\s+not\s+track\s+CHECK/i)
+    // ⚠️ Updated with the sentence it pins (story 66.5 code review). The comment in
+    // `BalancePage.tsx` previously read "does not track CHECK constraints"; the
+    // sweep that amended this file's docblock missed the `.tsx` copy because its
+    // grep was scoped to `*.ts`/`*.sql`/`*.md`. Both now say the same thing, and
+    // this regex is what keeps them saying it.
+    expect(source).toMatch(/drizzle-kit\s+0\.23\s+emits\s+no\s+CHECK\s+DDL/i)
   })
 
   it('keeps the rationale AT the control, not merely somewhere in the file', () => {

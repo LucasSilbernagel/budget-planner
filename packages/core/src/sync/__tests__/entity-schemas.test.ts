@@ -331,6 +331,53 @@ describe('⚠️⚠️ the REQUIRED/NULLABLE rule: a NOT NULL column may not be 
     ).toBe(false)
   })
 
+  it('savingsGoal: a NEGATIVE currentBalance is refused, and balanceTracking still ACCEPTS one (story 66.5)', () => {
+    // ⚠️⚠️ THE ASYMMETRY IS THE POINT, and it had no test until code review asked
+    // for one. `savingsGoalSchema.currentBalance` was tightened from
+    // `.min(PG_INT32_MIN)` to `.min(0)` to mirror the real database constraint
+    // `savingsGoals_currentBalance_non_negative` (migration 0020). Reverting it
+    // would have gone green before this test existed: no fixture anywhere in the
+    // repo carried a negative savings balance, and every negative `currentBalance`
+    // fixture in `apps/web` targets `balanceTracking` instead.
+    //
+    // ⚠️ `balanceTracking` must stay negative-capable — debt balances are negative
+    // by design and that table deliberately has NO such constraint. The second
+    // assertion is what stops someone "tidying" the two schemas into agreement.
+    expect(
+      savingsGoalSchema.safeParse({
+        ...rowChrome,
+        name: 'Overdrawn',
+        targetAmount: null,
+        currentBalance: -1,
+        monthlyAllocation: null,
+        allocationMode: 'automatic',
+      }).success
+    ).toBe(false)
+
+    expect(
+      savingsGoalSchema.safeParse({
+        ...rowChrome,
+        name: 'Brand new',
+        targetAmount: null,
+        currentBalance: 0,
+        monthlyAllocation: null,
+        allocationMode: 'automatic',
+      }).success
+    ).toBe(true)
+
+    expect(
+      balanceTrackingSchema.safeParse({
+        ...rowChrome,
+        type: 'debt',
+        name: 'Mortgage',
+        currentBalance: -250_000,
+        monthlyContribution: 0,
+        frequency: 'monthly',
+        contributionRecordedAsExpense: false,
+      }).success
+    ).toBe(true)
+  })
+
   it('savingsGoal: a row with NO allocationMode is refused', () => {
     expect(
       savingsGoalSchema.safeParse({
