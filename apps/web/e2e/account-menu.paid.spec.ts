@@ -85,79 +85,25 @@ test('the paid cluster carries the Premium pill OUTSIDE the trigger, at every wi
 })
 
 /**
- * AC-13: the trigger email's visible width, MEASURED. Decision D2 (Lucas,
- * 2026-09-22) is to hide it wherever it measures under 24px, which for a
- * Premium user is below 660px.
- *
- * ⚠️ THE ONE PLACE these numbers live. Three files have carried stale copies of
- * nav widths before; do not restate them elsewhere.
- *
- * `LONG_EMAIL` is 44 characters. Full text width: 335px under DejaVu (what CI
- * resolves `system-ui` to), 313px under Noto (a typical dev box).
- *
- * | viewport | visible, DejaVu | visible, Noto |
- * |---|---|---|
- * | 320 (mobile strip) | 131 of 335 | 137 of 313 |
- * | 640 | HIDDEN (10 with the rule removed) | HIDDEN (32 with it removed) |
- * | 660 | 30 | 52 |
- * | 680 | 50 | 72 |
- * | 700 | 70 | 92 |
- * | 800 | 170 | 192 |
- * | 1024 | 335 (full) | 313 (full) |
- * | 1152 | 335 (full) | 313 (full) |
- *
- * ⚠️ The 320px Noto cell read "full" until review measured it: 137 of 313, i.e.
- * truncated, like every other narrow reading. It was never measured — it was
- * filled in. The rest of the column reproduces exactly.
- *
- * The pre-59.3 figures, for comparison (the email was then in the status
- * region, with no trigger chrome around it): 50px at 640, 110 at 700, 210 at
- * 800, full from 1024 (DejaVu).
- *
- * The assertions are font-independent on purpose: hidden below 660, at least
- * 24px at 660, and monotonically wider as the viewport grows. The table is the
- * record; the assertions are what CI can hold to under either font.
+ * ⚠️ Story 69.2 (decision D2, Lucas 2026-09-25) removed the email from the
+ * trigger. This file used to hold AC-13 of story 59.3: the trigger email's
+ * MEASURED visible width at 320-1152px, hidden for a Premium user below 660px.
+ * That table and its test were deleted with the email rather than kept as
+ * history, because a width record that outlives its element reads like current
+ * fact. The trigger's absence of any email is asserted below and in
+ * `auth-indicator.test.tsx`.
  */
-test('the trigger email is hidden where it would be an ellipsis, and grows with the viewport', async ({
-  page,
-}) => {
+// One assertion, not a viewport loop (69.2 code review): `textContent` does not
+// change with the viewport, so looping widths around it proved the same thing
+// four times. What changes with the viewport (one row) is swept elsewhere.
+test('the paid trigger carries no email', async ({ page }) => {
   await mockSignedIn(page, { subscriptionStatus: 'active' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
-  // ⚠️ Gate FIRST. The SSR seed paints a complete cluster carrying the SEED's
-  // email (`e2e-paid@example.test`) in the first frame, so waiting on the
-  // trigger alone would let this measure the wrong identity — or, as in CI run
-  // 35782927398, find no LONG_EMAIL at all and fail after 5s.
+  // Gate FIRST: the SSR seed paints a signed-in cluster with the SEED's email
+  // in the first frame, so wait for the MOCKED identity to be announced.
   await expectSignedInAs(page, LONG_EMAIL)
-  const email = accountTrigger(page).getByText(LONG_EMAIL, { exact: true })
-  await expect(email).toHaveCount(1)
-
-  await expect(email, 'the email is not hidden at 640px').toBeHidden()
-  await page.setViewportSize({ width: 659, height: 800 })
-  await expect(email, 'the email is not hidden at 659px').toBeHidden()
-
-  const widths: number[] = []
-  for (const width of [660, 680, 700, 800, 1024, 1152] as const) {
-    await page.setViewportSize({ width, height: 800 })
-    await expect(email, `the email is hidden at ${width}px`).toBeVisible()
-    widths.push(await email.evaluate((el) => el.clientWidth))
-  }
-  const [at660] = widths
-  expect(
-    at660,
-    'the email is under 24px at 660px, which is what D2 forbids'
-  ).toBeGreaterThanOrEqual(24)
-  // Monotonic: every step wider shows at least as much email.
-  for (let i = 1; i < widths.length; i += 1) {
-    expect(
-      widths[i],
-      `the email shrank between steps: ${widths.join(', ')}`
-    ).toBeGreaterThanOrEqual(widths[i - 1])
-  }
-  // And it really is truncation, not a short string: the full text is wider.
-  const full = await email.evaluate((el) => el.scrollWidth)
-  expect(widths[0]).toBeLessThan(full)
-  expect(widths[widths.length - 1], 'the email never reaches full width').toBe(full)
+  await expect(accountTrigger(page), 'the trigger shows an email').not.toContainText('@')
 })
 
 test('a paid signed-in cluster keeps the header to ONE row at every desktop width', async ({
@@ -225,8 +171,7 @@ test('a FREE signed-in cluster on the paid nav also keeps the header to one row'
   page,
 }) => {
   // The fourth tier x server combination (AC-12): the widest nav (paid) beside
-  // a cluster with no Premium pill, so the email keeps the pill's width and the
-  // narrow-width hiding does not apply. Review found only two of the four were
+  // a cluster with no Premium pill. Review found only two of the four were
   // covered.
   await mockSignedIn(page, { subscriptionStatus: 'free' })
   await page.setViewportSize({ width: 640, height: 800 })

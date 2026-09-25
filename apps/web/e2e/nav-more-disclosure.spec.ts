@@ -36,7 +36,7 @@ import {
 
 const DESKTOP_WIDTHS = [640, 1280] as const
 const PRIMARY = ['Overview', 'Income', 'Expenses', 'Savings'] as const
-const FREE_PANEL = ['Balances', 'Retirement', 'Settings'] as const
+const FREE_PANEL = ['Balances', 'Retirement'] as const
 
 async function gotoSettled(page: Page, url = '/'): Promise<void> {
   await page.goto(url)
@@ -166,7 +166,8 @@ test('the header row holds at every desktop width, signed out AND signed in (fre
   await gotoSettled(page)
   expect(await sweepHeaderRow(page), 'the signed-out header row broke').toEqual([])
 
-  // Signed in on the FREE tier: avatar + long email, no Premium pill. See the
+  // Signed in on the FREE tier: avatar only (no email since story 69.2), no
+  // Premium pill. The announced email proves the mocked session landed. See the
   // paid twin for why this needs `/api/auth/me` mocked (story 59.2 review, D1).
   await mockSignedIn(page, { subscriptionStatus: 'free' })
   await page.setViewportSize({ width: 640, height: 800 })
@@ -226,14 +227,15 @@ for (const width of DESKTOP_WIDTHS) {
         .poll(chevronA, { message: 'the chevron stayed turned after an outside press' })
         .toBe(1)
 
-      // Closed by navigating from a panel row.
+      // Closed by navigating from a panel row. (Settings until story 69.2 took
+      // it out of the nav.)
       await openMore(page)
       await expect.poll(chevronA).toBe(-1)
       await page
         .getByRole('navigation', { name: 'Primary' })
-        .getByRole('link', { name: 'Settings', exact: true })
+        .getByRole('link', { name: 'Balances', exact: true })
         .click()
-      await expect(page).toHaveURL(/\/settings$/)
+      await expect(page).toHaveURL(/\/balance$/)
       await expect.poll(() => isMoreOpen(page)).toBe(false)
       await expect.poll(chevronA, { message: 'the chevron stayed turned after navigating' }).toBe(1)
     })
@@ -354,11 +356,12 @@ test.describe('the disclosure is a disclosure, at desktop width', () => {
   test('choosing a row navigates, closes the panel, and lights the trigger', async ({ page }) => {
     await gotoSettled(page)
     await openMore(page)
+    // Balances, not Settings: story 69.2 moved Settings out of the nav.
     await page
       .getByRole('navigation', { name: 'Primary' })
-      .getByRole('link', { name: 'Settings', exact: true })
+      .getByRole('link', { name: 'Balances', exact: true })
       .click()
-    await expect(page).toHaveURL(/\/settings$/)
+    await expect(page).toHaveURL(/\/balance$/)
     await expect.poll(() => isMoreOpen(page)).toBe(false)
     // "You are here" survives the destination moving behind a disclosure.
     await expect(page.locator(MORE_SUMMARY)).toHaveClass(/(^|\s)bg-green-50(\s|$)/)
@@ -366,7 +369,7 @@ test.describe('the disclosure is a disclosure, at desktop width', () => {
     await expect(
       page
         .getByRole('navigation', { name: 'Primary' })
-        .getByRole('link', { name: 'Settings', exact: true })
+        .getByRole('link', { name: 'Balances', exact: true })
     ).toHaveAttribute('aria-current', 'page')
   })
 
@@ -535,7 +538,6 @@ test.describe('with JavaScript disabled', () => {
       for (const [label, path] of [
         ['Balances', '/balance'],
         ['Retirement', '/retirement'],
-        ['Settings', '/settings'],
       ] as const) {
         await page.goto('/')
         const nav = page.getByRole('navigation', { name: 'Primary' })

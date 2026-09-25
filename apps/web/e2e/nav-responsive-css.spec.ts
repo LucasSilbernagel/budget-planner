@@ -24,7 +24,8 @@ import { MORE_SUMMARY } from './helpers/nav-more'
  *     59.2 the row was two lines from 640px to ~857px and `flex-wrap` was what
  *     held it (removing the class was measured at 138px of document overflow at
  *     640px). Since 59.2 the row is five items and fits on one line at 640px,
- *     with only 2.81px to spare under CI fonts (see the record below).
+ *     with only a few px to spare under CI fonts (the figure lives in the
+ *     record below, and nowhere else).
  *     `responsive-320.spec.ts` and `global-nav.spec.ts` sweep 320px only, so
  *     nothing else would see this.
  *  3. **The ink**, which no geometry assertion can see (AC-10). A reference
@@ -235,6 +236,7 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   //   after  59.2 (DejaVu)     441.58px                640px   (five items: one row everywhere)
   //   after  59.2 (Noto)       425.13px                640px
   //   after  69.1 (DejaVu)     441.58px                640px   (UNCHANGED total; see below)
+  //   after  69.2 (DejaVu)     441.58px                640px   (nav untouched; the CLUSTER moved)
   //
   // Story 59.2 (FR90) took the More destinations OUT of the desktop row. Until
   // then `sm:contents` dissolved the sheet into it, so every free destination
@@ -245,13 +247,40 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   // have summed the hidden panel anchors and left out the `<summary>`. Run it;
   // do not hand-roll a new one.
   //
-  // SIGNED OUT (the "Sign in" + "Upgrade" cluster, which cannot shrink):
+  // SIGNED OUT (the "Sign in" + "Upgrade" cluster, which cannot shrink), as of
+  // story 69.1:
   //   viewport   header inner   account cluster   available   headroom (DejaVu)
   //    640px         640            195.61          444.39          2.81px
   //    700px         700            195.61          504.39         62.81px
   //    760px         760            195.61          564.39        122.81px
   //   >= 1152px     1152 (cap)      195.61          956.39        514.81px
   //   (Noto: cluster 189.80, headroom 25.07px at 640px.)
+  //
+  // AFTER STORY 69.2 (FR109), MEASURED 2026-09-25, DejaVu (fingerprint
+  // "Expenses" 66.72px), free AND paid runs identical. Settings left the nav
+  // and a signed-out visitor got a 28px gear link in the cluster instead
+  // (decision D1), which cost exactly +36px (28 + the row's 8px gap): 231.61px.
+  // That overflowed at 640px, so the cluster's own `sm:` spacing paid for it,
+  // one step at a time with a measurement after each (story 69.2 Dev Agent
+  // Record): links `px-3` -> `sm:px-2` (-16), the row's right padding
+  // `sm:pr-2` (-8), both gaps `sm:gap-1` (-8), links `sm:px-1.5` (-8):
+  //   viewport   header inner   account cluster   available   headroom (DejaVu)
+  //    640px         640            191.61          448.39          6.81px
+  //    700px         700            191.61          508.39         66.81px
+  //    760px         760            191.61          568.39        126.81px
+  //   >= 1152px     1152 (cap)      191.61          960.39        518.81px
+  // No wrapping width from 640 to 1400px. The row's LEFT padding (`pl-4`) was
+  // deliberately not touched: it is the buffer against the cluster spilling
+  // left over More at enlarged root fonts (a finding deferred to story 69.3).
+  //
+  // SIGNED IN after 69.2 (email gone from the trigger, decision D2; mocked
+  // session, 1280px): trigger 64px; free cluster 92px; Premium cluster 168.52px
+  // (the pill). ⚠️ Measured by a THROWAWAY probe (story 69.2 Dev Agent Record),
+  // not a committed spec, with the DejaVu fingerprint checked in that probe
+  // ("Expenses" 66.72px) during the code review's re-take; the first take had
+  // not checked it. The row's `sm:gap-1` also narrowed the signed-in cluster's
+  // trigger-to-pill gap by 4px, which the signed-out bookkeeping above omits. Nothing in the signed-in cluster truncates any more. (The More
+  // panel's size is recorded in `nav-tier-aware.paid.spec.ts`, not here.)
   //
   // Story 69.1 (FR108) added the More chevron and paid for it in the same row
   // (decision D1). Measured 2026-09-25, DejaVu (fingerprint "Expenses" 66.72px),
@@ -263,8 +292,11 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   // design, not an absence of change: the item sum and the padding moved by
   // equal and opposite amounts.
   //
-  // SIGNED IN (story 59.2 code review; `/api/auth/me` mocked, long email,
-  // Premium pill, DejaVu). Before the fix the row WRAPPED: 3 rows at 640px and
+  // SIGNED IN, HISTORY (story 59.2 code review; `/api/auth/me` mocked, long
+  // email, Premium pill, DejaVu). ⚠️ Superseded by story 69.2, which took the
+  // email out of the trigger; the email widths below describe a trigger that no
+  // longer exists and are kept only as the record of why `sm:shrink-0` and
+  // `sm:min-w-0` were added. Before the fix the row WRAPPED: 3 rows at 640px and
   // 2 up to ~849px. Neither header flex item was barred from shrinking, the
   // nav had the larger basis, and it wrapped while the email's `truncate` never
   // engaged. Now the nav is `sm:shrink-0` and the account strip `sm:min-w-0`, so
@@ -274,7 +306,8 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   // Guarded by the signed-in sweeps in `nav-more-disclosure{,.paid}.spec.ts`,
   // every 5px from 640 to 1400px.
   //
-  // ⚠️⚠️ SIGNED OUT, THE 640px FIT IS TIGHT: 2.81px under CI fonts. And since
+  // ⚠️⚠️ SIGNED OUT, THE 640px FIT IS TIGHT: a few px under CI fonts (the
+  // figure is in the tables above and nowhere else). And since
   // the nav is `sm:shrink-0`, an overshoot no longer WRAPS the row. A row label
   // that grows by ~3px makes the DOCUMENT overflow sideways at 640px, because
   // the "Sign in"/"Upgrade" links cannot truncate the way an email can. So
@@ -491,7 +524,7 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
 
     const sheetRows = await read(`${NAV} > ul > li > details > ul > li > a`)
-    expect(sheetRows.map((r) => r.label)).toEqual(['Balances', 'Retirement', 'Settings'])
+    expect(sheetRows.map((r) => r.label)).toEqual(['Balances', 'Retirement'])
 
     // The More trigger is not an anchor (a <button> until story 59.2, a
     // <summary> since), so every anchor sweep in this file misses it —
@@ -716,10 +749,17 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
     // which FITS is reachable, under a describe titled "when it CANNOT fit".
     // Nothing went red because `scrollable` was collected and never asserted.
     // Measured after the retune: 228/199, 228/219, 190/179 — all three overflow.
+    //
+    // ⚠️ RE-TUNED AGAIN by story 69.2, for the same reason: Settings left the
+    // sheet, so the free panel is TWO rows and all three combos above stopped
+    // overflowing (each failed its own "does not overflow" guard, which 43.3's
+    // review added — so this time the vacuity was loud, not silent). Heights
+    // were cut until the cap sits below the two-row panel again; the measured
+    // panel/cap pairs are recorded in story 69.2's Dev Agent Record.
     for (const [w, h, root] of [
-      [568, 320, 24],
-      [320, 340, 24],
-      [360, 280, 20],
+      [568, 240, 24],
+      [320, 260, 24],
+      [360, 200, 20],
     ] as const) {
       test(`every row is reachable at ${w}x${h} with a ${root}px root font`, async ({ page }) => {
         await page.setViewportSize({ width: w, height: h })
@@ -854,7 +894,7 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
       NAV
     )
 
-    expect(rows.map((r) => r.label)).toEqual(['Balances', 'Retirement', 'Settings'])
+    expect(rows.map((r) => r.label)).toEqual(['Balances', 'Retirement'])
     for (const { label, height, overflows, lineCount } of rows) {
       expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
       expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)

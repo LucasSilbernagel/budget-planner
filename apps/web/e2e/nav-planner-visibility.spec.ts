@@ -164,7 +164,7 @@ for (const { label, width, height } of [
 test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
   test.use({ viewport: { width: 320, height: 720 } })
 
-  test('holds exactly its other two rows, each still a 44px target', async ({ page }) => {
+  test('holds exactly its other row, still a 44px target', async ({ page }) => {
     await page.addInitScript(
       (key) =>
         localStorage.setItem(
@@ -180,8 +180,9 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
     await page.locator(MORE_SUMMARY).click()
 
     const rows = page.locator(`${MORE_PANEL} > li > a`)
-    await expect(rows).toHaveCount(2)
-    expect(await rows.allTextContents()).toEqual(['Balances', 'Settings'])
+    // One row: Settings left the sheet in story 69.2, Retirement is hidden here.
+    await expect(rows).toHaveCount(1)
+    expect(await rows.allTextContents()).toEqual(['Balances'])
 
     for (const row of await rows.all()) {
       const box = await row.boundingBox()
@@ -245,7 +246,7 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
       // ⚠️ TWO count assertions live in this file, in two different tests. Story
       // 43.3 had to fix BOTH (4 -> 3 -> 2 rows); fixing one and shipping is the
       // "applied to one of two fixtures" defect 43.2's review recorded.
-      await expect(rows).toHaveCount(2)
+      await expect(rows).toHaveCount(1)
       for (const row of await rows.all()) {
         const box = await row.boundingBox()
         expect(

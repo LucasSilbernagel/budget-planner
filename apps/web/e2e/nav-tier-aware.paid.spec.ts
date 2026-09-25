@@ -69,12 +69,14 @@ async function anchorCount(page: Page): Promise<number> {
 test.describe('the paid nav really is the paid nav', () => {
   // The precondition every other test in this file rests on. If the seam stops
   // working, this fails FIRST and unambiguously, instead of leaving the
-  // geometry assertions quietly measuring a 7-anchor row.
-  test('the seam delivers an entitled session — 11 anchors, 7 sheet rows', async ({ page }) => {
+  // geometry assertions quietly measuring the free nav (6 anchors since 69.2).
+  // Counts since story 69.2, which took Settings out of the nav: 10 anchors / 6
+  // sheet rows paid, 6 / 2 free (11 / 7 and 7 / 3 before).
+  test('the seam delivers an entitled session — 10 anchors, 6 sheet rows', async ({ page }) => {
     await gotoNav(page)
 
-    expect(await anchorCount(page)).toBe(11)
-    await expect(page.locator(`${SHEET} > li`)).toHaveCount(7)
+    expect(await anchorCount(page)).toBe(10)
+    await expect(page.locator(`${SHEET} > li`)).toHaveCount(6)
 
     for (const path of ['/forecasting', '/profiles', '/report', '/categories']) {
       await expect(
@@ -86,13 +88,11 @@ test.describe('the paid nav really is the paid nav', () => {
 
   // ⚠️ THE NEGATIVE CONTROL. Without it, a seam that silently stopped working
   // would leave every "paid" assertion above passing against the free nav.
-  test('the FREE server on :5173 is unaffected — still 7 anchors, 3 sheet rows', async ({
-    page,
-  }) => {
+  test('the FREE server on :5173 is unaffected — 6 anchors, 2 sheet rows', async ({ page }) => {
     await gotoNav(page, `${FREE_ORIGIN}/`)
 
-    expect(await anchorCount(page)).toBe(7)
-    await expect(page.locator(`${SHEET} > li`)).toHaveCount(3)
+    expect(await anchorCount(page)).toBe(6)
+    await expect(page.locator(`${SHEET} > li`)).toHaveCount(2)
     for (const path of ['/forecasting', '/profiles', '/report', '/categories']) {
       await expect(
         page.locator(`${NAV} li[data-nav-path="${path}"]`),
@@ -123,9 +123,10 @@ test.describe('the paid nav really is the paid nav', () => {
  * clusters; the signed-in one was the review's finding D1, fixed with
  * `sm:shrink-0` on the nav. This docblock keeps only what is PAID-specific.
  *
- * The open panel (1280px, DejaVu): 160px wide (`sm:min-w-[10rem]`), 7 × 36px
- * rows = 262px tall, top at y=48, no horizontal overflow. (Free: 3 rows,
- * 118px.) Paid is the tallest panel, so it carries the occlusion sweep in
+ * The open panel (1280px, DejaVu): 160px wide (`sm:min-w-[10rem]`), 6 × 36px
+ * rows = 226px tall, top at y=48, no horizontal overflow. (Free: 2 rows,
+ * 82px.) Both re-measured by story 69.2, which took the Settings row out; they
+ * were 262px / 118px. Paid is the tallest panel, so it carries the occlusion sweep in
  * `nav-more-disclosure.paid.spec.ts`.
  *
  * ⚠️ 58.1's "973" and 59.1's "966" "available" figures are SUPERSEDED, not
@@ -174,9 +175,9 @@ test.describe('the paid desktop row (story 59.2)', () => {
     // eslint-disable-next-line no-console -- the measurement IS the deliverable
     console.log('[59.2] 1280px paid row:', JSON.stringify(m))
 
-    // The precondition this is the paid nav, not the free one: 11 anchors in the
-    // DOM (7 of them in the closed panel).
-    expect(await anchorCount(page), 'not measuring the paid nav').toBe(11)
+    // The precondition this is the paid nav, not the free one: 10 anchors in the
+    // DOM (6 of them in the closed panel; 11 and 7 until story 69.2).
+    expect(await anchorCount(page), 'not measuring the paid nav').toBe(10)
     expect(m.items, 'the paid row is not five items').toBe(5)
     // A PIN at 1, tightened from the pre-59.2 ceiling of 2 — the direction that
     // ceiling's own comment asked for ("a pass at 1 row is an improvement").
@@ -224,10 +225,11 @@ test.describe('the paid desktop row (story 59.2)', () => {
 })
 
 /**
- * AC-5 — the "More" sheet at 7 rows.
+ * AC-5 — the "More" sheet at 7 rows (6 since story 69.2 took Settings out; the
+ * table below is the 7-row record, and the 6-row one is recorded beneath it).
  *
  * The sheet is `max-sm:absolute`, anchored to the TOP edge of the bar, with a
- * `max-h-[calc(100svh-5rem)]` cap and `overflow-y-auto`. At 3 rows none of that
+ * `max-h-[calc(100svh-5rem)]` cap and `overflow-y-auto`. At 2-3 rows none of that
  * was load-bearing; at 7 it can be. The failure mode the cap prevents is the
  * panel growing off the TOP of the screen — out of flow, so page scrolling cannot
  * reach it, and `toBeVisible()` passes on it anyway.
@@ -242,15 +244,21 @@ test.describe('the paid desktop row (story 59.2)', () => {
  *   390x640    7       345px      239        580px         48px       0        no
  *   412x640    7       345px      239        580px         48px       0        no
  *
- * So at a normal phone height the 7-row sheet still fits inside the cap with room
+ * After story 69.2 (6 rows), MEASURED 2026-09-25 at all four widths:
+ *
+ *   320-412x640  6       297px      287        580px         48px       0        no
+ *
+ * i.e. exactly one 48px row shorter, with the last row where it was.
+ *
+ * So at a normal phone height the 7-row (now 6-row) sheet still fits inside the cap with room
  * to spare — the cap and the scroll path only engage on SHORT viewports, which is
  * why they get their own test below rather than riding along on these.
  *
  * ⚠️ Row height is 48px against a `min-h-[44px]` target, so the 44px floor holds
- * at 7 rows with 4px of slack — not a coincidence worth relying on if the row
+ * at 6 (formerly 7) rows with 4px of slack — not a coincidence worth relying on if the row
  * padding ever changes.
  */
-test.describe('the More sheet at 7 rows (AC-5)', () => {
+test.describe('the More sheet at 6 rows (AC-5)', () => {
   for (const width of [320, 360, 390, 412]) {
     test(`every row is on-screen and reachable at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 640 })
@@ -289,14 +297,14 @@ test.describe('the More sheet at 7 rows (AC-5)', () => {
       // eslint-disable-next-line no-console -- the measurement IS the deliverable
       console.log(`[58.1 AC-5] ${width}px sheet:`, JSON.stringify(r))
 
-      expect(r.rows, 'not measuring the paid sheet').toBe(7)
+      expect(r.rows, 'not measuring the paid sheet').toBe(6)
       // The cap's whole job: the panel's top edge stays on screen.
       expect(r.sheetTop, 'the sheet has grown off the top of the screen').toBeGreaterThanOrEqual(0)
       expect(r.lastRowBottom, 'the last sheet row paints below the viewport').toBeLessThanOrEqual(
         r.viewportHeight
       )
       expect(r.overflowX, 'the sheet absorbed horizontal overflow').toBeLessThanOrEqual(0)
-      // Every row keeps a real 44px touch target at 7 rows, not just at 3.
+      // Every row keeps a real 44px touch target at 6 rows, not just at 2.
       expect(r.minRowHeight, 'a sheet row fell below the 44px target').toBeGreaterThanOrEqual(44)
     })
   }
@@ -311,13 +319,16 @@ test.describe('the More sheet at 7 rows (AC-5)', () => {
    * left it green. A test for a scroll container has to pick a viewport where the
    * content genuinely overflows, and then assert that it scrolled.
    *
-   * 320x400 puts the cap at 320px against ~345px of rows. The landscape phone
+   * 320x400 put the cap at 320px against ~345px of rows. ⚠️ Story 69.2 took a
+   * row out (6 rows, ~297px), which FITS under a 320px cap, so this test's own
+   * "does not overflow" guard went red there. 320x360 puts the cap at 280px
+   * against the 6 rows. The landscape phone
    * case (568x320, cap 240px) is tighter still and is the shape the component's
    * own docblock records as having stranded rows off the TOP of the screen before
    * the cap existed.
    */
   for (const [width, height] of [
-    [320, 400],
+    [320, 360],
     [568, 320],
   ]) {
     test(`scrolls rather than stranding rows at ${width}x${height}`, async ({ page }) => {
@@ -371,7 +382,7 @@ test.describe('the More sheet at 7 rows (AC-5)', () => {
    * `toBeVisible()` and geometry assertions are both blind to occlusion, so the
    * probe has to be `elementFromPoint` per row.
    */
-  test('every row of the 7-row sheet stays tappable under the InstallPrompt banner', async ({
+  test('every row of the 6-row sheet stays tappable under the InstallPrompt banner', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 640 })
@@ -423,7 +434,7 @@ test.describe('the More sheet at 7 rows (AC-5)', () => {
     expect(probe, 'nav/sheet/banner not all present').not.toBeNull()
     const p = probe as NonNullable<typeof probe>
     expect(p.overlaps, 'sheet and banner do not overlap — this test proves nothing here').toBe(true)
-    expect(p.rows).toHaveLength(7)
+    expect(p.rows).toHaveLength(6)
     for (const row of p.rows) {
       expect(row.hitsSelf, `"${row.label}" is occluded — a tap there lands elsewhere`).toBe(true)
     }
@@ -432,9 +443,10 @@ test.describe('the More sheet at 7 rows (AC-5)', () => {
 
 /**
  * Tier and the Retirement preference are independent filters on one list, so the
- * PRODUCT of the two needs its own measurement — 10 anchors, 6 sheet rows.
+ * PRODUCT of the two needs its own measurement — 9 anchors, 5 sheet rows (10 and
+ * 6 until story 69.2 took Settings out).
  */
-test('paid session with the Retirement planner hidden: 10 anchors, 6 rows', async ({ page }) => {
+test('paid session with the Retirement planner hidden: 9 anchors, 5 rows', async ({ page }) => {
   await page.addInitScript(
     ({ key }) => {
       localStorage.setItem(
@@ -447,8 +459,8 @@ test('paid session with the Retirement planner hidden: 10 anchors, 6 rows', asyn
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoNav(page)
 
-  expect(await anchorCount(page)).toBe(10)
-  await expect(page.locator(`${SHEET} > li`)).toHaveCount(6)
+  expect(await anchorCount(page)).toBe(9)
+  await expect(page.locator(`${SHEET} > li`)).toHaveCount(5)
   await expect(page.locator(`${NAV} li[data-nav-path="/retirement"]`)).toHaveCount(0)
   // The premium four are unaffected by a preference that is not about them.
   await expect(page.locator(`${NAV} li[data-nav-path="/report"]`)).toHaveCount(1)

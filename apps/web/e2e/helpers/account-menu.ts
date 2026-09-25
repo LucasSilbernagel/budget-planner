@@ -43,14 +43,18 @@ export function accountTrigger(page: Page): Locator {
  * won the race. That is how CI run 35782927398 failed, and had the two emails
  * been similar enough it would have passed while measuring the wrong one.
  *
- * `toContainText` reads `textContent`, so this holds while the trigger's email
- * span is `display:none` (the 640-660px premium hide), and scoping to the
- * trigger skips the `sr-only` duplicate in the `role="status"` region.
+ * ⚠️ RE-POINTED by story 69.2. The trigger no longer shows the email (it is
+ * `[avatar initial][chevron]`), so the identity is read from the ONE place the
+ * cluster still carries it: the `sr-only` copy in the labelled `role="status"`
+ * region, which is what a screen reader hears. `toContainText` reads
+ * `textContent`, so `sr-only` is no obstacle. Do NOT gate on the trigger being
+ * visible instead: on `:5174` it is visible in the first frame with the SEED's
+ * identity, which is the race this helper exists to close.
  */
 export async function expectSignedInAs(page: Page, email: string): Promise<void> {
   await expect(
-    accountTrigger(page),
-    `the mocked session never reached the trigger: still not showing ${email}`
+    page.getByRole('status', { name: /account status/i }),
+    `the mocked session never reached the account cluster: still not announcing ${email}`
   ).toContainText(email, { timeout: SESSION_SETTLE_MS })
 }
 

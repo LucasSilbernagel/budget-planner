@@ -63,12 +63,11 @@ import { AuthIndicator } from '../auth-indicator'
 /**
  * The labelled live region.
  *
- * ⚠️ Since story 59.3 a signed-in user's email is in the DOM up to THREE times:
- * the `sr-only` copy in this region (what a screen reader hears), the VISIBLE
- * copy in the account-menu trigger, and the panel's "Signed in as …" line while
- * open. An unscoped `getByText(email)` therefore throws "multiple elements".
- * Scope to the element whose claim the assertion makes: announced = this
- * region; visible and truncating = the trigger.
+ * Since story 69.2 a signed-in user's email is in the DOM exactly ONCE: the
+ * `sr-only` copy in this region (what a screen reader hears). Story 59.3 had
+ * added a visible copy in the account-menu trigger and a "Signed in as …" line
+ * in the panel; 69.2 (decision D2) removed both. Scope email lookups to this
+ * region anyway, so an assertion says which claim it makes.
  */
 const accountStatus = () => screen.getByRole('status', { name: /account status/i })
 /** The same region, awaited: `renderWithRouter` mounts after the router loads. */
@@ -176,8 +175,15 @@ function renderWithNavigableRouter() {
     path: '/login',
     component: () => <div>login</div>,
   })
+  // Story 69.2: the account menu's Settings link and the signed-out gear both
+  // navigate here, so the tree needs a real `/settings` to navigate INTO.
+  const settingsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/settings',
+    component: () => <div>settings</div>,
+  })
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, otherRoute, loginRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, otherRoute, loginRoute, settingsRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   })
   render(<RouterProvider router={router} />)
@@ -302,16 +308,16 @@ describe('AuthIndicator', () => {
   })
 
   // Story 59.2 (code review). On the desktop row this strip is a flex item beside
-  // the nav. Without `sm:min-w-0` its minimum is its content width, so a long
-  // email can never truncate and the nav wraps to 2-3 rows instead (measured).
-  // Class TOKENS, because jsdom computes no layout. The rendered row is pinned
-  // with a mocked signed-in session in `e2e/nav-more-disclosure.paid.spec.ts`.
+  // the nav. Without `sm:min-w-0` its minimum is its content width, so the nav
+  // wrapped to 2-3 rows beside a long email instead (measured). Class TOKENS,
+  // because jsdom computes no layout. The rendered row is pinned in the
+  // signed-in e2e sweeps (`nav-more-disclosure{,.paid}.spec.ts`).
   //
-  // Story 59.3: the row chrome, `data-auth-indicator` and `sm:min-w-0` moved
-  // from the status region to a new OUTER row, because the account-menu
-  // trigger must sit OUTSIDE the live region. The email that truncates is now
-  // the VISIBLE one, inside the trigger; the region's copy is `sr-only`.
-  it('lets the strip yield width on the desktop row so a long email truncates', async () => {
+  // Story 59.3 moved the row chrome to a new OUTER row. Story 69.2 took the
+  // email out of the chrome altogether (decision D2), so there is nothing left
+  // to truncate: what this still pins is the row structure and that the
+  // tokens stay, and that the email appears nowhere VISIBLE.
+  it('keeps the outer row yieldable on desktop, with no visible email left in it', async () => {
     stubFetch({
       user: {
         userId: 'user-1',
@@ -329,11 +335,10 @@ describe('AuthIndicator', () => {
       'sm:min-w-0'
     )
     expect(rowTokens, '`min-w-0` must stay desktop-only').not.toContain('min-w-0')
-    const trigger = screen.getByRole('button', { name: 'Account menu' })
-    const email = within(trigger).getByText('a.long.address@example.test')
-    expect([...email.classList]).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
-    // The trigger itself must be allowed to shrink, or the email never can.
-    expect([...trigger.classList]).toContain('min-w-0')
+    // The ONE copy is the announced one.
+    const copies = screen.getAllByText('a.long.address@example.test')
+    expect(copies).toHaveLength(1)
+    expect([...copies[0].classList]).toContain('sr-only')
   })
 })
 
@@ -707,13 +712,29 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     expect(accountStatus().querySelector('button, a, [tabindex]')).toBeNull()
   })
 
-  it('shows [avatar][email][chevron] in the trigger and keeps the Premium pill outside it', async () => {
+  // Story 69.2 (decision D2): the trigger is `[avatar][chevron]`. The email is
+  // announced by the status region and shown on /settings, and nowhere in the
+  // trigger — for EVERY tier. (Until 69.2 a Premium user's email hid below
+  // 660px and a free user's truncated; that per-tier rule went with the email.)
+  it.each(['active', 'lifetime', 'free', 'past_due', 'canceled'])(
+    'a %s user: the trigger is [avatar][chevron], with no email in it',
+    async (subscriptionStatus) => {
+      await renderSignedIn({ ...USER, subscriptionStatus })
+      const button = trigger()
+      expect(button).toHaveTextContent(/^U$/)
+      expect(button.textContent).not.toContain('@')
+      expect(button.querySelectorAll('svg[aria-hidden="true"]')).toHaveLength(1)
+      // The name stays exactly "Account menu". D4: the email-based WCAG 2.5.3
+      // failure is gone; whether the visible one-letter initial is a "label"
+      // is arguable and recorded as such (69.2 code review), not settled here.
+      expect(button).toHaveAccessibleName('Account menu')
+    }
+  )
+
+  it('keeps the Premium pill outside the trigger and the email announced', async () => {
     await renderSignedIn()
 
     const button = trigger()
-    expect(within(button).getByText('U')).toBeInTheDocument()
-    expect(within(button).getByText('user@example.com')).toBeInTheDocument()
-    expect(button.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
 
     // Story 11-3's always-visible tier signal (WCAG 1.4.1): never behind a click.
     const pill = within(accountStatus()).getByText(/^premium$/i)
@@ -737,7 +758,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     expect(screen.queryByRole('button', { name: 'Account menu' })).not.toBeInTheDocument()
   })
 
-  it('opens to exactly "Signed in as {email}", a separator and Sign out', async () => {
+  it('opens to exactly Settings, a separator and Sign out', async () => {
     const { container } = await renderSignedIn()
     const user = userEvent.setup()
 
@@ -749,22 +770,80 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     const open = panel()
     expect(open, 'aria-controls does not resolve to the panel').not.toBeNull()
     const el = open as HTMLElement
-    expect(el).toHaveTextContent(/^Signed in as user@example\.com\s*Sign out$/)
-    expect(el.querySelectorAll('hr')).toHaveLength(1)
-    // One action, no destinations (FR90: Profiles/Report/Categories/Settings
-    // stay in the nav).
+    // ANCHORED, exactly as the 59.3 version was (story 69.2, epic AC-3): an
+    // extra row, or the old "Signed in as" line surviving, turns this red. A
+    // substring check would trade that guard for a green run.
+    expect(el).toHaveTextContent(/^Settings\s*Sign out$/)
+    // Structure, in DOM order: the link, the separator, the button.
+    expect([...el.children].map((c) => c.tagName)).toEqual(['A', 'HR', 'BUTTON'])
+    const settings = within(el).getByRole('link', { name: 'Settings', exact: true })
+    expect(settings).toHaveAttribute('href', '/settings')
+    expect(within(el).getAllByRole('link')).toHaveLength(1)
     expect(within(el).getAllByRole('button')).toHaveLength(1)
     expect(within(el).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
-    expect(within(el).queryAllByRole('link')).toHaveLength(0)
+    // No email in the panel either (decision D2): only on /settings.
+    expect(el.textContent).not.toContain('@')
     // The panel is not a second live region (e2e/clear-local-data.spec.ts:65).
     expect(accountStatus().contains(el)).toBe(false)
     expect(container.querySelectorAll('[role="status"], [aria-live]')).toHaveLength(1)
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     // Disclosure convention: opening does not move focus into the panel.
     expect(trigger()).toHaveFocus()
-    // Tab reaches the panel next, in DOM order.
+    // Tab reaches the panel next, in DOM order: Settings, then Sign out.
+    await user.tab()
+    expect(settings).toHaveFocus()
     await user.tab()
     expect(within(el).getByRole('button', { name: 'Sign out' })).toHaveFocus()
+  })
+
+  it('marks the Settings row current on /settings, and only there', async () => {
+    stubFetch({ user: USER })
+    renderWithRouter(<AuthIndicator />, { path: '/settings' })
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+    await user.click(trigger())
+    expect(
+      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
+    ).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('marks the Settings row current on /Settings too (case-insensitive)', async () => {
+    stubFetch({ user: USER })
+    renderWithRouter(<AuthIndicator />, { path: '/Settings' })
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+    await user.click(trigger())
+    expect(
+      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
+    ).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('does not mark the Settings row current elsewhere', async () => {
+    await renderSignedIn()
+    const user = userEvent.setup()
+    await user.click(trigger())
+    expect(
+      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
+    ).not.toHaveAttribute('aria-current')
+  })
+
+  // ⚠️ The case the pathname-change close cannot cover (story 69.2, Read-first
+  // #4): on /settings, clicking Settings changes NO pathname, and the press
+  // starts and ends inside the menu, so the outside-press guard declines too.
+  // Only the link's own `onClick` closes the panel. Mutation-measured: without
+  // it this test goes red and no other one does.
+  it('closes when Settings is chosen on /settings itself (same route), focus back on the trigger', async () => {
+    stubFetch({ user: USER })
+    renderWithRouter(<AuthIndicator />, { path: '/settings' })
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+    await user.click(trigger())
+    await user.click(
+      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
+    )
+    expect(panel(), 'the panel stayed open after a same-route click on Settings').toBeNull()
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger()).toHaveFocus()
   })
 
   it('toggles closed on a second click', async () => {
@@ -815,9 +894,10 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     const user = userEvent.setup()
     await user.click(trigger())
 
-    // Inside: the "Signed in as" line is not interactive, and pressing it must
-    // not dismiss the panel it belongs to.
-    await user.click(within(panel() as HTMLElement).getByText(/signed in as/i))
+    // Inside: the separator is not interactive, and pressing it must not
+    // dismiss the panel it belongs to. (It was the "Signed in as" line until
+    // story 69.2 removed it.)
+    await user.click((panel() as HTMLElement).querySelector('hr') as HTMLElement)
     expect(panel()).not.toBeNull()
 
     // The Premium pill is in the cluster but NOT in the menu: that is outside.
@@ -830,6 +910,20 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     expect(panel()).toBeNull()
     // Light dismiss must not yank focus off what the user pressed.
     expect(elsewhere).toHaveFocus()
+  })
+
+  it('closes when Settings is chosen from another route, which navigates to /settings', async () => {
+    stubFetch({ user: USER })
+    const { router } = renderWithNavigableRouter()
+    await within(await findAccountStatus()).findByText(USER.email)
+    const user = userEvent.setup()
+    await user.click(trigger())
+    await user.click(
+      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
+    )
+    await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
+    expect(panel()).toBeNull()
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('closes on navigation, and does not come back open after a sign-out and back in', async () => {
@@ -959,27 +1053,93 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
   })
 })
 
-// Decision D2 (Lucas, 2026-09-22): the trigger's email is hidden where it
-// measures under 24px, which for a Premium user is below 660px. The pill is
-// what takes the room, so a free user keeps the email at every desktop width.
-// Class TOKENS here; the measured widths live in ONE place,
-// `e2e/account-menu.paid.spec.ts` — deliberately not restated.
-describe('AuthIndicator — account menu email at narrow desktop widths (story 59.3, D2)', () => {
-  it.each([
-    ['active', true],
-    ['lifetime', true],
-    ['free', false],
-    ['past_due', false],
-    ['canceled', false],
-  ])('a %s user: email hidden below 660px = %s', async (subscriptionStatus, hidden) => {
-    stubFetch({ user: { userId: 'u', email: 'user@example.com', subscriptionStatus } })
+/**
+ * The signed-out route to Settings (story 69.2, FR109, decision D1).
+ *
+ * Settings left the nav. A signed-in user reaches it from the account menu; a
+ * signed-OUT visitor has no menu, so the cluster carries an icon-only gear link
+ * beside "Sign in". It is navigation, so it sits OUTSIDE the live region (a
+ * sibling, like the account menu), and it follows UX-DR28 on `/settings`
+ * (marked current, not dropped). It hides on `/login` only (decision D3), so the
+ * sign-in page keeps the empty strip story 41.3 gave it.
+ *
+ * Class TOKENS for size: jsdom has no layout. The rendered box, the width it
+ * costs at 640px and its reachability at 320/1280px are e2e
+ * (`e2e/settings-route.spec.ts`, `e2e/nav-responsive-css.spec.ts`).
+ */
+describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
+  const gear = () => screen.queryByRole('link', { name: 'Settings' })
+
+  it.each(['/', '/income', '/pricing'])(
+    'renders a gear link to /settings on %s, outside the live region',
+    async (path) => {
+      stubFetch({ user: null })
+      const { container } = renderWithRouter(<AuthIndicator />, { path })
+      await screen.findByRole('link', { name: /sign in/i })
+      const link = gear()
+      expect(link, `no Settings gear on ${path}`).not.toBeNull()
+      expect(link).toHaveAttribute('href', '/settings')
+      expect(link).toHaveAccessibleName('Settings')
+      // Icon-only: the name is the label, the glyph is decorative.
+      expect(link?.textContent).toBe('')
+      expect(link?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+      // Navigation stays out of the polite live region, in the row beside it.
+      expect(accountStatus().contains(link)).toBe(false)
+      expect(container.querySelector('[data-auth-indicator]')?.contains(link)).toBe(true)
+      // The 28x28px box (the project's target floor), as tokens.
+      expect([...(link as HTMLElement).classList]).toEqual(
+        expect.arrayContaining(['h-7', 'w-7', 'shrink-0'])
+      )
+      expect(link).not.toHaveAttribute('aria-current')
+    }
+  )
+
+  it('marks the gear current on /settings rather than dropping it (UX-DR28)', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />, { path: '/settings' })
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(gear()).toHaveAttribute('aria-current', 'page')
+  })
+
+  // Decision D3. Anti-vacuity: the "Sign in" link resolving on /pricing above
+  // proves the unauthenticated branch renders; here the whole strip is empty,
+  // so resolution is proven by the region having settled with no children.
+  it('renders no gear on /login, which keeps its empty strip (story 41.3, D3)', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />, { path: '/login' })
+    const indicator = await findAccountStatus()
+    await waitFor(() => expect(indicator.children).toHaveLength(0))
+    expect(gear()).toBeNull()
+    expect(document.querySelector('a[href="/settings"]')).toBeNull()
+  })
+
+  it('renders no gear for a signed-in user (the account menu is their route)', async () => {
+    stubFetch({ user: { userId: 'u', email: 'user@example.com', subscriptionStatus: 'free' } })
     renderWithRouter(<AuthIndicator />)
     await within(await findAccountStatus()).findByText('user@example.com')
-    const email = within(screen.getByRole('button', { name: 'Account menu' })).getByText(
-      'user@example.com'
-    )
-    expect(email.classList.contains('sm:max-[659.98px]:hidden')).toBe(hidden)
-    // The pill and the rule read ONE predicate: hidden exactly when the pill shows.
-    expect(within(accountStatus()).queryByText(/^premium$/i) !== null).toBe(hidden)
+    expect(gear()).toBeNull()
+    expect(document.querySelector('a[href="/settings"]')).toBeNull()
+  })
+
+  it('renders no gear while the session is loading', async () => {
+    stubFetchPending()
+    renderWithRouter(<AuthIndicator />)
+    // A real gate (69.2 code review): the region always renders, so finding it
+    // proves nothing. The loading PLACEHOLDER is the region's only child, an
+    // `aria-hidden` span, and it exists only in the loading state.
+    const region = await findAccountStatus()
+    expect(region.children).toHaveLength(1)
+    expect(region.children[0]).toHaveAttribute('aria-hidden', 'true')
+    expect(gear()).toBeNull()
+  })
+
+  // 69.2 code review (Edge layer, MEASURED): `/Settings` serves the settings
+  // page, but TanStack's active match is case-sensitive, so the gear was not
+  // marked there. It is marked from a lowercased read now, like the /login hide.
+  it.each(['/Settings', '/SETTINGS'])('marks the gear current on %s too', async (path) => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />, { path })
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(gear()).toHaveAttribute('aria-current', 'page')
   })
 })

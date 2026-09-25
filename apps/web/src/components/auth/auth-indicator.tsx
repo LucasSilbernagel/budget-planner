@@ -3,13 +3,15 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
 import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
+import { SettingsIcon } from '../ui/SettingsIcon'
 
 /**
  * Persistent signed-in / Premium indicator (Story 13-2), and since story 59.3
  * the account menu a signed-in user signs out from.
  *
  * Mounted once in `routes/__root.tsx`, so every route carries an always-visible
- * signal of session state: a signed-in user sees their email and — only when
+ * signal of session state: a signed-in user sees an avatar initial (their email
+ * is announced, and shown on `/settings`, since story 69.2) and — only when
  * their subscription is active or lifetime — a "Premium" marker; a signed-out visitor sees
  * "Upgrade" (→ `/pricing`, for a first-time customer — account creation
  * happens only via completed checkout there) and "Sign in" (→ `/login`, for a
@@ -48,12 +50,17 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * navigation and does not reset to the loading state, so a signed-in user sees
  * no flicker while browsing.
  *
- * The account menu (story 59.3, FR99). A signed-in user's cluster is a
- * disclosure: the trigger shows `[avatar] [email] [chevron]`, and its panel
- * holds "Signed in as {email}", a separator and Sign out, and NOTHING else.
- * Profiles, Report, Categories and Settings stay in the nav by decision (FR90).
- * The structure, and why the trigger sits OUTSIDE the live region, is recorded
- * at the return statement below.
+ * The account menu (story 59.3, FR99; reshaped by story 69.2, FR109). A
+ * signed-in user's cluster is a disclosure: the trigger shows `[avatar]
+ * [chevron]`, and its panel holds a Settings link, a separator and Sign out, and
+ * NOTHING else. Profiles, Report and Categories stay in the nav (FR90);
+ * Settings moved OUT of the nav into this cluster by decision (Lucas,
+ * 2026-09-25), which amends both FR90 and FR99. A signed-OUT visitor has no
+ * menu, so they get Settings as an icon-only gear link beside "Sign in"
+ * instead: no session is left without a route to `/settings`, which holds the
+ * currency, theme and retirement toggles and Clear local data, all free-tier.
+ * The structure, and why the trigger and the gear sit OUTSIDE the live region,
+ * is recorded at the return statement below.
  *
  * First-paint resolution (story UX-1): the strip's initial state is seeded from
  * the session the root loader resolves server-side (see context/session-seed), so
@@ -84,6 +91,12 @@ const LOGIN_PATH = '/login' as const
  * itself the same way "Sign in" hides on `/login`.
  */
 const PRICING_PATH = '/pricing' as const
+
+/**
+ * Where Settings lives since story 69.2 moved it out of the nav: the account
+ * menu's link (signed in) and the gear link (signed out) both point here.
+ */
+const SETTINGS_PATH = '/settings' as const
 
 interface CurrentUser {
   userId: string
@@ -122,9 +135,8 @@ function seedToAuthState(seed: SessionSeed | null): AuthState {
 
 /**
  * Whether the Premium pill shows. Both an active subscription and a lifetime
- * purchase (25-2) are Premium. One predicate, read by the pill AND by the
- * account menu's narrow-width rule, so the two cannot disagree about who has
- * the pill.
+ * purchase (25-2) are Premium. (Until story 69.2 the account menu's narrow-width
+ * email rule read it too; that rule went with the email.)
  */
 function isPremium(subscriptionStatus: string): boolean {
   return subscriptionStatus === 'active' || subscriptionStatus === 'lifetime'
@@ -138,9 +150,10 @@ async function fetchCurrentUser(): Promise<CurrentUser | null> {
   const data = (await response.json()) as { user?: CurrentUser | null }
   const user = data.user
   // Defensive: a user object without a usable email is treated as signed-out.
-  // The render path derefs `user.email` (avatar initial + label), so an endpoint
-  // contract drift that dropped `email` would otherwise throw during render at
-  // the app root — above any error boundary — and white-screen every route.
+  // The render path derefs `user.email` (avatar initial + the status region's
+  // announced copy), so an endpoint contract drift that dropped `email` would
+  // otherwise throw during render at the app root — above any error boundary —
+  // and white-screen every route.
   if (!user || typeof user.email !== 'string' || user.email.length === 0) {
     return null
   }
@@ -182,6 +195,12 @@ export function AuthIndicator() {
   // cannot map `I` to a dotless `ı` and reopen the hole.
   const isOnLoginPage = pathname.toLowerCase() === LOGIN_PATH
   const isOnPricingPage = pathname.toLowerCase() === PRICING_PATH
+  // Story 69.2 (code review, MEASURED): TanStack's active match is
+  // case-SENSITIVE, but `/Settings` serves the settings page (the same hole the
+  // note above describes for `/Login`). Settings left the nav, so the gear and
+  // the account menu's link are the ONLY "you are here" cue that page has. They
+  // therefore mark themselves from this lowercased read, not from `activeProps`.
+  const isOnSettingsPage = pathname.toLowerCase() === SETTINGS_PATH
 
   // `pathname` now does two jobs. It is read in the render body (the route check
   // above), and it is ALSO an intentional re-run trigger for this effect: the
@@ -237,7 +256,7 @@ export function AuthIndicator() {
       //
       // Reserve height on every render (incl. SSR + the loading state) so
       // resolving the session never shifts layout. `justify-end` keeps the
-      // indicator right-aligned; `min-w-0` + `truncate` on the email guard 320px.
+      // indicator right-aligned.
       // The bar chrome (border + background) is `max-sm:`-scoped: below 640px
       // this is a standalone top strip and needs its own border/bg, but on the
       // desktop row it inherits the shared chrome from the `__root.tsx` wrapper
@@ -245,11 +264,12 @@ export function AuthIndicator() {
       //
       // `sm:min-w-0` (story 59.2, code review): on the desktop row this strip is
       // a flex item beside the nav, and a flex item's default `min-width: auto`
-      // is its CONTENT width. A long email therefore could not shrink, the
-      // `truncate` below never engaged, and the nav wrapped to 2-3 rows instead
-      // (measured: 3 rows at 640px). With it, the strip yields width and the
-      // email truncates. The nav is `sm:shrink-0` for the same reason. `sm:`
-      // only, so the 320px top strip is untouched.
+      // is its CONTENT width. It was added so a long email in the cluster could
+      // truncate instead of wrapping the nav (measured: 3 rows at 640px). Since
+      // story 69.2 the cluster shows no email at all, so nothing in it truncates
+      // any more; the token is kept because it is harmless and story 69.3
+      // re-lays this row. The nav is `sm:shrink-0`. `sm:` only, so the 320px top
+      // strip is untouched.
       //
       // `relative`: below 640px the account panel hangs from THIS box, full
       // width, like the nav sheet hangs from the bottom bar. At 640px and up
@@ -259,13 +279,13 @@ export function AuthIndicator() {
       // (`e2e/helpers/nav-more.ts`) reads it to check the cluster stays on
       // screen.
       data-auth-indicator
-      className="relative flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm sm:min-w-0 max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
+      className="relative flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm sm:min-w-0 sm:gap-1 sm:pr-2 max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {authState.status === 'authenticated' && (
         <AccountMenu
           email={authState.user.email}
-          isPremium={isPremium(authState.user.subscriptionStatus)}
           pathname={pathname}
+          isOnSettingsPage={isOnSettingsPage}
         />
       )}
       <div
@@ -276,8 +296,8 @@ export function AuthIndicator() {
         // `sm:min-w-0` and `data-auth-indicator` moved to the row above), the
         // authenticated branch's email is now `sr-only`, and the reserve gains
         // the `max-sm:` calc below.
-        // `shrink-0`: on a narrow desktop row the email in the trigger is what
-        // gives way, never the "Sign in" / "Upgrade" links or the Premium pill.
+        // `shrink-0`: the "Sign in" / "Upgrade" links and the Premium pill never
+        // give way.
         role="status"
         aria-label="Account status"
         //
@@ -287,7 +307,7 @@ export function AuthIndicator() {
         // which carries that border, a 32px region made the 320px strip 33px
         // in every state. 31px of region plus the row's 1px border restores
         // exactly 32. At 640px and up there is no border and it stays 32px.
-        className="flex min-h-[2rem] shrink-0 items-center justify-end gap-2 max-sm:min-h-[calc(2rem-1px)]"
+        className="flex min-h-[2rem] shrink-0 items-center justify-end gap-2 sm:gap-1 max-sm:min-h-[calc(2rem-1px)]"
       >
         {authState.status === 'loading' && (
           // Neutral placeholder: identical on server + first client render, holds
@@ -305,11 +325,18 @@ export function AuthIndicator() {
         ⚠️ This DIVERGES from UX-DR28 / story 21.1, which is the app's rule for a
         link to the current page everywhere else: `GlobalNav` and `Footer` keep
         the link and MARK it with `activeProps` + `aria-current="page"`. That rule
-        is for wayfinding, where "you are here" is a useful answer. This strip is
-        an account affordance (its status, plus the account menu's Sign out), not
-        navigation — an invitation to sign in, on the sign-in page, has no
-        destination worth marking. Recorded here so a
-        later story does not "restore consistency" by putting the link back.
+        is for wayfinding, where "you are here" is a useful answer. "Sign in" and
+        "Upgrade" are account affordances, not navigation — an invitation to
+        sign in, on the sign-in page, has no destination worth marking. Recorded
+        here so a later story does not "restore consistency" by putting the link
+        back.
+
+        ⚠️ Since story 69.2 this strip ALSO carries navigation: the Settings gear
+        (signed out) and the account menu's Settings link (signed in). Those two
+        follow UX-DR28, not this rule — they are marked with `aria-current` on
+        `/settings` rather than dropped, because Settings left the nav and they
+        are the only "you are here" cue that page has. One strip, two rules, on
+        purpose: the split is by what the link IS, not where it sits.
 
         ⚠️ `activeProps` cannot express this. It can restyle an active link but
         not decline to render one, and story 31.5 measured that misapplying it
@@ -347,7 +374,7 @@ export function AuthIndicator() {
             {!isOnPricingPage && !isOnLoginPage && (
               <Link
                 to={PRICING_PATH}
-                className="rounded-md px-3 py-1 font-medium text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700"
+                className="rounded-md px-3 py-1 font-medium sm:px-1.5 text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700"
               >
                 Upgrade
               </Link>
@@ -355,7 +382,7 @@ export function AuthIndicator() {
             {!isOnLoginPage && (
               <Link
                 to={LOGIN_PATH}
-                className="rounded-md px-3 py-1 font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                className="rounded-md px-3 py-1 font-medium sm:px-1.5 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
               >
                 Sign in
               </Link>
@@ -365,11 +392,14 @@ export function AuthIndicator() {
 
         {authState.status === 'authenticated' && (
           <>
-            {/* What a screen reader hears, unchanged by story 59.3: "Account
-              status, {email}, Premium". The VISIBLE email moved into the
-              account-menu trigger, which cannot live in this region, so the
-              region keeps an `sr-only` copy. The email ONLY, not "Signed in
-              as …": the announcement stays exactly what it was. */}
+            {/* What a screen reader hears, unchanged by stories 59.3 and 69.2:
+              "Account status, {email}, Premium". Story 59.3 moved the VISIBLE
+              email into the account-menu trigger; story 69.2 (decision D2,
+              Lucas 2026-09-25) removed it from the chrome altogether, so the
+              only VISIBLE copy is on `/settings` (`account-section.tsx`). This
+              `sr-only` copy stays: it is the announcement, and the e2e helper
+              `expectSignedInAs` reads it to tell a mocked identity from a
+              seeded one. The email ONLY, not "Signed in as …". */}
             <span className="sr-only">{authState.user.email}</span>
             {isPremium(authState.user.subscriptionStatus) && (
               // Text label, not color/icon alone (Story 11-3 / WCAG 1.4.1).
@@ -384,56 +414,84 @@ export function AuthIndicator() {
           </>
         )}
       </div>
+      {authState.status === 'unauthenticated' && !isOnLoginPage && (
+        // The signed-out route to Settings (story 69.2, decision D1, Lucas
+        // 2026-09-25). Settings left the nav, and a signed-out visitor has no
+        // account menu, so without this they could not reach the currency,
+        // theme and retirement toggles or Clear local data at all.
+        //
+        // - OUTSIDE the `role="status"` region, like the account menu: it is
+        //   navigation, and navigation has no business in a polite live region.
+        //   (Only "Sign in" is REQUIRED inside it — `nav-account-row.test.tsx`.)
+        // - Hidden on `/login` only (decision D3), with "Upgrade", so the
+        //   sign-in page keeps the deliberately empty strip story 41.3 gave it.
+        // - NOT hidden on `/settings`: marked current there instead (UX-DR28).
+        //   See the 41.3 note above for why one strip follows two rules. The
+        //   mark comes from `isOnSettingsPage`, not `activeProps`, so `/Settings`
+        //   is marked too; `activeProps={{}}` stops TanStack adding its default
+        //   `active` class (it still adds `aria-current` on an exact-case match,
+        //   which agrees with ours).
+        // - Icon-only, so the name is `aria-label`. The box is 28x28px, the
+        //   project's target floor; its width cost at 640px is what the `sm:`
+        //   padding cuts on this row and the links above pay for (measured in
+        //   `e2e/nav-responsive-css.spec.ts`, the one width record).
+        <Link
+          to={SETTINGS_PATH}
+          aria-label="Settings"
+          aria-current={isOnSettingsPage ? 'page' : undefined}
+          className={isOnSettingsPage ? `${GEAR_LINK_CLASS} ${GEAR_ACTIVE_CLASS}` : GEAR_LINK_CLASS}
+          activeProps={{}}
+        >
+          <SettingsIcon className="h-4 w-4" />
+        </Link>
+      )}
     </div>
   )
 }
 
 /**
- * The trigger: `[avatar] [email] [chevron]`.
+ * The signed-out Settings gear (story 69.2). `h-7 w-7` is a 28x28px box, the
+ * project's target floor, with the 16px glyph centred. `shrink-0` because, like
+ * "Sign in", it must never give way. Raw `gray-*` with `dark:` variants and an
+ * INSET ring, matching the account panel's rows: the gear is a tight 28px box
+ * beside other controls at `sm:gap-1`, and an outset ring would paint over its
+ * neighbour. (Not because of the viewport edge: `sm:pr-2` leaves room there.)
+ */
+const GEAR_LINK_CLASS =
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+
+/** The gear's `aria-current` treatment on `/settings`: `GlobalNav.tsx`'s `ACTIVE_CLASS` tone. */
+const GEAR_ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+
+/**
+ * The trigger: `[avatar] [chevron]`.
  *
- * `min-h-[1.75rem]` + `px-2` give the BUTTON a box of at least 28px tall and
- * 24 + 16 = 40px wide, the project's 28px target floor. The avatar is not
- * enlarged.
+ * `min-h-[1.75rem]` + `px-2` give the BUTTON a box of at least 28px tall: the
+ * project's 28px target floor. Its width is its content, 8 + 24 (avatar) + 8
+ * (gap) + 16 (chevron) + 8 = 64px; the avatar is not enlarged.
  *
  * ⚠️ 28px, not the 32px (`min-h-[2rem]`) the story first specified. Below
  * 640px the strip is 32px INCLUDING its 1px bottom border, so it has 31px of
  * content height. A 32px trigger cannot fit and grows the strip. See the status
- * region's `max-sm:min-h-[calc(2rem-1px)]` for the measurement. `min-w-0` lets the button shrink so the email inside it can
- * truncate on a narrow desktop row. Raw `gray-*`/`green-*` with `dark:`
- * variants, not semantic tokens: this chrome follows `GlobalNav.tsx`'s
- * convention (UX record 2026-09-21, §6).
+ * region's `max-sm:min-h-[calc(2rem-1px)]` for the measurement. Raw
+ * `gray-*`/`green-*` with `dark:` variants, not semantic tokens: this chrome
+ * follows `GlobalNav.tsx`'s convention (UX record 2026-09-21, §6).
+ *
+ * ⚠️ NO EMAIL, by decision (story 69.2, D2, Lucas 2026-09-25). Until 69.2 the
+ * trigger was `[avatar] [email] [chevron]`, with the email truncating on a
+ * narrow row and hidden outright for a Premium user between 640 and 660px. The
+ * top-right stopped spending width restating who the user is. The address is
+ * still announced by the status region and shown on `/settings`. ACCEPTED COST:
+ * a user with two accounts sees only an initial in the chrome and must open
+ * `/settings` to confirm which account they are in.
+ *
+ * ⚠️ NO `min-w-0` since story 69.2's code review. It existed so the email could
+ * truncate; with nothing left to truncate it only let the button shrink BELOW
+ * its avatar + chevron under a squeeze, overflowing its own box. Without it the
+ * button holds its 64px and the squeeze goes where the row decides.
  */
 const ACCOUNT_TRIGGER_CLASS =
-  'flex min-h-[1.75rem] min-w-0 items-center gap-2 rounded-md px-2 font-medium text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-100 dark:hover:bg-gray-700'
-
-const ACCOUNT_EMAIL_CLASS = 'min-w-0 truncate'
-
-/**
- * Hide the trigger's email from 640px to below 660px, for a PREMIUM user only
- * (decision D2, Lucas 2026-09-22: hide it wherever it measures under 24px).
- *
- * The measured widths live in ONE place, `e2e/account-menu.paid.spec.ts`; they
- * are deliberately not restated here (review caught three copies of them, which
- * is how the nav's width figures went stale three times).
- *
- * ⚠️ The breakpoint is derived from the CI font (DejaVu, what `system-ui`
- * resolves to on the runners), which is the reference this project measures
- * against. Under a narrower dev font the same viewport shows a little more
- * email, so between 640px and 660px this hides an email that would have been
- * marginally over the 24px line there. That is the accepted cost of a static
- * breakpoint; the alternative is a container query, which Tailwind 3.4 has no
- * variant for here.
- *
- * Premium only, because the pill is what takes the room: without it the email
- * gets about 80px more, legible at every desktop width. And it is the room
- * that is fixed, not the email: at 640px ANY email gets those 10px, so a short
- * address would be clipped just the same. The trigger is then `[A ▾]`; the
- * email is still announced by the status region and shown in the panel.
- *
- * ⚠️ `659.98px`, not `660px`: Tailwind's `max-[660px]` is INCLUSIVE of 660px
- * (measured: the email was hidden at exactly 660px, where it has 30px).
- */
-const NARROW_PREMIUM_HIDE = 'sm:max-[659.98px]:hidden'
+  'flex min-h-[1.75rem] items-center gap-2 rounded-md px-2 font-medium text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-100 dark:hover:bg-gray-700'
 
 /**
  * The panel. Below 640px it hangs DOWN from the top strip, full width (the
@@ -455,23 +513,36 @@ const ACCOUNT_PANEL_CLASS =
   'absolute z-40 max-h-[calc(100svh-6rem)] overflow-y-auto border-gray-200 bg-white py-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-800 max-sm:inset-x-0 max-sm:top-full max-sm:border-b sm:right-0 sm:top-full sm:mt-1 sm:w-max sm:min-w-[14rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:rounded-md sm:border'
 
 /**
- * The one row. `py-2 text-sm` makes it about 36px tall, like `NAV_LINK_BASE`,
- * over the 28px floor. The ring is inset so the panel's edge cannot clip it.
+ * A panel row: the Settings link and the Sign out button look the same (story
+ * 69.2). `py-2 text-sm` makes each about 36px tall, like `NAV_LINK_BASE`, over
+ * the 28px floor. The ring is inset so the panel's edge cannot clip it.
  */
-const SIGN_OUT_CLASS =
-  'block w-full px-4 py-2 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 disabled:cursor-wait disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+const PANEL_ROW_CLASS =
+  'block w-full px-4 py-2 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+
+/** The Sign out row: the shared row, plus its in-flight (`disabled`) state. */
+const SIGN_OUT_CLASS = `${PANEL_ROW_CLASS} disabled:cursor-wait disabled:opacity-60`
 
 /**
- * The account menu (story 59.3, FR99): a signed-in user signs out here.
+ * The Settings row's `aria-current` treatment, the same tone as `GlobalNav.tsx`'s
+ * `ACTIVE_CLASS`. It shows only while the panel is open on `/settings`; the
+ * panel closes on any navigation, so that is the one case it can be seen.
+ */
+const PANEL_ROW_ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+
+/**
+ * The account menu (story 59.3, FR99): a signed-in user signs out here, and
+ * since story 69.2 (FR109) reaches Settings here.
  *
  * Mounted ONLY in the authenticated branch. So the open state cannot survive
  * a sign-out and come back open at the next sign-in: leaving the branch
  * unmounts this component and its state with it.
  *
  * ⚠️ A DISCLOSURE, not a menu (UX record 2026-09-21, §4). No `role="menu"`
- * and no `aria-haspopup`: one action and a line of static text do not clear
- * the bar for the menu pattern. The precedent NOT to copy was the profiles
- * switcher's `aria-haspopup` without a menu panel — that component
+ * and no `aria-haspopup`: two plain controls (a link and a button, story 69.2)
+ * do not clear the bar for the menu pattern, which would also demand arrow-key
+ * roving focus. Tab reaches them in DOM order, as it does in the nav's More.
+ * The precedent NOT to copy was the profiles switcher's `aria-haspopup` without a menu panel — that component
  * (`profiles/switch-profile.tsx`) was deleted by story 63.1, so the anti-pattern
  * is named here rather than pointed at.
  *
@@ -484,28 +555,21 @@ const SIGN_OUT_CLASS =
  * the DOM for every CSS and jsdom query, and a click before hydration desyncs
  * `open` from React state. The panel is rendered only while open instead.
  *
- * ⚠️⚠️ `aria-label="Account menu"`, EXACTLY, and the visible email is NOT part
- * of the name. This is a KNOWN, ACCEPTED failure of WCAG 2.5.3 (Label in Name,
- * Level A): a voice-control user who says the visible email cannot activate
- * this control. **Raised by story 59.3's code review and ACCEPTED by Lucas on
- * 2026-09-22**, on the epic's original reasoning (FR99): the email is an
- * identity readout that the status region beside this already announces, and
- * the affordance itself is the avatar + chevron.
+ * ⚠️ `aria-label="Account menu"`, EXACTLY. Every probe in the suite names it
+ * that way.
  *
- * It is recorded as an accepted cost in `_bmad-output/planning-artifacts/
- * epics.md` (FR99) and in `deferred-work.md`, so it is findable by an
- * accessibility audit rather than only by reading this file. Do NOT "fix" it in
- * passing: putting the email into the name reverses a product decision, and if
- * it is ever reversed, every probe that names this control moves to a
- * `/^Account menu/` regex in the same change.
+ * ✅ The WCAG 2.5.3 (Label in Name, Level A) failure that story 59.3 raised and
+ * Lucas ACCEPTED on 2026-09-22 is RESOLVED FOR THE EMAIL by story 69.2. It
+ * existed because the button's visible text was the user's email while its
+ * name was the fixed "Account menu", so a voice-control user saying the email
+ * could not activate it. Since 69.2 the email is gone from the button.
  *
- * ⚠️ The justification this comment used to give was FALSE and was corrected in
- * review: "`getByRole`'s `name` is a full-string match" is true of
- * testing-library and NOT of Playwright, which compiles a non-`exact` name to
- * `"value"i`, a case-insensitive SUBSTRING (verified in playwright-core
- * 1.61.1, `coreBundle.js` `getByRoleSelector` / `escapeForAttributeSelector`).
- * A compound name would therefore still match `/^Account menu/`-style probes.
- * The name is what it is by decision, not because tooling forces it.
+ * ⚠️ Not "no visible text at all" (corrected in 69.2's code review): the avatar
+ * INITIAL is still visible to a sighted user, `aria-hidden` notwithstanding,
+ * and "Account menu" does not contain "U". Whether a one-letter avatar is a
+ * text LABEL under 2.5.3 is arguable (it reads as an image of identity, not a
+ * caption), so this is recorded as resolved for the email and ARGUABLE for the
+ * initial, not settled. `deferred-work.md` and FR99 say the same.
  *
  * The dismissal machinery mirrors `GlobalNav.tsx`'s More disclosure: Escape and
  * an outside press close it, focus returns to the trigger only when nothing else
@@ -518,12 +582,12 @@ const SIGN_OUT_CLASS =
  */
 function AccountMenu({
   email,
-  isPremium,
   pathname,
+  isOnSettingsPage,
 }: {
   email: string
-  isPremium: boolean
   pathname: string
+  isOnSettingsPage: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -621,10 +685,10 @@ function AccountMenu({
   // in-flight sign-out".
 
   return (
-    // `min-w-0` so the trigger (and the email in it) can shrink. `sm:relative`
-    // makes this the box the desktop panel hangs from; below 640px it is not
-    // positioned, so the panel resolves against the full-width strip instead.
-    <div ref={menuRef} className="flex min-w-0 sm:relative">
+    // `sm:relative` makes this the box the desktop panel hangs from; below
+    // 640px it is not positioned, so the panel resolves against the full-width
+    // strip instead. (No `min-w-0`: see `ACCOUNT_TRIGGER_CLASS`.)
+    <div ref={menuRef} className="flex sm:relative">
       <button
         ref={triggerRef}
         type="button"
@@ -644,21 +708,33 @@ function AccountMenu({
         >
           {email.charAt(0).toUpperCase()}
         </span>
-        <span
-          className={
-            isPremium ? `${ACCOUNT_EMAIL_CLASS} ${NARROW_PREMIUM_HIDE}` : ACCOUNT_EMAIL_CLASS
-          }
-        >
-          {email}
-        </span>
         <ChevronDownIcon className={`${DISCLOSURE_CHEVRON_CLASS}${isOpen ? ' rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <div id={panelId} className={ACCOUNT_PANEL_CLASS}>
-          <p className="px-4 py-2 text-gray-600 dark:text-gray-300">
-            {'Signed in as '}
-            <span className="break-all font-medium text-gray-900 dark:text-gray-100">{email}</span>
-          </p>
+          {/* Settings (story 69.2, FR109). A real router `<Link>`, so the
+              panel's existing dismissal covers it: a pathname change closes the
+              panel before paint. ⚠️ The explicit `onClick` is for the ONE case
+              that does not change the pathname, a click on Settings while
+              already on `/settings`. The press starts and ends inside the menu,
+              so the outside-press guard correctly declines, and without this
+              the panel stayed open. `GlobalNav.tsx`'s sheet rows solved the
+              same thing the same way. Wrapped, not passed by reference:
+              `closeMenu` takes an optional `restoreFocus`, and React would pass
+              its MouseEvent into it. Focus returns to the trigger, as it does
+              from a sheet row; a real navigation then closes nothing more. */}
+          <Link
+            to={SETTINGS_PATH}
+            onClick={() => closeMenu()}
+            // Marked from the lowercased read, like the gear (`/Settings`).
+            aria-current={isOnSettingsPage ? 'page' : undefined}
+            className={
+              isOnSettingsPage ? `${PANEL_ROW_CLASS} ${PANEL_ROW_ACTIVE_CLASS}` : PANEL_ROW_CLASS
+            }
+            activeProps={{}}
+          >
+            Settings
+          </Link>
           <hr className="border-gray-200 dark:border-gray-700" />
           <button
             type="button"

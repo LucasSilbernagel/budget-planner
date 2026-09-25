@@ -90,11 +90,18 @@ describe('AC-7 guard: the sign-in-page rule comment states the shipped rule', ()
     //
     // ⚠️ AMENDED by story 59.3. The cluster gained an action (the account
     // menu's Sign out), so "an account-STATUS affordance" became incomplete.
-    // The half that carries the UX-DR28 reasoning, "not navigation", stayed
-    // TRUE: the menu holds no destinations, by decision (FR90, FR99). The pin
-    // moved to the amended sentence rather than being deleted, so removing the
-    // reason still fails here.
-    expect(source).toContain(
+    //
+    // ⚠️ AMENDED AGAIN by story 69.2, because the 59.3 sentence went FALSE:
+    // "the strip is … not navigation" stopped being true when Settings moved
+    // into it (the account menu's link and the signed-out gear, FR109). The
+    // UX-DR28 reasoning survives, but it is now about the two LINKS this rule
+    // governs, not the whole strip, and the note records that the strip's
+    // Settings links follow the OTHER rule on purpose. Both halves are pinned,
+    // so dropping either the reason or the split fails here.
+    expect(source).toContain('"Sign in" and "Upgrade" are account affordances, not navigation')
+    expect(source).toContain('the split is by what the link IS, not where it sits')
+    // And the retracted whole-strip claim must not come back.
+    expect(source).not.toContain(
       "an account affordance (its status, plus the account menu's Sign out), not navigation"
     )
   })

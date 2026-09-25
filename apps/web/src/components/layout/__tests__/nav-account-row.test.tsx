@@ -15,9 +15,10 @@ import { GlobalNav } from '../GlobalNav'
  * the two — the way `__root` does — and locks the STRUCTURAL invariant that
  * composition must never break: the "Sign in" affordance is NEVER a descendant
  * of the single `<nav aria-label="Primary">` landmark, so the nav always holds
- * exactly its seven section links.
+ * exactly its six section links (seven until story 69.2 moved Settings into
+ * the account cluster).
  *
- * Why it matters: the GlobalNav suite asserts the nav holds exactly seven links.
+ * Why it matters: the GlobalNav suite asserts the nav holds exactly six links.
  * A future refactor could nest `AuthIndicator`'s `<Link to="/login">` inside
  * `<nav>` to co-locate sign-in — and the most tempting place to do that is the
  * *mobile* bottom bar (the exact "don't crowd the 320px tab bar" trade-off Story
@@ -30,11 +31,11 @@ import { GlobalNav } from '../GlobalNav'
  * it would break this same invariant just as thoroughly as folding it into the
  * bar. Both are asserted below.
  *
- * ⚠️ The link counts here STAY 7, and they count DOM PRESENCE, not
- * reachability. Since story 59.2 the three More destinations sit inside a native
+ * ⚠️ The link counts here STAY 6, and they count DOM PRESENCE, not
+ * reachability. Since story 59.2 the More destinations sit inside a native
  * `<details>` at EVERY width, and a closed `<details>` hides them from a real
  * browser's accessibility tree. jsdom does not: its default stylesheet has no
- * closed-details rule, so `getAllByRole('link')` still resolves all seven.
+ * closed-details rule, so `getAllByRole('link')` still resolves all six.
  * Before 59.2 the reason was that jsdom applies no media queries. The number is
  * the same and the reason is not. "Fixing" these to 4 would turn correct tests
  * red. Which destinations a user can actually reach is a rendered fact, asserted
@@ -87,13 +88,32 @@ function NavAccountRow() {
 }
 
 describe('Nav + account row (story 19-3)', () => {
-  it('keeps exactly one Primary nav landmark holding exactly the seven section links', async () => {
+  it('keeps exactly one Primary nav landmark holding exactly the six section links', async () => {
     renderWithRouter(<NavAccountRow />)
 
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
     expect(navs).toHaveLength(1)
     // The Sign-in link must not inflate the nav's link set (story 11-1 / 19-2).
-    expect(within(navs[0]).getAllByRole('link')).toHaveLength(7)
+    expect(within(navs[0]).getAllByRole('link')).toHaveLength(6)
+  })
+
+  // Story 69.2 (FR109). The same invariant, the other way round: Settings moved
+  // OUT of the nav into this row, and it must not drift back in. A signed-out
+  // visitor's route to it is the gear link beside "Sign in", which is a sibling
+  // of the live region (it is navigation), not inside it and not inside <nav>.
+  it('puts the signed-out Settings gear in the account row, outside the nav and the live region', async () => {
+    renderWithRouter(<NavAccountRow />)
+
+    const nav = await screen.findByRole('navigation', { name: /primary/i })
+    await screen.findByRole('link', { name: /sign in/i })
+    const gear = screen.getByRole('link', { name: 'Settings' })
+
+    expect(gear).toHaveAttribute('href', '/settings')
+    expect(nav.contains(gear), 'the Settings gear was folded into <nav>').toBe(false)
+    expect(nav.querySelector('a[href="/settings"]')).toBeNull()
+    const status = screen.getByRole('status', { name: /account status/i })
+    expect(status.contains(gear), 'the Settings gear is inside the live region').toBe(false)
+    expect(gear.closest('[data-auth-indicator]')).not.toBeNull()
   })
 
   it('renders the "Sign in" affordance OUTSIDE the nav landmark — sibling, not descendant', async () => {
@@ -125,7 +145,7 @@ describe('Nav + account row (story 19-3)', () => {
     expect(nav.className.split(/\s+/), 'this nav is not the mobile bottom bar').toContain(
       'max-sm:fixed'
     )
-    expect(within(nav).getAllByRole('link')).toHaveLength(7)
+    expect(within(nav).getAllByRole('link')).toHaveLength(6)
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(signIn)).toBe(true)
@@ -149,8 +169,8 @@ describe('Nav + account row (story 19-3)', () => {
     expect(sheet.contains(signIn), 'Sign in was folded into the More sheet').toBe(false)
     expect(
       [...sheet.querySelectorAll('a')].map((a) => a.getAttribute('href')),
-      'the More sheet holds something other than its three destinations'
-    ).toEqual(['/balance', '/retirement', '/settings'])
+      'the More sheet holds something other than its two destinations'
+    ).toEqual(['/balance', '/retirement'])
   })
 })
 
@@ -162,7 +182,7 @@ describe('Nav + account row (story 19-3)', () => {
  * must never become a nav row (UX record 2026-09-21, §3: "Do not put Sign out
  * in the More sheet").
  *
- * A FREE signed-in user, so the nav's link count is the same seven as above:
+ * A FREE signed-in user, so the nav's link count is the same six as above:
  * an entitled seed would add the four premium destinations and change the
  * number for a reason unrelated to this invariant.
  */
@@ -190,8 +210,11 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const trigger = await screen.findByRole('button', { name: 'Account menu' })
     await user.click(trigger)
     const signOut = screen.getByRole('button', { name: 'Sign out' })
+    // Story 69.2: the panel's Settings link is the signed-in route to /settings.
+    const settings = screen.getByRole('link', { name: 'Settings', exact: true })
 
     expect(nav.contains(trigger), 'the account menu trigger was folded into <nav>').toBe(false)
+    expect(nav.contains(settings), 'the menu’s Settings link was folded into <nav>').toBe(false)
     expect(nav.contains(signOut), 'Sign out was folded into <nav>').toBe(false)
     // The sheet is a nav descendant, so `nav.contains` above already covers it;
     // this pins the tempting SPECIFIC place (story 31.5's sheet) and fails
@@ -199,7 +222,7 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const lists = [...nav.querySelectorAll('ul')]
     expect(lists, 'expected the bar list and the nested More sheet').toHaveLength(2)
     expect(lists[1].contains(signOut), 'Sign out was folded into the More sheet').toBe(false)
-    expect(within(nav).getAllByRole('link')).toHaveLength(7)
+    expect(within(nav).getAllByRole('link')).toHaveLength(6)
     // ZERO, and that is the right number. The nav's only control, More, is a
     // `<summary>`, which has NO role in testing-library (story 59.2, measured),
     // so it is not counted. Both account-menu controls are real `<button>`s, so
@@ -211,5 +234,9 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(trigger)).toBe(false)
     expect(status.contains(signOut)).toBe(false)
+    expect(status.contains(settings)).toBe(false)
+    // No gear for a signed-in user: the menu is their route, so the cluster
+    // holds exactly one link to /settings (the one inside the open panel).
+    expect(document.querySelectorAll('a[href="/settings"]')).toHaveLength(1)
   })
 })

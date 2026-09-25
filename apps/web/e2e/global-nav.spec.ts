@@ -88,14 +88,17 @@ test('reaches the Retirement Planner from the nav', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /retirement planner/i })).toBeVisible()
 })
 
-test('reaches the consolidated settings surface from the nav', async ({ page }) => {
+test('reaches the consolidated settings surface from the account cluster', async ({ page }) => {
   await page.goto('/income')
   await page.waitForLoadState('networkidle')
 
+  // Story 69.2 (FR109) moved Settings OUT of the nav (it was behind More from
+  // story 59.2). A signed-out visitor reaches it from the gear link in the
+  // account cluster; the signed-in route, the account menu, is covered in
+  // `settings-route.spec.ts`.
   const nav = page.getByRole('navigation', { name: 'Primary' })
-  // Behind More since story 59.2, at every width.
-  await page.locator(MORE_SUMMARY).click()
-  await nav.getByRole('link', { name: 'Settings' }).click()
+  await expect(nav.locator('a[href="/settings"]')).toHaveCount(0)
+  await page.locator('[data-auth-indicator]').getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/\/settings$/)
 
   // The settings surface hosts the relocated display controls (story 11-6).

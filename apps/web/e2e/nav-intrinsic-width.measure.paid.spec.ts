@@ -1,5 +1,6 @@
 /**
- * PAID nav row — intrinsic width, available width, and the open seven-row panel.
+ * PAID nav row — intrinsic width, available width, and the open six-row panel
+ * (seven until story 69.2 moved Settings to the account cluster).
  *
  * Committed by story 59.1's code review and RE-SCOPED by story 59.2. The numbers
  * this produces are quoted in `nav-tier-aware.paid.spec.ts`'s desktop docblock;
@@ -19,10 +20,10 @@ import {
 } from './helpers/nav-width'
 
 const WIDTHS = [640, 1024, 1152, 1280, 1440, 2400] as const
-const PANEL_ROWS = 7
+const PANEL_ROWS = 6
 const LOG_TAG = '[paid nav width]'
 
-test('MEASURE: the paid desktop row — five items, More panel of seven', async ({ page }) => {
+test('MEASURE: the paid desktop row — five items, More panel of six', async ({ page }) => {
   await page.setViewportSize({ width: 2400, height: 900 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')

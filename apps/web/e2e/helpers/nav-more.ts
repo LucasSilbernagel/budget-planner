@@ -154,8 +154,12 @@ export async function moreExpandedInAxTree(page: Page): Promise<boolean | null> 
 }
 
 /**
- * A long, realistic email: long enough that the account cluster cannot fit
- * beside the row at 640px without truncating.
+ * A long, realistic email. Until story 69.2 it was long enough that the account
+ * cluster could not fit beside the row at 640px without truncating. Since 69.2
+ * the chrome shows no email (it is only ANNOUNCED, by the status region), so
+ * this is now the mocked identity `expectSignedInAs` waits for: distinct from
+ * the `:5174` seed's `e2e-paid@example.test`, which is what makes the gate able
+ * to tell the two apart.
  */
 export const LONG_EMAIL = 'alexandra.montgomery-whitfield@example.test'
 

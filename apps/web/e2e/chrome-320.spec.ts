@@ -56,8 +56,11 @@ const NARROW_WIDTH = 320
 
 /** The four destinations that keep a cell in the bar. */
 const BAR_LABELS = ['Overview', 'Income', 'Expenses', 'Savings'] as const
-/** The three that moved behind the More trigger (four until story 43.3). */
-const SHEET_LABELS = ['Balances', 'Retirement', 'Settings'] as const
+/**
+ * The two that moved behind the More trigger (four until story 43.3, three until
+ * story 69.2 moved Settings to the account cluster).
+ */
+const SHEET_LABELS = ['Balances', 'Retirement'] as const
 
 /**
  * The bar's own cells, structurally: anchors that are direct grandchildren of

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectSignedInAs } from './helpers/account-menu'
 import {
   LONG_EMAIL,
   MORE_PANEL,
@@ -33,7 +34,6 @@ const PAID_PANEL = [
   'Profiles',
   'Report',
   'Categories',
-  'Settings',
 ] as const
 
 const PANEL_ROUTES: readonly [label: string, path: string][] = [
@@ -43,7 +43,6 @@ const PANEL_ROUTES: readonly [label: string, path: string][] = [
   ['Profiles', '/profiles'],
   ['Report', '/report'],
   ['Categories', '/categories'],
-  ['Settings', '/settings'],
 ]
 
 for (const width of [640, 1024, 1280] as const) {
@@ -64,14 +63,15 @@ for (const width of [640, 1024, 1280] as const) {
     expect(row.more).toBe('More')
     expect(row.tops, `the paid row still wraps at ${width}px`).toHaveLength(1)
 
-    // Seam check: this really is the paid nav (7 panel rows, not the free 3).
+    // Seam check: this really is the paid nav (6 panel rows, not the free 2;
+    // 7 and 3 until story 69.2 took Settings out).
     expect(await panelLabels(page)).toEqual([...PAID_PANEL])
   })
 }
 
 /**
- * The row for the user this story exists for: SIGNED IN, paying, with a long
- * email (story 59.2 code review, finding D1).
+ * The row for the user this story exists for: SIGNED IN and paying (story 59.2
+ * code review, finding D1).
  *
  * ⚠️⚠️ Every other width assertion in the suite runs beside a "Sign in"
  * cluster, because e2e has no real session. Measured with a signed-in cluster
@@ -79,45 +79,31 @@ for (const width of [640, 1024, 1280] as const) {
  * ~849px, and the email's `truncate` never engaged. Both header flex items
  * could shrink, and the nav, with the larger basis, wrapped first. Fixed by
  * `sm:shrink-0` on the nav plus `sm:min-w-0` on the account strip, so the email
- * truncates instead. Mutation-measured: remove either token and this goes red.
+ * truncated instead. At the time (59.2), removing either token turned this red,
+ * mutation-measured. ⚠️ That claim has NOT been re-measured since 69.2 removed
+ * the email: with a 64px trigger there may be nothing left to squeeze, so do
+ * not cite this test as the guard for those two tokens without re-running the
+ * mutation.
  *
- * ⚠️ RE-POINTED by story 59.3. The VISIBLE email moved into the account-menu
- * trigger, and the status region keeps only an `sr-only` copy (1px wide). The
- * old lookup, `strip.getByText(LONG_EMAIL)` inside the region, went on PASSING
- * against 59.3's code while measuring that 1px copy: `1 < 335` and `1 > 0`. A
- * silent green, seen green before this change and red after it under the
- * mutation recorded in the story. It now measures the trigger's email.
- *
- * And 640px is no longer where to see the truncation: since 59.3 a Premium
- * user's email is HIDDEN below 660px (decision D2). So the truncation is read
- * at 660px. The widths themselves belong to `account-menu.paid.spec.ts`.
+ * ⚠️ RE-POINTED by story 59.3, which moved the visible email into the
+ * account-menu trigger, and RE-SCOPED by story 69.2, which took it out of the
+ * chrome altogether (decision D2). There is no truncation left to read, so what
+ * this test still owns is the ONE-ROW claim for a signed-in Premium cluster
+ * (avatar + chevron + Premium pill) beside the paid nav, swept every 5px.
  */
-test('a signed-in Premium user with a long email gets ONE row at every desktop width', async ({
-  page,
-}) => {
+test('a signed-in Premium user gets ONE row at every desktop width', async ({ page }) => {
   await mockSignedIn(page)
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
 
-  // Precondition: this really is the signed-in cluster, with the Premium pill.
+  // Precondition: this really is the MOCKED signed-in cluster, with the Premium
+  // pill. The announced email is the proof the mock landed (the SSR seed's
+  // identity is a different address), and the trigger shows none of it.
+  await expectSignedInAs(page, LONG_EMAIL)
   const strip = page.getByRole('status', { name: /account status/i })
   await expect(strip.getByText('Premium', { exact: true })).toBeVisible()
-  const trigger = page.getByRole('button', { name: 'Account menu' })
-  const email = trigger.getByText(LONG_EMAIL, { exact: true })
-  await expect(email).toHaveCount(1)
-
-  // Precondition only. What the email does across widths — hidden below 660px
-  // for a Premium user, truncated above it — is asserted with its measured
-  // table in `account-menu.paid.spec.ts`, which is the ONE place those numbers
-  // live. Review caught this block restating them.
-  await page.setViewportSize({ width: 660, height: 800 })
-  await expect(email).toBeVisible()
-  const width = await email.evaluate((el) => ({
-    visible: el.clientWidth,
-    full: el.scrollWidth,
-  }))
-  expect(width.visible, 'the email did not truncate at 660px').toBeLessThan(width.full)
+  await expect(page.getByRole('button', { name: 'Account menu' })).not.toContainText('@')
 
   expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
 })
@@ -186,7 +172,8 @@ test.describe('with JavaScript disabled', () => {
  * without it. So the sweep covers every route the nav reaches plus `/pricing`
  * and `/docs`, and probes three points per row, not just the centre.
  *
- * Paid tier on purpose: it has the tallest panel (seven rows), so it covers
+ * Paid tier on purpose: it has the tallest panel (six rows since story 69.2
+ * took Settings out; seven before), so it covers
  * the most page content.
  */
 const ROUTES = [

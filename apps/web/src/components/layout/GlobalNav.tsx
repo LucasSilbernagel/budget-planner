@@ -15,10 +15,12 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  *
  * ## How many destinations — it depends on the TIER since story 58.1
  *
- * A free or signed-out session sees SEVEN top-level sections (eight until story
- * 43.3 (FR69) removed the free Net Worth projection page). An ENTITLED session
- * sees ELEVEN: the same seven plus Forecasting, Profiles, Report and Categories.
- * Every "seven" below describes the free nav unless it says otherwise.
+ * A free or signed-out session sees SIX top-level sections (eight until story
+ * 43.3 (FR69) removed the free Net Worth projection page; seven until story 69.2
+ * (FR109) moved Settings out of the nav into the account cluster). An ENTITLED
+ * session sees TEN: the same six plus Forecasting, Profiles, Report and
+ * Categories. Every "six" below describes the free nav unless it says otherwise;
+ * a "seven" or "eleven" in a story's history note is the pre-69.2 count.
  *
  * ⚠️ This REVERSES a named scope decision, and the reversal is recorded rather
  * than the old text being quietly deleted. Until 2026-09-14 this docblock read:
@@ -49,8 +51,8 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
  *
  * There is exactly one `<nav>`, one OUTER `<ul>`, one More `<details>` with its
- * `<summary>` (a `<button>` until story 59.2) and — since story 58.1 — seven
- * `<a>` for a free session or eleven for an entitled one, in the DOM at every
+ * `<summary>` (a `<button>` until story 59.2) and — since story 69.2 — six
+ * `<a>` for a free session or ten for an entitled one, in the DOM at every
  * viewport. The COUNT varies by tier; the STRUCTURE never does.
  * Desktop (>= 640px) is the unprefixed cascade —
  * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
@@ -114,9 +116,10 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * decided the count: 5 columns give 64px tracks (comfortable), 8 give 40px
  * (overflowing). So the bar shows FIVE cells — Overview, Income, Expenses,
  * Savings and a "More" trigger — and the remaining destinations live in a
- * sheet that More discloses: three for a free session, seven for an entitled one
- * since story 58.1. The bar is now 56.75px, and the tier cannot change that —
- * 58.1 touched only the sheet list, never `PRIMARY_TABS`.
+ * sheet that More discloses: two for a free session, six for an entitled one
+ * (three and seven from story 58.1 until story 69.2 took Settings out). The bar
+ * is now 56.75px, and the tier cannot change that — 58.1 and 69.2 touched only
+ * the sheet list, never `PRIMARY_TABS`.
  *
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
  * `<li>`. The obvious alternative — leaving every `<li>` in the bar and
@@ -134,9 +137,10 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * Savings · More at every width, in both tiers, and the other destinations are
  * a disclosure panel: a sheet above the bar below `sm`, a dropdown under the
  * trigger at `sm` and up. Accepted cost (decision, Lucas 2026-09-21): a free
- * desktop user reaches Balances, Retirement and Settings in two clicks, not
- * one. The row's measured widths live in ONE place,
- * `e2e/nav-responsive-css.spec.ts`. Do not restate them here.
+ * desktop user reaches Balances and Retirement in two clicks, not one. (Settings
+ * was the third until story 69.2 moved it to the account cluster.) The row's
+ * measured widths live in ONE place, `e2e/nav-responsive-css.spec.ts`. Do not
+ * restate them here.
  *
  * ⚠️⚠️ It is a native `<details>`/`<summary>`, and that is the FAIL-OPEN
  * requirement, not a styling choice (decision, Lucas 2026-09-21). Since story
@@ -205,7 +209,6 @@ type NavPath =
   | '/profiles'
   | '/report'
   | '/categories'
-  | '/settings'
 
 interface NavItem {
   label: string
@@ -235,7 +238,7 @@ const PRIMARY_TABS: readonly NavItem[] = [
 ]
 
 /**
- * The three destinations behind the mobile "More" trigger for a FREE session.
+ * The two destinations behind the "More" trigger for a FREE session.
  *
  * ⚠️ Since story 58.1 this is the free-tier BASE, not the whole sheet. An
  * entitled session renders `MORE_DESTINATIONS_ENTITLED` below, which splices four
@@ -246,9 +249,10 @@ const PRIMARY_TABS: readonly NavItem[] = [
  * Since story 59.2 they sit behind More at EVERY width. Until then,
  * `sm:contents` dissolved them into the one desktop row.
  *
- * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69). Every
- * "eight anchors" figure in this file dates from before that removal; the ones
- * describing the CURRENT nav now say seven, and the ones narrating the former
+ * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69), and
+ * THREE until story 69.2 removed Settings (FR109). Every "eight anchors" figure
+ * in this file dates from before 43.3 and every "seven" from before 69.2; the
+ * ones describing the CURRENT nav say six, and the ones narrating the former
  * 4x2 grid are left as history.
  */
 const MORE_DESTINATIONS: readonly NavItem[] = [
@@ -269,10 +273,13 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
   // forward-looking planning surface in the nav. Stays FREE (Epic 15 is UX-only,
   // no premium gate).
   { label: 'Retirement', to: '/retirement', Icon: RetirementIcon },
-  // Consolidated settings surface (story 11-6): the single home for the currency
-  // and dark-mode controls that used to be scattered across page headers and the
-  // footer.
-  { label: 'Settings', to: '/settings', Icon: SettingsIcon },
+  // ⚠️ Settings is NOT here, by decision (story 69.2, FR109, Lucas 2026-09-25).
+  // It was the third row from story 11-6 until 69.2 moved it to the account
+  // cluster (`auth/auth-indicator.tsx`): the account menu's Settings link for a
+  // signed-in user, and an icon-only gear link beside "Sign in" for a signed-out
+  // one, so no session is left without a route to `/settings`. This REVERSES
+  // FR90's "Settings STAYS in the nav" (amended in place in `epics.md`). Do not
+  // put it back here without taking the account-cluster route out.
 ]
 
 /**
@@ -339,28 +346,18 @@ const PREMIUM_DESTINATIONS: readonly NavItem[] = [
 export const PREMIUM_NAV_ROUTES: readonly string[] = PREMIUM_DESTINATIONS.map((item) => item.to)
 
 /**
- * The sheet an entitled session gets: the free list with the premium block
- * spliced in BEFORE Settings (decision D3).
+ * The sheet an entitled session gets: the free list, then the premium block.
  *
- * ⚠️ Not a concatenation. FR87 said "appended", which would leave Settings
- * stranded in the middle of a paying user's list; Settings stays last, where it
- * is for everyone else. The insertion point is found by route rather than by a
- * hard-coded index so reordering `MORE_DESTINATIONS` cannot silently move it.
+ * ⚠️ A plain concatenation since story 69.2. Until then the premium block was
+ * spliced in BEFORE Settings (story 58.1, decision D3), so that Settings stayed
+ * last for everyone, and a module-load `throw` guarded against Settings being
+ * removed from `MORE_DESTINATIONS`. Story 69.2 removed it on purpose (Settings
+ * lives in the account cluster now), so both the splice and its guard went with
+ * it. There is no longer a fixed last row to protect.
  */
-const SETTINGS_POSITION = MORE_DESTINATIONS.findIndex((item) => item.to === '/settings')
-if (SETTINGS_POSITION === -1) {
-  // ⚠️ Not defensive noise. `findIndex` returning -1 makes `slice(0, -1)` and
-  // `slice(-1)` still "work" — they would splice the premium block before
-  // whatever happens to be last, silently, with no crash and no missing item.
-  // The by-route lookup above protects against REORDERING; only this protects
-  // against REMOVAL. Throwing at module load turns a silent misplacement into an
-  // immediate, obvious failure.
-  throw new Error('GlobalNav: MORE_DESTINATIONS must contain a /settings entry')
-}
 const MORE_DESTINATIONS_ENTITLED: readonly NavItem[] = [
-  ...MORE_DESTINATIONS.slice(0, SETTINGS_POSITION),
+  ...MORE_DESTINATIONS,
   ...PREMIUM_DESTINATIONS,
-  ...MORE_DESTINATIONS.slice(SETTINGS_POSITION),
 ]
 
 /**
@@ -569,7 +566,7 @@ export function GlobalNav() {
   /**
    * The More tab's active state CANNOT come from `<Link activeProps>`: More is
    * not a route, so `activeProps` would silently mark nothing and the bar would
-   * show NO active tab on three of seven destinations — worse orientation than
+   * show NO active tab on two of six destinations — worse orientation than
    * the grid this replaced. Since story 59.2 the same is true on DESKTOP, where
    * those destinations moved behind More too, so this cue now carries "you are
    * here" at every width. `useRouterState` reads `router.stores.location`, the
@@ -1217,32 +1214,6 @@ function CategoriesIcon({ className }: { className: string }): React.ReactElemen
         strokeLinejoin="round"
         strokeWidth={2}
         d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-      />
-    </svg>
-  )
-}
-
-function SettingsIcon({ className }: { className: string }): React.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-      />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
       />
     </svg>
   )

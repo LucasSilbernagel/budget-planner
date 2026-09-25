@@ -126,10 +126,15 @@ export async function probeFont(page: Page, samples: readonly string[]) {
  *    the account cluster had changed width between the two measurements.
  *
  * `rows` counts distinct `top` values of the ROW ITEMS, never of `nav a`.
- * `emailWidth` is the email's VISIBLE box and `emailTextWidth` its full text
- * (they differ when `truncate` engages), or null when signed out. It is recorded
- * for story 59.3. The e2e servers have no real session, so a signed-in cluster
- * needs `/api/auth/me` mocked (see `nav-more-disclosure.paid.spec.ts`).
+ * The e2e servers have no real session, so a signed-in cluster needs
+ * `/api/auth/me` mocked (see `nav-more-disclosure.paid.spec.ts`).
+ *
+ * ⚠️ There is no `emailWidth` any more (removed by story 69.2). It read the
+ * first text node containing "@", which was the trigger's visible email. Since
+ * 69.2 the cluster shows no email: the only "@" left is the status region's
+ * `sr-only` copy, 1px wide, so the field would have gone on reporting a
+ * plausible-looking number about nothing — the silent green story 59.3 already
+ * caught once in `nav-more-disclosure.paid.spec.ts`.
  *
  * ⚠️ Assumes the header row holds exactly TWO children, the nav and the
  * account cluster, and throws otherwise. A logo or a third item would silently
@@ -144,8 +149,6 @@ export async function measureAvailable(page: Page, widths: readonly number[]) {
       accountCluster: number
       available: number
       rows: number
-      emailWidth: number | null
-      emailTextWidth: number | null
     }
   > = {}
   for (const width of widths) {
@@ -165,18 +168,6 @@ export async function measureAvailable(page: Page, widths: readonly number[]) {
         const r = (n: number) => Math.round(n * 100) / 100
         const headerInner = r(header.clientWidth)
         const accountCluster = r(cluster.getBoundingClientRect().width)
-        // The email is the only text in the cluster containing "@".
-        let emailWidth: number | null = null
-        let emailTextWidth: number | null = null
-        const walker = document.createTreeWalker(cluster, NodeFilter.SHOW_TEXT)
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-          if (n.textContent?.includes('@')) {
-            const box = n.parentElement as HTMLElement
-            emailWidth = r(box.getBoundingClientRect().width)
-            emailTextWidth = r(box.scrollWidth)
-            break
-          }
-        }
         return {
           listClientWidth: list.clientWidth,
           headerInner,
@@ -187,8 +178,6 @@ export async function measureAvailable(page: Page, widths: readonly number[]) {
               Math.round(li.getBoundingClientRect().top)
             )
           ).size,
-          emailWidth,
-          emailTextWidth,
         }
       },
       [NAV, ROW_ITEMS] as const

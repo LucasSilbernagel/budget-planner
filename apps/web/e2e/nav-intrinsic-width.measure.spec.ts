@@ -3,7 +3,8 @@
  *
  * Committed by story 59.1's code review and RE-SCOPED by story 59.2. Since 59.2
  * the desktop row is five items (Overview · Income · Expenses · Savings · More)
- * in both tiers; the three free More destinations are in an overlay panel,
+ * in both tiers; the two free More destinations (three until story 69.2 moved
+ * Settings to the account cluster) are in an overlay panel,
  * measured separately. The figures this logs are quoted in
  * `nav-responsive-css.spec.ts`; when they change, re-run this and update that
  * ONE place.
@@ -30,10 +31,10 @@ import {
 } from './helpers/nav-width'
 
 const WIDTHS = [640, 700, 760, 1024, 1152, 1280, 2400] as const
-const PANEL_ROWS = 3
+const PANEL_ROWS = 2
 const LOG_TAG = '[free nav width]'
 
-test('MEASURE: the free desktop row — five items, More panel of three', async ({ page }) => {
+test('MEASURE: the free desktop row — five items, More panel of two', async ({ page }) => {
   await page.setViewportSize({ width: 2400, height: 900 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')

@@ -23,8 +23,9 @@ import {
  * width, instead of only from the bottom of `/settings`. The SSR seed here is
  * signed-out, so every test mocks `/api/auth/me` with `mockSignedIn()` and the
  * cluster flips to signed-in after mount. The paid seam, where the trigger is
- * in the FIRST paint, and the narrow-width email table are in
- * `account-menu.paid.spec.ts`.
+ * in the FIRST paint, is in `account-menu.paid.spec.ts`. The routes to
+ * `/settings` (the menu's link, and the signed-out gear) are in
+ * `settings-route.spec.ts` (story 69.2).
  *
  * Everything here is a rendered fact that jsdom cannot see: geometry,
  * occlusion, real focus, real pointer sequences, a real document load.
@@ -84,7 +85,7 @@ test('signs out end to end: one logout POST, then a document load to /', async (
 const ROUTES = ['/', '/income', '/settings', '/login', '/pricing', '/forecasting'] as const
 
 for (const width of [320, 1280] as const) {
-  test(`the menu opens, holds Sign out and is painted over on no page at ${width}px`, async ({
+  test(`the menu opens, holds Settings and Sign out, and is painted over on no page at ${width}px`, async ({
     page,
   }) => {
     // ⚠️ SIX full document loads, each one gated on the post-mount session
@@ -103,7 +104,9 @@ for (const width of [320, 1280] as const) {
       })
       const panel = await openAccountMenu(page)
       await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
-      await expect(panel).toContainText(`Signed in as ${LONG_EMAIL}`)
+      await expect(panel.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+      // Story 69.2 (decision D2): the address is no longer in the panel.
+      await expect(panel).not.toContainText(LONG_EMAIL)
       for (const miss of await panelOcclusion(panel)) problems.push(`${route}: ${miss}`)
     }
     expect(problems, 'something paints over the open account panel').toEqual([])
@@ -156,7 +159,7 @@ test('at 1280px the panel hangs below the trigger, right-aligned and on screen',
 })
 
 for (const width of [320, 1280] as const) {
-  test(`the trigger and the Sign out row meet the 28px target floor at ${width}px`, async ({
+  test(`the trigger and both panel rows meet the 28px target floor at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 800 })
@@ -167,6 +170,8 @@ for (const width of [320, 1280] as const) {
     const panel = await openAccountMenu(page)
     const row = await panel.getByRole('button', { name: 'Sign out' }).boundingBox()
     expect(row?.height ?? 0, 'Sign out row height').toBeGreaterThanOrEqual(28)
+    const settings = await panel.getByRole('link', { name: 'Settings', exact: true }).boundingBox()
+    expect(settings?.height ?? 0, 'Settings row height').toBeGreaterThanOrEqual(28)
   })
 }
 
@@ -257,7 +262,7 @@ test('by keyboard both can be open at once, and ONE Escape closes both without a
   await expect(accountTrigger(page)).toBeFocused()
 })
 
-test('Tab from the open trigger reaches Sign out, and Escape returns focus to the trigger', async ({
+test('Tab from the open trigger reaches Settings then Sign out, and Escape returns focus to the trigger', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
@@ -267,6 +272,9 @@ test('Tab from the open trigger reaches Sign out, and Escape returns focus to th
   await expect(accountTrigger(page)).toHaveAttribute('aria-expanded', 'true')
   // No auto-focus into the panel: disclosure convention.
   await expect(accountTrigger(page)).toBeFocused()
+  // DOM order since story 69.2: the Settings link, then Sign out.
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeFocused()
   await page.keyboard.press('Escape')
@@ -274,21 +282,23 @@ test('Tab from the open trigger reaches Sign out, and Escape returns focus to th
   await expect(accountTrigger(page)).toBeFocused()
 })
 
-test('a FREE signed-in user with a long email keeps one header row and a legible email', async ({
+// Story 69.2 (decision D2) took the email out of the trigger, so the "legible
+// email" half of this test (under 24px at 640px was the failure) has nothing
+// left to measure and went with it. The ONE-ROW half stays: a free signed-in
+// cluster beside the free nav at 640px is still a combination worth sweeping.
+test('a FREE signed-in user keeps one header row, and the trigger shows no email', async ({
   page,
 }) => {
   await mockSignedIn(page, { subscriptionStatus: 'free' })
   await page.setViewportSize({ width: 640, height: 800 })
   await page.goto('/')
   await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
-  // No Premium pill for a free user, so the email keeps the room the pill
-  // would take, and the narrow-width hiding (Premium only) does not apply.
   const strip = page.getByRole('status', { name: /account status/i })
   await expect(strip.getByText('Premium', { exact: true })).toHaveCount(0)
-  const email = accountTrigger(page).getByText(LONG_EMAIL, { exact: true })
-  await expect(email).toBeVisible()
-  const visible = await email.evaluate((el) => el.clientWidth)
-  expect(visible, 'a free user’s email is under 24px at 640px').toBeGreaterThanOrEqual(24)
+  // The mocked identity HAS landed (it is announced), and none of it is visible
+  // in the trigger.
+  await expect(strip).toContainText(LONG_EMAIL)
+  await expect(accountTrigger(page)).not.toContainText('@')
 
   expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
 })
