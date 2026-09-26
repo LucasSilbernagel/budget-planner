@@ -1,5 +1,7 @@
+import { planLabel } from '@/lib/account/plan-label'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
 import { returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
+import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src/schema'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
@@ -23,7 +25,13 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 interface CurrentUser {
   userId: string
   email: string
-  subscriptionStatus: string
+  subscriptionStatus: SubscriptionStatus
+  /**
+   * Story 70.1. Optional because a server that predates the field (a rolling
+   * deploy) omits it; absent is read as "not known" — "Active" for an active
+   * subscriber, "Payment overdue" for a past-due one (see `planLabel`).
+   */
+  billingInterval?: BillingInterval | null
 }
 
 /**
@@ -167,8 +175,11 @@ export function AccountSection() {
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
               {authState.user.email}
             </span>
-            <span className="text-xs capitalize text-gray-500 dark:text-gray-400">
-              {authState.user.subscriptionStatus}
+            {/* Story 70.1: the plan NAME, not the raw status enum — which is what
+                made monthly and annual both read "Active", and (through CSS
+                `capitalize`) rendered `past_due` as "Past_due". */}
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {planLabel(authState.user.subscriptionStatus, authState.user.billingInterval)}
             </span>
           </div>
           <button

@@ -102,6 +102,12 @@ export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
   'lifetime',
 ])
 
+// The billing cadence the user bought (Story 70.1, FR111). Recorded from the
+// TOP-LEVEL `billing_cycle` of Paddle's subscription entity, which Paddle sets
+// from the subscription's prices. Only the two cadences this product sells are
+// representable; anything else is stored as NULL, never guessed.
+export const billingIntervalEnum = pgEnum('billingInterval', ['month', 'year'])
+
 // Currency enum for user currency preferences
 export const currencyEnum = pgEnum('currency', [
   'NONE',
@@ -135,6 +141,38 @@ export const users = pgTable(
     email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
     paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID
     subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
+    // --- The plan the user bought (Story 70.1, FR111) ---------------------------
+    //
+    // Monthly and annual subscribers are both `active`, so without this the plan
+    // was unrecoverable from the row and Settings could only say "Active". The
+    // Settings label is DERIVED at render from (subscriptionStatus,
+    // billingInterval) — `lib/account/plan-label.ts`. `lifetime` needs no value
+    // here: the status identifies it. NULL = not known (every row that predates
+    // this column until its next `subscription.*` event, or a cadence this
+    // product does not sell), and the label then falls back to "Active".
+    //
+    // ⚠️ WHY AN INTERVAL AND NOT A PADDLE PRICE ID. A price id must be mapped back
+    // to a plan through the `PADDLE_*_PRICE_ID` env vars, and that mapping misses
+    // SILENTLY on any id the env does not name: a re-price, a grandfathered
+    // price, and the sandbox→production re-key `reconcileEmailCollision` exists
+    // for. The interval survives all of those.
+    //
+    // ⚠️ WHY IT SHARES `entitlementUpdatedAt` (unlike `emailUpdatedAt` below).
+    // It is written by the SAME `subscription.*` events, from the same entity
+    // snapshot, in the same UPDATE as `subscriptionStatus`. It is not a separate
+    // event stream, so it must not have a separate watermark: one would let the
+    // status come from one event and the interval from another — a row
+    // describing a subscription that never existed. Write it ONLY inside a write
+    // that also advances `entitlementUpdatedAt`. Where the write is ordered, the
+    // guard is IN the statement (`entitlementWatermarkGuard` on the UPDATEs, the
+    // `setWhere` on the conflict paths — a pre-read alone races, Story 70.1
+    // review). The one unguarded site is the re-key adoption in
+    // `reconcileEmailCollision`, which advances the watermark on a row that is
+    // unentitled by construction and belongs to a different customer's stream.
+    //
+    // ⚠️ It is NOT an entitlement signal. No gate may read it; access is decided
+    // by `subscriptionStatus` alone.
+    billingInterval: billingIntervalEnum('billingInterval'),
     currency: currencyEnum('currency').default('NONE'),
     isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
     // --- Billing-event ordering + lifetime accounting (Story 5-19) -------------
@@ -796,6 +834,7 @@ export type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[numb
 
 // Currency enum type
 export type Currency = (typeof currencyEnum.enumValues)[number]
+export type BillingInterval = (typeof billingIntervalEnum.enumValues)[number]
 
 // Category kind enum type (Story 30.4a)
 export type CategoryKind = (typeof categoryKindEnum.enumValues)[number]

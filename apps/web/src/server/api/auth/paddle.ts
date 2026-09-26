@@ -22,7 +22,7 @@ import { verifySession } from './session'
 
 // Imported for local use AND re-exported so existing importers of this module
 // keep working; the single declaration lives in `../result`.
-import type { Currency } from '@budget-planner/db'
+import type { BillingInterval, Currency } from '@budget-planner/db'
 import type { ApiResult } from '../result'
 
 export type { ApiResult }
@@ -39,6 +39,13 @@ export interface UserSession {
   // Non-null: the column is nullable but carries a `'NONE'` default, and every
   // construction site below falls back to that rather than propagating null.
   currency: Currency
+  /**
+   * The plan cadence the user bought (Story 70.1). NULL = not known — a row
+   * that predates the column, a cadence this product does not sell, or a
+   * lifetime buyer (whose status alone names the plan). Display only: no
+   * entitlement decision may read it.
+   */
+  billingInterval: BillingInterval | null
   isAuthenticated: boolean
   name?: string
 }
@@ -185,6 +192,7 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
       paddleId: user.paddleId,
       subscriptionStatus: user.subscriptionStatus,
       currency: user.currency ?? 'NONE',
+      billingInterval: user.billingInterval ?? null,
       isAuthenticated: true,
     }
   } catch (error) {

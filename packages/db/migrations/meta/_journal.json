@@ -162,6 +162,13 @@
       "when": 1790351873991,
       "tag": "0022_cool_madame_web",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790385834617,
+      "tag": "0023_light_xavin",
+      "breakpoints": true
     }
   ]
 }

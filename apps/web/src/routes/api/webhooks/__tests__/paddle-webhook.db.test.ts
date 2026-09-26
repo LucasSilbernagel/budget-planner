@@ -66,7 +66,13 @@ vi.mock('@budget-planner/db', async (importOriginal) => {
     },
   }
 })
-vi.mock('@budget-planner/config', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
+vi.mock('@budget-planner/config', () => ({
+  getPaddleConfig,
+  assertPaddleProductionConfig,
+  // Story 70.1, AC-9: the label is proven through a REAL signed session, so
+  // `signSession` / `verifySession` need a secret.
+  getSessionSecret: () => 'story-70-1-session-secret-at-least-32-chars',
+}))
 vi.mock('@/server/paddle/customer-api', () => ({ fetchPaddleCustomerEmail }))
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -74,7 +80,10 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
 vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 
+import { planLabel } from '@/lib/account/plan-label'
 import { requestMagicLink } from '@/server/api/auth/magic-link'
+import { getCurrentUserSession } from '@/server/api/auth/paddle'
+import { signSession } from '@/server/api/auth/session'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import {
   loginTokens,
@@ -84,7 +93,7 @@ import {
   users,
 } from '@budget-planner/db'
 import { eq } from 'drizzle-orm'
-import { POST } from '../paddle'
+import { POST, entitlementWatermarkGuard } from '../paddle'
 
 const MIGRATIONS = new URL('../../../../../../../packages/db/migrations/', import.meta.url)
 
@@ -1311,5 +1320,325 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
     })
     expect(missing.status).toBe(200)
     expect((await readUser('ctm_1'))[0].email).toBe('old@example.test')
+  })
+})
+
+describe('Story 70.1 — Settings names the plan the user bought', () => {
+  /**
+   * A `subscription.created` shaped as Paddle sends it: the TOP-LEVEL
+   * `billing_cycle` (required on the subscription entity — the field the
+   * webhook reads) AND a line item whose price carries its own. The item-level
+   * one is present so a handler that read `items[0].price.billing_cycle`
+   * instead would still see a cycle — the top-level one is the contract.
+   */
+  function subscriptionCreated(
+    customerId: string,
+    email: string,
+    cycle: { interval: string; frequency: number } | undefined
+  ) {
+    return {
+      event_type: 'subscription.created',
+      data: {
+        id: `sub_${customerId}`,
+        customer_id: customerId,
+        status: 'active',
+        email,
+        currency_code: 'EUR',
+        ...(cycle ? { billing_cycle: cycle } : {}),
+        items: [
+          {
+            status: 'active',
+            quantity: 1,
+            recurring: true,
+            price: {
+              id: cycle?.interval === 'year' ? ANNUAL_PRICE : 'pri_monthly_599',
+              ...(cycle ? { billing_cycle: cycle } : {}),
+            },
+          },
+        ],
+      },
+    }
+  }
+
+  /** Resolve the user's session exactly as `/api/auth/me` does, from a signed cookie. */
+  async function sessionFor(paddleId: string) {
+    const [row] = await readUser(paddleId)
+    const token = signSession({ userId: row.id, paddleId: row.paddleId, email: row.email })
+    const result = await getCurrentUserSession(
+      new Request('https://app.test/api/auth/me', {
+        headers: { cookie: `session=${encodeURIComponent(token)}` },
+      })
+    )
+    if (!result.success || !result.data) throw new Error('session did not resolve')
+    return result.data
+  }
+
+  function labelOf(session: Awaited<ReturnType<typeof sessionFor>>): string {
+    // Read through a widened view so this file still RUNS against a server that
+    // predates the field (the RED leg of AC-9): absent reads as unknown.
+    const { billingInterval } = session as { billingInterval?: 'month' | 'year' | null }
+    return planLabel(session.subscriptionStatus, billingInterval)
+  }
+
+  it('a monthly and an annual subscriber render DIFFERENT labels, end to end (AC-9)', async () => {
+    await post({
+      ...subscriptionCreated('ctm_monthly', 'monthly@example.test', {
+        interval: 'month',
+        frequency: 1,
+      }),
+      occurred_at: at(1),
+    })
+    await post({
+      ...subscriptionCreated('ctm_annual', 'annual@example.test', {
+        interval: 'year',
+        frequency: 1,
+      }),
+      occurred_at: at(1),
+    })
+
+    const monthly = labelOf(await sessionFor('ctm_monthly'))
+    const annual = labelOf(await sessionFor('ctm_annual'))
+
+    expect({ monthly, annual }).toEqual({ monthly: 'Monthly Plan', annual: 'Annual Plan' })
+  })
+
+  const MONTH = { interval: 'month', frequency: 1 }
+  const YEAR = { interval: 'year', frequency: 1 }
+
+  it('drops a STALE event whole: an older monthly event cannot overwrite a newer annual one (AC-7)', async () => {
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', YEAR), occurred_at: at(10) })
+    // Paddle retries and reorders; this older delivery arrives second.
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', MONTH), occurred_at: at(5) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.billingInterval).toBe('year')
+    expect(row.entitlementUpdatedAt).toBe(BASE_TIME + 10 * 60_000)
+  })
+
+  it('follows a plan SWITCH: monthly then a newer annual event ends annual (AC-7)', async () => {
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', MONTH), occurred_at: at(0) })
+    await post({
+      event_type: 'subscription.updated',
+      data: { customer_id: 'ctm_1', status: 'active', billing_cycle: YEAR },
+      occurred_at: at(10),
+    })
+
+    expect((await readUser('ctm_1'))[0].billingInterval).toBe('year')
+  })
+
+  it('leaves the stored cadence alone when an event states NO billing_cycle (absent ≠ changed)', async () => {
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', YEAR), occurred_at: at(0) })
+    // `subscriptionEvent()` carries no billing_cycle.
+    await post({ ...subscriptionEvent({ status: 'past_due' }), occurred_at: at(5) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('past_due')
+    expect(row.billingInterval).toBe('year')
+  })
+
+  it('records a cadence this product does not sell as NULL, never a guessed plan (AC-2)', async () => {
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', YEAR), occurred_at: at(0) })
+    // Twelve months is a year in duration, but it is not a plan we sell.
+    await post({
+      event_type: 'subscription.updated',
+      data: {
+        customer_id: 'ctm_1',
+        status: 'active',
+        billing_cycle: { interval: 'month', frequency: 12 },
+      },
+      occurred_at: at(5),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.billingInterval).toBeNull()
+    expect(planLabel(row.subscriptionStatus, row.billingInterval)).toBe('Active')
+  })
+
+  // ⚠️ HONEST SCOPE (Story 70.1 review). The two first-seen tests below pin the
+  // OUTCOME, not the INSERT's `?? null`: the column is nullable with no default,
+  // so deleting that expression leaves both green. What they do catch is a
+  // first-seen row being given a WRONG cadence (a guessed or a leaked one).
+  // The first uses a payload Paddle cannot send (`billing_cycle` is required),
+  // kept as the defensive case; the second is the reachable one.
+  it('stores NULL for a first-seen subscriber whose payload states no cycle', async () => {
+    await post({
+      ...subscriptionCreated('ctm_1', 'buyer@example.test', undefined),
+      occurred_at: at(0),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('active')
+    expect(row.billingInterval).toBeNull()
+  })
+
+  it('stores NULL, not a guess, for a first-seen subscriber on a cadence we do not sell', async () => {
+    await post({
+      ...subscriptionCreated('ctm_1', 'buyer@example.test', { interval: 'month', frequency: 12 }),
+      occurred_at: at(0),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('active')
+    expect(row.billingInterval).toBeNull()
+  })
+
+  it.each([
+    ['an explicit null', null],
+    ['an upper-case interval', { interval: 'YEAR', frequency: 1 }],
+  ])('treats %s billing_cycle as MALFORMED (null), not absent (review, AC-2)', async (_, cycle) => {
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', YEAR), occurred_at: at(0) })
+    await post({
+      event_type: 'subscription.updated',
+      data: { customer_id: 'ctm_1', status: 'active', billing_cycle: cycle },
+      occurred_at: at(5),
+    })
+
+    // Absent would have PRESERVED 'year'; malformed degrades to "Active".
+    expect((await readUser('ctm_1'))[0].billingInterval).toBeNull()
+  })
+
+  describe('entitlementWatermarkGuard — the in-statement ordering predicate (review)', () => {
+    // The route cannot reach the race this closes: PGlite is one connection, so
+    // two deliveries never interleave between the pre-read and the UPDATE. This
+    // drives the predicate itself against the real schema, which is what makes
+    // the loser of such a race match no row.
+    async function guardedUpdate(occurredAtMinutes: number) {
+      const occurredAt = BASE_TIME + occurredAtMinutes * 60_000
+      return db
+        .update(users)
+        .set({ billingInterval: 'month', entitlementUpdatedAt: occurredAt })
+        .where(entitlementWatermarkGuard('ctm_1', occurredAt))
+        .returning({ id: users.id })
+    }
+
+    it('matches NO row for an event older than the stored watermark', async () => {
+      await seedUser({ billingInterval: 'year', entitlementUpdatedAt: BASE_TIME + 10 * 60_000 })
+
+      expect(await guardedUpdate(5)).toHaveLength(0)
+      const [row] = await readUser('ctm_1')
+      expect(row.billingInterval).toBe('year')
+      expect(row.entitlementUpdatedAt).toBe(BASE_TIME + 10 * 60_000)
+    })
+
+    it('matches NO row for an event at EXACTLY the watermark (strictly newer only)', async () => {
+      await seedUser({ billingInterval: 'year', entitlementUpdatedAt: BASE_TIME + 10 * 60_000 })
+      expect(await guardedUpdate(10)).toHaveLength(0)
+    })
+
+    it('matches the row for a newer event, and when no watermark is set yet', async () => {
+      await seedUser({ billingInterval: 'year', entitlementUpdatedAt: BASE_TIME + 10 * 60_000 })
+      expect(await guardedUpdate(15)).toHaveLength(1)
+      expect((await readUser('ctm_1'))[0].billingInterval).toBe('month')
+
+      await seedUser({ paddleId: 'ctm_2', email: 'other@example.test' })
+      const fresh = await db
+        .update(users)
+        .set({ billingInterval: 'year' })
+        .where(entitlementWatermarkGuard('ctm_2', BASE_TIME))
+        .returning({ id: users.id })
+      expect(fresh).toHaveLength(1)
+    })
+
+    it('matches ONLY the named customer', async () => {
+      await seedUser({ paddleId: 'ctm_2', email: 'other@example.test', billingInterval: 'year' })
+      await seedUser({ billingInterval: 'year' })
+
+      expect(await guardedUpdate(5)).toHaveLength(1)
+      expect((await readUser('ctm_2'))[0].billingInterval).toBe('year')
+    })
+  })
+
+  it("writes the cadence for ONLY the event's customer, leaving a bystander untouched", async () => {
+    await seedUser({
+      paddleId: 'ctm_2',
+      email: 'bystander@example.test',
+      subscriptionStatus: 'active',
+      billingInterval: 'month',
+    })
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', YEAR), occurred_at: at(0) })
+    await post({
+      event_type: 'subscription.updated',
+      data: { customer_id: 'ctm_1', status: 'active', billing_cycle: YEAR },
+      occurred_at: at(5),
+    })
+
+    expect((await readUser('ctm_2'))[0].billingInterval).toBe('month')
+  })
+
+  it('a lifetime grant clears a previous subscription cadence and labels as Lifetime Plan', async () => {
+    await post({ ...subscriptionCreated('ctm_1', 'buyer@example.test', YEAR), occurred_at: at(0) })
+    await post({ ...lifetimeEvent(), occurred_at: at(5) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('lifetime')
+    expect(row.billingInterval).toBeNull()
+    expect(labelOf(await sessionFor('ctm_1'))).toBe('Lifetime Plan')
+  })
+
+  it('a subscription event for a LIFETIME buyer writes nothing, cadence included', async () => {
+    await seedUser({ subscriptionStatus: 'lifetime', entitlementUpdatedAt: BASE_TIME })
+    await post({
+      event_type: 'subscription.updated',
+      data: { customer_id: 'ctm_1', status: 'active', billing_cycle: YEAR },
+      occurred_at: at(10),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('lifetime')
+    expect(row.billingInterval).toBeNull()
+  })
+
+  describe('re-key (reconcileEmailCollision) — the path that gets forgotten (AC-10)', () => {
+    async function seedLapsedAnnual() {
+      // A lapsed annual subscriber under an OLD Paddle customer id.
+      await seedUser({
+        paddleId: 'ctm_old',
+        email: 'returning@example.test',
+        subscriptionStatus: 'canceled',
+        billingInterval: 'year',
+        entitlementUpdatedAt: BASE_TIME,
+      })
+    }
+
+    it("writes the NEW customer's cadence onto the adopted row", async () => {
+      await seedLapsedAnnual()
+      await post({
+        ...subscriptionCreated('ctm_new', 'returning@example.test', MONTH),
+        occurred_at: at(10),
+      })
+
+      const [row] = await readUser('ctm_new')
+      expect(row.email).toBe('returning@example.test')
+      expect(row.subscriptionStatus).toBe('active')
+      expect(row.billingInterval).toBe('month')
+      expect(labelOf(await sessionFor('ctm_new'))).toBe('Monthly Plan')
+    })
+
+    it("clears the PREVIOUS customer's cadence when the new payload states none", async () => {
+      await seedLapsedAnnual()
+      await post({
+        ...subscriptionCreated('ctm_new', 'returning@example.test', undefined),
+        occurred_at: at(10),
+      })
+
+      const [row] = await readUser('ctm_new')
+      expect(row.subscriptionStatus).toBe('active')
+      // NOT 'year' — that belonged to ctm_old's subscription, and would show a
+      // monthly re-subscriber "Annual Plan".
+      expect(row.billingInterval).toBeNull()
+      expect(labelOf(await sessionFor('ctm_new'))).toBe('Active')
+    })
+
+    it('clears it on a lifetime re-key too', async () => {
+      await seedLapsedAnnual()
+      await post({
+        ...lifetimeEvent({ customer_id: 'ctm_new', email: 'returning@example.test' }),
+        occurred_at: at(10),
+      })
+
+      const [row] = await readUser('ctm_new')
+      expect(row.subscriptionStatus).toBe('lifetime')
+      expect(row.billingInterval).toBeNull()
+    })
   })
 })

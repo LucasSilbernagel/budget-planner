@@ -76,7 +76,18 @@ vi.mock('@budget-planner/db/src/schema', () => ({
   },
   paddleWebhookEvents: { __table: 'paddleWebhookEvents', eventId: 'eventId' },
 }))
-vi.mock('drizzle-orm', () => ({ eq: vi.fn(), sql: vi.fn(() => 'sql-fragment') }))
+// Story 70.1 review: the UPDATE paths now carry `entitlementWatermarkGuard`
+// (`and`/`or`/`isNull`/`lt`) in their WHERE. Stubbed like `eq` — `.where()` is a
+// no-op in this suite anyway; the predicate is exercised against PGlite in
+// `paddle-webhook.db.test.ts`.
+vi.mock('drizzle-orm', () => ({
+  eq: vi.fn(),
+  and: vi.fn(),
+  or: vi.fn(),
+  isNull: vi.fn(),
+  lt: vi.fn(),
+  sql: vi.fn(() => 'sql-fragment'),
+}))
 vi.mock('@/server/paddle/customer-api', () => ({ fetchPaddleCustomerEmail }))
 vi.mock('@/server/functions/profiles', () => ({ createDefaultProfileForUser }))
 vi.mock('@/lib/logger', () => ({
@@ -84,6 +95,7 @@ vi.mock('@/lib/logger', () => ({
 }))
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
 
+import { lt } from 'drizzle-orm'
 import { POST } from '../paddle'
 
 const SECRET = 'pdl_ntfset_test_secret'
@@ -319,6 +331,8 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: expect.any(Number),
+      // Story 70.1: a lifetime grant has no recurring cadence.
+      billingInterval: null,
       // Recorded at grant time so a later refund can be judged full vs partial
       // (AC-1). A grant with no usable total is now REFUSED outright, so this
       // field is always present on a successful lifetime write.
@@ -443,6 +457,8 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: expect.any(Number),
+      // Story 70.1: a lifetime grant has no recurring cadence.
+      billingInterval: null,
       // Recorded at grant time so a later refund can be judged full vs partial
       // (AC-1). A grant with no usable total is now REFUSED outright, so this
       // field is always present on a successful lifetime write.
@@ -537,6 +553,8 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: expect.any(Number),
+      // Story 70.1: a lifetime grant has no recurring cadence.
+      billingInterval: null,
       // Recorded at grant time so a later refund can be judged full vs partial
       // (AC-1). A grant with no usable total is now REFUSED outright, so this
       // field is always present on a successful lifetime write.
@@ -748,6 +766,68 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
     })
     expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
   })
+
+  it('writes the plan cadence in the SAME update as the status when the payload states one (Story 70.1)', async () => {
+    // This proves a PRESENT cycle rides in the one guarded UPDATE, and still
+    // that nothing else (email) is written. ⚠️ It does NOT prove the sibling
+    // above's absent-cycle case OMITS the key: `toHaveBeenCalledWith` equality
+    // ignores `undefined`-valued properties, so `billingInterval: undefined`
+    // would match there too. Absent-means-preserve is proven against a real
+    // database in `paddle-webhook.db.test.ts` ("leaves the stored cadence alone").
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.updated',
+        data: {
+          customer_id: 'ctm_1',
+          status: 'active',
+          billing_cycle: { interval: 'year', frequency: 1 },
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(setSpy).toHaveBeenCalledTimes(1)
+    expect(setSpy).toHaveBeenCalledWith({
+      subscriptionStatus: 'active',
+      entitlementUpdatedAt: expect.any(Number),
+      billingInterval: 'year',
+    })
+  })
+
+  it.each([
+    [
+      'subscription UPDATE',
+      { event_type: 'subscription.updated', data: { customer_id: 'ctm_1', status: 'active' } },
+    ],
+    [
+      'lifetime UPDATE',
+      {
+        event_type: 'transaction.completed',
+        data: {
+          id: 'txn_1',
+          customer_id: 'ctm_1',
+          status: 'completed',
+          items: [{ price: { id: LIFETIME_PRICE } }],
+          details: { totals: { grand_total: '9900' } },
+        },
+      },
+    ],
+  ])(
+    'the %s carries the watermark IN its WHERE, not only as a pre-read (Story 70.1 review)',
+    async (_, event) => {
+      // The pre-read (`isFresherThanWatermark`) never calls `lt`; only
+      // `entitlementWatermarkGuard` does. So `lt(…, occurredAt)` being built on this
+      // path is what shows the UPDATE is guarded in-statement. The race itself is
+      // not reproducible here or in PGlite; the predicate's SQL is exercised in
+      // `paddle-webhook.db.test.ts`.
+      const occurredAt = '2026-09-25T12:00:00.000Z'
+      const res = await POST({ request: signedRequest({ ...event, occurred_at: occurredAt }) })
+
+      expect(res.status).toBe(200)
+      expect(setSpy).toHaveBeenCalledTimes(1)
+      expect(lt).toHaveBeenCalledWith(expect.anything(), Date.parse(occurredAt))
+    }
+  )
 
   it('still fails closed for a first-seen subscriber whose resolved email is malformed', async () => {
     dbHasUser.value = false

@@ -77,6 +77,7 @@ import {
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import {
+  type BillingInterval,
   type Currency,
   type SubscriptionStatus,
   loginTokens,
@@ -131,6 +132,42 @@ function mapWebhookSubscriptionStatus(status: string): SubscriptionStatus {
     default:
       return 'free'
   }
+}
+
+/**
+ * Map Paddle's subscription `billing_cycle` to the plan cadence we store
+ * (Story 70.1, AC-2). Three outcomes, and the call sites depend on telling them
+ * apart:
+ *
+ *  - `'month'` / `'year'` — the two cadences this product sells, at frequency 1.
+ *  - `null` — a cycle IS stated but is not one of those (`day`, `week`, a
+ *    frequency other than 1, a malformed value, an explicit `null`, a
+ *    non-lowercase interval). Recorded as "not known" so the
+ *    label degrades to "Active" instead of keeping a plan name that is no longer
+ *    true. Deliberately strict: `month × 12` is NOT read as annual — a cadence
+ *    we do not sell must not be guessed into a plan name.
+ *  - `undefined` — NO cycle in the payload at all. Means "not stated", so the
+ *    update path leaves the stored value alone rather than erasing it.
+ *
+ * Reads the TOP-LEVEL `billing_cycle` only (required on Paddle's subscription
+ * entity). Each `items[].price` also carries one, but items can include add-ons.
+ */
+function mapBillingInterval(
+  cycle: PaddleEventData['billing_cycle']
+): BillingInterval | null | undefined {
+  if (cycle === undefined) return undefined
+  // A STATED `null` is malformed, not absent: Paddle's subscription entity lists
+  // `billing_cycle` as required and non-nullable. No case-folding either — Paddle's
+  // enum is lowercase, and AC-2 accepts exactly the two shapes below.
+  const interval = cycle?.interval
+  if (cycle?.frequency === 1 && (interval === 'month' || interval === 'year')) {
+    return interval
+  }
+  logger.warn('Webhook: subscription billing_cycle is not a plan this product sells', {
+    interval: cycle?.interval,
+    frequency: cycle?.frequency,
+  })
+  return null
 }
 
 /**
@@ -228,6 +265,30 @@ class WebhookDeliveryFailure extends Error {
   }
 }
 
+/**
+ * The ordering predicate for an UPDATE that advances `entitlementUpdatedAt`:
+ * this customer's row, and only while its stored watermark is still older than
+ * the event being applied (NULL = no billing event yet, always passes).
+ *
+ * ⚠️ Carried INTO the statement, not only checked beforehand (Story 70.1 review).
+ * The handlers also pre-read the watermark with `isFresherThanWatermark` so they
+ * can log and return early, but a pre-read alone is a check-then-act race: two
+ * concurrent deliveries (t=10 and a delayed t=5) can both pass it on separate
+ * connections, and whichever COMMITS last wins — leaving the row's status, and
+ * its plan cadence, from the OLDER event. With the predicate in the WHERE, the
+ * loser's UPDATE matches no row. Same shape as `emailWatermarkGuard` below and
+ * the `setWhere` on the insert paths.
+ *
+ * Exported only so its SQL can be exercised against a real database; a
+ * two-connection race is not reproducible in the single-connection PGlite suite.
+ */
+export function entitlementWatermarkGuard(customerId: string, occurredAt: number) {
+  return and(
+    eq(users.paddleId, customerId),
+    or(isNull(users.entitlementUpdatedAt), lt(users.entitlementUpdatedAt, occurredAt))
+  )
+}
+
 /** Statuses that mean the account currently HAS paid access. */
 const ENTITLED_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']
 
@@ -253,10 +314,16 @@ async function reconcileEmailCollision(
     normalizedEmail: string
     grantedStatus: SubscriptionStatus
     occurredAt: number
+    /**
+     * The NEW customer's plan cadence (Story 70.1). Required and never omitted
+     * from the write: the adopted row may carry the PREVIOUS customer's value.
+     */
+    billingInterval: BillingInterval | null
     lifetime?: LifetimeGrantFields
   }
 ): Promise<{ kind: 'none' } | { kind: 'rekeyed'; userId: string } | { kind: 'refused' }> {
-  const { customerId, normalizedEmail, grantedStatus, occurredAt, lifetime } = params
+  const { customerId, normalizedEmail, grantedStatus, occurredAt, billingInterval, lifetime } =
+    params
 
   const [byEmail] = await tx
     .select({
@@ -307,6 +374,11 @@ async function reconcileEmailCollision(
       // customer's event stream. Leaving it would let a foreign watermark drop
       // the new customer's early `customer.updated` as stale.
       emailUpdatedAt: null,
+      // ⚠️ Story 70.1, AC-3: ALWAYS written, never omitted — the same reasoning
+      // as `emailUpdatedAt` above. A re-keyed row can carry the previous
+      // customer's cadence (a lapsed annual subscriber re-subscribing monthly);
+      // leaving it would show them the wrong plan until some later event.
+      billingInterval,
       ...(lifetime ?? {}),
     })
     .where(eq(users.id, byEmail.id))
@@ -340,9 +412,11 @@ async function handleSubscriptionStatusUpdate(
     email?: string
     occurredAt: number
     currency?: string
+    /** From `mapBillingInterval`; `undefined` = the payload did not state one. */
+    billingInterval?: BillingInterval | null
   }
 ): Promise<WriteResult> {
-  const { customerId, subscriptionStatus, email, occurredAt, currency } = params
+  const { customerId, subscriptionStatus, email, occurredAt, currency, billingInterval } = params
 
   if (!customerId || typeof customerId !== 'string') {
     logger.error('Webhook: invalid customer_id', { customerId })
@@ -351,6 +425,11 @@ async function handleSubscriptionStatusUpdate(
 
   const mappedStatus = mapWebhookSubscriptionStatus(subscriptionStatus)
   const mappedCurrency = mapProvidedCurrency(currency)
+  // Story 70.1: on an EXISTING row an absent cycle leaves the stored cadence
+  // alone (absent ≠ changed). The interval rides in the same statement as the
+  // status, so the ordering guard below covers both — see the schema docblock
+  // for why it shares `entitlementUpdatedAt`.
+  const intervalUpdate = billingInterval === undefined ? {} : { billingInterval }
 
   const existing = await tx
     .select({
@@ -387,8 +466,21 @@ async function handleSubscriptionStatusUpdate(
     // chosen currency. It is insert-only, below.
     await tx
       .update(users)
-      .set({ subscriptionStatus: mappedStatus, entitlementUpdatedAt: occurredAt })
-      .where(eq(users.paddleId, customerId))
+      .set({
+        subscriptionStatus: mappedStatus,
+        entitlementUpdatedAt: occurredAt,
+        ...intervalUpdate,
+      })
+      // In-statement guards (Story 70.1 review): the watermark, and the
+      // no-downgrade rule the early return above checks — a lifetime grant
+      // that commits concurrently must not be overwritten either. This mirrors
+      // the insert path's `setWhere` exactly.
+      .where(
+        and(
+          entitlementWatermarkGuard(customerId, occurredAt),
+          sql`${users.subscriptionStatus} <> 'lifetime'`
+        )
+      )
     return { ok: true }
   }
 
@@ -418,6 +510,7 @@ async function handleSubscriptionStatusUpdate(
     normalizedEmail,
     grantedStatus: mappedStatus,
     occurredAt,
+    billingInterval: billingInterval ?? null,
   })
   if (collision.kind === 'refused') {
     return { ok: true, terminal: true }
@@ -437,11 +530,16 @@ async function handleSubscriptionStatusUpdate(
       email: normalizedEmail,
       subscriptionStatus: mappedStatus,
       entitlementUpdatedAt: occurredAt,
+      billingInterval: billingInterval ?? null,
       ...(mappedCurrency ? { currency: mappedCurrency } : {}),
     })
     .onConflictDoUpdate({
       target: users.paddleId,
-      set: { subscriptionStatus: mappedStatus, entitlementUpdatedAt: occurredAt },
+      set: {
+        subscriptionStatus: mappedStatus,
+        entitlementUpdatedAt: occurredAt,
+        ...intervalUpdate,
+      },
       setWhere: sql`${users.subscriptionStatus} <> 'lifetime' AND (${users.entitlementUpdatedAt} IS NULL OR ${users.entitlementUpdatedAt} < ${occurredAt})`,
     })
     .returning({ id: users.id })
@@ -542,9 +640,15 @@ async function handleLifetimePurchase(
       .set({
         subscriptionStatus: 'lifetime',
         entitlementUpdatedAt: occurredAt,
+        // Story 70.1: a lifetime grant has no recurring cadence. The label reads
+        // the status alone, so this is for the row's own consistency.
+        billingInterval: null,
         ...lifetimeFields,
       })
-      .where(eq(users.paddleId, customerId))
+      // In-statement watermark guard (Story 70.1 review) — see
+      // `entitlementWatermarkGuard`. A lifetime grant upgrades any status, so
+      // the watermark is the only condition, as on the insert path's `setWhere`.
+      .where(entitlementWatermarkGuard(customerId, occurredAt))
     return { ok: true }
   }
 
@@ -566,6 +670,7 @@ async function handleLifetimePurchase(
     normalizedEmail,
     grantedStatus: 'lifetime',
     occurredAt,
+    billingInterval: null,
     lifetime: lifetimeFields,
   })
   if (collision.kind === 'refused') {
@@ -585,6 +690,7 @@ async function handleLifetimePurchase(
       email: normalizedEmail,
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: occurredAt,
+      billingInterval: null,
       ...lifetimeFields,
       ...(mappedCurrency ? { currency: mappedCurrency } : {}),
     })
@@ -593,6 +699,7 @@ async function handleLifetimePurchase(
       set: {
         subscriptionStatus: 'lifetime',
         entitlementUpdatedAt: occurredAt,
+        billingInterval: null,
         ...lifetimeFields,
       },
       setWhere: sql`${users.entitlementUpdatedAt} IS NULL OR ${users.entitlementUpdatedAt} < ${occurredAt}`,
@@ -795,6 +902,8 @@ async function handleAdjustment(
     return { ok: true, terminal: true }
   }
 
+  // `billingInterval` is deliberately NOT touched (Story 70.1): the label for
+  // `canceled` ignores it, and it remains a true fact about what was bought.
   await tx
     .update(users)
     .set({ subscriptionStatus: 'canceled', entitlementUpdatedAt: occurredAt })
@@ -1072,6 +1181,11 @@ interface PaddleEventData {
    */
   status?: string
   currency_code?: string
+  /**
+   * `subscription.*` only (Story 70.1): how often the subscription renews,
+   * required on Paddle's subscription entity. Read by `mapBillingInterval`.
+   */
+  billing_cycle?: { interval?: string; frequency?: number } | null
   price_id?: string
   items?: Array<{ price_id?: string; price?: { id?: string } }>
   // Present only when the notification destination includes the customer entity,
@@ -1363,6 +1477,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
           ...(buyerEmail ? { email: buyerEmail } : {}),
           occurredAt,
           currency,
+          billingInterval: mapBillingInterval(data.billing_cycle),
         })
       )
       if (!result.ok) {

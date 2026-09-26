@@ -945,8 +945,8 @@ development_status:
   69-3-return-balances-and-retirement-to-the-desktop-nav-bar: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `c224665`. 2 decisions (Lucas: remove JS-off 640-642px wrap via `sm:pr-1 lg:pr-2`; close More crossing lg), 26 patches applied, 1 deferred (case-variant routes). Final: web 3342/221, tsc 0/0/0/0, Biome 0/616, e2e 516+4, measure 8/8.
   epic-69-retrospective: optional
 
-  epic-70: backlog  # Settings That Say What You Are Paying For.
-  70-1-record-and-display-the-plan-the-user-bought: backlog  # Needs a column + webhook + migration (users stores no priceId/interval). ⚠ THREE write sites incl. the re-key path `reconcileEmailCollision`.
+  epic-70: in-progress  # Settings That Say What You Are Paying For.
+  70-1-record-and-display-the-plan-the-user-bought: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `aae344f`. Decision (Lucas): watermark race FIXED NOW (`entitlementWatermarkGuard` in both UPDATE WHEREs). 8 patches, 2 deferred (multi-sub per customer; scheduled_change), 9 dismissed. Final: web 3394/223, core 941/27, DB 276+7, tsc 0/0/0/0, Biome 0/619, e2e 516 exit 0. ⚠⚠ DEPLOY: 0020-0023 before the app.
   70-2-make-the-sign-out-button-look-like-a-button: backlog
   epic-70-retrospective: optional
 

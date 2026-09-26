@@ -225,3 +225,52 @@ describe('AccountSection — deletion forfeits paid time (5-19 AC-6)', () => {
     }
   )
 })
+
+/**
+ * Story 70.1 — the Account section names the plan the user bought, from the
+ * `/api/auth/me` payload. The label table itself is pinned in
+ * `lib/account/plan-label.test.ts`; these prove the component RENDERS it from
+ * the payload rather than the raw status enum.
+ */
+describe('AccountSection — plan label (Story 70.1)', () => {
+  it.each([
+    ['active', 'year', 'Annual Plan'],
+    ['active', 'month', 'Monthly Plan'],
+    // AC-6: a row that predates the column — the pre-70.1 text, never blank.
+    ['active', null, 'Active'],
+    ['lifetime', null, 'Lifetime Plan'],
+    ['past_due', 'year', 'Annual Plan · payment overdue'],
+    ['canceled', 'year', 'Cancelled'],
+  ])('renders %s + %s as "%s"', async (subscriptionStatus, billingInterval, label) => {
+    stubFetch({
+      user: { userId: 'u1', email: 'user@example.com', subscriptionStatus, billingInterval },
+    })
+    render(<AccountSection />)
+
+    expect(await screen.findByText(label)).toBeInTheDocument()
+  })
+
+  it('falls back to "Active" when the server omits billingInterval (AC-6 / rolling deploy)', async () => {
+    stubFetch({ user: { userId: 'u1', email: 'user@example.com', subscriptionStatus: 'active' } })
+    render(<AccountSection />)
+
+    expect(await screen.findByText('Active')).toBeInTheDocument()
+  })
+
+  it('no longer renders the raw enum: past_due is not "Past_due" / "past_due"', async () => {
+    stubFetch({
+      user: {
+        userId: 'u1',
+        email: 'user@example.com',
+        subscriptionStatus: 'past_due',
+        billingInterval: null,
+      },
+    })
+    render(<AccountSection />)
+
+    const label = await screen.findByText('Payment overdue')
+    expect(screen.queryByText(/past_due/i)).not.toBeInTheDocument()
+    // The CSS `capitalize` that turned it into "Past_due" is gone with it.
+    expect(label).not.toHaveClass('capitalize')
+  })
+})
