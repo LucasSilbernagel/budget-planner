@@ -562,6 +562,8 @@ const ACCOUNT_PANEL_CLASS =
  * A panel row: the Settings link and the Sign out button look the same (story
  * 69.2). `py-2 text-sm` makes each about 36px tall, like `NAV_LINK_BASE`, over
  * the 28px floor. The ring is inset so the panel's edge cannot clip it.
+ * The Settings page's own Sign out is a standalone button in page content and
+ * is outlined like one (story 70.2). It does not use this row style on purpose.
  */
 const PANEL_ROW_CLASS =
   'block w-full px-4 py-2 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'

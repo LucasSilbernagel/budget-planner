@@ -50,6 +50,7 @@ vi.mock('@/lib/account/sign-out', async (importOriginal) => {
 
 import { resetSignOutStateForTests, returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
 import { AccountSection } from './account-section'
+import { LocalDataSection } from './local-data-section'
 
 const originalFetch = global.fetch
 
@@ -272,5 +273,69 @@ describe('AccountSection — plan label (Story 70.1)', () => {
     expect(screen.queryByText(/past_due/i)).not.toBeInTheDocument()
     // The CSS `capitalize` that turned it into "Past_due" is gone with it.
     expect(label).not.toHaveClass('capitalize')
+  })
+})
+
+/**
+ * Story 70.2 (FR112) — Sign out has a RESTING affordance: a border and a
+ * background with no `hover:` prefix, which is all a touch user ever sees.
+ *
+ * ⚠️ Asserted by whole class TOKEN (`toHaveClass`), never by a substring of
+ * `className`: a regex like `/bg-/` is satisfied by the `hover:bg-gray-100`
+ * the button already had, and would pass against the bug.
+ *
+ * The border is `gray-500` in BOTH themes (review decision, Lucas 2026-09-25):
+ * the fill equals the card's, so the border is the only affordance, and it must
+ * reach 3:1 against that fill. Measured (WCAG relative luminance): gray-500 on
+ * white 4.83, on gray-800 3.04. The first choice, gray-300 / gray-600, measured
+ * 1.47 / 1.94. gray-400 on white is still only 2.54.
+ */
+describe('AccountSection — Sign out affordance (Story 70.2)', () => {
+  async function renderSignOut() {
+    stubFetch({
+      user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' },
+    })
+    render(<AccountSection />)
+    return screen.findByRole('button', { name: /^sign out$/i })
+  }
+
+  it('has a border and a background at rest, in both themes, not only on hover', async () => {
+    const signOutButton = await renderSignOut()
+
+    expect(signOutButton).toHaveClass(
+      'border',
+      'border-gray-500',
+      'bg-white',
+      'dark:border-gray-500',
+      'dark:bg-gray-800'
+    )
+  })
+
+  it('matches Clear local data, the other secondary button on the page, apart from spacing and in-flight states', async () => {
+    const signOutButton = await renderSignOut()
+    render(<LocalDataSection />)
+    const clearButton = screen.getByRole('button', { name: /^clear local data$/i })
+
+    // Sign out drops Clear local data's `mt-3` (it sits in a flex row) and adds
+    // `disabled:` states (sign-out is in flight for a moment). Every other token
+    // must be the same, so the two cannot drift apart silently.
+    const comparable = (element: HTMLElement) =>
+      element.className
+        .split(/\s+/)
+        .filter((token) => token !== 'mt-3' && !token.startsWith('disabled:'))
+        .sort()
+    expect(comparable(signOutButton)).toEqual(comparable(clearButton))
+  })
+
+  it('stays subordinate to Delete account: outlined and neutral, never a solid or red fill', async () => {
+    const signOutButton = await renderSignOut()
+    const tokens = signOutButton.className.split(/\s+/)
+
+    // The only resting fills are the card's own: white, and gray-800 in dark.
+    expect(tokens.filter((token) => token.startsWith('bg-'))).toEqual(['bg-white'])
+    expect(tokens.filter((token) => token.startsWith('dark:bg-'))).toEqual(['dark:bg-gray-800'])
+    expect(tokens.some((token) => /(^|:)bg-red-/.test(token))).toBe(false)
+    // The comparison is live: Delete account IS the solid red one.
+    expect(screen.getByRole('button', { name: /^delete account$/i })).toHaveClass('bg-red-600')
   })
 })

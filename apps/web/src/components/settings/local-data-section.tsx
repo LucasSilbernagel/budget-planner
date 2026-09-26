@@ -83,13 +83,16 @@ export function LocalDataSection() {
         Removes the income, expenses, savings, balances and profiles stored in this browser. This
         only affects this device and does not delete any synced account.
       </p>
+      {/* Border gray-500 so it reaches 3:1 against the card-coloured fill
+          (story 70.2). Settings' Sign out shares this recipe, and
+          `account-section.test.tsx` pins the two together. */}
       <button
         type="button"
         onClick={() => {
           setCleared(false)
           setIsConfirmOpen(true)
         }}
-        className="mt-3 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+        className="mt-3 rounded-md border border-gray-500 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-500 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
       >
         Clear local data
       </button>

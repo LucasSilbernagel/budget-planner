@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-25r (**STORY 70.2 CODE-REVIEWED + CLOSED — `review` -> `done`**, UNCOMMITTED — AND EPIC 70 ROLLUP CLOSED IN THE SAME PASS. Next: `create-story` 71.1.)
+# last_updated: 2026-09-25q (**STORY 70.2 DEV COMPLETE — `in-progress` -> `review`**, UNCOMMITTED.)
+# last_updated: 2026-09-25p (**STORY 70.2 DEV STARTED — `ready-for-dev` -> `in-progress`** at `4fa2c9b`.)
+# last_updated: 2026-09-25o (**STORY 70.2 CONTEXTED — `backlog` -> `ready-for-dev`** at `4fa2c9b`.)
 # last_updated: 2026-09-25n (**STANDALONE `seo-1` CREATED -> `ready-for-dev`** at `c224665`: disallow /welcome, ship sitemap.xml, enumerating guard.)
 # last_updated: 2026-09-25m (**STORY 69.2 CODE-REVIEWED + CLOSED — `review` -> `done`**, UNCOMMITTED. See the 69.2 status line.)
 # last_updated: 2026-09-25l (**STORY 69.2 DEV COMPLETE — `in-progress` -> `review`**, UNCOMMITTED. See the 69.2 status line.)
@@ -945,9 +949,9 @@ development_status:
   69-3-return-balances-and-retirement-to-the-desktop-nav-bar: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `c224665`. 2 decisions (Lucas: remove JS-off 640-642px wrap via `sm:pr-1 lg:pr-2`; close More crossing lg), 26 patches applied, 1 deferred (case-variant routes). Final: web 3342/221, tsc 0/0/0/0, Biome 0/616, e2e 516+4, measure 8/8.
   epic-69-retrospective: optional
 
-  epic-70: in-progress  # Settings That Say What You Are Paying For.
+  epic-70: done  # ✅ CLOSED 2026-09-25 with 70.2 (both stories done; 70.2 UNCOMMITTED). Settings That Say What You Are Paying For.
   70-1-record-and-display-the-plan-the-user-bought: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `aae344f`. Decision (Lucas): watermark race FIXED NOW (`entitlementWatermarkGuard` in both UPDATE WHEREs). 8 patches, 2 deferred (multi-sub per customer; scheduled_change), 9 dismissed. Final: web 3394/223, core 941/27, DB 276+7, tsc 0/0/0/0, Biome 0/619, e2e 516 exit 0. ⚠⚠ DEPLOY: 0020-0023 before the app.
-  70-2-make-the-sign-out-button-look-like-a-button: backlog
+  70-2-make-the-sign-out-button-look-like-a-button: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `4fa2c9b`. Decision (Lucas): border gray-500 on BOTH Settings secondary buttons (3:1 vs fill), parity test-pinned. 4 patches, 3 deferred, 7 dismissed. Final: web 3397/223, tsc 0, Biome 0/619, e2e settings 11 passed. Contexted 2026-09-25 at `4fa2c9b`. Reuse Clear local data's outlined recipe; menu Sign out deliberately unchanged (D1).
   epic-70-retrospective: optional
 
   epic-71: backlog  # The Retirement Toggle Means What It Says. WIDENS the toggle's contract from navigation-only — the settings copy must move with it.

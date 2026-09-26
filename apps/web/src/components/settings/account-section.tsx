@@ -182,11 +182,23 @@ export function AccountSection() {
               {planLabel(authState.user.subscriptionStatus, authState.user.billingInterval)}
             </span>
           </div>
+          {/* Story 70.2 (FR112): a border and a background at REST, since a
+              touch user never hovers. The recipe is Clear local data's
+              (`local-data-section.tsx`), so the page's secondary actions match.
+              The border carries the affordance, since the fill equals the
+              card's in both themes, so it is gray-500 to reach 3:1 against
+              that fill (4.83 light, 3.04 dark; review decision, Lucas
+              2026-09-25). A test pins the two buttons' classes together.
+              Outlined and neutral, so it stays
+              subordinate to Delete account's solid red. ⚠️ The account menu's
+              Sign out (`auth-indicator.tsx`, `SIGN_OUT_CLASS`) deliberately
+              keeps the menu-row style. Inside that panel the panel is the
+              affordance, and story 69.2 made its rows match each other. */}
           <button
             type="button"
             onClick={handleSignOut}
             disabled={isSigningOut}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="rounded-md border border-gray-500 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60 dark:border-gray-500 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
           >
             Sign out
           </button>
