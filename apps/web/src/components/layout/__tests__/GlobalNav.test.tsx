@@ -74,6 +74,34 @@ const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
 const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...MORE_DESTINATIONS]
 
 /**
+ * ⚠️⚠️ STORY 69.3 (FR110, decision D2): Balances and Retirement are in the DOM
+ * TWICE. The sheet copy (inside More, `lg:hidden`) and a ROW copy (an outer
+ * `<li data-nav-promoted>`, `hidden lg:block`). A real browser renders exactly
+ * one of them at any width; jsdom applies no stylesheet, so it sees BOTH. So:
+ *
+ *  - a DOM anchor count is destinations + promoted copies (6 + 2 = 8 free),
+ *  - a role query by name for those two MUST be scoped to the sheet or the row
+ *    (`sheetOf` / `rowCopiesOf`), never resolved with `getAllBy…()[0]`, which
+ *    picks a copy by DOM order and asserts nothing about which one.
+ *
+ * Which copy a user actually sees at which width is a RENDERED fact:
+ * `e2e/nav-lg-row{,.paid}.spec.ts`.
+ */
+const PROMOTED_COPIES = MORE_DESTINATIONS.length
+
+/** The More panel's list. Non-null asserted, so a scoped query cannot pass on nothing. */
+const sheetOf = (nav: HTMLElement): HTMLElement => {
+  const sheet = nav.querySelector('details > ul')
+  expect(sheet, 'the More panel list is missing').not.toBeNull()
+  return sheet as HTMLElement
+}
+
+/** The promoted destinations' ROW copies' anchors, in order (story 69.3). */
+const rowCopiesOf = (nav: HTMLElement): HTMLAnchorElement[] => [
+  ...nav.querySelectorAll<HTMLAnchorElement>(':scope > ul > li[data-nav-promoted] > a'),
+]
+
+/**
  * Class-token membership helper (the canonical form used across the repo).
  *
  * ⚠️ Takes an ELEMENT, not a string. `HTMLElement.className` is a string but
@@ -98,9 +126,13 @@ const ICON_SVG = 'svg:not([data-disclosure-chevron])'
 
 /**
  * Colour utilities, for the AC-5 guard below. Tailwind emits every `max-sm:`
- * rule AFTER the unprefixed utilities, so a `max-sm:` COLOUR would beat the
- * unprefixed `hover:` states below 640px and silently invert mobile hover
- * behaviour. Layout/spacing/typography may be `max-sm:`-scoped; colour may not.
+ * rule AFTER the unprefixed utilities, so a `max-sm:` COLOUR would beat an
+ * unprefixed colour of equal specificity below 640px. Layout/spacing/typography
+ * may be `max-sm:`-scoped; colour may not.
+ * ⚠️ Corrected by story 69.3: this used to say it would beat the unprefixed
+ * `hover:` states. It would not (`:hover` is 0-2-0, a media-scoped class 0-1-0;
+ * measured for `max-lg:` in `e2e/nav-lg-row{,.paid}.spec.ts`). The guard stays
+ * for the non-hover case, the unprefixed active treatment included.
  *
  * ⚠️ Matched by PROPERTY FAMILY, not by palette name. An earlier version listed
  * nine palettes, which let `max-sm:bg-slate-100`, `max-sm:text-emerald-600` and
@@ -145,14 +177,26 @@ describe('GlobalNav', () => {
   it.each(SECTIONS)('exposes the %s section link to %s', async (name, href) => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    const link = within(nav).getByRole('link', { name })
-    expect(link).toHaveAttribute('href', href)
+    // A promoted destination has two DOM copies since story 69.3; every other
+    // destination has one. Each copy must point at the route.
+    const links = within(nav).getAllByRole('link', { name })
+    const promoted = MORE_DESTINATIONS.some(([, h]) => h === href)
+    expect(links).toHaveLength(promoted ? 2 : 1)
+    for (const link of links) expect(link).toHaveAttribute('href', href)
   })
 
-  it('exposes exactly the six top-level sections (no premium entry in the nav)', async () => {
+  it('exposes exactly the six top-level sections, as eight DOM anchors (no premium entry)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length)
+    // Eight DOM anchors: six destinations + the two promoted row copies (69.3).
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length + PROMOTED_COPIES)
+    expect(
+      new Set(
+        within(nav)
+          .getAllByRole('link')
+          .map((a) => a.getAttribute('href'))
+      ).size
+    ).toBe(SECTIONS.length)
     // Forecasting stays surfaced-but-locked on Home (story 7-2), not in the nav.
     expect(within(nav).queryByRole('link', { name: /forecast/i })).not.toBeInTheDocument()
   })
@@ -210,7 +254,7 @@ describe('GlobalNav', () => {
     const list = nav.querySelector('ul')
     expect(list).not.toBeNull()
 
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length)
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length + PROMOTED_COPIES)
     // The single <nav> carries the mobile bar's own positioning...
     expect(tokens(nav)).toContain('max-sm:fixed')
     // ...while the same <ul> carries BOTH the desktop flex row and the mobile grid.
@@ -261,14 +305,18 @@ describe('GlobalNav', () => {
    *
    * The obvious implementation (leave eight `<li>` in the bar, hide four with
    * `max-sm:hidden`, re-list them in a mobile-only sheet) is forbidden twice
-   * over: it puts four destination labels in the DOM TWICE — the dual-render
-   * this component's docblock rejects — and it breaks jsdom multi-match and
-   * Playwright strict mode alike. The compliant shape is a NESTED `<ul>` inside
-   * the fifth `<li>`. Until story 59.2 that list was dissolved into the desktop
-   * row at >= 640px. Since 59.2 it sits inside the cell's `<details>` and is a
-   * disclosure panel at every width.
+   * over: it puts four destination labels in the DOM TWICE, and it breaks
+   * jsdom multi-match and Playwright strict mode alike. The compliant shape is
+   * a NESTED `<ul>` inside the fifth `<li>`. Until story 59.2 that list was
+   * dissolved into the desktop row at >= 640px; since 59.2 it sits inside the
+   * cell's `<details>` as a disclosure panel.
+   *
+   * ⚠️ Story 69.3 (decision D2) DOES put two labels in the DOM twice, on
+   * purpose, for the `lg` row, and it corrected the docblock this comment used
+   * to cite: what `GlobalNav.tsx` rejects is two `<nav>` LANDMARKS. The mobile
+   * reasoning above stands; the `lg` copies are asserted below.
    */
-  it('nests the More destinations in ONE list, with no duplicated label', async () => {
+  it('nests the More destinations in ONE list, duplicated only as the lg row copies', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
@@ -278,8 +326,9 @@ describe('GlobalNav', () => {
     expect(outer.contains(sheet), 'the sheet list is not nested inside the outer list').toBe(true)
 
     // The bar's own cells are the outer list's direct anchors; the sheet's rows
-    // sit one level deeper. Together they are the six destinations, each once.
-    const barAnchors = [...outer.querySelectorAll(':scope > li > a')]
+    // sit one level deeper. Since story 69.3 the outer list ALSO holds the two
+    // promoted row copies (`data-nav-promoted`, rendered only at `lg`).
+    const barAnchors = [...outer.querySelectorAll(':scope > li:not([data-nav-promoted]) > a')]
     const sheetAnchors = [...sheet.querySelectorAll(':scope > li > a')]
     expect(barAnchors.map((a) => a.textContent?.trim())).toEqual([
       'Overview',
@@ -288,10 +337,33 @@ describe('GlobalNav', () => {
       'Savings',
     ])
     expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual(['Balances', 'Retirement'])
+    expect(rowCopiesOf(nav).map((a) => a.textContent?.trim())).toEqual(['Balances', 'Retirement'])
 
-    // No destination label appears twice anywhere in the subtree.
+    // ⚠️ REVERSED by story 69.3 (decision D2, Lucas 2026-09-25). Until then
+    // this asserted that NO href appears twice. The promoted destinations now
+    // appear exactly twice, and nothing else does: a third copy, or a copy of
+    // a tab or a premium row, is still the dual-render defect.
     const hrefs = [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href'))
-    expect(new Set(hrefs).size, 'a destination is duplicated in the nav DOM').toBe(hrefs.length)
+    const counts = new Map<string | null, number>()
+    for (const h of hrefs) counts.set(h, (counts.get(h) ?? 0) + 1)
+    for (const [h, n] of counts) {
+      const promoted = MORE_DESTINATIONS.some(([, href]) => href === h)
+      expect(n, `${h} appears ${n} times in the nav DOM`).toBe(promoted ? 2 : 1)
+    }
+    // Only ONE copy is ever rendered: the sheet copy is `lg:hidden`, the row
+    // copy `hidden lg:block`. Token-level only; e2e proves the render.
+    // The PROMOTED sheet rows specifically (the free sheet happens to be only
+    // those, but the assertion is about the set, not the tier).
+    for (const [, href] of MORE_DESTINATIONS) {
+      const li = sheet.querySelector(`:scope > li[data-nav-path="${href}"]`)
+      expect(li, `no sheet row for ${href}`).not.toBeNull()
+      expect(tokens(li as Element), 'a promoted sheet row renders at lg too').toContain('lg:hidden')
+    }
+    for (const a of rowCopiesOf(nav)) {
+      expect(tokens(a.parentElement as HTMLElement)).toEqual(['hidden', 'lg:block'])
+      // A desktop-only element: no mobile glyph, no mobile tokens.
+      expect(a.querySelector('svg'), 'a row copy carries an icon').toBeNull()
+    }
 
     // Story 59.2: the nested list is the panel of the fifth cell's `<details>`.
     // Until 59.2 this asserted the OPPOSITE — two `sm:contents` tokens
@@ -455,7 +527,9 @@ describe('GlobalNav', () => {
 
     // Each label is wrapped so the e2e line-count probe can scope a Range to the
     // TEXT — over the whole anchor it measures 3 rects on a correct cell.
-    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(7)
+    // Nine labels: the seven above + the two promoted row copies (story 69.3),
+    // which carry a label and NO icon, so the icon count stays seven.
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(9)
   })
 
   // Story 18-2 (review follow-ups), still true of the 31.5 single-row bar: the
@@ -537,9 +611,9 @@ describe('GlobalNav', () => {
   })
 
   // Story 31.4 (AC-5) — the composition trap. Tailwind emits `max-sm:` after
-  // every unprefixed utility, so a `max-sm:` colour on a link would beat the
-  // unprefixed `hover:bg-gray-100` / `hover:text-gray-900` below 640px and
-  // silently invert today's mobile hover behaviour.
+  // every unprefixed utility, so a `max-sm:` colour on a link would beat an
+  // unprefixed colour of equal specificity below 640px (NOT the `hover:`
+  // states, as this once said: see `COLOUR_FAMILY`'s note).
   it('scopes only layout with max-sm: on the links — never colour', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -549,10 +623,15 @@ describe('GlobalNav', () => {
       for (const token of tokens(anchor)) {
         const variants = token.split(':')
         const base = variants.pop() ?? token
-        if (!variants.includes('max-sm')) continue
+        // Every `max-*` media variant, not only `max-sm:` (story 69.3 code
+        // review): the rationale is the same for all of them, and 69.3 added
+        // the first `max-lg:` colour to this component (on the More trigger,
+        // which is not a link and is the one documented exception).
+        const scope = variants.find((v) => v.startsWith('max-'))
+        if (!scope) continue
         expect(
           isColourUtility(base),
-          `"${label}" carries a max-sm:-scoped colour (${token}), which beats the unprefixed hover states below 640px`
+          `"${label}" carries a ${scope}:-scoped colour (${token}), which beats unprefixed colours of equal specificity in that range`
         ).toBe(false)
       }
     }
@@ -593,27 +672,38 @@ describe('GlobalNav', () => {
       return summary as HTMLElement
     }
 
-    it.each(MORE_DESTINATIONS)('is active on %s (%s)', async (_label, href) => {
+    // Story 69.3: these two are behind More only BELOW `lg`, so More's active
+    // treatment is `max-lg:`-scoped on their routes. The unprefixed token would
+    // light More at `lg` too, beside the row anchor that is the real "you are
+    // here" there (AC-8 mutation iii). e2e reads the computed colour at both
+    // widths (`nav-lg-row{,.paid}.spec.ts`).
+    it.each(MORE_DESTINATIONS)('is active below lg only on %s (%s)', async (_label, href) => {
       renderWithRouter(<GlobalNav />, { path: href })
       const nav = await screen.findByRole('navigation', { name: /primary/i })
       // The matching row inside the sheet is marked, by `<Link>`'s own active
-      // handling...
-      await screen.findByRole('link', { name: _label })
-      expect(screen.getByRole('link', { name: _label })).toHaveAttribute('aria-current', 'page')
-      // ...and the TAB that discloses it carries the same active treatment.
-      expect(tokens(moreTrigger(nav)), `the More tab is not marked active on ${href}`).toContain(
-        'bg-green-50'
+      // handling, and so is its row copy...
+      const sheetRow = await within(sheetOf(nav)).findByRole('link', { name: _label })
+      expect(sheetRow).toHaveAttribute('aria-current', 'page')
+      const rowCopy = rowCopiesOf(nav).find((a) => a.getAttribute('href') === href)
+      expect(rowCopy, `no row copy for ${href}`).toBeDefined()
+      expect(rowCopy).toHaveAttribute('aria-current', 'page')
+      // ...and the TAB that discloses it carries the active treatment, below lg.
+      const triggerTokens = tokens(moreTrigger(nav))
+      expect(triggerTokens, `the More tab is not marked active on ${href}`).toEqual(
+        expect.arrayContaining(['max-lg:bg-green-50', 'max-lg:text-green-700'])
       )
+      expect(triggerTokens, `the More tab is active at lg on ${href}`).not.toContain('bg-green-50')
     })
 
     it.each(PRIMARY_TABS)('is NOT active on %s (%s)', async (_label, href) => {
       renderWithRouter(<GlobalNav />, { path: href })
       const nav = await screen.findByRole('navigation', { name: /primary/i })
       await screen.findByRole('link', { name: _label })
-      expect(
-        tokens(moreTrigger(nav)),
-        `the More tab is wrongly marked active on ${href}`
-      ).not.toContain('bg-green-50')
+      const triggerTokens = tokens(moreTrigger(nav))
+      expect(triggerTokens, `the More tab is wrongly marked active on ${href}`).not.toContain(
+        'bg-green-50'
+      )
+      expect(triggerTokens).not.toContain('max-lg:bg-green-50')
     })
 
     // Anti-vacuity: `bg-green-50` must actually be the token the active
@@ -659,8 +749,11 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href')),
       'the Retirement href survived the filter'
     ).not.toContain('/retirement')
-    // Five, not six: the node is not rendered, rather than hidden by CSS.
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1)
+    // Five destinations, not six: the node is not rendered, rather than hidden
+    // by CSS. Plus ONE promoted row copy (Balances): the Retirement row copy is
+    // filtered with its sheet row (story 69.3). 5 + 1 = 6.
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1 + 1)
+    expect(rowCopiesOf(nav).map((a) => a.textContent?.trim())).toEqual(['Balances'])
   })
 
   it('leaves the sheet holding exactly its other destination', async () => {
@@ -680,11 +773,12 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    // Six: four bar tabs, the More trigger, one sheet row. (Eight until story
-    // 43.3 removed the Net Worth destination; seven until story 69.2 removed
-    // Settings.)
+    // Six icons: four bar tabs, the More trigger, one sheet row. (Eight until
+    // story 43.3 removed the Net Worth destination; seven until story 69.2
+    // removed Settings.) Seven labels: those six + the Balances row copy, which
+    // has a label and no icon (story 69.3).
     expect([...nav.querySelectorAll(ICON_SVG)]).toHaveLength(6)
-    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(6)
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(7)
   })
 
   it('leaves the four bar tabs and the More trigger untouched', async () => {
@@ -694,7 +788,9 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
 
     const outer = [...nav.querySelectorAll('ul')][0]
     expect(
-      [...outer.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
+      [...outer.querySelectorAll(':scope > li:not([data-nav-promoted]) > a')].map((a) =>
+        a.textContent?.trim()
+      )
     ).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
     expect(nav.querySelectorAll('details > summary')).toHaveLength(1)
   })
@@ -703,7 +799,8 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
    * AC-3 — the More trigger cannot claim a destination the sheet does not hold.
    *
    * ⚠️ This is the state the story made unrepresentable rather than guarded:
-   * `isMoreActive` is derived from the SAME filtered list the rows render from.
+   * More's active state (`moreActiveClass`, `isMoreActive` until story 69.3) is
+   * derived from the SAME filtered list the rows render from.
    * Computing it from the unfiltered constant would light the trigger here while
    * the sheet it discloses holds no Retirement row — an orientation cue pointing
    * at nothing.
@@ -719,6 +816,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       tokens(summary as HTMLElement),
       'the More tab claims a destination its sheet no longer holds'
     ).not.toContain('bg-green-50')
+    expect(tokens(summary as HTMLElement)).not.toContain('max-lg:bg-green-50')
   })
 
   it('restores the entry when the preference is switched back on', async () => {
@@ -728,18 +826,20 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     // ⚠️ Assert the BEFORE state too. Checking only the restored render would
     // pass identically on a component that never filters anything — the test
     // could not tell the feature from its absence.
-    expect(within(hiddenNav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1)
+    // 5 destinations + the Balances row copy (story 69.3).
+    expect(within(hiddenNav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1 + 1)
     unmount()
 
     usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    expect(within(nav).getByRole('link', { name: /^retirement$/i })).toHaveAttribute(
+    expect(within(sheetOf(nav)).getByRole('link', { name: /^retirement$/i })).toHaveAttribute(
       'href',
       '/retirement'
     )
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length)
+    expect(rowCopiesOf(nav).map((a) => a.getAttribute('href'))).toEqual(['/balance', '/retirement'])
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length + PROMOTED_COPIES)
   })
 
   /**
@@ -757,7 +857,20 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const tagged = [...nav.querySelectorAll('li[data-nav-path]')].map((li) =>
       li.getAttribute('data-nav-path')
     )
-    expect(tagged).toEqual(['/', '/income', '/expenses', '/savings', '/balance', '/retirement'])
+    // DOM order: the four tabs, the two promoted ROW copies (story 69.3), then
+    // the sheet rows. The row copies MUST be tagged: the pre-paint rule hides
+    // `[data-nav-path='/retirement']`, and an untagged row copy would paint a
+    // hidden planner at lg on the first frame (AC-5).
+    expect(tagged).toEqual([
+      '/',
+      '/income',
+      '/expenses',
+      '/savings',
+      '/balance',
+      '/retirement',
+      '/balance',
+      '/retirement',
+    ])
   })
 })
 
@@ -820,9 +933,16 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
   const PAID_SHEET = ['Balances', 'Retirement', 'Forecasting', 'Profiles', 'Report', 'Categories']
 
   describe('an entitled session', () => {
-    it('renders ten anchors', async () => {
+    // Twelve DOM anchors: ten destinations + the two promoted row copies
+    // (story 69.3). The premium rows have no row copy: they stay behind More.
+    it('renders ten destinations as twelve anchors', async () => {
       renderWithSeed(seedWith())
-      expect(within(await nav()).getAllByRole('link')).toHaveLength(10)
+      const navEl = await nav()
+      expect(within(navEl).getAllByRole('link')).toHaveLength(12)
+      expect(rowCopiesOf(navEl).map((a) => a.textContent?.trim())).toEqual([
+        'Balances',
+        'Retirement',
+      ])
     })
 
     // Story 58.1's D3 spliced these in BEFORE Settings so it stayed last. Story
@@ -830,7 +950,12 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     // the free rows. The ORDER is still the assertion, not the count.
     it('appends the four premium rows after the free rows, in order', async () => {
       renderWithSeed(seedWith())
-      expect(sheetLabels(await nav())).toEqual(PAID_SHEET)
+      const navEl = await nav()
+      expect(sheetLabels(navEl)).toEqual(PAID_SHEET)
+      // Story 69.3: an entitled session keeps its More at lg (the premium four
+      // are behind it at every width), so its cell is NOT `lg:hidden`.
+      const cell = navEl.querySelector('details')?.parentElement as HTMLElement
+      expect(tokens(cell)).not.toContain('lg:hidden')
     })
 
     it.each(PREMIUM)('links %s to %s', async (label, href) => {
@@ -841,7 +966,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
     it('treats a lifetime purchase as entitled too', async () => {
       renderWithSeed(seedWith({ subscriptionStatus: 'lifetime' }))
-      expect(within(await nav()).getAllByRole('link')).toHaveLength(10)
+      expect(within(await nav()).getAllByRole('link')).toHaveLength(12)
     })
 
     it('tags every new <li> with its route for the pre-paint CSS hook', async () => {
@@ -849,11 +974,14 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       const tagged = [...(await nav()).querySelectorAll('li[data-nav-path]')].map((li) =>
         li.getAttribute('data-nav-path')
       )
+      // The tabs, the two promoted row copies (story 69.3), then the sheet.
       expect(tagged).toEqual([
         '/',
         '/income',
         '/expenses',
         '/savings',
+        '/balance',
+        '/retirement',
         '/balance',
         '/retirement',
         '/forecasting',
@@ -875,14 +1003,16 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         expect(tokens(icon), 'a premium icon is missing `sm:hidden`').toContain('sm:hidden')
         expect(icon).toHaveAttribute('aria-hidden', 'true')
       }
-      expect(navEl.querySelectorAll('[data-nav-label]')).toHaveLength(11)
+      // Thirteen labels: the eleven above + the two promoted row copies, which
+      // have no icon (story 69.3).
+      expect(navEl.querySelectorAll('[data-nav-label]')).toHaveLength(13)
     })
 
     it.each(PREMIUM)('marks the More trigger active on %s', async (label, href) => {
       renderWithSeed(seedWith(), href)
       const navEl = await nav()
       // Both halves: the row itself is current, AND the tab that discloses it
-      // shows it. `isMoreActive` reading a different list from the rendered rows
+      // shows it. `moreActiveClass` reading a different list from the rendered rows
       // is the specific regression this catches.
       expect(within(navEl).getByRole('link', { name: label, exact: true })).toHaveAttribute(
         'aria-current',
@@ -915,12 +1045,21 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       ],
     ]
 
-    it.each(NOT_ENTITLED)('gives %s the unchanged six-anchor free nav', async (_name, seed) => {
-      renderWithSeed(seed)
-      const navEl = await nav()
-      expect(within(navEl).getAllByRole('link')).toHaveLength(6)
-      expect(sheetLabels(navEl)).toEqual(FREE_SHEET)
-    })
+    // Six destinations, eight DOM anchors (the two promoted row copies, story
+    // 69.3).
+    it.each(NOT_ENTITLED)(
+      'gives %s the unchanged six-destination free nav',
+      async (_name, seed) => {
+        renderWithSeed(seed)
+        const navEl = await nav()
+        expect(within(navEl).getAllByRole('link')).toHaveLength(8)
+        expect(sheetLabels(navEl)).toEqual(FREE_SHEET)
+        // Story 69.3: with nothing left behind More at lg, a free session's More
+        // cell is `lg:hidden`. Token-level; e2e proves the render.
+        const cell = navEl.querySelector('details')?.parentElement as HTMLElement
+        expect(tokens(cell), 'a free session keeps a More trigger at lg').toContain('lg:hidden')
+      }
+    )
 
     it.each(NOT_ENTITLED)('shows %s no premium destination', async (_name, seed) => {
       renderWithSeed(seed)
@@ -948,7 +1087,8 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
 
-      expect(within(navEl).getAllByRole('link')).toHaveLength(9)
+      // Nine destinations + the Balances row copy (story 69.3) = ten anchors.
+      expect(within(navEl).getAllByRole('link')).toHaveLength(10)
       expect(sheetLabels(navEl)).toEqual([
         'Balances',
         'Forecasting',
@@ -964,6 +1104,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       const summary = (await nav()).querySelector('details > summary')
       expect(summary, 'the More <summary> is missing').not.toBeNull()
       expect(tokens(summary as HTMLElement)).not.toContain('bg-green-50')
+      expect(tokens(summary as HTMLElement)).not.toContain('max-lg:bg-green-50')
     })
   })
 
@@ -1003,6 +1144,9 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
  * native path is exercised directly by "adopts an open it did not cause" below,
  * which sets `.open` from script.
  */
+// "At every width" since story 59.2 for an ENTITLED session; below `lg` only
+// for a free one since story 69.3 (which has no More at `lg`). jsdom applies no
+// media queries, so these tests see the disclosure regardless.
 describe('GlobalNav — the More disclosure at every width (story 59.2)', () => {
   const parts = async () => {
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -1025,14 +1169,17 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
     const { nav, details, summary, panel } = await parts()
 
     const outer = nav.querySelector('ul') as HTMLElement
-    const fifth = outer.querySelectorAll(':scope > li')[4]
+    // The fifth cell of the RENDERED bar below lg. The promoted row copies
+    // (story 69.3) sit between Savings and More in the DOM but are `hidden`
+    // below lg, so they are excluded here, as a browser excludes them.
+    const fifth = outer.querySelectorAll(':scope > li:not([data-nav-promoted])')[4]
     expect(fifth?.firstElementChild, 'the <details> is not the fifth cell').toBe(details)
     expect(details.firstElementChild, 'the <summary> must be the first child').toBe(summary)
     expect(summary).toHaveAccessibleName('More')
     // Closed on the first render, so the server and client agree.
     expect(details.open).toBe(false)
     expect(details).not.toHaveAttribute('open')
-    // Closed MEANS hidden now, at every width — by design.
+    // Closed MEANS hidden now, wherever the disclosure renders — by design.
     expect(within(panel).getByRole('link', { name: /^balances$/i })).not.toBeVisible()
   })
 

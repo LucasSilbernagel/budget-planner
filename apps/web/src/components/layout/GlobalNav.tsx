@@ -22,6 +22,11 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * Categories. Every "six" below describes the free nav unless it says otherwise;
  * a "seven" or "eleven" in a story's history note is the pre-69.2 count.
  *
+ * ⚠️ A destination COUNT is not an anchor count since story 69.3: Balances and
+ * Retirement have two DOM copies (see "Balances and Retirement on the row from
+ * `lg`" below), so the DOM holds eight anchors for a free session and twelve
+ * for an entitled one.
+ *
  * ⚠️ This REVERSES a named scope decision, and the reversal is recorded rather
  * than the old text being quietly deleted. Until 2026-09-14 this docblock read:
  * "The premium *Forecasting* entry is intentionally NOT duplicated here: it stays
@@ -51,8 +56,9 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
  *
  * There is exactly one `<nav>`, one OUTER `<ul>`, one More `<details>` with its
- * `<summary>` (a `<button>` until story 59.2) and — since story 69.2 — six
- * `<a>` for a free session or ten for an entitled one, in the DOM at every
+ * `<summary>` (a `<button>` until story 59.2) and — since story 69.3 — eight
+ * `<a>` for a free session or twelve for an entitled one (six and ten from
+ * story 69.2 until 69.3 added the two `lg` row copies), in the DOM at every
  * viewport. The COUNT varies by tier; the STRUCTURE never does.
  * Desktop (>= 640px) is the unprefixed cascade —
  * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
@@ -103,6 +109,18 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * unprefixed colour state to lose, and its `max-sm:` background/border are
  * required precisely because the bar is out of flow below `sm` (see below).
  *
+ * ⚠️ CORRECTED by story 69.3, and the rule above STANDS for a different reason.
+ * The HOVER half of the reasoning is wrong: a `:hover` utility is 0-2-0 and a
+ * media-scoped class 0-1-0, so hover wins whatever the emit order. MEASURED
+ * for `max-lg:` at 800px (`e2e/nav-lg-row{,.paid}.spec.ts`: hovering the active
+ * More gives the same `bg-gray-100` under the `max-lg:` and the unprefixed
+ * treatment); `max-sm:` is the same mechanism, not separately measured. What a
+ * variant-scoped colour CAN beat is an unprefixed NON-hover colour of equal
+ * specificity, the unprefixed active treatment included, because it is emitted
+ * later. That is reasoned from source order, not measured, and it is still a
+ * good reason to keep link colours unprefixed. The More trigger's
+ * `PROMOTED_ACTIVE_BELOW_LG_CLASS` is the one deliberate exception.
+ *
  * ## The 5-tab bar and the "More" sheet (story 31.5, UX-DR35/38)
  *
  * The bottom bar used to be a 4x2 grid of all eight destinations (~89px tall).
@@ -124,7 +142,12 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
  * `<li>`. The obvious alternative — leaving every `<li>` in the bar and
  * re-listing the sheet's share in a mobile-only sheet — puts those destination
- * labels in the DOM TWICE, which is the dual-render rejected above.
+ * labels in the DOM TWICE. Until story 69.3 this paragraph called that "the
+ * dual-render rejected above", and for the MOBILE bar it still is the wrong
+ * shape. ⚠️ But story 69.3 (decision D2, Lucas 2026-09-25) DOES put two labels
+ * in the DOM twice, deliberately, for the `lg` row: see "Balances and
+ * Retirement on the row from `lg`" below. What was rejected above is two
+ * `<nav>` LANDMARKS, and that still holds: there is one.
  *
  * ## The same disclosure at EVERY width (story 59.2, FR90)
  *
@@ -133,14 +156,38 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * destination was an item of one flat desktop row. That is what broke: story
  * 58.1 added four premium anchors, and a paid user's row wrapped to TWO rows at
  * every desktop width, which was measured and could not be closed by
- * shrinking. The dissolve is gone. The row is Overview · Income · Expenses ·
- * Savings · More at every width, in both tiers, and the other destinations are
- * a disclosure panel: a sheet above the bar below `sm`, a dropdown under the
- * trigger at `sm` and up. Accepted cost (decision, Lucas 2026-09-21): a free
- * desktop user reaches Balances and Retirement in two clicks, not one. (Settings
- * was the third until story 69.2 moved it to the account cluster.) The row's
- * measured widths live in ONE place, `e2e/nav-responsive-css.spec.ts`. Do not
- * restate them here.
+ * shrinking. The dissolve is gone. From story 59.2 until 69.3 the row was
+ * Overview · Income · Expenses · Savings · More at every width, in both tiers,
+ * and the other destinations were a disclosure panel: a sheet above the bar
+ * below `sm`, a dropdown under the trigger at `sm` and up. Accepted cost then
+ * (decision, Lucas 2026-09-21): a free desktop user reached Balances and
+ * Retirement in two clicks, not one. (Settings was the third until story 69.2
+ * moved it to the account cluster.) Story 69.3 lifted that cost from `lg` up;
+ * below `lg` it stands. The row's measured widths live in ONE place,
+ * `e2e/nav-responsive-css.spec.ts`. Do not restate them here.
+ *
+ * ## Balances and Retirement on the row from `lg` (story 69.3, FR110)
+ *
+ * At `lg` (1024px) and up the row is Overview · Income · Expenses · Savings ·
+ * Balances · Retirement, plus More for an entitled session (whose panel is then
+ * the premium four). A FREE session has NO More at `lg`: nothing is left
+ * behind it. Below `lg`, and on the mobile bar, nothing changed.
+ *
+ * - WHY `lg` AND NOT `sm` (decision D1, Lucas 2026-09-25): at `sm` the rows do
+ *   not fit. Measured at the story's context pass, both the free and the paid
+ *   row are too wide for a 640px window, and this nav is
+ *   `sm:shrink-0`, so it would have overflowed the page rather than wrapped.
+ *   The figures are in the one width record.
+ * - WHY TWO DOM COPIES (decision D2): below `lg` the two destinations live in
+ *   the More `<details>`, and a closed `<details>` hides its content, so CSS
+ *   cannot lift them into the row. Each is rendered twice: a ROW copy
+ *   (`PROMOTED_ROW_CELL_CLASS`, `hidden lg:block`) and the sheet copy
+ *   (`lg:hidden`). Only one is ever rendered, so only one is in the
+ *   accessibility tree and the Tab order. jsdom, which applies no stylesheet,
+ *   sees both: the unit tests scope by `data-nav-promoted`.
+ * - More's "you are here" for those two routes is `max-lg:`-scoped
+ *   (`PROMOTED_ACTIVE_BELOW_LG_CLASS`), so at `lg` it does not light beside the
+ *   row anchor that is the real cue there.
  *
  * ⚠️⚠️ It is a native `<details>`/`<summary>`, and that is the FAIL-OPEN
  * requirement, not a styling choice (decision, Lucas 2026-09-21). Since story
@@ -246,8 +293,10 @@ const PRIMARY_TABS: readonly NavItem[] = [
  * adding a premium destination — that is what makes "the free nav did not move"
  * provable by reading the diff.
  *
- * Since story 59.2 they sit behind More at EVERY width. Until then,
- * `sm:contents` dissolved them into the one desktop row.
+ * From story 59.2 until 69.3 they sat behind More at EVERY width (until 59.2,
+ * `sm:contents` dissolved them into the one desktop row). Since story 69.3
+ * they sit behind More below `lg` only, and are ALSO rendered as row items
+ * that show from `lg` (`PROMOTED_PATHS`).
  *
  * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69), and
  * THREE until story 69.2 removed Settings (FR109). Every "eight anchors" figure
@@ -414,9 +463,55 @@ const SHEET_ROW_CLASS = `${NAV_LINK_BASE} sm:block sm:whitespace-nowrap max-sm:f
 
 /**
  * The active treatment, applied by `<Link activeProps>` on every destination anchor and
- * by hand on the More trigger (which is not a route — see `isMoreActive`).
+ * by hand on the More trigger (which is not a route — see `moreActiveClass`).
  */
 const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+
+/**
+ * The routes of `MORE_DESTINATIONS`: the two free destinations that sit behind
+ * More below `lg` and on the row at `lg` and up (story 69.3). Premium routes are
+ * not here: they are behind More at every width.
+ */
+const PROMOTED_PATHS: ReadonlySet<string> = new Set(MORE_DESTINATIONS.map((item) => item.to))
+
+/**
+ * A promoted destination's ROW copy (story 69.3, FR110, decisions D1/D2).
+ *
+ * `hidden lg:block` on the `<li>`: not rendered below `lg` at all, so the mobile
+ * grid and the 640-1023px row never see it, and at `lg` it is an item of the
+ * row like a tab. It is a DESKTOP-only element, so it carries no `max-sm:`
+ * tokens and no icon (the icons are `sm:hidden` mobile glyphs and this copy is
+ * never rendered below `lg`). Its anchor is `NAV_LINK_BASE` alone.
+ */
+const PROMOTED_ROW_CELL_CLASS = 'hidden lg:block'
+
+/**
+ * The same destination's SHEET copy is hidden at `lg`, where the row copy
+ * takes over. Only one of the two is ever rendered.
+ */
+const PROMOTED_SHEET_CELL_CLASS = 'max-sm:min-w-0 lg:hidden'
+
+/**
+ * The More trigger's active treatment when the current route is a PROMOTED
+ * destination: `ACTIVE_CLASS`, scoped `max-lg:` (story 69.3). Below `lg` the
+ * destination is behind More, so More is "you are here"; at `lg` the row anchor
+ * is, and More must not light as well. A premium route still gets the
+ * unprefixed `ACTIVE_CLASS`, because it is behind More at every width.
+ *
+ * ⚠️ A variant-scoped COLOUR, which the link-colour rule in the component
+ * docblock forbids for `max-sm:`. That rule is about hover: a `:hover` utility
+ * is 0-2-0 and a media-scoped class is 0-1-0, so hover still wins here exactly
+ * as it does over the unprefixed `ACTIVE_CLASS`. Measured in
+ * `e2e/nav-lg-row.spec.ts` (hover on the active trigger at 800px).
+ */
+/** The More cell. `sm:relative`: the desktop dropdown hangs from it. */
+const MORE_CELL_CLASS = 'max-sm:min-w-0 sm:relative'
+
+/** Tailwind's `lg` screen (default config): where the promoted row copies show. */
+const LG_MEDIA_QUERY = '(min-width: 1024px)'
+
+const PROMOTED_ACTIVE_BELOW_LG_CLASS =
+  'max-lg:bg-green-50 max-lg:text-green-700 dark:max-lg:bg-green-900/30 dark:max-lg:text-green-300'
 
 /**
  * The More trigger, a `<summary>`, at EVERY width since story 59.2.
@@ -568,8 +663,10 @@ export function GlobalNav() {
    * not a route, so `activeProps` would silently mark nothing and the bar would
    * show NO active tab on two of six destinations — worse orientation than
    * the grid this replaced. Since story 59.2 the same is true on DESKTOP, where
-   * those destinations moved behind More too, so this cue now carries "you are
-   * here" at every width. `useRouterState` reads `router.stores.location`, the
+   * those destinations moved behind More too, so this cue carries "you are
+   * here" at every width for the premium routes, and below `lg` for Balances
+   * and Retirement, which are row anchors from `lg` (story 69.3; see
+   * `moreActiveClass`). `useRouterState` reads `router.stores.location`, the
    * same store `<Link>`'s own active computation reads, through a `useStore`
    * whose `getServerSnapshot` and `getSnapshot` are the same synchronous read.
    * The store is seeded from `history.location` at router construction, BEFORE
@@ -583,7 +680,7 @@ export function GlobalNav() {
    * 35.2, FR55).
    *
    * ⚠️⚠️ ONE list, read TWICE — deliberately. The rendered rows and
-   * `isMoreActive` below both derive from this, so the trigger cannot claim a
+   * `moreActiveClass` below both derive from this, so the trigger cannot claim a
    * destination the sheet no longer holds. Deriving the active state from
    * `MORE_DESTINATIONS` instead would light the More tab on `/retirement` while
    * the sheet it discloses is empty of it: an orientation cue pointing at
@@ -647,7 +744,39 @@ export function GlobalNav() {
       : destinations.filter((item) => item.to !== '/retirement')
   }, [isEntitled, showRetirementPlanner])
 
-  const isMoreActive = visibleMoreDestinations.some((item) => item.to === pathname)
+  /**
+   * The promoted destinations still visible after the planner filter, rendered a
+   * SECOND time as row items at `lg` (story 69.3, D2). Derived from the same
+   * filtered list as the sheet, so the planner toggle removes both copies.
+   */
+  const promotedRowDestinations = useMemo(
+    () => visibleMoreDestinations.filter((item) => PROMOTED_PATHS.has(item.to)),
+    [visibleMoreDestinations]
+  )
+
+  /**
+   * Which of More's destinations is current, if any. Since story 69.3 the answer
+   * decides HOW More is active, not just whether: a promoted destination is
+   * behind More only below `lg`, so it gets the `max-lg:`-scoped treatment; a
+   * premium one is behind More at every width. Still derived from the SAME
+   * filtered list the rows render from (the invariant above).
+   */
+  const activeMoreItem = visibleMoreDestinations.find((item) => item.to === pathname)
+  const moreActiveClass =
+    activeMoreItem === undefined
+      ? ''
+      : PROMOTED_PATHS.has(activeMoreItem.to)
+        ? PROMOTED_ACTIVE_BELOW_LG_CLASS
+        : ACTIVE_CLASS
+
+  /**
+   * Whether More discloses anything at `lg` (story 69.3). The promoted
+   * destinations are on the row there, so More is needed only if the SAME
+   * filtered list holds something else (today: the premium four). Derived from
+   * the list, not from the tier (code review of 69.3): a future free More
+   * destination would otherwise be unreachable at `lg` with nothing red.
+   */
+  const moreNeededAtLg = visibleMoreDestinations.some((item) => !PROMOTED_PATHS.has(item.to))
 
   /**
    * Close the sheet.
@@ -714,6 +843,32 @@ export function GlobalNav() {
   useEffect(() => {
     if (detailsRef.current?.open) setIsMoreOpen(true)
   }, [])
+
+  /**
+   * Close a More that has nothing to disclose at `lg` when the viewport crosses
+   * into `lg` (story 69.3 code review; decision, Lucas 2026-09-25). MEASURED by
+   * the review: opened at 1023px and widened past 1024px, the `<details>` went
+   * `display:none` with `open` still true, its document listeners stayed armed
+   * (an Escape anywhere "closed" an invisible panel), and narrowing again
+   * re-showed it open.
+   *
+   * ⚠️ This is NOT the viewport-derived state the component docblock forbids.
+   * That rule is about the FIRST render (server and first client render must
+   * agree), and the initial state here is still the deterministic `false`.
+   * This only CLOSES in response to a resize, after hydration.
+   *
+   * Focus is deliberately not restored: the trigger is `display:none` at `lg`,
+   * so focusing it would do nothing.
+   */
+  useEffect(() => {
+    if (moreNeededAtLg || typeof globalThis.matchMedia !== 'function') return
+    const atLg = globalThis.matchMedia(LG_MEDIA_QUERY)
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setIsMoreOpen(false)
+    }
+    atLg.addEventListener('change', handleChange)
+    return () => atLg.removeEventListener('change', handleChange)
+  }, [moreNeededAtLg])
 
   useEffect(() => {
     if (!isMoreOpen) return
@@ -806,8 +961,13 @@ export function GlobalNav() {
       // email) out-weighed the nav's flex basis. The nav absorbed the
       // shortfall by WRAPPING, to 3 rows at 640px and 2 up to ~849px, and the
       // email's `truncate` never engaged. With the nav held at its content
-      // width, the cluster yields instead (it is `sm:min-w-0`, in
-      // `auth-indicator.tsx`), so the email truncates. The e2e suite has no real
+      // width, the cluster yielded instead (it was `sm:min-w-0`, in
+      // `auth-indicator.tsx`), so the email truncated. ⚠️ Story 69.2 removed
+      // the email and story 69.3 removed `sm:min-w-0` (decision D4): when the
+      // two no longer fit on one line, which happens only at an enlarged root
+      // font, the header row WRAPS the cluster to a line of its own
+      // (`__root.tsx`). This token still keeps the NAV from being the thing
+      // that gives way. The e2e suite has no real
       // session, so it only ever measured the signed-out "Sign in" cluster and
       // was blind to this. `e2e/nav-more-disclosure.paid.spec.ts` now mocks
       // `/api/auth/me` to render a signed-in cluster, and pins it.
@@ -817,13 +977,16 @@ export function GlobalNav() {
           It arrived (commit d4f3ffb) to contain the eight items the nav then
           had, and until 59.2 the desktop bar was two rows below a single-row
           threshold. Since 59.2's code review the <nav> is `sm:shrink-0`, so the
-          list always gets its full content width and never wraps. At >= 640px
-          the thing that yields is now the account cluster, whose email
-          truncates. If the row ever outgrows the viewport minus the cluster's
-          minimum, the DOCUMENT overflows sideways; it does not wrap. That is
-          what the no-overflow assertions in `e2e/nav-responsive-css.spec.ts`
-          (640/700/760px) and the paid signed-in sweep catch. The measured
-          headroom lives there, in ONE place; do not restate it here.
+          list always gets its full content width and never wraps. Since story
+          69.3 (decision D4) what gives way when the nav and the account
+          cluster cannot share a line is the HEADER row (`__root.tsx`,
+          `sm:flex-wrap`): the cluster drops to a line of its own. That happens
+          only at an enlarged root font. At the default font every width from
+          640px is ONE header line, and the one-row sweeps and the no-overflow
+          assertions in `e2e/nav-responsive-css.spec.ts` (640/700/760px) are
+          what would catch a regression; a nav that outgrows the viewport ON
+          ITS OWN still overflows the document sideways. The measured headroom
+          lives there, in ONE place; do not restate it here.
           `responsive-320.spec.ts` and `global-nav.spec.ts` both sweep 320px
           only.
 
@@ -849,11 +1012,13 @@ export function GlobalNav() {
           the default font size. Putting `px-4` back overflows the document at
           640px.
 
-          ⚠️ KNOWN, DEFERRED to story 69.3 (code review of 69.1): at an
-          ENLARGED root font the signed-out cluster spills LEFT over the nav,
-          and without this padding it covers the More chevron in narrow
-          windows (measured ~642-665px at an 18px root). The mode predates
-          69.1; 69.1 widened it. See `deferred-work.md`.
+          ⚠️ Deferred from 69.1's code review, FIXED by story 69.3 (decision
+          D4): at an ENLARGED root font the signed-out cluster used to spill
+          LEFT over the nav and cover the More chevron (69.3's RED run, CI
+          fonts: 640-675px at an 18px root, 640-750px at 20px). The fix was NOT
+          padding here: the cluster lost `sm:min-w-0` and the header row
+          wraps it instead. `e2e/nav-enlarged-font{,.paid}.spec.ts` guard it
+          with `elementFromPoint`.
 
           Coupling to watch when the item split changes: `grid-cols-5` fixes the
           bar at exactly ONE row (~56.75px). Moving a destination out of the
@@ -892,13 +1057,48 @@ export function GlobalNav() {
             </Link>
           </li>
         ))}
-        {/* The fifth cell: the More disclosure, at every width (story 59.2).
+        {/* The promoted destinations' ROW copies (story 69.3, FR110). Rendered
+            only at `lg` and up, where a free row of six anchors and a paid row
+            of six plus More fit; below `lg` they are not rendered and the SHEET
+            copy is the one a user reaches. See `PROMOTED_ROW_CELL_CLASS`.
+            `data-nav-path` is load-bearing: it is what the pre-paint
+            `[data-hide-retirement]` rule in `styles/global.css` matches, so a
+            hidden planner is hidden on the first frame here too.
+            `data-nav-promoted` marks the copy for the tests, which run in
+            jsdom and would otherwise see both copies. */}
+        {promotedRowDestinations.map((item) => (
+          <li
+            key={`row-${item.to}`}
+            className={PROMOTED_ROW_CELL_CLASS}
+            data-nav-path={item.to}
+            data-nav-promoted
+          >
+            <Link
+              to={item.to}
+              className={NAV_LINK_BASE}
+              activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
+              // Same reason as the tabs: a same-route click must close a paid
+              // session's open panel. `false`: the clicked link keeps focus.
+              onClick={() => closeMore(false)}
+            >
+              <span data-nav-label>{item.label}</span>
+            </Link>
+          </li>
+        ))}
+        {/* The fifth cell: the More disclosure (story 59.2). At every width for
+            an entitled session; below `lg` only for a free one (story 69.3).
+            It is the fifth RENDERED cell: the promoted row copies above are
+            `hidden` below `lg`.
             Below `sm` it is the bar's fifth grid cell, and it is deliberately NOT
             positioned there. The sheet must keep resolving `max-sm:absolute`
             against the `max-sm:fixed` <nav>, which is what makes it full-width
             and flush on top of the bar. At `sm` and up, `sm:relative` makes this
             cell the containing block the dropdown hangs from. */}
-        <li className="max-sm:min-w-0 sm:relative">
+        {/* `lg:hidden` for a session that is not entitled (story 69.3): at `lg`
+            both free destinations are on the row, so nothing is left behind
+            More and a free desktop row has no trigger at all. Keyed on
+            `moreNeededAtLg` (what the list holds), not on the tier. */}
+        <li className={moreNeededAtLg ? MORE_CELL_CLASS : `${MORE_CELL_CLASS} lg:hidden`}>
           <details
             ref={detailsRef}
             open={isMoreOpen}
@@ -947,7 +1147,7 @@ export function GlobalNav() {
                 setIsMoreOpen((open) => !open)
               }}
               className={
-                isMoreActive ? `${MORE_TRIGGER_CLASS} ${ACTIVE_CLASS}` : MORE_TRIGGER_CLASS
+                moreActiveClass ? `${MORE_TRIGGER_CLASS} ${moreActiveClass}` : MORE_TRIGGER_CLASS
               }
             >
               <MoreIcon className="h-6 w-6 sm:hidden" />
@@ -959,7 +1159,13 @@ export function GlobalNav() {
             </summary>
             <ul className={SHEET_PANEL_CLASS}>
               {visibleMoreDestinations.map((item) => (
-                <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
+                <li
+                  key={item.to}
+                  className={
+                    PROMOTED_PATHS.has(item.to) ? PROMOTED_SHEET_CELL_CLASS : 'max-sm:min-w-0'
+                  }
+                  data-nav-path={item.to}
+                >
                   <Link
                     to={item.to}
                     className={SHEET_ROW_CLASS}

@@ -257,7 +257,14 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
                 data-print-hide
                 className="sm:border-b sm:border-gray-200 sm:bg-white dark:sm:border-gray-700 dark:sm:bg-gray-800"
               >
-                <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
+                <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:flex-wrap sm:items-center sm:justify-between">
+                  {/* `sm:flex-wrap` (story 69.3, decision D4): when the nav and the
+                    account cluster cannot share one line, which happens only at
+                    an ENLARGED root font, the cluster drops to a line of its own
+                    instead of painting over the nav. At the default font every
+                    width from 640px fits on one line (the record is in
+                    `e2e/nav-responsive-css.spec.ts`), so this never engages
+                    there. See `auth-indicator.tsx` for the other half. */}
                   {/* Persistent primary navigation (story 11-1): rendered once here
                     so every route shares it. Leading (left) on the desktop row; a
                     fixed bottom tab bar on narrow/PWA viewports. */}

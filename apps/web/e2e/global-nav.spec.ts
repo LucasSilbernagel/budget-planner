@@ -13,14 +13,18 @@ import { MORE_PANEL, MORE_SUMMARY, isMoreOpen, moreExpandedInAxTree } from './he
  *    per-page footer link blocks).
  *  - AC-2: the current route is marked `aria-current="page"`.
  *  - The core promise: from a deep sub-page you can reach another section
- *    without routing back through Home. Since story 59.2 that is one click for
- *    the four bar tabs, and two (More, then the row) for everything else.
+ *    without routing back through Home. At the default desktop viewport
+ *    (1280px) that is ONE click for every free destination again since story
+ *    69.3, which put Balances and Retirement back on the row from `lg`. (Two
+ *    clicks, More then the row, from story 59.2 until 69.3, and still two below
+ *    `lg`: that path is covered in `nav-lg-row.spec.ts` and
+ *    `nav-more-disclosure.spec.ts`.)
  *  - AC-3: the nav stays usable at a narrow (mobile/PWA) viewport.
  *  - Story 31.5: below `sm` only four destinations keep a bar cell; the other
- *    three are disclosed by a "More" trigger. Since story 59.2 the SAME is true
- *    at the default desktop viewport: `sm:contents` no longer dissolves the
- *    panel into the row, so the tests above open More before reaching a panel
- *    destination. The mobile half lives in the `describe` at the bottom; the
+ *    three are disclosed by a "More" trigger. From story 59.2 until 69.3 the
+ *    same was true at the default desktop viewport; since 69.3 a FREE desktop
+ *    session at `lg` has no More at all. The mobile half lives in the
+ *    `describe` at the bottom; the
  *    desktop dismissal, focus and JS-off coverage is in
  *    `nav-more-disclosure.spec.ts`.
  *
@@ -38,17 +42,16 @@ test('reaches another section from a deep sub-page without a detour through Home
   await expect(nav).toBeVisible()
 
   // From Savings to the Balance Tracking page with no detour through the Home
-  // dashboard: More, then the row. That was ONE click until story 59.2 put
-  // Balances behind the More disclosure at every width. (The nav entry reads
-  // "Balances" since 59.1; the PAGE keeps its longer name, deliberately — FR89.)
-  await page.locator(MORE_SUMMARY).click()
+  // dashboard, in ONE click at the default 1280px viewport (story 69.3 put it
+  // back on the row from `lg`; two clicks via More from story 59.2 until then).
+  // (The nav entry reads "Balances" since 59.1; the PAGE keeps its longer
+  // name, deliberately — FR89.)
+  await expect(page.locator(MORE_SUMMARY)).toHaveCount(1)
+  await expect(page.locator(MORE_SUMMARY), 'a free More renders at 1280px').toBeHidden()
   await nav.getByRole('link', { name: 'Balances', exact: true }).click()
   await expect(page).toHaveURL(/\/balance$/)
 
-  // The destination is marked active in the hydrated DOM. Choosing the row
-  // closed the panel, so reopen it to read the row.
-  await expect.poll(() => isMoreOpen(page)).toBe(false)
-  await page.locator(MORE_SUMMARY).click()
+  // The destination is marked active in the hydrated DOM, on the row.
   await expect(nav.getByRole('link', { name: 'Balances', exact: true })).toHaveAttribute(
     'aria-current',
     'page'
@@ -70,17 +73,13 @@ test('reaches the Retirement Planner from the nav', async ({ page }) => {
   await page.waitForLoadState('networkidle')
 
   // Story 15-1: /retirement was a docs-only nav-orphan; it is now a first-class
-  // nav destination, marked active on arrival. It was a SINGLE click until story
-  // 59.2 moved it behind the More disclosure at every width.
+  // nav destination, marked active on arrival. A SINGLE click at the default
+  // 1280px viewport again since story 69.3 (behind More from 59.2 until then,
+  // and still behind it below `lg`).
   const nav = page.getByRole('navigation', { name: 'Primary' })
-  await page.locator(MORE_SUMMARY).click()
   await nav.getByRole('link', { name: 'Retirement' }).click()
   await expect(page).toHaveURL(/\/retirement$/)
 
-  // Wait for the close to commit before reopening, or the reopening click can
-  // land on a still-open panel and CLOSE it.
-  await expect.poll(() => isMoreOpen(page)).toBe(false)
-  await page.locator(MORE_SUMMARY).click()
   await expect(nav.getByRole('link', { name: 'Retirement' })).toHaveAttribute(
     'aria-current',
     'page'

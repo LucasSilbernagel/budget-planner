@@ -213,8 +213,14 @@ test('the 320px strip is the same height signed in as signed out (no layout shif
  * Two disclosures, one bar (UX record 2026-09-21, §5.4). Each closes the other
  * when the user PRESSES the other's trigger, in both orders, and neither is
  * left stuck open. Focus lands on what was pressed.
+ *
+ * ⚠️ The desktop arm is 1000px, not 1280px, since story 69.3: at `lg` (1024px)
+ * and up a FREE session has no More (Balances and Retirement are on the row),
+ * so there is only one disclosure left to interact with. 1000px is a free
+ * desktop width that still has both (the widest is 1023px). The paid twin
+ * keeps 1280px.
  */
-for (const width of [320, 1280] as const) {
+for (const width of [320, 1000] as const) {
   test(`pressing one trigger closes the other disclosure, both orders, at ${width}px`, async ({
     page,
   }) => {
@@ -242,8 +248,9 @@ test('by keyboard both can be open at once, and ONE Escape closes both without a
 }) => {
   // Accepted, not a defect: the nav deliberately lets a keyboard user Tab past
   // its open panel (story 59.2 review), so no pointer event ever tells it the
-  // account menu opened.
-  await page.setViewportSize({ width: 1280, height: 800 })
+  // account menu opened. 1000px: the free More exists only below `lg` since
+  // story 69.3.
+  await page.setViewportSize({ width: 1000, height: 800 })
   await gotoSignedIn(page, '/')
 
   await page.locator(MORE_SUMMARY).focus()

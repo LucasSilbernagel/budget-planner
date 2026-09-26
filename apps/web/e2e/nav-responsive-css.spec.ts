@@ -89,6 +89,12 @@ interface NavSnapshot {
    * could in principle disagree between the server render and the settled
    * client one — which would be a flash of an unhighlighted bar on the four
    * routes More owns. This is the assertion that would catch it.
+   *
+   * ⚠️ Read from the COMPUTED background (`bg-green-50` = rgb(240, 253, 244)),
+   * not the class list, since story 69.3. On Balances/Retirement routes the
+   * treatment is now `max-lg:bg-green-50` (More is "you are here" for them only
+   * below `lg`), a different token, so a class-list probe would read false
+   * with the cue working. The computed colour is the claim anyway.
    */
   moreActive: boolean
 }
@@ -108,7 +114,11 @@ function readNav(page: Page): Promise<NavSnapshot | null> {
       innerHeight: globalThis.innerHeight,
       sheetVisible: sheet ? sheet.checkVisibility() : null,
       detailsOpen: details ? details.open : null,
-      moreActive: trigger ? trigger.className.split(/\s+/).includes('bg-green-50') : false,
+      // Light scheme only: the dark active colour is a different rgba. Every
+      // caller runs in the default (light) emulation.
+      moreActive: trigger
+        ? globalThis.getComputedStyle(trigger).backgroundColor === 'rgb(240, 253, 244)'
+        : false,
     }
   }, NAV)
 }
@@ -142,7 +152,7 @@ test.describe('the mobile nav paints its final position on the first frame (AC-2
                   sheetVisible: sheet ? sheet.checkVisibility() : null,
                   detailsOpen: details ? details.open : null,
                   moreActive: trigger
-                    ? trigger.className.split(/\s+/).includes('bg-green-50')
+                    ? globalThis.getComputedStyle(trigger).backgroundColor === 'rgb(240, 253, 244)'
                     : false,
                 }
               })()
@@ -225,7 +235,8 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
 
   // THE DESKTOP ROW — the single live record of its widths. The paid-tier
   // figures live in `nav-tier-aware.paid.spec.ts`. Since story 59.2 both tiers
-  // have the SAME five-item row, so the numbers agree by construction; each
+  // have the SAME five-item row below `lg` (story 69.3 split the row at `lg`, where
+  // the tiers differ), so the below-lg numbers agree by construction; each
   // file carries its own tier's measurement run.
   //
   //                        row's intrinsic width   single-row from
@@ -237,11 +248,52 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   //   after  59.2 (Noto)       425.13px                640px
   //   after  69.1 (DejaVu)     441.58px                640px   (UNCHANGED total; see below)
   //   after  69.2 (DejaVu)     441.58px                640px   (nav untouched; the CLUSTER moved)
+  //   after  69.3 (DejaVu)     441.58px                640px   (below lg: the five-item row, unchanged)
+  //   after  69.3 (DejaVu)     559.77px               1024px   (from lg: six anchors, no More; see below)
+  //
+  // STORY 69.3 (FR110), MEASURED 2026-09-25, DejaVu (fingerprint "Expenses"
+  // 66.72px), by the two-band `nav-intrinsic-width.measure{,.paid}.spec.ts`,
+  // signed out, 640-1400px with NO wrapping width in either tier or planner
+  // state. Balances and Retirement are row anchors from `lg` (1024px, decision
+  // D1), because at `sm` they did not fit (the "single-row from" column is the
+  // band's first width, not a wrap threshold):
+  //
+  //   row                  below lg   from lg    1024px headroom (signed out)
+  //   free                  441.58     559.77          272.62px
+  //   free, planner off     441.58     454.00          378.39px
+  //   (The paid rows are recorded in `nav-tier-aware.paid.spec.ts`, not here.)
+  //
+  // The lg rows reproduce the story's context-time probe exactly, taken by
+  // cloning `<li>`s into the live row; this measurement is of the shipped row.
+  //
+  // THE ACCOUNT CLUSTER after 69.3's code review, MEASURED by the committed
+  // `nav-intrinsic-width.measure.clusters.paid.spec.ts` (DejaVu, fingerprint
+  // 66.72). Its right padding is `sm:pr-1 lg:pr-2` (decision, Lucas
+  // 2026-09-25), so it is 4px narrower below `lg` than from `lg`:
+  //
+  //   cluster state                            below lg    from lg
+  //   signed out (Upgrade · Sign in · gear)     187.61      191.61
+  //   signed in, free                            88.00       92.00
+  //   signed in, Premium (pill)                 164.52      168.52
+  //   JS OFF, signed in Premium, <noscript> gear 196.52     200.52
+  //
+  //   640px: signed-out headroom beside the five-item row is 10.81px (6.81
+  //   before the review's 4px); the tightest state is JS-off Premium, 1.90px
+  //   (443.48 available vs 441.58). The gear costs +32px (a 28px box + the
+  //   row's 4px `sm:gap-1`), not the +36 the story derived.
+  //   ⚠️ In the dev pass, at `pr-2` everywhere, that JS-off state was 2.10px
+  //   too wide at 640px and the header wrapped it at 640-642px. The review
+  //   sent it back; `settings-route.paid.spec.ts` now asserts ONE header line
+  //   for it at every width 640-1400px.
+  //   1024px headroom beside the free row: signed in free 372.23px (DERIVED:
+  //   1024 - 92 - 559.77, since the cluster spec runs on the paid server). The
+  //   paid-row headrooms are in `nav-tier-aware.paid.spec.ts`.
   //
   // Story 59.2 (FR90) took the More destinations OUT of the desktop row. Until
   // then `sm:contents` dissolved the sheet into it, so every free destination
-  // was an item of this row. Now the row is Overview · Income · Expenses ·
-  // Savings · More at every width, and the other rows are an overlay panel.
+  // was an item of this row. From 59.2 until 69.3 the row was Overview ·
+  // Income · Expenses · Savings · More at every width, and the other rows an
+  // overlay panel; since 69.3 that is the row below `lg` (see the 69.3 table).
   // Measured by `e2e/nav-intrinsic-width.measure.spec.ts`, which 59.2 re-scoped
   // from "every `nav a`" to the row's five flex items. The old version would
   // have summed the hidden panel anchors and left out the `<summary>`. Run it;
@@ -299,10 +351,12 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   // `sm:min-w-0` were added. Before the fix the row WRAPPED: 3 rows at 640px and
   // 2 up to ~849px. Neither header flex item was barred from shrinking, the
   // nav had the larger basis, and it wrapped while the email's `truncate` never
-  // engaged. Now the nav is `sm:shrink-0` and the account strip `sm:min-w-0`, so
-  // the EMAIL yields: 50px of it is visible at 640px, 110px at 700, 210px at
-  // 800, and all 335px from ~1024px. The row is one line at every width. The
-  // signed-in cluster has no fixed width, so it gets no "available" column.
+  // engaged. Then the nav became `sm:shrink-0` and the account strip `sm:min-w-0`
+  // (the latter removed again by story 69.3, decision D4), so
+  // the EMAIL yielded: 50px of it was visible at 640px, 110px at 700, 210px at
+  // 800, and all 335px from ~1024px. The row was one line at every width. The
+  // signed-in cluster then had no fixed width, so it got no "available"
+  // column. (All of this is 59.2-era history; the email is gone since 69.2.)
   // Guarded by the signed-in sweeps in `nav-more-disclosure{,.paid}.spec.ts`,
   // every 5px from 640 to 1400px.
   //
@@ -354,7 +408,14 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
         // Since story 59.2 that query also returns the three anchors inside the
         // closed More panel, which are not in the row, and it skips the More
         // `<summary>`, which is.
-        const items = [...list.querySelectorAll(':scope > li')]
+        // ⚠️ RENDERED items only, since story 69.3 (the one edit this test got,
+        // and the only one: it read the DOM, not the render). Balances and
+        // Retirement have a ROW copy in the outer list that is `display:none`
+        // below `lg`, with an all-zero rect, so counting it would report seven
+        // items and a phantom second row.
+        const items = [...list.querySelectorAll(':scope > li')].filter(
+          (li) => li.getClientRects().length > 0
+        )
         const rights = items.map((li) => li.getBoundingClientRect().right)
         return {
           items: items.length,
@@ -513,10 +574,14 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
     const read = (selector: string) =>
       page.evaluate(
         (sel) =>
-          [...document.querySelectorAll(sel)].map((a) => ({
-            label: a.textContent?.trim() ?? '',
-            radius: globalThis.getComputedStyle(a).borderRadius,
-          })),
+          // Rendered only (story 69.3): the promoted row copies match
+          // `${NAV} > ul > li > a` too, and are `display:none` at 320px.
+          [...document.querySelectorAll(sel)]
+            .filter((a) => getComputedStyle(a.parentElement as HTMLElement).display !== 'none')
+            .map((a) => ({
+              label: a.textContent?.trim() ?? '',
+              radius: globalThis.getComputedStyle(a).borderRadius,
+            })),
         selector
       )
 
@@ -925,8 +990,9 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
 })
 
 /**
- * The More disclosure is a REAL overlay in the desktop row at 1280px (story
- * 59.2, AC-14).
+ * The More disclosure is a REAL overlay in the desktop row (story 59.2, AC-14).
+ * Measured at 1000px since story 69.3, which removed the free More at `lg`; at
+ * 1280px until then. The mutation figures below are 59.2's, taken at 1280px.
  *
  * ⚠️ This test REPLACES "the nested sheet list DISSOLVES into the desktop row
  * at 1280px", which asserted the exact opposite: `sm:contents` on the wrapper
@@ -956,15 +1022,25 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
  * contributes no height whether it is absolute or not, which is why the
  * open-state half lives here.
  */
-test('the More disclosure is a real overlay in the desktop row at 1280px', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 })
+// ⚠️ 1000px, not 1280px, since story 69.3: at `lg` (1024px) and up a FREE
+// session has no More (Balances and Retirement are on the row), so there is no
+// overlay to test. 1000px is a free desktop width that has one (the widest is
+// 1023px).
+test('the More disclosure is a real overlay in the desktop row at 1000px', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 720 })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
 
   const read = () =>
     page.evaluate((selector) => {
       const nav = document.querySelector(selector) as HTMLElement
-      const items = [...nav.querySelectorAll(':scope > ul > li')] as HTMLElement[]
+      // Every item that is not `display: none` (story 69.3: the promoted row
+      // copies are, below `lg`). Deliberately NOT a rect filter: mutations (a)
+      // and (d) above make the More cell `display: contents`, which has an
+      // empty rect, and they must still find it as the last item.
+      const items = ([...nav.querySelectorAll(':scope > ul > li')] as HTMLElement[]).filter(
+        (li) => getComputedStyle(li).display !== 'none'
+      )
       const cell = items.at(-1) as HTMLElement
       const details = cell.querySelector(':scope > details') as HTMLDetailsElement | null
       const panel = details?.querySelector(':scope > ul') as HTMLElement | null

@@ -1,5 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import {
+  ACTIVE_BG,
   LONG_EMAIL,
   MORE_DETAILS,
   MORE_PANEL,
@@ -7,6 +8,7 @@ import {
   NAV,
   isMoreOpen,
   mockSignedIn,
+  moreBackground,
   moreExpandedInAxTree,
   openMore,
   panelLabels,
@@ -21,8 +23,9 @@ import {
  * `sm:contents`, and hid the trigger with `sm:hidden`. That put a free user's
  * seven destinations in one flat row, and a paid user's eleven in TWO rows at
  * every desktop width, which was measured and could not be closed by shrinking.
- * The row is now Overview · Income · Expenses · Savings · More at every width,
- * in both tiers. The paid-tier half of this file is
+ * From story 59.2 until 69.3 the row was Overview · Income · Expenses ·
+ * Savings · More at every width, in both tiers; since 69.3 that is the row
+ * below `lg` only (`nav-lg-row.spec.ts` covers `lg` and up). The paid-tier half of this file is
  * `nav-more-disclosure.paid.spec.ts`.
  *
  * The disclosure is a native `<details>`/`<summary>` (decision, Lucas
@@ -34,7 +37,19 @@ import {
  * see `helpers/nav-more.ts`.
  */
 
-const DESKTOP_WIDTHS = [640, 1280] as const
+/**
+ * ⚠️ 1000px, not 1280px, since story 69.3 (FR110, decision D1). At `lg`
+ * (1024px) and up a FREE session has no More at all: Balances and Retirement
+ * are on the row (`nav-lg-row.spec.ts`). This file is about the free More
+ * DISCLOSURE, so its desktop arm runs at a width that still has one. (1000px,
+ * not the widest such width: that is 1023px, which `nav-lg-row.spec.ts`
+ * covers. A first draft of this note said 1000 was the widest; it is not.)
+ * Playwright's default viewport (1280) is past that line, which is why every
+ * desktop test here pins a width.
+ */
+const DESKTOP_WIDTHS = [640, 1000] as const
+/** A free desktop width with a More disclosure: below `lg`, not its edge. */
+const DISCLOSURE_WIDTH = 1000
 const PRIMARY = ['Overview', 'Income', 'Expenses', 'Savings'] as const
 const FREE_PANEL = ['Balances', 'Retirement'] as const
 
@@ -52,7 +67,11 @@ async function gotoSettled(page: Page, url = '/'): Promise<void> {
 async function readRow(page: Page) {
   return page.evaluate((nav) => {
     const list = document.querySelector(`${nav} > ul`) as HTMLElement
-    const items = [...list.querySelectorAll(':scope > li')] as HTMLElement[]
+    // RENDERED items only (story 69.3): the promoted row copies are in the DOM
+    // at every width and `display:none` below `lg`.
+    const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
+      (li) => li.getClientRects().length > 0
+    )
     return {
       labels: items.map((li) =>
         (
@@ -251,7 +270,7 @@ test('the chevron is display:none on the mobile bar (decision D3)', async ({ pag
 })
 
 test.describe('the desktop panel in the dark theme', () => {
-  test.use({ viewport: { width: 1280, height: 800 } })
+  test.use({ viewport: { width: DISCLOSURE_WIDTH, height: 800 } })
 
   test('paints its own opaque dark background', async ({ page }) => {
     // Story 61.1 (FR93): the theme follows the device, so emulate the media
@@ -265,7 +284,7 @@ test.describe('the desktop panel in the dark theme', () => {
 })
 
 test.describe('the disclosure is a disclosure, at desktop width', () => {
-  test.use({ viewport: { width: 1280, height: 800 } })
+  test.use({ viewport: { width: DISCLOSURE_WIDTH, height: 800 } })
 
   test('the platform reports its expanded state, and the panel is not a dialog', async ({
     page,
@@ -364,7 +383,10 @@ test.describe('the disclosure is a disclosure, at desktop width', () => {
     await expect(page).toHaveURL(/\/balance$/)
     await expect.poll(() => isMoreOpen(page)).toBe(false)
     // "You are here" survives the destination moving behind a disclosure.
-    await expect(page.locator(MORE_SUMMARY)).toHaveClass(/(^|\s)bg-green-50(\s|$)/)
+    // COMPUTED, not the class list (story 69.3): on this route the treatment is
+    // `max-lg:bg-green-50`, a different token, so a class probe would read the
+    // cue as missing while it paints.
+    await expect.poll(() => moreBackground(page)).toBe(ACTIVE_BG)
     await openMore(page)
     await expect(
       page
@@ -382,7 +404,9 @@ test.describe('the disclosure is a disclosure, at desktop width', () => {
       .click()
     await expect(page).toHaveURL(/\/income$/)
     await expect.poll(() => isMoreOpen(page)).toBe(false)
-    await expect(page.locator(MORE_SUMMARY)).not.toHaveClass(/(^|\s)bg-green-50(\s|$)/)
+    // COMPUTED (story 69.3): a class probe for `bg-green-50` alone would pass
+    // on a trigger still painted by `max-lg:bg-green-50`.
+    expect(await moreBackground(page)).not.toBe(ACTIVE_BG)
   })
 
   /**
@@ -478,7 +502,7 @@ test.describe('the disclosure is a disclosure, at desktop width', () => {
  * back every script so the click lands on the server-rendered HTML.
  */
 test('a panel opened BEFORE hydration is still dismissible after it', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.setViewportSize({ width: DISCLOSURE_WIDTH, height: 800 })
   let release: () => void = () => {}
   const released = new Promise<void>((resolve) => {
     release = resolve
@@ -532,7 +556,7 @@ test('a panel opened BEFORE hydration is still dismissible after it', async ({ p
 test.describe('with JavaScript disabled', () => {
   test.use({ javaScriptEnabled: false })
 
-  for (const width of [320, 1280] as const) {
+  for (const width of [320, DISCLOSURE_WIDTH] as const) {
     test(`every More destination is reachable at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 })
       for (const [label, path] of [
@@ -551,11 +575,36 @@ test.describe('with JavaScript disabled', () => {
     })
   }
 
+  // Story 69.3: at `lg` the free destinations are ROW anchors, and the row is
+  // server-rendered CSS, so they are reachable with JS off by construction.
+  // Proven rather than reasoned, because this is FR90's fail-open claim.
+  test('at 1280px both free destinations are row anchors, reachable with JS off', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    for (const [label, path] of [
+      ['Balances', '/balance'],
+      ['Retirement', '/retirement'],
+    ] as const) {
+      await page.goto('/')
+      // In the DOM and not rendered: `toBeHidden()` alone also passes on a nav
+      // with no More at all (story 69.3 code review).
+      await expect(page.locator(MORE_SUMMARY)).toHaveCount(1)
+      await expect(page.locator(MORE_SUMMARY), 'a free More renders at lg').toBeHidden()
+      const link = page
+        .getByRole('navigation', { name: 'Primary' })
+        .getByRole('link', { name: label, exact: true })
+      await expect(link, `${label} is not ONE visible row anchor with JS off`).toHaveCount(1)
+      await link.click()
+      await expect(page).toHaveURL(new RegExp(`${path}$`))
+    }
+  })
+
   // The case the epic's original AC-3 (drive the cue from `isMoreOpen`) gets
   // wrong: with JS off React never runs, so state would say "closed" forever
   // while the native toggle shows the panel.
-  test('the chevron turns with the NATIVE toggle at 1280px', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 800 })
+  test(`the chevron turns with the NATIVE toggle at ${DISCLOSURE_WIDTH}px`, async ({ page }) => {
+    await page.setViewportSize({ width: DISCLOSURE_WIDTH, height: 800 })
     await page.goto('/')
     const closed = await readChevron(page)
     expect(closed.count, 'the More trigger has no disclosure chevron').toBe(1)
@@ -581,7 +630,7 @@ test.describe('with JavaScript disabled', () => {
   })
 
   test('the server renders the disclosure closed', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.setViewportSize({ width: DISCLOSURE_WIDTH, height: 800 })
     await page.goto('/')
     await expect(page.locator(MORE_DETAILS)).not.toHaveAttribute('open', /.*/)
   })

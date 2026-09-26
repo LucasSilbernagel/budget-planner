@@ -167,11 +167,18 @@
      of this comment claimed the opposite; it was corrected in code review.
 
      The rule would only lose to a higher-specificity or `!important` display
-     declaration on the same element. Today the target <li> carries
-     `max-sm:min-w-0` and no display utility at all.
+     declaration on the same element. Until story 69.3 the one target <li>
+     carried `max-sm:min-w-0` and no display utility at all. Since 69.3 there
+     are TWO targets: the sheet row (`max-sm:min-w-0 lg:hidden`) and the lg ROW
+     copy (`hidden lg:block`). `lg:block` is exactly the 0-1-0 display utility
+     described above, and this rule still beats it:
+     `e2e/nav-planner-visibility.spec.ts` asserts the row copy is `display:
+     none` on the first frame at 1280px. Both copies carry `data-nav-path`,
+     which is what makes that true.
 
      Either way `e2e/nav-planner-visibility.spec.ts` asserts the first frame at
-     BOTH 320px and 1280px. Until story 59.2 the failure mode was asymmetric:
+     BOTH 320px and 1280px (and at 800px since story 69.3, where the desktop
+     panel now lives). Until story 59.2 the failure mode was asymmetric:
      at >= 640px `sm:contents` dissolved the sheet into the desktop row, so a
      broken rule could hide the entry on mobile and reveal it on desktop. Since
      59.2 the entry sits in the nav's More `<details>` at both widths, closed on

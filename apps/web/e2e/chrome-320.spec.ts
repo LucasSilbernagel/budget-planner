@@ -72,22 +72,29 @@ const BAR_CELL_SELECTOR = `${NAV} > ul > li > a`
 
 function readBarCells(page: Page) {
   return page.evaluate((selector) => {
-    return [...document.querySelectorAll(selector)].map((a) => {
-      const label = a.querySelector('[data-nav-label]')
-      // getClientRects() on the LABEL's contents returns one rect per rendered
-      // line box, so its length is the label's line count. Ranged over the whole
-      // anchor it would measure 3 on a correct cell — see the file docblock.
-      const range = document.createRange()
-      if (label) range.selectNodeContents(label)
-      return {
-        label: label?.textContent?.trim() ?? '',
-        // scrollWidth > clientWidth means the label paints past its cell and
-        // collides with the neighbouring destination (the pre-18-2 defect).
-        overflows: a.scrollWidth > a.clientWidth,
-        height: Math.round(a.getBoundingClientRect().height),
-        lineCount: label ? range.getClientRects().length : -1,
-      }
-    })
+    // RENDERED cells only (story 69.3). Balances and Retirement also have a ROW
+    // copy under the outer `<ul>` since 69.3 (`hidden lg:block`), so this
+    // selector matches them in the DOM at every width. Filtered by render,
+    // not excluded by marker, so that a row copy LEAKING into the 320px bar
+    // (a lost `hidden`) is exactly what turns the label check below red.
+    return [...document.querySelectorAll(selector)]
+      .filter((a) => a.getClientRects().length > 0)
+      .map((a) => {
+        const label = a.querySelector('[data-nav-label]')
+        // getClientRects() on the LABEL's contents returns one rect per rendered
+        // line box, so its length is the label's line count. Ranged over the whole
+        // anchor it would measure 3 on a correct cell — see the file docblock.
+        const range = document.createRange()
+        if (label) range.selectNodeContents(label)
+        return {
+          label: label?.textContent?.trim() ?? '',
+          // scrollWidth > clientWidth means the label paints past its cell and
+          // collides with the neighbouring destination (the pre-18-2 defect).
+          overflows: a.scrollWidth > a.clientWidth,
+          height: Math.round(a.getBoundingClientRect().height),
+          lineCount: label ? range.getClientRects().length : -1,
+        }
+      })
   }, BAR_CELL_SELECTOR)
 }
 

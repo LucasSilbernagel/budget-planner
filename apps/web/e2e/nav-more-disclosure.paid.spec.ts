@@ -12,6 +12,7 @@ import {
   readChevron,
   sweepHeaderRow,
 } from './helpers/nav-more'
+import { LG } from './helpers/nav-width'
 
 /**
  * The "More" disclosure for a PAID session (story 59.2, FR90).
@@ -36,6 +37,13 @@ const PAID_PANEL = [
   'Categories',
 ] as const
 
+/**
+ * The panel at `lg` and up (story 69.3, FR110): Balances and Retirement are ROW
+ * anchors there, so the paid panel is the premium four. Below `lg` it is all
+ * six, as before.
+ */
+const PAID_PANEL_LG = ['Forecasting', 'Profiles', 'Report', 'Categories'] as const
+
 const PANEL_ROUTES: readonly [label: string, path: string][] = [
   ['Balances', '/balance'],
   ['Retirement', '/retirement'],
@@ -45,27 +53,34 @@ const PANEL_ROUTES: readonly [label: string, path: string][] = [
   ['Categories', '/categories'],
 ]
 
-for (const width of [640, 1024, 1280] as const) {
-  test(`the paid desktop row is ONE row of five items at ${width}px`, async ({ page }) => {
+// Five items below `lg`, seven from `lg` (story 69.3: Balances and Retirement
+// join the row there). Either way ONE row, with More last.
+for (const width of [640, 1000, 1024, 1280] as const) {
+  const expected = width >= LG ? 7 : 5
+  test(`the paid desktop row is ONE row of ${expected} items at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
     const row = await page.evaluate((nav) => {
-      const items = [...document.querySelectorAll(`${nav} > ul > li`)] as HTMLElement[]
+      // RENDERED items only: the promoted row copies are `display:none` below
+      // `lg` (story 69.3).
+      const items = ([...document.querySelectorAll(`${nav} > ul > li`)] as HTMLElement[]).filter(
+        (li) => li.getClientRects().length > 0
+      )
       return {
         count: items.length,
         tops: [...new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))],
         more: items.at(-1)?.querySelector(':scope > details > summary')?.textContent?.trim(),
       }
     }, NAV)
-    expect(row.count, 'the paid row is not five items').toBe(5)
+    expect(row.count, `the paid row is not ${expected} items`).toBe(expected)
     expect(row.more).toBe('More')
     expect(row.tops, `the paid row still wraps at ${width}px`).toHaveLength(1)
 
-    // Seam check: this really is the paid nav (6 panel rows, not the free 2;
-    // 7 and 3 until story 69.2 took Settings out).
-    expect(await panelLabels(page)).toEqual([...PAID_PANEL])
+    // Seam check: this really is the paid nav (6 panel rows below lg, the
+    // premium 4 from lg; not the free 2).
+    expect(await panelLabels(page)).toEqual(width >= LG ? [...PAID_PANEL_LG] : [...PAID_PANEL])
   })
 }
 
@@ -80,10 +95,9 @@ for (const width of [640, 1024, 1280] as const) {
  * could shrink, and the nav, with the larger basis, wrapped first. Fixed by
  * `sm:shrink-0` on the nav plus `sm:min-w-0` on the account strip, so the email
  * truncated instead. At the time (59.2), removing either token turned this red,
- * mutation-measured. ⚠️ That claim has NOT been re-measured since 69.2 removed
- * the email: with a 64px trigger there may be nothing left to squeeze, so do
- * not cite this test as the guard for those two tokens without re-running the
- * mutation.
+ * mutation-measured. ⚠️ That is HISTORY: story 69.2 removed the email and story
+ * 69.3 (decision D4) removed `sm:min-w-0` itself, and this test is green
+ * without it. It does not guard either token any more.
  *
  * ⚠️ RE-POINTED by story 59.3, which moved the visible email into the
  * account-menu trigger, and RE-SCOPED by story 69.2, which took it out of the
@@ -108,35 +122,45 @@ test('a signed-in Premium user gets ONE row at every desktop width', async ({ pa
   expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
 })
 
-test('the open paid panel shows all seven rows, on screen and unoccluded, at 1280px', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-  await openMore(page)
+for (const [width, rows] of [
+  [1000, PAID_PANEL],
+  [1280, PAID_PANEL_LG],
+] as const) {
+  test(`the open paid panel shows its ${rows.length} rows, on screen and unoccluded, at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await openMore(page)
 
-  const nav = page.getByRole('navigation', { name: 'Primary' })
-  for (const label of PAID_PANEL) {
-    await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible()
-  }
-  const hits = await page.evaluate((sel) => {
-    const vh = globalThis.innerHeight
-    return [...document.querySelectorAll(`${sel} > li > a`)].map((a) => {
-      const r = a.getBoundingClientRect()
-      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
-      return {
-        label: a.textContent?.trim(),
-        onScreen: r.top >= 0 && r.bottom <= vh,
-        inside: hit !== null && a.contains(hit),
-      }
-    })
-  }, MORE_PANEL)
-  expect(
-    hits.filter((h) => !h.onScreen || !h.inside),
-    'a paid row is off-screen or painted over'
-  ).toEqual([])
-})
+    const panel = page.locator(MORE_PANEL)
+    for (const label of rows) {
+      await expect(panel.getByRole('link', { name: label, exact: true })).toBeVisible()
+    }
+    // Exactly these: at `lg` the Balances/Retirement panel rows must NOT render.
+    await expect(panel.getByRole('link')).toHaveCount(rows.length)
+    const hits = await page.evaluate((sel) => {
+      const vh = globalThis.innerHeight
+      // Rendered rows only (story 69.3).
+      return [...document.querySelectorAll(`${sel} > li > a`)]
+        .filter((a) => a.getClientRects().length > 0)
+        .map((a) => {
+          const r = a.getBoundingClientRect()
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+          return {
+            label: a.textContent?.trim(),
+            onScreen: r.top >= 0 && r.bottom <= vh,
+            inside: hit !== null && a.contains(hit),
+          }
+        })
+    }, MORE_PANEL)
+    expect(
+      hits.filter((h) => !h.onScreen || !h.inside),
+      'a paid row is off-screen or painted over'
+    ).toEqual([])
+  })
+}
 
 test.describe('with JavaScript disabled', () => {
   test.use({ javaScriptEnabled: false })
@@ -201,7 +225,11 @@ for (const width of [640, 1280] as const) {
       await page.waitForLoadState('networkidle')
       await openMore(page)
       const hits = await page.evaluate((sel) => {
-        const rows = [...document.querySelectorAll(`${sel} > li > a`)] as HTMLElement[]
+        // Rendered rows only (story 69.3): at `lg` the Balances/Retirement
+        // panel rows are `display:none`, and probing a zero rect "misses".
+        const rows = ([...document.querySelectorAll(`${sel} > li > a`)] as HTMLElement[]).filter(
+          (a) => a.getClientRects().length > 0
+        )
         return {
           rows: rows.length,
           misses: rows.flatMap((a) => {
@@ -217,7 +245,9 @@ for (const width of [640, 1280] as const) {
         }
       }, MORE_PANEL)
       // Anti-vacuity: an empty panel would have nothing to occlude.
-      expect(hits.rows, `the panel on ${route} has no rows to probe`).toBe(PAID_PANEL.length)
+      expect(hits.rows, `the panel on ${route} has the wrong rows to probe`).toBe(
+        width >= LG ? PAID_PANEL_LG.length : PAID_PANEL.length
+      )
       occluded.push(...hits.misses.map((m) => `${route} ${m}`))
       await page.keyboard.press('Escape')
     }
@@ -226,10 +256,10 @@ for (const width of [640, 1280] as const) {
 }
 
 /**
- * The More chevron for a PAID session (story 69.1, FR108). Story 69.3 PLANS
- * to remove the More trigger from the FREE desktop row (nothing would be left
- * behind it), which would make this the only tier with the cue at desktop.
- * Not yet the case: the free twin lives in `nav-more-disclosure.spec.ts`.
+ * The More chevron for a PAID session (story 69.1, FR108). Since story 69.3 a
+ * FREE session has no More trigger at `lg` and up (nothing is left behind it),
+ * so at 1280px this is the only tier with the cue. The free twin runs below
+ * `lg`, in `nav-more-disclosure.spec.ts`.
  */
 test('the paid More trigger carries a chevron that turns with the panel at 1280px', async ({
   page,

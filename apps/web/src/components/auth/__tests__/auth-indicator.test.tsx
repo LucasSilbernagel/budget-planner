@@ -314,10 +314,13 @@ describe('AuthIndicator', () => {
   // signed-in e2e sweeps (`nav-more-disclosure{,.paid}.spec.ts`).
   //
   // Story 59.3 moved the row chrome to a new OUTER row. Story 69.2 took the
-  // email out of the chrome altogether (decision D2), so there is nothing left
-  // to truncate: what this still pins is the row structure and that the
-  // tokens stay, and that the email appears nowhere VISIBLE.
-  it('keeps the outer row yieldable on desktop, with no visible email left in it', async () => {
+  // email out of the chrome altogether (decision D2), so there was nothing left
+  // to truncate. ⚠️ REVERSED by story 69.3 (decision D4): `sm:min-w-0` then only
+  // let the row's box shrink below its content, and `justify-end` pushed the
+  // overflow LEFT over the nav at an enlarged root font. It is gone; the row
+  // keeps its content width, `sm:ml-auto` keeps it right-aligned when the header
+  // wraps it to its own line (`e2e/nav-enlarged-font{,.paid}.spec.ts`).
+  it('keeps the outer row at its content width, with no visible email left in it', async () => {
     stubFetch({
       user: {
         userId: 'user-1',
@@ -331,10 +334,11 @@ describe('AuthIndicator', () => {
     expect(row, 'the outer row carries `data-auth-indicator`').not.toBeNull()
     expect(row.contains(accountStatus()), 'the status region sits inside the row').toBe(true)
     const rowTokens = [...row.classList]
-    expect(rowTokens, 'the strip cannot shrink below its content on desktop').toContain(
+    expect(rowTokens, 'the strip can shrink below its content again (69.3 D4)').not.toContain(
       'sm:min-w-0'
     )
-    expect(rowTokens, '`min-w-0` must stay desktop-only').not.toContain('min-w-0')
+    expect(rowTokens).not.toContain('min-w-0')
+    expect(rowTokens, 'a wrapped cluster would lose its right alignment').toContain('sm:ml-auto')
     // The ONE copy is the announced one.
     const copies = screen.getAllByText('a.long.address@example.test')
     expect(copies).toHaveLength(1)
@@ -1141,5 +1145,43 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
     renderWithRouter(<AuthIndicator />, { path })
     await screen.findByRole('link', { name: /sign in/i })
     expect(gear()).toHaveAttribute('aria-current', 'page')
+  })
+})
+
+/**
+ * Story 69.3 (decision D3): a SIGNED-IN visitor with JavaScript off reaches
+ * `/settings` through a `<noscript>` gear.
+ *
+ * What jsdom can and cannot say here, MEASURED at 69.3 with a throwaway probe:
+ * React 19's `renderToString` emits the anchor INSIDE `<noscript>`, and a
+ * CLIENT render leaves the `<noscript>` EMPTY (no child elements). So this file
+ * can prove the client half, that the element is there and holds no LIVE
+ * second gear with JavaScript on. The server half (a visible, working link
+ * with JavaScript off) is a rendered fact, proven in
+ * `e2e/settings-route.paid.spec.ts`.
+ */
+describe('AuthIndicator — the signed-in JS-off Settings gear (story 69.3, D3)', () => {
+  it('renders a <noscript> in the signed-in cluster, holding no live link', async () => {
+    stubFetch({
+      user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' },
+    })
+    const { container } = renderWithRouter(<AuthIndicator />, { path: '/income' })
+    await screen.findByRole('button', { name: 'Account menu' })
+    const row = container.querySelector('[data-auth-indicator]') as HTMLElement
+    const noscripts = row.querySelectorAll(':scope > noscript')
+    expect(noscripts, 'the signed-in cluster has no <noscript> gear').toHaveLength(1)
+    // Outside the live region, like the signed-out gear.
+    expect(accountStatus().contains(noscripts[0] as Node)).toBe(false)
+    // No live second gear: the panel is closed, so NOTHING links to /settings.
+    expect(screen.queryAllByRole('link', { name: 'Settings' })).toHaveLength(0)
+    expect(container.querySelector('a[href="/settings"]')).toBeNull()
+  })
+
+  it('renders no <noscript> gear for a signed-out visitor, who has the real one', async () => {
+    stubFetch({ user: null })
+    const { container } = renderWithRouter(<AuthIndicator />, { path: '/income' })
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(container.querySelectorAll('noscript')).toHaveLength(0)
+    expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(1)
   })
 })

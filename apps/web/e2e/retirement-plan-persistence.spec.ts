@@ -6,7 +6,6 @@ import {
   RETIREMENT_PLANNER_STORAGE_KEY,
   RETIREMENT_PLANNER_VERSION,
 } from '../src/stores/retirementPlannerStore'
-import { MORE_SUMMARY } from './helpers/nav-more'
 
 /**
  * The retirement plan survives a reload and a navigation (Story 44.1, FR71).
@@ -139,10 +138,14 @@ test.describe('retirement plan persistence', () => {
 
     await page.getByRole('link', { name: 'Income', exact: true }).first().click()
     await expect(page.locator(AGE)).toHaveCount(0)
-    // Retirement sits behind the nav's More disclosure at every width since
-    // story 59.2, so the real nav route is More, then the row.
-    await page.locator(MORE_SUMMARY).click()
-    await page.getByRole('link', { name: 'Retirement', exact: true }).first().click()
+    // At this default 1280px width Retirement is a ROW anchor again since story
+    // 69.3 (behind More from story 59.2 until then, and still below `lg`), so
+    // the real nav route is one click. Scoped to the nav and to what renders:
+    // the page itself also links to Retirement.
+    await page
+      .getByRole('navigation', { name: 'Primary' })
+      .getByRole('link', { name: 'Retirement', exact: true })
+      .click()
 
     await expect(page.locator(AGE)).toHaveValue('42')
     await expect(page.locator(LIFE)).toHaveValue('88')

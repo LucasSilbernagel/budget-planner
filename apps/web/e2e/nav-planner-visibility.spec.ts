@@ -1,5 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import { MORE_PANEL, MORE_SUMMARY } from './helpers/nav-more'
+import { LG, PLANNER_STORAGE_KEY } from './helpers/nav-width'
 
 /**
  * Retirement planner visibility (story 35.2, FR55).
@@ -47,8 +48,24 @@ import { MORE_PANEL, MORE_SUMMARY } from './helpers/nav-more'
  */
 
 const NAV = 'nav[aria-label="Primary"]'
+/**
+ * Every Retirement entry in the nav, whichever copy. Since story 69.3 there are
+ * TWO in the DOM: the sheet row (inside More, `lg:hidden`) and the ROW copy
+ * (`hidden lg:block`). "Gone" means both are gone, so the after-hydration
+ * absence checks use this.
+ */
 const RETIREMENT_LI = `${NAV} li[data-nav-path="/retirement"]`
-const STORAGE_KEY = 'budget-planner-planner-visibility-v1'
+/**
+ * The copy that RENDERS at the current width (story 69.3): the row copy at
+ * `lg` (1024px) and up, the sheet row below. The first-frame probe reads this
+ * one, because the other copy is `display:none` by its own width rule and
+ * would report "suppressed" for a default user.
+ */
+const RENDERED_RETIREMENT_LI = {
+  sheet: `${NAV} details li[data-nav-path="/retirement"]`,
+  row: `${NAV} > ul > li[data-nav-promoted][data-nav-path="/retirement"]`,
+}
+const STORAGE_KEY = PLANNER_STORAGE_KEY
 
 interface FirstFrame {
   /** `null` when the <li> is absent from the pre-hydration HTML entirely. */
@@ -80,10 +97,10 @@ async function firstFrameWith(page: Page, hidden: boolean, path: string): Promis
   )
 
   await page.addInitScript(
-    ({ navSel, liSel }) => {
+    ({ navSel, liSel, lg }) => {
       document.addEventListener('DOMContentLoaded', () => {
         const nav = document.querySelector(navSel)
-        const li = document.querySelector(liSel)
+        const li = document.querySelector(globalThis.innerWidth >= lg ? liSel.row : liSel.sheet)
         ;(globalThis as unknown as { __plannerAtDCL?: unknown }).__plannerAtDCL = {
           display: li ? globalThis.getComputedStyle(li).display : null,
           marked: document.documentElement.getAttribute('data-hide-retirement') === '1',
@@ -91,7 +108,7 @@ async function firstFrameWith(page: Page, hidden: boolean, path: string): Promis
         }
       })
     },
-    { navSel: NAV, liSel: RETIREMENT_LI }
+    { navSel: NAV, liSel: RENDERED_RETIREMENT_LI, lg: LG }
   )
 
   const response = await page.goto(path)
@@ -114,7 +131,11 @@ async function firstFrameWith(page: Page, hidden: boolean, path: string): Promis
 
 for (const { label, width, height } of [
   { label: '320px (mobile bar + More sheet)', width: 320, height: 720 },
-  { label: '1280px (desktop disclosure panel)', width: 1280, height: 800 },
+  // 1280px has been the desktop ROW copy since story 69.3 (Balances and
+  // Retirement join the row at `lg`); 800px is the desktop disclosure panel,
+  // which is what 1280px measured from story 59.2 until 69.3.
+  { label: '800px (desktop disclosure panel)', width: 800, height: 800 },
+  { label: '1280px (desktop row, story 69.3)', width: 1280, height: 800 },
 ]) {
   test.describe(`the hidden Retirement entry never paints — ${label}`, () => {
     test.use({ viewport: { width, height } })
@@ -156,7 +177,8 @@ for (const { label, width, height } of [
       )
 
       await page.waitForLoadState('networkidle')
-      await expect(page.locator(RETIREMENT_LI)).toHaveCount(1)
+      // Two DOM copies since story 69.3 (the sheet row and the lg row copy).
+      await expect(page.locator(RETIREMENT_LI)).toHaveCount(2)
     })
   })
 }
@@ -213,7 +235,9 @@ test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
 
     // The bar is unaffected: Retirement never lived there, so `grid-cols-5` and
     // the root's height reserve are untouched. Measured, not argued (§1.3).
-    const barCells = nav.locator(':scope > ul > li')
+    // Rendered cells only (story 69.3): the promoted row copies are outer
+    // `<li>`s too, `display:none` below `lg`, and a CSS count includes them.
+    const barCells = nav.locator(':scope > ul > li:visible')
     await expect(barCells).toHaveCount(5)
 
     /**
@@ -312,11 +336,10 @@ test.describe('the /retirement route with the planner hidden (AC-5, AC-6, AC-9)'
     // still suppressed by a stale pre-paint attribute" — which is precisely the
     // defect this assertion now guards (found in review by two independent
     // layers). The count form certified the broken build green.
-    // Since story 59.2 the entry lives behind More at this 1280px width too, and
-    // a row in a CLOSED `<details>` is never visible. Open the panel first, or
-    // this fails on a correctly restored entry.
-    await page.locator(MORE_SUMMARY).click()
-    await expect(page.locator(RETIREMENT_LI)).toBeVisible()
+    // At this default 1280px width the entry is a ROW anchor again since story
+    // 69.3 (it was behind More from 59.2 until then), so it is visible with no
+    // panel to open. The copy that renders here is the row copy.
+    await expect(page.locator(RENDERED_RETIREMENT_LI.row)).toBeVisible()
   })
 
   test('the preference survives a reload (AC-9)', async ({ page }) => {

@@ -1,5 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import { MORE_PANEL, MORE_SUMMARY, NAV } from './helpers/nav-more'
+import { PLANNER_STORAGE_KEY } from './helpers/nav-width'
 
 /**
  * The tier-aware nav, measured on a REAL paid session (story 58.1, AC-5/AC-6).
@@ -35,7 +36,7 @@ import { MORE_PANEL, MORE_SUMMARY, NAV } from './helpers/nav-more'
 // `${NAV} button` nor `${NAV} > ul > li > ul` finds anything any more.
 const MORE_TRIGGER = MORE_SUMMARY
 const SHEET = MORE_PANEL
-const STORAGE_KEY = 'budget-planner-planner-visibility-v1'
+const STORAGE_KEY = PLANNER_STORAGE_KEY
 
 /** The free server, for the negative control. Absolute: this project's baseURL is :5174. */
 const FREE_ORIGIN = 'http://localhost:5173'
@@ -70,12 +71,15 @@ test.describe('the paid nav really is the paid nav', () => {
   // The precondition every other test in this file rests on. If the seam stops
   // working, this fails FIRST and unambiguously, instead of leaving the
   // geometry assertions quietly measuring the free nav (6 anchors since 69.2).
-  // Counts since story 69.2, which took Settings out of the nav: 10 anchors / 6
-  // sheet rows paid, 6 / 2 free (11 / 7 and 7 / 3 before).
-  test('the seam delivers an entitled session — 10 anchors, 6 sheet rows', async ({ page }) => {
+  // Counts since story 69.2, which took Settings out of the nav: 10
+  // destinations / 6 sheet rows paid, 6 / 2 free (11 / 7 and 7 / 3 before).
+  // Since story 69.3 the DOM anchor count is two higher in both tiers:
+  // Balances and Retirement also have a ROW copy (`hidden lg:block`), so 12
+  // paid and 8 free. The sheet row counts are unchanged.
+  test('the seam delivers an entitled session — 12 DOM anchors, 6 sheet rows', async ({ page }) => {
     await gotoNav(page)
 
-    expect(await anchorCount(page)).toBe(10)
+    expect(await anchorCount(page)).toBe(12)
     await expect(page.locator(`${SHEET} > li`)).toHaveCount(6)
 
     for (const path of ['/forecasting', '/profiles', '/report', '/categories']) {
@@ -88,10 +92,10 @@ test.describe('the paid nav really is the paid nav', () => {
 
   // ⚠️ THE NEGATIVE CONTROL. Without it, a seam that silently stopped working
   // would leave every "paid" assertion above passing against the free nav.
-  test('the FREE server on :5173 is unaffected — 6 anchors, 2 sheet rows', async ({ page }) => {
+  test('the FREE server on :5173 is unaffected — 8 DOM anchors, 2 sheet rows', async ({ page }) => {
     await gotoNav(page, `${FREE_ORIGIN}/`)
 
-    expect(await anchorCount(page)).toBe(6)
+    expect(await anchorCount(page)).toBe(8)
     await expect(page.locator(`${SHEET} > li`)).toHaveCount(2)
     for (const path of ['/forecasting', '/profiles', '/report', '/categories']) {
       await expect(
@@ -103,18 +107,21 @@ test.describe('the paid nav really is the paid nav', () => {
 })
 
 /**
- * The desktop row for a paid session — FIVE items, ONE row (story 59.2, FR90).
+ * The desktop row for a paid session — ONE row (story 59.2, FR90): five items
+ * below `lg`, seven from `lg` since story 69.3.
  *
  * ⚠️⚠️ THIS REPLACES A TWO-ROW RECORD. Until story 59.2 a paying user's eleven
  * anchors wrapped to TWO rows (92px) at every desktop width. 59.1 measured the
  * row as needing 1026.80px against 966px at the cap (DejaVu) — 60.80px short
  * after its own rename, 116.23px before it — and recorded that no spacing
  * change could close it. 59.2 closed it by moving the More destinations out of
- * the row: the row is Overview · Income · Expenses · Savings · More in BOTH
- * tiers, and the other seven rows are an overlay panel.
+ * the row: from 59.2 until 69.3 the row was Overview · Income · Expenses ·
+ * Savings · More in BOTH tiers at every width, and the other rows (seven then,
+ * six after 69.2) an overlay panel. Since 69.3 that is the row BELOW `lg`.
  *
- * ⚠️ THE ROW'S WIDTHS ARE NOT REPEATED HERE. The free and paid rows are the
- * same five items, so there is one measurement, and it lives in ONE place: the
+ * ⚠️ THE ROW'S WIDTHS ARE NOT REPEATED HERE. Below `lg` the free and paid rows
+ * are the same five items, so there is one measurement, and it lives in ONE
+ * place (the `lg` rows differ by tier; see the 69.3 note below): the
  * record in `nav-responsive-css.spec.ts` ("THE DESKTOP ROW"), produced by
  * `nav-intrinsic-width.measure{,.paid}.spec.ts`. The paid run reproduces the
  * free figures exactly (441.58px DejaVu, re-measured unchanged after story
@@ -128,6 +135,20 @@ test.describe('the paid nav really is the paid nav', () => {
  * 82px.) Both re-measured by story 69.2, which took the Settings row out; they
  * were 262px / 118px. Paid is the tallest panel, so it carries the occlusion sweep in
  * `nav-more-disclosure.paid.spec.ts`.
+ *
+ * ⚠️ STORY 69.3 (FR110) split the row into TWO BANDS, and the panel with it.
+ * MEASURED 2026-09-25, DejaVu (fingerprint 66.72), by the two-band
+ * `nav-intrinsic-width.measure.paid.spec.ts`, signed out:
+ *   - below `lg` (measured at 1000px): the five-item row, 441.58px; the panel
+ *     is the six rows above, 226px tall (5 rows / 190px with the planner off).
+ *   - from `lg`: SIX anchors + More, 638.48px (532.72px with the planner off);
+ *     the panel is the premium four, 154px tall. 1024px headroom 193.91px
+ *     signed out, 217.00px beside a Premium cluster, 185.00px beside the
+ *     JavaScript-off Premium cluster with its <noscript> gear. The free table
+ *     and the cluster widths are in `nav-responsive-css.spec.ts`.
+ *   No wrapping width from 640 to 1400px in either planner state.
+ * So the "1280px" panel figure above is now the BELOW-lg panel; at 1280px the
+ * panel is 154px. (Free: no panel at all from `lg`.)
  *
  * ⚠️ 58.1's "973" and 59.1's "966" "available" figures are SUPERSEDED, not
  * reconciled. Both were the list's `clientWidth` while the 11-anchor row was
@@ -144,18 +165,21 @@ test.describe('the paid nav really is the paid nav', () => {
  * reproducibly). Run the committed harness; do not write a new one.
  */
 test.describe('the paid desktop row (story 59.2)', () => {
-  test('is ONE row of the same five items as the free row at 1280px, with no overflow', async ({
-    page,
-  }) => {
+  // Story 69.3 (FR110): at `lg` and up the paid row is SEVEN items (Balances and
+  // Retirement join it, More stays for the premium four). Five below `lg`.
+  test('is ONE row of seven items at 1280px, with no overflow', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 })
     await gotoNav(page)
 
     const measured = await page.evaluate((selector) => {
       const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
       if (!list) return null
-      // The ROW ITEMS. `list.querySelectorAll('a')` would also count the seven
+      // The ROW ITEMS. `list.querySelectorAll('a')` would also count the
       // rows inside the closed More panel, whose tops are not in the row.
-      const items = [...list.querySelectorAll(':scope > li')] as HTMLElement[]
+      // RENDERED ones only (story 69.3): a `display:none` item's top is 0.
+      const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
+        (li) => li.getClientRects().length > 0
+      )
       // Distinct top offsets = wrapped row count. Reading `height` alone cannot
       // distinguish one tall row from two short ones.
       const rows = new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))
@@ -175,10 +199,11 @@ test.describe('the paid desktop row (story 59.2)', () => {
     // eslint-disable-next-line no-console -- the measurement IS the deliverable
     console.log('[59.2] 1280px paid row:', JSON.stringify(m))
 
-    // The precondition this is the paid nav, not the free one: 10 anchors in the
-    // DOM (6 of them in the closed panel; 11 and 7 until story 69.2).
-    expect(await anchorCount(page), 'not measuring the paid nav').toBe(10)
-    expect(m.items, 'the paid row is not five items').toBe(5)
+    // The precondition this is the paid nav, not the free one: 12 anchors in the
+    // DOM (10 destinations + the two lg row copies, story 69.3; 11 until story
+    // 69.2).
+    expect(await anchorCount(page), 'not measuring the paid nav').toBe(12)
+    expect(m.items, 'the paid row is not seven items at lg').toBe(7)
     // A PIN at 1, tightened from the pre-59.2 ceiling of 2 — the direction that
     // ceiling's own comment asked for ("a pass at 1 row is an improvement").
     expect(m.rowCount, 'the paid desktop nav wraps').toBe(1)
@@ -200,7 +225,10 @@ test.describe('the paid desktop row (story 59.2)', () => {
       const m = await page.evaluate((selector) => {
         const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
         if (!list) return null
-        const items = [...list.querySelectorAll(':scope > li')] as HTMLElement[]
+        // RENDERED items only (story 69.3): see the 1280px test above.
+        const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
+          (li) => li.getClientRects().length > 0
+        )
         return {
           rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
           listOverflow: list.scrollWidth - list.clientWidth,
@@ -446,7 +474,9 @@ test.describe('the More sheet at 6 rows (AC-5)', () => {
  * PRODUCT of the two needs its own measurement — 9 anchors, 5 sheet rows (10 and
  * 6 until story 69.2 took Settings out).
  */
-test('paid session with the Retirement planner hidden: 9 anchors, 5 rows', async ({ page }) => {
+test('paid session with the Retirement planner hidden: 9 destinations, 5 rows', async ({
+  page,
+}) => {
   await page.addInitScript(
     ({ key }) => {
       localStorage.setItem(
@@ -459,7 +489,9 @@ test('paid session with the Retirement planner hidden: 9 anchors, 5 rows', async
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoNav(page)
 
-  expect(await anchorCount(page)).toBe(9)
+  // 9 destinations + the Balances row copy (story 69.3; the Retirement row copy
+  // is filtered with its sheet row) = 10 DOM anchors.
+  expect(await anchorCount(page)).toBe(10)
   await expect(page.locator(`${SHEET} > li`)).toHaveCount(5)
   await expect(page.locator(`${NAV} li[data-nav-path="/retirement"]`)).toHaveCount(0)
   // The premium four are unaffected by a preference that is not about them.

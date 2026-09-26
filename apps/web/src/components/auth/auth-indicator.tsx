@@ -262,14 +262,27 @@ export function AuthIndicator() {
       // desktop row it inherits the shared chrome from the `__root.tsx` wrapper
       // so the nav and this indicator read as one bar (story 19-3).
       //
-      // `sm:min-w-0` (story 59.2, code review): on the desktop row this strip is
-      // a flex item beside the nav, and a flex item's default `min-width: auto`
-      // is its CONTENT width. It was added so a long email in the cluster could
-      // truncate instead of wrapping the nav (measured: 3 rows at 640px). Since
-      // story 69.2 the cluster shows no email at all, so nothing in it truncates
-      // any more; the token is kept because it is harmless and story 69.3
-      // re-lays this row. The nav is `sm:shrink-0`. `sm:` only, so the 320px top
-      // strip is untouched.
+      // NO `sm:min-w-0` since story 69.3 (decision D4). Story 59.2's review
+      // added it so a long email could truncate instead of wrapping the nav;
+      // story 69.2 took the email out, and then it did only harm. With a
+      // `min-width` of 0 the row's BOX shrank below its content when squeezed,
+      // and `justify-end` pushed the overflow LEFTWARD over the nav: at an
+      // enlarged root font a press on the More chevron hit this cluster
+      // (measured in 69.3's RED run: 640-675px at an 18px root, 640-750px at
+      // 20px, signed out). Without it the row keeps its content width, and
+      // the header row (`__root.tsx`, `sm:flex-wrap`) drops it to a line of
+      // its own instead. `sm:ml-auto` keeps it right-aligned there, where
+      // `justify-between` alone would push a lone item left.
+      // `e2e/nav-enlarged-font{,.paid}.spec.ts` guard it.
+      //
+      // `sm:pr-1 lg:pr-2` (story 69.3 code review; decision, Lucas 2026-09-25):
+      // the right padding is 4px below `lg`, 8px from `lg`. With JavaScript OFF
+      // a signed-in Premium cluster carries the `<noscript>` gear below, and at
+      // 8px it was a few px too wide for the five-item row at 640px: the header
+      // wrapped it to its own line at the DEFAULT font (640-642px). This is
+      // step 5 of story 69.2's width ladder, the one it did not need. From
+      // `lg` the row has hundreds of px to spare, so the old 8px stays there.
+      // Measured in `e2e/nav-intrinsic-width.measure.clusters.paid.spec.ts`.
       //
       // `relative`: below 640px the account panel hangs from THIS box, full
       // width, like the nav sheet hangs from the bottom bar. At 640px and up
@@ -279,7 +292,7 @@ export function AuthIndicator() {
       // (`e2e/helpers/nav-more.ts`) reads it to check the cluster stays on
       // screen.
       data-auth-indicator
-      className="relative flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm sm:min-w-0 sm:gap-1 sm:pr-2 max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
+      className="relative flex min-h-[2rem] items-center justify-end gap-2 px-4 text-sm sm:ml-auto sm:gap-1 sm:pr-1 lg:pr-2 max-sm:border-b max-sm:border-gray-200 max-sm:bg-white dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {authState.status === 'authenticated' && (
         <AccountMenu
@@ -444,6 +457,39 @@ export function AuthIndicator() {
         >
           <SettingsIcon className="h-4 w-4" />
         </Link>
+      )}
+      {authState.status === 'authenticated' && (
+        // The signed-in route to Settings for a visitor with JavaScript OFF
+        // (story 69.3, decision D3, Lucas 2026-09-25). Since story 69.2 a
+        // signed-in user reaches Settings through the account menu, which is a
+        // React `<button>` (59.3 D1), so with JavaScript off they had no route
+        // at all (FR90, then marked OPEN).
+        //
+        // `<noscript>` costs nothing with JavaScript ON: the browser's parser
+        // treats its content as inert text and the UA stylesheet hides the
+        // element, so there is no second gear and no width. With JavaScript
+        // OFF it is the same 28px gear as the signed-out one.
+        //
+        // ⚠️ HONEST SCOPE: this covers JavaScript DISABLED. It does NOT cover
+        // JavaScript that fails to load, or the window before hydration; there
+        // the account-menu trigger renders and does nothing until React runs.
+        //
+        // - A plain `<a>`, not a router `<Link>`: with scripting off no router
+        //   runs, and with it on this content is never parsed into elements.
+        // - Not route-aware, like the rest of this branch (see the 41.3 note).
+        // - Marked current on `/settings`, like the signed-out gear.
+        <noscript>
+          <a
+            href={SETTINGS_PATH}
+            aria-label="Settings"
+            aria-current={isOnSettingsPage ? 'page' : undefined}
+            className={
+              isOnSettingsPage ? `${GEAR_LINK_CLASS} ${GEAR_ACTIVE_CLASS}` : GEAR_LINK_CLASS
+            }
+          >
+            <SettingsIcon className="h-4 w-4" />
+          </a>
+        </noscript>
       )}
     </div>
   )

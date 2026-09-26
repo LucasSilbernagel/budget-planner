@@ -67,7 +67,19 @@ import type { Page } from '@playwright/test'
 
 export const NAV = 'nav[aria-label="Primary"]'
 
-/** The row's flex items: the four primary `<li>` and the More cell. */
+/**
+ * The row's flex items, as a selector: the primary `<li>`s, the More cell and,
+ * since story 69.3, the promoted Balances/Retirement copies.
+ *
+ * ⚠️⚠️ Since story 69.3 SOME OF THESE ARE `display:none` at any given width:
+ * the promoted copies below `lg`, the free More cell at `lg`. A hidden `<li>`
+ * has an all-zero rect, so its `top` is 0 and every "distinct tops" row count
+ * reports a PHANTOM second row, and a gap sum over all `<li>`s over-counts by
+ * one gap per hidden item (measured at 69.3's context time; the harness's own
+ * sum-vs-render guard fires on it). Every function below filters to RENDERED
+ * items (`getClientRects().length > 0`) after querying this selector; a new
+ * reader must do the same.
+ */
 const ROW_ITEMS = `${NAV} > ul > li`
 /** A row item's label, whether the item is a link or the More `<summary>`. */
 const ITEM_LABEL = ':scope > a [data-nav-label], :scope > details > summary [data-nav-label]'
@@ -112,7 +124,7 @@ export async function probeFont(page: Page, samples: readonly string[]) {
  * What the row actually gets, cap IN PLACE. Call BEFORE `liftConstraints`.
  *
  * ⚠️ Since story 59.2 the list's `clientWidth` is NOT "available". The list is
- * no longer width-saturated: it sizes to its five items, and the header's
+ * no longer width-saturated: it sizes to its items, and the header's
  * `justify-between` puts the slack BETWEEN the nav and the account cluster. So
  * three figures are recorded and named for what they are:
  *
@@ -173,10 +185,11 @@ export async function measureAvailable(page: Page, widths: readonly number[]) {
           headerInner,
           accountCluster,
           available: r(headerInner - accountCluster),
+          // Rendered items only (story 69.3): see `ROW_ITEMS`.
           rows: new Set(
-            [...document.querySelectorAll(items)].map((li) =>
-              Math.round(li.getBoundingClientRect().top)
-            )
+            [...document.querySelectorAll(items)]
+              .filter((li) => li.getClientRects().length > 0)
+              .map((li) => Math.round(li.getBoundingClientRect().top))
           ).size,
         }
       },
@@ -207,7 +220,11 @@ export function measureIntrinsic(page: Page): Promise<IntrinsicMeasurement> {
       const cs = getComputedStyle(list)
       const listPadding = Number.parseFloat(cs.paddingLeft) + Number.parseFloat(cs.paddingRight)
       const gap = Number.parseFloat(cs.columnGap || '0')
-      const lis = [...document.querySelectorAll(items)] as HTMLElement[]
+      // Rendered items only (story 69.3): a hidden `<li>` contributes no width
+      // but WOULD contribute a gap. See `ROW_ITEMS`.
+      const lis = ([...document.querySelectorAll(items)] as HTMLElement[]).filter(
+        (li) => li.getClientRects().length > 0
+      )
       const itemSum = lis.reduce((t, li) => t + li.getBoundingClientRect().width, 0)
       const gapTotal = gap * (lis.length - 1)
       const r = (n: number) => Math.round(n * 100) / 100
@@ -243,6 +260,12 @@ export async function measureWithLabel(page: Page, href: string, label: string) 
             : document.querySelector(`${nav} > ul > li > a[href="${h}"] [data-nav-label]`)
         ) as HTMLElement | null
         if (!span) throw new Error(`"${h}" is not a ROW item of ${nav} — nothing to measure`)
+        // Story 69.3: `/balance` and `/retirement` have a row copy that is
+        // `display:none` below `lg`. Swapping a hidden label measures nothing.
+        if (span.getClientRects().length === 0)
+          throw new Error(
+            `"${h}" is a row item but not RENDERED at this width — nothing to measure`
+          )
         const previous = span.textContent ?? ''
         span.textContent = t
         void (document.querySelector(`${nav} > ul`) as HTMLElement).offsetWidth
@@ -284,7 +307,12 @@ export async function measurePanel(page: Page) {
     const panel = document.querySelector(`${nav} > ul > li > details > ul`) as HTMLElement
     const b = panel.getBoundingClientRect()
     const r = (n: number) => Math.round(n * 100) / 100
-    const rows = [...panel.querySelectorAll(':scope > li > a')] as HTMLElement[]
+    // Rendered rows only (story 69.3): at `lg` the Balances/Retirement rows are
+    // `display:none` in the panel, because their copies are on the row. (The
+    // panel is OPEN here, so rects are a valid test.)
+    const rows = ([...panel.querySelectorAll(':scope > li > a')] as HTMLElement[]).filter(
+      (a) => a.getClientRects().length > 0
+    )
     return {
       visible: panel.checkVisibility(),
       width: r(b.width),
@@ -324,18 +352,78 @@ export async function findWrappingWidths(
   { from = 640, to = 1400, step = 5 }: { from?: number; to?: number; step?: number } = {}
 ) {
   const wrapping: number[] = []
-  for (let width = from; width <= to; width += step) {
+  for (const width of sweepWidths(from, to, step)) {
     await page.setViewportSize({ width, height: 900 })
+    // Rendered items only (story 69.3): see `ROW_ITEMS`.
     const rows = await page.evaluate(
       (items) =>
         new Set(
-          [...document.querySelectorAll(items)].map((li) =>
-            Math.round(li.getBoundingClientRect().top)
-          )
+          [...document.querySelectorAll(items)]
+            .filter((li) => li.getClientRects().length > 0)
+            .map((li) => Math.round(li.getBoundingClientRect().top))
         ).size,
       ROW_ITEMS
     )
     if (rows !== 1) wrapping.push(width)
   }
   return wrapping
+}
+
+/**
+ * Tailwind's `lg`: from here the row carries Balances and Retirement too (story
+ * 69.3, FR110, decision D1). Below it the row is the five-item row of story
+ * 59.2.
+ */
+export const LG = 1024
+
+/**
+ * The widths a sweep visits: every `step` px from `from` to `to`, PLUS both
+ * sides of the `lg` boundary (1023 and 1024) when they are in range. A plain
+ * 5px walk from 640 steps from 1020 to 1025 and never samples 1024, the width
+ * where the lg row has the least headroom (story 69.3 code review).
+ */
+export function sweepWidths(from: number, to: number, step: number): number[] {
+  const widths = new Set<number>()
+  for (let width = from; width <= to; width += step) widths.add(width)
+  for (const edge of [LG - 1, LG]) if (edge >= from && edge <= to) widths.add(edge)
+  return [...widths].sort((a, b) => a - b)
+}
+
+/** The Retirement-planner preference's persisted key (`plannerVisibilityStore`). */
+export const PLANNER_STORAGE_KEY = 'budget-planner-planner-visibility-v1'
+
+/**
+ * Both bands' intrinsic widths in ONE page session (story 69.3): the five-item
+ * row (measured at 1000px, below `lg`) and the `lg` row (measured at 2400px),
+ * each with its own A/B label swap. Lifts the constraints, so call it LAST,
+ * after every real-layout reading (`measureAvailable`, `findWrappingWidths`,
+ * `measurePanel`).
+ *
+ * ⚠️ The viewport is part of the measurement now. `hidden lg:block` means the
+ * set of rendered row items depends on it, so a width taken at 2400px says
+ * nothing about the row a 1000px window gets, and the reverse.
+ */
+export async function measureBands(page: Page, longer: string) {
+  await liftConstraints(page)
+  await page.setViewportSize({ width: 1000, height: 900 })
+  await page.waitForTimeout(150)
+  const belowLg = await measureIntrinsic(page)
+  const belowLgLonger = await measureWithLabel(page, '/expenses', longer)
+  await page.setViewportSize({ width: 2400, height: 900 })
+  await page.waitForTimeout(150)
+  const lg = await measureIntrinsic(page)
+  const lgLonger = await measureWithLabel(page, '/expenses', longer)
+  return { belowLg, belowLgLonger, lg, lgLonger }
+}
+
+/** Seed the Retirement-planner preference OFF before any page script runs. */
+export async function hidePlannerBeforeLoad(page: Page) {
+  await page.addInitScript(
+    (key) =>
+      localStorage.setItem(
+        key,
+        JSON.stringify({ state: { showRetirementPlanner: false }, version: 0 })
+      ),
+    PLANNER_STORAGE_KEY
+  )
 }

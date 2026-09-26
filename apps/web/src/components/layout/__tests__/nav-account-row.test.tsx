@@ -31,7 +31,8 @@ import { GlobalNav } from '../GlobalNav'
  * it would break this same invariant just as thoroughly as folding it into the
  * bar. Both are asserted below.
  *
- * ⚠️ The link counts here STAY 6, and they count DOM PRESENCE, not
+ * ⚠️ The link counts here are 8 since story 69.3 (6 destinations + the two
+ * promoted row copies, `hidden lg:block`), and they count DOM PRESENCE, not
  * reachability. Since story 59.2 the More destinations sit inside a native
  * `<details>` at EVERY width, and a closed `<details>` hides them from a real
  * browser's accessibility tree. jsdom does not: its default stylesheet has no
@@ -94,7 +95,9 @@ describe('Nav + account row (story 19-3)', () => {
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
     expect(navs).toHaveLength(1)
     // The Sign-in link must not inflate the nav's link set (story 11-1 / 19-2).
-    expect(within(navs[0]).getAllByRole('link')).toHaveLength(6)
+    // Eight DOM anchors: six destinations + the two promoted row copies (story
+    // 69.3), which jsdom sees because it applies no stylesheet.
+    expect(within(navs[0]).getAllByRole('link')).toHaveLength(8)
   })
 
   // Story 69.2 (FR109). The same invariant, the other way round: Settings moved
@@ -145,7 +148,8 @@ describe('Nav + account row (story 19-3)', () => {
     expect(nav.className.split(/\s+/), 'this nav is not the mobile bottom bar').toContain(
       'max-sm:fixed'
     )
-    expect(within(nav).getAllByRole('link')).toHaveLength(6)
+    // 6 destinations + 2 promoted row copies (story 69.3).
+    expect(within(nav).getAllByRole('link')).toHaveLength(8)
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(signIn)).toBe(true)
@@ -222,7 +226,8 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const lists = [...nav.querySelectorAll('ul')]
     expect(lists, 'expected the bar list and the nested More sheet').toHaveLength(2)
     expect(lists[1].contains(signOut), 'Sign out was folded into the More sheet').toBe(false)
-    expect(within(nav).getAllByRole('link')).toHaveLength(6)
+    // 6 destinations + 2 promoted row copies (story 69.3).
+    expect(within(nav).getAllByRole('link')).toHaveLength(8)
     // ZERO, and that is the right number. The nav's only control, More, is a
     // `<summary>`, which has NO role in testing-library (story 59.2, measured),
     // so it is not counted. Both account-menu controls are real `<button>`s, so

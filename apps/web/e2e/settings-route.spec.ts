@@ -1,6 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 import { SESSION_SETTLE_MS, accountTrigger, openAccountMenu } from './helpers/account-menu'
 import { NAV, mockSignedIn } from './helpers/nav-more'
+import { LG } from './helpers/nav-width'
 
 /**
  * Every session keeps a route to `/settings` (story 69.2, FR109; epic 69 AC-5
@@ -137,8 +138,17 @@ test.describe('with JavaScript disabled', () => {
       // AC-4's JS-off arm, asserted rather than implied (69.2 code review): the
       // nav's JS-free `<details>` no longer carries Settings in either state.
       await expect(page.locator(`${NAV} a[href="/settings"]`)).toHaveCount(0)
-      await page.locator(`${NAV} details > summary`).click()
-      await expect(page.locator(`${NAV} a[href="/settings"]`)).toHaveCount(0)
+      // Open the disclosure too, where there IS one. Since story 69.3 a free
+      // session has no More at `lg` (1280px here): nothing is behind it, and the
+      // closed-state count above already covers every DOM copy.
+      const more = page.locator(`${NAV} details > summary`)
+      if (width < LG) {
+        await more.click()
+        await expect(page.locator(`${NAV} a[href="/settings"]`)).toHaveCount(0)
+      } else {
+        await expect(more).toHaveCount(1)
+        await expect(more, 'a free More renders at lg').toBeHidden()
+      }
       await link.click()
       await expect(page).toHaveURL(/\/settings$/)
       await expect(page.getByRole('heading', { name: /^settings$/i })).toBeVisible()
