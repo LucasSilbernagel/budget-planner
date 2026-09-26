@@ -196,3 +196,83 @@ test.describe('an expense that ends before retirement (free tier)', () => {
     await expect(page.getByTestId('desired-income-ending-expenses')).toHaveCount(0)
   })
 })
+
+/**
+ * Flip the Retirement planner switch on /settings through the REAL control.
+ *
+ * ⚠️ NOT `addInitScript`. An init script re-runs on EVERY navigation, so a
+ * seeded "off" would be re-applied by the very `goto` that is meant to observe
+ * the planner turned back on — the restore half of the round trip could never
+ * be seen.
+ *
+ * ⚠️ Two hydration guards, because the server renders the switch at its
+ * DEFAULT (`aria-checked="true"`) whatever the stored preference is:
+ * 1. wait for the switch to show the stored state (`!on`) before acting — for
+ *    the turn-ON case this is what proves the client has read storage; without
+ *    it the server's "true" would satisfy the target and the click be skipped;
+ * 2. retry the click until the target state holds, since a click that lands
+ *    before the handler is attached is silently lost.
+ *
+ * ⚠️ Guard 1 proves hydration only for the turn-ON case. For turn-OFF it is met
+ * by the server markup itself (`"true"`); there the retry in guard 2 is what
+ * carries the weight.
+ *
+ * ⚠️ A FLIP, not an idempotent set: it asserts the OPPOSITE state first, so a
+ * call whose target already holds times out after 20s. Every call here changes
+ * the preference; keep it that way or add an early return.
+ */
+async function setPlannerVisible(page: import('@playwright/test').Page, on: boolean) {
+  await page.goto('/settings')
+  await page.waitForLoadState('networkidle')
+  const toggle = page.getByRole('switch', { name: /show retirement planner/i })
+  await expect(toggle).toHaveAttribute('aria-checked', String(!on), { timeout: 20_000 })
+  await expect(async () => {
+    if ((await toggle.getAttribute('aria-checked')) !== String(on)) {
+      await toggle.click()
+    }
+    await expect(toggle).toHaveAttribute('aria-checked', String(on), { timeout: 1000 })
+  }).toPass({ timeout: 15_000 })
+}
+
+test.describe('the question follows the planner toggle (71.1, FR113, free tier)', () => {
+  test('hidden while the planner is off, and every mark is kept for when it returns', async ({
+    page,
+  }) => {
+    await page.goto('/expenses')
+    let dialog = await openModal(page, '+ Add Expense', 'Add Expense')
+    await dialog.getByTestId('expense-name-input').fill('Mortgage')
+    await dialog.getByTestId('expense-amount-input').fill('1800')
+    await dialog.getByTestId('expense-ends-before-retirement').check()
+    await dialog.getByRole('button', { name: 'Add Expense' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByTestId('expense-row-ends-before-retirement')).toHaveCount(1)
+
+    await setPlannerVisible(page, false)
+
+    // A full navigation, so the preference and the row both come back out of
+    // localStorage rather than a module singleton.
+    await page.goto('/expenses')
+    await expensesHydrated(page)
+    await expect(page.getByTestId('expense-row-ends-before-retirement')).toHaveCount(0)
+
+    // Edit an UNRELATED field with the question hidden.
+    dialog = await openModal(page, 'Edit Mortgage', 'Edit Expense')
+    await expect(dialog.getByTestId('expense-amount-input')).toBeVisible()
+    await expect(dialog.getByTestId('expense-ends-before-retirement')).toHaveCount(0)
+    await expect(dialog.getByText(/retire/i)).toHaveCount(0)
+    await dialog.getByTestId('expense-amount-input').fill('1900')
+    await dialog.getByRole('button', { name: 'Save Changes' }).click()
+    await expect(dialog).toBeHidden()
+
+    await setPlannerVisible(page, true)
+
+    await page.goto('/expenses')
+    await expensesHydrated(page)
+    // The mark survived the hidden edit …
+    await expect(page.getByTestId('expense-row-ends-before-retirement')).toHaveCount(1)
+    // … and so did the edit itself (non-vacuity: the save really happened).
+    await expect(page.locator('tr', { hasText: 'Mortgage' })).toContainText('$1,900.00')
+    dialog = await openModal(page, 'Edit Mortgage', 'Edit Expense')
+    await expect(dialog.getByTestId('expense-ends-before-retirement')).toBeChecked()
+  })
+})

@@ -86,6 +86,21 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/applies everywhere amounts are shown/i)).toBeInTheDocument()
   })
 
+  it('describes the Retirement switch as covering the expense-form question too (71.1, FR113)', () => {
+    render(<SettingsPage />)
+    // Read through `aria-describedby`, so the pin covers what a screen-reader user
+    // hears with the switch, not just text that happens to sit nearby.
+    const toggle = screen.getByRole('switch', { name: /show retirement planner/i })
+    const description = document.getElementById(toggle.getAttribute('aria-describedby') ?? '')
+    const text = (description?.textContent ?? '').replace(/\s+/g, ' ').trim()
+    // Anchored on the DISTINGUISHING clauses, not on "retirement" alone.
+    expect(text).toContain('along with the retirement question on the expense form')
+    expect(text).toContain('any expenses you marked are kept')
+    // ⚠️ The retracted navigation-only claim must not survive the rewrite: the
+    // old sentence ENDED at "navigation.", which is what made it false.
+    expect(text).not.toMatch(/from your navigation\./)
+  })
+
   it('hosts NO dark-mode toggle — the theme follows the device (61.1, FR93)', () => {
     render(<SettingsPage />)
 

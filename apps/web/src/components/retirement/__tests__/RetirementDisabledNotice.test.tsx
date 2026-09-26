@@ -32,6 +32,13 @@ describe('RetirementDisabledNotice', () => {
     expect(screen.getByText(/you hid this planner in settings/i)).toBeInTheDocument()
   })
 
+  it('says the expense form stopped asking too, not only the navigation (71.1, FR113)', async () => {
+    renderWithRouter(<RetirementDisabledNotice />)
+    expect(
+      await screen.findByText(/the expense form no longer asks about retirement/i)
+    ).toBeInTheDocument()
+  })
+
   /**
    * AC-7's user-facing half. The control that leads here sits on the same
    * Settings page as "Clear local data", so the copy must actively deny data

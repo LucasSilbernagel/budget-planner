@@ -15,9 +15,14 @@ import { useSetShowRetirementPlanner } from '../../stores/plannerVisibilityStore
  *
  * ⚠️ The copy states plainly that nothing was deleted, because the control that
  * leads here sits next to "Clear local data" on the same Settings page and the
- * two must not be confused. It is also true in the strongest sense: the planner
- * holds no persisted inputs at all, and the income/expense/balance stores it
- * reads are never written by this feature.
+ * two must not be confused. It is also true in the strongest sense: the
+ * planner's own saved plan (`retirementPlannerStore`, since story 44.1) and the
+ * income/expense/balance stores it reads are never written by this feature, and
+ * since story 71.1 (FR113) the expense form omits `endsBeforeRetirement` while
+ * the question is hidden, so a marked expense keeps its mark.
+ *
+ * ⚠️ CORRECTED by story 71.1: this used to say "the planner holds no persisted
+ * inputs at all". That stopped being true at story 44.1.
  */
 export function RetirementDisabledNotice(): React.ReactElement {
   const setShowRetirementPlanner = useSetShowRetirementPlanner()
@@ -29,7 +34,8 @@ export function RetirementDisabledNotice(): React.ReactElement {
           The Retirement planner is turned off
         </h1>
         <p className="text-base text-body mb-4">
-          You hid this planner in Settings, so it has been removed from your navigation.
+          You hid this planner in Settings, so it has been removed from your navigation and the
+          expense form no longer asks about retirement.
         </p>
         <p className="text-base text-body mb-8">
           Nothing was deleted. Your income, expenses, savings and balances are exactly as you left

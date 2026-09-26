@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-25v (**STORY 71.1 CODE-REVIEWED + CLOSED — `review` -> `done`**, UNCOMMITTED — AND EPIC 71 ROLLUP CLOSED IN THE SAME PASS. Next: `create-story` 72.1.)
+# last_updated: 2026-09-25u (**STORY 71.1 DEV COMPLETE — `in-progress` -> `review`**, UNCOMMITTED.)
+# last_updated: 2026-09-25t (**STORY 71.1 DEV STARTED — `ready-for-dev` -> `in-progress`** at `31f098e`.)
+# last_updated: 2026-09-25s (**STORY 71.1 CONTEXTED — `backlog` -> `ready-for-dev`** at `31f098e`; epic-71 -> in-progress. Story-taken D1 badge hides too, D2 omit key when hidden, D3 off-state notice copy moves.)
 # last_updated: 2026-09-25r (**STORY 70.2 CODE-REVIEWED + CLOSED — `review` -> `done`**, UNCOMMITTED — AND EPIC 70 ROLLUP CLOSED IN THE SAME PASS. Next: `create-story` 71.1.)
 # last_updated: 2026-09-25q (**STORY 70.2 DEV COMPLETE — `in-progress` -> `review`**, UNCOMMITTED.)
 # last_updated: 2026-09-25p (**STORY 70.2 DEV STARTED — `ready-for-dev` -> `in-progress`** at `4fa2c9b`.)
@@ -954,8 +958,8 @@ development_status:
   70-2-make-the-sign-out-button-look-like-a-button: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `4fa2c9b`. Decision (Lucas): border gray-500 on BOTH Settings secondary buttons (3:1 vs fill), parity test-pinned. 4 patches, 3 deferred, 7 dismissed. Final: web 3397/223, tsc 0, Biome 0/619, e2e settings 11 passed. Contexted 2026-09-25 at `4fa2c9b`. Reuse Clear local data's outlined recipe; menu Sign out deliberately unchanged (D1).
   epic-70-retrospective: optional
 
-  epic-71: backlog  # The Retirement Toggle Means What It Says. WIDENS the toggle's contract from navigation-only — the settings copy must move with it.
-  71-1-hide-the-ends-before-retirement-question-when-the-planner-is-off: backlog
+  epic-71: done  # ✅ CLOSED 2026-09-25 with 71.1 (sole story; UNCOMMITTED). The Retirement Toggle Means What It Says. WIDENS the toggle's contract from navigation-only — the settings copy must move with it.
+  71-1-hide-the-ends-before-retirement-question-when-the-planner-is-off: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `31f098e`. 9 patches applied, 0 deferred, 5 dismissed. Final: web 3405/223, core 941/27, DB 276+7, tsc 0/0/0, Biome 0/619, e2e 517+4. DEV DONE 2026-09-25, UNCOMMITTED, baseline `31f098e`. Gates (frozen tree): web 3404/223, core 941/27, DB 276+7, tsc 0/0/0, Biome 0/619, e2e 517+4. M1/M2/M4 red, M3 green as predicted; e2e M2 red. Contexted 2026-09-25 at `31f098e`. D1 row badge hides too; D2 omit endsBeforeRetirement from handleSubmit when hidden (seeding stays unconditional); D3 RetirementDisabledNotice copy moves. Round-trip test CANNOT be red on main — M2 mutation is its proof.
   epic-71-retrospective: optional
 
   epic-72: backlog  # Every Savings Entry Can Receive An Allocation. REVERSES 64.1/FR98 (decision taken, Lucas 2026-09-25).

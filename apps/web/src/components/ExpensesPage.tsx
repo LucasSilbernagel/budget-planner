@@ -15,6 +15,7 @@ import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { type FlowSortKey, createFlowSortExtractors } from '../lib/table-sort-keys'
 import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'
 import { ConfirmDialog } from './ui/ConfirmDialog'
@@ -189,6 +190,21 @@ export function ExpensesPage() {
   // Story 65.2 (FR101). Unticked is a permanently valid state, so this joins
   // neither `computeErrors` nor the `FieldName` union below.
   const [endsBeforeRetirement, setEndsBeforeRetirement] = useState(false)
+  // Story 71.1 (FR113): with the retirement planner turned off in Settings, the
+  // form stops asking about retirement and the list stops badging rows for it.
+  // The stored marks are KEPT — see `handleSubmit` for how a hidden field
+  // leaves them untouched.
+  //
+  // ⚠️ No pre-paint rule is needed here, unlike the nav's `[data-hide-retirement]`.
+  // The rows render only once `hydrated` (below) is true, which trails
+  // `StoreHydration`. The modal opens only from a click handler, and although the
+  // "+ Add Expense" button itself is NOT behind `hydrated`, React attaches its
+  // `onClick` only when the route subtree hydrates — structurally after the
+  // root-pass rehydrate (see `hooks/useStoresHydrated`). So neither surface can
+  // show this store's pre-hydration default to a user who turned it off.
+  // (Corrected in code review 71.1: this used to credit the modal's safety to the
+  // `hydrated` gate, which the button does not sit behind.)
+  const showRetirementPlanner = useShowRetirementPlanner()
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -274,9 +290,12 @@ export function ExpensesPage() {
     // destroy the row's category, with the picker showing no sign of it.
     setCategoryId(source.categoryId ?? null)
     // ⚠️ Load-bearing for the SAME reason as `categoryId` directly above, and the
-    // higher-traffic case: `handleSubmit` sends this field unconditionally, so
-    // without seeding it here, editing only the AMOUNT of a marked expense would
-    // silently un-mark it. `=== true` rather than truthy: rows persisted before
+    // higher-traffic case: while the control is SHOWN, `handleSubmit` sends this
+    // field on every save, so without seeding it here, editing only the AMOUNT of
+    // a marked expense would silently un-mark it. (While the planner is off,
+    // story 71.1 omits the field from the save, so this seed cannot reach the row
+    // — mutation M3 in that story left every test green. It is still load-bearing
+    // for the planner-on case, so do not gate it on visibility.) `=== true` rather than truthy: rows persisted before
     // 65.2 have no key, and localStorage is user-editable.
     //
     // ⚠️ CORRECTED BY CODE REVIEW 65.2: an earlier version of this comment said
@@ -329,12 +348,25 @@ export function ExpensesPage() {
         amount: parseFromInput(amount, locale),
         frequency,
         categoryId,
-        // Story 65.2 (FR101): sent UNCONDITIONALLY, like every other field here.
-        // An `if (endsBeforeRetirement)` would make the untick unreachable —
+        // Story 65.2 (FR101): sent on EVERY save while the control is shown, like
+        // every other field here. An `if (endsBeforeRetirement)` would make the
+        // untick unreachable —
         // `updateExpense` merges `{...previous, ...updates}`, so an omitted key
         // leaves the old `true` in place and the box would re-tick itself on the
         // next open. Same partial-write hazard the sync payload documents.
-        endsBeforeRetirement,
+        //
+        // Story 71.1 (FR113): while the planner is off the control is hidden and
+        // the key is OMITTED, deliberately, so a hidden field writes nothing:
+        // `updateExpense` merges, so an edit keeps the stored mark exactly, and
+        // `toClientExpense` stamps `false` on an add. The sync push is unaffected:
+        // `syncEntityUpdate` is handed the MERGED row and `toServerPayload` emits
+        // the STORED boolean, so the wire still carries the kept mark. Sending the seeded state
+        // instead would also preserve the mark today, but only as a side effect of
+        // `openEditModal`'s seeding — and it would write a STALE value back if a
+        // sync pull changed the row while the modal was open. Do not gate the
+        // seeding or the resets on visibility; with the key omitted they cannot
+        // reach the row, and they must stay intact for when the planner is on.
+        ...(showRetirementPlanner ? { endsBeforeRetirement } : {}),
       }
 
       if (editingId !== null) {
@@ -538,8 +570,13 @@ export function ExpensesPage() {
 
                                 ⚠️ Carries TEXT, not colour alone (WCAG 1.4.1), and
                                 `=== true` rather than truthy because pre-65.2 rows
-                                have no key and localStorage is user-editable. */}
-                            {expense.endsBeforeRetirement === true && (
+                                have no key and localStorage is user-editable.
+
+                                Story 71.1 (FR113): hidden while the planner is off —
+                                the badge names retirement just as the form's help
+                                text does. The stored mark is untouched, so the badge
+                                returns on the same rows when the planner does. */}
+                            {showRetirementPlanner && expense.endsBeforeRetirement === true && (
                               <span
                                 className="mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
                                 data-testid="expense-row-ends-before-retirement"
@@ -768,28 +805,34 @@ export function ExpensesPage() {
                 to?" — a question needing amortization this app does not have
                 (`calculateDebtMetrics` is dormant, `useDebtEntries` has zero
                 callers). What the planner needs is a prediction, so the copy
-                states one. */}
-            <div>
-              <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  id="endsBeforeRetirement"
-                  checked={endsBeforeRetirement}
-                  onChange={(e) => setEndsBeforeRetirement(e.target.checked)}
-                  className="mt-0.5 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-green-500 w-4 h-4 text-green-600"
-                  aria-describedby="expense-ends-before-retirement-help"
-                  data-testid="expense-ends-before-retirement"
-                />
-                <label htmlFor="endsBeforeRetirement" className="font-medium text-label text-sm">
-                  This expense ends before I retire
-                </label>
+                states one.
+
+                Story 71.1 (FR113): the whole block — checkbox, label AND help —
+                is not rendered while the planner is off. The help ends "The
+                retirement planner uses it…", so it cannot be left behind. */}
+            {showRetirementPlanner && (
+              <div>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="endsBeforeRetirement"
+                    checked={endsBeforeRetirement}
+                    onChange={(e) => setEndsBeforeRetirement(e.target.checked)}
+                    className="mt-0.5 border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-green-500 w-4 h-4 text-green-600"
+                    aria-describedby="expense-ends-before-retirement-help"
+                    data-testid="expense-ends-before-retirement"
+                  />
+                  <label htmlFor="endsBeforeRetirement" className="font-medium text-label text-sm">
+                    This expense ends before I retire
+                  </label>
+                </div>
+                <p id="expense-ends-before-retirement-help" className="mt-1 text-muted text-xs">
+                  Tick this for a cost that will have stopped by the time you retire — a mortgage
+                  you'll have paid off, tuition, daycare or a commute. The retirement planner uses
+                  it to suggest what your income needs to cover.
+                </p>
               </div>
-              <p id="expense-ends-before-retirement-help" className="mt-1 text-muted text-xs">
-                Tick this for a cost that will have stopped by the time you retire — a mortgage
-                you'll have paid off, tuition, daycare or a commute. The retirement planner uses it
-                to suggest what your income needs to cover.
-              </p>
-            </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-4">
               <button

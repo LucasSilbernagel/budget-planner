@@ -17,6 +17,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
 import { useExpenseStore } from '../../stores/expenseStore'
+import {
+  PLANNER_VISIBILITY_STORAGE_KEY,
+  usePlannerVisibilityStore,
+} from '../../stores/plannerVisibilityStore'
 
 /**
  * Tier control for the Premium-only Category column (story 33.3, FR57).
@@ -1071,7 +1075,8 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
 
   it('⚠️⚠️ editing only the AMOUNT leaves the tick intact', async () => {
     // THE regression this story is most likely to ship. `closeModal` resets every
-    // field and `handleSubmit` sends them all unconditionally, so a flag that
+    // field and `handleSubmit` sends them all on every save (this flag only while
+    // the planner is shown — story 71.1 omits it when hidden), so a flag that
     // `openEditModal` forgets to seed is silently written back as false when the
     // user edits something else entirely. `categoryId` shipped exactly this
     // defect once (code review 30.4b, annotated at ExpensesPage.tsx:265-270).
@@ -1180,5 +1185,191 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
     expect(
       container.querySelector('[data-testid="expense-row-ends-before-retirement"]')
     ).not.toBeNull()
+  })
+})
+
+describe('ExpensesPage — the retirement question follows the planner toggle (71.1, FR113)', () => {
+  /**
+   * With the retirement planner turned off in Settings, the expense form stops
+   * asking about retirement and the list stops badging rows for it — but the
+   * stored marks are KEPT, so turning the planner back on restores every one.
+   *
+   * ⚠️ WHAT THESE TESTS CAN AND CANNOT PROVE AGAINST `31f098e`. The absence
+   * tests (checkbox, help, badge) were RED there, because both rendered
+   * unconditionally. The round trip was GREEN there, and that is not a flaw in
+   * it: before this story the hidden-field case did not exist, and the edit form
+   * seeded and re-sent the row's own value. Its discriminating power is shown by
+   * mutation instead — sending `false` for a hidden field turns it red (story
+   * 71.1, mutation M2).
+   *
+   * ⚠️ The planner flag lives in a persisted store and the web gate shares one
+   * `--localstorage-file`, so it is reset to its default (`true`) after EVERY
+   * test rather than left for the next file to inherit.
+   */
+  const LABEL = 'This expense ends before I retire'
+  const BADGE = '[data-testid="expense-row-ends-before-retirement"]'
+  const HELP_ID = 'expense-ends-before-retirement-help'
+
+  const hidePlanner = () => usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
+  const showPlanner = () => usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
+
+  const addMarkedMortgage = () =>
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+
+  beforeEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+    showPlanner()
+  })
+
+  afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+    showPlanner()
+    // `setState` goes through persist's WRITE path (`skipHydration` skips only the
+    // read), so restoring the value would still leave a blob in the shared
+    // `--localstorage-file`. Restore the ABSENCE too — `vitest.setup.ts` precedent.
+    localStorage.removeItem(PLANNER_VISIBILITY_STORAGE_KEY)
+  })
+
+  it('does not ask on the ADD form while the planner is off', async () => {
+    hidePlanner()
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+    // Non-vacuity: this really is the expense form, fully rendered.
+    expect(within(dialog).getByTestId('expense-amount-input')).toBeInTheDocument()
+
+    expect(within(dialog).queryByRole('checkbox', { name: LABEL })).toBeNull()
+    expect(within(dialog).queryByTestId('expense-ends-before-retirement')).toBeNull()
+    // The help paragraph goes too: it ends "The retirement planner uses it…",
+    // a reference to the feature the user just switched off.
+    expect(document.getElementById(HELP_ID)).toBeNull()
+    expect(within(dialog).queryByText(/retire/i)).toBeNull()
+  })
+
+  it('does not ask on the EDIT form of a marked row while the planner is off', async () => {
+    addMarkedMortgage()
+    hidePlanner()
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByTestId('expense-amount-input')).toBeInTheDocument()
+
+    expect(within(dialog).queryByRole('checkbox', { name: LABEL })).toBeNull()
+    expect(within(dialog).queryByTestId('expense-ends-before-retirement')).toBeNull()
+    expect(document.getElementById(HELP_ID)).toBeNull()
+    // The same whole-dialog sweep as the ADD test, so edit-only retirement copy
+    // (a "this expense is marked…" hint, say) cannot slip in unnoticed.
+    expect(within(dialog).queryByText(/retire/i)).toBeNull()
+  })
+
+  it('badges a marked row only while the planner is on — asserted in BOTH states', async () => {
+    addMarkedMortgage()
+    const { container } = renderWithProviders(<ExpensesPage />)
+
+    // ON: present (so an implementation that never renders the badge fails here).
+    expect(container.querySelectorAll(BADGE)).toHaveLength(1)
+
+    // OFF: gone, while the row itself is still listed.
+    act(() => hidePlanner())
+    expect(container.querySelectorAll(BADGE)).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Edit Mortgage' })).toBeInTheDocument()
+
+    // ON again: back on the same row, from the untouched stored mark.
+    act(() => showPlanner())
+    const badges = container.querySelectorAll(BADGE)
+    expect(badges).toHaveLength(1)
+    expect((badges[0] as HTMLElement).closest('tr')?.textContent).toContain('Mortgage')
+  })
+
+  it('⚠️⚠️ keeps the mark through an edit made while the planner is off', async () => {
+    // THE data-safety promise: the toggle "deletes nothing". The user edits an
+    // unrelated field with the question hidden, then turns the planner back on
+    // — the mark must be exactly where it was.
+    addMarkedMortgage()
+    hidePlanner()
+    const user = userEvent.setup()
+    const { container } = renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    let dialog = screen.getByRole('dialog')
+    const amount = within(dialog).getByTestId('expense-amount-input')
+    await user.clear(amount)
+    await user.type(amount, '1900')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    // The edit really landed (non-vacuity) …
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses[0].amount).toBe(190_000)
+    })
+    // … and the mark survived it.
+    expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(true)
+
+    act(() => showPlanner())
+    expect(container.querySelectorAll(BADGE)).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('checkbox', { name: LABEL })).toBeChecked()
+  })
+
+  it('⚠️ writes NOTHING to the flag while hidden — a change made under the open modal survives', async () => {
+    // The test that tells OMITTING the key apart from re-sending the seeded value,
+    // which the round trip above cannot: there, both leave the stored `true` in
+    // place. Here the row changes UNDER the open modal (what a sync pull does), so
+    // the seeded state goes stale. Re-sending it writes the stale `true` back;
+    // omitting the key leaves the newer value alone. Found by code review 71.1.
+    addMarkedMortgage()
+    hidePlanner()
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
+    const dialog = screen.getByRole('dialog')
+
+    // Simulated pull: another device un-marked the row while this modal is open.
+    const id = useExpenseStore.getState().expenses[0].id
+    act(() => {
+      useExpenseStore.setState((state) => ({
+        expenses: state.expenses.map((e) =>
+          e.id === id ? { ...e, endsBeforeRetirement: false } : e
+        ),
+      }))
+    })
+
+    const amount = within(dialog).getByTestId('expense-amount-input')
+    await user.clear(amount)
+    await user.type(amount, '1900')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses[0].amount).toBe(190_000)
+    })
+    expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(false)
+  })
+
+  it('saves a new expense unmarked while the planner is off', async () => {
+    hidePlanner()
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByTestId('expense-name-input'), 'Groceries')
+    await user.type(within(dialog).getByTestId('expense-amount-input'), '400')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Expense' }))
+
+    await waitFor(() => {
+      expect(useExpenseStore.getState().expenses).toHaveLength(1)
+    })
+    // A real `false`, stamped by `toClientExpense` — not an absent key.
+    expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(false)
   })
 })

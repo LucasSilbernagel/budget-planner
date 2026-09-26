@@ -14,18 +14,27 @@ import {
  * deliberately rather than invented.
  *
  * Positive framing, matching both existing switches: ON means the planner is
- * shown. The store defaults to ON so nobody's navigation changes without their
- * action.
+ * shown. The store defaults to ON so nothing the app shows — the nav entry, the
+ * page, or the expense form's retirement question — changes without their action.
  *
  * ⚠️ The accessible name must NOT contain the words "dark mode":
  * `settings-page.test.tsx` counts dark-mode switches by filtering every
  * `role="switch"` on `/dark mode/i` over `aria-label`/`textContent`, so a second
  * switch matching that phrase would break an unrelated, correct test.
  *
- * Turning the planner off hides the nav entry and makes `/retirement` render an
- * explanatory panel instead — it deletes nothing. The planner holds no persisted
- * inputs of its own, and the shared income/expense/balance stores it reads are
- * untouched either way.
+ * Turning the planner off hides the nav entry, makes `/retirement` render an
+ * explanatory panel instead, and (story 71.1, FR113) hides the expense form's
+ * ends-before-retirement question and its row badge. It deletes nothing: marked
+ * expenses keep `endsBeforeRetirement` and show it again when the planner is
+ * back (pinned by the 71.1 block in `components/__tests__/ExpensesPage.test.tsx`
+ * and `e2e/ends-before-retirement.spec.ts`). The planner's own saved plan
+ * (`retirementPlannerStore`, since story 44.1) and the shared
+ * income/expense/balance stores it reads are untouched either way (pinned by
+ * `__tests__/planner-visibility-data-safety.test.tsx`, which drives this switch
+ * but never opens the expense form).
+ *
+ * ⚠️ CORRECTED by story 71.1: this docblock used to say "the planner holds no
+ * persisted inputs of its own". That stopped being true at story 44.1.
  */
 export interface RetirementVisibilityToggleProps {
   /** Extra classes for the control (e.g. layout/spacing from the host). */

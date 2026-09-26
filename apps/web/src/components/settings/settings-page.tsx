@@ -89,10 +89,12 @@ export function SettingsPage() {
               Applies everywhere amounts are shown.
             </p>
           </div>
-          {/* Retirement planner visibility — story 35.2, FR55. Placed in
-              "Display" because it governs what the navigation shows, not what
-              the app calculates: turning it off hides the entry and the page,
-              and deletes nothing. */}
+          {/* Retirement planner visibility — story 35.2, FR55; widened by story
+              71.1, FR113. Placed in "Display" because it governs where the
+              planner and its questions APPEAR, not what the app stores or
+              calculates: turning it off hides the nav entry, the page, and the
+              expense form's ends-before-retirement question and row badge — and
+              deletes nothing (marked expenses keep their mark). */}
           <div>
             {/* ⚠️ The description is linked with `aria-describedby`, not merely
                 placed nearby. It carries the data-safety reassurance, and this
@@ -104,8 +106,9 @@ export function SettingsPage() {
               id="settings-retirement-visibility-description"
               className="mt-2 text-sm text-gray-500 dark:text-gray-400"
             >
-              Turn this off to remove the Retirement planner from your navigation. Your income,
-              expenses and balances are unaffected.
+              Turn this off to remove the Retirement planner from your navigation, along with the
+              retirement question on the expense form. Your income, expenses and balances are
+              unaffected, and any expenses you marked are kept for when you turn it back on.
             </p>
           </div>
         </div>
