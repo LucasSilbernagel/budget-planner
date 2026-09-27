@@ -13,9 +13,14 @@
 # here because it is the site root a search result must be able to reach — it
 # doubles as the Overview screen, so it is the one page that is both.
 #
-# Deliberately NOT here: a `Sitemap:` line. A sitemap needs absolute URLs and
-# this app has no production origin yet — see the story's AC-5 record. Add one
-# with the deployment stories (epic 4/5), not before.
+# Every page route is EITHER in that list OR under a `Disallow:` below, and
+# `src/routes/__tests__/robots-sitemap-coverage.test.ts` fails if a route is in
+# neither. Adding a route means deciding which, in this file.
+#
+# `Sitemap:` added by story seo-1. Story 40.1 left it out because there was no
+# production origin; that origin is now settled (ADR-007). The URL must be
+# absolute, and its origin must match every <loc> in sitemap.xml — the same
+# coverage test checks both. sitemap.xml lists exactly the indexable pages.
 
 User-agent: *
 Allow: /
@@ -39,3 +44,11 @@ Disallow: /report
 Disallow: /retirement
 Disallow: /savings
 Disallow: /settings
+Disallow: /welcome
+
+# `/welcome` (story seo-1) is Paddle Checkout's post-purchase landing page
+# ("Thanks for subscribing…"). Nothing public links to it; a stranger arriving
+# at it from a search result would land mid-purchase. Prefix rule like the rest:
+# a future `/welcome-back` would be covered too — check before adding one.
+
+Sitemap: https://www.longhandbudget.com/sitemap.xml

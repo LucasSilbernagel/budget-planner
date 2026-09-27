@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sitemap — Longhand Budget (story seo-1).
+
+  Lists EXACTLY the pages robots.txt leaves indexable, as absolute URLs on the
+  production origin (ADR-007: www is canonical, the apex only redirects).
+  `src/routes/__tests__/robots-sitemap-coverage.test.ts` fails if this set drifts
+  from the route classification in robots.txt — including one /docs/<slug> per
+  entry of DOC_PAGES, so adding a document means adding its <loc> here.
+
+  No <lastmod>/<changefreq>/<priority>: Google ignores the last two, and a
+  hand-maintained lastmod goes stale and is worse than none.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.longhandbudget.com/</loc></url>
+  <url><loc>https://www.longhandbudget.com/pricing</loc></url>
+  <url><loc>https://www.longhandbudget.com/contact</loc></url>
+  <url><loc>https://www.longhandbudget.com/docs</loc></url>
+  <url><loc>https://www.longhandbudget.com/docs/getting-started</loc></url>
+  <url><loc>https://www.longhandbudget.com/docs/features</loc></url>
+  <url><loc>https://www.longhandbudget.com/docs/how-totals-are-calculated</loc></url>
+  <url><loc>https://www.longhandbudget.com/docs/where-a-mortgage-belongs</loc></url>
+  <url><loc>https://www.longhandbudget.com/docs/faq</loc></url>
+  <url><loc>https://www.longhandbudget.com/terms</loc></url>
+  <url><loc>https://www.longhandbudget.com/privacy</loc></url>
+  <url><loc>https://www.longhandbudget.com/refund</loc></url>
+</urlset>

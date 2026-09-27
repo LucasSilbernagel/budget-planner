@@ -120,14 +120,27 @@ test.describe('per-route page metadata (story 40.1)', () => {
     const body = await response.text()
     expect(body).toContain('User-agent: *')
     expect(body).toContain('Disallow: /api/')
-    // AC-5 recorded that no sitemap ships yet; if one is added later this line
-    // is the reminder to revisit the decision rather than silently diverge.
-    // Anchored to the start of a line: the file EXPLAINS the omission in a
-    // comment that necessarily contains the word, so a bare `toContain` here
-    // fails against correct content. Case-insensitive and whitespace-tolerant
-    // because robots.txt field names are case-insensitive and parsers accept
-    // leading space — pinning one spelling of a directive that has equivalent
-    // spellings is the exact hole `script-src-elem` opened in story 39.2.
-    expect(body).not.toMatch(/^\s*sitemap\s*:/im)
+    // Story 40.1 asserted there was NO `Sitemap:` line (no production origin
+    // yet); story seo-1 added one, so the guard is reversed rather than
+    // deleted. Anchored to the start of a line: the file's comments also say
+    // "Sitemap:", so a bare `toContain('Sitemap')` passes against a file whose
+    // directive is gone. Case-insensitive and whitespace-tolerant because
+    // robots.txt field names are case-insensitive and parsers accept leading
+    // space — pinning one spelling of a directive that has equivalent spellings
+    // is the exact hole `script-src-elem` opened in story 39.2.
+    expect(body).toMatch(/^\s*sitemap\s*:\s*https:\/\/www\.longhandbudget\.com\/sitemap\.xml\s*$/im)
+    expect(body).toMatch(/^\s*disallow\s*:\s*\/welcome\s*$/im)
+  })
+
+  test('sitemap.xml is served from the app origin', async ({ request }) => {
+    // Proves the file ships from public/. This runs on the Vite dev server, so
+    // it CANNOT prove the production content type — the node-adapter unit test
+    // does that (`.xml` fell back to application/octet-stream before seo-1).
+    const response = await request.get('/sitemap.xml')
+
+    expect(response.status()).toBe(200)
+    const body = await response.text()
+    expect(body).toContain('<urlset')
+    expect(body).toContain('<loc>https://www.longhandbudget.com/pricing</loc>')
   })
 })

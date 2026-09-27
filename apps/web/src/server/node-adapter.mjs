@@ -51,6 +51,10 @@ const CONTENT_TYPES = {
   // served as JSON/manifest+json; without this it would fall back to
   // application/octet-stream and the install prompt would never appear.
   '.webmanifest': 'application/manifest+json',
+  // sitemap.xml (story seo-1). Without this a crawler is handed an
+  // application/octet-stream download. e2e cannot catch it — it runs the Vite
+  // dev server, not this adapter.
+  '.xml': 'application/xml; charset=utf-8',
 }
 
 /**

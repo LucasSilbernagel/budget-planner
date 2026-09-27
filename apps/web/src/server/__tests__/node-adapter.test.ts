@@ -39,6 +39,13 @@ beforeAll(async () => {
   await writeFile(join(clientDir, 'manifest.webmanifest'), '{"name":"Budget Planner"}')
   await writeFile(join(clientDir, 'sw.js'), '/* service worker */')
   await writeFile(join(clientDir, 'workbox-abc123.js'), '/* workbox runtime */')
+  // Sitemap (story seo-1): e2e runs the Vite dev server, not this adapter, so
+  // this is the only test of the content type the production adapter assigns.
+  // (It cannot see anything a proxy in front of the container might rewrite.)
+  await writeFile(
+    join(clientDir, 'sitemap.xml'),
+    '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>'
+  )
 })
 
 afterAll(async () => {
@@ -87,6 +94,15 @@ describe('resolveStaticAsset', () => {
     expect(asset).not.toBeNull()
     expect(asset.contentType).toBe('application/manifest+json')
     // A plain root file — short cache, not the SW no-cache treatment.
+    expect(asset.cacheControl).toBe('public, max-age=3600')
+  })
+
+  it('serves the sitemap as application/xml, not a binary download (story seo-1, AC-5)', async () => {
+    const asset = await resolveStaticAsset('/sitemap.xml', clientDir)
+    expect(asset).not.toBeNull()
+    // Without a `.xml` entry this falls back to application/octet-stream, which
+    // is invisible to e2e (dev server) and wrong in production.
+    expect(asset.contentType).toBe('application/xml; charset=utf-8')
     expect(asset.cacheControl).toBe('public, max-age=3600')
   })
 

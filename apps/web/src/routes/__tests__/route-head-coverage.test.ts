@@ -1,8 +1,15 @@
-import { lstatSync, readdirSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DOC_PAGES } from '../../content/docs'
 import { Route as RootRoute } from '../__root'
+import {
+  ROUTES_DIR,
+  globKeyToRoutesRel,
+  globbedPagePaths,
+  isPageRouteFile,
+  routeModules,
+  toRoutePath,
+  walkRouteFiles,
+} from './route-discovery'
 
 /**
  * Every page route names itself (story 40.1, FR65).
@@ -31,8 +38,9 @@ import { Route as RootRoute } from '../__root'
  * 1 and 2 both run their result through `isPageRouteFile`/`toRoutePath`, so a
  * bug in EITHER of those is common-mode and their agreement proves nothing about
  * it. Only the hand list is independent of that code. This is exactly how an
- * untitled `.ts` route passed 51/51 — see the note on `isPageRouteFile`. When
- * changing the classifier, mutate it and confirm the suite goes red; do not
+ * untitled `.ts` route passed 51/51 — see the note on `isPageRouteFile` (now in
+ * `./route-discovery.ts`, shared with story seo-1's robots/sitemap test). When
+ * changing the classifier, mutate it and confirm BOTH suites go red; do not
  * infer safety from the two walkers agreeing.
  *
  * Narrowing the glob makes 1 disagree with 2. Deleting a route file without
@@ -45,73 +53,6 @@ import { Route as RootRoute } from '../__root'
  * else in the unit suite imports it — `src/test/utils.ts` builds its own route
  * tree — so there is no precedent to copy here.
  */
-
-const ROUTES_DIR = resolve(__dirname, '..')
-
-/** Vite resolves this glob against the filesystem at transform time. */
-const routeModules = import.meta.glob('../**/*.{ts,tsx}')
-
-/**
- * A route file is a PAGE route when it is neither the root document, nor a
- * server route, nor a test.
- *
- * ⚠️ THIS ACCEPTS `.ts` AS WELL AS `.tsx`, AND THAT IS LOAD-BEARING. The first
- * version matched `.tsx` only, on the unstated assumption that a page route
- * always contains JSX. It does not have to: a redirect-only or loader-only route
- * is legal TanStack file routing and needs no JSX. MEASURED — an untitled
- * `routes/zz-mutant.ts` passed the whole suite 51/51 GREEN, while the identical
- * route as `.tsx` went red.
- *
- * Worse, the extension check sat UPSTREAM of all three discovery opinions, so
- * the glob, the filesystem walk and the hand-written list agreed with each other
- * about a route none of them could see. THREE OPINIONS BEHIND ONE SHARED FILTER
- * ARE ONE OPINION. Server routes stay excluded by the explicit `api/` rule,
- * which is a stated rule rather than a side effect of how those files happen to
- * be written — that is what makes widening the extension safe.
- *
- * NOT handled, because this app uses none of them and a wrong guess would be
- * worse than a loud failure: route groups `(group)/`, pathless layouts
- * `_layout/`, and flat dot-notation (`docs.$docId.tsx`). Any of those derives a
- * route path matching nothing in the expected list and fails LOUDLY rather than
- * passing silently. Extend `toRoutePath` if the app adopts one.
- */
-function isPageRouteFile(relPath: string): boolean {
-  const p = relPath.split(sep).join('/').replace(/^\.\//, '')
-  if (!/\.tsx?$/.test(p)) return false
-  if (p === '__root.tsx') return false
-  if (p.startsWith('api/')) return false
-  if (p.includes('__tests__/')) return false
-  if (/\.(test|spec)\./.test(p)) return false
-  // TanStack excludes `-`-prefixed files and directories from routing, so they
-  // are colocated helpers, not pages, and must not be asked for a <title>.
-  if (p.split('/').some((seg) => seg.startsWith('-'))) return false
-  return true
-}
-
-/** `income.tsx` -> `/income`; `index.tsx` -> `/`; `docs/index.tsx` -> `/docs`. */
-function toRoutePath(relPath: string): string {
-  const p = relPath
-    .split(sep)
-    .join('/')
-    .replace(/^\.\.\//, '')
-    .replace(/^\.\//, '')
-  const withoutExt = p.replace(/\.tsx$/, '')
-  if (withoutExt === 'index') return '/'
-  return `/${withoutExt.replace(/\/index$/, '')}`
-}
-
-/** Real filesystem walk — independent of any build-time pattern. */
-function walkRouteFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const abs = join(dir, entry)
-    if (lstatSync(abs).isDirectory()) {
-      walkRouteFiles(abs, acc)
-    } else {
-      acc.push(relative(ROUTES_DIR, abs))
-    }
-  }
-  return acc
-}
 
 /**
  * Every page route in the app, written out by hand.
@@ -204,20 +145,16 @@ const ROOT_TITLE = titleOf(rootMeta)
  * crash on `undefined()` does not.
  */
 async function importRoute(routePath: string): Promise<unknown> {
-  const globKey = Object.keys(routeModules).find(
-    (k) => isPageRouteFile(k.replace(/^\.\.\//, '')) && toRoutePath(k) === routePath
-  )
+  const globKey = Object.keys(routeModules).find((k) => {
+    const rel = globKeyToRoutesRel(k)
+    return isPageRouteFile(rel) && toRoutePath(rel) === routePath
+  })
   const loader = globKey === undefined ? undefined : routeModules[globKey]
   if (!loader) {
     throw new Error(`no route module found for ${routePath}`)
   }
   return loader()
 }
-
-const globbedPagePaths = Object.keys(routeModules)
-  .filter((k) => isPageRouteFile(k.replace(/^\.\.\//, '')))
-  .map(toRoutePath)
-  .sort()
 
 describe('route discovery (story 40.1, AC-6)', () => {
   it('the compile-time glob and a real filesystem walk find the SAME page routes', () => {
