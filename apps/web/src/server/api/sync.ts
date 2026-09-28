@@ -644,14 +644,19 @@ export async function getLiveProfileIds(userId: string): Promise<string[]> {
 
 /**
  * Whether a TOMBSTONED row with this id exists for this user. `entityExists`
- * treats tombstones as absent, so a create for a deleted id would otherwise
- * reach the INSERT and fail on the primary key.
+ * treats tombstones as absent, so two operations need this instead:
  *
- * ⚠️ That failure would surface as a 200 envelope with `failedCount > 0` and NO
- * status code, which the client now KEEPS QUEUED (it removes an operation only
- * on a status code that proves permanent rejection). So without this guard the
- * op replays every cycle rather than being dropped — a stuck queue, not a lost
- * edit. Either way the guard is what stops it.
+ * - a CREATE for a deleted id would otherwise reach the INSERT and fail on the
+ *   primary key — a 200 envelope with `failedCount > 0` and NO status code, which
+ *   the client KEEPS QUEUED, so the op would replay every cycle;
+ * - a DELETE for a row that is already tombstoned (story 76.1) — its first
+ *   response was lost, or another device deleted it first — would otherwise be a
+ *   `delete-update` CONFLICT, which the client never removes from its queue. See
+ *   {@link isAlreadyDeleted}.
+ *
+ * ⚠️ Filters `userId` + `id`, deliberately NOT `profileId`: the requesting user
+ * owning the tombstone is the ownership proof, and a row tombstoned by its
+ * profile's cascade still names that (now tombstoned) profile.
  */
 async function tombstoneExists(
   entityType: keyof EntityTableMap,
@@ -665,6 +670,44 @@ async function tombstoneExists(
     .where(and(eq(table.userId, userId), eq(table.id, entityId), eq(table.isDeleted, true)))
     .limit(1)
   return rows.length > 0
+}
+
+/**
+ * Whether `operation` is a DELETE the server has already applied (story 76.1,
+ * FR121): the row is tombstoned and belongs to the requesting user, so the
+ * target state already holds and the op is acknowledged as processed.
+ *
+ * ⚠️ A tombstone is REQUIRED. A delete for an id with no row for this user —
+ * never created, or another user's — is not acknowledged: it keeps its
+ * `delete-update` conflict, which stays queued. It is not refused permanently
+ * either, because a delete can legitimately arrive before its own create lands
+ * (core sends every queued op even when an earlier one for the row failed).
+ */
+async function isAlreadyDeleted(operation: SyncOperation): Promise<boolean> {
+  return (
+    operation.type === 'delete' &&
+    (await tombstoneExists(
+      operation.entityType as keyof EntityTableMap,
+      operation.entityId,
+      operation.userId
+    ))
+  )
+}
+
+/**
+ * The `.set()` payload for an UPDATE of `data`.
+ *
+ * The per-entity schemas VALIDATE but do not strip `operation.data`, so drop the
+ * identity columns a client must never be able to rewrite: `id` and `profileId`
+ * would re-home the row, and `data.userId` is not the session-verified
+ * `operation.userId` — spreading it would let a payload move a row into another
+ * user's account. Drizzle's defaultNow() only fires on INSERT, so an UPDATE that
+ * does not set updatedAt would leave the cursor stale and a delta-by-updatedAt
+ * pull would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
+ */
+function updatePayload(data: Record<string, unknown>, userId: string) {
+  const { id: _id, profileId: _profileId, userId: _userId, ...fields } = data
+  return { ...fields, userId, updatedAt: new Date() }
 }
 
 /**
@@ -713,20 +756,101 @@ async function updateEntity(
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
-    // Drizzle's defaultNow() only fires on INSERT, so an UPDATE that does not
-    // set updatedAt would leave the cursor stale and a delta-by-updatedAt pull
-    // would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
-    // The per-entity schemas VALIDATE but do not strip `operation.data`, so drop
-    // the identity columns a client must never be able to rewrite: `id` and
-    // `profileId` would re-home the row, and `data.userId` is not the
-    // session-verified `operation.userId` — spreading it would let a payload
-    // move a row into another user's account.
-    const { id: _id, profileId: _profileId, userId: _userId, ...fields } = data
-    const updateData = { ...fields, userId, updatedAt: new Date() }
-    await db.update(table).set(updateData).where(whereClause)
+    // See `updatePayload` for what is stripped and why `updatedAt` is bumped.
+    await db.update(table).set(updatePayload(data, userId)).where(whereClause)
     return { success: true }
   } catch (error) {
     return failureFromError(error, { entityType, entityId, userId })
+  }
+}
+
+/**
+ * Apply a `userProfile` update that PROMOTES the profile to default: demote the
+ * current default and apply the update in ONE transaction, so the last promotion
+ * wins (story 76.1, decision D1 — Lucas, 2026-09-28).
+ *
+ * ## Why the seat can already be taken
+ *
+ * The only code that CHANGES the default is `profileStore.removeProfile`, which
+ * queues a promotion straight after the tombstone of the old default. (Every other
+ * update of the current default reaches this function too — `syncBridge` re-sends
+ * `isDefault: true` on a rename or currency edit — and is a demote-and-re-promote
+ * of the same row: the same end state.) The client sends ONE op per request, so the
+ * tombstone arrives alone, and `processBatchSync`'s post-batch repair
+ * (`ensureUserHasDefaultProfile`) hands the empty seat to the OLDEST survivor
+ * before the promotion arrives. MEASURED at `d54c1a8`: whenever the survivor the
+ * device promoted was not the oldest, the promotion then hit
+ * `userProfiles_one_default_per_user` (23505), which is deliberately not a
+ * permanent refusal (`sync-rejection.ts`), so it stayed queued for ever — on ONE
+ * device. A second device that deleted the same default and promoted a different
+ * survivor hit the same wall.
+ *
+ * ⚠️ Last promotion wins, and that is the decision, not an accident: the device's
+ * own choice overrides the repair's pick, and of two devices the later one wins.
+ * The cost, accepted: a device that has not pulled and re-sends `isDefault: true`
+ * for a LIVE profile (`syncBridge` sends `isDefault` on every profile update)
+ * takes the seat back. Every successful promotion leaves exactly one live
+ * default, and the demoted row's `updatedAt` is bumped so every device's next pull
+ * converges.
+ *
+ * ⚠️⚠️ The target must still be LIVE when the transaction runs (code review 76.1).
+ * `entityExists` checked it OUTSIDE the transaction, so another device's delete
+ * can land in between. Without the guard below the demotion committed, the flag
+ * was written onto a TOMBSTONE, and the account was left with zero live defaults
+ * while the op reported success. So the promote only matches a live row, and a
+ * miss throws, which rolls the demotion back. The throw carries no SQLSTATE, so
+ * the op stays queued (not permanent); on replay `checkConflict` sees the
+ * tombstone and reports an `update-delete` conflict — the pre-existing class
+ * deferred to story 76.2.
+ *
+ * ⚠️ Concurrency, REASONED not measured (PGlite is single-connection): two
+ * promotions racing under READ COMMITTED can still make the later one fail on the
+ * unique index, because its demotion's snapshot cannot see the winner's new
+ * default. That 23505 stays queued (not permanent) and the replay demotes the
+ * winner and takes the seat, so the classification is deliberately left alone.
+ * Story 76.3 owns true concurrency.
+ */
+async function promoteProfile(
+  profileId: string,
+  data: Record<string, unknown>,
+  userId: string
+): Promise<OperationResult> {
+  try {
+    await db.transaction(async (tx) => {
+      // ⚠️ No `id <> profileId` exclusion, deliberately: when the target already
+      // holds the seat (a rename re-sending its own flag) it is demoted and
+      // re-promoted inside this transaction — the same end state, and a mutation
+      // adding the exclusion leaves every test green, so it would only be a
+      // condition nothing can observe.
+      await tx
+        .update(userProfiles)
+        .set({ isDefault: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(userProfiles.userId, userId),
+            eq(userProfiles.isDefault, true),
+            eq(userProfiles.isDeleted, false)
+          )
+        )
+      const promoted = await tx
+        .update(userProfiles)
+        .set(updatePayload(data, userId))
+        .where(
+          and(
+            eq(userProfiles.userId, userId),
+            eq(userProfiles.id, profileId),
+            eq(userProfiles.isDeleted, false)
+          )
+        )
+        .returning({ id: userProfiles.id })
+      if (promoted.length === 0) {
+        // Rolls the demotion back — see the docblock.
+        throw new Error('Promotion target is no longer a live profile')
+      }
+    })
+    return { success: true }
+  } catch (error) {
+    return failureFromError(error, { entityType: 'userProfile', entityId: profileId, userId })
   }
 }
 
@@ -944,6 +1068,21 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
       return { success: true }
     }
 
+    // A delete this user's row ALREADY carries (story 76.1). `checkConflict`
+    // acknowledges the ordinary replay before this function runs; this arm is
+    // for a row another writer tombstoned between that check and here. Without
+    // it the delete case below answers `Entity not found`, which stays queued.
+    //
+    // ⚠️⚠️ BEFORE the profile check, not inside the `delete` case: a row
+    // tombstoned by its PROFILE's cascade names a tombstoned profile, so
+    // `profileBelongsToUser` would answer `Profile not found` first — also kept
+    // queued for ever. ⚠️ No sequential test can open this window for real
+    // (PGlite is single-connection); `sync-delete-idempotent.db.test.ts`
+    // simulates the interleaving by stubbing `checkConflict`'s SELECT.
+    if (await isAlreadyDeleted(operation)) {
+      return { success: true }
+    }
+
     // Profile-scoped entities must name a live profile the SESSION user owns.
     // The FK alone only proves the profile exists — for someone.
     if ('profileId' in getTable(entityType)) {
@@ -983,6 +1122,13 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
         const entityExistsForUpdate = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForUpdate) {
           return { success: false, error: 'Entity not found' }
+        }
+        // A PROMOTION takes the seat from the current default (story 76.1, D1):
+        // see `promoteProfile` for why the seat is usually already taken.
+        // ⚠️ `=== true` only: `false` and an absent flag keep the plain update,
+        // whose stale-demotion case the post-batch repair handles.
+        if (entityType === 'userProfile' && operation.data['isDefault'] === true) {
+          return promoteProfile(entityId, operation.data, userId)
         }
         return updateEntity(entityType, entityId, operation.data, userId, profileId)
       }
@@ -1071,9 +1217,16 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
 /**
  * Check if an operation conflicts with current server state
  */
-async function checkConflict(
-  operation: SyncOperation
-): Promise<{ hasConflict: boolean; conflictType?: string; serverData?: Record<string, unknown> }> {
+async function checkConflict(operation: SyncOperation): Promise<{
+  hasConflict: boolean
+  conflictType?: string
+  serverData?: Record<string, unknown>
+  /**
+   * The op's target state already holds (story 76.1): a DELETE of a row this
+   * user has already tombstoned. `processBatchSync` counts it as processed.
+   */
+  alreadyApplied?: boolean
+}> {
   const entityType = operation.entityType as keyof EntityTableMap
   const entityId = operation.entityId
   const userId = operation.userId
@@ -1113,6 +1266,13 @@ async function checkConflict(
         // Conflict if entity doesn't exist on server
         const existsForDelete = await entityExists(entityType, entityId, userId, profileId)
         if (!existsForDelete) {
+          // Already tombstoned for THIS user: a replay whose first response was
+          // lost, or a second device deleting the same row (story 76.1). Before,
+          // this was a `delete-update` conflict, which the client never removes
+          // from its queue — so one lost response stopped all sync for good.
+          if (await isAlreadyDeleted(operation)) {
+            return { hasConflict: false, alreadyApplied: true }
+          }
           return { hasConflict: true, conflictType: 'delete-update', serverData: undefined }
         }
         break
@@ -1265,6 +1425,14 @@ export async function processBatchSync(
       continue
     }
 
+    // Likewise an ALREADY-APPLIED delete (story 76.1): the row is tombstoned for
+    // this user, so the target state holds. An explicit field rather than another
+    // `conflictType` string, so rewording a conflict type cannot change it.
+    if (conflictCheck.alreadyApplied) {
+      processedCount++
+      continue
+    }
+
     if (conflictCheck.hasConflict) {
       // Conflict detected - record it
       conflictCount++
@@ -1307,8 +1475,11 @@ export async function processBatchSync(
   //     ordinary RENAME re-sends `isDefault: false` and clears the flag. The
   //     update arm of `checkConflict` only tests existence — it never compares
   //     `baseVersion` — so nothing else stops it and the push reports success.
-  //  2. A delete+promote pair that arrives promotion-first: the promotion is
-  //     rejected by `userProfiles_one_default_per_user`, the tombstone applies.
+  //  2. The tombstone of the default arriving ALONE — which is the normal case:
+  //     the client sends one op per request, so the repair below fills the
+  //     seat with the oldest survivor before the paired promotion arrives. The
+  //     promotion then takes the seat (`promoteProfile`, story 76.1). (Before
+  //     76.1 it hit `userProfiles_one_default_per_user` and stayed queued.)
   //  3. The tombstone lands while its paired promotion is stranded by a
   //     transient failure (recorded in `deferred-work.md`).
   //

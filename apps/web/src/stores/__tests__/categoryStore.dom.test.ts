@@ -342,12 +342,13 @@ describe('categoryStore — write invariants', () => {
  *
  * ⚠️ This is the ONLY store that keeps soft-deleted rows in local state, so
  * unlike every sibling a mutation can still "find" a row the server has already
- * dropped. Server-side `entityExists` filters `isDeleted = false`, so a second
- * delete returns `Entity not found` → `retryable: false` → the operation lands
- * in `nonRetryableOperations`, which `synchronization.ts` never passes to
- * `removeBatch`. It is then retried forever, pins the sync status at FAILED and
+ * dropped. Server-side `entityExists` filters `isDeleted = false`, so an UPDATE
+ * of such a row is an `update-delete` conflict, which the client never removes
+ * from its queue: it is retried forever, pins the sync status at FAILED and
  * re-opens the circuit breaker every cycle — suppressing retries for EVERY
- * other entity, not just categories.
+ * other entity, not just categories. (A second DELETE was the same trap until
+ * story 76.1, which made the server acknowledge a delete of a row the user has
+ * already tombstoned.)
  */
 describe('categoryStore — tombstoned rows are inert', () => {
   it('a second delete does not re-tombstone or re-enqueue', async () => {

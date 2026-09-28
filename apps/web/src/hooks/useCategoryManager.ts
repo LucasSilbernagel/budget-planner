@@ -154,11 +154,12 @@ function renameCategory(id: string, name: string) {
 
 function deleteCategory(id: string): { affectedRowCount: number } {
   const existing = useCategoryStore.getState().getCategoryById(id)
-  // Already tombstoned: do nothing at all. Re-running the cascade would enqueue
-  // a second delete for a row the server has already dropped. ⚠️ That op comes
-  // back as a CONFLICT ('delete-update'), not as a non-retryable failure, so it
-  // is NOT removed from the queue — conflicts are never removed and it replays
-  // forever. This guard is what prevents that. See categoryStore.
+  // Already tombstoned: do nothing at all. Re-running the cascade would touch
+  // income and expense rows again and enqueue a second delete for a row the
+  // server has already dropped. Since story 76.1 the server ACKNOWLEDGES that
+  // second delete (it used to be a `delete-update` conflict, never removed from
+  // the queue), so the guard is no longer what stops a deadlock — it stops a
+  // pointless re-cascade and a wasted push. See categoryStore.
   if (!existing || existing.isDeleted) {
     return { affectedRowCount: 0 }
   }

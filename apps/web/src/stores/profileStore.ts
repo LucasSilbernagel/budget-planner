@@ -290,17 +290,15 @@ export const useProfileStore = create<ProfileState>()(
           // Paid tier: queue the profile tombstone. A no-op on the free tier
           // (`syncEntityDelete` returns early with no bridge registered), so the
           // cascade above is the whole deletion there.
-          // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT, not a preference. The index
-          // covers LIVE rows only, so promoting before the old default is
-          // tombstoned leaves two rows satisfying `isDefault AND NOT isDeleted`
-          // and the push fails on a unique violation. Tombstone, then promote —
-          // and the push applies a batch's operations in array order (the
-          // apply loop in `server/api/sync.ts:processBatchSync`), so queue
-          // order is apply order.
-          // ⚠️ Since the code review the server also REPAIRS the invariant
-          // after any batch touching `userProfile`, so a reordering that
-          // rejects the promotion degrades to "a default was chosen for
-          // you" rather than to an account with none.
+          // ⚠️ Tombstone, then promote — but the order is no longer what keeps
+          // the account valid (story 76.1). The client sends ONE op per request,
+          // so the tombstone arrives alone and the server's post-batch repair
+          // (`ensureUserHasDefaultProfile`) gives the seat to the OLDEST
+          // survivor first. The promotion then TAKES the seat: the server
+          // demotes the current default in the same transaction
+          // (`server/api/sync.ts:promoteProfile`, decision D1 — last promotion
+          // wins). Before 76.1 it hit the one-default unique index whenever the
+          // survivor here was not the oldest, and stayed queued for ever.
           syncEntityDelete('userProfile', target)
           if (promoted) {
             // ⚠️ Queued, not merely written above. A `set()` marks the flag

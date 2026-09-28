@@ -25,9 +25,16 @@
  *   reference `categories.id`, and the queue ranks only PROFILE creates first, so
  *   an income row whose category create is still queued (or stranded retrying)
  *   fails now and succeeds once the category lands.
- * - `23505` unique — `userProfiles_one_default_per_user` refuses a promotion that
- *   arrives before its paired demotion or tombstone, and the categories live-name
- *   index refuses the first half of a rename swap. Both clear on replay.
+ * - `23505` unique — the categories live-name index refuses the first half of a
+ *   rename swap, which clears on replay. `userProfiles_one_default_per_user` no
+ *   longer refuses a sync-path promotion by ORDER: since story 76.1 a promotion
+ *   demotes the current default in the same transaction (`promoteProfile` in
+ *   `sync.ts`). What can still raise it there is a promotion RACING another
+ *   promotion or the post-batch repair, which clears on replay — and a
+ *   `userProfile` CREATE carrying `isDefault: true` while a default exists, which
+ *   does NOT clear on replay (recorded in `deferred-work.md`, 76.1 review). That
+ *   last case is why this code is not simply classified permanent for profiles:
+ *   the create is a legitimate profile the user made, and dropping it loses it.
  * - Transient errors (`40001`, `40P01`, `57014`, connection loss, anything with no
  *   `code`). ⚠️ They stay in the KEPT-queued bucket too, NOT the retryable one.
  *   One leg of that choice was that a retryable op used to leave the persisted

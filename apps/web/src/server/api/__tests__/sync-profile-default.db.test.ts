@@ -149,13 +149,19 @@ describe('the delete + promote pair the store queues (story 63.2)', () => {
   })
 
   /**
-   * ⚠️ THE ORDER IS A DATABASE CONSTRAINT, and this is the only place it is
-   * proven end-to-end. `userProfiles_one_default_per_user` is
-   * `UNIQUE (userId) WHERE isDefault AND NOT isDeleted`, so promoting while the
-   * old default is still live violates it. The store queues delete-then-update
-   * for this reason; here the reversed batch shows what that ordering buys.
+   * ⚠️ ORDER NO LONGER MATTERS (story 76.1, decision D1 — Lucas, 2026-09-28).
+   *
+   * This test used to be "REJECTS the promotion if it arrives before the
+   * tombstone": `userProfiles_one_default_per_user` refused a promotion while the
+   * old default was still live, and the post-batch repair then picked a default.
+   * Story 76.1 measured what that cost on the LIVE path, where the client sends
+   * one op per request: the repair after the lone tombstone gives the seat to the
+   * OLDEST survivor, so the device's own promotion hit the index and stayed
+   * queued for ever. A promotion now DEMOTES the current default in the same
+   * transaction (`promoteProfile` in `sync.ts`), so the reversed batch applies in
+   * full and keeps the successor the device chose.
    */
-  it('REJECTS the promotion if it arrives before the tombstone', async () => {
+  it('applies the promotion even if it arrives before the tombstone — no op fails', async () => {
     const result = await push([
       op({
         type: 'update',
@@ -166,16 +172,14 @@ describe('the delete + promote pair the store queues (story 63.2)', () => {
       op({ type: 'delete', entityType: 'userProfile', entityId: P_DEFAULT }),
     ])
 
-    expect(result.success).toBe(false)
-    // Exactly one operation failed, and it is the promotion — the delete that
-    // follows it still applies.
-    expect(result.failedOperationIds).toHaveLength(1)
+    // The discriminating assertions: before story 76.1 the promotion failed here.
+    expect(result.success).toBe(true)
+    expect(result.failedOperationIds).toEqual([])
+    // ⚠️ Not discriminating with two profiles — P_OTHER is also the repair's
+    // pick. "Keeps the chosen successor" is proven where the survivor is NOT the
+    // oldest: `sync-delete-idempotent.db.test.ts`, the one-device promotion test.
     const live = await liveProfiles()
     expect(live.map((p) => p.id)).toEqual([P_OTHER])
-    // ⚠️ The promotion was REJECTED by the index, so this batch would have left
-    // the account with zero defaults. The post-batch invariant repair restores
-    // one — which is the whole point of repairing rather than vetoing: a bad
-    // ordering degrades to "a default was chosen for you", never to silence.
     expect(live.filter((p) => p.isDefault).map((p) => p.id)).toEqual([P_OTHER])
   })
 })

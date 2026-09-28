@@ -134,9 +134,12 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     expect(entityId).toBe('biz')
     expect(payload['isDefault']).toBe(true)
 
-    // ⚠️ ORDER IS A DATABASE CONSTRAINT, not a preference. The partial unique
-    // index is `(userId) WHERE isDefault AND NOT isDeleted`; promote before the
-    // old default is tombstoned and two live rows satisfy it.
+    // Tombstone, then promote. ⚠️ Since story 76.1 the order is no longer what
+    // keeps the server valid: a promotion demotes the current default in the
+    // same transaction (`server/api/sync.ts:promoteProfile`), so it takes the
+    // seat in either order. The order is kept so the promotion is the LAST
+    // word — the server's post-tombstone repair picks a default first, and the
+    // promotion then replaces that pick with the one this device chose.
     const deleteOrder = handle.queueDelete.mock.invocationCallOrder[0] as number
     const updateOrder = handle.queueUpdate.mock.invocationCallOrder[0] as number
     expect(deleteOrder).toBeLessThan(updateOrder)

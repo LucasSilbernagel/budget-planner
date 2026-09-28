@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-28zb (**76.1 CODE-REVIEWED + CLOSED -> done**, UNCOMMITTED. Next: create-story 76.2 — inherits the deferred update-of-tombstone conflict.)
+# last_updated: 2026-09-28za (**76.1 DEV DONE -> review**, UNCOMMITTED. D1 revised to B. Web 3672/238, tsc 0x4, Biome 0/646.)
+# last_updated: 2026-09-28z (**76.1 DEV STARTED** -> in-progress, baseline `d54c1a8`.)
+# last_updated: 2026-09-28y (**76.1 CONTEXTED -> ready-for-dev** at `d54c1a8`; epic-76 -> in-progress. D1 = A (yield), Lucas.)
 # last_updated: 2026-09-28x (**75.4 CODE-REVIEWED + CLOSED; EPIC 75 DONE** — rollup closed same pass. UNCOMMITTED. Web 3652/236, core 995/30, db 283+7, tsc 0/0/0/0, Biome 0/644.)
 # last_updated: 2026-09-28w (**75.4 DEV DONE -> review**, UNCOMMITTED, baseline `6331ba5`. Web 3651/236, core 990/30, db 283+7, tsc 0/0/0/0, Biome 0/644. All 6 mutants RED.)
 # last_updated: 2026-09-28v (**75.4 CONTEXTED -> ready-for-dev** at `6331ba5`. Validation moves into core pull() for server-winning non-tombstone changes; one validator.)
@@ -1025,8 +1029,8 @@ development_status:
   75-4-refuse-a-malformed-server-row-before-it-can-discard-my-local-edit: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED. D1 defer (false revert notice, unreachable), D2 fix (drop block → discardBatch). 10 patches incl. prototype-key pull crash. Web 3652/236, core 995/30, db 283+7, tsc 0x4, Biome 0/644.  # contexted 2026-09-28 at `6331ba5`. Validate IN core, inside the LWW loop, only for a change about to be APPLIED (local-wins branch untouched); refused row keeps the local op, advances the cursor (66.2 ADVANCE re-read, holds); web safeParse REMOVED (one validator). Open Q for Lucas: pull-side user notice (default no).
   epic-75-retrospective: optional
 
-  epic-76: backlog  # Profiles That Delete Cleanly On Every Device. FR121/FR122. Plan after 75.1 is done. 76.3: PGlite is single-connection — say plainly whether a true race test is possible.
-  76-1-make-a-profile-delete-safe-to-replay-and-to-repeat: backlog
+  epic-76: in-progress  # Profiles That Delete Cleanly On Every Device. FR121/FR122. Plan after 75.1 is done. 76.3: PGlite is single-connection — say plainly whether a true race test is possible.
+  76-1-make-a-profile-delete-safe-to-replay-and-to-repeat: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED. 11 patches incl. promoteProfile rollback when target not live (could leave ZERO defaults). Decision: promotion of a row deleted elsewhere (update-delete conflict) DEFERRED to 76.2. Web 3673/238, tsc 0, Biome 0/646.  # DEV DONE 2026-09-28, UNCOMMITTED, baseline `d54c1a8`. ⚠️ D1 REVISED A -> B (Lucas): LAST PROMOTION WINS (`promoteProfile`), because the RED run showed a SINGLE-device deadlock (repair fills the seat between the one-op requests). Web 3672/238, core 995/30, db 283+7, tsc 0x4, Biome 0/646. Mutations M1/M2/M3/M5 RED; M4 inert -> conjunct deleted. contexted 2026-09-28 at `d54c1a8`. MEASURED: replay is a `delete-update` CONFLICT (checkConflict, not applyOperation's arm the epic cites); 2nd device's promotion of a different survivor fails unrejected -> kept queued. D1 first taken as A (yield), then REVISED to B (last promotion wins) during dev, Lucas 2026-09-28. SHIPPED: B.
   76-2-keep-a-remotely-deleted-profile-from-stranding-this-devices-queue: backlog
   76-3-hold-the-profile-deletion-rules-when-two-devices-act-at-once: backlog
   epic-76-retrospective: optional
