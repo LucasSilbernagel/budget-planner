@@ -17,7 +17,7 @@
 
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
-import { requestMagicLink } from '@/server/api/auth/magic-link'
+import { MagicLinkStageError, requestMagicLink } from '@/server/api/auth/magic-link'
 import { clientIpForRateLimit } from '@/server/rate-limit/client-ip'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { getSiteUrl } from '@budget-planner/config'
@@ -35,6 +35,20 @@ const EMAIL_LIMIT = { windowMs: 15 * 60 * 1000, maxAttempts: 5 } as const
 /** The single generic success body — identical for every non-error outcome. */
 const GENERIC_OK = { success: true } as const
 
+/**
+ * The ONE message every request's outcome is logged under (Story 74.1, AC-5),
+ * so the production log answers "what happened to this request?" with a single
+ * grep. The branch is a structured field, never part of the message. Every
+ * request that returns a response logs exactly one line; the only gaps are a
+ * THROW out of the handler itself (the limiter's DB call, or `getSiteUrl()`
+ * failing closed), which surface as a 500 and the platform's own error log.
+ *
+ * ⚠️ Server-side only. Anything that depends on the account lookup is logged
+ * from INSIDE the fire-and-forget chain, after the response has been returned,
+ * so neither the body nor the timing of the response changes (AC-4).
+ */
+const OUTCOME_MESSAGE = 'Magic-link request outcome'
+
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   const now = Date.now()
 
@@ -45,6 +59,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   if (ip) {
     const ipLimit = await checkDbRateLimit({ scope: 'ip', subject: ip, now, ...IP_LIMIT })
     if (!ipLimit.allowed) {
+      logger.info(OUTCOME_MESSAGE, { branch: 'throttled', scope: 'ip' })
       return json(
         { success: false, error: 'Too many requests. Please try again later.' },
         {
@@ -58,11 +73,13 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   try {
     body = await request.json()
   } catch {
+    logger.info(OUTCOME_MESSAGE, { branch: 'bad-request' })
     return json({ success: false, error: 'Invalid request body' }, { status: 400 })
   }
 
   const email = (body as { email?: unknown } | null)?.email
   if (typeof email !== 'string') {
+    logger.info(OUTCOME_MESSAGE, { branch: 'bad-request' })
     return json({ success: false, error: 'Email is required' }, { status: 400 })
   }
 
@@ -72,6 +89,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   // no enumeration) — the full shape check still runs inside requestMagicLink.
   const emailKey = email.trim().toLowerCase()
   if (!emailKey || emailKey.length > MAX_EMAIL_LENGTH) {
+    logger.info(OUTCOME_MESSAGE, { branch: 'invalid-shape' })
     return json(GENERIC_OK)
   }
 
@@ -85,6 +103,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     ...EMAIL_LIMIT,
   })
   if (!emailLimit.allowed) {
+    logger.info(OUTCOME_MESSAGE, { branch: 'throttled', scope: 'email' })
     return json(GENERIC_OK)
   }
 
@@ -95,10 +114,26 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   // never surfaced. `getSiteUrl()` fails closed in production (misconfig → 500),
   // which is a deploy-wide signal, not a per-email enumeration channel.
   const siteUrl = getSiteUrl()
-  void requestMagicLink(email, siteUrl).catch((error) => {
-    logger.error('Magic-link request failed', { error })
-    captureError(error, { scope: 'magic-link-request' })
-  })
+  void requestMagicLink(email, siteUrl)
+    .then(
+      (outcome) => {
+        logger.info(OUTCOME_MESSAGE, outcome)
+      },
+      (error: unknown) => {
+        // Log and report the ORIGINAL error, not the stage wrapper: the logger
+        // serialises an Error as `{ name, message }` only, so the wrapper alone
+        // would hide the Brevo status / DB error text this line exists to show
+        // (74.1 review). `redact()` still scrubs addresses out of that message.
+        const stage = error instanceof MagicLinkStageError ? error.stage : undefined
+        const original = error instanceof MagicLinkStageError ? error.cause : error
+        logger.error(OUTCOME_MESSAGE, { branch: 'send-failed', stage, error: original })
+        captureError(original, { scope: 'magic-link-request', stage })
+      }
+    )
+    .catch(() => {
+      // Logging itself threw (e.g. a closed stdout). There is nowhere left to
+      // report it, and an unhandled rejection here would take the process down.
+    })
 
   return json(GENERIC_OK)
 }

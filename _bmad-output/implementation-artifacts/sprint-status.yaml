@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-27g (**74.1 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED. 1 decision (coupon controls in Paddle), 10 patches, 0 deferred, 8 dismissed. Web 3476/224, core 943/27, DB 276+7, tsc 0/0/0/0, Biome 0/621. Ops: replay ntf after deploy; cap coupon 9DIDI9S5W9.)
+# last_updated: 2026-09-27f (**74.1 DEV DONE -> review**, UNCOMMITTED. Cause: 100%-coupon lifetime repurchase refused by 5-19 zero-value gate; now grants (Lucas). Web 3469/224, core 943/27, DB 276+7, tsc 0/0/0/0, Biome 0/621.)
+# last_updated: 2026-09-27e (**74.1 DEV STARTED -> in-progress**.)
+# last_updated: 2026-09-27d (**74.1 CONTEXTED -> ready-for-dev**, epic-74 -> in-progress.)
 # last_updated: 2026-09-27c (**STANDALONE seo-1 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Fable 5.1), UNCOMMITTED. 0 HIGH; 8 patches applied + controlled; 2 deferred. Web 3436/224, tsc 0, Biome 0/621. T7 post-deploy (Lucas) still open.)
 # last_updated: 2026-09-27b (**STANDALONE seo-1 DEV COMPLETE — `in-progress` -> `review`**, UNCOMMITTED. Web 3435/224, tsc 0, Biome 0/621, page-metadata e2e 9/9. T7 post-deploy open.)
 # last_updated: 2026-09-27a (**STANDALONE seo-1 DEV STARTED — `ready-for-dev` -> `in-progress`** at `57d55cb`; story baseline_commit `c224665` preserved.)
@@ -975,8 +979,9 @@ development_status:
   73-2-purge-lapsed-account-data-after-the-retention-window: backlog
   epic-73-retrospective: optional
 
-  epic-74: backlog  # Sign-In That Works After An Account Is Recreated. Root cause NOT established.
-  74-1-diagnose-why-the-magic-link-is-not-delivered-and-fix-it: backlog  # ⚠ Do not let 74.2's throttle defect close this on the wrong cause (fixed 5/15min window self-heals).
+  epic-74: in-progress  # Sign-In That Works After An Account Is Recreated. Root cause NOT established.
+  74-1-diagnose-why-the-magic-link-is-not-delivered-and-fix-it: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-27 (3 layers, Opus), UNCOMMITTED. 10 patches, 0 deferred. DEV DONE 2026-09-27, UNCOMMITTED: ROOT CAUSE = Sep 25 lifetime repurchase used a 100% coupon (grand_total 0), refused by 5-19's zero-value gate (c5931cf, 09-16) -> no users row -> silent no-op. Fix (Lucas): coupon lifetime grants. Ops: replay ntf_01m3czf38xsa9yjqhr4nxdbef3 after deploy. DEV STARTED 2026-09-27 at `f66bded`. CONTEXTED 2026-09-27 at `f66bded`: in-app probe P1-P6 does NOT reproduce (link minted in every erase/repurchase ordering); Task 1 needs Lucas for prod evidence. Found: post-erasure cancel webhook RESURRECTS the user row (record, don't fix).
+  # ⚠ Do not let 74.2's throttle defect close this on the wrong cause (fixed 5/15min window self-heals).
   74-2-clear-the-email-scoped-throttle-when-an-account-is-erased: backlog
   epic-74-retrospective: optional
 

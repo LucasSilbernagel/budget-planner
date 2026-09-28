@@ -47,6 +47,7 @@ const {
   fetchPaddleCustomerEmail,
   captureError,
   sendMagicLinkEmail,
+  cancelActiveSubscriptionsForCustomer,
 } = vi.hoisted(() => ({
   getPaddleConfig: vi.fn(),
   assertPaddleProductionConfig: vi.fn(),
@@ -55,6 +56,9 @@ const {
   // Story 68.1, AC-2: the lockout is only proven closed by driving
   // `requestMagicLink` itself, so the mailer is the observation point.
   sendMagicLinkEmail: vi.fn(),
+  // Story 74.1: `deleteUserAccount` runs for real, but its best-effort Paddle
+  // cancel `fetch`es the live API — no real API calls in tests.
+  cancelActiveSubscriptionsForCustomer: vi.fn(),
 }))
 
 vi.mock('@budget-planner/db', async (importOriginal) => {
@@ -79,8 +83,10 @@ vi.mock('@/lib/logger', () => ({
 }))
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
 vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
+vi.mock('@/server/paddle/subscription-api', () => ({ cancelActiveSubscriptionsForCustomer }))
 
 import { planLabel } from '@/lib/account/plan-label'
+import { deleteUserAccount } from '@/server/api/account'
 import { requestMagicLink } from '@/server/api/auth/magic-link'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { signSession } from '@/server/api/auth/session'
@@ -659,15 +665,103 @@ describe('AC-8 — lower-severity correctness', () => {
     expect((await readUser('ctm_new'))[0].currency).toBe('USD')
   })
 
-  it('refuses to grant lifetime on a ZERO-VALUE transaction carrying the lifetime price', async () => {
-    // A 100%-discount or otherwise non-collecting transaction must not mint a
-    // permanent €99 entitlement — which, combined with the refund gap this
-    // story closes, previously had no path back at all.
+  it('refuses to grant lifetime on a ZERO-VALUE transaction with NO discount', async () => {
+    // A zero total nothing explains (a misconfigured price) must not mint a
+    // permanent €99 entitlement. Story 74.1 narrowed this: a zero total that a
+    // 100% coupon produced DOES grant — see the next test.
     await seedUser({ subscriptionStatus: 'free' })
 
     const res = await post(lifetimeEvent({ details: { totals: { grand_total: '0' } } }))
 
     expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
+  })
+
+  it('GRANTS lifetime on a 100%-coupon transaction, recording a revocable total of 0 (Story 74.1)', async () => {
+    await seedUser({ subscriptionStatus: 'free' })
+
+    const res = await post(
+      lifetimeEvent({
+        discount_id: 'dsc_full',
+        details: { totals: { grand_total: '0', subtotal: '9900', discount: '9900' } },
+      })
+    )
+
+    expect(res.status).toBe(200)
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('lifetime')
+    expect(row.lifetimeTransactionId).toBe('txn_lifetime_1')
+    expect(row.lifetimeGrantTotal).toBe(0)
+  })
+
+  it('a chargeback adjustment on a coupon grant takes the revoke path (code-path guard only)', async () => {
+    // ⚠️ Not a real-world scenario: a €0 transaction moves no money, so Paddle
+    // cannot raise a chargeback against it — a coupon grant is revocable only by
+    // hand. This pins that a 0 grant total does not break `handleAdjustment`.
+    await seedUser({ subscriptionStatus: 'free' })
+    await post({
+      ...lifetimeEvent({
+        discount_id: 'dsc_full',
+        details: { totals: { grand_total: '0', subtotal: '9900', discount: '9900' } },
+      }),
+      occurred_at: at(0),
+    })
+
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+
+    await post({ ...adjustmentEvent({ action: 'chargeback' }), occurred_at: at(5) })
+
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('canceled')
+  })
+
+  it('refuses a zero total when the discount did NOT cover the subtotal (credit top-up, review)', async () => {
+    // `grand_total` is computed AFTER customer credit: a 10% coupon with the
+    // rest paid from credit also reads 0, but the coupon did not pay for it.
+    await seedUser({ subscriptionStatus: 'free' })
+
+    await post(
+      lifetimeEvent({
+        discount_id: 'dsc_ten_percent',
+        details: { totals: { grand_total: '0', subtotal: '9900', discount: '990' } },
+      })
+    )
+
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
+  })
+
+  it('refuses a €0 PRICE that merely carries a discount (misconfigured price, review)', async () => {
+    await seedUser({ subscriptionStatus: 'free' })
+
+    await post(
+      lifetimeEvent({
+        discount_id: 'dsc_any',
+        details: { totals: { grand_total: '0', subtotal: '0', discount: '0' } },
+      })
+    )
+
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
+  })
+
+  it('refuses a coupon grant whose payload states no subtotal/discount (cannot prove coverage)', async () => {
+    await seedUser({ subscriptionStatus: 'free' })
+
+    await post(
+      lifetimeEvent({ discount_id: 'dsc_full', details: { totals: { grand_total: '0' } } })
+    )
+
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
+  })
+
+  it('refuses a NEGATIVE total even when a discount is present (Story 74.1)', async () => {
+    await seedUser({ subscriptionStatus: 'free' })
+
+    await post(
+      lifetimeEvent({
+        discount_id: 'dsc_full',
+        details: { totals: { grand_total: '-100', subtotal: '9900', discount: '9900' } },
+      })
+    )
+
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
   })
 
@@ -1639,6 +1733,126 @@ describe('Story 70.1 — Settings names the plan the user bought', () => {
       const [row] = await readUser('ctm_new')
       expect(row.subscriptionStatus).toBe('lifetime')
       expect(row.billingInterval).toBeNull()
+    })
+  })
+})
+
+describe('Story 74.1 — erase then repurchase at the same address', () => {
+  // The reported sequence, driven end to end: buy, erase through the REAL
+  // `deleteUserAccount` (a real signed session), buy again at the same address,
+  // request a sign-in link. The observation point is the mocked mailer.
+  //
+  // ⚠️ AC-8: nothing here asserts how many `users` rows exist after a
+  // post-erasure `subscription.canceled`. That event RESURRECTS the erased row
+  // (probe P1, a separate defect recorded in deferred-work.md); pinning the row
+  // count would make this suite defend it.
+  const ADDRESS = 'returning@example.test'
+
+  beforeEach(() => {
+    fetchPaddleCustomerEmail.mockResolvedValue(ADDRESS)
+    cancelActiveSubscriptionsForCustomer.mockResolvedValue(undefined)
+    sendMagicLinkEmail.mockResolvedValue(undefined)
+  })
+
+  /** Erase the account exactly as the Settings "Delete account" button does. */
+  async function eraseThroughTheRealDeletion(paddleId: string) {
+    const [row] = await readUser(paddleId)
+    const token = signSession({ userId: row.id, paddleId: row.paddleId, email: row.email })
+    const result = await deleteUserAccount(
+      new Request('https://app.test/api/account', {
+        method: 'DELETE',
+        headers: { cookie: `session=${encodeURIComponent(token)}` },
+      })
+    )
+    expect(result.success).toBe(true)
+    expect(await readUser(paddleId)).toHaveLength(0)
+  }
+
+  /** A lifetime checkout paid in full by a 100% coupon, as in production. */
+  function fullyDiscountedLifetime(overrides: Record<string, unknown> = {}) {
+    return lifetimeEvent({
+      id: 'txn_coupon_2',
+      discount_id: 'dsc_full_coupon',
+      details: { totals: { grand_total: '0', subtotal: '9900', discount: '9900' } },
+      ...overrides,
+    })
+  }
+
+  /** A link is minted AND it belongs to the re-bought row, not a leftover one. */
+  async function expectLinkSentTo(address: string, paddleId: string) {
+    const outcome = await requestMagicLink(address, 'https://app.test')
+    expect(outcome.branch).toBe('sent')
+    const [bought] = await readUser(paddleId)
+    expect(outcome.branch === 'sent' && outcome.userId).toBe(bought?.id)
+    expect(sendMagicLinkEmail).toHaveBeenCalledTimes(1)
+    expect(sendMagicLinkEmail.mock.calls[0][0]).toBe(address)
+  }
+
+  describe('the production case: a 100%-coupon lifetime repurchase (the cause, Task 1)', () => {
+    it('same customer id — a link is minted for the re-bought account', async () => {
+      await post({ ...lifetimeEvent({}), occurred_at: at(0) })
+      await eraseThroughTheRealDeletion('ctm_1')
+
+      const res = await post({ ...fullyDiscountedLifetime(), occurred_at: at(60) })
+      expect(res.status).toBe(200)
+
+      await expectLinkSentTo(ADDRESS, 'ctm_1')
+      const [row] = await readUser('ctm_1')
+      expect(row.subscriptionStatus).toBe('lifetime')
+    })
+
+    it('new customer id — a link is minted for the re-bought account', async () => {
+      await post({ ...lifetimeEvent({}), occurred_at: at(0) })
+      await eraseThroughTheRealDeletion('ctm_1')
+
+      await post({ ...fullyDiscountedLifetime({ customer_id: 'ctm_2' }), occurred_at: at(60) })
+
+      await expectLinkSentTo(ADDRESS, 'ctm_2')
+      const [row] = await readUser('ctm_2')
+      expect(row.subscriptionStatus).toBe('lifetime')
+    })
+  })
+
+  describe('regression guards — these never reproduced in-app (context probe P2-P4)', () => {
+    it('paid lifetime repurchase, same customer id', async () => {
+      await post({ ...lifetimeEvent({}), occurred_at: at(0) })
+      await eraseThroughTheRealDeletion('ctm_1')
+
+      await post({ ...lifetimeEvent({ id: 'txn_paid_2' }), occurred_at: at(60) })
+
+      await expectLinkSentTo(ADDRESS, 'ctm_1')
+    })
+
+    it('subscription: erase, post-erasure subscription.canceled, repurchase with the SAME id', async () => {
+      await post({ ...subscriptionEvent({ status: 'active' }), occurred_at: at(0) })
+      await eraseThroughTheRealDeletion('ctm_1')
+      // Paddle's own cancellation of the erased subscription (probe P1).
+      await post({
+        event_type: 'subscription.canceled',
+        occurred_at: at(1),
+        data: { customer_id: 'ctm_1', status: 'canceled' },
+      })
+
+      await post({ ...subscriptionEvent({ status: 'active' }), occurred_at: at(60) })
+
+      await expectLinkSentTo(ADDRESS, 'ctm_1')
+    })
+
+    it('subscription: erase, post-erasure subscription.canceled, repurchase with a NEW id', async () => {
+      await post({ ...subscriptionEvent({ status: 'active' }), occurred_at: at(0) })
+      await eraseThroughTheRealDeletion('ctm_1')
+      await post({
+        event_type: 'subscription.canceled',
+        occurred_at: at(1),
+        data: { customer_id: 'ctm_1', status: 'canceled' },
+      })
+
+      await post({
+        ...subscriptionEvent({ customer_id: 'ctm_2', status: 'active' }),
+        occurred_at: at(60),
+      })
+
+      await expectLinkSentTo(ADDRESS, 'ctm_2')
     })
   })
 })

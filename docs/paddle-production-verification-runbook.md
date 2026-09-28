@@ -91,8 +91,16 @@ gap the skip leaves open.
 6. **Entitled user cannot re-buy.** Signed in as an `active`/`lifetime` account,
    request `GET /api/paddle/checkout-config`. Expect `403` with no
    `clientToken` in the body, and no checkout offered on `/pricing`.
-7. **Zero-value transaction.** If the dashboard allows a 100%-discount
-   transaction on the lifetime price, confirm it does NOT grant `lifetime`.
+7. **Zero-value transaction.** ⚠️ Reversed by Story 74.1 (decision
+   2026-09-27): a 100%-COUPON transaction on the lifetime price DOES grant
+   `lifetime`, recording `lifetimeGrantTotal = 0`. Confirm it grants and that
+   the buyer can request a sign-in link. A zero total the discount does not
+   cover (no discount, a €0 price, or a partial coupon plus credit) is still
+   refused. (Before 74.1 a coupon buyer got a completed checkout and no account.)
+   ⚠️ **The coupon IS the abuse control** — the code accepts ANY discount that
+   covers the full price. Every 100% coupon must have a **usage limit** and be
+   **restricted to the lifetime price** (and ideally an expiry). A coupon grant
+   cannot be revoked by refund or chargeback (no money moved); revoke by hand.
 
 ✅ **Migration 0017 is applied** (`0017_sad_venus.sql`, deploy run 35150867103,
 2026-09-16) — it creates `paddleWebhookEvents`, the `users` watermark/lifetime-

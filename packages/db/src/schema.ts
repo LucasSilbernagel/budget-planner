@@ -202,8 +202,9 @@ export const users = pgTable(
     emailUpdatedAt: bigint('emailUpdatedAt', { mode: 'number' }),
     // The transaction that bought a `lifetime` grant, and its grand total in the
     // currency's lowest unit. Recorded at grant time so a later refund can be
-    // judged FULL vs PARTIAL without a second Paddle API round trip (AC-1), and
-    // so a zero-value / non-collecting transaction cannot grant lifetime (AC-8).
+    // judged FULL vs PARTIAL without a second Paddle API round trip (AC-1). A
+    // 100%-coupon grant records a total of 0 (Story 74.1); no money moved, so it
+    // is revocable only by hand. An UNEXPLAINED zero total still cannot grant.
     lifetimeTransactionId: varchar('lifetimeTransactionId', { length: 255 }),
     lifetimeGrantTotal: bigint('lifetimeGrantTotal', { mode: 'number' }),
     // ⚠️ There is deliberately NO `lifetimeRefundedTotal` counter here. An

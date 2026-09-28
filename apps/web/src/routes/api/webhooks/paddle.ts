@@ -1195,7 +1195,13 @@ interface PaddleEventData {
   customer?: { email?: string }
   // --- transaction events (Story 5-19, AC-8) ---
   // Paddle sends monetary amounts as STRINGS in the currency's lowest unit.
-  details?: { totals?: { grand_total?: string } }
+  details?: { totals?: { grand_total?: string; subtotal?: string; discount?: string } }
+  /**
+   * The discount applied to a transaction (Story 74.1). Required, together
+   * with `details.totals.discount` covering the whole `subtotal`, for a zero
+   * total to grant lifetime — see `isFullyDiscounted`.
+   */
+  discount_id?: string | null
   // --- adjustment events (Story 5-19, AC-1) ---
   /** `refund` | `credit` | `chargeback` | `chargeback_warning` | reversals. */
   action?: string
@@ -1225,11 +1231,28 @@ function parseLowestUnit(value?: string): number | undefined {
 
 /**
  * Transaction statuses that represent money actually collected. A lifetime
- * grant requires one of these AND a positive total (AC-8): a 100%-discount,
- * zero-value or non-collecting transaction carrying the lifetime price must not
- * mint a permanent €99 entitlement.
+ * grant requires one of these (5-19 AC-8) AND a total that is either positive or
+ * zero because a discount covered it (Story 74.1, product decision 2026-09-27).
  */
 const COLLECTED_TRANSACTION_STATUSES: readonly string[] = ['completed', 'paid']
+
+/**
+ * True when a discount covered the ENTIRE subtotal (Story 74.1): a
+ * `discount_id` is present and `totals.discount >= totals.subtotal > 0`. A zero
+ * `grand_total` alone does not show that — it is computed after customer
+ * credit, and a €0 price with any coupon attached is also zero.
+ */
+function isFullyDiscounted(data: PaddleEventData): boolean {
+  const subtotal = parseLowestUnit(data.details?.totals?.subtotal)
+  const discount = parseLowestUnit(data.details?.totals?.discount)
+  return (
+    !!data.discount_id &&
+    subtotal !== undefined &&
+    discount !== undefined &&
+    subtotal > 0 &&
+    discount >= subtotal
+  )
+}
 
 /** Prefer an email already in the payload; otherwise resolve it via the API. */
 async function resolveBuyerEmail(data: PaddleEventData): Promise<string | undefined> {
@@ -1531,9 +1554,8 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       }
 
       // AC-8: the price id alone is not enough. Require a status that means the
-      // money was actually collected AND a positive grand total, so a
-      // 100%-discount or otherwise non-collecting transaction cannot grant a
-      // permanent, previously irrevocable entitlement.
+      // money was actually collected AND a usable grand total. Story 74.1
+      // narrowed the zero-total rule — see the refusal below.
       const grandTotal = parseLowestUnit(data.details?.totals?.grand_total)
       if (grandTotal === undefined) {
         // ⚠️ REFUSE, do not grant. An earlier version only rejected `<= 0` and
@@ -1559,7 +1581,21 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         })
         return json({ success: true })
       }
-      if (grandTotal <= 0) {
+      // ⚠️ Story 74.1 (decision, Lucas 2026-09-27): a 100%-COUPON lifetime
+      // checkout GRANTS. 5-19 refused every zero total, which silently left a
+      // coupon buyer with a completed Paddle checkout and NO account: no row,
+      // so every sign-in request was a silent no-op (the reported "no magic
+      // link after repurchase", traced to live txn_01m3cze0…, 2026-09-25).
+      // Refused still: a zero total the discount does not explain (no discount,
+      // a misconfigured €0 price, or a partial coupon topped up by customer
+      // credit — `grand_total` is AFTER credits), and any negative total.
+      //
+      // ⚠️ A coupon grant records `lifetimeGrantTotal: 0` and is, in practice,
+      // revocable only BY HAND: no money moved, so no refund or chargeback can
+      // arrive for it. The abuse control is the COUPON itself — capped uses,
+      // restricted to the lifetime price, in the Paddle dashboard (decision,
+      // Lucas 2026-09-27; runbook step 7).
+      if (grandTotal < 0 || (grandTotal === 0 && !isFullyDiscounted(data))) {
         logger.warn('Webhook: lifetime-priced transaction collected nothing; refusing to grant', {
           customerId,
           grandTotal,

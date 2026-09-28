@@ -84,4 +84,37 @@ describe('sendMagicLinkEmail', () => {
     expect(link).not.toContain('secret@example.com')
     expect(bodyStr).toContain(link)
   })
+
+  describe('Brevo messageId (Story 74.1, AC-5)', () => {
+    const LINK = 'https://app.test/api/auth/login/verify?token=x'
+
+    it('returns the messageId from a 2xx body', async () => {
+      server.use(
+        http.post(BREVO_URL, () =>
+          HttpResponse.json(
+            { messageId: '<201798300811.5787683@relay.domain.com>' },
+            { status: 201 }
+          )
+        )
+      )
+      await expect(sendMagicLinkEmail('user@example.com', LINK)).resolves.toBe(
+        '<201798300811.5787683@relay.domain.com>'
+      )
+    })
+
+    it('does NOT throw on a 2xx with an empty body — the send already succeeded', async () => {
+      server.use(http.post(BREVO_URL, () => new HttpResponse(null, { status: 201 })))
+      await expect(sendMagicLinkEmail('user@example.com', LINK)).resolves.toBeUndefined()
+    })
+
+    it('does NOT throw on a 2xx with a non-JSON body', async () => {
+      server.use(http.post(BREVO_URL, () => HttpResponse.text('queued', { status: 201 })))
+      await expect(sendMagicLinkEmail('user@example.com', LINK)).resolves.toBeUndefined()
+    })
+
+    it('ignores a messageId that is not a string', async () => {
+      server.use(http.post(BREVO_URL, () => HttpResponse.json({ messageId: 42 }, { status: 201 })))
+      await expect(sendMagicLinkEmail('user@example.com', LINK)).resolves.toBeUndefined()
+    })
+  })
 })

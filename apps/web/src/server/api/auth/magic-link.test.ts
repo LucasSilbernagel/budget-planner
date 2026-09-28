@@ -40,12 +40,15 @@ vi.mock('@budget-planner/db', () => ({ db: { select: dbSelect } }))
 vi.mock('./login-token', () => ({ createLoginToken, consumeLoginToken, peekLoginToken }))
 vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 
+import { redact } from '@/lib/logger'
 import {
+  MagicLinkStageError,
   buildVerifyLink,
   isValidEmail,
   normalizeEmail,
   peekMagicLink,
   requestMagicLink,
+  toMessageRef,
   verifyMagicLink,
 } from './magic-link'
 
@@ -78,9 +81,15 @@ describe('requestMagicLink (no enumeration, no signup)', () => {
   it('sends a link for a known, non-deleted user', async () => {
     selectLimit.mockResolvedValueOnce([{ id: 'u1', email: 'user@example.com', paddleId: 'pad_1' }])
     createLoginToken.mockResolvedValueOnce('raw-tok')
+    sendMagicLinkEmail.mockResolvedValueOnce('<202609271234.12345678901@smtp-relay.mailin.fr>')
 
-    await requestMagicLink('User@Example.com', BASE)
+    const outcome = await requestMagicLink('User@Example.com', BASE)
 
+    expect(outcome).toEqual({
+      branch: 'sent',
+      userId: 'u1',
+      messageRef: '202609271234.12345678901',
+    })
     expect(createLoginToken).toHaveBeenCalledWith('u1')
     expect(sendMagicLinkEmail).toHaveBeenCalledWith(
       'user@example.com',
@@ -90,16 +99,78 @@ describe('requestMagicLink (no enumeration, no signup)', () => {
 
   it('does NOTHING for an unknown email (no token, no email, no account created)', async () => {
     selectLimit.mockResolvedValueOnce([])
-    await requestMagicLink('ghost@example.com', BASE)
+    expect(await requestMagicLink('ghost@example.com', BASE)).toEqual({ branch: 'no-such-user' })
     expect(createLoginToken).not.toHaveBeenCalled()
     expect(sendMagicLinkEmail).not.toHaveBeenCalled()
   })
 
   it('does NOTHING for an invalid email without even querying the DB', async () => {
-    await requestMagicLink('not-an-email', BASE)
+    expect(await requestMagicLink('not-an-email', BASE)).toEqual({ branch: 'invalid-shape' })
     expect(dbSelect).not.toHaveBeenCalled()
     expect(createLoginToken).not.toHaveBeenCalled()
     expect(sendMagicLinkEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe('requestMagicLink — outcome and failure stage (Story 74.1, AC-5)', () => {
+  it('omits messageRef when the provider returned no messageId', async () => {
+    selectLimit.mockResolvedValueOnce([{ id: 'u1', email: 'user@example.com', paddleId: 'pad_1' }])
+    createLoginToken.mockResolvedValueOnce('raw-tok')
+    sendMagicLinkEmail.mockResolvedValueOnce(undefined)
+    expect(await requestMagicLink('user@example.com', BASE)).toEqual({
+      branch: 'sent',
+      userId: 'u1',
+    })
+  })
+
+  it('tags a DB lookup failure with stage lookup', async () => {
+    const cause = new Error('db down')
+    selectLimit.mockRejectedValueOnce(cause)
+    const error = await requestMagicLink('user@example.com', BASE).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(MagicLinkStageError)
+    expect(error).toMatchObject({ stage: 'lookup', cause })
+    expect(createLoginToken).not.toHaveBeenCalled()
+  })
+
+  it('tags a token-insert failure with stage token', async () => {
+    selectLimit.mockResolvedValueOnce([{ id: 'u1', email: 'user@example.com', paddleId: 'pad_1' }])
+    createLoginToken.mockRejectedValueOnce(new Error('insert failed'))
+    const error = await requestMagicLink('user@example.com', BASE).catch((e: unknown) => e)
+    expect(error).toMatchObject({ stage: 'token' })
+    expect(sendMagicLinkEmail).not.toHaveBeenCalled()
+  })
+
+  it('tags a provider failure with stage send', async () => {
+    selectLimit.mockResolvedValueOnce([{ id: 'u1', email: 'user@example.com', paddleId: 'pad_1' }])
+    createLoginToken.mockResolvedValueOnce('raw-tok')
+    sendMagicLinkEmail.mockRejectedValueOnce(new Error('Email provider returned 401'))
+    const error = await requestMagicLink('user@example.com', BASE).catch((e: unknown) => e)
+    expect(error).toMatchObject({ stage: 'send' })
+  })
+})
+
+describe('toMessageRef — a Brevo id that survives the logger (Story 74.1, AC-5 trap)', () => {
+  const BREVO_ID = '<202609271234.12345678901@smtp-relay.mailin.fr>'
+
+  it('keeps the part before @, and it survives the REAL redact()', () => {
+    expect(toMessageRef(BREVO_ID)).toBe('202609271234.12345678901')
+    expect(redact({ messageRef: toMessageRef(BREVO_ID) })).toEqual({
+      messageRef: '202609271234.12345678901',
+    })
+  })
+
+  it('the raw id would NOT survive — the reason the reduction exists', () => {
+    expect(redact({ messageRef: BREVO_ID })).toEqual({ messageRef: '[REDACTED]' })
+  })
+
+  it('returns undefined for a missing or empty id', () => {
+    expect(toMessageRef(undefined)).toBeUndefined()
+    expect(toMessageRef('')).toBeUndefined()
+    expect(toMessageRef('<@x>')).toBeUndefined()
+  })
+
+  it('strips a trailing > when the id carries no @ (review)', () => {
+    expect(toMessageRef('<abc123>')).toBe('abc123')
   })
 })
 

@@ -16,7 +16,18 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { checkDbRateLimit, buckets } = vi.hoisted(() => {
+const { checkDbRateLimit, buckets, logger, captureError, MagicLinkStageError } = vi.hoisted(() => {
+  // Story 74.1: a stand-in with the real class's shape, so the route's
+  // `instanceof` check runs against the same constructor the tests throw.
+  class MagicLinkStageError extends Error {
+    readonly stage: string
+    readonly cause: unknown
+    constructor(stage: string, cause: unknown) {
+      super(`Magic-link request failed at stage '${stage}'`)
+      this.stage = stage
+      this.cause = cause
+    }
+  }
   const buckets = new Map<string, number>()
   const checkDbRateLimit = vi.fn(
     async ({
@@ -34,13 +45,22 @@ const { checkDbRateLimit, buckets } = vi.hoisted(() => {
       return { allowed: count <= maxAttempts, remaining: Math.max(0, maxAttempts - count) }
     }
   )
-  return { checkDbRateLimit, buckets }
+  return {
+    checkDbRateLimit,
+    buckets,
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    captureError: vi.fn(),
+    MagicLinkStageError,
+  }
 })
 
 vi.mock('@/server/rate-limit/db-window', () => ({ checkDbRateLimit }))
 vi.mock('@/server/api/auth/magic-link', () => ({
   requestMagicLink: vi.fn().mockResolvedValue(undefined),
+  MagicLinkStageError,
 }))
+vi.mock('@/lib/logger', () => ({ logger }))
+vi.mock('@/lib/error-tracking', () => ({ captureError }))
 
 import { requestMagicLink } from '@/server/api/auth/magic-link'
 import { POST } from '../request'
@@ -63,7 +83,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
 beforeEach(() => {
   vi.clearAllMocks()
   buckets.clear()
-  asMock(requestMagicLink).mockResolvedValue(undefined)
+  asMock(requestMagicLink).mockResolvedValue({ branch: 'no-such-user' })
 })
 
 describe('POST /api/auth/login/request', () => {
@@ -152,5 +172,192 @@ describe('POST /api/auth/login/request', () => {
     expect(scopes).not.toContain('ip')
     expect(scopes).toContain('email')
     expect(asMock(requestMagicLink).mock.calls.length).toBeLessThan(7)
+  })
+})
+
+describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
+  const OUTCOME = 'Magic-link request outcome'
+
+  /** Let the fire-and-forget chain settle; the response has already returned. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  /** Every call on any level that carries the outcome message. */
+  function outcomeLines() {
+    return [logger.info, logger.warn, logger.error, logger.debug].flatMap((fn) =>
+      fn.mock.calls
+        .filter((call) => call[0] === OUTCOME)
+        .map((call) => call[1] as Record<string, unknown>)
+    )
+  }
+
+  it('logs `sent` with the userId and messageRef', async () => {
+    asMock(requestMagicLink).mockResolvedValueOnce({
+      branch: 'sent',
+      userId: 'u-1',
+      messageRef: '202609271234.12345678901',
+    })
+    await post({ email: 'known@example.com' })
+    await settle()
+    expect(outcomeLines()).toEqual([
+      { branch: 'sent', userId: 'u-1', messageRef: '202609271234.12345678901' },
+    ])
+  })
+
+  it('logs `no-such-user` and `invalid-shape` from inside the chain', async () => {
+    await post({ email: 'ghost@example.com' })
+    await settle()
+    asMock(requestMagicLink).mockResolvedValueOnce({ branch: 'invalid-shape' })
+    await post({ email: 'not-an-email' })
+    await settle()
+    expect(outcomeLines()).toEqual([{ branch: 'no-such-user' }, { branch: 'invalid-shape' }])
+  })
+
+  it('logs `invalid-shape` for a blank or over-long address, without reaching the sender', async () => {
+    await post({ email: '   ' })
+    await post({ email: `${'a'.repeat(300)}@x.com` })
+    await settle()
+    expect(requestMagicLink).not.toHaveBeenCalled()
+    expect(outcomeLines()).toEqual([{ branch: 'invalid-shape' }, { branch: 'invalid-shape' }])
+  })
+
+  it('logs `throttled` (scope email) on the throttle path — exactly one line per request', async () => {
+    for (let i = 0; i < 6; i++) await post({ email: 'spammed@example.com' })
+    await settle()
+    const lines = outcomeLines()
+    expect(lines).toHaveLength(6)
+    expect(lines.slice(0, 5)).toEqual(Array(5).fill({ branch: 'no-such-user' }))
+    expect(lines[5]).toEqual({ branch: 'throttled', scope: 'email' })
+  })
+
+  it.each(['lookup', 'token', 'send'])(
+    'logs `send-failed` with stage %s and the ORIGINAL error, and reports it',
+    async (stage) => {
+      const cause = new Error('boom')
+      asMock(requestMagicLink).mockRejectedValueOnce(new MagicLinkStageError(stage, cause))
+      await post({ email: 'known@example.com' })
+      await settle()
+      expect(outcomeLines()).toEqual([{ branch: 'send-failed', stage, error: cause }])
+      expect(logger.error).toHaveBeenCalledTimes(1)
+      expect(captureError).toHaveBeenCalledWith(cause, { scope: 'magic-link-request', stage })
+    }
+  )
+
+  it('the provider status survives the REAL redact() on a send failure (review)', async () => {
+    // The logger serialises an Error as `{ name, message }` only. Logging the
+    // stage WRAPPER recorded "failed at stage 'send'" and lost the Brevo status
+    // that the pre-74.1 line showed.
+    const { redact } = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger')
+    asMock(requestMagicLink).mockRejectedValueOnce(
+      new MagicLinkStageError(
+        'send',
+        new Error('Email provider returned 401 sending the magic link')
+      )
+    )
+    await post({ email: 'known@example.com' })
+    await settle()
+
+    expect(redact(outcomeLines()[0])).toEqual({
+      branch: 'send-failed',
+      stage: 'send',
+      error: { name: 'Error', message: 'Email provider returned 401 sending the magic link' },
+    })
+  })
+
+  it('logs the IP throttle and both 400s too (review: one line per answered request)', async () => {
+    for (let i = 0; i < 6; i++) await post({ email: `u${i}@example.com` }, CLIENT_IP)
+    await post('not json{')
+    await post({ email: 123 })
+    await settle()
+    const lines = outcomeLines()
+    expect(lines).toHaveLength(8)
+    expect(lines[5]).toEqual({ branch: 'throttled', scope: 'ip' })
+    expect(lines.slice(6)).toEqual([{ branch: 'bad-request' }, { branch: 'bad-request' }])
+  })
+
+  it('a logger that THROWS inside the chain does not become an unhandled rejection (review)', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      logger.info.mockImplementationOnce(() => {
+        throw new Error('stdout closed')
+      })
+      const res = await post({ email: 'known@example.com' })
+      await settle()
+      await settle()
+      expect(res.status).toBe(200)
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
+  it('an untagged failure still logs `send-failed`, with no stage to guess', async () => {
+    asMock(requestMagicLink).mockRejectedValueOnce(new Error('unexpected'))
+    await post({ email: 'known@example.com' })
+    await settle()
+    expect(outcomeLines()).toEqual([
+      { branch: 'send-failed', stage: undefined, error: new Error('unexpected') },
+    ])
+  })
+
+  it('the response is byte-identical across sent, no-such-user, throttled and send-failed', async () => {
+    const bodies: string[] = []
+    const statuses: number[] = []
+    const record = async (res: Response) => {
+      statuses.push(res.status)
+      bodies.push(await res.text())
+    }
+
+    asMock(requestMagicLink).mockResolvedValueOnce({ branch: 'sent', userId: 'u-1' })
+    await record(await post({ email: 'sent@example.com' }))
+    await record(await post({ email: 'ghost@example.com' }))
+    asMock(requestMagicLink).mockRejectedValueOnce(new MagicLinkStageError('send', 'down'))
+    await record(await post({ email: 'failing@example.com' }))
+    for (let i = 0; i < 5; i++) await post({ email: 'capped@example.com' })
+    await record(await post({ email: 'capped@example.com' }))
+    await settle()
+
+    expect(statuses).toEqual([200, 200, 200, 200])
+    expect(new Set(bodies)).toEqual(new Set(['{"success":true}']))
+    // The throttled request really was throttled — otherwise this compares
+    // four copies of the same branch.
+    expect(outcomeLines()).toContainEqual({ branch: 'throttled', scope: 'email' })
+  })
+
+  it('does NOT await the send: the response returns while the lookup is still pending (AC-4)', async () => {
+    let release!: (value: unknown) => void
+    asMock(requestMagicLink).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve
+      })
+    )
+    const res = await post({ email: 'known@example.com' })
+    expect(res.status).toBe(200)
+    expect(outcomeLines()).toEqual([])
+    release({ branch: 'sent', userId: 'u-1' })
+    await settle()
+    expect(outcomeLines()).toEqual([{ branch: 'sent', userId: 'u-1' }])
+  })
+
+  it('the logged messageRef survives the REAL redact() (AC-5 trap)', async () => {
+    const { redact } = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger')
+    const { toMessageRef } = await vi.importActual<typeof import('@/server/api/auth/magic-link')>(
+      '@/server/api/auth/magic-link'
+    )
+    const brevoMessageId = '<202609271234.12345678901@smtp-relay.mailin.fr>'
+    asMock(requestMagicLink).mockResolvedValueOnce({
+      branch: 'sent',
+      userId: 'u-1',
+      messageRef: toMessageRef(brevoMessageId),
+    })
+    await post({ email: 'known@example.com' })
+    await settle()
+
+    const [line] = outcomeLines()
+    expect(redact(line)).toEqual({
+      branch: 'sent',
+      userId: 'u-1',
+      messageRef: '202609271234.12345678901',
+    })
   })
 })

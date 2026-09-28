@@ -62,8 +62,14 @@ function buildEmailBody(link: string): { html: string; text: string } {
  * response, so the caller never reports a successful "we emailed you" on a
  * silent failure. In development without an API key, the link is logged to the
  * server console so local sign-in works without an email account.
+ *
+ * Resolves to Brevo's `messageId` when the 2xx body carries one (Story 74.1,
+ * AC-5), so a report can be matched to Brevo's delivery log. Brevo documents the
+ * 201 body as `{ "messageId": "<…@relay.domain.com>" }` (checked 2026-09-27 at
+ * developers.brevo.com/reference/sendtransacemail). A missing or non-JSON body
+ * resolves `undefined` — the send already succeeded, so it must not throw.
  */
-export async function sendMagicLinkEmail(to: string, link: string): Promise<void> {
+export async function sendMagicLinkEmail(to: string, link: string): Promise<string | undefined> {
   const config = getEmailConfig()
 
   if (!config.isConfigured || !config.apiKey) {
@@ -74,7 +80,7 @@ export async function sendMagicLinkEmail(to: string, link: string): Promise<void
         to,
         magicLink: link,
       })
-      return
+      return undefined
     }
     throw new Error(
       'EMAIL_API_KEY is not configured. Magic-link login requires the EU email provider (NFR1, NFR2).'
@@ -102,5 +108,18 @@ export async function sendMagicLinkEmail(to: string, link: string): Promise<void
   if (!response.ok) {
     // Do not include the provider body (may echo the recipient) in the message.
     throw new Error(`Email provider returned ${response.status} sending the magic link`)
+  }
+
+  return readMessageId(response)
+}
+
+/** Brevo's `messageId` from a 2xx body, or undefined — never throws. */
+async function readMessageId(response: Response): Promise<string | undefined> {
+  try {
+    const body: unknown = await response.json()
+    const messageId = (body as { messageId?: unknown } | null)?.messageId
+    return typeof messageId === 'string' && messageId ? messageId : undefined
+  } catch {
+    return undefined
   }
 }
