@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+// jsdom supplies `localStorage`, which core's sync queue persists to. The
+// default `node` environment has none unless Node runs with
+// `--localstorage-file` (dev boxes do, CI does not).
 /**
  * A malformed server row cannot cost the user a local edit (story 75.4, FR123),
  * driven through the web chain exactly as `hooks/useSync.ts` wires it.
