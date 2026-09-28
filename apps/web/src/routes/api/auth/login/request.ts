@@ -17,6 +17,7 @@
 
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
+import { normalizeEmail } from '@/server/api/auth/email'
 import { MagicLinkStageError, requestMagicLink } from '@/server/api/auth/magic-link'
 import { clientIpForRateLimit } from '@/server/rate-limit/client-ip'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
@@ -30,7 +31,8 @@ const MAX_EMAIL_LENGTH = 254
 // Per-IP: short burst window mirroring the Paddle callback.
 const IP_LIMIT = { windowMs: 60 * 1000, maxAttempts: 5 } as const
 // Per-email: a wider window so one address cannot be mail-bombed with links.
-const EMAIL_LIMIT = { windowMs: 15 * 60 * 1000, maxAttempts: 5 } as const
+// Exported so the erasure test (Story 74.2) drives the SAME limits, not a copy.
+export const EMAIL_LIMIT = { windowMs: 15 * 60 * 1000, maxAttempts: 5 } as const
 
 /** The single generic success body — identical for every non-error outcome. */
 const GENERIC_OK = { success: true } as const
@@ -87,7 +89,11 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   // skip the per-email limiter entirely, and an unbounded string would be a
   // memory-amplification key. Out-of-range values get the generic 200 (no work,
   // no enumeration) — the full shape check still runs inside requestMagicLink.
-  const emailKey = email.trim().toLowerCase()
+  //
+  // ⚠️ `normalizeEmail`, not an inline copy: account erasure (`account.ts`)
+  // deletes this bucket by the same key, so the two must be ONE function or a
+  // drift turns that delete into a silent no-op (Story 74.2).
+  const emailKey = normalizeEmail(email)
   if (!emailKey || emailKey.length > MAX_EMAIL_LENGTH) {
     logger.info(OUTCOME_MESSAGE, { branch: 'invalid-shape' })
     return json(GENERIC_OK)

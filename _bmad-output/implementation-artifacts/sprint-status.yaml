@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-27k (**74.2 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED — AND EPIC 74 ROLLUP CLOSED IN THE SAME PASS. 9 patches, 1 deferred, 9 dismissed. Web 3480/224, core 943/27, DB 276+7, tsc 0/0/0/0, Biome exit 0/621. Remaining batch 14: epic 73 (12-month retention NOT confirmed).)
+# last_updated: 2026-09-27j (**74.2 DEV DONE -> review**, UNCOMMITTED. RED showed surviving bucket (count 6); 3 controls red. Web 3480/224, core 943/27, DB 276+7, tsc 0/0/0/0, Biome exit 0/621.)
+# last_updated: 2026-09-27i (**74.2 DEV STARTED -> in-progress** at `187efd0`.)
+# last_updated: 2026-09-27h (**74.2 CONTEXTED -> ready-for-dev** at `187efd0`.)
 # last_updated: 2026-09-27g (**74.1 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED. 1 decision (coupon controls in Paddle), 10 patches, 0 deferred, 8 dismissed. Web 3476/224, core 943/27, DB 276+7, tsc 0/0/0/0, Biome 0/621. Ops: replay ntf after deploy; cap coupon 9DIDI9S5W9.)
 # last_updated: 2026-09-27f (**74.1 DEV DONE -> review**, UNCOMMITTED. Cause: 100%-coupon lifetime repurchase refused by 5-19 zero-value gate; now grants (Lucas). Web 3469/224, core 943/27, DB 276+7, tsc 0/0/0/0, Biome 0/621.)
 # last_updated: 2026-09-27e (**74.1 DEV STARTED -> in-progress**.)
@@ -979,10 +983,10 @@ development_status:
   73-2-purge-lapsed-account-data-after-the-retention-window: backlog
   epic-73-retrospective: optional
 
-  epic-74: in-progress  # Sign-In That Works After An Account Is Recreated. Root cause NOT established.
+  epic-74: done  # ✅ CLOSED 2026-09-27 with 74.2 (both stories done; 74.2 UNCOMMITTED). Sign-In That Works After An Account Is Recreated.
   74-1-diagnose-why-the-magic-link-is-not-delivered-and-fix-it: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-27 (3 layers, Opus), UNCOMMITTED. 10 patches, 0 deferred. DEV DONE 2026-09-27, UNCOMMITTED: ROOT CAUSE = Sep 25 lifetime repurchase used a 100% coupon (grand_total 0), refused by 5-19's zero-value gate (c5931cf, 09-16) -> no users row -> silent no-op. Fix (Lucas): coupon lifetime grants. Ops: replay ntf_01m3czf38xsa9yjqhr4nxdbef3 after deploy. DEV STARTED 2026-09-27 at `f66bded`. CONTEXTED 2026-09-27 at `f66bded`: in-app probe P1-P6 does NOT reproduce (link minted in every erase/repurchase ordering); Task 1 needs Lucas for prod evidence. Found: post-erasure cancel webhook RESURRECTS the user row (record, don't fix).
   # ⚠ Do not let 74.2's throttle defect close this on the wrong cause (fixed 5/15min window self-heals).
-  74-2-clear-the-email-scoped-throttle-when-an-account-is-erased: backlog
+  74-2-clear-the-email-scoped-throttle-when-an-account-is-erased: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-27 (3 layers, Opus), UNCOMMITTED, baseline `187efd0`. 9 patches, 1 deferred (old-address bucket after email change), 9 dismissed.
   epic-74-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.

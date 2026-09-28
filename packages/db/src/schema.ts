@@ -607,7 +607,8 @@ export const categories = pgTable(
 // - `subject` is the bucket key within a scope (IP string, lowercased email, or userId).
 // - `userId`  is populated ONLY for the 'sync' scope (FK → users), so account
 //             erasure (account.ts) still removes a user's sync counters; it is
-//             NULL for IP/email buckets, which have no owning user.
+//             NULL for IP/email buckets, which have no owning user. Erasure
+//             removes the account's email bucket by `subject` instead (74.2).
 // - `windowStart` is the fixed bucket boundary (floor(now / windowMs) * windowMs);
 //             the UNIQUE (scope, subject, windowStart) index is the ON CONFLICT
 //             target for the atomic upsert in server/rate-limit/db-window.ts.

@@ -700,7 +700,7 @@ async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
 }
 
 /**
- * Every profile-scoped CHILD table, in the order `server/api/account.ts:90-100`
+ * Every profile-scoped CHILD table, in the order `server/api/account.ts`'s erasure transaction
  * deletes them (story 66.3, AC-4/AC-9).
  *
  * ⚠️ The child set is SIX tables, not the four "financial arrays" the epic names.

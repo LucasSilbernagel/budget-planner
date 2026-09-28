@@ -483,7 +483,7 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     // not reassign (66.3, D1) — so the gap is closed rather than re-logged.
     //
     // ⚠️⚠️ ORDER IS A DATABASE CONSTRAINT HERE, unlike the sync path's cascade.
-    // These are HARD deletes, so `server/api/account.ts:90-100` is the canonical
+    // These are HARD deletes, so `server/api/account.ts`'s erasure transaction is the canonical
     // order and the one non-obvious link is `categories`: it is referenced BY
     // `incomeSources.categoryId` and `expenses.categoryId`, so it must come AFTER
     // both, and it references `userProfiles.id`, so it must come BEFORE that. It

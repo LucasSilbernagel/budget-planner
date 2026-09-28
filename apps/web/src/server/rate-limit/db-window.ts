@@ -55,7 +55,8 @@ export interface DbRateLimitOptions {
   /**
    * Owning user — populated ONLY for the `sync` scope so account erasure
    * (account.ts deletes rateLimits by userId) still clears the counter. Omit for
-   * IP/email buckets, which have no owning user (column is NULL).
+   * IP/email buckets, which have no owning user (column is NULL). Erasure clears
+   * the account's EMAIL bucket separately, by `subject` (Story 74.2).
    */
   userId?: string | null
   /** Injectable clock (tests). Defaults to `Date.now()`. */
@@ -111,7 +112,8 @@ export function __resetReapGateForTests(): void {
  *
  * ⚠️ `FOR UPDATE SKIP LOCKED` is load-bearing, not an optimisation. Account
  * erasure deletes `rateLimits` by `userId` inside a multi-statement transaction
- * (`server/api/account.ts:98`), and `sync`-scope rows carry BOTH a `userId` and
+ * (`server/api/account.ts`) — and, since Story 74.2, the account's `email`
+ * bucket by `subject` in the same transaction — and `sync`-scope rows carry BOTH a `userId` and
  * a `windowStart` — so the two predicates DO select overlapping rows. Without
  * SKIP LOCKED the two deletes could take row locks in different orders and
  * deadlock, and PostgreSQL might pick the ERASURE as the victim: a user-facing,
@@ -121,8 +123,8 @@ export function __resetReapGateForTests(): void {
  *
  * ⚠️ BUT THE PROTECTION IS ONE-DIRECTIONAL, and saying otherwise would be a
  * false comfort: SKIP LOCKED stops THIS statement waiting. It does not stop
- * erasure waiting on US — `account.ts`'s plain `DELETE ... WHERE userId = $1`
- * still blocks on any row this sweep holds, for as long as the sweep runs, and
+ * erasure waiting on US — `account.ts`'s plain `DELETE`s (by `userId`, and by
+ * email `subject`) still block on any row this sweep holds, for as long as the sweep runs, and
  * the pool sets no `statement_timeout` (`packages/db/src/client.ts`). That is
  * why the sweep is CAPPED (`REAP_BATCH_LIMIT`) rather than deleting every
  * eligible row in one unbounded statement: a bounded sweep bounds how long

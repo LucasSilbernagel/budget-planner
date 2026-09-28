@@ -76,6 +76,9 @@ vi.mock('@budget-planner/config', () => ({
   // Story 70.1, AC-9: the label is proven through a REAL signed session, so
   // `signSession` / `verifySession` need a secret.
   getSessionSecret: () => 'story-70-1-session-secret-at-least-32-chars',
+  // Story 74.2: the magic-link request route is driven for real, and an
+  // ALLOWED request builds its link from the site URL.
+  getSiteUrl: () => 'https://app.test',
 }))
 vi.mock('@/server/paddle/customer-api', () => ({ fetchPaddleCustomerEmail }))
 vi.mock('@/lib/logger', () => ({
@@ -86,19 +89,24 @@ vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 vi.mock('@/server/paddle/subscription-api', () => ({ cancelActiveSubscriptionsForCustomer }))
 
 import { planLabel } from '@/lib/account/plan-label'
+import { logger } from '@/lib/logger'
+import { EMAIL_LIMIT, POST as requestLinkPOST } from '@/routes/api/auth/login/request'
 import { deleteUserAccount } from '@/server/api/account'
+import { normalizeEmail } from '@/server/api/auth/email'
 import { requestMagicLink } from '@/server/api/auth/magic-link'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { signSession } from '@/server/api/auth/session'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
+import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import {
   loginTokens,
   paddleAdjustments,
   paddleWebhookEvents,
+  rateLimits,
   userProfiles,
   users,
 } from '@budget-planner/db'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { POST, entitlementWatermarkGuard } from '../paddle'
 
 const MIGRATIONS = new URL('../../../../../../../packages/db/migrations/', import.meta.url)
@@ -242,6 +250,9 @@ beforeEach(async () => {
   await db.delete(paddleAdjustments)
   // Story 68.1: BEFORE `users` — `loginTokens.userId` references it.
   await db.delete(loginTokens)
+  // Story 74.2: BEFORE `users` — `sync`-scope rows reference `users.id`, and
+  // email buckets written by one case must not throttle the next.
+  await db.delete(rateLimits)
   await db.delete(users)
 })
 
@@ -1854,5 +1865,138 @@ describe('Story 74.1 — erase then repurchase at the same address', () => {
 
       await expectLinkSentTo(ADDRESS, 'ctm_2')
     })
+  })
+})
+
+describe('Story 74.2 — erasure clears the email-scoped throttle', () => {
+  // What a user types into the sign-in form, and what the throttle keys on.
+  const TYPED = 'returning@example.test'
+  // ⚠️ THE DISCRIMINATING SEED. The webhook stores addresses already normalized
+  // (Story 5-3), so for an ordinary row the raw stored email EQUALS the throttle
+  // key and a delete that forgot to normalize would pass. A legacy row stored in
+  // mixed case is the only shape where "keyed on the raw email" and "keyed on
+  // the normalized email" differ — so it is the only shape that can go RED for
+  // that mistake. `magic-link.ts` still `lower()`s its lookup for such rows.
+  const STORED = 'Returning@Example.Test'
+  const PADDLE_ID = 'ctm_legacy'
+
+  // One instant mid-way through the CURRENT real 15-min window, so every call
+  // lands in one fixed bucket (`db-window.ts:199`) and the reaper's 1h cutoff
+  // cannot touch it. Not pinned across webhook `post()`s, which sign with the
+  // real clock.
+  const NOW =
+    Math.floor(Date.now() / EMAIL_LIMIT.windowMs) * EMAIL_LIMIT.windowMs + EMAIL_LIMIT.windowMs / 2
+
+  function attempt() {
+    return checkDbRateLimit({
+      scope: 'email',
+      subject: normalizeEmail(TYPED),
+      now: NOW,
+      ...EMAIL_LIMIT,
+    })
+  }
+
+  function emailBuckets() {
+    return db
+      .select()
+      .from(rateLimits)
+      .where(and(eq(rateLimits.scope, 'email'), eq(rateLimits.subject, normalizeEmail(TYPED))))
+  }
+
+  async function exhaustTheThrottle() {
+    for (let i = 0; i < EMAIL_LIMIT.maxAttempts; i++) {
+      expect((await attempt()).allowed).toBe(true)
+    }
+    // The (max+1)th is refused — the state a user is in after mashing "resend".
+    expect((await attempt()).allowed).toBe(false)
+    expect(await emailBuckets()).toHaveLength(1)
+  }
+
+  async function eraseThroughTheRealDeletion() {
+    const [row] = await readUser(PADDLE_ID)
+    const token = signSession({ userId: row.id, paddleId: row.paddleId, email: row.email })
+    const result = await deleteUserAccount(
+      new Request('https://app.test/api/account', {
+        method: 'DELETE',
+        headers: { cookie: `session=${encodeURIComponent(token)}` },
+      })
+    )
+    expect(result.success).toBe(true)
+    expect(await readUser(PADDLE_ID)).toHaveLength(0)
+  }
+
+  beforeEach(() => {
+    cancelActiveSubscriptionsForCustomer.mockResolvedValue(undefined)
+    sendMagicLinkEmail.mockResolvedValue(undefined)
+  })
+
+  it('deletes the bucket with the account, so the next attempt is ALLOWED', async () => {
+    await seedUser({ email: STORED, paddleId: PADDLE_ID, subscriptionStatus: 'lifetime' })
+    await exhaustTheThrottle()
+
+    await eraseThroughTheRealDeletion()
+
+    // Row-level first: on `main` the surviving bucket is visible here, which is
+    // the mechanism — not just its symptom below.
+    expect(await emailBuckets()).toEqual([])
+    expect((await attempt()).allowed).toBe(true)
+  })
+
+  it('leaves every OTHER address and scope alone', async () => {
+    await seedUser({ email: STORED, paddleId: PADDLE_ID, subscriptionStatus: 'lifetime' })
+    await exhaustTheThrottle()
+    const bystander = { scope: 'email' as const, subject: 'someone-else@example.test' }
+    const ip = { scope: 'ip' as const, subject: '203.0.113.7' }
+    // SYNTHETIC — no real caller keys a non-email scope by an address. It exists
+    // so the `scope = 'email'` conjunct is load-bearing: a delete keyed on the
+    // subject alone would take this row too (review 74.2).
+    const sameSubjectOtherScope = {
+      scope: 'login-verify' as const,
+      subject: normalizeEmail(TYPED),
+    }
+    for (const bucket of [bystander, ip, sameSubjectOtherScope]) {
+      await checkDbRateLimit({ ...bucket, now: NOW, ...EMAIL_LIMIT })
+    }
+
+    await eraseThroughTheRealDeletion()
+
+    const left = await db.select().from(rateLimits)
+    expect(left.map((r) => [r.scope, r.subject]).sort()).toEqual([
+      ['email', 'someone-else@example.test'],
+      ['ip', '203.0.113.7'],
+      ['login-verify', normalizeEmail(TYPED)],
+    ])
+  })
+
+  it('end to end: throttled, erased, repurchased — the sign-in route sends the link', async () => {
+    fetchPaddleCustomerEmail.mockResolvedValue(TYPED)
+    await seedUser({ email: STORED, paddleId: PADDLE_ID, subscriptionStatus: 'lifetime' })
+    await exhaustTheThrottle()
+    await eraseThroughTheRealDeletion()
+    await post({ ...lifetimeEvent({ customer_id: 'ctm_new' }), occurred_at: at(60) })
+    vi.mocked(logger.info).mockClear()
+
+    // The route reads `Date.now()` for its bucket; pin it to the exhausted
+    // window for this one request only.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(NOW)
+    try {
+      const res = await requestLinkPOST({
+        request: new Request('https://app.test/api/auth/login/request', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: TYPED }),
+        }),
+      })
+      expect(await res.json()).toEqual({ success: true })
+    } finally {
+      clock.mockRestore()
+    }
+
+    expect(logger.info).not.toHaveBeenCalledWith('Magic-link request outcome', {
+      branch: 'throttled',
+      scope: 'email',
+    })
+    await vi.waitFor(() => expect(sendMagicLinkEmail).toHaveBeenCalledTimes(1))
+    expect(sendMagicLinkEmail.mock.calls[0][0]).toBe(TYPED)
   })
 })

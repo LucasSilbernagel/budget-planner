@@ -330,7 +330,7 @@ describe('expired-window reaper', () => {
     await call(1_800_000_000_000)
     const { text } = renderSql(state.captured.executed[0])
     // Load-bearing, not an optimisation: `sync` rows carry BOTH a userId and a
-    // windowStart, so the reaper and account.ts:98 DO select overlapping rows.
+    // windowStart, so the reaper and account.ts's userId delete DO select overlapping rows.
     // SKIP LOCKED makes the sweep step over rows erasure holds rather than wait
     // on them, so PostgreSQL can never pick erasure as a deadlock victim.
     expect(text).toContain('FOR UPDATE SKIP LOCKED')

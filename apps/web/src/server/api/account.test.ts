@@ -53,7 +53,11 @@ vi.mock('@budget-planner/db', () => ({ db: { transaction } }))
 // override `eq` so each WHERE clause target is an inspectable { col, val }.
 vi.mock('drizzle-orm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('drizzle-orm')>()
-  return { ...actual, eq: (col: unknown, val: unknown) => ({ col, val }) }
+  return {
+    ...actual,
+    eq: (col: unknown, val: unknown) => ({ col, val }),
+    and: (...conds: unknown[]) => ({ and: conds }),
+  }
 })
 vi.mock('./auth/paddle', () => ({ getCurrentUserSession }))
 vi.mock('@budget-planner/config', () => ({ getPaddleConfig }))
@@ -92,13 +96,19 @@ const EXPECTED_ORDER = [
   balanceTracking,
   loginTokens,
   rateLimits,
+  // Story 74.2: again, by the email `subject` — the magic-link throttle.
+  rateLimits,
   userProfiles,
   users,
 ]
 
+// Mixed case + padding on purpose (Story 74.2): the email-bucket delete must
+// key on `normalizeEmail(...)`, and only an un-normalized address can show it.
+const SESSION_EMAIL = '  A@Test.Dev '
+
 const authedSession = (userId: string, paddleId = 'pdl_1') => ({
   success: true,
-  data: { userId, email: 'a@test.dev', paddleId, subscriptionStatus: 'active', currency: 'EUR' },
+  data: { userId, email: SESSION_EMAIL, paddleId, subscriptionStatus: 'active', currency: 'EUR' },
 })
 
 const req = (body?: unknown) =>
@@ -123,6 +133,21 @@ describe('deleteUserAccount', () => {
     expect(transaction).toHaveBeenCalledTimes(1)
     expect(txDelete).toHaveBeenCalledTimes(EXPECTED_ORDER.length)
     expect(whereCalls.map((c) => c.table)).toEqual(EXPECTED_ORDER)
+  })
+
+  it('deletes the email-scoped throttle by the NORMALIZED session address (Story 74.2)', async () => {
+    getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
+
+    await deleteUserAccount(req())
+
+    const [byUser, byEmail] = whereCalls.filter((c) => c.table === rateLimits)
+    expect(byUser?.arg).toEqual({ col: rateLimits.userId, val: 'user-A' })
+    expect(byEmail?.arg).toEqual({
+      and: [
+        { col: rateLimits.scope, val: 'email' },
+        { col: rateLimits.subject, val: 'a@test.dev' },
+      ],
+    })
   })
 
   it('returns unauthenticated (→401) and deletes nothing when there is no session', async () => {
@@ -155,12 +180,18 @@ describe('deleteUserAccount', () => {
     getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
 
     // A malicious body naming a different user must be ignored entirely.
-    await deleteUserAccount(req({ userId: 'user-B' }))
+    await deleteUserAccount(req({ userId: 'user-B', email: 'victim@test.dev' }))
 
     const usersDelete = whereCalls.find((c) => c.table === users)
     expect(usersDelete?.arg).toEqual({ col: users.id, val: 'user-A' })
-    // Every WHERE clause targets user-A; none references user-B.
+    // Every WHERE clause targets user-A; none references user-B. The one
+    // keyed by address uses the SESSION's address, never the body's.
     for (const call of whereCalls) {
+      if ('and' in (call.arg as object)) {
+        const vals = (call.arg as { and: Array<{ val: unknown }> }).and.map((c) => c.val)
+        expect(vals).toEqual(['email', 'a@test.dev'])
+        continue
+      }
       expect((call.arg as { val: unknown }).val).toBe('user-A')
     }
   })
