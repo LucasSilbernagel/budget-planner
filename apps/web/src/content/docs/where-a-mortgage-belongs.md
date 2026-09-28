@@ -1,6 +1,6 @@
 ## Where a mortgage belongs
 
-A mortgage is two things at once, and Longhand keeps them apart on purpose. The
+A mortgage is two things at once, and Longhand Budget keeps them apart on purpose. The
 recurring **payment** is money leaving your account each month, so it belongs
 with your other bills. The **amount still owed** is a debt you are carrying, so
 it belongs with the rest of what you own and owe.
@@ -20,7 +20,7 @@ property as well as the loan against it.
   frequency you actually pay it.
 - The **amount still owed** goes on the [Balance Tracking](/balance) page, as an
   entry of type **Debt**, in the *Current Balance/Value* field. Enter it as a positive
-  number — Longhand subtracts what you owe for you.
+  number — Longhand Budget subtracts what you owe for you.
 - The **property itself** goes on the same page, as a separate entry of type
   **Asset**, with what it is worth today in the *Current Balance/Value* field.
 
@@ -73,7 +73,7 @@ left to save. It is also deliberately left out of the retirement planner's pot:
 that pot is what you have built up, and netting a mortgage off it would answer a
 different question.
 
-Longhand does not ask for your interest rate and does not work out how a loan
+Longhand Budget does not ask for your interest rate and does not work out how a loan
 amortises, so nothing recalculates this figure for you — the amount owed stays
 exactly where you put it until you change it. Update it yourself every few
 months to keep your net worth current.
@@ -86,14 +86,14 @@ The value you enter is part of what you own. It affects:
 - the Net Worth figure on the home page, and the assets bar in the balances
   chart
 
-It does **not** change your cash flow, and Longhand does not ask you to set a
+It does **not** change your cash flow, and Longhand Budget does not ask you to set a
 contribution against it — money you put aside toward something you own belongs
 on the [Savings](/savings) page. An asset stays out of the retirement planner's
 pot as well, for the same reason cash in a savings account does: that pot is
 only what you have invested, and nothing else on the Balance Tracking page
 counts toward it.
 
-Longhand does not track the value for you either. It stays exactly where you put
+Longhand Budget does not track the value for you either. It stays exactly where you put
 it until you change it, so revisit it when the thing is worth meaningfully more
 or less than the figure you entered.
 

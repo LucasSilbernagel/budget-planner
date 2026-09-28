@@ -156,13 +156,13 @@ describe('documentation content accuracy (story 10-4)', () => {
     // `not.toContain('import or export')` above covers the phantom phrasing.
   })
 
-  it('the FAQ frames Longhand as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
+  it('the FAQ frames Longhand Budget as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
     const faq = contentFor('faq')
     expect(faq.toLowerCase()).toContain('planning tool')
     expect(faq).toContain('Lunch Money')
   })
 
-  it('refers to the product as "Longhand", never the retired brands (stories 27-3, brand-1)', () => {
+  it('refers to the product as "Longhand Budget", never the retired brands (stories 27-3, brand-1, brand-2)', () => {
     // The docs rebrand must be complete and stay complete: no doc body or its
     // index metadata may reference a retired wordmark, and the page that names
     // the product (Features) carries the new brand. "Lunch Money" (a third-party
@@ -176,15 +176,14 @@ describe('documentation content accuracy (story 10-4)', () => {
       expect(page.content).not.toContain('SoluBudget')
       expect(page.description).not.toContain('SoluBudget')
     }
-    // Assert the FORMAL form explicitly. `toContain('Longhand')` would be
-    // strictly weaker than the `toContain('SoluBudget')` it replaced, because
-    // the short form is a strict PREFIX of the formal one — so it could not
-    // distinguish the two at exactly the moment brand-1 introduced a form
-    // distinction. Features opens on the formal form (first mention) and uses
-    // the short form thereafter, so both are pinned deliberately.
+    // Assert the FULL name explicitly. `toContain('Longhand')` passes against
+    // both "Longhand" and "Longhand Budget", because the bare word is a strict
+    // PREFIX of the full name, so it cannot tell them apart. Since brand-2 the
+    // docs use the full name after the first mention too, so the first mention
+    // and a later one are both pinned. `brand-form.test.ts` sweeps every page.
     expect(getDocPage('features')?.content).toContain('Longhand Budget is split into')
-    expect(getDocPage('features')?.content).toMatch(/\bLonghand is built for\b/)
-    expect(getDocPage('features')?.description).toContain('Longhand')
+    expect(getDocPage('features')?.content).toMatch(/\bLonghand Budget is built for\b/)
+    expect(getDocPage('features')?.description).toContain('Everything Longhand Budget can do')
   })
 
   it('the Features page pledges no AI, scoped to what was actually verified (brand-1 AC-6)', () => {

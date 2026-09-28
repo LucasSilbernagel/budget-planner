@@ -38,7 +38,7 @@ export const DOC_PAGES: readonly DocPage[] = [
   {
     slug: 'features',
     title: 'Features',
-    description: 'Everything Longhand can do, free and premium.',
+    description: 'Everything Longhand Budget can do, free and premium.',
     content: features,
   },
   // Reference material: after the tour, before the FAQ (story 32.3).

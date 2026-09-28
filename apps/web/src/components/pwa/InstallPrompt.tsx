@@ -192,10 +192,12 @@ export function InstallPrompt() {
       // open "More" sheet tappable where this banner overlaps it. Measured: at
       // z-40 the banner swallowed the whole "Retirement" row while every geometry
       // and `toBeVisible()` assertion still passed.
-      // Short form "Longhand", not "Longhand Budget" (story brand-1, AC-1):
-      // this prompt is about the app icon, and the icon's label is the PWA
-      // `short_name` — which is "Longhand". The two must agree or the user is
-      // told to install one name and gets another on their home screen.
+      // Short form "Longhand", not "Longhand Budget": one of only two places the
+      // product is not called by its full name (story brand-2, Lucas 2026-09-27;
+      // guarded by `brand-form.test.ts`). This prompt is about the app icon, and
+      // the icon's label is the PWA `short_name` — which is "Longhand". The two
+      // must agree or the user is told to install one name and gets another on
+      // their home screen.
       aria-label="Install Longhand"
       className="fixed bottom-[calc(2.625rem_+_18px_+_env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
     >

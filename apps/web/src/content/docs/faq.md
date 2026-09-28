@@ -12,7 +12,7 @@ your device. On the Premium tier, synced data is stored on servers located in
 the European Union — there is no US data residency. See the
 [Privacy Policy](/privacy) for the full details.
 
-### Does Longhand use cookies or track me?
+### Does Longhand Budget use cookies or track me?
 
 No advertising or cross-site tracking. We use privacy-friendly, cookieless
 analytics (counter.dev) that only counts visits with a single non-identifying
@@ -22,7 +22,7 @@ The full list of the services we use is in the [Privacy Policy](/privacy).
 ### How do I reset or clear my data?
 
 Open the [Settings](/settings) page and use **Clear local data**. It removes
-everything Longhand has stored in this browser (your income, expenses,
+everything Longhand Budget has stored in this browser (your income, expenses,
 savings, balances and profiles), asks you to confirm first, and only affects
 this device. As a fallback you can still clear it from your browser's own
 privacy settings (for example, in Chrome: *Settings → Privacy and security →
@@ -34,7 +34,7 @@ EU database, in line with the [Privacy Policy](/privacy).
 
 ### Why do my totals differ from the raw amounts I entered?
 
-Longhand converts every amount to a common monthly basis before adding
+Longhand Budget converts every amount to a common monthly basis before adding
 things together. For example, a weekly expense is multiplied by about 4.33 (the
 average number of weeks in a month) to estimate its monthly cost, so the monthly
 figure is an estimate rather than an exact calendar-month total. This lets income
@@ -50,13 +50,13 @@ away from the same sum added up by hand, see
 
 ### Can I switch between currencies or hide currency symbols?
 
-Yes. Longhand supports a currency-less mode that shows raw numbers, and
+Yes. Longhand Budget supports a currency-less mode that shows raw numbers, and
 an explicit mode that formats amounts with locale-aware symbols. You can switch
 modes from the [Settings](/settings) page.
 
-### Does Longhand track my actual spending?
+### Does Longhand Budget track my actual spending?
 
-No. Longhand is a planning tool for the figures you enter yourself. It
+No. Longhand Budget is a planning tool for the figures you enter yourself. It
 does not connect to your bank or credit card, and it does not import
 transactions or track what you actually spend. If you want to record and
 categorise real spending, use a dedicated spend tracker such as Lunch Money,

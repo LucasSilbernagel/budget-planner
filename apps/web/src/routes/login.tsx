@@ -128,8 +128,8 @@ function LoginPage() {
           <div className="mt-6 p-4 surface-inset rounded-lg border border-default">
             <h3 className="font-medium text-heading mb-1">No account needed</h3>
             <p className="text-sm text-body">
-              You can also use Longhand without an account. Your data will be stored locally on this
-              device only.
+              You can also use Longhand Budget without an account. Your data will be stored locally
+              on this device only.
             </p>
             <a
               href="/"

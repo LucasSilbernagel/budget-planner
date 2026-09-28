@@ -7,13 +7,13 @@ retirement projection charts where your current numbers lead. Premium
 forecasting is a separate what-if workspace: build a scenario from your own
 figures, save it to a searchable list, and reload any of them later.
 
-Longhand is built for **intentional budgeting without bank sync or AI
+Longhand Budget is built for **intentional budgeting without bank sync or AI
 integrations**: you plan with the numbers you enter yourself. The core planner
 needs no account, and the app never connects to your bank or any financial
 institution. If you choose to create an account for syncing, that data is
 hosted in the EU (see below).
 
-**No ads, no trackers, no AI — ever.** Longhand shows no advertising, embeds
+**No ads, no trackers, no AI — ever.** Longhand Budget shows no advertising, embeds
 no third-party trackers, and has no AI features: nothing you enter is sent to a
 model, because there is no model. This holds for every visitor on both tiers.
 
@@ -67,7 +67,7 @@ model, because there is no model. This holds for every visitor on both tiers.
 
 ### Privacy and data location
 
-Longhand is built around data sovereignty. When you upgrade to Premium,
+Longhand Budget is built around data sovereignty. When you upgrade to Premium,
 your synced data is stored on servers located in the European Union. There is
 no US data residency, which keeps your information outside the scope of the US
 CLOUD Act.

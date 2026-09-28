@@ -9,7 +9,7 @@ The free tier needs no account, and your financial data stays in your browser an
 The page itself does load a visit-counting analytics script, and the contact form posts what you type in it, so the guarantee is about your financial data specifically rather than about zero network traffic.
 Premium adds authenticated, EU-hosted multi-device sync.
 
-After the first mention the product is referred to simply as Longhand.
+The product is always called Longhand Budget; the only exceptions are the shorter label under the installed app icon and the install prompt that names it.
 
 <img width="2800" height="1800" alt="Screen Shot 2026-09-14 at 16 51 47" src="https://github.com/user-attachments/assets/bb55f631-9abd-45ee-bc83-53975db88e90" />
 
@@ -19,7 +19,7 @@ https://www.longhandbudget.com/
 
 ## Features
 
-Longhand is split into a Free tier that runs entirely on your device and a Premium tier that adds five capabilities.
+Longhand Budget is split into a Free tier that runs entirely on your device and a Premium tier that adds five capabilities.
 There are no ads, no third-party trackers, and no AI features on either tier.
 
 ### Free
@@ -158,7 +158,7 @@ A full production or paid-tier deployment additionally requires the server secre
 | `SESSION_SECRET` | Server | HMAC-SHA256 key for signed session cookies. **Required in production** - authentication fails closed if it is missing or shorter than 32 characters. Generate with `openssl rand -hex 32`. In development it may be omitted (an insecure fallback is used with a warning). |
 | `SITE_URL` | Server | Public HTTPS origin of the deployed app. **Required in production** - it fails closed if the value is missing, `localhost`, or non-HTTPS, because magic-link emails build absolute links from it. Defaults to `http://localhost:5173` in development. |
 | `EMAIL_API_KEY` | Server | API key for the EU transactional-email provider (Brevo) that sends magic-link login emails. Required in production for the paid tier - the mailer fails closed outside development. A runtime secret; never commit it. |
-| `EMAIL_FROM` | Server | Verified sender address for magic-link emails. Defaults to the Longhand-owned, Brevo-verified `hello@longhandbudget.com`. |
+| `EMAIL_FROM` | Server | Verified sender address for magic-link emails. Defaults to `hello@longhandbudget.com`, the Brevo-verified address Longhand Budget owns. |
 | `PADDLE_ENVIRONMENT` | Server | Selects the Paddle billing environment, `sandbox` or `production`. Defaults to `sandbox` everywhere EXCEPT `GET /api/paddle/checkout-config`, which refuses to serve a default and 500s if this is unset. |
 | `PADDLE_API_KEY` | Server | Paddle billing API key for the paid tier. A runtime secret. |
 | `PADDLE_CLIENT_TOKEN` | Client-safe | Browser token for Paddle.js checkout. Not a secret — safe to expose via `/api/paddle/checkout-config`. |

@@ -3,7 +3,7 @@
 You enter amounts at whatever frequency you actually receive or pay them —
 weekly, every two weeks, monthly, or yearly. Those numbers cannot be added
 together as they stand: a weekly $100 and a yearly $100 are nothing like the
-same amount of money. So Longhand converts every entry to one **common monthly
+same amount of money. So Longhand Budget converts every entry to one **common monthly
 basis** first, adds the monthly figures together, and then re-expresses the
 total at whichever period you have selected.
 
@@ -46,7 +46,7 @@ already doing**. Each of these pairs is algebraically identical:
 - an every-two-weeks amount as a monthly figure: **every two weeks ÷ 2 × 52 ÷
   12**
 
-So if one of your figures disagrees with Longhand's, the two are not using
+So if one of your figures disagrees with Longhand Budget's, the two are not using
 different conversion models. Check the entries themselves — a missing row, a
 duplicate, or an amount recorded at the wrong frequency — rather than looking
 for a different formula. If the gap is only a few cents and every entry checks
@@ -67,7 +67,7 @@ Same figures in a spreadsheet: 2,000×26 + 600×12 + 1,200      = $60,400.00
                                                     difference =       4¢
 ```
 
-Every figure there is what Longhand actually renders for those three entries.
+Every figure there is what Longhand Budget actually renders for those three entries.
 
 ### Why a few cents go missing
 
@@ -88,11 +88,11 @@ total is rounded once over everything. At the weekly and every-two-weeks views �
 the two whose factors are not whole numbers — those two routes can land a cent or
 two apart. At the monthly and yearly views they agree exactly, which is why you
 only see that note on the other two. Where a breakdown can differ from the total
-beside it, Longhand says so on the page rather than leaving you to find it.
+beside it, Longhand Budget says so on the page rather than leaving you to find it.
 
 This is also why a single **$100.00 yearly** entry shows as **$99.96** at the
 yearly view: $100.00 ÷ 12 is $8.333…, which becomes $8.33, and $8.33 × 12 is
-$99.96. The four cents are the rounding, not a lost payment. Longhand rounds this
+$99.96. The four cents are the rounding, not a lost payment. Longhand Budget rounds this
 way on purpose, and always from the same monthly figure, so a total is never
 quietly recomputed a second way — the few cents you see are the ones described
 here.
