@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEGAL_PAGES, PRICING_PAGE, getLegalPage } from '../index'
+import { LEGAL_PAGES, PRICING_PAGE, PRIVACY_PAGE, getLegalPage } from '../index'
 
 /**
  * Legal/commercial content registry tests (story 5-13, updated in stories 10-3,
@@ -96,6 +96,117 @@ describe('getLegalPage', () => {
 
   it('returns undefined for an unknown slug', () => {
     expect(getLegalPage('does-not-exist')).toBeUndefined()
+  })
+})
+
+/**
+ * Story 73.1 — the privacy policy states a retention period for lapsed
+ * accounts (FR115). The period is a COMMITMENT, not a description of a running
+ * job: the purge is story 73.2, and no account can come due before 2027-09-10
+ * (production went live 2026-09-10), which is the only reason "we will delete"
+ * is true today. So the section must not describe an automatic process.
+ *
+ * Every assertion is scoped to the section, and most to a single bullet, so a
+ * phrase moved into the wrong bullet (an exemption turned into a deletion
+ * trigger) goes red. The extractors THROW when a heading or bullet is missing,
+ * so no assertion can pass against an empty string.
+ */
+describe('privacy page: retention period (story 73.1)', () => {
+  const RETENTION_HEADING = /^## How long we keep your data$/gm
+
+  function retentionSection(): string {
+    const content = PRIVACY_PAGE.content
+    // Anchored to a whole line, so a demoted `### How long…` does not count,
+    // and required exactly once, so a second, contradicting section cannot hide
+    // behind the first.
+    const headings = [...content.matchAll(RETENTION_HEADING)]
+    if (headings.length !== 1) {
+      throw new Error(`privacy.md must have exactly one retention h2, found ${headings.length}`)
+    }
+    const rest = content.slice((headings[0].index ?? 0) + headings[0][0].length)
+    const next = rest.search(/^## /m)
+    return next === -1 ? rest : rest.slice(0, next)
+  }
+
+  function bullet(label: string): string {
+    const found = retentionSection()
+      .split(/^- /m)
+      .find((item) => item.startsWith(`**${label}**`))
+    if (found === undefined) {
+      throw new Error(`retention section has no "${label}" bullet`)
+    }
+    return found
+  }
+
+  it('states one period, 12 months, however a period might be written', () => {
+    // EVERY duration the section states must be 12 months. A bare
+    // `toMatch(/12 months/)` stayed green when one of the two mentions was
+    // changed to 24 (control run in story 73.1), and a digits-plus-"months"
+    // pattern missed "12 years", "a year" and "twelve months" (73.1 review).
+    const section = retentionSection().replaceAll('*', '')
+    const durations = [
+      ...section.matchAll(
+        /\b(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty[\s-]four)[\s-]+(day|week|month|year)s?\b/gi
+      ),
+    ].map((match) => `${match[1].toLowerCase()} ${match[2].toLowerCase()}`)
+    expect(durations.length).toBeGreaterThan(0)
+    expect(
+      durations.every((duration) => duration === '12 month'),
+      `durations stated: ${durations}`
+    ).toBe(true)
+  })
+
+  it('exempts every entitled account in the Premium bullet: active, payment retried, lifetime', () => {
+    const premium = bullet('While you have Premium')
+    expect(premium).toMatch(/as long as your Premium access continues/)
+    expect(premium).toMatch(/payment is being retried/)
+    // A lifetime purchase CAN be revoked (refund or chargeback sets `canceled`,
+    // webhooks/paddle.ts handleAdjustment), so "never lapses" would be false.
+    expect(premium).toMatch(/lifetime license \(unless the purchase is refunded or charged back\)/)
+  })
+
+  it('states the trigger, the clock and the commitment in the lapse bullet', () => {
+    const lapsed = bullet('After Premium access ends')
+    // Any loss of access, not only a subscription ending: a revoked lifetime
+    // lands in the same `canceled` state 73.2 will select.
+    expect(lapsed).toMatch(/if your Premium access ends/)
+    expect(lapsed).toMatch(/a purchase is refunded or charged back/)
+    // Buying lifetime also stops the clock, and it is not a "resubscription".
+    expect(lapsed).toMatch(/you do not buy Premium again/)
+    // D1 (Lucas, 2026-09-27): the clock runs from the end of access, and a
+    // sign-in does not reset it.
+    expect(lapsed).toMatch(/from the day your access ended/)
+    expect(lapsed).toMatch(/Signing in during that time does not reset the 12 months/)
+    // The commitment itself, future tense. The self-service bullet also says
+    // "delete your account and all of your synced data", so pin the "we will".
+    expect(lapsed).toMatch(/we will delete your account and all of your synced data/)
+    expect(lapsed).toMatch(/We will email you before that happens/)
+    expect(lapsed).not.toMatch(/payment is being retried|lifetime license/)
+  })
+
+  it('covers the Premium account and its synced data, not the free tier', () => {
+    const section = retentionSection()
+    // The account row (email, Paddle customer id) is personal data too, and it
+    // is deleted with the synced data, so the scope names both.
+    expect(section).toMatch(/covers your Premium account and the data it syncs/)
+    expect(section).toMatch(/Free-tier data stays on your device/)
+  })
+
+  it('points a lapsed user at self-service deletion, and the section it cites exists after it', () => {
+    const self = bullet("You don't have to wait")
+    expect(self).toMatch(/at any time from Settings/)
+    expect(self).toMatch(/see "Your rights" below/)
+    const content = PRIVACY_PAGE.content
+    const rights = content.search(/^## Your rights$/m)
+    expect(rights, 'privacy.md has no "## Your rights" section').toBeGreaterThan(
+      content.search(RETENTION_HEADING)
+    )
+  })
+
+  it('does not describe an automatic deletion that is not yet running (73.2)', () => {
+    expect(retentionSection()).not.toMatch(
+      /\b(automatic(ally)?|automated|auto-?delet\w*|scheduled|nightly|daily|weekly|periodic(ally)?|cron|job|every (night|day|week|month))\b|our system deletes/i
+    )
   })
 })
 

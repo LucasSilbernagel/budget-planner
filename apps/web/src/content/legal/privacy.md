@@ -1,6 +1,6 @@
 _This page is informational and does not constitute legal advice._
 
-_Last updated: 7 August 2026_
+_Last updated: 27 September 2026_
 
 This Privacy Policy explains what data Longhand Budget ("we", "the Service") handles and how.
 We have designed the Service to collect as little personal data as possible.
@@ -21,6 +21,19 @@ Clearing your browser data clears your Longhand Budget data.
 If you create a Premium account, your financial data is stored so it can be synced across your devices.
 **Your financial data is hosted exclusively on DanubeData infrastructure in Germany (EU); we do not store or process it in the United States.**
 Some third parties we rely on operate outside the EU — most notably our payment processor, **Paddle (United Kingdom)** — and handle only the limited data needed for their function, as described below.
+
+## How long we keep your data
+
+This section covers your Premium account and the data it syncs to our servers.
+Free-tier data stays on your device and never reaches us.
+
+- **While you have Premium** — we keep your account and synced data for as long as your Premium access continues.
+  This includes a subscription whose payment is being retried, and a lifetime license (unless the purchase is refunded or charged back).
+- **After Premium access ends** — if your Premium access ends (for example, your subscription ends, or a purchase is refunded or charged back) and you do not buy Premium again, we keep your account and synced data for **12 months** from the day your access ended, so you can pick up where you left off if you come back.
+  Signing in during that time does not reset the 12 months.
+  After those 12 months we will delete your account and all of your synced data from our EU database.
+  We will email you before that happens.
+- **You don't have to wait** — you can delete your account and all of your synced data yourself at any time from Settings (see "Your rights" below).
 
 ## Cookies and device storage
 

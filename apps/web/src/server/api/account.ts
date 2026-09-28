@@ -2,7 +2,7 @@
  * Account management server functions (Story 10-5)
  *
  * Real, self-serve account ERASURE backing the Privacy Policy's "right to
- * erasure" promise (privacy.md:81) — GDPR Art. 17 / PIPEDA. This is a hard
+ * erasure" promise (privacy.md, "Your rights") — GDPR Art. 17 / PIPEDA. This is a hard
  * DELETE of the user and every row they own, NOT a flip of the `isDeleted`
  * sync tombstone (Story 4-18): that tombstone is a cross-device delete-
  * propagation mechanism and leaves the financial values in the EU database,
