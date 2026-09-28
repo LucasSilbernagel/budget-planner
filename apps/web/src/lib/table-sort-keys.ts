@@ -134,12 +134,12 @@ interface SavingsRow {
  * caller memoises on `[allocations, getProgress]` alongside the rows.
  *
  * `monthlyAllocation` reproduces the cell's own expression exactly (story 26.3):
- * an account is AUTOMATIC iff the solver placed it in `allocations` — membership
- * is what discriminates automatic from manual, and a manual amount is floored at 0
+ * a row is AUTOMATIC iff the solver placed it in `allocations` — membership is
+ * what discriminates automatic from manual, and a manual amount is floored at 0
  * to match the solver. Sorting by the stored field instead would order rows by a
- * number they never display — which is also why a goal-less ACCOUNT, excluded from
- * the allocation by story 64.1 and rendered as “—”, keys as null rather than as its
- * stored amount.
+ * number they never display. Story 72.1 removed 64.1's account branch (which keyed
+ * a target-less row as null because its cell showed “—”): every row now shows a
+ * figure, so every row keys by it.
  */
 export function createSavingsSortExtractors(
   allocations: Readonly<Record<string, number>>,
@@ -149,20 +149,10 @@ export function createSavingsSortExtractors(
     name: (row) => textOrNull(row.name),
     target: (row) => finiteOrNull(row.targetAmount),
     currentBalance: (row) => finiteOrNull(row.currentBalance),
-    // ⚠️ Story 64.1: THREE states, matching the cell. A goal-less account receives
-    // no allocation and renders “—”, so its key is null and it sorts last in both
-    // directions — exactly as "No target" does in the `target` column above.
-    // Falling through to the stored amount ordered a row that displays “—” by an
-    // invisible number: measured descending, a stale 300.00 account sorted ABOVE a
-    // visible 100.00 goal, and two “—” rows were split by figures neither showed.
     monthlyAllocation: (row) =>
-      row.targetAmount == null
-        ? null
-        : finiteOrNull(
-            row.id in allocations
-              ? allocations[row.id] ?? 0
-              : Math.max(0, row.monthlyAllocation ?? 0)
-          ),
+      finiteOrNull(
+        row.id in allocations ? allocations[row.id] ?? 0 : Math.max(0, row.monthlyAllocation ?? 0)
+      ),
     progress: (row) => finiteOrNull(getProgress(row.id)),
   }
 }

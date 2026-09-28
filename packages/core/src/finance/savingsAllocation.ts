@@ -16,35 +16,26 @@
  *   contribution and manual-allocation deductions.
  */
 
-import {
-  type AllocationMode,
-  isSavingsAccount,
-  resolveAllocationMode,
-} from '../services/savingsGoals'
+import { type AllocationMode, resolveAllocationMode } from '../services/savingsGoals'
 import { type NormalizableFinancialItem, calculateNetPeriodIncome } from './netIncome'
 import { normalizeToMonthly } from './normalization'
 
 /**
- * A savings account/goal as the solver needs it — a subset of `ClientSavingsGoal`.
- * - `targetAmount` null ⇒ a goal-less savings account, which takes NO part in the
- *   allocation at all (Story 64.1, FR98). See `isExcludedFromAllocation` below.
+ * A savings row as the solver needs it — a subset of `ClientSavingsGoal`.
  * - `allocationMode` absent ⇒ treated as `automatic` (see `resolveAllocationMode`).
- * - `monthlyAllocation` is the fixed amount (cents) for `manual` accounts and is
- *   ignored for `automatic` accounts; absent/`null` counts as 0.
+ * - `monthlyAllocation` is the fixed amount (cents) for `manual` rows and is
+ *   ignored for `automatic` rows; absent/`null` counts as 0.
  *
- * ⚠️ `targetAmount` is REQUIRED, and that is deliberate rather than strict for its
- * own sake. "No target" is expressed as an ABSENT value (`null`/undefined — see
- * `isSavingsAccount`), so an OPTIONAL field here would make every caller that
- * simply forgot to pass one look exactly like a caller declaring an account, and
- * the row would be silently dropped from the solve with nothing to catch it. When
- * this field was added, all 44 account literals in this module's own test suite
- * omitted it — under an optional declaration every one of them would have flipped
- * to "account", zeroed every allocation figure in the suite, and still compiled.
- * Required makes `tsc` name each site instead. Do not relax it.
+ * Every row takes part, goal or target-less account alike (Story 72.1, FR114).
+ * There is deliberately NO `targetAmount` here: the solver does not read it. Story
+ * 64.1 (FR98) once excluded target-less rows and declared the field REQUIRED so
+ * that an absent value could not silently mean "account"; 72.1 reversed that rule,
+ * and a declared field nothing reads would only advertise a capability that does
+ * not exist. Callers may still pass whole `ClientSavingsGoal` rows — held in a
+ * variable they are not excess-property-checked — and the target is ignored.
  */
 export interface AllocationAccount {
   id: string
-  targetAmount: number | null
   allocationMode?: AllocationMode
   monthlyAllocation?: number | null
 }
@@ -84,17 +75,15 @@ export interface AutomaticAllocationInput {
 
 /**
  * Result of solving the automatic allocations.
- * `allocations` maps each automatic GOAL's id to its computed even-share in cents;
- * manual goals are absent, and so are goal-less savings accounts of either mode
- * (Story 64.1).
+ * `allocations` maps each automatic row's id (goal or target-less account) to its
+ * computed even-share in cents; manual rows are absent.
  *
  * ⚠️ `Σ allocations === distributablePool` holds **whenever at least one automatic
- * goal remains**. With none, the pool is still computed and reported while
+ * row exists**. With none, the pool is still computed and reported while
  * `allocations` is empty, so the sum is 0 and the identity does NOT hold. That is
  * intended, not a gap: `SavingsPage` renders the leftover figure with an explicit
- * "nothing is set to receive it" message, which needs the real pool. This was
- * always true of the `count === 0` path; story 64.1 only made it reachable for a
- * user who has savings rows but no goals among them.
+ * "nothing is set to receive it" message, which needs the real pool. It is
+ * reachable only when every row is manual (or there are no rows).
  */
 export interface AutomaticAllocationResult {
   distributablePool: number // cents, always >= 0
@@ -108,49 +97,13 @@ function isManual(account: AllocationAccount): boolean {
 }
 
 /**
- * True when a row takes NO part in the allocation at all (Story 64.1, FR98).
- *
- * A target-less entry is a savings ACCOUNT — a balance the user wanted to record,
- * not something they are saving toward — so it is asked for no monthly allocation
- * and given none. It is excluded from BOTH arms: it does not consume the manual
- * deduction in `sumManualAllocations` and it does not receive an automatic share in
- * `solveAutomaticAllocations`. Excluding only one arm would leave a manual account
- * shrinking a pool it can no longer draw from.
- *
- * ⚠️ Delegates to `isSavingsAccount`, which is the declared single source of truth
- * for the goal-vs-account discriminator (Story 16-1) and uses LOOSE equality. Do
- * not re-implement it as `targetAmount === null`: an absent key means the same
- * thing as an explicit null, and a strict check would keep allocating to such a
- * row. Do not reach for `!targetAmount` either — a target of 0 is a goal, and the
- * suite pins that.
- *
- * ⚠️ Two boundaries worth stating plainly. (1) `undefined` is OUT OF CONTRACT for the
- * declared type, which is `number | null`; it is nonetheless treated as an account,
- * because rows reach the solver from paths that do not validate (a server pull, a
- * hand-edited localStorage blob) and the loose check costs nothing. The suite covers
- * it through a cast, not because the type permits it. (2) `isSavingsAccount` is NOT
- * re-exported from this package's public index — only the `AllocationMode` type is
- * (see `src/index.ts`, which records why the `services/savingsGoals` subpath does not
- * resolve for consumers) — so `apps/web` cannot call it and hand-rolls the same
- * `== null` check at its three read sites. That parity is unguarded; widening the
- * public surface is the fix if it ever drifts.
- */
-function isExcludedFromAllocation(account: AllocationAccount): boolean {
-  return isSavingsAccount(account)
-}
-
-/**
  * Sums the manual savings allocations, treating absent/null/non-finite/negative
  * amounts as 0 (so a malformed amount can never poison the pool with NaN).
- *
- * Story 64.1: a goal-less savings account is skipped even when it carries a stored
- * manual amount. `SavingsPage` neutralizes that field on save, but a row can still
- * arrive with a stale value from a server pull or hand-edited localStorage, and it
- * must not silently reserve money against a row that receives nothing.
+ * Every manual row counts, target-less or not (Story 72.1).
  */
 function sumManualAllocations(savingsAccounts: AllocationAccount[]): number {
   return (savingsAccounts || []).reduce((sum, account) => {
-    if (isExcludedFromAllocation(account) || !isManual(account)) {
+    if (!isManual(account)) {
       return sum
     }
     const amount = account.monthlyAllocation
@@ -208,15 +161,13 @@ export function calculateDistributablePool(input: AutomaticAllocationInput): num
 
 /**
  * Solves the automatic leftover allocation: computes the distributable pool and
- * splits it evenly across the automatic savings accounts with exact cents.
+ * splits it evenly across the automatic savings rows with exact cents.
  *
- * Among the rows that take part at all, "automatic" is the complement of "manual":
- * every one that is not in `manual` mode receives a share (an absent or
- * unrecognized mode defaults to automatic). That split stays exhaustive, so no
- * participating account — and no cent of the pool — is ever dropped.
- *
- * Story 64.1 adds a third population ahead of that split: goal-less savings
- * accounts, which take part in neither arm (see `isExcludedFromAllocation`).
+ * Every row takes part, and "automatic" is the complement of "manual": every row
+ * that is not in `manual` mode receives a share (an absent or unrecognized mode
+ * defaults to automatic). That split is exhaustive — there are exactly TWO
+ * populations — so no row and no cent of the pool is ever dropped. Whether a row
+ * has a target plays no part (Story 72.1, reversing 64.1's third population).
  *
  * The even share is `floor(pool / N)`, and the leftover cents (`pool mod N`, a
  * value in `0..N-1`) are handed out one-at-a-time to the automatic accounts in
@@ -225,18 +176,16 @@ export function calculateDistributablePool(input: AutomaticAllocationInput): num
  * Account ids are assumed unique (they are uuid primary keys). Duplicate ids
  * would collapse in the `allocations` record and break the sum invariant.
  *
- * @returns The pool, the count of automatic goals, and the per-account
- *   allocations (automatic goals only). With zero automatic goals, the pool is
- *   still computed but `allocations` is empty — see the note on
- *   `AutomaticAllocationResult` about the sum identity.
+ * @returns The pool, the count of automatic rows, and the per-row allocations
+ *   (automatic rows only). With zero automatic rows, the pool is still computed
+ *   but `allocations` is empty — see the note on `AutomaticAllocationResult`
+ *   about the sum identity.
  */
 export function solveAutomaticAllocations(
   input: AutomaticAllocationInput
 ): AutomaticAllocationResult {
   const distributablePool = calculateDistributablePool(input)
-  const automaticAccounts = (input.savingsAccounts || []).filter(
-    (account) => !isExcludedFromAllocation(account) && !isManual(account)
-  )
+  const automaticAccounts = (input.savingsAccounts || []).filter((account) => !isManual(account))
   const count = automaticAccounts.length
 
   const allocations: Record<string, number> = {}

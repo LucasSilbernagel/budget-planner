@@ -428,7 +428,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-25
+last_updated: 2026-09-27
 baseline_commit: 821544f  # 2026-09-25 reset to HEAD by sprint-planning for BATCH 14 (was 9f9ae1a, set for the now-closed batch 13). Tree clean; epics 1-68 + all standalones committed.
 project: budget-planner
 project_key: NOKEY
@@ -948,6 +948,7 @@ development_status:
   cleanup-3-remove-the-unreachable-financial-data-module-and-fix-the-migrations-readme: done  # **BATCH 13** (SCP 2026-09-24), standalone, lowest priority. (1) `apps/web/src/server/api/data/financialData.ts` is exported ONLY through the `server/api/data/index.ts:9` barrel and has no application consumer — delete it or wire it up, and record the decision. ⚠ It contains dead duplicate savings write paths modelling a required non-nullable target (`:561` `createSavingsGoal`, `:591` `updateSavingsGoal`) that CONTRADICT the live `/api/sync/*` path, which carries null through; confirm the live path is unaffected, and record that if `syncFinancialData` is ever wired for free->paid seeding these MUST be relaxed first or accounts silently drop goals on upgrade. (2) `packages/db/migrations/README.md` instructs the reader to run `0000_fix_users_id_type_to_uuid.sql` (`:9`, `:43`, `:78`) — **a file that does not exist**. ⚠ "Never read by X" is not "dead": check each symbol's SERIALIZATION path, not only its compute path, before deleting. ⚠ **CITATIONS CORRECTED at context time (2026-09-24):** `createSavingsGoal` is at **`:563`** and `updateSavingsGoal` at **`:606`**, not `:561`/`:591`; and the README names the phantom file at **FOUR** sites — `:9`, `:43`, `:78` AND **`:99`** — not the three listed above.
 
   seo-1-classify-welcome-in-robots-and-ship-a-sitemap: done  # Standalone, CREATED 2026-09-25 at `c224665` (Lucas, after a Search Console 'No robots.txt' report — MEASURED: prod serves robots.txt 200, report is stale/apex row, NOT a defect). Disallow `/welcome` (unclassified since 5-3), static `public/sitemap.xml` + `Sitemap:` line, enumerating route/robots/sitemap test. ⚠⚠ `node-adapter.mjs` has NO `.xml` MIME → octet-stream in prod, invisible to e2e (dev server).
+  brand-2-say-longhand-budget-wherever-the-name-is-user-visible: backlog  # Standalone, CREATED 2026-09-27 (Lucas): replace every user-visible bare "Longhand" with "Longhand Budget". ⚠⚠ REVERSES brand-1 AC-1's deliberate rule (formal form on first mention, short form after; PWA `short_name` = "Longhand", pinned by `pwa-manifest.test.ts` + `e2e/pwa-install.spec.ts` + InstallPrompt 'Install Longhand'). DECIDED (Lucas 2026-09-27): PWA `short_name` STAYS "Longhand" and so does InstallPrompt's 'Install Longhand' (they must agree) — the ONLY exceptions. Context grep at `88ecbb1` (bare-Longhand, excl. tests): UI copy login.tsx:131, docs/index.ts:41; 20 in `src/content/docs/*.md`; plus `pwa.config.mjs` + email templates to re-check. Code comments/identifiers are NOT user-visible — exclude.
 
   # BATCH 14 (added 2026-09-25 by sprint-planning; epics 69-74 / FR108-FR118, drafted from the 2026-09-25 feedback batch). Read each epic's **Notes:** block in epics.md before contexting — three of the eight feedback items rested on a premise that measured false.
   epic-69: done  # ✅ CLOSED 2026-09-25 with 69.3 (all three stories done; 69.3 UNCOMMITTED). A Nav Bar That Shows Where Things Are.
@@ -965,8 +966,8 @@ development_status:
   71-1-hide-the-ends-before-retirement-question-when-the-planner-is-off: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-25 (3 layers, Fable), UNCOMMITTED, baseline `31f098e`. 9 patches applied, 0 deferred, 5 dismissed. Final: web 3405/223, core 941/27, DB 276+7, tsc 0/0/0, Biome 0/619, e2e 517+4. DEV DONE 2026-09-25, UNCOMMITTED, baseline `31f098e`. Gates (frozen tree): web 3404/223, core 941/27, DB 276+7, tsc 0/0/0, Biome 0/619, e2e 517+4. M1/M2/M4 red, M3 green as predicted; e2e M2 red. Contexted 2026-09-25 at `31f098e`. D1 row badge hides too; D2 omit endsBeforeRetirement from handleSubmit when hidden (seeding stays unconditional); D3 RetirementDisabledNotice copy moves. Round-trip test CANNOT be red on main — M2 mutation is its proof.
   epic-71-retrospective: optional
 
-  epic-72: backlog  # Every Savings Entry Can Receive An Allocation. REVERSES 64.1/FR98 (decision taken, Lucas 2026-09-25).
-  72-1-allow-allocation-on-target-less-savings-entries: backlog  # ⚠⚠ Existing target-less rows were FORCED to automatic/null — lifting the exclusion silently starts them drawing a share. The story must state the backfill.
+  epic-72: done  # Every Savings Entry Can Receive An Allocation. REVERSES 64.1/FR98 (decision taken, Lucas 2026-09-25).
+  72-1-allow-allocation-on-target-less-savings-entries: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-27 (UNCOMMITTED). Review (3 layers, Opus): 1 decision (summary copy "entry/entries", Lucas), 11 patches, 4 deferred, 4 dismissed. Final (frozen tree): web 3439/224, core 943/27, DB 276+7, tsc 0/0/0, Biome 0/621, e2e 518+4.
   epic-72-retrospective: optional
 
   epic-73: backlog  # A Stated Retention Period For Lapsed Accounts. 73.1 publishes, 73.2 enforces; 12 months is NOT yet confirmed.

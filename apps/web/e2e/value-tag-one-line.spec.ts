@@ -70,40 +70,42 @@ test.describe('Story 42.3 — value and tag on one line at 320px', () => {
     // otherwise a third seeded row would be silently unchecked, which is the
     // "[0] indexing" hole in a different costume.
     //
-    // ⚠️ Story 64.1: this enumerates rows by their Auto/Fixed PILL, and only a GOAL
-    // has one now. The seed holds two rows — `sav-1` (a manual goal) and `sav-2` (a
-    // goal-less account) — so exactly ONE id is expected here, not two. `sav-2` is
-    // not missing; it receives no allocation and therefore renders a dash with no
-    // pill, which the case below pins so its absence stays deliberate rather than
-    // becoming a silently unchecked row.
+    // Story 72.1 (reverses 64.1 / FR98): BOTH seeded rows carry a pill again —
+    // `sav-1` (a manual goal) and `sav-2` (a target-less account, automatic).
+    // 64.1 expected only `sav-1` here because it gave accounts a dash and no pill.
     const rowIds = await page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-testid^="savings-allocation-mode-"]')).map((el) =>
         (el.getAttribute('data-testid') ?? '').replace('savings-allocation-mode-', '')
       )
     )
-    expect(rowIds.sort()).toEqual(['sav-1'])
+    expect(rowIds.sort()).toEqual(['sav-1', 'sav-2'])
 
-    // The other half of the fixture: the account row's cell, pinned at 320px so
-    // "no pill" cannot quietly become "no cell" or "a stale figure".
+    // The account row, pinned at 320px: it shows a real figure and an Auto pill,
+    // and its amount keeps the nowrap class token. `sav-2` is the ONLY automatic
+    // row (`sav-1` is manual), so it receives the WHOLE pool. That figure depends
+    // on the seeded income, expenses and contributions, so it is not hard-coded:
+    // it is compared against the pool the leftover summary shows ("<pool>/mo split
+    // across 1 automatic entry"), which a zero or stale figure cannot match.
     const account = await page.evaluate(() => {
       const amount = document.querySelector('[data-testid="savings-allocation-sav-2"]')
+      const pill = document.querySelector('[data-testid="savings-allocation-mode-sav-2"]')
       if (!amount) {
         throw new Error('the account row rendered no allocation cell')
       }
       return {
         text: amount.textContent?.trim() ?? '',
-        // ⚠️ The class, not a line count. A lone em dash occupies one glyph and
-        // CANNOT wrap, so `getClientRects().length === 1` holds however the cell is
-        // styled — it fails only on `display:none`. An earlier revision asserted it
-        // under the message "the account row dash wrapped at 320px", a failure that
-        // cannot occur; code review caught it. The class token is the real contract,
-        // and it is what keeps the cell correct if the dash is ever replaced by text.
         nowrap: (amount.getAttribute('class') ?? '').includes('whitespace-nowrap'),
-        hasPill: Boolean(document.querySelector('[data-testid="savings-allocation-mode-sav-2"]')),
+        pill: pill?.textContent?.trim() ?? null,
+        summary:
+          document.querySelector('[data-testid="savings-leftover-summary"]')?.textContent ?? '',
       }
     })
-    expect(account.text).toBe('—')
-    expect(account.hasPill, 'an account row must carry no Auto/Fixed pill').toBe(false)
+    expect(account.text, 'the account row must show a figure, not a dash').toMatch(/\d\.\d{2}/)
+    expect(account.pill, 'the account row must carry its Auto/Fixed pill').toBe('Auto')
+    expect(account.summary, 'sav-2 must receive the whole pool').toContain(
+      `${account.text}/mo split across 1 automatic entry`
+    )
+    expect(account.text, 'the whole pool here is non-zero').not.toMatch(/^\D*0\.00$/)
     expect(account.nowrap, 'the account row amount lost its nowrap protection').toBe(true)
 
     for (const id of rowIds) {

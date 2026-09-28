@@ -142,33 +142,35 @@ describe('value/tag pairs on the Savings table', () => {
         )
       }
 
-      // ⚠️ Story 64.1: there are now TWO allocation-cell shapes, and which one a
-      // row gets is decided by whether it is a goal. A GOAL carries an Auto/Fixed
-      // pill. A goal-less ACCOUNT receives no allocation at all, so it renders a
-      // dash with NO pill — claiming either mode would be false. Both shapes still
-      // owe the nowrap amount and the pair wrapper asserted above; only the pill is
-      // conditional.
+      // ⚠️ Story 72.1 (reverses 64.1 / FR98): ONE allocation-cell shape again.
+      // Every row — goal or target-less account — carries a figure AND an
+      // Auto/Fixed pill. 64.1 briefly gave accounts a dash with no pill; that
+      // branch is gone, so every row owes the pill's tokens.
       //
-      // ⚠️ Classified from the STORE, never from the rendered text. Keying off
-      // `textContent === '—'` would let the code grade its own homework: a GOAL that
-      // regressed to a dash-with-no-pill would be reclassified as an account and
-      // this loop would pass it. Code review caught exactly that.
+      // ⚠️ Still classified from the STORE, never from the rendered text: the id
+      // must match a seeded row, and the seed deliberately holds one of each kind
+      // (asserted), so an account row cannot quietly drop out of this loop.
       const rowId = (id ?? '').replace('savings-allocation-', '')
       const seeded = useSavingsStore.getState().savingsGoals.find((g) => g.id === rowId)
       expect(seeded, `${id} matches no seeded savings row`).toBeDefined()
-      const isAccountRow = seeded?.targetAmount == null
       const tag = pair?.querySelector('[data-testid^="savings-allocation-mode-"]')
-      if (isAccountRow) {
-        expect(tag, `${id} is an account row and must carry NO Auto/Fixed tag`).toBeNull()
-      } else {
-        expect(tag, `${id} has no Auto/Fixed tag`).not.toBeNull()
-        for (const token of expectedTokens('RESPONSIVE_TAG_CLASS', RESPONSIVE_TAG_CLASS)) {
-          expect(tokens(tag?.getAttribute('class')), `${id} tag is missing ${token}`).toContain(
-            token
-          )
-        }
+      expect(tag, `${id} has no Auto/Fixed tag`).not.toBeNull()
+      for (const token of expectedTokens('RESPONSIVE_TAG_CLASS', RESPONSIVE_TAG_CLASS)) {
+        expect(tokens(tag?.getAttribute('class')), `${id} tag is missing ${token}`).toContain(token)
       }
     }
+    // Both kinds were actually checked above: the seed holds one goal and one
+    // target-less account, and the loop visited a cell for EXACTLY the seeded
+    // rows — compared by id, not by count.
+    const seededRows = useSavingsStore.getState().savingsGoals
+    expect(seededRows.map((g) => (g.targetAmount == null ? 'account' : 'goal')).sort()).toEqual([
+      'account',
+      'goal',
+    ])
+    const visitedIds = amounts
+      .map((el) => (el.getAttribute('data-testid') ?? '').replace('savings-allocation-', ''))
+      .sort()
+    expect(visitedIds).toEqual(seededRows.map((g) => g.id).sort())
   })
 
   it('EVERY name cell protects its badge but leaves the name wrappable (AC-2)', () => {
@@ -220,15 +222,15 @@ describe('value/tag pairs on the Savings table', () => {
     // `for…of` assertion loop, and this case shipped without one — caught in
     // code review, one test after the doctrine was written.
     //
-    // The arithmetic, restated for Story 64.1: the two seeded rows are one GOAL
-    // and one ACCOUNT. They give 2 amounts + 2 badges, plus a mode pill for the
-    // GOAL ONLY — the account receives no allocation and so carries no Auto/Fixed
-    // pill — so 5 protected elements, not 6. The floor is stated as the exact
-    // expected count so that LOSING a protected element still fails here.
+    // The arithmetic, restated for Story 72.1: the two seeded rows are one GOAL
+    // and one target-less ACCOUNT, and both are allocated. Each gives 1 amount +
+    // 1 Auto/Fixed pill + 1 badge, so 2 × 3 = 6 protected elements. (64.1 had 5:
+    // it gave the account no pill.) The floor is stated as the exact expected
+    // count so that LOSING a protected element still fails here.
     expect(
       nowrapped.length,
       'no element carries whitespace-nowrap — this case would assert nothing'
-    ).toBe(5)
+    ).toBe(6)
     for (const el of nowrapped) {
       const testId = el.getAttribute('data-testid') ?? ''
       const isTag =
