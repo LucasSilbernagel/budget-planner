@@ -2,7 +2,8 @@ import { useSync } from '@/hooks/useSync'
 import { seedOnce } from '@/lib/sync/seedLocalData'
 import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
-import { useEffect, useRef } from 'react'
+import { type ReactElement, useEffect, useRef } from 'react'
+import { RefusedEditNotice } from './RefusedEditNotice'
 
 /**
  * The sync engine, split out so it is DOWNLOADED ONLY BY A PAID SESSION
@@ -21,10 +22,11 @@ import { useEffect, useRef } from 'react'
  * subtree cannot appear in the SSR HTML and there is nothing for a `Suspense`
  * fallback to diverge from.
  *
- * ⚠️ This is wiring, not UI — it renders `null`. The one-chunk delay before it
- * mounts is invisible, and the ordering it depends on (`activeProfileReconciled`
- * before the bridge registers) is enforced inside this file, not by when the
- * module arrives.
+ * ⚠️ This is mostly wiring. Its only UI is the refused-edit notice (story
+ * 75.2), which renders nothing until the server permanently refuses an edit. The
+ * one-chunk delay before it mounts is invisible, and the ordering it depends on
+ * (`activeProfileReconciled` before the bridge registers) is enforced inside
+ * this file, not by when the module arrives.
  */
 
 /**
@@ -32,7 +34,7 @@ import { useEffect, useRef } from 'react'
  * (and its poller) only ever runs once we KNOW the session is a paid sync tier —
  * hooks cannot be called conditionally in the parent.
  */
-export function ActiveSync({ userId }: { userId: string }): null {
+export function ActiveSync({ userId }: { userId: string }): ReactElement {
   const sync = useSync({ userId, autoSync: true, autoPull: true })
   const initialPullRef = useRef(false)
   const backfillRef = useRef(false)
@@ -100,5 +102,7 @@ export function ActiveSync({ userId }: { userId: string }): null {
       })
   }, [activeProfileReconciled, userId])
 
-  return null
+  // Story 75.2: the only UI the sync engine has — a notice naming each edit the
+  // server permanently refused. Renders nothing until there is one.
+  return <RefusedEditNotice />
 }

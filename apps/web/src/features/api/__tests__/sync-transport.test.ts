@@ -125,6 +125,48 @@ describe('sendSyncOperation', () => {
     expect(result.statusCode).toBeUndefined()
   })
 
+  it("code review 75.2 (D1): a 400 carrying the server's own `invalid-request` refusal keeps its permanent status", async () => {
+    stubFetch(async () =>
+      jsonResponse(
+        {
+          success: false,
+          processedCount: 0,
+          failedCount: 1,
+          conflictCount: 0,
+          refusal: 'invalid-request',
+        },
+        400
+      )
+    )
+    const result = await sendSyncOperation(operation)
+    expect(result.retryable).toBe(false)
+    expect(result.statusCode).toBe(400)
+  })
+
+  it.each([
+    [
+      "the route's own bad-JSON 400 (no `refusal`)",
+      400,
+      { success: false, error: 'Invalid request body: x' },
+    ],
+    ['a proxy/CDN 404 with an HTML body', 404, '<html>Not Found</html>'],
+    ['a 409 from something that is not the sync server', 409, {}],
+    ['a 422 with no refusal', 422, { error: 'nope' }],
+  ])(
+    'code review 75.2 (D1): WITHHOLDS the permanent status for %s — kept queued, never dropped',
+    async (_label, status, body) => {
+      stubFetch(async () =>
+        typeof body === 'string'
+          ? new Response(body, { status, headers: { 'Content-Type': 'text/html' } })
+          : jsonResponse(body, status)
+      )
+      const result = await sendSyncOperation(operation)
+      expect(result.success).toBe(false)
+      expect(result.retryable).toBe(false)
+      expect(result.statusCode).toBeUndefined()
+    }
+  )
+
   it('classifies a 401 as a permanent (non-retryable) failure', async () => {
     stubFetch(async () => jsonResponse({ success: false, error: 'Unauthorized' }, 401))
     const result = await sendSyncOperation(operation)

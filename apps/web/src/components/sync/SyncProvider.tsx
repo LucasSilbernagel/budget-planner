@@ -18,8 +18,10 @@
  *     bridge is cleared and `useSync` tears down its poller — paid→free returns
  *     the app to localStorage-only behaviour with no further network (Task 5).
  *
- * Renders `null` — it is wiring, not UI. SSR-safe: the session probe runs only on
- * the client (after mount), so the server render is inert.
+ * Otherwise wiring, not UI: its only visible output is `ActiveSync`'s
+ * refused-edit notice (story 75.2), which renders nothing until the server
+ * permanently refuses an edit. SSR-safe: the session probe runs only on the
+ * client (after mount), so the server render is inert.
  */
 
 import { lazyWithRetry } from '@/lib/lazy-with-retry'

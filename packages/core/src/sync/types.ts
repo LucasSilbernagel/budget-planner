@@ -513,6 +513,15 @@ export type FetchServerChangesFn = (since: number | null) => Promise<ServerChang
 export type ChangesPulledCallback = (changes: ServerChange[]) => void
 
 /**
+ * Callback invoked with the operations a sync PERMANENTLY refused and removed
+ * from the queue (story 75.2, FR119). Fired once per sync, with that sync's
+ * refusals only, and never with an op whose removal from the queue failed (that
+ * op is still queued and will be sent again). The web layer uses it to tell the
+ * user which entry was refused and to revert the refused change locally.
+ */
+export type OperationsRejectedCallback = (operations: SyncOperation[]) => void
+
+/**
  * Result of a pull (server → client) operation (Story 4-18).
  */
 export interface PullResult {
@@ -587,13 +596,11 @@ export interface SyncState {
    * sync status at FAILED and re-opens the circuit breaker every cycle, which
    * suppresses retries for every OTHER entity.
    *
-   * ⚠️⚠️ THIS FIELD IS WRITE-ONLY TODAY. Nothing reads it — not `useSync`, not
-   * any store, not any component — so a rejected operation IS dropped silently
-   * from the user's point of view: the edit leaves the outbox and the next sync
-   * reports success with nothing shown. Do not cite this array as evidence that
-   * the loss is surfaced; it records the loss for a future reader that does not
-   * exist yet. Wiring it into the UI is tracked in `deferred-work.md`.
-   * It is also never emptied by any path, so it grows for the service lifetime.
+   * A bounded diagnostic record of what was refused — the most recent
+   * `MAX_RECORDED_REJECTIONS` operations (see `synchronization.ts`), not a full
+   * history. ⚠️ It is NOT how the user is told: that is the
+   * `onOperationsRejected` subscription (story 75.2), which fires once per sync
+   * with that sync's refusals. Read this for debugging and tests only.
    *
    * ⚠️ Auth-blocked (401) and tier-blocked (403) operations are deliberately NOT
    * routed here — both stay queued. So does any non-retryable failure with no

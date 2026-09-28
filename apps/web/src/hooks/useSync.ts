@@ -7,7 +7,8 @@
  * Features:
  * - Automatic sync on data changes with debouncing
  * - Manual sync trigger
- * - Sync status UI indicators
+ * - Sync status label/icon/colour helpers (exported below; no component renders
+ *   sync STATUS — the only sync UI is the refused-edit notice, story 75.2)
  * - Zustand-based state management
  * - Error handling and retry logic
  */
@@ -31,7 +32,9 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { fetchServerChangesWithMeta, sendSyncOperation } from '../features/api/client'
-import { applyServerChangesToStores } from '../lib/sync/applyServerChanges'
+import { applyServerChangesToStores, findLocalRow } from '../lib/sync/applyServerChanges'
+import { addRefusalNotices, dismissAllRefusalNotices } from '../lib/sync/refusalNoticeStore'
+import { handleRejectedOperations } from '../lib/sync/refusedEdits'
 import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
 import { toServerPayload } from '../lib/sync/syncBridge'
 import { useProfileStore } from '../stores/profileStore'
@@ -391,10 +394,52 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       })
     })
 
+    // Story 75.2 (FR119): an op the server PERMANENTLY refused has left the
+    // queue. Name the entry to the user and REVERT it on this device (decision,
+    // Lucas 2026-09-28) — see `lib/sync/refusedEdits.ts` for why each case
+    // reverts the way it does.
+    //
+    // The re-pull for a refused update/delete follows the profile-switch
+    // effect's IN-FLIGHT rule below: reset the cursor, and if a pull is already
+    // in flight ask for a re-pull instead. (Unlike that effect it does NOT skip
+    // when `autoPull` is off — a revert has to happen either way.) Calling `pull()` then is a silent no-op (its
+    // in-flight guard), and the in-flight pull would write a non-null cursor over
+    // the reset — the `finally` in `pull()` re-resets and re-pulls.
+    const requestFullRepull = (): void => {
+      const svc = syncServiceRef.current
+      if (!svc) {
+        return
+      }
+      svc.resetPullCursor()
+      if (pullInFlightRef.current) {
+        repullRequestedRef.current = true
+        return
+      }
+      pullRef.current().catch((error) => {
+        console.error('Re-pull after a refused edit failed:', error)
+      })
+    }
+    const unsubscribeRejected = syncServiceRef.current.onOperationsRejected((operations) => {
+      handleRejectedOperations(operations, {
+        queue: service.getQueue(),
+        applyChanges: applyServerChangesToStores,
+        lookupLocalRow: findLocalRow,
+        requestFullRepull,
+        notify: addRefusalNotices,
+      }).catch((error) => {
+        console.error('Handling refused sync edits failed:', error)
+      })
+    })
+
     // Cleanup on unmount
     return () => {
       unsubscribe()
       unsubscribeChanges()
+      unsubscribeRejected()
+      // Notices name THIS account's entries. The store is module-level, so
+      // without this a sign-out → sign-in as another paid user in the same tab
+      // would show the first account's entry names (code review 75.2).
+      dismissAllRefusalNotices()
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
@@ -595,9 +640,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       pullInFlightRef.current = false
       if (repullRequestedRef.current) {
         repullRequestedRef.current = false
-        // Only a profile switch requests a re-pull, and the pull that was in
-        // flight has just advanced the cursor with the PREVIOUS profile's delta,
-        // overwriting the switch's reset. Reset again so this is a full snapshot.
+        // A profile switch or a refused edit (story 75.2) requested a re-pull
+        // while this one was in flight, and this pull has just advanced the
+        // cursor, overwriting that request's reset. Reset again so this is a
+        // full snapshot.
         syncServiceRef.current?.resetPullCursor()
         pullRef.current().catch((error) => {
           console.error('Re-pull failed:', error)

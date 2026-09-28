@@ -281,7 +281,20 @@ interface BatchSyncResponseLite {
    * module never pulls the server sync module (and `@budget-planner/db`) in.
    */
   rejections?: { operationId: string; reason: string }[]
+  /**
+   * A refusal of the WHOLE request, set by `processBatchSync` (story 75.1) and
+   * mapped to the HTTP status by the route. Only `'invalid-request'` is permanent.
+   */
+  refusal?: string
 }
+
+/**
+ * HTTP statuses core treats as PERMANENT (`PERMANENT_REJECT_STATUS_CODES` in
+ * `packages/core/src/sync/synchronization.ts`) — mirrored here, not imported,
+ * because core does not export it. An op answered with one of these LEAVES THE
+ * QUEUE, and since story 75.2 a refused create is also removed from the device.
+ */
+const PERMANENT_HTTP_STATUSES: ReadonlySet<number> = new Set([400, 404, 409, 422])
 
 /**
  * Pushes a single sync operation to the server via HTTP (Story 5-15).
@@ -330,13 +343,26 @@ export async function sendSyncOperation(operation: SyncOperation): Promise<Proce
   }
 
   if (!response.ok) {
-    const errorData = (await response.json().catch(() => ({}))) as { error?: string }
+    const errorData = (await response.json().catch(() => ({}))) as {
+      error?: string
+      refusal?: string
+    }
+    // ⚠️⚠️ A permanent status is passed on ONLY when the body proves the SYNC
+    // SERVER itself refused the request (code review 75.2, decision D1 — Lucas,
+    // 2026-09-28). A 404 from a proxy or CDN, a stale PWA tab calling a renamed
+    // route, or the route's own bad-JSON 400 (which carries no `refusal`) is
+    // NOT a verdict on the operation — and a permanent status would drop it from
+    // the queue and, for a create, DELETE the only copy from this device (75.2's
+    // revert). Without that proof the status is withheld: `retryable: false`
+    // with no status code is the unclassified bucket, which core keeps queued.
+    const serverRefused = errorData.refusal === 'invalid-request'
+    const withheld = PERMANENT_HTTP_STATUSES.has(response.status) && !serverRefused
     return {
       success: false,
       error: errorData.error || `Sync request failed (${response.status})`,
-      // 429 (rate limit) and 5xx are transient; other 4xx are permanent.
+      // 429 (rate limit) and 5xx are transient; other 4xx are not retried.
       retryable: response.status === 429 || response.status >= 500,
-      statusCode: response.status,
+      ...(withheld ? {} : { statusCode: response.status }),
     }
   }
 

@@ -1088,7 +1088,9 @@ export function HomePage() {
               reason to revisit — /pricing (`pricing-page.tsx`) and the /docs
               feature list (`content/docs/features.md`) both still describe the
               feature. Nothing anywhere reports whether sync is ON or WORKING:
-              SyncProvider renders nothing, no /settings section mentions it, and
+              SyncProvider's only output is the refused-edit notice (story 75.2),
+              which reports a refused EDIT, not whether sync is on; no /settings
+              section mentions it, and
               AuthIndicator's "Premium" marker speaks to the TIER, not to sync.
               The named follow-up is a REAL SYNC STATUS INDICATOR, which has
               never existed. Do NOT "fix" this by reinstating the section.

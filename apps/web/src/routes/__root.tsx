@@ -193,7 +193,8 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
           <InstallPrompt />
           {/* Mounts multi-device sync for authenticated paid sessions only
             (story 5-15): free/unauthenticated users get no service and no
-            network. Renders nothing — pure wiring. */}
+            network. Wiring, except for the refused-edit notice (story 75.2),
+            which renders nothing until the server refuses an edit. */}
           <SyncProvider />
           {/* Captures privacy-respecting acquisition metadata from the landing
             URL (story 4-12): URL-only, in-memory, no cookies/localStorage. */}

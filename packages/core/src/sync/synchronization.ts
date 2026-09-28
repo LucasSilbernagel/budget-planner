@@ -20,6 +20,7 @@ import type {
   ConflictResolutionStrategy,
   ConflictResult,
   ConflictType,
+  OperationsRejectedCallback,
   ProcessOperationResult,
   PullResult,
   ServerChange,
@@ -52,6 +53,18 @@ const DEFAULT_CONFIG: SyncConfig = {
  * If this limit is exceeded, a warning is logged
  */
 const MAX_CALLBACKS = 100
+
+/**
+ * How many refused operations `state.rejectedOperations` keeps (story 75.2).
+ *
+ * The array used to grow for the life of the service, because nothing ever
+ * emptied it. It is not how refusals reach the user — `onOperationsRejected`
+ * is — so it only needs to hold enough recent history to debug with. It is
+ * CAPPED rather than drained by its reader: the reader is a callback that fires
+ * inside `sync()`, so draining there would empty the array before any caller
+ * of `sync()` could look at it.
+ */
+const MAX_RECORDED_REJECTIONS = 50
 
 /**
  * Circuit breaker configuration for retry logic
@@ -323,6 +336,7 @@ export class SynchronizationService {
   private statusCallbacks: Set<SyncStatusCallback> = new Set()
   private conflictCallbacks: Set<ConflictCallback> = new Set()
   private changesPulledCallbacks: Set<ChangesPulledCallback> = new Set()
+  private operationsRejectedCallbacks: Set<OperationsRejectedCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing = false
   // Set when a sync trigger (e.g. coming back online) arrives while a sync is
@@ -535,6 +549,7 @@ export class SynchronizationService {
     this.statusCallbacks.clear()
     this.conflictCallbacks.clear()
     this.changesPulledCallbacks.clear()
+    this.operationsRejectedCallbacks.clear()
   }
 
   /**
@@ -629,6 +644,38 @@ export class SynchronizationService {
     }
     this.changesPulledCallbacks.add(callback)
     return () => this.changesPulledCallbacks.delete(callback)
+  }
+
+  /**
+   * Subscribe to the operations a sync permanently refused (story 75.2, FR119).
+   * Fired once per sync, after the refused ops have left the queue, with that
+   * sync's refusals only. The web layer names each refused entry to the user and
+   * reverts it locally.
+   * @param callback - The callback function
+   * @returns Unsubscribe function to remove the callback
+   */
+  onOperationsRejected(callback: OperationsRejectedCallback): () => void {
+    if (this.operationsRejectedCallbacks.size >= MAX_CALLBACKS) {
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
+    }
+    this.operationsRejectedCallbacks.add(callback)
+    return () => this.operationsRejectedCallbacks.delete(callback)
+  }
+
+  /**
+   * Notify all operations-rejected callbacks. Each gets its own copy, and one
+   * throwing callback cannot stop the others or the sync.
+   */
+  private notifyOperationsRejectedCallbacks(operations: SyncOperation[]): void {
+    for (const callback of this.operationsRejectedCallbacks) {
+      try {
+        callback([...operations])
+      } catch (error) {
+        this.log('Operations-rejected callback error:', error)
+      }
+    }
   }
 
   /**
@@ -1198,9 +1245,9 @@ export class SynchronizationService {
       //
       // ⚠️ Keyed on entityType AND entityId, and ONLY for a refused CREATE: a
       // refused update leaves a row that exists server-side, so its siblings can
-      // still succeed. ⚠️ This covers ops ALREADY queued. An edit made after the
-      // refusal is queued afresh and will fail the same way; what the device does
-      // with the refused row is story 75.2's to decide. ⚠️ A refused PROFILE
+      // still succeed. ⚠️ This covers ops ALREADY queued. Story 75.2 decided the
+      // rest (revert): the web layer drops any op for the row queued after this
+      // sweep and removes the row from the device (`lib/sync/refusedEdits.ts`). ⚠️ A refused PROFILE
       // create does not reach its children (different entityType) — those are
       // story 76.2's.
       const refusedCreates = new Set(
@@ -1276,12 +1323,11 @@ export class SynchronizationService {
       // status that proves it will never accept them, and replaying one blocks
       // the whole queue.
       //
-      // ⚠️ `state.rejectedOperations` records what was dropped, but NOTHING
-      // READS IT TODAY — not `useSync`, not any store, not any component. So a
-      // rejected operation is, at product level, discarded SILENTLY: the edit
-      // disappears from the outbox and the next sync reports success. Do not
-      // cite this array as a user-visible safety net until something renders it
-      // (tracked in `deferred-work.md`). It is also never emptied by any path.
+      // What was dropped reaches the user through `onOperationsRejected`
+      // (story 75.2), which fires below once the state is updated: the web layer
+      // names each refused entry and reverts it locally. ⚠️ Only the ops that
+      // actually LEFT the queue are reported — if the removal throws, they are
+      // still queued and are not announced as refused.
       let recordableRejectedOps = rejectedOperations
       if (rejectedOperations.length > 0) {
         try {
@@ -1314,7 +1360,11 @@ export class SynchronizationService {
       this.state.pendingOperations = this.queue.getAll()
       this.state.failedOperations = [...this.state.failedOperations, ...requeuableFailedOps]
       this.state.conflictOperations = [...this.state.conflictOperations, ...conflictOperations]
-      this.state.rejectedOperations = [...this.state.rejectedOperations, ...recordableRejectedOps]
+      // Capped, not unbounded (story 75.2): see `MAX_RECORDED_REJECTIONS`.
+      this.state.rejectedOperations = [
+        ...this.state.rejectedOperations,
+        ...recordableRejectedOps,
+      ].slice(-MAX_RECORDED_REJECTIONS)
 
       // Determine final status
       if (failedCount > 0 || conflictCount > 0) {
@@ -1335,6 +1385,10 @@ export class SynchronizationService {
       }
 
       this.notifyStatusCallbacks()
+
+      if (recordableRejectedOps.length > 0) {
+        this.notifyOperationsRejectedCallbacks(recordableRejectedOps)
+      }
 
       // AUTH-blocked failures only: open the circuit to stop auto-retrying an
       // operation that cannot succeed until the user re-authenticates.
@@ -1863,6 +1917,7 @@ export type {
   ServerChange,
   PullResult,
   ChangesPulledCallback,
+  OperationsRejectedCallback,
 }
 
 export { SyncQueue, createSyncQueue, LocalStorageSyncQueueStorage, DEFAULT_CONFIG }

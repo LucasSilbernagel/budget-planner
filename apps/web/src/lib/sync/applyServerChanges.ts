@@ -134,6 +134,25 @@ const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
 }
 
 /**
+ * Read one local row by entity type and id, through the same store/collection
+ * map the applier writes with (story 75.2 — naming a refused entry). Returns
+ * `undefined` when the row is not on this device.
+ */
+export function findLocalRow(
+  entityType: SyncEntityType,
+  id: string
+): Record<string, unknown> | undefined {
+  const binding = ENTITY_BINDINGS[entityType]
+  if (!binding) {
+    return undefined
+  }
+  const rows = (binding.store.getState()[binding.collection] ?? []) as (Record<string, unknown> & {
+    id: string
+  })[]
+  return rows.find((row) => row.id === id)
+}
+
+/**
  * Apply a single pulled change to its store: remove on tombstone, otherwise
  * replace-or-insert by the shared uuid id.
  */
@@ -256,13 +275,16 @@ function applyOne(change: ServerChange): boolean {
  *
  * ⚠️⚠️ This is a DEVELOPER channel and the story says so rather than pretending
  * otherwise. There is no sync-status UI in this product: the whole of
- * `useSync`'s return — `lastError`, `conflictCount`, `failedCount` — is consumed
- * by `components/sync/ActiveSync.tsx`, which renders `null`. `useProfileError`
- * has no renderer either, and `captureError` no-ops because `initErrorTracking`
- * is called from nowhere. Routing a refusal into any of those would be a THIRD
- * write-only channel, which is exactly what AC-5 forbids. A user-facing surface
- * for "your device and the server disagree" does not exist and building one is
- * out of this story's scope.
+ * `useSync`'s return — `lastError`, `conflictCount`, `failedCount` — is read by
+ * nothing that displays it. `useProfileError` has no renderer either, and
+ * `captureError` no-ops because `initErrorTracking` is called from nowhere.
+ * Routing a refusal into any of those would be a THIRD write-only channel, which
+ * is exactly what AC-5 forbids.
+ *
+ * ⚠️ Story 75.2 added ONE user-facing surface, and it does NOT cover this path:
+ * `components/sync/RefusedEditNotice.tsx` names edits the server refused on the
+ * PUSH side. A server row refused HERE, on the PULL side, still reaches only the
+ * console — the user is not told (story 75.4 is where this path changes).
  *
  * ⚠️ `console.warn`, matching the established client-side idiom in
  * `syncBridge.ts`'s `onQueueError` — NOT `lib/logger.ts`, which is server-only in
