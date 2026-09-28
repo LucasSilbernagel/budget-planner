@@ -39,9 +39,19 @@
  * in this directory used `userId: 0`, a number, which is the CLIENT STORE's type
  * for the free tier and was never on the wire. They are corrected in the same
  * pass; a fixture that is not production-shaped proves nothing about production.
+ *
+ * ## Where the check runs now (story 75.4)
+ *
+ * ⚠️⚠️ The validation moved from `applyOne` into CORE's `pull()`, which checks a
+ * row before it can win last-writer-wins. Left in the applier, a refusal came
+ * AFTER core had already dropped the user's queued edit. So every refusal here is
+ * driven through {@link pullThrough}: a real `SynchronizationService` wired
+ * exactly as `hooks/useSync.ts` wires it. The last block pins that the applier
+ * itself no longer validates, so there is no second gate left to drift.
  */
 
-import type { ServerChange } from '@budget-planner/core/sync'
+import { createSynchronizationService } from '@budget-planner/core/sync'
+import type { PullResult, ServerChange } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
@@ -49,7 +59,7 @@ import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { netWorthFromTotals } from '../../net-worth'
-import { applyServerChangesToStores } from '../applyServerChanges'
+import { applyServerChangesToStores, reportRefusedServerChanges } from '../applyServerChanges'
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const PROFILE_ID = '22222222-2222-4222-8222-222222222222'
@@ -132,6 +142,31 @@ function savingsChange(data: Record<string, unknown>, overrides: Partial<ServerC
   } satisfies ServerChange
 }
 
+/**
+ * Pull `changes` through a real core service, wired exactly as `hooks/useSync.ts`
+ * wires it. Asserts the positive anchor (the pull ran and succeeded) so a refusal
+ * below can never be a pull that simply did nothing.
+ */
+async function pullThrough(changes: ServerChange[]): Promise<PullResult> {
+  const fetchServerChanges = vi.fn(async () => changes)
+  const service = createSynchronizationService(USER_ID, {
+    autoSync: false,
+    debug: false,
+    processOperation: async () => ({ success: true }),
+    fetchServerChanges,
+  })
+  service.onChangesPulled((pulled) => applyServerChangesToStores(pulled))
+  service.onServerChangesRefused(reportRefusedServerChanges)
+  try {
+    const result = await service.pull()
+    expect(fetchServerChanges).toHaveBeenCalledTimes(1)
+    expect(result.success).toBe(true)
+    return result
+  } finally {
+    service.destroy()
+  }
+}
+
 beforeEach(() => {
   useIncomeStore.setState({ incomeSources: [] })
   useExpenseStore.setState({ expenses: [] })
@@ -141,12 +176,17 @@ beforeEach(() => {
 })
 
 describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
-  it('a STRING currentBalance never reaches the store', () => {
-    applyServerChangesToStores([balanceChange({ currentBalance: '300000' })])
+  it('a STRING currentBalance never reaches the store', async () => {
+    const result = await pullThrough([balanceChange({ currentBalance: '300000' })])
     expect(useBalanceStore.getState().entries).toHaveLength(0)
+    // The mechanism that refused it is core's (story 75.4), and it says so.
+    expect(result.refused).toEqual([
+      { entityType: 'balanceTracking', entityId: ROW_A, fields: ['currentBalance:invalid_type'] },
+    ])
+    expect(result.applied).toEqual([])
   })
 
-  it('⚠️ the consequence: the concatenated total can no longer be produced', () => {
+  it('⚠️ the consequence: the concatenated total can no longer be produced', async () => {
     // ⚠️ This asserts through `getTotalSavings()` — the store's OWN selector,
     // production code — NOT a copy of its arithmetic written here. An earlier
     // draft of this test summed the rows with a local `reduce` annotated "the
@@ -172,7 +212,7 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
       ] as any,
     })
 
-    applyServerChangesToStores([savingsChange({ currentBalance: '300000' })])
+    await pullThrough([savingsChange({ currentBalance: '300000' })])
 
     const savingsCents = useSavingsStore.getState().getTotalSavings()
     const net = netWorthFromTotals({
@@ -194,23 +234,23 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
     expect(typeof net).toBe('number')
   })
 
-  it('a STRING amount on a cashflow row never reaches the store', () => {
-    applyServerChangesToStores([incomeChange({ amount: '500000' })])
+  it('a STRING amount on a cashflow row never reaches the store', async () => {
+    await pullThrough([incomeChange({ amount: '500000' })])
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
-  it('a non-finite amount never reaches the store', () => {
-    applyServerChangesToStores([incomeChange({ amount: Number.POSITIVE_INFINITY })])
+  it('a non-finite amount never reaches the store', async () => {
+    await pullThrough([incomeChange({ amount: Number.POSITIVE_INFINITY })])
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
-  it('an unknown frequency never reaches the store', () => {
-    applyServerChangesToStores([incomeChange({ frequency: 'fortnightly' })])
+  it('an unknown frequency never reaches the store', async () => {
+    await pullThrough([incomeChange({ frequency: 'fortnightly' })])
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
-  it('a row missing its required fields never reaches the store', () => {
-    applyServerChangesToStores([
+  it('a row missing its required fields never reaches the store', async () => {
+    await pullThrough([
       {
         entityType: 'incomeSource',
         entityId: ROW_A,
@@ -224,8 +264,8 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
 })
 
 describe('AC-1: a VALID row is written exactly as before — byte for byte', () => {
-  it('writes the whole server payload, not a reshaped copy', () => {
-    applyServerChangesToStores([incomeChange({})])
+  it('writes the whole server payload, not a reshaped copy', async () => {
+    await pullThrough([incomeChange({})])
 
     const rows = useIncomeStore.getState().incomeSources
     expect(rows).toHaveLength(1)
@@ -244,12 +284,12 @@ describe('AC-1: a VALID row is written exactly as before — byte for byte', () 
     expect(row['amount']).toBe(500_000)
   })
 
-  it('a savings ACCOUNT (targetAmount null) is written, not refused', () => {
+  it('a savings ACCOUNT (targetAmount null) is written, not refused', async () => {
     // ⚠️ The false-rejection fence. `savingsGoals.targetAmount` is nullable —
     // null means "savings account, no target" (story 16-1) — and core's schema
     // required a number until this story. Getting this wrong would have deleted
     // every savings account from every synced device.
-    applyServerChangesToStores([
+    await pullThrough([
       {
         entityType: 'savingsGoal',
         entityId: ROW_A,
@@ -274,8 +314,8 @@ describe('AC-1: a VALID row is written exactly as before — byte for byte', () 
     expect(useSavingsStore.getState().savingsGoals).toHaveLength(1)
   })
 
-  it('a profile with a null description and null currency is written, not refused', () => {
-    applyServerChangesToStores([
+  it('a profile with a null description and null currency is written, not refused', async () => {
+    await pullThrough([
       {
         entityType: 'userProfile',
         entityId: PROFILE_ID,
@@ -300,7 +340,7 @@ describe('AC-1: a VALID row is written exactly as before — byte for byte', () 
 })
 
 describe('AC-6: a tombstone is never validated', () => {
-  it('a tombstone carrying NO payload at all still deletes the row', () => {
+  it('a tombstone carrying NO payload at all still deletes the row', async () => {
     useBalanceStore.setState({
       entries: [
         {
@@ -324,7 +364,7 @@ describe('AC-6: a tombstone is never validated', () => {
     // A tombstone is reconstructed from a soft-deleted ROW and is not required to
     // carry a well-formed payload. Validating it would stop deletes propagating
     // across devices — a silent, permanent data-resurrection bug.
-    applyServerChangesToStores([
+    await pullThrough([
       {
         entityType: 'balanceTracking',
         entityId: ROW_A,
@@ -337,7 +377,7 @@ describe('AC-6: a tombstone is never validated', () => {
     expect(useBalanceStore.getState().entries).toHaveLength(0)
   })
 
-  it('a tombstone whose payload is MALFORMED still deletes the row', () => {
+  it('a tombstone whose payload is MALFORMED still deletes the row', async () => {
     useBalanceStore.setState({
       entries: [
         {
@@ -358,7 +398,7 @@ describe('AC-6: a tombstone is never validated', () => {
       ] as any,
     })
 
-    applyServerChangesToStores([
+    await pullThrough([
       balanceChange({ currentBalance: '300000' }, { isDeleted: true, updatedAt: 3000 }),
     ])
 
@@ -366,8 +406,41 @@ describe('AC-6: a tombstone is never validated', () => {
   })
 })
 
-describe('AC-7: a rejected row does not perturb ordering or the active profile', () => {
-  it('does not re-sort a collection whose only change was rejected', () => {
+describe('AC-7: a pull whose only row was refused does not perturb ordering or the active profile', () => {
+  // ⚠️ Since story 75.4 core refuses these rows, so the applier is never CALLED
+  // for them, and these two tests pin the END-TO-END outcome. The one refusal
+  // still inside the applier (the empty-id guard) is covered below, calling the
+  // applier directly.
+  it('the empty-id refusal inside the applier does not re-sort the collection', () => {
+    useIncomeStore.setState({
+      // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
+      incomeSources: [
+        {
+          id: ROW_B,
+          userId: USER_ID,
+          profileId: PROFILE_ID,
+          name: 'Salary',
+          amount: 1,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ] as any,
+    })
+    const before = useIncomeStore.getState().incomeSources
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      applyServerChangesToStores([incomeChange({}, { entityId: '' })])
+      // Positive anchor: the applier ran and refused it.
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
+    // Same array identity: `stampMissingSortOrder` would have stamped ROW_B.
+    expect(useIncomeStore.getState().incomeSources).toBe(before)
+  })
+
+  it('does not re-sort a collection whose only change was rejected', async () => {
     // `resortCollection` runs `stampMissingSortOrder`, which ASSIGNS a position to
     // any row that lacks one. A batch whose every change was refused must not
     // trigger it, or a rejected pull silently rewrites the user's ordering.
@@ -388,13 +461,13 @@ describe('AC-7: a rejected row does not perturb ordering or the active profile',
     })
     const before = useIncomeStore.getState().incomeSources
 
-    applyServerChangesToStores([incomeChange({ amount: '500000' })])
+    await pullThrough([incomeChange({ amount: '500000' })])
 
     // Same array identity: nothing wrote to this collection at all.
     expect(useIncomeStore.getState().incomeSources).toBe(before)
   })
 
-  it('does not reconcile the active profile when the only profile change was rejected', () => {
+  it('does not reconcile the active profile when the only profile change was rejected', async () => {
     // A rejected `userProfile` must not set `appliedProfile`. Otherwise
     // `reconcileActiveProfile` runs against a list that is MISSING the row it was
     // meant to add, and can repoint the active profile or drop placeholders.
@@ -405,7 +478,7 @@ describe('AC-7: a rejected row does not perturb ordering or the active profile',
     })
     const profilesBefore = useProfileStore.getState().profiles
 
-    applyServerChangesToStores([
+    await pullThrough([
       {
         entityType: 'userProfile',
         entityId: PROFILE_ID,
@@ -424,8 +497,8 @@ describe('AC-7: a rejected row does not perturb ordering or the active profile',
     expect(useProfileStore.getState().profiles).toBe(profilesBefore)
   })
 
-  it('one rejected row does not block the valid rows in the same batch', () => {
-    applyServerChangesToStores([
+  it('one rejected row does not block the valid rows in the same batch', async () => {
+    await pullThrough([
       incomeChange({ amount: '500000' }),
       incomeChange({ id: ROW_B }, { entityId: ROW_B }),
     ])
@@ -437,10 +510,10 @@ describe('AC-7: a rejected row does not perturb ordering or the active profile',
 })
 
 describe('AC-5: a refusal is reported, not swallowed', () => {
-  it('warns once per rejected row, without leaking the financial value', () => {
+  it('warns once per rejected row, without leaking the financial value', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      applyServerChangesToStores([balanceChange({ currentBalance: '300000' })])
+      await pullThrough([balanceChange({ currentBalance: '300000' })])
 
       expect(warn).toHaveBeenCalledTimes(1)
       const [message, context] = warn.mock.calls[0] ?? []
@@ -461,10 +534,10 @@ describe('AC-5: a refusal is reported, not swallowed', () => {
     }
   })
 
-  it('says nothing for a batch in which every row is valid', () => {
+  it('says nothing for a batch in which every row is valid', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      applyServerChangesToStores([incomeChange({})])
+      await pullThrough([incomeChange({})])
       expect(warn).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()
@@ -473,10 +546,10 @@ describe('AC-5: a refusal is reported, not swallowed', () => {
 })
 
 describe('AC-5: the empty-id refusal is reported too', () => {
-  it('warns when a change carries no entityId, instead of dropping it silently', () => {
+  it('warns when a change carries no entityId, instead of dropping it silently', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      applyServerChangesToStores([incomeChange({}, { entityId: '' })])
+      await pullThrough([incomeChange({}, { entityId: '' })])
       expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
       // Before the code review this path returned silently, so a row dropped for a
       // missing id was invisible while a row dropped for a bad amount was not.
@@ -490,10 +563,10 @@ describe('AC-5: the empty-id refusal is reported too', () => {
 })
 
 describe('an unknown entity type is still ignored defensively, not warned about', () => {
-  it('a future server-side entity type does not crash an older client', () => {
+  it('a future server-side entity type does not crash an older client', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      applyServerChangesToStores([
+      const result = await pullThrough([
         {
           // biome-ignore lint/suspicious/noExplicitAny: simulating a NEWER server
           entityType: 'somethingNew' as any,
@@ -503,9 +576,32 @@ describe('an unknown entity type is still ignored defensively, not warned about'
           isDeleted: false,
         },
       ])
+      // Positive anchor (code review 75.4): core PASSED it on, so the applier is
+      // what ignored it, not core dropping or refusing it first.
+      expect(result.applied).toHaveLength(1)
+      expect(result.refused).toEqual([])
       // Pre-existing behaviour at the `!binding` guard in `applyOne`, deliberately
       // left alone: an older client seeing a newer entity type is not a corrupt row.
       // (No line number on purpose — this diff moved that guard once already.)
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('story 75.4: the applier itself no longer validates — ONE validator, in core', () => {
+  it('writes a row the schema would refuse, when it is called directly', () => {
+    // ⚠️ This is the one-validator pin, and the inversion is deliberate. Before
+    // 75.4 this call refused the row. If a second `safeParse` is ever re-added to
+    // `applyOne`, this goes red: the check belongs where it runs BEFORE
+    // last-writer-wins drops the user's queued edit, and that is core's `pull()`.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      applyServerChangesToStores([incomeChange({ amount: '500000' })])
+      const rows = useIncomeStore.getState().incomeSources
+      expect(rows).toHaveLength(1)
+      expect((rows[0] as unknown as Record<string, unknown>)['amount']).toBe('500000')
       expect(warn).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()

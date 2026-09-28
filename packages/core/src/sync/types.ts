@@ -95,10 +95,13 @@ export const SYNC_CURRENCIES = [
  * ## ⚠️⚠️ What these schemas are FOR (story 66.2, FR103) — read before editing one
  *
  * Until 66.2 these were declared-for-parity and imported by NOTHING. They are now
- * the **PULL-path gate**: `apps/web/src/lib/sync/applyServerChanges.ts` validates
- * every server row against the matching schema before writing it into a client
- * store. That makes them the only gate in the whole sync contract that runs on
- * the server→client direction — the other five all sit on push or at rest.
+ * the **PULL-path gate**: `validateServerRow` (below) checks every non-tombstone
+ * server row against the matching schema inside `SynchronizationService.pull()`,
+ * before the row can win last-writer-wins (story 75.4 moved it there from
+ * `apps/web/src/lib/sync/applyServerChanges.ts`, where a refusal came too late to
+ * save the user's queued edit). That makes them the only gate in the whole sync
+ * contract that runs on the server→client direction — the other five all sit on
+ * push or at rest.
  *
  * Two consequences that are easy to get wrong:
  *
@@ -142,8 +145,8 @@ export const SYNC_CURRENCIES = [
  * where the client legitimately sends a partial row; it is never right for a
  * pulled row, which came from `db.select()` and therefore carries every column.
  *
- * ⚠️ The applier consumes the VERDICT ONLY (`safeParse().success`) and never
- * writes the parse output — `z.object` STRIPS undeclared keys, and these schemas
+ * ⚠️ `validateServerRow` returns a VERDICT ONLY, and `pull()` passes the ORIGINAL
+ * change on; nothing ever writes the parse output — `z.object` STRIPS undeclared keys, and these schemas
  * do not declare `profileId`, `sortOrder`, `categoryId`, `isDeleted`,
  * `createdAt` or `updatedAt`. Writing the output would delete them from every
  * synced row. Pinned by `__tests__/entity-schemas.test.ts`.
@@ -194,8 +197,9 @@ export const savingsGoalSchema = z.object({
   // ⚠️ NULLABLE, and that is load-bearing (story 66.2). The column is
   // `integer('targetAmount')` with no NOT NULL: "null ⇒ savings account (no
   // target); a positive int ⇒ goal" (story 16-1). This schema required a number
-  // until 66.2 gave it its first consumer — the PULL-path guard in
-  // `apps/web/src/lib/sync/applyServerChanges.ts` — at which point it would have
+  // until 66.2 gave it its first consumer — the PULL-path guard, then in
+  // `apps/web/src/lib/sync/applyServerChanges.ts` and since story 75.4 in core's
+  // `pull()` (`validateServerRow`) — at which point it would have
   // rejected EVERY savings account the user owns. The bug was invisible for as
   // long as nothing imported this file. `.positive()` mirrors the server ingest
   // gate; `.max()` mirrors syncOperationDataSchema and the int32 column.
@@ -207,7 +211,8 @@ export const savingsGoalSchema = z.object({
   // constraint — `savingsGoals_currentBalance_non_negative`, added by migration
   // `0020` — so a pulled row carrying a negative balance is a row the server
   // cannot be storing. Refusing it here is safe in a way that refusing on the
-  // PUSH path is not: `applyServerChanges` skips and reports a refused row, while
+  // PUSH path is not: `pull()` refuses and reports the row (keeping any queued
+  // local edit, story 75.4), while
   // a push-side rejection is kept queued forever and eventually stops all sync.
   // ⚠️ Deliberately NOT mirrored onto `balanceTrackingSchema` below — debt
   // balances are negative by design and that table has no such constraint.
@@ -402,10 +407,11 @@ export type SyncEntityType =
   | 'userProfile'
   // Story 30.4a: user-defined income/expense categories (FR54).
   //
-  // ⚠️ Extending this union type-enforces exactly ONE downstream gate —
-  // `ENTITY_BINDINGS` in apps/web/src/lib/sync/applyServerChanges.ts, which is
-  // declared `Record<SyncEntityType, EntityBinding>`. Every other gate must be
-  // updated by hand and fails SILENTLY if missed:
+  // ⚠️ Extending this union type-enforces exactly TWO downstream gates —
+  // `ENTITY_BINDINGS` in apps/web/src/lib/sync/applyServerChanges.ts and
+  // `SERVER_ROW_SCHEMAS` below (story 75.4), both declared
+  // `Record<SyncEntityType, …>`. Every other gate must be updated by hand and
+  // fails SILENTLY if missed:
   //   - toServerPayload's switch (syncBridge.ts) — now has a `never`-exhaustive
   //     default so it, too, is a compile error rather than a silent misroute
   //   - syncOperationDataSchema below — zod STRIPS undeclared keys
@@ -497,6 +503,78 @@ export interface ServerChange {
 }
 
 /**
+ * The schema a PULLED, non-tombstone row must satisfy before core lets it win
+ * last-writer-wins (story 75.4, FR123). ONE map, ONE verdict: the web applier no
+ * longer validates, so there is no second gate to drift from this one.
+ *
+ * `Record<SyncEntityType, …>`, so a new entity type fails to compile until it has
+ * a schema here.
+ */
+export const SERVER_ROW_SCHEMAS: Record<SyncEntityType, z.ZodTypeAny> = {
+  incomeSource: incomeSourceSchema,
+  expense: expenseSchema,
+  savingsGoal: savingsGoalSchema,
+  balanceTracking: balanceTrackingSchema,
+  userProfile: userProfileSchema,
+  category: categorySchema,
+}
+
+/** The verdict on one pulled row. `fields` is `path:code` and never a value. */
+export type ServerRowVerdict = { ok: true } | { ok: false; fields: string[] }
+
+/**
+ * Validate a pulled server row against its entity schema (story 75.4).
+ *
+ * ⚠️ A VERDICT ONLY. Callers keep the ORIGINAL change: `z.object` strips
+ * undeclared keys, and these schemas declare none of `profileId`, `sortOrder`,
+ * `categoryId`, `isDeleted`, `createdAt` or `updatedAt`.
+ *
+ * ⚠️ `fields` is built from each issue's `path` and `code` only. An issue's
+ * `message` can embed the received value, and the value may be money, so it is
+ * never carried out of here (story 66.2).
+ *
+ * An entity type with no schema (a server newer than this client) passes:
+ * older clients ignore unknown types, and that is not a corrupt row.
+ */
+export function validateServerRow(change: ServerChange): ServerRowVerdict {
+  // ⚠️ An OWN-property check, not a bare index (code review 75.4, MEASURED): the
+  // server supplies `entityType`, and `SERVER_ROW_SCHEMAS['toString']` is an
+  // INHERITED function, so a bare lookup was truthy, `.safeParse` threw inside
+  // the LWW loop, and every later pull re-fetched the row and threw again.
+  // (`Object.hasOwn` is ES2022; this package's `lib` is ES2021.)
+  if (!Object.prototype.hasOwnProperty.call(SERVER_ROW_SCHEMAS, change.entityType)) {
+    return { ok: true }
+  }
+  const schema = SERVER_ROW_SCHEMAS[change.entityType]
+  const result = schema.safeParse(change.data)
+  if (result.success) {
+    return { ok: true }
+  }
+  return {
+    ok: false,
+    fields: result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}:${issue.code}`),
+  }
+}
+
+/**
+ * A pulled row that core REFUSED (story 75.4): it failed {@link validateServerRow},
+ * was not applied, and did not displace any queued local op. It carries no
+ * `data` and no zod issues, so no value can leak through it.
+ */
+export interface RefusedServerChange {
+  entityType: SyncEntityType
+  entityId: string
+  /** `path:code` for each failing field, e.g. `amount:invalid_type`. */
+  fields: string[]
+}
+
+/**
+ * Callback invoked once per pull with the server rows that pull refused (story
+ * 75.4). Not called when nothing was refused.
+ */
+export type ServerChangesRefusedCallback = (refused: RefusedServerChange[]) => void
+
+/**
  * Transport hook for fetching server-side changes since a cursor (Story 4-18).
  * Injected via {@link SyncConfig} to keep the core transport-agnostic — the web
  * layer supplies an HTTP implementation; the core never imports `fetch`/`db`.
@@ -539,6 +617,13 @@ export interface PullResult {
    * the last-write-wins comparison (unsynced local work is never discarded).
    */
   conflicts: ServerChange[]
+
+  /**
+   * Server rows that would have been applied but failed their entity schema
+   * (story 75.4). Not applied, not counted in `changesPulledCount`, and they
+   * displaced no queued local op. The cursor still advances past them.
+   */
+  refused: RefusedServerChange[]
 
   /** Error message if the pull failed */
   error?: string

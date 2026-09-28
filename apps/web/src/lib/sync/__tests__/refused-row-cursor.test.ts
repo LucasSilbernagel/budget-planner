@@ -3,13 +3,18 @@
  *
  * ## The decision this pins, and why it is a decision at all
  *
- * ⚠️⚠️ The cursor is persisted BEFORE the web layer ever sees the rows.
+ * ⚠️⚠️ The cursor is SET (in core's in-memory state; it is never persisted,
+ * see below) BEFORE the web layer ever sees the rows.
  * `SynchronizationService.pull()` sets `this.state.lastPullTimestamp = newCursor`
  * and only THEN calls `notifyChangesPulledCallbacks(applied)`. `ChangesPulledCallback`
- * returns `void` and its throw is swallowed. So `applyServerChanges.ts` — which
- * is where this story's guard lives, and where the epic put it — structurally
- * CANNOT hold the cursor back. This test records that as observed behaviour
- * rather than leaving it to be rediscovered.
+ * returns `void` and its throw is swallowed. So `applyServerChanges.ts` — where
+ * 66.2 put its guard — structurally CANNOT hold the cursor back.
+ *
+ * ⚠️ Story 75.4 moved that guard into core's `pull()` (a refusal there must come
+ * BEFORE last-writer-wins drops the user's queued edit). That removes the
+ * MECHANICAL obstacle to option (B) below, and (B) is still rejected: its real
+ * cost was always the stall, which moving the guard does not change. So a row
+ * refused in core still advances the cursor.
  *
  * Two options existed and the smaller diff is not self-evidently right:
  *
@@ -19,10 +24,10 @@
  *       later change behind it, because the server's filter is
  *       `updatedAt > cursor`. One bad row would become a permanent, total sync
  *       stall. Advancing keeps a one-row problem a one-row problem.
- *   (B) HOLD — rejected. It needs validation moved into core's `pull()` so a
- *       refused change can join the `earliestSuppressed` set (`synchronization.ts`),
- *       which changes `applied`/`PullResult` semantics and the conflict contract,
- *       and it buys the stall above.
+ *   (B) HOLD — rejected. It would add a refused change to the `earliestSuppressed`
+ *       set (`synchronization.ts`), and it buys the stall above. (66.2 also
+ *       counted "needs validation moved into core" against it; 75.4 made that
+ *       move for a different reason, and the stall is the reason that remains.)
  *
  * ⚠️ The cost of (A) is real and is NOT hidden: within a session the refused row
  * is skipped by every subsequent poll.
@@ -49,7 +54,7 @@ import { createSynchronizationService } from '@budget-planner/core/sync'
 import type { ServerChange, SynchronizationService } from '@budget-planner/core/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useIncomeStore } from '../../../stores/incomeStore'
-import { applyServerChangesToStores } from '../applyServerChanges'
+import { applyServerChangesToStores, reportRefusedServerChanges } from '../applyServerChanges'
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const PROFILE_ID = '22222222-2222-4222-8222-222222222222'
@@ -96,6 +101,7 @@ describe('AC-4: the pull cursor when a row is refused', () => {
     })
     // Exactly the wiring `hooks/useSync.ts` performs.
     service.onChangesPulled((changes) => applyServerChangesToStores(changes))
+    service.onServerChangesRefused(reportRefusedServerChanges)
   })
 
   afterEach(() => {
@@ -108,8 +114,10 @@ describe('AC-4: the pull cursor when a row is refused', () => {
 
     const result = await service.pull()
 
-    // Core applied it (core does not validate); the web layer refused to write it.
+    // Core refused it (story 75.4: core validates before LWW) and did not apply it.
     expect(result.success).toBe(true)
+    expect(result.refused.map((r) => r.entityId)).toEqual([BAD_ID])
+    expect(result.applied).toEqual([])
     expect(result.conflicts).toEqual([])
     expect(result.lastPullTimestamp).toBe(1500)
     expect(service.getState().lastPullTimestamp).toBe(1500)

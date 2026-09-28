@@ -22,7 +22,15 @@ function serverChange(overrides: Partial<ServerChange> = {}): ServerChange {
   return {
     entityType: 'incomeSource',
     entityId: 'srv-1',
-    data: { name: 'Salary', amount: 500000, frequency: 'monthly' },
+    // ⚠️ A VALID row (story 75.4). Core now validates a pulled row before it can
+    // win LWW, and `incomeSourceSchema` requires a uuid `userId`, which this
+    // fixture lacked, so every "applied" test here would have seen it refused.
+    data: {
+      name: 'Salary',
+      amount: 500000,
+      frequency: 'monthly',
+      userId: '11111111-1111-4111-8111-111111111111',
+    },
     updatedAt: 1000,
     isDeleted: false,
     ...overrides,

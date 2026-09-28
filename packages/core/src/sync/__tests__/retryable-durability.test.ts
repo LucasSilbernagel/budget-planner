@@ -241,7 +241,14 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
         {
           entityType: 'incomeSource',
           entityId: 'entity-flaky',
-          data: { name: 'server' },
+          // A VALID row: this server change must WIN LWW, and since story 75.4 a
+          // row that fails its schema is refused instead of displacing the op.
+          data: {
+            name: 'server',
+            amount: 100,
+            frequency: 'monthly',
+            userId: '11111111-1111-4111-8111-111111111111',
+          },
           updatedAt: 9_000,
           isDeleted: false,
         },
@@ -371,6 +378,43 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       await queue.add(op('fresh', { timestamp: 7_000 }))
 
       expect(await reload(storage)).toEqual(['later', 'fresh'])
+    })
+  })
+
+  describe('code review 75.4: an op that lost pull LWW is dropped even when storage refuses', () => {
+    it('does not push the stale edit over the value the pull just applied', async () => {
+      // Before: `removeBatch` threw on the storage failure, the op stayed queued,
+      // and the next sync sent the OLD local edit over the NEWER server value the
+      // pull had just applied. Its comment called that "a redundant retry".
+      await queue.add(op('stale', { timestamp: 1_000 }))
+      storage.failWrites = true
+      fetchServerChanges.mockResolvedValueOnce([
+        {
+          entityType: 'incomeSource',
+          entityId: 'entity-stale',
+          data: {
+            name: 'newer server value',
+            amount: 100,
+            frequency: 'monthly',
+            userId: '11111111-1111-4111-8111-111111111111',
+          },
+          updatedAt: 9_000,
+          isDeleted: false,
+        },
+      ])
+
+      const pulled = await service.pull()
+
+      // Positive anchors: the server row won and was applied.
+      expect(pulled.applied.map((c) => c.entityId)).toEqual(['entity-stale'])
+      expect(queue.getAll()).toEqual([])
+      // The stated limit: storage refused the write, so it still holds the op.
+      expect(storage.persistedIds()).toEqual(['stale'])
+
+      storage.failWrites = false
+      const before = sentIds().length
+      await service.sync()
+      expect(sentIds().slice(before)).not.toContain('stale')
     })
   })
 

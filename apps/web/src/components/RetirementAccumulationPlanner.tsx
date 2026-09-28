@@ -393,9 +393,11 @@ function RetirementAccumulationPlannerInner() {
         note: 'Only investment accounts count toward your nest egg — add them on the Balance Tracking page.',
       }
     }
-    // ⚠️ The sync applier writes pulled rows straight into the store without
-    // `validateBalanceTracking` (`lib/sync/applyServerChanges.ts:93-94`), so this
-    // total can be NaN, Infinity or fractional. Left unguarded, `formatCurrency`
+    // ⚠️ Balance rows reach the store without `validateBalanceTracking` on two
+    // paths, so this total can be NaN, Infinity or fractional. A PULLED row is now
+    // checked by core's `balanceTrackingSchema` (`.int()`; story 66.2, in core's
+    // `pull()` since 75.4), which closes the sync route; hand-edited or legacy
+    // localStorage is still unchecked, and that is why the guard stays. Left unguarded, `formatCurrency`
     // renders NaN as a confident "0.00" while the solver throws — and a fractional
     // cent shows one number and solves another. The free Net Worth projection
     // page refused the identical data and set this precedent; story 43.3 removed

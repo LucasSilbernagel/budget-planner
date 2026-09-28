@@ -1,4 +1,7 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-28x (**75.4 CODE-REVIEWED + CLOSED; EPIC 75 DONE** — rollup closed same pass. UNCOMMITTED. Web 3652/236, core 995/30, db 283+7, tsc 0/0/0/0, Biome 0/644.)
+# last_updated: 2026-09-28w (**75.4 DEV DONE -> review**, UNCOMMITTED, baseline `6331ba5`. Web 3651/236, core 990/30, db 283+7, tsc 0/0/0/0, Biome 0/644. All 6 mutants RED.)
+# last_updated: 2026-09-28v (**75.4 CONTEXTED -> ready-for-dev** at `6331ba5`. Validation moves into core pull() for server-winning non-tombstone changes; one validator.)
 # last_updated: 2026-09-28u (**75.3 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED. 11 patches, 2 deferred, 4 dismissed. Web 3648/235, core 974/29, db 283+7, tsc 0/0/0, Biome 0/642.)
 # last_updated: 2026-09-28t (**75.3 DEV DONE -> review**, UNCOMMITTED. Web 3647/235, core 969/29, db 283+7, tsc 0/0/0, Biome 0/642.)
 # last_updated: 2026-09-28s (**75.3 DEV STARTED -> in-progress** at `0b6f947`.)
@@ -1015,11 +1018,11 @@ development_status:
   epic-74-retrospective: optional
 
   # BATCH 15 (added 2026-09-28 by sprint-planning; epics 75-78 / FR119-FR127, from `planning-artifacts/deferred-work-triage-2026-09-28.md` measured at `c668e94`). Re-verify each cited line before contexting — the previous triage went 75% stale in 11 days. Order: 75.1 -> 75.2; epic 76 after 75.1 is done; 75.3, 75.4, 77, 78 in any order.
-  epic-75: in-progress  # A Sync That Refuses One Edit Instead Of Stopping. FR119/FR120/FR123. Decision (Lucas 2026-09-28): a refused edit shows a VISIBLE notice naming the entry. 75.2 local-value decision TAKEN (Lucas, 2026-09-28): REVERT.
+  epic-75: done  # ✅ ALL 4 STORIES DONE 2026-09-28 (rollup closed in the same pass as 75.4).  # A Sync That Refuses One Edit Instead Of Stopping. FR119/FR120/FR123. Decision (Lucas 2026-09-28): a refused edit shows a VISIBLE notice naming the entry. 75.2 local-value decision TAKEN (Lucas, 2026-09-28): REVERT.
   75-1-refuse-a-never-acceptable-sync-operation-with-a-permanent-status: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED, baseline `c668e94`. 2 decisions (Lucas: D1 refused create drops its row's queued follow-ups — CORE change; D2 permanent set narrowed to 23514+22003), 7 patches incl. HIGH P1 user-id mismatch 401 (kept) not 422 (dropped) — cross-tab session. 3 deferred, 6 dismissed. Web 3602/231, core 947, db 283+7, tsc 0/0/0, Biome 0/633.
   75-2-tell-the-user-which-edit-was-refused: done  # contexted 2026-09-28 at `7887d1b`. DECISION (Lucas): REVERT the refused change locally (create → synthetic tombstone via applier; update/delete → full re-pull) + named notice.
   75-3-never-lose-a-retryable-sync-operation: done  # contexted 2026-09-28 at `0b6f947`. Design A: retryable ops never leave the persisted queue. Design B: `SyncQueue.discardBatch` drops refused ops from memory even when storage refuses the write (reload limit pinned). Web has NO periodic push (`autoSync: false`).
-  75-4-refuse-a-malformed-server-row-before-it-can-discard-my-local-edit: backlog
+  75-4-refuse-a-malformed-server-row-before-it-can-discard-my-local-edit: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED. D1 defer (false revert notice, unreachable), D2 fix (drop block → discardBatch). 10 patches incl. prototype-key pull crash. Web 3652/236, core 995/30, db 283+7, tsc 0x4, Biome 0/644.  # contexted 2026-09-28 at `6331ba5`. Validate IN core, inside the LWW loop, only for a change about to be APPLIED (local-wins branch untouched); refused row keeps the local op, advances the cursor (66.2 ADVANCE re-read, holds); web safeParse REMOVED (one validator). Open Q for Lucas: pull-side user notice (default no).
   epic-75-retrospective: optional
 
   epic-76: backlog  # Profiles That Delete Cleanly On Every Device. FR121/FR122. Plan after 75.1 is done. 76.3: PGlite is single-connection — say plainly whether a true race test is possible.

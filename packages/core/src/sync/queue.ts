@@ -259,7 +259,7 @@ export class SyncQueue {
    * once.
    *
    * Use it ONLY for ops that can never be accepted, so that one resurrected from
-   * storage is refused again rather than applied. Two callers qualify today:
+   * storage is refused again rather than applied. Three callers qualify today:
    *   - ops the server refused on their own data (the sync service);
    *   - ops for a row whose CREATE the server refused (the web layer's sweep).
    *     The server has no such row, so an update or delete for it cannot land.
@@ -267,6 +267,10 @@ export class SyncQueue {
    *     with that create. If one resurrects alone (only the create's removal was
    *     persisted), it meets `update-delete` / `Entity not found`, which is the
    *     pre-existing kept-queued path, not a silent write.
+   *   - ops that LOST pull's last-writer-wins to a strictly newer server row
+   *     (code review 75.4). Sending one would overwrite the value the pull just
+   *     applied. One that resurrects after a reload meets a full pull (the cursor
+   *     restarts at `null`), and the same newer row drops it again.
    * Do not use it for ops that still have to reach the server.
    *
    * LIMIT, stated plainly: it cannot outlive a NEW queue built from storage while

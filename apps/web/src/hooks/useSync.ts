@@ -32,7 +32,11 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { fetchServerChangesWithMeta, sendSyncOperation } from '../features/api/client'
-import { applyServerChangesToStores, findLocalRow } from '../lib/sync/applyServerChanges'
+import {
+  applyServerChangesToStores,
+  findLocalRow,
+  reportRefusedServerChanges,
+} from '../lib/sync/applyServerChanges'
 import { addRefusalNotices, dismissAllRefusalNotices } from '../lib/sync/refusalNoticeStore'
 import { handleRejectedOperations } from '../lib/sync/refusedEdits'
 import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
@@ -394,6 +398,13 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       })
     })
 
+    // Story 75.4 (FR123): rows core refused to apply because they failed their
+    // entity schema. The user's queued edit survived them; this only reports them
+    // (developer channel, no values — see `reportRefusedServerChanges`).
+    const unsubscribeRefusedRows = syncServiceRef.current.onServerChangesRefused(
+      reportRefusedServerChanges
+    )
+
     // Story 75.2 (FR119): an op the server PERMANENTLY refused has left the
     // queue. Name the entry to the user and REVERT it on this device (decision,
     // Lucas 2026-09-28) — see `lib/sync/refusedEdits.ts` for why each case
@@ -435,6 +446,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     return () => {
       unsubscribe()
       unsubscribeChanges()
+      unsubscribeRefusedRows()
       unsubscribeRejected()
       // Notices name THIS account's entries. The store is module-level, so
       // without this a sign-out → sign-in as another paid user in the same tab

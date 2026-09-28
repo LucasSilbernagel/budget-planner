@@ -188,9 +188,10 @@ export function backfillSortOrder<T extends DisplayOrdered>(rows: readonly T[] |
  * ⚠️⚠️ REACHING THAT DOES **NOT** REQUIRE ~2.1 BILLION INSERTS — an earlier version
  * of this note said so and was wrong (found in 48.2's review). The gate is
  * `.max(PG_INT32_MAX)` and zod's `.max` is **INCLUSIVE**, so `sortOrder:
- * 2_147_483_647` is a contractually VALID value for a pulled row. Since 66.2
- * `applyServerChanges` DOES validate a pulled row, but verdict-only and against
- * schemas that do not declare `sortOrder` at all, so the value is written through
+ * 2_147_483_647` is a contractually VALID value for a pulled row. Since 66.2 a
+ * pulled row IS validated (in core's `pull()` since story 75.4; in
+ * `applyServerChanges` before that), but verdict-only and against schemas that do
+ * not declare `sortOrder` at all, so the value is written through
  * unchanged; `stampMissingSortOrder` stamps only MISSING positions. It reaches the
  * store intact. **One** such row makes the next local add compute
  * `max + 1 = 2_147_483_648`: the queue gate throws, `syncBridge` swallows it into a

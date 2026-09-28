@@ -23,7 +23,9 @@ import type {
   OperationsRejectedCallback,
   ProcessOperationResult,
   PullResult,
+  RefusedServerChange,
   ServerChange,
+  ServerChangesRefusedCallback,
   SyncConfig,
   SyncEntityType,
   SyncOperation,
@@ -33,7 +35,7 @@ import type {
   SyncStatusCallback,
 } from './types'
 import { SyncStatus } from './types'
-import { syncOperationDataSchema } from './types'
+import { syncOperationDataSchema, validateServerRow } from './types'
 
 /**
  * Default configuration for the synchronization service
@@ -337,6 +339,7 @@ export class SynchronizationService {
   private conflictCallbacks: Set<ConflictCallback> = new Set()
   private changesPulledCallbacks: Set<ChangesPulledCallback> = new Set()
   private operationsRejectedCallbacks: Set<OperationsRejectedCallback> = new Set()
+  private serverChangesRefusedCallbacks: Set<ServerChangesRefusedCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing = false
   // Set when a sync trigger (e.g. coming back online) arrives while a sync is
@@ -550,6 +553,7 @@ export class SynchronizationService {
     this.conflictCallbacks.clear()
     this.changesPulledCallbacks.clear()
     this.operationsRejectedCallbacks.clear()
+    this.serverChangesRefusedCallbacks.clear()
   }
 
   /**
@@ -674,6 +678,37 @@ export class SynchronizationService {
         callback([...operations])
       } catch (error) {
         this.log('Operations-rejected callback error:', error)
+      }
+    }
+  }
+
+  /**
+   * Subscribe to the server rows a pull REFUSED (story 75.4, FR123). Fired once
+   * per pull, after the cursor is set, with that pull's refusals only, and not at
+   * all when nothing was refused. The web layer reports them (developer channel).
+   * @param callback - The callback function
+   * @returns Unsubscribe function to remove the callback
+   */
+  onServerChangesRefused(callback: ServerChangesRefusedCallback): () => void {
+    if (this.serverChangesRefusedCallbacks.size >= MAX_CALLBACKS) {
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
+    }
+    this.serverChangesRefusedCallbacks.add(callback)
+    return () => this.serverChangesRefusedCallbacks.delete(callback)
+  }
+
+  /**
+   * Notify all server-changes-refused callbacks. Each gets its own copy, and one
+   * throwing callback cannot stop the others or the pull.
+   */
+  private notifyServerChangesRefusedCallbacks(refused: RefusedServerChange[]): void {
+    for (const callback of this.serverChangesRefusedCallbacks) {
+      try {
+        callback([...refused])
+      } catch (error) {
+        this.log('Server-changes-refused callback error:', error)
       }
     }
   }
@@ -1664,6 +1699,16 @@ export class SynchronizationService {
    *     callback is emitted so this is observable, not silent.
    * Server changes with no queued local op apply directly.
    *
+   * ⚠️⚠️ A change that would be APPLIED (either of the last two cases) and is not
+   * a tombstone is validated FIRST (story 75.4, FR123). A row that fails its
+   * entity schema is REFUSED: it is not applied, it displaces no queued op, no
+   * conflict is reported, and it is returned in `refused` instead. Before this,
+   * the only validation ran in the web layer AFTER the queued op had been
+   * removed, so a malformed row cost the user their edit and nothing ever pushed
+   * it. A change that LOSES to a local edit is not validated: nothing is written,
+   * so there is nothing to protect, and its conflict/cursor-hold semantics stay
+   * exactly as they were.
+   *
    * The transport (`config.fetchServerChanges`) is REQUIRED — like
    * `processOperation`, a missing transport throws rather than no-oping, so a
    * misconfiguration can't masquerade as "no remote changes".
@@ -1694,11 +1739,13 @@ export class SynchronizationService {
         conflicts: [],
         error: message,
         lastPullTimestamp: since,
+        refused: [],
       }
     }
 
     const applied: ServerChange[] = []
     const conflicts: ServerChange[] = []
+    const refused: RefusedServerChange[] = []
     const droppedLocalOps: SyncOperation[] = []
 
     // Index the current queue by entity key. The NEWEST op per entity is what
@@ -1753,6 +1800,26 @@ export class SynchronizationService {
         continue
       }
 
+      // ⚠️⚠️ Validate BEFORE the drop below (story 75.4). This change is about to
+      // be applied and, if an op is queued for it, to displace that op. A refused
+      // row must do neither: the op stays queued and pushes later (the server push
+      // path has no timestamp LWW, so it lands). ⚠️ That heals the server row ONLY
+      // in the fields the op carries: an update sends the fields the user changed,
+      // so a bad `amount` survives an edit to `name` alone, and every later pull
+      // refuses the row again (deferred-work, 75.4). A tombstone is never validated; it carries no meaningful payload, and
+      // refusing one would stop deletes propagating (story 66.2, rule 1).
+      if (!change.isDeleted) {
+        const verdict = validateServerRow(change)
+        if (!verdict.ok) {
+          refused.push({
+            entityType: change.entityType,
+            entityId: change.entityId,
+            fields: verdict.fields,
+          })
+          continue
+        }
+      }
+
       if (localOp) {
         // Server change is strictly newer than the newest queued local op →
         // server wins LWW. Drop ALL queued ops for this entity (review P4) so
@@ -1773,6 +1840,11 @@ export class SynchronizationService {
       applied.push(change)
     }
 
+    // ⚠️ A REFUSED change advances the cursor like an applied one (story 66.2's
+    // ADVANCE decision, re-read in 75.4): a malformed row stays malformed, so
+    // holding the cursor below it would re-fetch it for ever and stall every
+    // later change behind it. It is deliberately NOT in `earliestSuppressed`.
+    //
     // Advance the pull cursor — but NOT past a change suppressed by a still-queued
     // local op (review D2). The cursor sits just below the earliest unresolved
     // (suppressed) change, so the next pull re-fetches it (and idempotently
@@ -1796,13 +1868,24 @@ export class SynchronizationService {
     // (mirrors the push path's conflictOperations) so the UI count reflects the
     // local writes the server overwrote (review D4).
     if (droppedLocalOps.length > 0) {
+      // ⚠️ `discardBatch`, not `removeBatch` (code review 75.4, Lucas's decision).
+      // `removeBatch` THROWS when storage refuses the write, and the ops then
+      // stayed queued. The old comment called that "a redundant retry", and it
+      // was not: the pull has just APPLIED the newer server value, so the next
+      // push would send the stale local edit over it. `discardBatch` drops them
+      // from memory even when storage refuses. Its limit (they return on a reload
+      // while storage keeps refusing) is safe here: a reload pulls from `null`,
+      // the same newer server row wins LWW again, and they are dropped again
+      // before anything can push them.
       try {
-        await this.queue.removeBatch(droppedLocalOps.map((op) => op.id))
+        const { persisted } = await this.queue.discardBatch(droppedLocalOps.map((op) => op.id))
+        if (!persisted) {
+          this.log('Stale local ops dropped from memory only; storage refused the write')
+        }
         this.state.pendingOperations = this.queue.getAll()
         this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
       } catch (error) {
-        // If removal fails the ops stay queued and will be re-evaluated on the
-        // next pull/push — no data is lost, the worst case is a redundant retry.
+        // `discardBatch` does not throw for a storage failure; this is a bug path.
         this.log('Failed to remove stale local ops after pull:', error)
       }
       this.state.conflictOperations = [...this.state.conflictOperations, ...droppedLocalOps]
@@ -1816,6 +1899,9 @@ export class SynchronizationService {
     if (applied.length > 0) {
       this.notifyChangesPulledCallbacks(applied)
     }
+    if (refused.length > 0) {
+      this.notifyServerChangesRefusedCallbacks(refused)
+    }
     this.notifyStatusCallbacks()
 
     return {
@@ -1823,6 +1909,7 @@ export class SynchronizationService {
       changesPulledCount: applied.length,
       applied,
       conflicts,
+      refused,
       lastPullTimestamp: newCursor,
     }
   }

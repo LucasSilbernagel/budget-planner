@@ -18,45 +18,48 @@
  * (the value is only read back for display/aggregation) and is a separate concern
  * from the id unification this story delivers — out of scope here.
  *
- * ## Validation (Story 66.2, FR103)
+ * ## Validation (Story 66.2, FR103; moved into core by story 75.4, FR123)
  *
- * Every non-tombstone row is validated against its entity schema before it is
- * written; a row that fails is refused and reported instead. ⚠️⚠️ This is the
- * ONLY validation anywhere on the server → client direction. The gate it uses —
- * core's per-entity mirrors — is one of six; the OTHER FIVE
- * (`syncOperationDataSchema`, the server ingest schemas, the syncBridge payload
- * whitelist, the DB columns, the client types) all sit on the PUSH path or at
- * rest, so until 66.2 the authoritative server payload was trusted completely and
- * written in verbatim.
+ * ⚠️⚠️ THIS MODULE NO LONGER VALIDATES AN ENTITY ROW. Core does, in
+ * `SynchronizationService.pull()` (`validateServerRow`, over the same per-entity
+ * schemas this module used to call), BEFORE the row can win last-writer-wins.
+ * It used to happen here, and that was the defect 75.4 closes: core had already
+ * removed the user's queued edit by the time this module refused the row, so the
+ * edit was lost and nothing ever pushed it.
  *
- * ⚠️ Three rules the guard depends on, each with a test that fails if it is
- * broken (`__tests__/server-row-validation.test.ts`):
+ * So a row that reaches {@link applyServerChangesToStores} through a pull has
+ * already passed. The only other caller is story 75.2's `refusedEdits.ts`, which
+ * applies synthetic TOMBSTONES, and tombstones are never validated anywhere. There
+ * is deliberately no second check here: one that production could no longer
+ * reach, kept green by tests that call this function directly, would be a copy
+ * asserted against itself. Pinned by `__tests__/server-row-validation.test.ts`.
  *
- *   1. It runs AFTER the tombstone return. A tombstone is rebuilt from a
- *      soft-deleted ROW and carries no meaningful payload; validating one would
- *      stop deletes propagating — silent data resurrection.
- *   2. It supplies a VERDICT ONLY. `change.data` is still written unchanged,
- *      because `z.object` strips undeclared keys and the schemas declare neither
- *      `profileId` nor `sortOrder`.
- *   3. A refusal returns `false`, reusing the existing contract below, so a
- *      rejected row cannot mark a collection touched (triggering a re-sort) nor
- *      set `appliedProfile` (triggering an active-profile reconcile).
+ * Core reports what it refused through `onServerChangesRefused`, which
+ * `hooks/useSync.ts` wires to {@link reportRefusedServerChanges}, the one reporter.
  *
- * ⚠️ The pull CURSOR is unaffected and cannot be affected from here: core
- * persists it before calling this module, and the callback returns `void`. That
- * is a deliberate, argued choice — see `__tests__/refused-row-cursor.test.ts`.
+ * ⚠️ Two guards DO stay in `applyOne`, and neither is a second validator. The
+ * `!binding` guard skips an entity type this client does not know (a server newer
+ * than the client; not a corrupt row). The `!id` guard refuses a change whose
+ * ENVELOPE has an empty `entityId`, which no entity schema declares and which the
+ * store write would turn into an untargetable orphan.
+ *
+ * ⚠️ Two of 66.2's rules still hold, now in core, each with a test:
+ *
+ *   1. A tombstone is never validated. It is rebuilt from a soft-deleted ROW and
+ *      carries no meaningful payload; validating one would stop deletes
+ *      propagating — silent data resurrection.
+ *   2. The schema supplies a VERDICT ONLY. `change.data` is written here
+ *      unchanged, because `z.object` strips undeclared keys and the schemas
+ *      declare neither `profileId` nor `sortOrder`.
+ *
+ * ⚠️ The pull CURSOR advances past a refused row (66.2's decision, re-read in
+ * 75.4). It lives in core's in-memory state and is never persisted; core sets it
+ * before calling this module, and the callback returns `void`, so nothing here
+ * can move it. See `__tests__/refused-row-cursor.test.ts`.
  */
 
 import type { ServerChange, SyncEntityType } from '@budget-planner/core'
-import {
-  balanceTrackingSchema,
-  categorySchema,
-  expenseSchema,
-  incomeSourceSchema,
-  savingsGoalSchema,
-  userProfileSchema,
-} from '@budget-planner/core/sync/types'
-import type { ZodTypeAny } from 'zod'
+import type { RefusedServerChange } from '@budget-planner/core/sync'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'
@@ -77,23 +80,6 @@ interface EntityBinding {
   store: StoreApi
   /** The state field that holds the entity array. */
   collection: string
-  /**
-   * The schema a PULLED row must satisfy before it is written (Story 66.2, FR103).
-   *
-   * These are core's per-entity mirrors. They were declared for parity and, until
-   * this story, imported by no PRODUCTION code (one spec already reached
-   * `expenseSchema` through a dynamic `await import` — the story first recorded
-   * the stronger "nothing", and its review corrected it); every other sync gate
-   * (`syncOperationDataSchema`, the server ingest schemas, the syncBridge
-   * whitelist) sits on the PUSH path or at rest, so before 66.2 no validation of
-   * any kind ran on the server → client direction.
-   *
-   * ⚠️ Why these and not `syncOperationDataSchema`: that schema models a PARTIAL
-   * operation payload — every field is `.optional()`, so it accepts `{}`. It
-   * cannot express "this row is complete", which is exactly what a pulled row
-   * has to be. See `packages/core/src/sync/types.ts` for the full note.
-   */
-  schema: ZodTypeAny
 }
 
 /**
@@ -104,32 +90,26 @@ const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
   incomeSource: {
     store: useIncomeStore as unknown as StoreApi,
     collection: 'incomeSources',
-    schema: incomeSourceSchema,
   },
   expense: {
     store: useExpenseStore as unknown as StoreApi,
     collection: 'expenses',
-    schema: expenseSchema,
   },
   savingsGoal: {
     store: useSavingsStore as unknown as StoreApi,
     collection: 'savingsGoals',
-    schema: savingsGoalSchema,
   },
   balanceTracking: {
     store: useBalanceStore as unknown as StoreApi,
     collection: 'entries',
-    schema: balanceTrackingSchema,
   },
   userProfile: {
     store: useProfileStore as unknown as StoreApi,
     collection: 'profiles',
-    schema: userProfileSchema,
   },
   category: {
     store: useCategoryStore as unknown as StoreApi,
     collection: 'categories',
-    schema: categorySchema,
   },
 }
 
@@ -171,13 +151,19 @@ function applyOne(change: ServerChange): boolean {
   // neither be matched (to replace/tombstone) nor safely inserted — `{ id: '' }`
   // would be an orphan that no later change can ever target. Skip it rather than
   // corrupt the store. (Replaces the old numeric NaN guard, which is now moot.)
+  //
+  // ⚠️ Kept HERE when entity validation moved into core (story 75.4), and that is
+  // not a second validator: this guards the ENVELOPE's id, which no entity schema
+  // declares, and the store write below is what an empty id would corrupt. The
+  // `!binding` guard above is the same kind of thing: an entity type this client
+  // does not know, not a malformed row.
   if (!id) {
     // ⚠️ Reported like any other refusal (code review 66.2): this path returned
     // silently, so a row dropped for a missing id was invisible while a row
     // dropped for a bad amount was not — an inconsistency in the one channel
     // AC-5 asked for. `entityId` is the empty string here, so nothing
     // identifying is lost by naming it.
-    reportRefusedRow(change, [{ path: ['entityId'], code: 'too_small' }])
+    reportRefusedRow(change.entityType, change.entityId, ['entityId:too_small'])
     return false
   }
 
@@ -218,9 +204,10 @@ function applyOne(change: ServerChange): boolean {
       // it, `appliedProfile` stayed FALSE and `reconcileActiveProfile` never ran —
       // leaving stores 1..k cleared, k+1..5 intact, the profile row already gone
       // and `activeProfileId` pointing at a profile that no longer exists, which
-      // `scopeToActiveProfile` then renders as an empty app. The pull cursor is
-      // persisted BEFORE the applier runs (`synchronization.ts:1631` then `:1635`),
-      // so the tombstone is never redelivered and nothing retries.
+      // `scopeToActiveProfile` then renders as an empty app. Core has already
+      // advanced the pull cursor past the tombstone before calling this module
+      // (`SynchronizationService.pull()`), so it is not redelivered this session
+      // and nothing retries.
       //
       // Reporting the tombstone as applied is the right call even on failure: the
       // profile row IS gone from the store above, so the active-profile repoint
@@ -234,31 +221,19 @@ function applyOne(change: ServerChange): boolean {
     return true
   }
 
-  // ⚠️⚠️ Validate the server row BEFORE it enters the store (Story 66.2, FR103).
+  // ⚠️ NOT validated here (story 75.4): core validated this row before letting it
+  // win LWW, and refused it there if it was malformed. See the module docblock.
   //
-  // Placed here deliberately — AFTER the `!id` guard and AFTER the tombstone
-  // return above. A tombstone is reconstructed from a soft-deleted ROW and is not
-  // required to carry a well-formed payload; validating one would stop deletes
-  // propagating across devices, which is a silent data-resurrection bug.
-  //
-  // ⚠️ The failure this stops is NOT a crash. A persisted STRING amount makes `+`
-  // a CONCATENATION, so the totals come out large, finite and entirely plausible
-  // with no `NaN` to flag them: `stores/savingsStore.ts` and
-  // `stores/balanceStore.ts` both sum raw persisted rows, and `useNetWorth` feeds
-  // the result straight to `netWorthFromTotals`. A finiteness check is not enough
-  // — the guard has to test `typeof === 'number'`, which `z.number()` does.
-  // (deferred-work.md:1031.)
-  const validation = binding.schema.safeParse(change.data)
-  if (!validation.success) {
-    reportRefusedRow(change, validation.error.issues)
-    return false
-  }
+  // The failure that validation stops is NOT a crash, which is why it must not be
+  // lost in a refactor: a persisted STRING amount makes `+` a CONCATENATION, so
+  // `stores/savingsStore.ts` and `stores/balanceStore.ts` (which sum raw persisted
+  // rows) produce large, finite, plausible totals with no `NaN` to flag them.
 
   // Insert the authoritative server row keyed by its shared uuid id. Deliberately
   // NOT profile-scoped (story 54.4): the server row carries its own `profileId`,
   // and reads — not writes — decide what is visible under the active profile.
   //
-  // ⚠️⚠️ `change.data` is written UNCHANGED — the schema above supplies a VERDICT
+  // ⚠️⚠️ `change.data` is written UNCHANGED — core's schema supplied a VERDICT
   // and nothing else. `z.object` STRIPS undeclared keys, and the entity schemas
   // declare none of `profileId`, `sortOrder`, `categoryId`, `isDeleted`,
   // `createdAt` or `updatedAt`. Writing `safeParse().data` instead would delete
@@ -271,7 +246,9 @@ function applyOne(change: ServerChange): boolean {
 }
 
 /**
- * Report a server row that failed validation (Story 66.2, AC-5).
+ * Report a server row that was refused (Story 66.2, AC-5): by core's validation
+ * (story 75.4, through {@link reportRefusedServerChanges}) or by the empty-id
+ * guard in `applyOne`.
  *
  * ⚠️⚠️ This is a DEVELOPER channel and the story says so rather than pretending
  * otherwise. There is no sync-status UI in this product: the whole of
@@ -283,8 +260,10 @@ function applyOne(change: ServerChange): boolean {
  *
  * ⚠️ Story 75.2 added ONE user-facing surface, and it does NOT cover this path:
  * `components/sync/RefusedEditNotice.tsx` names edits the server refused on the
- * PUSH side. A server row refused HERE, on the PULL side, still reaches only the
- * console — the user is not told (story 75.4 is where this path changes).
+ * PUSH side. A server row refused on the PULL side still reaches only the
+ * console, and the user is not told. Story 75.4 changed what such a refusal
+ * COSTS (the user's queued edit now survives it), not who hears about it; a
+ * pull-side notice was left as an open product question.
  *
  * ⚠️ `console.warn`, matching the established client-side idiom in
  * `syncBridge.ts`'s `onQueueError` — NOT `lib/logger.ts`, which is server-only in
@@ -296,20 +275,26 @@ function applyOne(change: ServerChange): boolean {
  * client-side `console.warn` has no redaction pass at all, so money must not be
  * put into the message in the first place. Issue `message` strings are dropped
  * for the same reason: a future zod version or a custom refinement could embed
- * the received value in one.
+ * the received value in one. Core builds `fields` from path and code only
+ * (`validateServerRow`), so what arrives here is already value-free.
  */
-/** The only part of a zod issue this reporter uses — see the no-values note above. */
-interface RefusalIssue {
-  path: readonly (string | number)[]
-  code: string
+function reportRefusedRow(entityType: string, entityId: string, fields: readonly string[]): void {
+  console.warn('[applyServerChanges] refused a malformed server row', {
+    entityType,
+    entityId,
+    fields: [...fields],
+  })
 }
 
-function reportRefusedRow(change: ServerChange, issues: readonly RefusalIssue[]): void {
-  console.warn('[applyServerChanges] refused a malformed server row', {
-    entityType: change.entityType,
-    entityId: change.entityId,
-    fields: issues.map((issue) => `${issue.path.join('.') || '(root)'}:${issue.code}`),
-  })
+/**
+ * Report the rows core refused in one pull (story 75.4). `hooks/useSync.ts`
+ * subscribes this to `SynchronizationService.onServerChangesRefused`: one
+ * `console.warn` per refused row, through the same reporter as the empty-id guard.
+ */
+export function reportRefusedServerChanges(refused: readonly RefusedServerChange[]): void {
+  for (const row of refused) {
+    reportRefusedRow(row.entityType, row.entityId, row.fields)
+  }
 }
 
 /**

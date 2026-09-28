@@ -10,8 +10,9 @@
  * already reached `expenseSchema` through a dynamic `await import`. The story
  * first recorded the stronger claim; its code review caught it, the same way
  * 66.1's review caught a claim that had checked static importers only.)
- * Story 66.2 gives them their first real consumer: `apps/web/src/lib/sync/applyServerChanges.ts` validates every pulled
- * server row against them before writing it into a client store.
+ * Story 66.2 gives them their first real consumer: `apps/web/src/lib/sync/applyServerChanges.ts` validated every pulled
+ * server row against them before writing it into a client store. Story 75.4 moved that check into core's
+ * `pull()` (`validateServerRow` in `../types.ts`), so it runs before last-writer-wins can drop a queued local edit.
  *
  * ⚠️⚠️ That exposed three disagreements between these schemas and the DATABASE
  * COLUMNS they mirror. None had ever fired, because the only path that ran a zod

@@ -171,8 +171,10 @@ export const useBalanceStore = create<BalanceState>()(
       // ⚠️ Stated narrowly on purpose (48.2 review). "Every mutation validates"
       // would be false — `deleteBalanceEntry` below is a mutation and runs no
       // validation, correctly, and neither does zustand's persist/rehydrate. The
-      // unvalidated path that writes row DATA is `lib/sync/applyServerChanges.ts`,
-      // not this file.
+      // path outside this file that writes row DATA is the sync applier,
+      // `lib/sync/applyServerChanges.ts`. It does not run `validateBalanceTracking`;
+      // the pulled row is checked upstream by core's `balanceTrackingSchema`, in
+      // `pull()` (story 75.4).
 
       // Delete a balance entry
       deleteBalanceEntry: (id: string): boolean => {
