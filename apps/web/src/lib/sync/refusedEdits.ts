@@ -31,9 +31,11 @@
  * active profile.
  *
  * ⚠️ A refused PROFILE create: its local child rows go with it (the tombstone
- * cascade), but their own queued ops are NOT removed here — they fail
- * `Profile not found`, which is deliberately not permanent (75.1). Story 76.2
- * owns them.
+ * cascade), and so do their own queued ops (story 76.2), through core's
+ * `discardOperationsForDeletedProfile` — the same strict predicate a pulled
+ * profile tombstone uses. Left queued they would fail `Profile not found` for
+ * ever, which is deliberately not permanent on the server (75.1): a refused
+ * create is the positive proof the server cannot see.
  */
 
 import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync'
@@ -46,6 +48,11 @@ export interface RefusalHandlerDeps {
     getAll: () => SyncOperation[]
     discardBatch: (ids: string[]) => Promise<{ removed: number; persisted: boolean }>
   }
+  /**
+   * Core's `discardOperationsForDeletedProfile` (story 76.2): drop the queued ops
+   * stamped with a profile whose create the server refused.
+   */
+  discardOperationsForDeletedProfile: (profileId: string) => Promise<unknown>
   /** `applyServerChangesToStores` — used to apply the synthetic tombstones. */
   applyChanges: (changes: ServerChange[]) => void
   /** `findLocalRow` — reads a row's current local state, for its name and kind. */
@@ -205,6 +212,13 @@ export async function handleRejectedOperations(
       ])
     } catch (error) {
       console.error('[refusedEdits] could not remove a refused create locally:', error)
+    }
+    if (first.entityType === 'userProfile') {
+      try {
+        await deps.discardOperationsForDeletedProfile(first.entityId)
+      } catch (error) {
+        console.error('[refusedEdits] could not drop queued ops of a refused profile:', error)
+      }
     }
   }
 

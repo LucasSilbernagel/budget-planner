@@ -308,8 +308,20 @@ export const useProfileStore = create<ProfileState>()(
             // ⚠️ Typed as `ClientProfile`, not inlined: `syncEntityUpdate` takes
             // `ClientEntity` (`{ id, updatedAt? }`), so an object literal at the
             // call site trips TS's excess-property check on `isDefault`.
+            //
+            // ⚠️ `dependsOn` the tombstone (story 76.2, decision D1 = A). If a
+            // pull drops the tombstone by last-writer-wins (the profile was
+            // edited on another device, so the deletion lost), core drops this
+            // promotion in the same pass and `useSync` re-pulls to revert the
+            // local flag. Without it the promotion still pushed and MOVED the
+            // default because of a deletion that did not happen. One-way: a
+            // lost promotion leaves the tombstone queued. Core also HOLDS the
+            // promotion on push until the tombstone has landed, and drops it
+            // if the tombstone is permanently refused (code review 76.2).
             const promotedRow: ClientProfile = { ...promoted, isDefault: true }
-            syncEntityUpdate('userProfile', promotedRow, promoted)
+            syncEntityUpdate('userProfile', promotedRow, promoted, {
+              dependsOn: { entityType: 'userProfile', entityId: target.id, type: 'delete' },
+            })
           }
         }
       },

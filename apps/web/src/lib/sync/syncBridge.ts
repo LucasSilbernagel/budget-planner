@@ -18,7 +18,7 @@
  * the stores (no cycle) and never imports server/db code (no client-bundle hazard).
  */
 
-import type { SyncEntityType } from '@budget-planner/core'
+import type { SyncEntityType, SyncOperation } from '@budget-planner/core'
 
 /** Queue functions the provider supplies (sourced from `useSync`). */
 export interface SyncBridgeHandle {
@@ -34,7 +34,8 @@ export interface SyncBridgeHandle {
     entityId: string,
     data: Record<string, unknown>,
     version?: number,
-    baseVersion?: number
+    baseVersion?: number,
+    dependsOn?: SyncOperation['dependsOn']
   ) => Promise<void>
   queueDelete: (entityType: SyncEntityType, entityId: string, baseVersion?: number) => Promise<void>
 }
@@ -345,20 +346,26 @@ export function enqueueCreate(
  * Queue an UPDATE (no-op for the free tier). `previous` is the pre-edit entity;
  * its `updatedAt` becomes the `baseVersion` so pull reconciliation uses causal
  * LWW instead of wall-clock time (4-18 D1).
+ *
+ * `options.dependsOn` names an op this update only makes sense after (story
+ * 76.2): if a pull drops that op by last-writer-wins, it drops this one too.
  */
 export function syncEntityUpdate(
   entityType: SyncEntityType,
   entity: ClientEntity,
-  previous?: ClientEntity
+  previous?: ClientEntity,
+  options: { dependsOn?: SyncOperation['dependsOn'] } = {}
 ): void {
   if (!handle) {
     return
   }
   const payload = toServerPayload(entityType, entity, handle.userId)
   const baseVersion = toBaseVersion(previous?.updatedAt ?? entity.updatedAt)
-  handle.queueUpdate(entityType, entity.id, payload, undefined, baseVersion).catch((error) => {
-    onQueueError(`update ${entityType}`, error)
-  })
+  handle
+    .queueUpdate(entityType, entity.id, payload, undefined, baseVersion, options.dependsOn)
+    .catch((error) => {
+      onQueueError(`update ${entityType}`, error)
+    })
 }
 
 /**

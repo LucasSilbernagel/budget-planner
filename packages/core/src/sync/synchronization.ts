@@ -113,6 +113,74 @@ const PERMANENT_REJECT_STATUS_CODES: ReadonlySet<number> = new Set([
 ])
 
 /**
+ * Whether `operation` belongs to a profile that has been DELETED on the server
+ * (story 76.2), given the ids of the deleted profiles.
+ *
+ * ⚠️⚠️ `op.profileId` is the ACTIVE-profile stamp at queue time
+ * (`config.profileId`), not the row's owner, and on a `userProfile` op it means
+ * nothing at all: the server's `userProfiles` table has no `profileId` column.
+ * It is also STALE in the one case that matters most. The host updates the stamp
+ * after a profile switch has rendered, so deleting the ACTIVE default queues the
+ * survivor's promotion carrying the DELETED profile's id, and a profile created
+ * while P was active carries P too. So `userProfile` ops are never matched here:
+ * dropping them would lose the user's chosen successor or a whole new profile.
+ * A deleted profile's OWN op needs no arm here: its tombstone is applied only
+ * when the server won last-writer-wins, which has already dropped every queued
+ * op for that profile.
+ *
+ * For every other entity type the stamp is exactly what the server checks
+ * (`profileBelongsToUser(operation.profileId)` in `server/api/sync.ts`), so an op
+ * matched here can never CHANGE anything: a create fails `Profile not found` and
+ * an update of a cascade-tombstoned row is an `update-delete` conflict, both for
+ * ever. A delete of a cascade-tombstoned row would be acknowledged as a no-op
+ * (story 76.1, `isAlreadyDeleted`), so dropping it is harmless too.
+ *
+ * Strict equality: an op with no stamp never matches (story 66.3's rule for a
+ * destructive predicate).
+ */
+function isStrandedByDeletedProfile(
+  operation: SyncOperation,
+  deletedProfileIds: ReadonlySet<string>
+): boolean {
+  return (
+    operation.entityType !== 'userProfile' &&
+    typeof operation.profileId === 'string' &&
+    deletedProfileIds.has(operation.profileId)
+  )
+}
+
+/** `type:entityType:entityId` — how a `dependsOn` reference names an op. */
+function operationKey(op: {
+  type: SyncOperation['type']
+  entityType: SyncOperation['entityType']
+  entityId: string
+}): string {
+  return `${op.type}:${op.entityType}:${op.entityId}`
+}
+
+/**
+ * Whether `operation` names a `dependsOn` target that is still queued and has
+ * not landed in this sync (story 76.2, code review). `landed` holds the ops this
+ * sync has already had accepted: they stay in the queue until the batch is
+ * removed after the loop, so the queue alone cannot tell.
+ */
+function dependsOnStillPending(
+  operation: SyncOperation,
+  queued: readonly SyncOperation[],
+  landed: readonly SyncOperation[]
+): boolean {
+  const target = operation.dependsOn
+  if (!target) {
+    return false
+  }
+  const key = operationKey(target)
+  return (
+    queued.some((op) => op.id !== operation.id && operationKey(op) === key) &&
+    !landed.some((op) => operationKey(op) === key)
+  )
+}
+
+/**
  * Generates a unique ID for sync operations.
  *
  * Uses `crypto.randomUUID()` when available to guarantee uniqueness — the
@@ -820,7 +888,8 @@ export class SynchronizationService {
     data: Record<string, unknown>,
     userId: string,
     version?: number,
-    baseVersion?: number
+    baseVersion?: number,
+    dependsOn?: SyncOperation['dependsOn']
   ): Promise<SyncOperation> {
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
@@ -847,6 +916,8 @@ export class SynchronizationService {
       baseVersion,
       // Stamp the active profile (DN2: service-level config).
       profileId: this.config.profileId,
+      // Only when set, so an op without a link serializes exactly as before.
+      ...(dependsOn ? { dependsOn } : {}),
     }
 
     await this.queue.add(operation)
@@ -1238,6 +1309,17 @@ export class SynchronizationService {
           break
         }
 
+        // ⚠️ A dependent waits for the op it `dependsOn` (story 76.2, code review,
+        // decision (a)). Sending a promotion while its deletion had failed let the
+        // server demote the deleted profile — bumping its `updatedAt` — so the
+        // next pull saw it live and newer than the deletion, and dropped the
+        // deletion: the device undid its own user's delete. The dependent stays
+        // queued, unsent and uncounted, until the target leaves the queue.
+        if (dependsOnStillPending(operation, this.queue.getAll(), successfullyProcessed)) {
+          this.log('Holding an operation until the one it depends on has landed')
+          continue
+        }
+
         try {
           const result = await this.processOperation(operation)
 
@@ -1291,8 +1373,8 @@ export class SynchronizationService {
       // still succeed. ⚠️ This covers ops ALREADY queued. Story 75.2 decided the
       // rest (revert): the web layer drops any op for the row queued after this
       // sweep and removes the row from the device (`lib/sync/refusedEdits.ts`). ⚠️ A refused PROFILE
-      // create does not reach its children (different entityType) — those are
-      // story 76.2's.
+      // create does not reach its children here (different entityType): the web
+      // layer drops them through `discardOperationsForDeletedProfile` (story 76.2).
       const refusedCreates = new Set(
         rejectedOperations
           .filter((op) => op.type === 'create')
@@ -1322,6 +1404,26 @@ export class SynchronizationService {
           }
           rejectedOperations.push(...followUps)
         }
+      }
+
+      // A dependent leaves WITH a permanently refused target (story 76.2, code
+      // review): a promotion whose deletion the server will never accept would
+      // otherwise push later and move the default because of a deletion that did
+      // not happen. It was held above, so it sits in no bucket; it is reported
+      // with the refusal, and the web layer reverts it like any refused update.
+      const refusedTargets = new Set(rejectedOperations.map(operationKey))
+      if (refusedTargets.size > 0) {
+        const alreadyRefused = new Set(rejectedOperations.map((op) => op.id))
+        rejectedOperations.push(
+          ...this.queue
+            .getAll()
+            .filter(
+              (op) =>
+                op.dependsOn !== undefined &&
+                !alreadyRefused.has(op.id) &&
+                refusedTargets.has(operationKey(op.dependsOn))
+            )
+        )
       }
 
       // Remove all successfully processed operations from queue at once
@@ -1709,6 +1811,11 @@ export class SynchronizationService {
    * so there is nothing to protect, and its conflict/cursor-hold semantics stay
    * exactly as they were.
    *
+   * ⚠️ Two more drops happen in the same pass (story 76.2), neither a conflict:
+   * ops stamped with a profile whose tombstone this pull APPLIED
+   * (`discardedForDeletedProfile`), and ops that `dependsOn` an op LWW dropped
+   * (`droppedDependents`). See the block before the queue write.
+   *
    * The transport (`config.fetchServerChanges`) is REQUIRED — like
    * `processOperation`, a missing transport throws rather than no-oping, so a
    * misconfiguration can't masquerade as "no remote changes".
@@ -1740,6 +1847,8 @@ export class SynchronizationService {
         error: message,
         lastPullTimestamp: since,
         refused: [],
+        discardedForDeletedProfile: [],
+        droppedDependents: [],
       }
     }
 
@@ -1747,6 +1856,11 @@ export class SynchronizationService {
     const conflicts: ServerChange[] = []
     const refused: RefusedServerChange[] = []
     const droppedLocalOps: SyncOperation[] = []
+    // Dropped ops whose entity the server holds as a LIVE row (story 76.2): the
+    // op's intent did not happen. A delete dropped against a TOMBSTONE did happen
+    // (another device got there first, or this device's own push landed and its
+    // response was lost), so what depends on it must stay.
+    const lostToLiveRow = new Set<string>()
 
     // Index the current queue by entity key. The NEWEST op per entity is what
     // would win a push, so the LWW decision compares against it — but when the
@@ -1829,6 +1943,9 @@ export class SynchronizationService {
         // server change, which is not a SyncOperation.
         for (const op of allOpsByEntity.get(key) ?? [localOp]) {
           droppedLocalOps.push(op)
+          if (!change.isDeleted) {
+            lostToLiveRow.add(`${op.type}:${op.entityType}:${op.entityId}`)
+          }
         }
         this.notifyConflictCallbacks({
           hasConflict: true,
@@ -1864,10 +1981,64 @@ export class SynchronizationService {
       }
     }
 
+    // ⚠️⚠️ Two more kinds of op leave the queue in this same pass (story 76.2).
+    // Neither lost a comparison, so neither is a conflict.
+    //
+    // 1. Ops stamped with a profile whose tombstone this pull APPLIED. Another
+    //    device deleted it; the server cascade tombstoned its rows, and the web
+    //    layer's pull cascade (story 66.3) is about to destroy them locally. This
+    //    is Lucas's 66.3 decision (2026-09-24, destroy, not reassign) applied to
+    //    the rows' PENDING EDITS. It is not a new data-loss rule: none of these
+    //    ops could change anything on the server any more — creates and updates
+    //    fail for ever, deletes would be acknowledged no-ops (see
+    //    `isStrandedByDeletedProfile`).
+    //    Only an APPLIED tombstone counts: it is positive proof. A suppressed one
+    //    means a local edit still wins and the profile is live here.
+    //
+    // 2. Ops that `dependsOn` an op LWW just dropped for a LIVE server row
+    //    (decision D1 = A): a promotion whose deletion lost. Not when the row came
+    //    back as a tombstone: the deletion happened, and the promotion still
+    //    fills the seat. One level only: `dependsOn` is set on the promotion
+    //    alone, and nothing depends on a promotion.
+    const alreadyDropped = new Set(droppedLocalOps.map((op) => op.id))
+    const deletedProfileIds = new Set(
+      applied
+        .filter((change) => change.entityType === 'userProfile' && change.isDeleted)
+        .map((change) => change.entityId)
+    )
+    const discardedForDeletedProfile =
+      deletedProfileIds.size > 0
+        ? this.queue
+            .getAll()
+            .filter(
+              (op) =>
+                !alreadyDropped.has(op.id) && isStrandedByDeletedProfile(op, deletedProfileIds)
+            )
+        : []
+    const droppedDependents = this.queue.getAll().filter((op) => {
+      const target = op.dependsOn
+      return (
+        target !== undefined &&
+        !alreadyDropped.has(op.id) &&
+        lostToLiveRow.has(`${target.type}:${target.entityType}:${target.entityId}`)
+      )
+    })
+    // The two lists cannot overlap: a dependent is a `userProfile` promotion, and
+    // `isStrandedByDeletedProfile` never matches a `userProfile` op.
+    const toDiscard = [...droppedLocalOps, ...discardedForDeletedProfile, ...droppedDependents]
+    if (discardedForDeletedProfile.length > 0 || droppedDependents.length > 0) {
+      // Counts and ids only: an op's data can carry financial values.
+      console.info('[sync] pull let go of queued ops', {
+        deletedProfileIds: [...deletedProfileIds],
+        forDeletedProfile: discardedForDeletedProfile.length,
+        dependents: droppedDependents.length,
+      })
+    }
+
     // Remove queued ops that definitively lost LWW, and surface them as conflicts
     // (mirrors the push path's conflictOperations) so the UI count reflects the
     // local writes the server overwrote (review D4).
-    if (droppedLocalOps.length > 0) {
+    if (toDiscard.length > 0) {
       // ⚠️ `discardBatch`, not `removeBatch` (code review 75.4, Lucas's decision).
       // `removeBatch` THROWS when storage refuses the write, and the ops then
       // stayed queued. The old comment called that "a redundant retry", and it
@@ -1878,7 +2049,7 @@ export class SynchronizationService {
       // the same newer server row wins LWW again, and they are dropped again
       // before anything can push them.
       try {
-        const { persisted } = await this.queue.discardBatch(droppedLocalOps.map((op) => op.id))
+        const { persisted } = await this.queue.discardBatch(toDiscard.map((op) => op.id))
         if (!persisted) {
           this.log('Stale local ops dropped from memory only; storage refused the write')
         }
@@ -1888,7 +2059,9 @@ export class SynchronizationService {
         // `discardBatch` does not throw for a storage failure; this is a bug path.
         this.log('Failed to remove stale local ops after pull:', error)
       }
-      this.state.conflictOperations = [...this.state.conflictOperations, ...droppedLocalOps]
+      if (droppedLocalOps.length > 0) {
+        this.state.conflictOperations = [...this.state.conflictOperations, ...droppedLocalOps]
+      }
     }
 
     // Persist the advanced pull cursor (separate from the push cursor) and surface
@@ -1910,8 +2083,42 @@ export class SynchronizationService {
       applied,
       conflicts,
       refused,
+      discardedForDeletedProfile,
+      droppedDependents,
       lastPullTimestamp: newCursor,
     }
+  }
+
+  /**
+   * Drop every queued op stamped with `profileId`, a profile that will never
+   * exist on the server (story 76.2). Same strict predicate as `pull()`; see
+   * `isStrandedByDeletedProfile`. Returns the ops it dropped.
+   *
+   * The pull applies it by itself. This entry point is for the host's other
+   * source of positive proof: the server permanently refused the profile's
+   * CREATE (story 75.2, `refusedEdits.ts`), so its children's queued ops would
+   * otherwise fail `Profile not found` for ever.
+   *
+   * `discardBatch`, like the pull: storage refusing the write still drops the ops
+   * from this session.
+   */
+  async discardOperationsForDeletedProfile(profileId: string): Promise<SyncOperation[]> {
+    if (!profileId) {
+      return []
+    }
+    const ids = new Set([profileId])
+    const stranded = this.queue.getAll().filter((op) => isStrandedByDeletedProfile(op, ids))
+    if (stranded.length === 0) {
+      return []
+    }
+    const { persisted } = await this.queue.discardBatch(stranded.map((op) => op.id))
+    if (!persisted) {
+      this.log('Ops of a deleted profile dropped from memory only; storage refused the write')
+    }
+    this.state.pendingOperations = this.queue.getAll()
+    this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
+    this.notifyStatusCallbacks()
+    return stranded
   }
 
   /**

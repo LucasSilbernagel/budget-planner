@@ -800,8 +800,11 @@ async function updateEntity(
  * while the op reported success. So the promote only matches a live row, and a
  * miss throws, which rolls the demotion back. The throw carries no SQLSTATE, so
  * the op stays queued (not permanent); on replay `checkConflict` sees the
- * tombstone and reports an `update-delete` conflict — the pre-existing class
- * deferred to story 76.2.
+ * tombstone and reports an `update-delete` conflict. That conflict does not last:
+ * the device's next pull delivers the target's tombstone, which is newer than the
+ * promotion's `baseVersion`, so pull last-writer-wins drops the promotion
+ * (story 76.2; pinned by core's `pull-drops-deleted-profile-ops.test.ts`, "a
+ * queued edit of the deleted profile ITSELF is drained by the same pull").
  *
  * ⚠️ Concurrency, REASONED not measured (PGlite is single-connection): two
  * promotions racing under READ COMMITTED can still make the later one fail on the
@@ -1095,8 +1098,10 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
         }
       }
       // ⚠️ NOT permanent (story 75.1). The profile's own create may still be
-      // queued or retrying, and a remotely deleted profile is story 76.2's to
-      // handle — dropping here would lose the child edits.
+      // queued or retrying. A remotely DELETED profile is handled on the client
+      // (story 76.2): the pull that applies its tombstone drops these ops, and a
+      // refused profile create drops them too. A server refusal here would
+      // instead raise 75.2's notice for rows the user can no longer see.
       if (!(await profileBelongsToUser(profileId, userId))) {
         return { success: false, error: 'Profile not found' }
       }

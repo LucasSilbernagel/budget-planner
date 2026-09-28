@@ -195,6 +195,10 @@ function applyOne(change: ServerChange): boolean {
     // So the tombstone is treated as the instruction it is — "this profile is
     // gone" — and the same strict-equality cascade runs against local state. No
     // child tombstones are needed, and none are pulled.
+    //
+    // ⚠️ The QUEUE half is not here (story 76.2). The rows' pending edits were
+    // dropped by core's `pull()` before this module was called, in the same pass
+    // that applied this tombstone (see `isStrandedByDeletedProfile`).
     if (change.entityType === 'userProfile') {
       // ⚠⚠ GUARDED, and the guard is not defensive padding (code review). The
       // cascade writes FIVE persisted stores in a loop, and zustand's

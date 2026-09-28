@@ -59,6 +59,7 @@ function deps(overrides: Partial<RefusalHandlerDeps> = {}) {
         return { removed: before - queued.length, persisted: true }
       }),
     },
+    discardOperationsForDeletedProfile: vi.fn(async (_profileId: string) => []),
     applyChanges: vi.fn((changes: ServerChange[]) => {
       applied.push(changes)
     }),
@@ -161,6 +162,32 @@ describe('handleRejectedOperations — reverting', () => {
       ],
     ])
     expect(d.requestFullRepull).not.toHaveBeenCalled()
+  })
+
+  it('a refused PROFILE create lets go of its children’s queued ops too (story 76.2)', async () => {
+    const d = deps()
+    await handleRejectedOperations(
+      [op({ type: 'create', entityType: 'userProfile', entityId: 'p-1' })],
+      d
+    )
+
+    // Its rows went with the synthetic tombstone (66.3 cascade); their queued ops
+    // would otherwise fail `Profile not found` for ever.
+    expect(d.discardOperationsForDeletedProfile).toHaveBeenCalledTimes(1)
+    expect(d.discardOperationsForDeletedProfile).toHaveBeenCalledWith('p-1')
+    expect(d.applied).toHaveLength(1)
+    // AFTER the synthetic tombstone: the rows go first, then their queued ops.
+    const tombstoneOrder = (d.applyChanges as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0] as number
+    const discardOrder = (d.discardOperationsForDeletedProfile as ReturnType<typeof vi.fn>).mock
+      .invocationCallOrder[0] as number
+    expect(tombstoneOrder).toBeLessThan(discardOrder)
+  })
+
+  it('a refused create of any OTHER entity type does not touch a profile’s ops', async () => {
+    const d = deps()
+    await handleRejectedOperations([op({ type: 'create' })], d)
+    expect(d.discardOperationsForDeletedProfile).not.toHaveBeenCalled()
   })
 
   it('names a refused create from the local row BEFORE the tombstone removes it', async () => {

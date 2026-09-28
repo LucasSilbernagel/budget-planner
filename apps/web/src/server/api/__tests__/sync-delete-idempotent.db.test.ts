@@ -469,8 +469,8 @@ describe('the promotion that travels with a profile delete (AC-3, AC-4; decision
       const result = await push([promoteOp(Q, 'Q')])
 
       expect(limit).toHaveBeenCalledTimes(2)
-      // Refused, NOT permanently: an unrejected failure, kept queued (76.2 owns
-      // what the device does with a promotion of a row deleted elsewhere).
+      // Refused, NOT permanently: an unrejected failure, kept queued. The device's
+      // next pull drops it: the target's tombstone beats its `baseVersion` (76.2).
       expect(mechanism(result)).toEqual({ conflictTypes: [], failedCount: 1, rejections: [] })
     } finally {
       spy.mockRestore()

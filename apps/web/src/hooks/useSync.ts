@@ -19,6 +19,7 @@ import type {
   PullResult,
   ServerChange,
   SyncEntityType,
+  SyncOperation,
   SyncResult,
   SyncStatus,
 } from '@budget-planner/core/sync'
@@ -199,7 +200,9 @@ export interface UseSyncReturn {
     data: Record<string, unknown>,
     version?: number,
     /** Server `updatedAt` (ms) this edit was based on, for causal pull LWW (4-18 D1). */
-    baseVersion?: number
+    baseVersion?: number,
+    /** The op this one is dropped with if pull LWW drops it (story 76.2). */
+    dependsOn?: SyncOperation['dependsOn']
   ) => Promise<void>
 
   /** Queue a delete operation */
@@ -317,6 +320,31 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   const lastLiveProfileIdsRef = useRef<string[] | undefined>(undefined)
   const syncSoonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  /**
+   * Reset the pull cursor and pull a FULL snapshot, honouring a pull that is
+   * already in flight. The one copy of this rule (story 76.2), used by a profile
+   * switch, a refused edit (story 75.2) and a dropped dependent op (story 76.2).
+   *
+   * ⚠️ Calling `pull()` while one is in flight is a silent no-op (its in-flight
+   * guard), and the in-flight pull would then write a non-null cursor over the
+   * reset. So it asks for a re-pull instead, and the `finally` in `pull()`
+   * resets again and re-pulls. Reads refs only, so it is stable across renders.
+   */
+  const requestFullRepull = useCallback((): void => {
+    const svc = syncServiceRef.current
+    if (!svc) {
+      return
+    }
+    svc.resetPullCursor()
+    if (pullInFlightRef.current) {
+      repullRequestedRef.current = true
+      return
+    }
+    pullRef.current().catch((error) => {
+      console.error('Full re-pull failed:', error)
+    })
+  }, [])
+
   // Initialize sync service on first render
   useEffect(() => {
     // Create the synchronization service with custom processOperation
@@ -410,29 +438,14 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     // Lucas 2026-09-28) — see `lib/sync/refusedEdits.ts` for why each case
     // reverts the way it does.
     //
-    // The re-pull for a refused update/delete follows the profile-switch
-    // effect's IN-FLIGHT rule below: reset the cursor, and if a pull is already
-    // in flight ask for a re-pull instead. (Unlike that effect it does NOT skip
-    // when `autoPull` is off — a revert has to happen either way.) Calling `pull()` then is a silent no-op (its
-    // in-flight guard), and the in-flight pull would write a non-null cursor over
-    // the reset — the `finally` in `pull()` re-resets and re-pulls.
-    const requestFullRepull = (): void => {
-      const svc = syncServiceRef.current
-      if (!svc) {
-        return
-      }
-      svc.resetPullCursor()
-      if (pullInFlightRef.current) {
-        repullRequestedRef.current = true
-        return
-      }
-      pullRef.current().catch((error) => {
-        console.error('Re-pull after a refused edit failed:', error)
-      })
-    }
+    // The re-pull for a refused update/delete is `requestFullRepull`. Unlike the
+    // profile-switch effect it does NOT skip when `autoPull` is off — a revert
+    // has to happen either way.
     const unsubscribeRejected = syncServiceRef.current.onOperationsRejected((operations) => {
       handleRejectedOperations(operations, {
         queue: service.getQueue(),
+        discardOperationsForDeletedProfile: (profileId) =>
+          service.discardOperationsForDeletedProfile(profileId),
         applyChanges: applyServerChangesToStores,
         lookupLocalRow: findLocalRow,
         requestFullRepull,
@@ -458,7 +471,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       syncServiceRef.current?.destroy()
       syncServiceRef.current = null
     }
-  }, [userId, syncConfig, store, pullLimit, autoSync])
+  }, [userId, syncConfig, store, pullLimit, autoSync, requestFullRepull])
 
   // Sync state from store
   const {
@@ -635,6 +648,21 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       // so `useIsInitialSyncPending` and other leaf consumers can read this
       // WITHOUT importing this (heavy) module — see that store's own docblock.
       setLastPullTimestamp(result.lastPullTimestamp)
+      // Story 76.2 (D1 = A): core dropped an op because the op it depended on
+      // lost last-writer-wins — a promotion whose profile deletion lost. This
+      // device still shows the promoted profile as the default, beside the
+      // resurrected one. The revert is story 75.2's: a full re-pull, which
+      // re-applies the promoted profile's SERVER row (`isDefault: false`). Never a
+      // store action, which would queue a new op. We are inside a pull, so this
+      // only asks for one; the `finally` below runs it.
+      //
+      // ⚠️ The limit: a LATER queued update of that profile still carries
+      // `isDefault: true` (`syncBridge` sends the flag on every profile update),
+      // wins LWW over the re-pulled row and re-promotes it on push (76.1's "last
+      // promotion wins"). That ends at ONE default, not two.
+      if (result.success && result.droppedDependents.length > 0) {
+        requestFullRepull()
+      }
       const liveProfileIds = lastLiveProfileIdsRef.current
       lastLiveProfileIdsRef.current = undefined
       // An empty list means the server has not even a default profile yet (its
@@ -662,7 +690,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         })
       }
     }
-  }, [store, uploadMissingProfiles])
+  }, [store, uploadMissingProfiles, requestFullRepull])
   pullRef.current = pull
 
   // Force pull is an alias for pull (symmetry with forceSync).
@@ -710,14 +738,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     if (!autoPull || !syncServiceRef.current) {
       return
     }
-    if (pullInFlightRef.current) {
-      repullRequestedRef.current = true
-      return
-    }
-    pullRef.current().catch((error) => {
-      console.error('Pull after profile switch failed:', error)
-    })
-  }, [activeProfileId, autoPull])
+    requestFullRepull()
+  }, [activeProfileId, autoPull, requestFullRepull])
 
   // Queue operations
   const queueCreate = useCallback(
@@ -754,7 +776,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       entityId: string | number,
       data: Record<string, unknown>,
       version?: number,
-      baseVersion?: number
+      baseVersion?: number,
+      dependsOn?: SyncOperation['dependsOn']
     ): Promise<void> => {
       if (!syncServiceRef.current) {
         throw new Error('Sync service not initialized')
@@ -766,7 +789,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         data,
         userId,
         version,
-        baseVersion
+        baseVersion,
+        dependsOn
       )
 
       // Trigger debounced sync if auto-sync is enabled

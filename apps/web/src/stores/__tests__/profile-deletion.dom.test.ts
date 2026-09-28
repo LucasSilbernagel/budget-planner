@@ -133,6 +133,14 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     expect(entityType).toBe('userProfile')
     expect(entityId).toBe('biz')
     expect(payload['isDefault']).toBe(true)
+    // The promotion names its tombstone (story 76.2, D1 = A): core holds it back
+    // on push until the tombstone lands, and drops it on pull if the tombstone
+    // loses to a live row.
+    expect(handle.queueUpdate.mock.calls[0]?.[5]).toEqual({
+      entityType: 'userProfile',
+      entityId: 'main',
+      type: 'delete',
+    })
 
     // Tombstone, then promote. ⚠️ Since story 76.1 the order is no longer what
     // keeps the server valid: a promotion demotes the current default in the

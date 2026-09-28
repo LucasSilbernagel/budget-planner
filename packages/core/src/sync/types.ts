@@ -473,6 +473,35 @@ export interface SyncOperation {
    * when it queues an edit against a known server row.
    */
   baseVersion?: number
+
+  /**
+   * The op this one only makes sense after (story 76.2, decision D1 = A). When
+   * pull last-writer-wins drops a queued op that matches this reference, this op
+   * is dropped in the same pass.
+   *
+   * The link is ONE-WAY, and that is the point. `profileStore.removeProfile`
+   * queues `delete X` then a promotion of the survivor, and only the promotion
+   * names the delete: a promotion without its deletion would move the default
+   * because of a deletion that did not happen, but a deletion without its
+   * promotion is the ordinary "a default was chosen for you" repair. So a lost
+   * promotion leaves the delete queued.
+   *
+   * It is honoured on BOTH paths (code review 76.2, decision (a)). On push the
+   * dependent is HELD, unsent, while the op it names is still queued and has not
+   * landed: sent alone, a promotion made the server demote the profile being
+   * deleted, which bumped its `updatedAt`, so the next pull dropped the deletion
+   * as lost. And a permanently refused target takes its dependents with it.
+   *
+   * A reference, not an op id: the host queues both ops fire-and-forget and never
+   * sees the first op's id. Ops persisted before this field existed lack it and
+   * behave exactly as before. The server never reads it (`syncOperationSchema` is
+   * a plain `z.object`, which strips unknown keys).
+   */
+  dependsOn?: {
+    entityType: SyncEntityType
+    entityId: string
+    type: SyncOperationType
+  }
 }
 
 /**
@@ -624,6 +653,20 @@ export interface PullResult {
    * displaced no queued local op. The cursor still advances past them.
    */
   refused: RefusedServerChange[]
+
+  /**
+   * Queued ops dropped because this pull APPLIED the tombstone of the profile
+   * they were stamped with (story 76.2). The server can never accept them, and
+   * they are not conflicts: they lost no comparison. Empty on a failed pull.
+   */
+  discardedForDeletedProfile: SyncOperation[]
+
+  /**
+   * Queued ops dropped because the op they `dependsOn` lost last-writer-wins in
+   * this pull (story 76.2). The host must revert whatever it wrote locally when it
+   * queued them. Empty on a failed pull.
+   */
+  droppedDependents: SyncOperation[]
 
   /** Error message if the pull failed */
   error?: string

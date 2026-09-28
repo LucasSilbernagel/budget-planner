@@ -407,7 +407,7 @@ describe('processBatchSync classification (story 75.1, AC-1/AC-3)', () => {
     expect(result.error).toMatch(/Invalid uuid/)
   })
 
-  it('does NOT reject "Profile not found" — the profile may still be syncing (story 76.2 owns deletion)', async () => {
+  it('does NOT reject "Profile not found" — the profile may still be syncing (the ops of a deleted profile are dropped by the pull, story 76.2)', async () => {
     // A CREATE, so `checkConflict` passes and `applyOperation` reaches the profile
     // check (an UPDATE would be reported as an update-delete conflict first).
     const op = queuedOp({
