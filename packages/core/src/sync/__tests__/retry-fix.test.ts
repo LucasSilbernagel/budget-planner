@@ -1,10 +1,17 @@
 /**
- * Tests for the retry logic fix
- * Verifies that failed operations are removed from queue before re-queuing
+ * Tests for the retry logic fix.
+ *
+ * ⚠️ Story 75.3 INVERTED this file. It used to assert that failed operations
+ * are REMOVED from the queue before `runRetry` re-queues them, which was its
+ * guard against duplicate ids. That removal was defect A3: the op lived only in
+ * memory until the retry, and past the retry budget, or across a reload, it was
+ * lost. Retryable ops now never leave the queue and `runRetry` never re-adds, so
+ * the duplicate-id property is kept by a different mechanism. Both properties
+ * are pinned below.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SynchronizationService } from '../synchronization'
+import { DEFAULT_CONFIG, SynchronizationService } from '../synchronization'
 
 describe('SynchronizationService Retry Logic Fix', () => {
   let service: SynchronizationService
@@ -19,6 +26,8 @@ describe('SynchronizationService Retry Logic Fix', () => {
         operations.push(op)
       }),
       getAll: vi.fn(() => [...operations]),
+      // `runRetry` reads it since story 75.3 (it syncs only if anything is queued).
+      getCount: vi.fn(() => operations.length),
       // sync() pulls the batch to process via getReadyOperations; the mock must
       // implement it or sync() throws before any operation is processed.
       getReadyOperations: vi.fn((_batchSize?: number) => [...operations]),
@@ -59,51 +68,46 @@ describe('SynchronizationService Retry Logic Fix', () => {
   })
 
   describe('Failed operations handling', () => {
-    it('should remove failed operations from queue before re-queuing', async () => {
-      // Add some operations to the queue
+    it('keeps failed operations IN the queue, and records them as a view', async () => {
       await service.queue.add({ id: 'op1', type: 'create', entityType: 'incomeSource' })
       await service.queue.add({ id: 'op2', type: 'update', entityType: 'expense' })
 
       // Trigger sync which will fail
       await service.sync()
 
-      // Check that failed operations were moved to state
+      // Positive anchor: both really were sent.
+      expect(mockProcessOperation).toHaveBeenCalledTimes(2)
       // @ts-expect-error - accessing private property for testing
-      expect(service.state.failedOperations.length).toBe(2)
-
-      // Check that queue.removeBatch was called with failed operation IDs
-      expect(mockQueue.removeBatch).toHaveBeenCalled()
-
-      // The queue should now be empty (operations removed)
+      expect(service.state.failedOperations.map((op: any) => op.id)).toEqual(['op1', 'op2'])
+      expect(mockQueue.removeBatch).not.toHaveBeenCalled()
       // @ts-expect-error - accessing private property for testing
-      expect(service.queue.getAll().length).toBe(0)
+      expect(service.queue.getAll().map((op: any) => op.id)).toEqual(['op1', 'op2'])
     })
 
     it('should not create duplicate operation IDs when retrying', async () => {
-      // This test verifies the fix for: "scheduleRetry re-queues failed operations creating duplicate operation IDs"
+      vi.useFakeTimers()
+      try {
+        const op = {
+          id: 'op-unique-123',
+          type: 'create',
+          entityType: 'incomeSource',
+          userId: 'user-123',
+        }
+        await service.queue.add(op)
 
-      // Add an operation
-      const op = {
-        id: 'op-unique-123',
-        type: 'create',
-        entityType: 'incomeSource',
-        userId: 'user-123',
+        await service.sync()
+        // Let the retry timer fire (this suite uses the default delay); the retry fails too.
+        await vi.advanceTimersByTimeAsync(DEFAULT_CONFIG.retryDelay)
+
+        // Positive anchor: the retry really ran.
+        expect(mockProcessOperation).toHaveBeenCalledTimes(2)
+        // Still exactly one copy: `runRetry` must not re-add an op that never left.
+        expect(mockQueue.add).toHaveBeenCalledTimes(1)
+        // @ts-expect-error - accessing private property for testing
+        expect(service.queue.getAll()).toEqual([op])
+      } finally {
+        vi.useRealTimers()
       }
-      await service.queue.add(op)
-
-      // Trigger sync which will fail
-      await service.sync()
-
-      // Check queue.removeBatch was called
-      expect(mockQueue.removeBatch).toHaveBeenCalledWith(['op-unique-123'])
-
-      // The operation should be in failedOperations
-      // @ts-expect-error - accessing private property for testing
-      expect(service.state.failedOperations).toContainEqual(op)
-
-      // Queue should be empty
-      // @ts-expect-error - accessing private property for testing
-      expect(service.queue.getAll().length).toBe(0)
     })
   })
 })

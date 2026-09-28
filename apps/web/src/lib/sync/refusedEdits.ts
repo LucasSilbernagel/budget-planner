@@ -44,7 +44,7 @@ export interface RefusalHandlerDeps {
   /** The live sync queue (core `SyncQueue`). */
   queue: {
     getAll: () => SyncOperation[]
-    removeBatch: (ids: string[]) => Promise<unknown>
+    discardBatch: (ids: string[]) => Promise<{ removed: number; persisted: boolean }>
   }
   /** `applyServerChangesToStores` — used to apply the synthetic tombstones. */
   applyChanges: (changes: ServerChange[]) => void
@@ -174,11 +174,21 @@ export async function handleRejectedOperations(
       .filter((op) => op.entityType === first.entityType && op.entityId === first.entityId)
       .map((op) => op.id)
     if (leftover.length > 0) {
+      // `discardBatch`, not `removeBatch` (story 75.3). If storage refuses the
+      // write, `removeBatch` keeps them queued, and they become that very
+      // never-removed conflict. `discardBatch` drops them from this session
+      // regardless. Storage keeps them until its next successful write, so a
+      // reload before then brings them back.
       try {
-        await deps.queue.removeBatch(leftover)
+        const { persisted } = await deps.queue.discardBatch(leftover)
         console.info(
           `[refusedEdits] dropped ${leftover.length} op(s) still queued for a refused create (${notice.key})`
         )
+        if (!persisted) {
+          console.warn(
+            `[refusedEdits] storage refused the write, so the drop holds for this session only (${notice.key})`
+          )
+        }
       } catch (error) {
         console.error('[refusedEdits] could not drop queued ops for a refused create:', error)
       }

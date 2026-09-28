@@ -8,7 +8,12 @@
  * sync.
  */
 
-import type { ServerChange, SyncOperation } from '@budget-planner/core/sync'
+import {
+  type ServerChange,
+  type SyncOperation,
+  SyncQueue,
+  type SyncQueueStorage,
+} from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   addRefusalNotices,
@@ -46,10 +51,12 @@ function deps(overrides: Partial<RefusalHandlerDeps> = {}) {
     applied,
     queue: {
       getAll: () => [...queued],
-      removeBatch: vi.fn(async (ids: string[]) => {
+      discardBatch: vi.fn(async (ids: string[]) => {
+        const before = queued.length
         for (let i = queued.length - 1; i >= 0; i--) {
           if (ids.includes((queued[i] as SyncOperation).id)) queued.splice(i, 1)
         }
+        return { removed: before - queued.length, persisted: true }
       }),
     },
     applyChanges: vi.fn((changes: ServerChange[]) => {
@@ -212,10 +219,70 @@ describe('handleRejectedOperations — reverting', () => {
     expect(d.notify).toHaveBeenCalledTimes(1)
   })
 
-  it('a failing queue removal does not stop the revert or the notice', async () => {
+  it('an unpersisted discard (storage refusing writes) still drops the ops, reverts and notifies', async () => {
+    const d = deps()
+    d.queued.push(op({ id: 'late', entityId: 'row-1' }))
+    const discard = d.queue.discardBatch
+    d.queue.discardBatch = vi.fn(async (ids: string[]) => ({
+      ...(await discard(ids)),
+      persisted: false,
+    }))
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await handleRejectedOperations([op({ type: 'create' })], d)
+    const warned = warn.mock.calls.length
+    info.mockRestore()
+    warn.mockRestore()
+    expect(d.queue.discardBatch).toHaveBeenCalledWith(['late'])
+    expect(d.queued).toEqual([])
+    expect(warned).toBe(1)
+    expect(d.applyChanges).toHaveBeenCalledTimes(1)
+    expect(d.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('over a REAL queue whose storage refuses writes, the leftover still leaves this session', async () => {
+    // Code review P8: the doubles above implement only `discardBatch`, so a
+    // regression to `removeBatch` crashed them rather than exercising storage.
+    // A real `SyncQueue` has both, and its `removeBatch` keeps the op when the
+    // write fails, which is exactly the regression this must catch.
+    let failWrites = false
+    const saved = new Map<string, SyncOperation[]>()
+    const storage: SyncQueueStorage = {
+      loadQueue: async (userId) => [...(saved.get(userId) ?? [])],
+      saveQueue: async (userId, queue) => {
+        if (failWrites) throw new Error('QuotaExceededError')
+        saved.set(userId, [...queue])
+      },
+      clearQueue: async (userId) => {
+        saved.delete(userId)
+      },
+    }
+    const queue = new SyncQueue('u', storage)
+    await queue.initialize()
+    await queue.add(op({ id: 'late', entityId: 'row-1' }))
+    await queue.add(op({ id: 'other', entityId: 'row-9' }))
+    failWrites = true
+    const d = deps({ queue })
+    const quiet = [
+      vi.spyOn(console, 'error').mockImplementation(() => {}),
+      vi.spyOn(console, 'warn').mockImplementation(() => {}),
+      vi.spyOn(console, 'info').mockImplementation(() => {}),
+    ]
+
+    await handleRejectedOperations([op({ type: 'create', entityId: 'row-1' })], d)
+    for (const spy of quiet) spy.mockRestore()
+
+    expect(queue.getAll().map((o) => o.id)).toEqual(['other'])
+    // The stated limit: storage never took the removal.
+    expect((saved.get('u') ?? []).map((o) => o.id)).toEqual(['late', 'other'])
+    expect(d.applyChanges).toHaveBeenCalledTimes(1)
+    expect(d.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('an unexpected throw from the queue does not stop the revert or the notice', async () => {
     const d = deps()
     d.queued.push(op({ id: 'late' }))
-    d.queue.removeBatch = vi.fn(async () => {
+    d.queue.discardBatch = vi.fn(async () => {
       throw new Error('QuotaExceededError')
     })
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})

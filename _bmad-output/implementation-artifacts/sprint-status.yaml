@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-28u (**75.3 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED. 11 patches, 2 deferred, 4 dismissed. Web 3648/235, core 974/29, db 283+7, tsc 0/0/0, Biome 0/642.)
+# last_updated: 2026-09-28t (**75.3 DEV DONE -> review**, UNCOMMITTED. Web 3647/235, core 969/29, db 283+7, tsc 0/0/0, Biome 0/642.)
+# last_updated: 2026-09-28s (**75.3 DEV STARTED -> in-progress** at `0b6f947`.)
+# last_updated: 2026-09-28r (**75.3 CONTEXTED -> ready-for-dev** at `0b6f947`. Core baseline 954/28.)
 # last_updated: 2026-09-28q (**75.2 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED. D1 (Lucas): permanence only on the server own refusal. 11 patches, 8 deferred, 6 dismissed. Web 3646/235, core 954/28, db 283+7, tsc 0/0/0, Biome 0/641.)
 # last_updated: 2026-09-28p (**75.2 DEV DONE -> review**, UNCOMMITTED. Web 3633/235, core 954/28, db 283+7, tsc 0/0/0, Biome 0/641.)
 # last_updated: 2026-09-28o (**75.2 DEV STARTED -> in-progress** at `7887d1b`.)
@@ -1014,7 +1018,7 @@ development_status:
   epic-75: in-progress  # A Sync That Refuses One Edit Instead Of Stopping. FR119/FR120/FR123. Decision (Lucas 2026-09-28): a refused edit shows a VISIBLE notice naming the entry. 75.2 local-value decision TAKEN (Lucas, 2026-09-28): REVERT.
   75-1-refuse-a-never-acceptable-sync-operation-with-a-permanent-status: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED, baseline `c668e94`. 2 decisions (Lucas: D1 refused create drops its row's queued follow-ups — CORE change; D2 permanent set narrowed to 23514+22003), 7 patches incl. HIGH P1 user-id mismatch 401 (kept) not 422 (dropped) — cross-tab session. 3 deferred, 6 dismissed. Web 3602/231, core 947, db 283+7, tsc 0/0/0, Biome 0/633.
   75-2-tell-the-user-which-edit-was-refused: done  # contexted 2026-09-28 at `7887d1b`. DECISION (Lucas): REVERT the refused change locally (create → synthetic tombstone via applier; update/delete → full re-pull) + named notice.
-  75-3-never-lose-a-retryable-sync-operation: backlog
+  75-3-never-lose-a-retryable-sync-operation: done  # contexted 2026-09-28 at `0b6f947`. Design A: retryable ops never leave the persisted queue. Design B: `SyncQueue.discardBatch` drops refused ops from memory even when storage refuses the write (reload limit pinned). Web has NO periodic push (`autoSync: false`).
   75-4-refuse-a-malformed-server-row-before-it-can-discard-my-local-edit: backlog
   epic-75-retrospective: optional
 

@@ -90,11 +90,13 @@ describe('push integration — service → sendSyncOperation → /api/sync/batch
     )
     await service.forceSync()
 
-    // The op survived the failure — still tracked (retryable), never lost.
+    // The op survived the failure — still QUEUED, exactly once, never lost.
+    // (Story 75.3: a retryable op no longer leaves the queue. `failedOperations`
+    // is now a view of queued ops, a subset of `pendingOperations`, so the old
+    // `pending + failed === 1` would count it twice.)
     const afterFailure = service.getState()
-    const stillTracked =
-      afterFailure.pendingOperations.length + afterFailure.failedOperations.length
-    expect(stillTracked).toBe(1)
+    expect(afterFailure.pendingOperations.map((o) => o.entityId)).toEqual([ENTITY_ID])
+    expect(afterFailure.failedOperations.map((o) => o.entityId)).toEqual([ENTITY_ID])
 
     // Then a successful sync of a SECOND op proves the transport recovers and the
     // route is reached once connectivity is back.

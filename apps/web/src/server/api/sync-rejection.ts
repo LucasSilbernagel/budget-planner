@@ -29,9 +29,13 @@
  *   arrives before its paired demotion or tombstone, and the categories live-name
  *   index refuses the first half of a rename swap. Both clear on replay.
  * - Transient errors (`40001`, `40P01`, `57014`, connection loss, anything with no
- *   `code`). ⚠️ They stay in the KEPT-queued bucket too, NOT the retryable one: a
- *   retryable op leaves the persisted queue and lives only in memory, and past
- *   the retry budget it is lost on reload (FR120, story 75.3).
+ *   `code`). ⚠️ They stay in the KEPT-queued bucket too, NOT the retryable one.
+ *   One leg of that choice was that a retryable op used to leave the persisted
+ *   queue and was lost past the retry budget or on reload. Story 75.3 fixed that
+ *   (FR120): both buckets now persist. What still differs is core's handling:
+ *   retryable ops get the fast retry timer and its budget, and kept-queued ops
+ *   wait for the next sync. The classification stands. Moving these to retryable 5xx is a
+ *   separate, open option, recorded in `deferred-work.md`.
  *
  * ⚠️ Narrowed by the story 75.1 code review (decision D2, Lucas, 2026-09-28) to the
  * codes the op's OWN data can still produce. `23502`, `22P02`, `22001` and the

@@ -581,7 +581,13 @@ export interface SyncState {
   /** Operations that are pending synchronization */
   pendingOperations: SyncOperation[]
 
-  /** Operations that failed during synchronization */
+  /**
+   * The ops that failed RETRYABLY in the most recent sync and are still queued
+   * (story 75.3). This is a VIEW: a subset of `pendingOperations`, replaced every
+   * sync, and never the only copy. Retryable ops no longer leave the persisted
+   * queue; this list used to carry them in memory until a retry re-added them,
+   * which lost them past the retry budget or across a reload.
+   */
   failedOperations: SyncOperation[]
 
   /** Operations that have conflicts requiring resolution */

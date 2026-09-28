@@ -1130,6 +1130,14 @@ export class SynchronizationService {
       if (operations.length === 0) {
         this.state.status = SyncStatus.COMPLETED
         this.state.lastSyncTimestamp = Date.now()
+        // An empty queue is a clean state (story 75.3). Without this reset, a queue
+        // emptied by pull LWW left the budget spent, and the next genuine failure
+        // got no fast retry. Nothing is failing, so the view is empty too.
+        this.state.retryCount = 0
+        this.state.failedOperations = []
+        // The queue can be emptied outside the service (the web layer's refused-
+        // create sweep calls `discardBatch` directly), so refresh this too.
+        this.state.pendingOperations = []
         this.notifyStatusCallbacks()
 
         return {
@@ -1150,7 +1158,7 @@ export class SynchronizationService {
       let synchronizedCount = 0
       let failedCount = 0
       let conflictCount = 0
-      // Retryable (transient/5xx) failures — eligible for retry/re-queue.
+      // Retryable (transient/5xx) failures. They stay queued and are retried (story 75.3).
       const failedOperations: SyncOperation[] = []
       // Non-retryable failures split by WHY the server said no. Conflating them
       // was a defect: a permanently-rejected op that stays queued is replayed
@@ -1265,8 +1273,8 @@ export class SynchronizationService {
           )
         if (followUps.length > 0) {
           const followUpIds = new Set(followUps.map((op) => op.id))
-          // Out of every bucket this batch already filed them in, so a retry does
-          // not re-queue one and a conflict is not recorded for one.
+          // Out of every bucket this batch already filed them in, so none is
+          // retried as a retryable failure and no conflict is recorded for one.
           for (const bucket of [
             failedOperations,
             conflictOperations,
@@ -1291,61 +1299,63 @@ export class SynchronizationService {
           synchronizedCount = successfullyProcessed.length
         } catch (removeError) {
           this.log('Failed to remove operations from queue:', removeError)
-          // CRITICAL FIX: If we can't remove from queue, these operations will be retried
-          // Move them to failed so they're reprocessed
-          failedOperations.push(...successfullyProcessed)
+          // They stay queued and are re-sent by a later sync. They count as
+          // failed but are deliberately kept OUT of `failedOperations`: the
+          // server ACCEPTED them, so the retryable view (and its fast retry
+          // timer) must not claim them. Fast-retrying ops the server already
+          // applied only hastens the re-send (story 75.3 code review, P4).
           failedCount += successfullyProcessed.length
           // Don't count as synchronized
           synchronizedCount = 0
         }
       }
 
-      // Remove retryable failed operations from the queue so scheduleRetry can
-      // re-queue them without creating duplicate-id entries. Only the ones we
-      // actually removed are tracked in state.failedOperations — if removal
-      // fails they stay in the queue and must NOT also be re-queued (which
-      // would duplicate them).
-      let requeuableFailedOps = failedOperations
-      if (failedOperations.length > 0) {
-        const failedOperationIds = failedOperations.map((op) => op.id)
-        try {
-          await this.queue.removeBatch(failedOperationIds)
-        } catch (removeError) {
-          this.log('Failed to remove failed operations from queue:', removeError)
-          // Could not remove them — they remain queued and will be retried
-          // naturally on the next sync. Don't track them for re-queue.
-          requeuableFailedOps = []
-        }
-      }
+      // Retryable failures STAY in the persisted queue (story 75.3, FR120).
+      //
+      // They used to be removed here and parked in `state.failedOperations`, in
+      // memory only, for `runRetry` to re-add. A reload before the retry timer
+      // fired lost them, and so did an exhausted retry budget, because then
+      // nothing re-added them. While parked they were also invisible to every
+      // queue reader: pull's LWW index applied an older server row that the retry
+      // then overwrote, and `hasPendingOperations` let a profile create be queued
+      // twice. Kept queued, the next sync of any kind carries them, whatever the
+      // budget says. The retry timer below is only the FAST path.
 
-      // Remove PERMANENTLY REJECTED operations from the queue. Unlike the
-      // retryable branch above these are never re-queued: the server has named a
-      // status that proves it will never accept them, and replaying one blocks
-      // the whole queue.
+      // Remove PERMANENTLY REJECTED operations from the queue. The server has
+      // named a status that proves it will never accept them, and replaying one
+      // blocks the whole queue.
       //
       // What was dropped reaches the user through `onOperationsRejected`
       // (story 75.2), which fires below once the state is updated: the web layer
-      // names each refused entry and reverts it locally. ⚠️ Only the ops that
-      // actually LEFT the queue are reported — if the removal throws, they are
-      // still queued and are not announced as refused.
+      // names each refused entry and reverts it locally.
+      //
+      // `discardBatch`, not `removeBatch` (story 75.3): when storage refuses the
+      // write (quota, private mode, blocked site data), the ops still leave this
+      // session's queue, so they are neither replayed nor left unannounced.
+      // `removeBatch` kept them queued, and because the next removal failed the
+      // same way, they replayed every cycle, silently. ⚠️ Limit: storage still
+      // holds them, so a reload before any later successful write sends them once
+      // more. They are then refused and announced once more.
       let recordableRejectedOps = rejectedOperations
       if (rejectedOperations.length > 0) {
         try {
-          await this.queue.removeBatch(rejectedOperations.map((op) => op.id))
+          const { persisted } = await this.queue.discardBatch(rejectedOperations.map((op) => op.id))
+          if (!persisted) {
+            this.log(
+              'Storage refused the write removing rejected operations; they are dropped for this session only.'
+            )
+          }
         } catch (removeError) {
-          this.log('Failed to remove rejected operations from queue:', removeError)
-          // Could not remove them — they are still queued, so do NOT report them
-          // as rejected-and-dropped; the next sync will try the removal again.
-          // ⚠️ If the removal failed because the underlying storage write failed
-          // (quota, private mode, blocked site data) the next attempt fails the
-          // same way and the op replays every cycle — the very loop this branch
-          // exists to break. Recorded in `deferred-work.md`.
+          // `discardBatch` does not throw for a storage failure, so this is
+          // something unexpected. Stay conservative: they may still be queued, so
+          // do not announce them as dropped.
+          this.log('Failed to discard rejected operations from queue:', removeError)
           recordableRejectedOps = []
         }
       }
 
-      // Non-retryable but unclassified ops are intentionally NOT removed and NOT
-      // re-queued: leaving them in the queue is the whole point, so they survive
+      // Non-retryable but unclassified ops are intentionally NOT removed: leaving
+      // them in the queue is the whole point, so they survive
       // a transient server fault and go out again on the next sync. Logged so the
       // "kept rather than dropped" decision is observable during debugging.
       if (unclassifiedFailedOperations.length > 0) {
@@ -1358,7 +1368,10 @@ export class SynchronizationService {
       // Update state
       this.state.lastSyncTimestamp = Date.now()
       this.state.pendingOperations = this.queue.getAll()
-      this.state.failedOperations = [...this.state.failedOperations, ...requeuableFailedOps]
+      // A VIEW, not a carrier (story 75.3): this sync's retryable failures that
+      // are still queued. It is replaced each sync, and is a subset of
+      // `pendingOperations`, never in addition to it.
+      this.state.failedOperations = this.retryableStillQueued(failedOperations)
       this.state.conflictOperations = [...this.state.conflictOperations, ...conflictOperations]
       // Capped, not unbounded (story 75.2): see `MAX_RECORDED_REJECTIONS`.
       this.state.rejectedOperations = [
@@ -1396,9 +1409,11 @@ export class SynchronizationService {
       // ⚠️ This is deliberately NOT an `else if` chain with the retry below. It
       // used to be, and that stranded work: when one batch produced BOTH an
       // auth-blocked op and a retryable one, opening the circuit consumed the
-      // branch and `scheduleRetry()` never ran, so the retryable op was removed
-      // from the queue (above) and then never re-queued — the local edit was lost
-      // on reload. The two decisions are independent and both must be evaluated.
+      // branch and `scheduleRetry()` never ran. At the time, retryable ops were
+      // removed from the queue and only a retry re-queued them, so the local edit
+      // was lost on reload. (Since story 75.3 they stay queued, so a skipped retry
+      // now only delays them.) The two decisions are independent and both must be
+      // evaluated.
       //
       // ⚠️⚠️ TIER-blocked (403) is deliberately ABSENT from this condition. It
       // used to be folded in with 401, which re-opened the circuit on EVERY sync
@@ -1416,7 +1431,7 @@ export class SynchronizationService {
       }
       if (
         // Schedule retry only for retryable failures and only if retries remain.
-        requeuableFailedOps.length > 0 &&
+        this.state.failedOperations.length > 0 &&
         this.state.retryCount < this.config.maxRetries
       ) {
         this.scheduleRetry()
@@ -1514,12 +1529,12 @@ export class SynchronizationService {
         // Circuit is open. DEFER the retry to just after the cooldown rather than
         // dropping it.
         //
-        // ⚠️ This used to `return`, which stranded work: by the time we get here
-        // the retryable operations have ALREADY been removed from the queue and
-        // live only in `state.failedOperations` (in memory). Returning left
-        // nothing to re-queue them, so they survived only until reload — the
-        // local edit was silently lost. Only `runRetry` reads
-        // `state.failedOperations`, so if no timer fires, nothing recovers them.
+        // ⚠️ This used to `return`. At the time that stranded work, because
+        // retryable ops had been removed from the queue and only `runRetry`
+        // re-queued them. Since story 75.3 they stay queued, so a dropped timer
+        // would only delay them until the next sync of any kind. The deferral
+        // still matters: it is the fast path, and the web app has no periodic push
+        // (`useSync` passes `autoSync: false`).
         const delay = this.circuitBrokenUntil - now + this.config.retryDelay
         this.log(
           `Circuit breaker: Open until ${new Date(
@@ -1531,7 +1546,7 @@ export class SynchronizationService {
           // `delay` was computed from the `circuitBrokenUntil` observed when this
           // timer was ARMED, but `openCircuit()` can push that deadline out
           // afterwards without clearing this handle — a later sync that produces
-          // auth-blocked ops and no requeuable ones never re-enters
+          // auth-blocked ops and no retryable ones never re-enters
           // `scheduleRetry()`. The timer would then fire on the old schedule and
           // drain inside a cooldown that was just extended, defeating the breaker
           // under exactly the sustained failure it exists for.
@@ -1560,61 +1575,53 @@ export class SynchronizationService {
     }
 
     this.retryTimeout = setTimeout(() => {
-      // Run the async re-queue work in a properly-awaited handler so a failed
-      // re-add does not silently drop operations (zero tolerance for data loss).
+      // `runRetry` is async. Its failures are caught inside it, and the ops it
+      // retries never left the queue (story 75.3), so a failure loses nothing.
       void this.runRetry()
     }, this.config.retryDelay)
   }
 
   /**
-   * Re-queue failed operations and trigger a sync. Each re-add is awaited so
-   * that if persistence fails the operation is restored to failedOperations
-   * rather than being lost (the previous fire-and-forget forEach cleared
-   * failedOperations before the async adds resolved).
+   * One retry attempt: sync again. The failed operations never left the queue
+   * (story 75.3), so there is nothing to re-add. ⚠️ Re-adding one here would
+   * DUPLICATE its id in the queue.
+   *
+   * ⚠️ Checked BEFORE the attempt is counted (story 75.3 code review, P2). A timer
+   * outlives the failure that armed it: if an external sync has since landed the
+   * ops (resetting `retryCount`), or the web sweep discarded them, or the device
+   * is offline, the timer must neither spend the budget nor send the rest of the
+   * queue (kept-queued 403/unclassified ops) as though it were a retry. Offline
+   * ops go out on the `online` event instead.
    */
   private async runRetry(): Promise<void> {
-    this.state.retryCount++
-    this.log(`Retry attempt ${this.state.retryCount}`)
-
-    if (this.state.failedOperations.length === 0) {
+    this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
+    if (this.state.failedOperations.length === 0 || !this.state.isOnline) {
       return
     }
 
-    const failedOps = [...this.state.failedOperations]
-    this.state.failedOperations = []
-    const couldNotRequeue: SyncOperation[] = []
+    this.state.retryCount++
+    this.log(`Retry attempt ${this.state.retryCount}`)
 
-    for (const op of failedOps) {
-      try {
-        await this.queue.add(op)
-      } catch (error) {
-        this.log('Failed to re-queue operation:', error)
-        // Restore so the operation is retried on a later attempt instead of
-        // being lost from both the queue and failedOperations.
-        couldNotRequeue.push(op)
+    try {
+      await this.sync()
+    } catch (error) {
+      this.log('Retry sync error:', error)
+      // Track consecutive failures for circuit breaker
+      this.consecutiveFailures++
+      if (this.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
+        this.openCircuit()
       }
     }
+  }
 
-    if (couldNotRequeue.length > 0) {
-      this.state.failedOperations = [...this.state.failedOperations, ...couldNotRequeue]
-    }
-
-    this.state.pendingOperations = this.queue.getAll()
-    this.notifyStatusCallbacks()
-
-    // Trigger sync only after all re-adds have settled.
-    if (this.state.isOnline) {
-      try {
-        await this.sync()
-      } catch (error) {
-        this.log('Retry sync error:', error)
-        // Track consecutive failures for circuit breaker
-        this.consecutiveFailures++
-        if (this.consecutiveFailures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
-          this.openCircuit()
-        }
-      }
-    }
+  /**
+   * The subset of `operations` still in the queue. It keeps the
+   * `state.failedOperations` view from naming an op that has since left the
+   * queue (story 75.3).
+   */
+  private retryableStillQueued(operations: SyncOperation[]): SyncOperation[] {
+    const queuedIds = new Set(this.queue.getAll().map((op) => op.id))
+    return operations.filter((op) => queuedIds.has(op.id))
   }
 
   /**
@@ -1792,6 +1799,7 @@ export class SynchronizationService {
       try {
         await this.queue.removeBatch(droppedLocalOps.map((op) => op.id))
         this.state.pendingOperations = this.queue.getAll()
+        this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
       } catch (error) {
         // If removal fails the ops stay queued and will be re-evaluated on the
         // next pull/push — no data is lost, the worst case is a redundant retry.

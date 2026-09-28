@@ -44,6 +44,15 @@ describe('onOperationsRejected (story 75.2)', () => {
           if (o && ids.includes(o.id)) operations.splice(i, 1)
         }
       }),
+      // Refused ops leave the queue through `discardBatch` (story 75.3).
+      discardBatch: vi.fn(async (ids: string[]) => {
+        const before = operations.length
+        for (let i = operations.length - 1; i >= 0; i--) {
+          const o = operations[i]
+          if (o && ids.includes(o.id)) operations.splice(i, 1)
+        }
+        return { removed: before - operations.length, persisted: true }
+      }),
     }
     resultForOp = new Map()
     processOperation = vi.fn(async (o: AnyOp) => resultForOp.get(o.id) ?? { success: true })
@@ -96,17 +105,49 @@ describe('onOperationsRejected (story 75.2)', () => {
     expect(seen).toEqual([['create', 'update']])
   })
 
-  it('does NOT fire for ops whose removal from the queue failed — they are still queued', async () => {
+  // Story 75.3 INVERTED the test that stood here ("does NOT fire for ops whose
+  // removal from the queue failed — they are still queued"). It pinned the defect:
+  // a removal that fails because storage refuses writes fails identically every
+  // cycle, so the op replayed for ever and the user was never told. A refused op
+  // now leaves this session's queue even when the write fails, and IS announced.
+  // The storage-failure path is covered over a real `SyncQueue` in
+  // `retryable-durability.test.ts`. Here only the contract with the queue is
+  // checked: an unpersisted discard is still announced.
+  it('fires for ops whose discard could not be PERSISTED — they have left this session', async () => {
     const callback = vi.fn()
     service.onOperationsRejected(callback)
     operations.push(op('bad'))
     refuse('bad')
-    mockQueue.removeBatch.mockRejectedValueOnce(new Error('QuotaExceededError'))
+    mockQueue.discardBatch.mockImplementationOnce(async (ids: string[]) => {
+      for (let i = operations.length - 1; i >= 0; i--) {
+        const o = operations[i]
+        if (o && ids.includes(o.id)) operations.splice(i, 1)
+      }
+      return { removed: 1, persisted: false }
+    })
 
     await service.sync()
 
-    // Positive anchor: the op really was refused and really is still queued.
-    expect(operations.map((o) => o.id)).toEqual(['bad'])
+    // Positive anchor: the op really was sent and refused.
+    expect(processOperation.mock.calls.map(([o]) => o.id)).toEqual(['bad'])
+    // Code review P1: without these two lines the test passed on pre-75.3 code,
+    // where `removeBatch` removed the op and the callback fired just the same.
+    expect(mockQueue.discardBatch).toHaveBeenCalledWith(['bad'])
+    expect(mockQueue.removeBatch).not.toHaveBeenCalled()
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback.mock.calls[0]?.[0].map((o: AnyOp) => o.id)).toEqual(['bad'])
+  })
+
+  it('does NOT fire if the discard itself throws unexpectedly — the op may still be queued', async () => {
+    const callback = vi.fn()
+    service.onOperationsRejected(callback)
+    operations.push(op('bad'))
+    refuse('bad')
+    mockQueue.discardBatch.mockRejectedValueOnce(new Error('unexpected'))
+
+    await service.sync()
+
+    expect(processOperation.mock.calls.map(([o]) => o.id)).toEqual(['bad'])
     expect(callback).not.toHaveBeenCalled()
   })
 

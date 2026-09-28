@@ -10,8 +10,10 @@
  *    retries for every OTHER entity.
  * 2. `if (nonRetryable) openCircuit() else if (requeuable) scheduleRetry()` —
  *    the `else if` meant a batch containing BOTH kinds never scheduled its
- *    retry, and since retryable ops are removed from the queue before that
- *    point, they were stranded in memory and lost on reload.
+ *    retry. At the time retryable ops were removed from the queue before that
+ *    point, so they were stranded in memory and lost on reload. (Since story
+ *    75.3 they stay queued; a skipped retry now only delays them, and the
+ *    durability itself is pinned in `retryable-durability.test.ts`.)
  *
  * ⚠️ The first fix's ORIGINAL shape was itself a data-loss bug, found in code
  * review and corrected here. It removed an operation unless the status code was
@@ -57,6 +59,15 @@ describe('Non-retryable sync failures', () => {
           const op = operations[i]
           if (op && ids.includes(op.id)) operations.splice(i, 1)
         }
+      }),
+      // Refused ops leave the queue through `discardBatch` (story 75.3).
+      discardBatch: vi.fn(async (ids: string[]) => {
+        const before = operations.length
+        for (let i = operations.length - 1; i >= 0; i--) {
+          const op = operations[i]
+          if (op && ids.includes(op.id)) operations.splice(i, 1)
+        }
+        return { removed: before - operations.length, persisted: true }
       }),
     }
 
@@ -114,7 +125,7 @@ describe('Non-retryable sync failures', () => {
       expect(state.failedOperations.map((op: AnyOp) => op.id)).not.toContain('op-delete')
     })
 
-    it('drops a follow-up that failed RETRYABLY in the same batch, so no retry re-queues it', async () => {
+    it('drops a follow-up that failed RETRYABLY in the same batch, so no retry re-sends it', async () => {
       await service.queue.add(create)
       await service.queue.add(update)
       refuse('op-create')
@@ -185,7 +196,9 @@ describe('Non-retryable sync failures', () => {
 
       // It must NOT still be queued — replaying it forever is the defect.
       expect(service.queue.getAll()).toHaveLength(0)
-      expect(mockQueue.removeBatch).toHaveBeenCalledWith(['op-reject'])
+      // `discardBatch`, not `removeBatch`, since story 75.3: a refused op leaves the
+      // queue even when storage refuses the write.
+      expect(mockQueue.discardBatch).toHaveBeenCalledWith(['op-reject'])
       // @ts-expect-error - accessing private property for testing
       const rejected = service.state.rejectedOperations
       expect(rejected.map((op: AnyOp) => op.id)).toEqual(['op-reject'])
@@ -300,7 +313,8 @@ describe('Non-retryable sync failures', () => {
       // The circuit opened because of the auth failure...
       // @ts-expect-error - accessing private property for testing
       expect(service.circuitBroken).toBe(true)
-      // ...and the retryable op was removed from the queue and parked in memory.
+      // ...and the retryable op is recorded as failed. (Since story 75.3 it also
+      // stays queued; `failedOperations` is a view of queued ops, not a carrier.)
       // @ts-expect-error - accessing private property for testing
       expect(service.state.failedOperations.map((op: AnyOp) => op.id)).toEqual(['op-transient'])
 
@@ -325,7 +339,7 @@ describe('Non-retryable sync failures', () => {
       expect(service.state.failedOperations).toHaveLength(0)
     })
 
-    it('DEFERS a retry past the circuit cooldown and re-queues the operation', async () => {
+    it('DEFERS a retry past the circuit cooldown and then retries the operation', async () => {
       vi.useFakeTimers()
       await service.queue.add({ id: 'op-transient', type: 'create', entityType: 'incomeSource' })
       resultForOp.set('op-transient', { success: false, retryable: true })
@@ -338,15 +352,16 @@ describe('Non-retryable sync failures', () => {
 
       // @ts-expect-error - accessing private property for testing
       expect(service.state.failedOperations.map((op: AnyOp) => op.id)).toEqual(['op-transient'])
-      // A deferred timer must exist: returning early here stranded the operation
-      // in memory, where only `runRetry` could have recovered it.
+      // A deferred timer must exist. Returning early here used to strand the
+      // operation in memory, where only `runRetry` could recover it. Since story
+      // 75.3 it stays queued, but the timer is still the fast path.
       // @ts-expect-error - accessing private property for testing
       expect(service.retryTimeout).toBeTruthy()
 
       // Let the cooldown elapse. ⚠️ Assert the OPERATION is recovered, not just
       // that `circuitBroken` flipped — the handler assigns that two statements
       // before calling `runRetry`, so it would still be false if `runRetry` threw
-      // or re-queued nothing.
+      // or synced nothing.
       const callsBefore = processOperation.mock.calls.length
       resultForOp.set('op-transient', { success: true })
       await vi.advanceTimersByTimeAsync(70_000)

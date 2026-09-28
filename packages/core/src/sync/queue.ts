@@ -245,6 +245,71 @@ export class SyncQueue {
   }
 
   /**
+   * Remove operations that must NOT be sent again, even when the removal cannot
+   * be persisted (story 75.3).
+   *
+   * ⚠️ This is the ONE deliberate exception to the persist-first rule every other
+   * mutator follows. `removeBatch` leaves memory untouched when `saveQueue`
+   * throws, which is right for data we must keep. For an op the server has
+   * permanently refused, however, the same behaviour made it replay every cycle.
+   * The removal fails the same way each time (quota, private mode, blocked site
+   * data), so the loop never ends, and the user is never told. Here memory drops
+   * the ops regardless, so every reader of this queue (the ready set, pull's LWW
+   * index, `hasPendingOperations`, the refused-create sweeps) stops seeing them at
+   * once.
+   *
+   * Use it ONLY for ops that can never be accepted, so that one resurrected from
+   * storage is refused again rather than applied. Two callers qualify today:
+   *   - ops the server refused on their own data (the sync service);
+   *   - ops for a row whose CREATE the server refused (the web layer's sweep).
+   *     The server has no such row, so an update or delete for it cannot land.
+   *     If one resurrects together with its create, 75.1's D1 sweeps it again
+   *     with that create. If one resurrects alone (only the create's removal was
+   *     persisted), it meets `update-delete` / `Entity not found`, which is the
+   *     pre-existing kept-queued path, not a silent write.
+   * Do not use it for ops that still have to reach the server.
+   *
+   * LIMIT, stated plainly: it cannot outlive a NEW queue built from storage while
+   * storage itself is refusing writes. That means a page reload, and also
+   * re-creating the sync service in the same tab (sign-out/in; `useSync`
+   * rebuilds it). Storage still holds the ops, so they are sent, refused and
+   * announced once more. It converges only on a successful write. `add`,
+   * `addBatch` and `dequeue` always write the whole in-memory queue; the removers
+   * (this one included) write it only when something matches. So storage catches
+   * up at the next successful write of either kind, and never while storage keeps
+   * refusing.
+   *
+   * Never throws for a storage failure; `persisted` reports it instead, and the
+   * error is logged here so a real bug is not mistaken for a quota error.
+   * @param operationIds - Array of operation IDs to discard
+   */
+  async discardBatch(operationIds: string[]): Promise<{ removed: number; persisted: boolean }> {
+    return this.serialize(async () => {
+      const idsSet = new Set(operationIds)
+      const filtered = this.queue.filter((op) => !idsSet.has(op.id))
+      const removed = this.queue.length - filtered.length
+
+      if (removed === 0) {
+        return { removed, persisted: true }
+      }
+
+      let persisted = true
+      try {
+        await this.storage.saveQueue(this.userId, filtered)
+      } catch (error) {
+        persisted = false
+        console.error(
+          'Failed to persist discarding sync operations; they are dropped from memory only:',
+          error
+        )
+      }
+      this.queue = filtered
+
+      return { removed, persisted }
+    })
+  }
+
+  /**
    * Remove operations by entity type and ID
    * @param entityType - The entity type
    * @param entityId - The entity ID
