@@ -86,7 +86,11 @@ vi.mock('drizzle-orm', () => ({
   or: vi.fn(),
   isNull: vi.fn(),
   lt: vi.fn(),
-  sql: vi.fn(() => 'sql-fragment'),
+  // Story 73.2: the retention helpers build `IN (…)` lists with `sql.join`.
+  sql: Object.assign(
+    vi.fn(() => 'sql-fragment'),
+    { join: vi.fn(() => 'sql-fragment') }
+  ),
 }))
 vi.mock('@/server/paddle/customer-api', () => ({ fetchPaddleCustomerEmail }))
 vi.mock('@/server/functions/profiles', () => ({ createDefaultProfileForUser }))
@@ -122,21 +126,46 @@ const MONTHLY_PRICE = 'pri_monthly_599'
  * entirely leaves all 53 tests across both suites green. An earlier version of
  * this comment claimed the db suite covered it. It does not.
  */
-function makeTx({ existingStatus = 'free' }: { existingStatus?: string | null } = {}) {
+function makeTx({
+  existingStatus = 'free',
+  vanishBeforeUpdate = false,
+  updateMatches = true,
+}: {
+  existingStatus?: string | null
+  /**
+   * Story 73.2, AC-9: the row is present for the handler's first read, then
+   * gone — as if the retention purge committed between the read and the
+   * UPDATE. Every later read returns nothing and the UPDATE matches no row.
+   */
+  vanishBeforeUpdate?: boolean
+  /** False = the row exists but an in-statement guard suppressed the UPDATE. */
+  updateMatches?: boolean
+} = {}) {
   const rowCount = existingStatus === null ? 0 : 1
   const selectedRow = existingStatus === null ? undefined : { status: existingStatus }
+  let reads = 0
   return {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve(selectedRow ? [selectedRow] : []),
+          limit: () => {
+            reads++
+            const present = selectedRow && !(vanishBeforeUpdate && reads > 1)
+            return Promise.resolve(present ? [selectedRow] : [])
+          },
         }),
       }),
     }),
     update: () => ({
       set: (values: unknown) => {
         setSpy(values)
-        return { where: () => Promise.resolve({ rowCount }) }
+        const matched = rowCount === 1 && updateMatches && !vanishBeforeUpdate
+        return {
+          where: () =>
+            Object.assign(Promise.resolve({ rowCount: matched ? 1 : 0 }), {
+              returning: () => Promise.resolve(matched ? [{ id: 'user-id' }] : []),
+            }),
+        }
       },
     }),
     insert: (table: unknown) => {
@@ -333,6 +362,10 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
       entitlementUpdatedAt: expect.any(Number),
       // Story 70.1: a lifetime grant has no recurring cadence.
       billingInterval: null,
+      // Story 73.2: access regained — the retention clock and notice clear.
+      accessEndedAt: null,
+      retentionNoticeSentAt: null,
+      retentionNoticeAttemptedAt: null,
       // Recorded at grant time so a later refund can be judged full vs partial
       // (AC-1). A grant with no usable total is now REFUSED outright, so this
       // field is always present on a successful lifetime write.
@@ -459,6 +492,10 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
       entitlementUpdatedAt: expect.any(Number),
       // Story 70.1: a lifetime grant has no recurring cadence.
       billingInterval: null,
+      // Story 73.2: access regained — the retention clock and notice clear.
+      accessEndedAt: null,
+      retentionNoticeSentAt: null,
+      retentionNoticeAttemptedAt: null,
       // Recorded at grant time so a later refund can be judged full vs partial
       // (AC-1). A grant with no usable total is now REFUSED outright, so this
       // field is always present on a successful lifetime write.
@@ -555,6 +592,10 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
       entitlementUpdatedAt: expect.any(Number),
       // Story 70.1: a lifetime grant has no recurring cadence.
       billingInterval: null,
+      // Story 73.2: access regained — the retention clock and notice clear.
+      accessEndedAt: null,
+      retentionNoticeSentAt: null,
+      retentionNoticeAttemptedAt: null,
       // Recorded at grant time so a later refund can be judged full vs partial
       // (AC-1). A grant with no usable total is now REFUSED outright, so this
       // field is always present on a successful lifetime write.
@@ -763,6 +804,8 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'canceled',
       entitlementUpdatedAt: expect.any(Number),
+      // Story 73.2: the start-or-keep CASE (real SQL is proven in the db suite).
+      accessEndedAt: 'sql-fragment',
     })
     expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
   })
@@ -791,6 +834,10 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
       subscriptionStatus: 'active',
       entitlementUpdatedAt: expect.any(Number),
       billingInterval: 'year',
+      // Story 73.2: entitled — no retention clock, no pending notice.
+      accessEndedAt: null,
+      retentionNoticeSentAt: null,
+      retentionNoticeAttemptedAt: null,
     })
   })
 
@@ -901,6 +948,137 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
         data: { customer_id: 'ctm_np', status: 'active', email: 'np@example.com' },
       }),
     })
+
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('Story 73.2, AC-9 — a row that vanishes between read and UPDATE is retried, not dropped', () => {
+  // ⚠️ The real interleaving (the retention purge committing between the
+  // handler's unlocked read and its UPDATE) needs two connections; PGlite has
+  // one. `makeTx({ vanishBeforeUpdate })` SIMULATES it: the first read sees the
+  // row, the UPDATE matches nothing, and the re-read finds it gone.
+  function subscriptionActivated() {
+    return POST({
+      request: signedRequest({
+        event_type: 'subscription.activated',
+        data: { customer_id: 'ctm_1', status: 'active' },
+      }),
+    })
+  }
+  function lifetimeGranted() {
+    return POST({
+      request: signedRequest({
+        event_type: 'transaction.completed',
+        data: {
+          details: { totals: { grand_total: '9900' } },
+          customer_id: 'ctm_1',
+          price_id: LIFETIME_PRICE,
+        },
+      }),
+    })
+  }
+
+  it('subscription: returns 500 so Paddle retries into the first-seen INSERT path', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: 'canceled', vanishBeforeUpdate: true }))
+    )
+
+    const res = await subscriptionActivated()
+
+    expect(res.status).toBe(500)
+  })
+
+  it('subscription: a guard-suppressed UPDATE on a row that still exists stays a 200 (unchanged)', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: 'canceled', updateMatches: false }))
+    )
+
+    const res = await subscriptionActivated()
+
+    expect(res.status).toBe(200)
+  })
+
+  it('lifetime: returns 500 so Paddle retries the grant', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: 'canceled', vanishBeforeUpdate: true }))
+    )
+
+    const res = await lifetimeGranted()
+
+    expect(res.status).toBe(500)
+  })
+
+  it('subscription: a LAPSED event whose row vanished is NOT retried (review fix) — a retry could only resurrect it', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: 'active', vanishBeforeUpdate: true }))
+    )
+
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.canceled',
+        data: { customer_id: 'ctm_1', status: 'canceled' },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('re-key: an adoption target that vanished before the UPDATE returns 500, not a 200 that granted nothing', async () => {
+    // First-seen customer (no row by paddleId), whose email matches a lapsed
+    // row under another customer — which the purge deletes before the UPDATE.
+    dbHasUser.value = false
+    fetchPaddleCustomerEmail.mockResolvedValue('buyer@example.com')
+    let reads = 0
+    const tx = makeTx({ existingStatus: null })
+    const adoptionTx = {
+      ...tx,
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: () => {
+              reads++
+              // read 1: by paddleId → none; read 2: by email → the lapsed row.
+              return Promise.resolve(
+                reads === 2
+                  ? [{ id: 'u-old', paddleId: 'ctm_old', status: 'canceled', isDeleted: false }]
+                  : []
+              )
+            },
+          }),
+        }),
+      }),
+      update: () => ({
+        set: (values: unknown) => {
+          setSpy(values)
+          return {
+            where: () =>
+              Object.assign(Promise.resolve({ rowCount: 0 }), {
+                returning: () => Promise.resolve([]),
+              }),
+          }
+        },
+      }),
+    }
+    transaction.mockImplementation(async (cb: (t: typeof adoptionTx) => unknown) => cb(adoptionTx))
+
+    const res = await POST({
+      request: signedRequest({
+        event_type: 'subscription.activated',
+        data: { customer_id: 'ctm_new', status: 'active' },
+      }),
+    })
+
+    expect(res.status).toBe(500)
+    expect(insertValuesSpy).not.toHaveBeenCalled()
+  })
+
+  it('lifetime: a guard-suppressed UPDATE on a row that still exists stays a 200 (unchanged)', async () => {
+    transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      cb(makeTx({ existingStatus: 'canceled', updateMatches: false }))
+    )
+
+    const res = await lifetimeGranted()
 
     expect(res.status).toBe(200)
   })

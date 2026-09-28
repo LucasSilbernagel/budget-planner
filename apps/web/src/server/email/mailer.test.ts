@@ -8,9 +8,10 @@
  */
 
 import { server } from '@/mocks/server'
+import { resetConfig } from '@budget-planner/config'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sendMagicLinkEmail } from './mailer'
+import { formatDeletionDate, sendMagicLinkEmail, sendRetentionNoticeEmail } from './mailer'
 
 const BREVO_URL = 'https://api.brevo.com/v3/smtp/email'
 
@@ -116,5 +117,108 @@ describe('sendMagicLinkEmail', () => {
       server.use(http.post(BREVO_URL, () => HttpResponse.json({ messageId: 42 }, { status: 201 })))
       await expect(sendMagicLinkEmail('user@example.com', LINK)).resolves.toBeUndefined()
     })
+  })
+})
+
+describe('sendRetentionNoticeEmail (Story 73.2, AC-4)', () => {
+  function capture() {
+    const captured: { body: Record<string, unknown> | null } = { body: null }
+    server.use(
+      http.post(BREVO_URL, async ({ request }) => {
+        captured.body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ messageId: 'notice-1' }, { status: 201 })
+      })
+    )
+    return captured
+  }
+
+  it('sends the deletion date, how to keep the data, and how to delete now — through Brevo', async () => {
+    const captured = capture()
+
+    const id = await sendRetentionNoticeEmail('lapsed@example.com', {
+      deletionDate: '14 September 2027',
+    })
+
+    expect(id).toBe('notice-1')
+    const body = captured.body as Record<string, unknown>
+    expect(body.to).toEqual([{ email: 'lapsed@example.com' }])
+    expect(body.subject).toBe('Your Longhand Budget data will be deleted')
+    for (const part of [body.textContent, body.htmlContent] as string[]) {
+      expect(part).toContain('14 September 2027')
+      expect(part).toContain('https://app.test/pricing')
+      expect(part).toContain('https://app.test/settings')
+      expect(part).toContain('Longhand Budget')
+    }
+  })
+
+  it('carries no remote images or tracking, and no money figures', async () => {
+    const captured = capture()
+
+    await sendRetentionNoticeEmail('lapsed@example.com', { deletionDate: '14 September 2027' })
+
+    const html = (captured.body as Record<string, unknown>).htmlContent as string
+    expect(html).not.toMatch(/<img|<script|pixel|utm_/i)
+    expect(JSON.stringify(captured.body)).not.toMatch(/[€$£]|\d+\.\d\d/)
+  })
+
+  it('throws on a non-2xx so the sweep never records a notice Brevo did not accept', async () => {
+    server.use(http.post(BREVO_URL, () => HttpResponse.json({ error: 'bad' }, { status: 503 })))
+    await expect(
+      sendRetentionNoticeEmail('lapsed@example.com', { deletionDate: '14 September 2027' })
+    ).rejects.toThrow('Email provider returned 503 sending the retention notice')
+  })
+
+  it('formats the deletion date in UTC as D Month YYYY', () => {
+    // 23:30 UTC on 13 September is still the 13th in UTC, whatever the host TZ.
+    expect(formatDeletionDate(Date.parse('2027-09-13T23:30:00Z'))).toBe('13 September 2027')
+    expect(formatDeletionDate(Date.parse('2027-09-14T00:00:00Z'))).toBe('14 September 2027')
+  })
+
+  it('throws when the provider is not configured, EVEN in development (review fix)', async () => {
+    vi.stubEnv('EMAIL_API_KEY', '')
+    vi.stubEnv('NODE_ENV', 'development')
+    resetConfig()
+    try {
+      await expect(
+        sendRetentionNoticeEmail('lapsed@example.com', { deletionDate: '14 September 2027' })
+      ).rejects.toThrow('EMAIL_API_KEY is not configured')
+    } finally {
+      vi.unstubAllEnvs()
+      resetConfig()
+    }
+  })
+
+  it('builds links without a double slash when SITE_URL ends in one', async () => {
+    vi.stubEnv('SITE_URL', 'https://app.test/')
+    resetConfig()
+    const captured = capture()
+    try {
+      await sendRetentionNoticeEmail('lapsed@example.com', { deletionDate: '14 September 2027' })
+    } finally {
+      vi.unstubAllEnvs()
+      resetConfig()
+    }
+    const body = JSON.stringify(captured.body)
+    expect(body).toContain('https://app.test/pricing')
+    expect(body).not.toContain('app.test//')
+  })
+
+  it('sends every Brevo call with a timeout signal', async () => {
+    let signal: AbortSignal | null = null
+    server.use(
+      http.post(BREVO_URL, ({ request }) => {
+        signal = request.signal
+        return HttpResponse.json({ messageId: 'x' }, { status: 201 })
+      })
+    )
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    try {
+      await sendRetentionNoticeEmail('lapsed@example.com', { deletionDate: '14 September 2027' })
+      const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+    } finally {
+      fetchSpy.mockRestore()
+    }
+    expect(signal).not.toBeNull()
   })
 })

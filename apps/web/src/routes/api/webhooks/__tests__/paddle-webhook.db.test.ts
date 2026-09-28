@@ -87,6 +87,11 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
 vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 vi.mock('@/server/paddle/subscription-api', () => ({ cancelActiveSubscriptionsForCustomer }))
+// Story 73.2: `checkDbRateLimit` (driven for real here) fires the retention
+// backstop on its success path. Left live, it would start a background sweep
+// on PGlite's ONE connection while a test runs — a query that can land inside
+// the test's own transaction. Its behaviour is covered in `sweep.db.test.ts`.
+vi.mock('@/server/retention/backstop', () => ({ maybeRunRetentionBackstop: vi.fn() }))
 
 import { planLabel } from '@/lib/account/plan-label'
 import { logger } from '@/lib/logger'
@@ -1998,5 +2003,207 @@ describe('Story 74.2 — erasure clears the email-scoped throttle', () => {
     })
     await vi.waitFor(() => expect(sendMagicLinkEmail).toHaveBeenCalledTimes(1))
     expect(sendMagicLinkEmail.mock.calls[0][0]).toBe(TYPED)
+  })
+})
+
+describe('Story 73.2 — the retention clock moves with the status, in the same statement', () => {
+  const ms = (minutesFromBase: number) => Date.parse(at(minutesFromBase))
+
+  it('starts the clock when an entitled subscription is canceled', async () => {
+    await seedUser({ subscriptionStatus: 'active' })
+
+    await post({
+      event_type: 'subscription.canceled',
+      data: { customer_id: 'ctm_1', status: 'canceled' },
+      occurred_at: at(10),
+    })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('canceled')
+    expect(row.accessEndedAt).toBe(ms(10))
+  })
+
+  it('does NOT restart the clock on a later event that leaves the row lapsed (why the column exists)', async () => {
+    // `entitlementUpdatedAt` DOES advance here — that is the 73.1-deferred
+    // defect: reading it as the lapse date would restart the 12 months.
+    await seedUser({ subscriptionStatus: 'active' })
+    await post({
+      event_type: 'subscription.canceled',
+      data: { customer_id: 'ctm_1', status: 'canceled' },
+      occurred_at: at(10),
+    })
+
+    await post({ ...subscriptionEvent({ status: 'canceled' }), occurred_at: at(500) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.entitlementUpdatedAt).toBe(ms(500))
+    expect(row.accessEndedAt).toBe(ms(10))
+  })
+
+  it('clears the clock AND any retention notice when access is regained', async () => {
+    await seedUser({
+      subscriptionStatus: 'canceled',
+      accessEndedAt: ms(-1000),
+      retentionNoticeSentAt: ms(-10),
+    })
+
+    await post({ ...subscriptionEvent({ status: 'active' }), occurred_at: at(10) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('active')
+    expect(row.accessEndedAt).toBeNull()
+    expect(row.retentionNoticeSentAt).toBeNull()
+  })
+
+  it('a lapsed-to-lapsed event keeps the retention notice (it belongs to the same lapse)', async () => {
+    await seedUser({
+      subscriptionStatus: 'canceled',
+      accessEndedAt: ms(-1000),
+      retentionNoticeSentAt: ms(-10),
+    })
+
+    await post({ ...subscriptionEvent({ status: 'canceled' }), occurred_at: at(10) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.accessEndedAt).toBe(ms(-1000))
+    expect(row.retentionNoticeSentAt).toBe(ms(-10))
+  })
+
+  it('starts the clock when a subscription is PAUSED (paused maps to free: no access)', async () => {
+    await seedUser({ subscriptionStatus: 'active' })
+
+    await post({ ...subscriptionEvent({ status: 'paused' }), occurred_at: at(10) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('free')
+    expect(row.accessEndedAt).toBe(ms(10))
+  })
+
+  it('starts the clock when a lifetime grant is revoked by a full refund', async () => {
+    await seedUser({ subscriptionStatus: 'free' })
+    await post(lifetimeEvent({}))
+    expect((await readUser('ctm_1'))[0].accessEndedAt).toBeNull()
+
+    await post({ ...adjustmentEvent({ totals: { total: '9900' } }), occurred_at: at(5) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('canceled')
+    expect(row.accessEndedAt).toBe(ms(5))
+  })
+
+  it('a lifetime grant clears a running clock and notice', async () => {
+    await seedUser({
+      subscriptionStatus: 'canceled',
+      accessEndedAt: ms(-1000),
+      retentionNoticeSentAt: ms(-10),
+    })
+
+    await post({ ...lifetimeEvent({}), occurred_at: at(10) })
+
+    const [row] = await readUser('ctm_1')
+    expect(row.subscriptionStatus).toBe('lifetime')
+    expect(row.accessEndedAt).toBeNull()
+    expect(row.retentionNoticeSentAt).toBeNull()
+  })
+
+  it('a first-seen customer with a LAPSED status creates no account (review decision, Lucas 2026-09-28)', async () => {
+    // Before the 73.2 review this INSERTED a `canceled` row with a fresh clock:
+    // the path by which an erased or purged account came back.
+    fetchPaddleCustomerEmail.mockResolvedValue('never-paid@example.test')
+
+    const res = await post({
+      event_type: 'subscription.canceled',
+      data: { customer_id: 'ctm_new', status: 'canceled' },
+      occurred_at: at(10),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await readUser('ctm_new')).toEqual([])
+    expect(await db.select().from(userProfiles)).toEqual([])
+    // Nothing to insert, so no customer-API round trip either.
+    expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
+  })
+
+  it('a first-seen PAUSED customer creates no account either', async () => {
+    fetchPaddleCustomerEmail.mockResolvedValue('paused@example.test')
+
+    const res = await post({ ...subscriptionEvent({ customer_id: 'ctm_new', status: 'paused' }) })
+
+    expect(res.status).toBe(200)
+    expect(await readUser('ctm_new')).toEqual([])
+  })
+
+  it('erasure is NOT undone by Paddle’s own cancellation webhook (closes 74.1’s resurrection defect)', async () => {
+    // The 74.1 probe P1 sequence: erase, then Paddle delivers the
+    // `subscription.canceled` that erasure's own cancel call triggered.
+    // Erasure removes the row (the `eraseAccountRows` path is proven in the
+    // Story 74.1/74.2 suites below); here only its absence matters.
+    const user = await seedUser({
+      paddleId: 'ctm_erased',
+      email: 'erased@example.test',
+      subscriptionStatus: 'active',
+    })
+    await db.delete(users).where(eq(users.id, user.id))
+    fetchPaddleCustomerEmail.mockResolvedValue('erased@example.test')
+
+    const res = await post({
+      event_type: 'subscription.canceled',
+      data: { customer_id: 'ctm_erased', status: 'canceled' },
+      occurred_at: at(10),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await db.select().from(users).where(eq(users.email, 'erased@example.test'))).toEqual([])
+  })
+
+  it('a first-seen ACTIVE customer has no clock', async () => {
+    fetchPaddleCustomerEmail.mockResolvedValue('new@example.test')
+
+    await post({
+      ...subscriptionEvent({ customer_id: 'ctm_new', status: 'active' }),
+      occurred_at: at(10),
+    })
+
+    const [row] = await readUser('ctm_new')
+    expect(row.accessEndedAt).toBeNull()
+  })
+
+  it('a re-key to an entitled status clears the adopted row’s clock and notice', async () => {
+    await seedUser({
+      paddleId: 'ctm_old',
+      subscriptionStatus: 'canceled',
+      accessEndedAt: ms(-1000),
+      retentionNoticeSentAt: ms(-10),
+    })
+    fetchPaddleCustomerEmail.mockResolvedValue('buyer@example.test')
+
+    await post({
+      ...subscriptionEvent({ customer_id: 'ctm_new', status: 'active' }),
+      occurred_at: at(10),
+    })
+
+    const [row] = await readUser('ctm_new')
+    expect(row.subscriptionStatus).toBe('active')
+    expect(row.accessEndedAt).toBeNull()
+    expect(row.retentionNoticeSentAt).toBeNull()
+  })
+
+  it('a LAPSED event for a new customer does not adopt a lapsed row, and leaves its clock alone', async () => {
+    await seedUser({
+      paddleId: 'ctm_old',
+      subscriptionStatus: 'canceled',
+      accessEndedAt: ms(-1000),
+    })
+    fetchPaddleCustomerEmail.mockResolvedValue('buyer@example.test')
+
+    await post({
+      event_type: 'subscription.canceled',
+      data: { customer_id: 'ctm_new', status: 'canceled' },
+      occurred_at: at(10),
+    })
+
+    expect(await readUser('ctm_new')).toEqual([])
+    const [row] = await readUser('ctm_old')
+    expect(row.accessEndedAt).toBe(ms(-1000))
   })
 })

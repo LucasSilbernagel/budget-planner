@@ -74,6 +74,11 @@ import {
   isFresherThanWatermark,
   parseOccurredAt,
 } from '@/server/paddle/webhook-events'
+import {
+  insertedAccessEndedAt,
+  isEntitledStatus,
+  retentionColumnsFor,
+} from '@/server/retention/status-classes'
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { currencyEnum, db } from '@budget-planner/db'
 import {
@@ -321,7 +326,12 @@ async function reconcileEmailCollision(
     billingInterval: BillingInterval | null
     lifetime?: LifetimeGrantFields
   }
-): Promise<{ kind: 'none' } | { kind: 'rekeyed'; userId: string } | { kind: 'refused' }> {
+): Promise<
+  | { kind: 'none' }
+  | { kind: 'rekeyed'; userId: string }
+  | { kind: 'refused' }
+  | { kind: 'vanished' }
+> {
   const { customerId, normalizedEmail, grantedStatus, occurredAt, billingInterval, lifetime } =
     params
 
@@ -362,13 +372,17 @@ async function reconcileEmailCollision(
   // Adoptable: soft-deleted, `free` or `canceled`. Clearing `isDeleted` is part
   // of the adoption — they are paying again, and leaving the sync tombstone set
   // would hide every row they own from their own device.
-  await tx
+  const adopted = await tx
     .update(users)
     .set({
       paddleId: customerId,
       subscriptionStatus: grantedStatus,
       isDeleted: false,
       entitlementUpdatedAt: occurredAt,
+      // Story 73.2: the retention clock moves in the same statement as the
+      // status. The adopted row is unentitled by construction, so a lapsed
+      // grant KEEPS its existing clock and an entitled one clears it.
+      ...retentionColumnsFor(grantedStatus, occurredAt),
       // ⚠️ Story 68.1 review: the row is being adopted by a DIFFERENT Paddle
       // customer, so any `emailUpdatedAt` it carries belongs to the PREVIOUS
       // customer's event stream. Leaving it would let a foreign watermark drop
@@ -382,6 +396,21 @@ async function reconcileEmailCollision(
       ...(lifetime ?? {}),
     })
     .where(eq(users.id, byEmail.id))
+    .returning({ id: users.id })
+
+  // Story 73.2 review: the row was read above WITHOUT a lock. If the retention
+  // purge (or an erasure) deleted it in between, this UPDATE matched nothing —
+  // and reporting `rekeyed` would 200 a grant that landed nowhere. The caller
+  // turns `vanished` into a 500, and Paddle's retry inserts a fresh row.
+  if (adopted.length === 0) {
+    logger.warn(
+      'Webhook: re-key target vanished before the adoption UPDATE — returning 500 for retry',
+      {
+        customerId,
+      }
+    )
+    return { kind: 'vanished' }
+  }
 
   logger.info('Webhook: re-keyed an unentitled existing account to a new Paddle customer', {
     customerId,
@@ -389,6 +418,39 @@ async function reconcileEmailCollision(
     previousStatus: byEmail.status,
   })
   return { kind: 'rekeyed', userId: byEmail.id }
+}
+
+/**
+ * True when the row an UPDATE path read a moment ago is no longer there
+ * (Story 73.2, AC-9).
+ *
+ * The update paths read `existing` WITHOUT a lock and then UPDATE. If the
+ * retention purge (or an erasure) deletes the row in between, the UPDATE
+ * matches nothing and, before this check, the handler reported success: a
+ * paying customer's activation or lifetime grant was silently dropped. The
+ * caller now returns `{ ok: false }`, the delivery 500s and its claim rolls
+ * back, and Paddle's retry takes the first-seen INSERT path.
+ *
+ * Called ONLY after an UPDATE returned no row. A row that is still present
+ * means a guard suppressed the write on purpose (a stale event, a lifetime
+ * row) — unchanged behaviour.
+ *
+ * ⚠️ PGlite is a single connection, so no test can produce the interleaving;
+ * the mocked suite drives this branch directly.
+ */
+async function rowVanished(tx: WebhookTx, customerId: string): Promise<boolean> {
+  const rows = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.paddleId, customerId))
+    .limit(1)
+  if (rows.length > 0) {
+    return false
+  }
+  logger.warn('Webhook: user row vanished between read and update — returning 500 for retry', {
+    customerId,
+  })
+  return true
 }
 
 /**
@@ -464,12 +526,14 @@ async function handleSubscriptionStatusUpdate(
     // `users.currency` is a display preference that seeds new profiles — a
     // renewal paid from another country must not silently flip the user's
     // chosen currency. It is insert-only, below.
-    await tx
+    const updated = await tx
       .update(users)
       .set({
         subscriptionStatus: mappedStatus,
         entitlementUpdatedAt: occurredAt,
         ...intervalUpdate,
+        // Story 73.2: see `accessEndedAtFor` — start, keep or clear the clock.
+        ...retentionColumnsFor(mappedStatus, occurredAt),
       })
       // In-statement guards (Story 70.1 review): the watermark, and the
       // no-downgrade rule the early return above checks — a lifetime grant
@@ -481,7 +545,35 @@ async function handleSubscriptionStatusUpdate(
           sql`${users.subscriptionStatus} <> 'lifetime'`
         )
       )
+      .returning({ id: users.id })
+    // Only an ENTITLED write is worth a retry (Story 73.2 review). A lapsed
+    // event whose row was just purged or erased has nothing left to update,
+    // and retrying it would only reach the first-seen path below — which
+    // refuses a lapsed status anyway.
+    if (
+      updated.length === 0 &&
+      isEntitledStatus(mappedStatus) &&
+      (await rowVanished(tx, customerId))
+    ) {
+      return { ok: false }
+    }
     return { ok: true }
+  }
+
+  // Story 73.2 review (decision, Lucas 2026-09-28): an UNKNOWN customer with a
+  // LAPSED status creates nothing. Such an event is, in practice, the tail of
+  // an account that no longer exists here: Paddle's `subscription.canceled`
+  // after a user's own erasure (74.1's resurrection defect) or any lapsed event
+  // after the retention purge. Inserting it would re-create the erased
+  // address with a fresh 12-month clock. Terminal: there is nothing to retry.
+  // A customer who pays again arrives with an ENTITLED status and is inserted
+  // below as before.
+  if (!isEntitledStatus(mappedStatus)) {
+    logger.info('Webhook: lapsed-status event for an unknown customer — no account created', {
+      customerId,
+      mappedStatus,
+    })
+    return { ok: true, terminal: true }
   }
 
   // No existing user. Resolve the email ONLY now — every existing
@@ -515,6 +607,9 @@ async function handleSubscriptionStatusUpdate(
   if (collision.kind === 'refused') {
     return { ok: true, terminal: true }
   }
+  if (collision.kind === 'vanished') {
+    return { ok: false }
+  }
   if (collision.kind === 'rekeyed') {
     return { ok: true, createdUserId: collision.userId }
   }
@@ -531,6 +626,7 @@ async function handleSubscriptionStatusUpdate(
       subscriptionStatus: mappedStatus,
       entitlementUpdatedAt: occurredAt,
       billingInterval: billingInterval ?? null,
+      accessEndedAt: insertedAccessEndedAt(mappedStatus, occurredAt),
       ...(mappedCurrency ? { currency: mappedCurrency } : {}),
     })
     .onConflictDoUpdate({
@@ -539,6 +635,7 @@ async function handleSubscriptionStatusUpdate(
         subscriptionStatus: mappedStatus,
         entitlementUpdatedAt: occurredAt,
         ...intervalUpdate,
+        ...retentionColumnsFor(mappedStatus, occurredAt),
       },
       setWhere: sql`${users.subscriptionStatus} <> 'lifetime' AND (${users.entitlementUpdatedAt} IS NULL OR ${users.entitlementUpdatedAt} < ${occurredAt})`,
     })
@@ -635,7 +732,7 @@ async function handleLifetimePurchase(
     }
 
     // `currency` omitted deliberately — insert-only (AC-8), as above.
-    await tx
+    const updated = await tx
       .update(users)
       .set({
         subscriptionStatus: 'lifetime',
@@ -644,11 +741,17 @@ async function handleLifetimePurchase(
         // the status alone, so this is for the row's own consistency.
         billingInterval: null,
         ...lifetimeFields,
+        // Story 73.2: access regained — clears the clock and any notice.
+        ...retentionColumnsFor('lifetime', occurredAt),
       })
       // In-statement watermark guard (Story 70.1 review) — see
       // `entitlementWatermarkGuard`. A lifetime grant upgrades any status, so
       // the watermark is the only condition, as on the insert path's `setWhere`.
       .where(entitlementWatermarkGuard(customerId, occurredAt))
+      .returning({ id: users.id })
+    if (updated.length === 0 && (await rowVanished(tx, customerId))) {
+      return { ok: false }
+    }
     return { ok: true }
   }
 
@@ -676,6 +779,9 @@ async function handleLifetimePurchase(
   if (collision.kind === 'refused') {
     return { ok: true, terminal: true }
   }
+  if (collision.kind === 'vanished') {
+    return { ok: false }
+  }
   if (collision.kind === 'rekeyed') {
     return { ok: true, createdUserId: collision.userId }
   }
@@ -691,6 +797,7 @@ async function handleLifetimePurchase(
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: occurredAt,
       billingInterval: null,
+      accessEndedAt: insertedAccessEndedAt('lifetime', occurredAt),
       ...lifetimeFields,
       ...(mappedCurrency ? { currency: mappedCurrency } : {}),
     })
@@ -701,6 +808,7 @@ async function handleLifetimePurchase(
         entitlementUpdatedAt: occurredAt,
         billingInterval: null,
         ...lifetimeFields,
+        ...retentionColumnsFor('lifetime', occurredAt),
       },
       setWhere: sql`${users.entitlementUpdatedAt} IS NULL OR ${users.entitlementUpdatedAt} < ${occurredAt}`,
     })
@@ -906,7 +1014,13 @@ async function handleAdjustment(
   // `canceled` ignores it, and it remains a true fact about what was bought.
   await tx
     .update(users)
-    .set({ subscriptionStatus: 'canceled', entitlementUpdatedAt: occurredAt })
+    .set({
+      subscriptionStatus: 'canceled',
+      entitlementUpdatedAt: occurredAt,
+      // Story 73.2: a revoked lifetime (refund/chargeback) is a lapse too — the
+      // 12 months start here.
+      ...retentionColumnsFor('canceled', occurredAt),
+    })
     .where(eq(users.id, existing.id))
 
   logger.warn('Webhook: entitlement REVOKED', {
@@ -1491,7 +1605,12 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       }
 
       // Outside the transaction, by design — see `resolveEmailForFirstSeenBuyer`.
-      const buyerEmail = await resolveEmailForFirstSeenBuyer(customerId, data)
+      // Story 73.2 review: a LAPSED status never creates a user (see
+      // `handleSubscriptionStatusUpdate`), so it never needs the email — skip
+      // the customer-API round trip.
+      const buyerEmail = isEntitledStatus(mapWebhookSubscriptionStatus(status))
+        ? await resolveEmailForFirstSeenBuyer(customerId, data)
+        : undefined
 
       const result = await runGuarded(customerId, (tx) =>
         handleSubscriptionStatusUpdate(tx, {

@@ -220,6 +220,36 @@ export const users = pgTable(
     // its issued-at (`iat`) is at or before this value, so an exfiltrated token
     // can be invalidated server-side before its 7-day TTL. NULL = never revoked.
     sessionsRevokedAt: bigint('sessionsRevokedAt', { mode: 'number' }),
+    // --- Retention clock (Story 73.2) -----------------------------------------
+    //
+    // `accessEndedAt` is the epoch-ms `occurred_at` of the Paddle event that
+    // ENDED Premium access (entitled -> `canceled`/`free`). The privacy policy's
+    // 12-month retention period runs from it. NULL = access has not ended
+    // (entitled), or the row predates this column and was entitled at backfill.
+    //
+    // ⚠️ Written ONLY in the same statement as `subscriptionStatus`, through
+    // `server/retention/status-classes.ts` (`accessEndedAtFor` /
+    // `insertedAccessEndedAt`): regaining access clears it, losing access sets
+    // it, and a further unentitled event KEEPS it. That KEEP is why this is not
+    // `entitlementUpdatedAt`, which advances on every later `subscription.*`
+    // event and would silently restart the clock.
+    //
+    // ⚠️ It is NOT an entitlement signal. No gate may read it for access;
+    // access is decided by `subscriptionStatus` alone. Only the retention sweep
+    // (`server/retention/sweep.ts`) reads it.
+    accessEndedAt: bigint('accessEndedAt', { mode: 'number' }),
+    // Epoch ms at which Brevo ACCEPTED the retention warning email for the
+    // CURRENT lapse (Story 73.2, D2). The purge requires it to be at least 30
+    // days old and not older than `accessEndedAt`, so deletion can never be
+    // unannounced. Cleared whenever access is regained.
+    retentionNoticeSentAt: bigint('retentionNoticeSentAt', { mode: 'number' }),
+    // Epoch ms of the last ATTEMPT to send that notice, successful or not
+    // (Story 73.2 review). Notice candidates are taken oldest-attempt-first,
+    // never-attempted first, so an address Brevo keeps refusing rotates to the
+    // back of the queue instead of blocking every account behind it. A row
+    // whose notice never succeeds is NEVER deleted (Lucas, 2026-09-28: never
+    // delete unwarned). Cleared whenever access is regained.
+    retentionNoticeAttemptedAt: bigint('retentionNoticeAttemptedAt', { mode: 'number' }),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
@@ -787,6 +817,27 @@ export const paddleAdjustments = pgTable(
   })
 )
 
+// Job Runs table — single-flight lease + success heartbeat for unattended jobs
+// (Story 73.2). One row per job `name`, seeded by its migration.
+//
+// - `leaseUntil` (epoch ms): a run claims the job with ONE atomic
+//   `UPDATE … WHERE leaseUntil IS NULL OR leaseUntil < now RETURNING`. No row
+//   back → another run holds it. Pool-safe, unlike a session advisory lock,
+//   and it self-heals: a run that dies mid-way stops blocking once it expires.
+// - `lastCompletedAt` (epoch ms): the end of the last run that reached its end,
+//   whether or not individual accounts failed (Story 73.2 review: one address
+//   Brevo refuses must not look like a stopped schedule). The in-app backstop
+//   reads it to decide whether the scheduled trigger has stopped (GitHub
+//   disables schedules on a public repo after 60 idle days). Per-account
+//   failures still turn the scheduled run red via the route's 500.
+//
+// No FK, no user data: it records that a job ran, never what it touched.
+export const jobRuns = pgTable('jobRuns', {
+  name: varchar('name', { length: 64 }).primaryKey(),
+  leaseUntil: bigint('leaseUntil', { mode: 'number' }),
+  lastCompletedAt: bigint('lastCompletedAt', { mode: 'number' }),
+})
+
 // Type exports for TypeScript type safety
 // Note: Using InferSelectModel instead of deprecated InferModel
 export type User = InferSelectModel<typeof users>
@@ -819,6 +870,7 @@ export type NewLoginToken = InferInsertModel<typeof loginTokens>
 export type Category = InferSelectModel<typeof categories>
 export type NewCategory = InferInsertModel<typeof categories>
 
+export type JobRun = InferSelectModel<typeof jobRuns>
 export type PaddleWebhookEvent = InferSelectModel<typeof paddleWebhookEvents>
 export type NewPaddleWebhookEvent = InferInsertModel<typeof paddleWebhookEvents>
 
@@ -855,6 +907,7 @@ export const allTables = {
   categories,
   paddleWebhookEvents,
   paddleAdjustments,
+  jobRuns,
 }
 
 // NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)

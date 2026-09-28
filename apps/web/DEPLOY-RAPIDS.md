@@ -154,6 +154,7 @@ so each value is set a single time.
 | `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | optional | Webhook timestamp-freshness window. Default `300`. |
 | ~~`PADDLE_VENDOR_ID` / `PADDLE_PUBLIC_KEY`~~ | — | **Removed in Story 5-3** — Paddle Classic vars, unused by Billing. Do not set. |
 | `EMAIL_API_KEY` | 5-16 | Magic-link email (EU provider). Runtime secret. |
+| `RETENTION_SWEEP_TOKEN` | **73.2** | Bearer token for `POST /api/internal/retention-sweep`. **≥32 chars and ≥8 distinct chars** (the `SESSION_SECRET` floor) or the endpoint refuses every call (503). Must equal the GitHub `production` environment secret of the same name. Generate: `openssl rand -hex 32`. Runtime secret. See `.github/DEPLOY_RUNBOOK.md` §9. |
 | `EMAIL_FROM` | **5-3** | Defaults to the verified Longhand sender `hello@longhandbudget.com`; override only if the Brevo-verified address changes. |
 | `PORT` / `HOST` | platform | `PORT` injected by Knative (entry defaults 8080 / `0.0.0.0`). |
 

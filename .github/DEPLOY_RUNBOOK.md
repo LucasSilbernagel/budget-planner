@@ -76,6 +76,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `DATABASE_MIGRATOR_PASSWORD` | `migrate` job | Password for **`bp_migrator`** (the DDL role). The **only** sensitive piece of the migration connection string — host, port, user and database name are no longer secrets (see the note below). |
 | `DATABASE_CA_CERT` | `migrate` job | **Mandatory, not optional.** The DanubeData chain is self-signed, so without it every connection fails `SELF_SIGNED_CERT_IN_CHAIN` before a statement runs (verified 2026-09-03). Since Story 5.18 the `migrate` job connects at **`verify-full`**: it runs in-cluster, so the host it dials is the name on the certificate and nothing is waived. (Until 2026-09-15 it ran at `verify-ca` over the public endpoint, which the in-cluster-only certificate does not name; `migrate-tls.ts` and `DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH` were deleted along with that path.) |
 | `DANUBEDATA_REGISTRY_USERNAME` / `DANUBEDATA_REGISTRY_PASSWORD` | `push-image` | Registry login for the image push. **`push-image` declares `environment: production` solely to receive these** — GitHub does not expose environment-scoped secrets to a job that does not name the environment, and they would otherwise resolve to empty strings. |
+| `RETENTION_SWEEP_TOKEN` | `retention-sweep.yml` | Bearer token the daily retention sweep sends to `POST /api/internal/retention-sweep` (Story 73.2). **Must equal** the Rapids runtime secret of the same name. See §9. |
 | `DANUBE_TOKEN` | `migrate`, `deploy` | The DanubeData API token. In `migrate` it drives the in-cluster migrate container (`danube rapids apply` / `update` / `ls`, §4). **Scopes needed: `serverless:read`, `serverless:write`, and `serverless:diagnostics`** (the last only so the failure path's `rapids logs`/`revisions`/`events` produce output). `serverless:delete` is deliberately **not** required — the container is never deleted, only emptied and scaled to zero. **This exact name is not a preference** — the CLI reads `process.env.DANUBE_TOKEN` and nothing else (`@danubedata/cli` `dist/lib/config.js`, `getToken`). ⚠️ An earlier draft of this table named `RAPIDS_API_TOKEN`, which the CLI never reads: setting that one and flipping `DEPLOY_ENABLED` would have authenticated as nobody. Corrected by 4-16. |
 
 > **⚠️ `DATABASE_URL` and `DATABASE_PUBLIC_HOST` are not in this table, and are
@@ -532,3 +533,67 @@ last known-good deploys before pruning. Keep at least the 2–3 most recent.
 After a manual prune, re-run the deploy from **Actions → Deploy (production) →
 Run workflow** (or push a trivial commit); the automatic prune takes over from
 there.
+
+---
+
+## 9. Retention sweep (Story 73.2)
+
+The privacy policy (`apps/web/src/content/legal/privacy.md`, "How long we keep
+your data") commits to deleting a lapsed account's data after a stated period,
+with a warning email first. **That page is the one home of both figures**; do
+not restate them here. Two triggers enforce it:
+
+- **Primary:** `.github/workflows/retention-sweep.yml`, daily at 06:00 UTC. It
+  calls `POST /api/internal/retention-sweep` with a bearer token.
+- **Backstop:** the app runs the same sweep itself, from request traffic, when
+  the last COMPLETED run is more than 3 days old
+  (`apps/web/src/server/retention/backstop.ts`). It is **unarmed until a first
+  run completes**, so nothing is sent or deleted before step 6 below. It needs
+  traffic, so it is a fallback for a stopped schedule, not a second trigger.
+
+A `jobRuns` lease stops the two from running at once.
+
+### One-time setup
+
+1. Generate a token: `openssl rand -hex 32`.
+2. Set it as the Rapids runtime secret `RETENTION_SWEEP_TOKEN`, in the console
+   (`apps/web/DEPLOY-RAPIDS.md` §3). Env vars have no CLI path.
+3. Set the **same value** as the `production` environment secret
+   `RETENTION_SWEEP_TOKEN` (Settings → Environments → production).
+4. Deploy, so migration 0024 is applied (it adds the columns and the `jobRuns`
+   row).
+5. Run the workflow by hand with **dry run** ticked (Actions → Retention sweep →
+   Run workflow). Expect HTTP 200 and counts in the run summary. `noticesDue`,
+   `purgesDue` and `clocksStarted` are TOTALS (not capped by the batch size);
+   read them before the first real run.
+6. Run it once more with dry run unticked, or let the daily schedule do it.
+   That first completed run arms the backstop.
+
+⚠️ **Do not add required reviewers to the `production` environment** without
+moving this job off it: approval is requested for every job that names the
+environment, so every scheduled run would wait for a click and the schedule
+would never run unattended. §3 suggests reviewers for the deploy jobs. As of
+2026-09-28 the environment has no protection rules (measured with
+`gh api repos/…/environments/production`).
+
+### Reading a run
+
+- **401**: the two token copies differ. **503**: the Rapids secret is unset or
+  shorter than 32 characters.
+- **500 with counts**: at least one warning email or deletion failed. The
+  failures are in the app log under `[Retention]`. The next run retries them.
+  A warning that failed is never counted as sent, so no account is deleted
+  without one, **ever**: an address that keeps refusing is retried daily at the
+  back of the queue and its account is kept (Lucas, 2026-09-28). A red run
+  every day for the same address means one to look at by hand.
+- **`truncated: true`**: the run hit its time budget; the rest goes next run.
+- **`skipped: "lease-held"`**: another sweep, usually the backstop, was
+  already running. This is not an error.
+
+### ⚠️ GitHub switches this schedule off after 60 idle days
+
+In a public repository, GitHub disables scheduled workflows after 60 days with
+no repository activity. The backstop keeps deletions running, but re-enable the
+workflow when you return: Actions → Retention sweep → **Enable workflow**.
+`.github/workflows/ca-expiry.yml` is affected the same way.
+

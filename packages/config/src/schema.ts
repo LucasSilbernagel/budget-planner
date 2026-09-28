@@ -99,6 +99,13 @@ export const envSchema = z.object({
 
   // Deployment
   SITE_URL: z.string().default('http://localhost:5173'),
+
+  // Story 73.2: bearer token for POST /api/internal/retention-sweep, called by
+  // the daily `.github/workflows/retention-sweep.yml`. A RUNTIME SECRET set by
+  // hand in the Rapids console AND in the GitHub `production` environment —
+  // never committed. Unset (or too short) = the endpoint refuses every call;
+  // the in-app backstop still runs the sweep.
+  RETENTION_SWEEP_TOKEN: z.string().optional(),
 })
 
 // Runtime configuration type
@@ -386,6 +393,18 @@ export const SESSION_SECRET_MIN_DISTINCT_CHARS = 8
 function normalizeSecret(secret: string | undefined): string | undefined {
   const trimmed = secret?.trim()
   return trimmed ? trimmed : undefined
+}
+
+/**
+ * The retention-sweep bearer token (Story 73.2), or `undefined` when unset or
+ * too weak after trimming. "Too weak" is the SAME floor `SESSION_SECRET` uses
+ * (`isAcceptableSecret`: length AND distinct characters, code review 73.2), so
+ * a padded value like 32 × `a` is refused. The route FAILS CLOSED on
+ * `undefined`: it runs nothing for anyone. Never log it.
+ */
+export function getRetentionSweepToken(): string | undefined {
+  const token = normalizeSecret(getConfig().RETENTION_SWEEP_TOKEN)
+  return token && isAcceptableSecret(token) ? token : undefined
 }
 
 /**

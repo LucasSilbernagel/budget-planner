@@ -1,0 +1,88 @@
+# Daily retention sweep (Story 73.2).
+#
+# The privacy policy (`apps/web/src/content/legal/privacy.md`, "How long we keep
+# your data" — the ONE home of the period and the notice lead time) promises
+# that a lapsed account's data is deleted after a stated period, with a warning
+# email first. This job is the primary trigger for that: it POSTs the app's
+# token-protected sweep endpoint, which sends due warnings and deletes due
+# accounts, then returns the counts.
+#
+# A red run here means some warning or deletion failed (or the endpoint is not
+# configured). The app keeps the deadline anyway through its in-app backstop,
+# but read the run — `apps/web/src/server/retention/sweep.ts` explains each count.
+#
+# ⚠️ GitHub DISABLES scheduled workflows in a public repository after 60 days
+# with no repository activity. The in-app backstop
+# (`apps/web/src/server/retention/backstop.ts`) covers that gap, but re-enable
+# this workflow when you come back: Actions → "Retention sweep" → Enable.
+# `.github/DEPLOY_RUNBOOK.md` §9 has the setup steps.
+name: Retention sweep
+
+on:
+  schedule:
+    # 06:00 UTC daily — before a working morning in Europe, so a red run is
+    # seen the same day.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Count only: send no email and delete nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Run the retention sweep
+    runs-on: ubuntu-latest
+    # Same gate as the deploy pipeline: nothing live, nothing to sweep.
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    # Environment-scoped secret: without naming the environment,
+    # RETENTION_SWEEP_TOKEN resolves to an empty string (the ca-expiry lesson).
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/internal/retention-sweep
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          RETENTION_SWEEP_TOKEN: ${{ secrets.RETENTION_SWEEP_TOKEN }}
+          # A scheduled run has no inputs, so it is never a dry run.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_URL:-}" ]; then
+            echo "::error::SITE_URL repository variable is unset."
+            exit 1
+          fi
+          if [ -z "${RETENTION_SWEEP_TOKEN:-}" ]; then
+            echo "::error::RETENTION_SWEEP_TOKEN is not set in the production environment. See .github/DEPLOY_RUNBOOK.md §9."
+            exit 1
+          fi
+          url="${SITE_URL%/}/api/internal/retention-sweep"
+          if [ "${DRY_RUN}" = "1" ]; then
+            url="${url}?dryRun=1"
+          fi
+          # --fail-with-body: a non-2xx (401/500/503) fails this step AND still
+          # prints the counts. The body is counts only — never an address or
+          # an id — so it is safe to print. --max-time sits above Rapids' 60s
+          # request timeout.
+          # The exit status is captured rather than left to `set -e`, so the
+          # summary is written on a FAILED run too — the runs that matter.
+          set +e
+          curl --fail-with-body -sS --max-time 90 -X POST \
+            -H "Authorization: Bearer ${RETENTION_SWEEP_TOKEN}" \
+            -o /tmp/sweep.json "${url}"
+          status=$?
+          set -e
+          cat /tmp/sweep.json 2>/dev/null || true
+          echo
+          {
+            echo "### Retention sweep (curl exit ${status})"
+            echo '```json'
+            cat /tmp/sweep.json 2>/dev/null || echo '(no response body)'
+            echo
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"

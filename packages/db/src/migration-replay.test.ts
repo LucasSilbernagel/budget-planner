@@ -354,12 +354,18 @@ describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
-    // Story 70.1: 23 -> 24 journal entries and 157 -> 159 statements, for
+    // Story 73.2: 24 -> 25 journal entries and 159 -> 165 statements, for
+    // migration 0024: `CREATE TABLE jobRuns`, three `ALTER TABLE users ADD
+    // COLUMN` (`accessEndedAt`, `retentionNoticeSentAt`,
+    // `retentionNoticeAttemptedAt`), and two HAND-APPENDED data statements (the
+    // lapsed-row backfill and the `jobRuns` seed). MEASURED: 165. A
+    // regeneration that dropped the two hand-appended statements would land at 163.
+    // (Story 70.1 before it: 23 -> 24 journal entries and 157 -> 159 statements, for
     // migration 0023's `CREATE TYPE billingInterval` + `ALTER TABLE users ADD
     // COLUMN billingInterval` — the plan the user bought. MEASURED: the run
     // reported 159 against the old pin of 157, and 0023 holds exactly those two
     // statements, so 0020's eight hand-written CHECKs still replay (a drop would
-    // have landed at 151).
+    // have landed at 151).)
     // (Story 68.1 before it: 22 -> 23 journal entries and 156 -> 157 statements, for
     // migration 0022's single `ALTER TABLE users ADD COLUMN emailUpdatedAt` —
     // the `customer.updated` ordering watermark, deliberately separate from
@@ -380,8 +386,8 @@ describe('clean-slate migration replay', () => {
     // ⚠️ They matter more since 0020 than before it: that migration is
     // hand-authored and `drizzle-kit generate` cannot reproduce it, so a
     // regeneration that drops all eight statements shows up HERE first.
-    expect(journal.entries.length).toBe(24)
-    expect(appliedStatements).toBe(159)
+    expect(journal.entries.length).toBe(25)
+    expect(appliedStatements).toBe(165)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {

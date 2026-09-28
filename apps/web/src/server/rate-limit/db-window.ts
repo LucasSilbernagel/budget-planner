@@ -23,6 +23,7 @@
  */
 
 import { logger } from '@/lib/logger'
+import { maybeRunRetentionBackstop } from '@/server/retention/backstop'
 import { db, rateLimits } from '@budget-planner/db'
 import { sql } from 'drizzle-orm'
 import { createIntervalGate, passIfDue } from './interval-gate'
@@ -241,6 +242,10 @@ export async function checkDbRateLimit(options: DbRateLimitOptions): Promise<Rat
     if (windowMs < REAP_CUTOFF_MS) {
       maybeReapExpiredWindows(now)
     }
+    // Story 73.2: the retention sweep's in-app backstop rides the same success
+    // path — gated hourly per instance, never awaited, never throws. See
+    // `server/retention/backstop.ts` for why it exists.
+    maybeRunRetentionBackstop(now)
     return { allowed: count <= maxAttempts, remaining: Math.max(0, maxAttempts - count) }
   } catch (error) {
     const sanitized = error instanceof Error ? error.message : String(error)

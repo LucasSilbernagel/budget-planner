@@ -72,8 +72,10 @@ vi.mock('@budget-planner/db', () => {
 vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }))
+vi.mock('@/server/retention/backstop', () => ({ maybeRunRetentionBackstop: vi.fn() }))
 
 import { logger } from '@/lib/logger'
+import { maybeRunRetentionBackstop } from '@/server/retention/backstop'
 import { __resetReapGateForTests, checkDbRateLimit } from './db-window'
 
 beforeEach(() => {
@@ -419,5 +421,20 @@ describe('reaper bounds and invariants', () => {
   it('still sweeps for a caller at the longest window actually configured (15 min)', async () => {
     await call(1_800_000_000_000, 15 * 60 * 1000)
     expect(state.captured.executed).toHaveLength(1)
+  })
+})
+
+describe('retention backstop wiring (Story 73.2)', () => {
+  const opts = { scope: 'sync' as const, subject: 'u1', windowMs: 60_000, maxAttempts: 5 }
+
+  it('offers the backstop the request clock on the success path', async () => {
+    await checkDbRateLimit({ ...opts, now: 1_700_000_000_000 })
+    expect(maybeRunRetentionBackstop).toHaveBeenCalledWith(1_700_000_000_000)
+  })
+
+  it('does NOT run it on a DB failure — the last thing to add during an outage', async () => {
+    state.mode = 'throw'
+    await checkDbRateLimit({ ...opts, now: 1_700_000_000_000 })
+    expect(maybeRunRetentionBackstop).not.toHaveBeenCalled()
   })
 })

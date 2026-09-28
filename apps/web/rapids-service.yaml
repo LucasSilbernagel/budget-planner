@@ -101,6 +101,8 @@ spec:
             # PADDLE_ANNUAL_PRICE_ID, PADDLE_LIFETIME_PRICE_ID (story 5-20: all
             # three price IDs are REQUIRED in production and must differ),
             # PADDLE_WEBHOOK_MAX_AGE_SECONDS (optional),
-            # EMAIL_API_KEY, EMAIL_FROM (optional — defaults to a verified sender).
+            # EMAIL_API_KEY, EMAIL_FROM (optional — defaults to a verified sender),
+            # RETENTION_SWEEP_TOKEN (Story 73.2 — must match the GitHub
+            # `production` environment secret of the same name).
             # PADDLE_VENDOR_ID / PADDLE_PUBLIC_KEY are Classic-only — removed in
             # Story 5-3; do not set them.

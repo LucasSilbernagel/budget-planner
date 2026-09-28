@@ -35,8 +35,16 @@ const {
       return Promise.resolve(undefined)
     }),
   }))
-  const transaction = vi.fn(async (cb: (tx: { delete: typeof txDelete }) => Promise<void>) =>
-    cb({ delete: txDelete })
+  // Story 73.2: `eraseAccountRows` opens with a `users` row lock through
+  // `tx.execute`. Recorded in the same call log as the deletes so the test
+  // below can assert the lock comes FIRST.
+  const txExecute = vi.fn((query: unknown) => {
+    whereCalls.push({ table: 'LOCK users', arg: query })
+    return Promise.resolve(undefined)
+  })
+  const transaction = vi.fn(
+    async (cb: (tx: { delete: typeof txDelete; execute: typeof txExecute }) => Promise<void>) =>
+      cb({ delete: txDelete, execute: txExecute })
   )
   return {
     transaction,
@@ -132,7 +140,8 @@ describe('deleteUserAccount', () => {
     expect(result).toEqual({ success: true })
     expect(transaction).toHaveBeenCalledTimes(1)
     expect(txDelete).toHaveBeenCalledTimes(EXPECTED_ORDER.length)
-    expect(whereCalls.map((c) => c.table)).toEqual(EXPECTED_ORDER)
+    // Story 73.2, AC-6: the `users` row lock precedes every delete.
+    expect(whereCalls.map((c) => c.table)).toEqual(['LOCK users', ...EXPECTED_ORDER])
   })
 
   it('deletes the email-scoped throttle by the NORMALIZED session address (Story 74.2)', async () => {
@@ -187,6 +196,14 @@ describe('deleteUserAccount', () => {
     // Every WHERE clause targets user-A; none references user-B. The one
     // keyed by address uses the SESSION's address, never the body's.
     for (const call of whereCalls) {
+      if (call.table === 'LOCK users') {
+        // A drizzle `sql` template keeps its interpolated values as raw
+        // entries of `queryChunks`: the lock must be keyed on user-A too.
+        const chunks = (call.arg as { queryChunks: unknown[] }).queryChunks
+        expect(chunks).toContain('user-A')
+        expect(chunks).not.toContain('user-B')
+        continue
+      }
       if ('and' in (call.arg as object)) {
         const vals = (call.arg as { and: Array<{ val: unknown }> }).and.map((c) => c.val)
         expect(vals).toEqual(['email', 'a@test.dev'])

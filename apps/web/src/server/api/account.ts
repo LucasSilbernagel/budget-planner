@@ -28,7 +28,7 @@ import {
   userProfiles,
   users,
 } from '@budget-planner/db/src/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { cancelActiveSubscriptionsForCustomer } from '../paddle/subscription-api'
 import { normalizeEmail } from './auth/email'
 import { getCurrentUserSession } from './auth/paddle'
@@ -78,48 +78,9 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
     //    deleting our row does NOT stop Paddle billing). Never blocks erasure.
     await cancelPaddleSubscriptionBestEffort(paddleId)
 
-    // 3) Transactional hard-delete. Every FK in the schema is RESTRICT (no
-    //    CASCADE), so children MUST be deleted before their parents. Financial
-    //    rows and forecasting profiles reference BOTH users.id and
-    //    userProfiles.id, so they precede userProfiles; rateLimits and
-    //    loginTokens reference only users.id. `users` is deleted last.
-    //
-    //    ⚠️ `categories` (Story 30.4a) is referenced BY incomeSources.categoryId
-    //    and expenses.categoryId, so it must come AFTER both of them — and it
-    //    references users.id and userProfiles.id, so it must come BEFORE those.
-    //    It is the only table in this list with a parent AND a child here.
-    //
-    //    `rateLimits` is deleted TWICE: by `userId` (sync buckets) and by
-    //    email `subject` (the magic-link throttle, whose `userId` is NULL).
-    await db.transaction(async (tx) => {
-      await tx.delete(forecastingProfiles).where(eq(forecastingProfiles.userId, userId))
-      await tx.delete(incomeSources).where(eq(incomeSources.userId, userId))
-      await tx.delete(expenses).where(eq(expenses.userId, userId))
-      await tx.delete(categories).where(eq(categories.userId, userId))
-      await tx.delete(savingsGoals).where(eq(savingsGoals.userId, userId))
-      await tx.delete(balanceTracking).where(eq(balanceTracking.userId, userId))
-      await tx.delete(loginTokens).where(eq(loginTokens.userId, userId))
-      await tx.delete(rateLimits).where(eq(rateLimits.userId, userId))
-      // Story 74.2: the magic-link throttle is written with a NULL `userId`
-      // (`request.ts`), so the delete above cannot see it. Left behind, it would
-      // hold the address (its `subject`) and carry the old counter into a new
-      // account at that address — a FIXED 15-min window, so a self-healing
-      // confound, not a lockout. Keyed through `normalizeEmail`, the SAME
-      // function the route keys it with; any other spelling is a silent no-op.
-      // Every window, not just the live one. Covers the account's CURRENT
-      // address only: a bucket under an address it had before an email change
-      // is not knowable here (deferred-work.md), and a request after COMMIT
-      // starts a fresh bucket, as it should.
-      // Locks: the reaper uses SKIP LOCKED, so it never waits on us (no cycle);
-      // we can wait on it only as the userId delete already can, bounded by its
-      // batch cap. A concurrent upsert waits on the ONE conflicting row we hold
-      // and holds no other lock while it does, so it cannot close a cycle.
-      await tx
-        .delete(rateLimits)
-        .where(and(eq(rateLimits.scope, 'email'), eq(rateLimits.subject, normalizeEmail(email))))
-      await tx.delete(userProfiles).where(eq(userProfiles.userId, userId))
-      await tx.delete(users).where(eq(users.id, userId))
-    })
+    // 3) Transactional hard-delete — the ONE deletion order, shared with the
+    //    retention purge (Story 73.2). See `eraseAccountRows`.
+    await db.transaction((tx) => eraseAccountRows(tx, { userId, email }))
 
     // The session is now invalid regardless of the cookie: validateSessionToken
     // resolves the user from the DB (Story 5-7) and that row is gone. The route
@@ -133,6 +94,84 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
       error: error instanceof Error ? error.message : 'Failed to delete account',
     }
   }
+}
+
+/** The transaction handle `db.transaction` passes to its callback. */
+export type AccountTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * Hard-delete ONE user and every row they own, inside the caller's
+ * transaction. The single FK-safe deletion order in the codebase: account
+ * erasure (`deleteUserAccount`) and the retention purge
+ * (`server/retention/sweep.ts`, Story 73.2) both call it, so there is no
+ * second hand-written order to drift.
+ *
+ * Deliberately NO Paddle call here. Erasure cancels the subscription BEFORE
+ * its transaction; the purge must not call Paddle at all, because Paddle's
+ * resulting `subscription.canceled` re-creates the row for an unknown customer
+ * (deferred-work.md, 74.1's resurrection HIGH).
+ *
+ * ⚠️ LOCK ORDER (Story 73.2, AC-6). The FIRST statement locks the `users`
+ * row. Every caller therefore takes the `users` lock before any child-row
+ * lock, so erasure and the purge cannot form a lock cycle on one user. The
+ * purge takes that same lock with `SKIP LOCKED` BEFORE calling this, so it
+ * never waits on an erasure in progress; this statement is then a no-op
+ * re-lock. The protection is one-directional, as in `db-window.ts`: an
+ * erasure CAN wait on a purge that already holds the row, for as long as that
+ * one user's purge takes.
+ *
+ * `paddleWebhookEvents` and `paddleAdjustments` are NOT deleted: the event log
+ * must survive so a replay after deletion is still recognised as a replay
+ * (`schema.ts`, `paddleWebhookEvents` docblock).
+ *
+ * Idempotent: an absent user deletes zero rows everywhere.
+ */
+export async function eraseAccountRows(
+  tx: AccountTx,
+  { userId, email }: { userId: string; email: string }
+): Promise<void> {
+  await tx.execute(sql`SELECT ${users.id} FROM ${users} WHERE ${users.id} = ${userId} FOR UPDATE`)
+
+  // Every FK in the schema is RESTRICT (no
+  // CASCADE), so children MUST be deleted before their parents. Financial
+  // rows and forecasting profiles reference BOTH users.id and
+  // userProfiles.id, so they precede userProfiles; rateLimits and
+  // loginTokens reference only users.id. `users` is deleted last.
+  //
+  // ⚠️ `categories` (Story 30.4a) is referenced BY incomeSources.categoryId
+  // and expenses.categoryId, so it must come AFTER both of them — and it
+  // references users.id and userProfiles.id, so it must come BEFORE those.
+  // It is the only table in this list with a parent AND a child here.
+  //
+  // `rateLimits` is deleted TWICE: by `userId` (sync buckets) and by
+  // email `subject` (the magic-link throttle, whose `userId` is NULL).
+  await tx.delete(forecastingProfiles).where(eq(forecastingProfiles.userId, userId))
+  await tx.delete(incomeSources).where(eq(incomeSources.userId, userId))
+  await tx.delete(expenses).where(eq(expenses.userId, userId))
+  await tx.delete(categories).where(eq(categories.userId, userId))
+  await tx.delete(savingsGoals).where(eq(savingsGoals.userId, userId))
+  await tx.delete(balanceTracking).where(eq(balanceTracking.userId, userId))
+  await tx.delete(loginTokens).where(eq(loginTokens.userId, userId))
+  await tx.delete(rateLimits).where(eq(rateLimits.userId, userId))
+  // Story 74.2: the magic-link throttle is written with a NULL `userId`
+  // (`request.ts`), so the delete above cannot see it. Left behind, it would
+  // hold the address (its `subject`) and carry the old counter into a new
+  // account at that address — a FIXED 15-min window, so a self-healing
+  // confound, not a lockout. Keyed through `normalizeEmail`, the SAME
+  // function the route keys it with; any other spelling is a silent no-op.
+  // Every window, not just the live one. Covers the account's CURRENT
+  // address only: a bucket under an address it had before an email change
+  // is not knowable here (deferred-work.md), and a request after COMMIT
+  // starts a fresh bucket, as it should.
+  // Locks: the reaper uses SKIP LOCKED, so it never waits on us (no cycle);
+  // we can wait on it only as the userId delete already can, bounded by its
+  // batch cap. A concurrent upsert waits on the ONE conflicting row we hold
+  // and holds no other lock while it does, so it cannot close a cycle.
+  await tx
+    .delete(rateLimits)
+    .where(and(eq(rateLimits.scope, 'email'), eq(rateLimits.subject, normalizeEmail(email))))
+  await tx.delete(userProfiles).where(eq(userProfiles.userId, userId))
+  await tx.delete(users).where(eq(users.id, userId))
 }
 
 /**

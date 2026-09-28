@@ -1,6 +1,6 @@
 _This page is informational and does not constitute legal advice._
 
-_Last updated: 27 September 2026_
+_Last updated: 28 September 2026_
 
 This Privacy Policy explains what data Longhand Budget ("we", "the Service") handles and how.
 We have designed the Service to collect as little personal data as possible.
@@ -29,10 +29,10 @@ Free-tier data stays on your device and never reaches us.
 
 - **While you have Premium** — we keep your account and synced data for as long as your Premium access continues.
   This includes a subscription whose payment is being retried, and a lifetime license (unless the purchase is refunded or charged back).
-- **After Premium access ends** — if your Premium access ends (for example, your subscription ends, or a purchase is refunded or charged back) and you do not buy Premium again, we keep your account and synced data for **12 months** from the day your access ended, so you can pick up where you left off if you come back.
+- **After Premium access ends** — if your Premium access ends (for example, your subscription ends or is paused, or a purchase is refunded or charged back) and you do not buy Premium again, we keep your account and synced data for **12 months** from the day your access ended, so you can pick up where you left off if you come back.
   Signing in during that time does not reset the 12 months.
-  After those 12 months we will delete your account and all of your synced data from our EU database.
-  We will email you before that happens.
+  After those 12 months we will delete your account and all of your synced data from our EU database, normally within 30 days of the 12 months ending.
+  We will email you at least 30 days before that happens.
 - **You don't have to wait** — you can delete your account and all of your synced data yourself at any time from Settings (see "Your rights" below).
 
 ## Cookies and device storage
@@ -55,10 +55,11 @@ When you subscribe, Paddle collects the information needed to take payment (such
 We do not receive or store your full payment-card details.
 Please refer to Paddle's own privacy notice for how they handle payment data.
 
-## Sign-in emails
+## Sign-in and account emails
 
 When you sign in with a magic link, we send that email through **Brevo (Sendinblue)**, an email provider based in France (EU).
-Brevo receives only the email address needed to deliver your login link and never receives your financial data.
+We also send the warning before a lapsed account is deleted (see "How long we keep your data") through Brevo.
+Brevo receives only the email address needed to deliver these emails and never receives your financial data.
 
 ## Contact form
 

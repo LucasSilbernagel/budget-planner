@@ -138,8 +138,10 @@ describe('privacy page: retention period (story 73.1)', () => {
     return found
   }
 
-  it('states one period, 12 months, however a period might be written', () => {
-    // EVERY duration the section states must be 12 months. A bare
+  it('states the 12-month period and the 30-day notice, and no other duration', () => {
+    // EVERY duration the section states must be 12 months — or, since story
+    // 73.2, the 30 days of the warning's lead time and the deletion bound
+    // (`server/retention/sweep.ts`, NOTICE_LEAD_MS). A bare
     // `toMatch(/12 months/)` stayed green when one of the two mentions was
     // changed to 24 (control run in story 73.1), and a digits-plus-"months"
     // pattern missed "12 years", "a year" and "twelve months" (73.1 review).
@@ -149,9 +151,10 @@ describe('privacy page: retention period (story 73.1)', () => {
         /\b(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty[\s-]four)[\s-]+(day|week|month|year)s?\b/gi
       ),
     ].map((match) => `${match[1].toLowerCase()} ${match[2].toLowerCase()}`)
-    expect(durations.length).toBeGreaterThan(0)
+    expect(durations).toContain('12 month')
+    expect(durations).toContain('30 day')
     expect(
-      durations.every((duration) => duration === '12 month'),
+      durations.every((duration) => duration === '12 month' || duration === '30 day'),
       `durations stated: ${durations}`
     ).toBe(true)
   })
@@ -171,6 +174,9 @@ describe('privacy page: retention period (story 73.1)', () => {
     // lands in the same `canceled` state 73.2 will select.
     expect(lapsed).toMatch(/if your Premium access ends/)
     expect(lapsed).toMatch(/a purchase is refunded or charged back/)
+    // Story 73.2: a paused subscription maps to `free`, which the purge
+    // selects (`server/retention/status-classes.ts`), so the policy says so.
+    expect(lapsed).toMatch(/your subscription ends or is paused/)
     // Buying lifetime also stops the clock, and it is not a "resubscription".
     expect(lapsed).toMatch(/you do not buy Premium again/)
     // D1 (Lucas, 2026-09-27): the clock runs from the end of access, and a
@@ -180,7 +186,11 @@ describe('privacy page: retention period (story 73.1)', () => {
     // The commitment itself, future tense. The self-service bullet also says
     // "delete your account and all of your synced data", so pin the "we will".
     expect(lapsed).toMatch(/we will delete your account and all of your synced data/)
-    expect(lapsed).toMatch(/We will email you before that happens/)
+    // Story 73.2: the lead time (D2) and the upper bound, both 30 days.
+    expect(lapsed).toMatch(/We will email you at least 30 days before that happens/)
+    // "normally": an account whose warning keeps failing is never deleted
+    // unwarned, so it can run past the bound (review decision, Lucas 2026-09-28).
+    expect(lapsed).toMatch(/normally within 30 days of the 12 months ending/)
     expect(lapsed).not.toMatch(/payment is being retried|lifetime license/)
   })
 
@@ -203,7 +213,10 @@ describe('privacy page: retention period (story 73.1)', () => {
     )
   })
 
-  it('does not describe an automatic deletion that is not yet running (73.2)', () => {
+  // 73.1 wrote this guard because no purge existed yet. Story 73.2 KEEPS it:
+  // the policy states what we commit to, not how a job achieves it, and a
+  // word like "daily" would turn an ops cadence into a public promise.
+  it('states commitments, not the mechanism that carries them out', () => {
     expect(retentionSection()).not.toMatch(
       /\b(automatic(ally)?|automated|auto-?delet\w*|scheduled|nightly|daily|weekly|periodic(ally)?|cron|job|every (night|day|week|month))\b|our system deletes/i
     )
@@ -275,5 +288,19 @@ describe('pricing page content (AC-4)', () => {
     // "side by side" is additionally still a real overpromise: no view plots two
     // saved forecasts together. Hyphenated form included (30-2 review).
     expect(PRICING_PAGE.content).not.toMatch(/side[\s-]by[\s-]side/i)
+  })
+})
+
+describe('privacy page: the retention warning email is disclosed (story 73.2)', () => {
+  it('names the retention warning in the Brevo section, and still only the address', () => {
+    const content = PRIVACY_PAGE.content
+    const start = content.search(/^## Sign-in and account emails$/m)
+    expect(start, 'privacy.md has no "## Sign-in and account emails" section').toBeGreaterThan(-1)
+    const rest = content.slice(start + 1)
+    const section = rest.slice(0, rest.search(/^## /m))
+    expect(section).toMatch(/Brevo/)
+    expect(section).toMatch(/warning before a lapsed account is deleted/)
+    expect(section).toMatch(/only the email address/)
+    expect(section).toMatch(/never receives your financial data/)
   })
 })
