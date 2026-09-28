@@ -21,6 +21,8 @@
  */
 
 import { logger } from '@/lib/logger'
+import type { SyncRejection, SyncRejectionReason } from '@/server/api/sync-rejection'
+import { constraintOf, permanentRejectionReason, sqlStateOf } from '@/server/api/sync-rejection'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
@@ -78,6 +80,71 @@ export interface BatchSyncResponse {
   status: SyncStatus
   /** Error message if sync failed */
   error?: string
+  /**
+   * Operations the server refused PERMANENTLY (story 75.1). Each is also counted
+   * in `failedCount` and listed in `failedOperationIds`, so a client that does
+   * not read this field behaves exactly as before. The client transport maps a
+   * listed op to `statusCode: 422`, which core drops from the queue.
+   *
+   * Optional only so `server/functions/sync.ts`'s literals keep compiling;
+   * `processBatchSync` always sets it.
+   */
+  rejections?: SyncRejection[]
+  /**
+   * Why the WHOLE request was refused before any operation ran, if it was. The
+   * route maps it to an HTTP status (`routes/api/sync/batch.ts`). An explicit
+   * discriminant, so rewording an `error` string cannot silently change a status.
+   */
+  refusal?: BatchRefusal
+}
+
+/**
+ * A request-level refusal. Only `invalid-request` is PERMANENT (the route answers
+ * 400, which core drops). `ownership` answers 401, which core keeps queued: the
+ * op may be another account's pending edit (see its arm in `processBatchSync`).
+ * `tier` and `rate-limit` keep their 403 / 429 semantics.
+ */
+export type BatchRefusal = 'invalid-request' | 'ownership' | 'tier' | 'rate-limit'
+
+/**
+ * Outcome of applying one operation. `rejection` is set ONLY for a failure that is
+ * positive proof of permanence (see `sync-rejection.ts`); every other failure
+ * leaves it unset and is reported exactly as before story 75.1.
+ */
+interface OperationResult {
+  success: boolean
+  error?: string
+  rejection?: SyncRejectionReason
+}
+
+/**
+ * Turn a caught database error into an {@link OperationResult}.
+ *
+ * A PERMANENT refusal is logged with the driver detail and returned with a
+ * generic `error` plus its `rejection` reason (AC-6: the driver message names
+ * tables, columns and constraints, so it goes to the log, never the envelope).
+ * Anything else is returned EXACTLY as the catch blocks returned it before story
+ * 75.1 — the message, and no `rejection` — so it stays in core's kept-queued
+ * bucket.
+ */
+function failureFromError(
+  error: unknown,
+  context: { entityType: string; entityId?: unknown; userId?: unknown }
+): OperationResult {
+  const rejection = permanentRejectionReason(error)
+  if (rejection) {
+    logger.error('Sync operation permanently refused by the database', {
+      ...context,
+      sqlState: sqlStateOf(error),
+      constraint: constraintOf(error),
+      error,
+    })
+    return { success: false, error: 'Refused by the database', rejection }
+  }
+  return {
+    success: false,
+    error: error instanceof Error ? error.message : String(error),
+  }
 }
 
 /**
@@ -260,7 +327,13 @@ export const syncOperationSchema = z
       'userProfile',
       'category',
     ]),
-    entityId: z.string(),
+    // A uuid (story 75.1). Every entity table's `id` is a uuid column and every
+    // client id generator mints a v4-shaped uuid (`lib/uuid.ts`, story 5-14), so a
+    // non-uuid id can never succeed on any path. Before this, `checkConflict`'s
+    // SELECT raised `22P02`, its catch reported a `server-check-failed` CONFLICT,
+    // and a conflict is never removed from the client queue — a permanent loop.
+    // Refused here it is a clean 400 that core drops.
+    entityId: z.string().uuid(),
     data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
     timestamp: z.number(),
     deviceId: z.string(),
@@ -293,26 +366,34 @@ export const syncOperationSchema = z
       return
     }
 
-    // For create/update, validate full structure based on entityType
-    switch (entityType) {
-      case 'incomeSource':
-        incomeSourceSchema.parse(entityData)
-        break
-      case 'expense':
-        expenseSchema.parse(entityData)
-        break
-      case 'savingsGoal':
-        savingsGoalSchema.parse(entityData)
-        break
-      case 'balanceTracking':
-        balanceTrackingSchema.parse(entityData)
-        break
-      case 'userProfile':
-        userProfileSchema.parse(entityData)
-        break
-      case 'category':
-        categorySchema.parse(entityData)
-        break
+    // For create/update, validate full structure based on entityType.
+    //
+    // ⚠️⚠️ `safeParse` + `addIssue`, NEVER `.parse()` (story 75.1). A `.parse()`
+    // THROWS out of the refinement, and zod 3 does not catch a throw inside
+    // `superRefine`: `batchSyncRequestSchema.safeParse` itself threw, escaping
+    // `processBatchSync` and the route, so an invalid payload never reached the
+    // "Invalid request" arm below. MEASURED: the route threw a raw `ZodError`,
+    // which the client transport sees as a network failure — RETRYABLE — so the
+    // op left the persisted queue for an in-memory retry and was lost past the
+    // retry budget or on reload. Reported as issues, it is a clean 400 that core
+    // drops.
+    const schemaFor = {
+      incomeSource: incomeSourceSchema,
+      expense: expenseSchema,
+      savingsGoal: savingsGoalSchema,
+      balanceTracking: balanceTrackingSchema,
+      userProfile: userProfileSchema,
+      category: categorySchema,
+    } satisfies Record<typeof entityType, z.ZodTypeAny>
+    const result = schemaFor[entityType].safeParse(entityData)
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: issue.message,
+          path: ['data', ...issue.path],
+        })
+      }
     }
   })
 
@@ -592,7 +673,7 @@ async function tombstoneExists(
 async function createEntity(
   entityType: keyof EntityTableMap,
   data: Record<string, unknown> & { userId: string; profileId?: string }
-): Promise<{ success: boolean; error?: string }> {
+): Promise<OperationResult> {
   try {
     const table = getTable(entityType)
     // Explicitly stamp updatedAt (Story 4-18). Although the column defaults to
@@ -604,10 +685,7 @@ async function createEntity(
     await db.insert(table).values(insertData)
     return { success: true }
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
+    return failureFromError(error, { entityType, entityId: data['id'], userId: data.userId })
   }
 }
 
@@ -620,7 +698,7 @@ async function updateEntity(
   data: Record<string, unknown>,
   userId: string,
   profileId?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<OperationResult> {
   try {
     const table = getTable(entityType)
     let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
@@ -648,10 +726,7 @@ async function updateEntity(
     await db.update(table).set(updateData).where(whereClause)
     return { success: true }
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
+    return failureFromError(error, { entityType, entityId, userId })
   }
 }
 
@@ -757,7 +832,7 @@ const PROFILE_CHILD_TABLES = [
 async function deleteProfileWithChildren(
   profileId: string,
   userId: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<OperationResult> {
   try {
     await db.transaction(async (tx) => {
       const now = new Date()
@@ -789,7 +864,16 @@ async function deleteProfileWithChildren(
     // `server/functions/profiles.ts`, is an asymmetry that survives only until
     // someone renders the envelope. Logging it also means a failed cascade is
     // observable at all, which it was not.
-    logger.error('Profile cascade failed', { userId, profileId, error })
+    logger.error('Profile cascade failed', {
+      userId,
+      profileId,
+      sqlState: sqlStateOf(error),
+      constraint: constraintOf(error),
+      error,
+    })
+    // ⚠️ NEVER classified permanent (story 75.1 code review): the op names only
+    // the profile, and the cascade writes only `isDeleted`/`updatedAt`, so no
+    // failure here can be caused by the op's own data.
     return { success: false, error: 'Failed to delete profile' }
   }
 }
@@ -808,7 +892,7 @@ async function deleteEntity(
   entityId: string,
   userId: string,
   profileId?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<OperationResult> {
   try {
     const table = getTable(entityType)
     let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
@@ -826,6 +910,9 @@ async function deleteEntity(
     await db.update(table).set({ isDeleted: true, updatedAt: new Date() }).where(whereClause)
     return { success: true }
   } catch (error) {
+    // ⚠️ NEVER classified permanent (story 75.1 code review). A soft-delete writes
+    // only `isDeleted`/`updatedAt`, so its own data cannot violate a CHECK —
+    // whatever failed, the server's state or a transient fault caused it.
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -836,17 +923,17 @@ async function deleteEntity(
 /**
  * Apply an operation to the database
  */
-async function applyOperation(
-  operation: SyncOperation
-): Promise<{ success: boolean; error?: string }> {
+async function applyOperation(operation: SyncOperation): Promise<OperationResult> {
   const entityType = operation.entityType as keyof EntityTableMap
   const entityId = operation.entityId
   const userId = operation.userId
   const profileId = operation.profileId
 
   // Validate userId is not empty
+  // Permanent: unreachable past the request schema (`userId: z.string()` plus the
+  // ownership loop), but classified anyway so it can never become a replay loop.
   if (!userId) {
-    return { success: false, error: 'User ID is required' }
+    return { success: false, error: 'User ID is required', rejection: 'invalid' }
   }
 
   try {
@@ -860,9 +947,17 @@ async function applyOperation(
     // Profile-scoped entities must name a live profile the SESSION user owns.
     // The FK alone only proves the profile exists — for someone.
     if ('profileId' in getTable(entityType)) {
+      // Permanent: the op's own shape is wrong, and no replay adds a field.
       if (!profileId) {
-        return { success: false, error: 'profileId is required for this entity type' }
+        return {
+          success: false,
+          error: 'profileId is required for this entity type',
+          rejection: 'invalid',
+        }
       }
+      // ⚠️ NOT permanent (story 75.1). The profile's own create may still be
+      // queued or retrying, and a remotely deleted profile is story 76.2's to
+      // handle — dropping here would lose the child edits.
       if (!(await profileBelongsToUser(profileId, userId))) {
         return { success: false, error: 'Profile not found' }
       }
@@ -932,9 +1027,10 @@ async function applyOperation(
             // ⚠⚠ WHY NOT `success: false`. The first version returned a failure,
             // and the code review measured where that lands: a `{success:false}`
             // in a 200 envelope carries NO http status, so
-            // `features/api/client.ts:348` marks it `retryable: false` with no
-            // `statusCode`, and core files it under `unclassifiedFailedOperations`
-            // (`packages/core/src/sync/synchronization.ts:1103`) which `:1185-1194`
+            // `sendSyncOperation` (`features/api/client.ts`, its `failedCount > 0`
+            // arm) marks it `retryable: false` with no `statusCode`, and core
+            // files it under `unclassifiedFailedOperations`
+            // (`packages/core/src/sync/synchronization.ts`), which it
             // DELIBERATELY KEEPS QUEUED — removal requires positive proof of
             // permanence. So the op replays every cycle, `failedCount > 0` every
             // time, `consecutiveFailures` climbs, the circuit breaker opens and
@@ -963,10 +1059,12 @@ async function applyOperation(
       }
     }
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
+    // Reached by the pre-checks' SELECTs (`tombstoneExists`, `profileBelongsToUser`,
+    // `entityExists`). Nothing they raise is op-data today — the request schema
+    // now requires a uuid `entityId` (story 75.1), which closed the one `22P02`
+    // route — so this is classified only for uniformity; in practice it keeps the
+    // pre-75.1 message-and-no-rejection shape.
+    return failureFromError(error, { entityType, entityId, userId })
   }
 }
 
@@ -1054,7 +1152,17 @@ export async function processBatchSync(
   request: BatchSyncRequest,
   user: Pick<User, 'id' | 'subscriptionStatus'>
 ): Promise<BatchSyncResponse> {
-  // Validate request
+  // Validate request.
+  //
+  // ⚠️⚠️ The REQUEST-LEVEL `invalid-request` refusal below is PERMANENT: the
+  // route answers 400 and core DROPS the op (story 75.1). (`ownership` is NOT
+  // permanent — see its arm.)
+  // That is safe ONLY because the client sends ONE operation per request
+  // (`sendSyncOperation` in `features/api/client.ts` posts `operations:
+  // [operation]`), so refusing the request refuses exactly the op that is wrong.
+  // If the client ever batches several ops per request, one bad op would take its
+  // valid neighbours down with it — at which point these refusals must become
+  // per-operation, like `rejections` below.
   const validationResult = batchSyncRequestSchema.safeParse(request)
   if (!validationResult.success) {
     return {
@@ -1067,6 +1175,7 @@ export async function processBatchSync(
       serverTimestamp: Date.now(),
       status: SyncStatusEnum.FAILED,
       error: `Invalid request: ${validationResult.error.message}`,
+      refusal: 'invalid-request',
     }
   }
 
@@ -1086,6 +1195,7 @@ export async function processBatchSync(
       serverTimestamp: Date.now(),
       status: SyncStatusEnum.FAILED,
       error: 'Forbidden: server sync requires an active paid subscription',
+      refusal: 'tier',
     }
   }
 
@@ -1102,6 +1212,14 @@ export async function processBatchSync(
         serverTimestamp: Date.now(),
         status: SyncStatusEnum.FAILED,
         error: 'Unauthorized: Operation user ID mismatch',
+        // ⚠️⚠️ NOT permanent — 401 at the route, which core KEEPS QUEUED (story
+        // 75.1 code review; the story first shipped 422 here, which drops). The
+        // op may be another account's genuine pending edit: the session cookie is
+        // shared across tabs, but `useSync` reads its `userId` once at mount and
+        // nothing listens for a sign-in in another tab. So tab 1 pushes account
+        // A's queue under tab 2's B cookie, and dropping it deletes A's edits.
+        // A 401 keeps them until A signs back in.
+        refusal: 'ownership',
       }
     }
   }
@@ -1119,6 +1237,7 @@ export async function processBatchSync(
       serverTimestamp: Date.now(),
       status: SyncStatusEnum.FAILED,
       error: 'Rate limit exceeded',
+      refusal: 'rate-limit',
     }
   }
 
@@ -1127,6 +1246,7 @@ export async function processBatchSync(
   let conflictCount = 0
   const conflicts: SyncConflict[] = []
   const failedOperationIds: string[] = []
+  const rejections: SyncRejection[] = []
 
   // Process each operation
   for (const operation of operations) {
@@ -1167,6 +1287,11 @@ export async function processBatchSync(
     } else {
       failedCount++
       failedOperationIds.push(operation.id)
+      // Counted as failed AS WELL, so a client that does not read `rejections`
+      // sees exactly the envelope it saw before story 75.1.
+      if (result.rejection) {
+        rejections.push({ operationId: operation.id, reason: result.rejection })
+      }
     }
   }
 
@@ -1217,6 +1342,7 @@ export async function processBatchSync(
     conflictCount,
     conflicts,
     failedOperationIds,
+    rejections,
     serverTimestamp: endTime,
     status,
   }

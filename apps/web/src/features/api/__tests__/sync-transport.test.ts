@@ -89,6 +89,42 @@ describe('sendSyncOperation', () => {
     expect(result.error).toContain('Entity already exists')
   })
 
+  it('story 75.1: maps an op the server listed in `rejections` to statusCode 422', async () => {
+    stubFetch(async () =>
+      jsonResponse({
+        success: false,
+        processedCount: 0,
+        failedCount: 1,
+        conflictCount: 0,
+        rejections: [{ operationId: 'op-1', reason: 'constraint' }],
+      })
+    )
+    const result = await sendSyncOperation(operation)
+    // 422 is in core's PERMANENT_REJECT_STATUS_CODES: the op is dropped, not replayed.
+    expect(result).toEqual({
+      success: false,
+      error: 'Refused by the server (constraint)',
+      retryable: false,
+      statusCode: 422,
+    })
+  })
+
+  it('story 75.1: a failure for an op NOT in `rejections` keeps the no-status path (stays queued)', async () => {
+    stubFetch(async () =>
+      jsonResponse({
+        success: false,
+        processedCount: 0,
+        failedCount: 1,
+        conflictCount: 0,
+        error: 'Profile not found',
+        rejections: [{ operationId: 'some-other-op', reason: 'constraint' }],
+      })
+    )
+    const result = await sendSyncOperation(operation)
+    expect(result.retryable).toBe(false)
+    expect(result.statusCode).toBeUndefined()
+  })
+
   it('classifies a 401 as a permanent (non-retryable) failure', async () => {
     stubFetch(async () => jsonResponse({ success: false, error: 'Unauthorized' }, 401))
     const result = await sendSyncOperation(operation)

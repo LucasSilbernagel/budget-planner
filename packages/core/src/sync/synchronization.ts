@@ -1187,6 +1187,53 @@ export class SynchronizationService {
         }
       }
 
+      // A permanently refused CREATE takes its row's other queued ops with it
+      // (story 75.1 code review, decision D1 — Lucas, 2026-09-28).
+      //
+      // The row then exists locally but never on the server, so every later op
+      // for it can only fail: an update or delete is answered `update-delete` /
+      // `Entity not found` — a conflict (never removed) or an unclassified failure
+      // (kept queued) — and the account-wide deadlock returns one op later. They
+      // are refused WITH the create and recorded alongside it.
+      //
+      // ⚠️ Keyed on entityType AND entityId, and ONLY for a refused CREATE: a
+      // refused update leaves a row that exists server-side, so its siblings can
+      // still succeed. ⚠️ This covers ops ALREADY queued. An edit made after the
+      // refusal is queued afresh and will fail the same way; what the device does
+      // with the refused row is story 75.2's to decide. ⚠️ A refused PROFILE
+      // create does not reach its children (different entityType) — those are
+      // story 76.2's.
+      const refusedCreates = new Set(
+        rejectedOperations
+          .filter((op) => op.type === 'create')
+          .map((op) => `${op.entityType}:${op.entityId}`)
+      )
+      if (refusedCreates.size > 0) {
+        const alreadyRefused = new Set(rejectedOperations.map((op) => op.id))
+        const followUps = this.queue
+          .getAll()
+          .filter(
+            (op) =>
+              !alreadyRefused.has(op.id) && refusedCreates.has(`${op.entityType}:${op.entityId}`)
+          )
+        if (followUps.length > 0) {
+          const followUpIds = new Set(followUps.map((op) => op.id))
+          // Out of every bucket this batch already filed them in, so a retry does
+          // not re-queue one and a conflict is not recorded for one.
+          for (const bucket of [
+            failedOperations,
+            conflictOperations,
+            unclassifiedFailedOperations,
+          ]) {
+            for (let i = bucket.length - 1; i >= 0; i--) {
+              const op = bucket[i]
+              if (op && followUpIds.has(op.id)) bucket.splice(i, 1)
+            }
+          }
+          rejectedOperations.push(...followUps)
+        }
+      }
+
       // Remove all successfully processed operations from queue at once
       // Only count as synchronized AFTER successful removal
       if (successfullyProcessed.length > 0) {

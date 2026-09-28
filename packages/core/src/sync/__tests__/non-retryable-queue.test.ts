@@ -34,7 +34,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
 
-type AnyOp = { id: string; type: string; entityType: string }
+type AnyOp = { id: string; type: string; entityType: string; entityId?: string }
 
 describe('Non-retryable sync failures', () => {
   let service: SynchronizationService
@@ -76,6 +76,99 @@ describe('Non-retryable sync failures', () => {
   afterEach(() => {
     service.destroy()
     vi.useRealTimers()
+  })
+
+  // Story 75.1 code review, decision D1 (Lucas, 2026-09-28). A refused CREATE
+  // leaves the row existing locally but never on the server, so every later op for
+  // that row can only fail — the server answers `update-delete` / `Entity not found`
+  // (a conflict, never removed) — and the account-wide deadlock returns one op
+  // later. The row's other queued ops are therefore refused WITH the create.
+  describe("a permanently refused CREATE takes its row's queued follow-ups with it", () => {
+    const create = { id: 'op-create', type: 'create', entityType: 'savingsGoal', entityId: 'g-1' }
+    const update = { id: 'op-update', type: 'update', entityType: 'savingsGoal', entityId: 'g-1' }
+    const del = { id: 'op-delete', type: 'delete', entityType: 'savingsGoal', entityId: 'g-1' }
+
+    function refuse(id: string) {
+      resultForOp.set(id, { success: false, retryable: false, statusCode: 422 })
+    }
+
+    it('drops the create AND every queued op for the same row, and records them all as rejected', async () => {
+      await service.queue.add(create)
+      await service.queue.add(update)
+      await service.queue.add(del)
+      refuse('op-create')
+      // What the server answers for an op on a row that was never created.
+      resultForOp.set('op-update', { success: false, conflict: true })
+      resultForOp.set('op-delete', { success: false, error: 'Entity not found', retryable: false })
+
+      await service.sync()
+
+      expect(service.queue.getAll()).toHaveLength(0)
+      // @ts-expect-error - accessing private property for testing
+      const state = service.state
+      expect(state.rejectedOperations.map((op: AnyOp) => op.id).sort()).toEqual(
+        ['op-create', 'op-delete', 'op-update'].sort()
+      )
+      // Not ALSO recorded as a conflict or a retryable failure.
+      expect(state.conflictOperations.map((op: AnyOp) => op.id)).not.toContain('op-update')
+      expect(state.failedOperations.map((op: AnyOp) => op.id)).not.toContain('op-delete')
+    })
+
+    it('drops a follow-up that failed RETRYABLY in the same batch, so no retry re-queues it', async () => {
+      await service.queue.add(create)
+      await service.queue.add(update)
+      refuse('op-create')
+      resultForOp.set('op-update', { success: false, retryable: true })
+
+      await service.sync()
+
+      expect(service.queue.getAll()).toHaveLength(0)
+      // @ts-expect-error - accessing private property for testing
+      expect(service.state.failedOperations.map((op: AnyOp) => op.id)).not.toContain('op-update')
+    })
+
+    it('CONTROL — leaves ops for OTHER rows, and ops of another entity type with the same id', async () => {
+      const otherRow = {
+        id: 'op-other',
+        type: 'update',
+        entityType: 'savingsGoal',
+        entityId: 'g-2',
+      }
+      const otherType = { id: 'op-type', type: 'update', entityType: 'expense', entityId: 'g-1' }
+      await service.queue.add(create)
+      await service.queue.add(otherRow)
+      await service.queue.add(otherType)
+      refuse('op-create')
+      // Both kept by the no-status-code rule, so they must still be queued.
+      resultForOp.set('op-other', { success: false, retryable: false })
+      resultForOp.set('op-type', { success: false, retryable: false })
+
+      await service.sync()
+
+      expect(
+        service.queue
+          .getAll()
+          .map((op: AnyOp) => op.id)
+          .sort()
+      ).toEqual(['op-other', 'op-type'])
+    })
+
+    it("CONTROL — a refused UPDATE does NOT take the row's other ops (the row exists server-side)", async () => {
+      const update2 = {
+        id: 'op-update-2',
+        type: 'update',
+        entityType: 'savingsGoal',
+        entityId: 'g-1',
+      }
+      await service.queue.add(update)
+      await service.queue.add(update2)
+      refuse('op-update')
+      resultForOp.set('op-update-2', { success: false, retryable: false })
+
+      await service.sync()
+
+      expect(service.queue.getAll().map((op: AnyOp) => op.id)).toEqual(['op-update-2'])
+    })
   })
 
   describe('queue disposition by failure class', () => {

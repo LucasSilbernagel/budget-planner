@@ -188,12 +188,60 @@ describe('POST /api/sync/batch served boundary', () => {
       serverTimestamp: 1700,
       status: 'FAILED',
       error: 'Rate limit exceeded',
+      // Story 75.1: the route keys statuses on this discriminant, not on `error`.
+      refusal: 'rate-limit',
     })
     const response = await POST({ request: postRequest(sampleBatch) })
     const payload = await response.json()
 
     expect(response.status).toBe(429)
     expect(payload.error).toContain('Rate limit')
+  })
+
+  // Story 75.1: request-level refusals get statuses core can classify. 400 is in
+  // core's PERMANENT_REJECT_STATUS_CODES (the op is dropped). Ownership is 401 —
+  // kept queued, because the op may be another account's pending edit (code
+  // review) — and deliberately not 403, which core files as tier-blocked.
+  it.each([
+    ['invalid-request', 400],
+    ['ownership', 401],
+    ['tier', 403],
+    ['rate-limit', 429],
+  ] as const)('maps a %s refusal to HTTP %i', async (refusal, status) => {
+    mockSession(paidSession)
+    mockBatchResult({
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: 1700,
+      status: 'FAILED',
+      error: 'whatever',
+      refusal,
+    })
+    const response = await POST({ request: postRequest(sampleBatch) })
+    expect(response.status).toBe(status)
+  })
+
+  it('does NOT pick a status from the error TEXT (story 75.1)', async () => {
+    // Before 75.1 the 429 arm string-matched 'Rate limit exceeded'. A message with
+    // no discriminant is an ordinary 200 envelope.
+    mockSession(paidSession)
+    mockBatchResult({
+      success: false,
+      processedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      conflicts: [],
+      failedOperationIds: [],
+      serverTimestamp: 1700,
+      status: 'FAILED',
+      error: 'Rate limit exceeded',
+    })
+    const response = await POST({ request: postRequest(sampleBatch) })
+    expect(response.status).toBe(200)
   })
 
   it('returns a 200 envelope (not an HTTP error) for a per-op conflict', async () => {

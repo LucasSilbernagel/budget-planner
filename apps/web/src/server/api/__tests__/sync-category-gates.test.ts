@@ -71,18 +71,23 @@ describe('syncOperationSchema — the category entity type is accepted', () => {
     expect(syncOperationSchema.safeParse(categoryOp()).success).toBe(true)
   })
 
-  // ⚠️ PRE-EXISTING QUIRK, pinned rather than fixed. The `.superRefine` in
-  // syncOperationSchema validates entity data with `<entity>Schema.parse(...)`,
-  // which THROWS instead of calling `ctx.addIssue`. A throw inside a refinement
-  // escapes `safeParse`, so malformed ENTITY DATA raises rather than returning
-  // `{ success: false }`. These assert the real behaviour; see the story's
-  // Completion Notes and deferred-work for the consequence at the route layer.
+  // ⚠️ FIXED by story 75.1 — these used to assert `toThrow()`. The `.superRefine`
+  // validated entity data with `<entity>Schema.parse(...)`, and a throw inside a
+  // refinement escapes `safeParse`, so malformed ENTITY DATA raised instead of
+  // returning `{ success: false }`. MEASURED consequence at the route: a raw
+  // `ZodError` escaped the handler, the client transport read it as a network
+  // failure (RETRYABLE), and the op left the persisted queue for an in-memory
+  // retry — lost past the retry budget or on reload. Now the refinement reports
+  // the issues and the route answers 400, which core drops. The old `toThrow()`
+  // pins encoded that defect, which is why they changed.
   it('rejects a category whose kind is not a real ledger side', () => {
     const bad = op({
       entityType: 'category',
       data: { name: 'Groceries', kind: 'liability', userId: USER_ID },
     })
-    expect(() => syncOperationSchema.safeParse(bad)).toThrow()
+    const result = syncOperationSchema.safeParse(bad)
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual(['data', 'kind'])
   })
 
   it('rejects a category with an empty name', () => {
@@ -90,7 +95,9 @@ describe('syncOperationSchema — the category entity type is accepted', () => {
       entityType: 'category',
       data: { name: '', kind: 'expense', userId: USER_ID },
     })
-    expect(() => syncOperationSchema.safeParse(bad)).toThrow()
+    const result = syncOperationSchema.safeParse(bad)
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual(['data', 'name'])
   })
 
   it('still rejects a genuinely unknown entity type (the enum was widened, not removed)', () => {
@@ -171,8 +178,10 @@ describe('a cashflow operation may carry a categoryId (AC-5)', () => {
         userId: USER_ID,
       },
     })
-    // Throws rather than returning success:false — see the superRefine note above.
-    expect(() => syncOperationSchema.safeParse(bad)).toThrow()
+    // Returns success:false (story 75.1) — see the superRefine note above.
+    const result = syncOperationSchema.safeParse(bad)
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.path).toEqual(['data', 'categoryId'])
   })
 })
 

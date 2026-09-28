@@ -275,6 +275,12 @@ interface BatchSyncResponseLite {
   failedCount: number
   conflictCount: number
   error?: string
+  /**
+   * Operations refused PERMANENTLY (story 75.1). Mirrors `BatchSyncResponse.rejections`
+   * in `server/api/sync.ts`; declared here rather than imported so this client
+   * module never pulls the server sync module (and `@budget-planner/db`) in.
+   */
+  rejections?: { operationId: string; reason: string }[]
 }
 
 /**
@@ -294,6 +300,11 @@ interface BatchSyncResponseLite {
  *
  * The service sends operations one at a time, so the batch always wraps exactly
  * one operation (preserving the previous per-operation transport contract).
+ *
+ * ⚠️⚠️ LOAD-BEARING (story 75.1): the server refuses an invalid request as a
+ * whole, with a PERMANENT status (400) that makes core drop the op. That drops the right op only because a request carries exactly one. Batching
+ * several ops per request here would make one bad op take its valid neighbours
+ * down with it — see the matching comment in `processBatchSync`.
  */
 export async function sendSyncOperation(operation: SyncOperation): Promise<ProcessOperationResult> {
   let response: Response
@@ -343,8 +354,22 @@ export async function sendSyncOperation(operation: SyncOperation): Promise<Proce
   if (result.conflictCount > 0) {
     return { success: false, conflict: true }
   }
-  // Server-side failure (validation/apply): a permanent reject — not retryable,
-  // or the queue would replay the same rejected op forever.
+  // A PERMANENT refusal (story 75.1): the server named this op as one it can never
+  // accept. `statusCode: 422` is in core's PERMANENT_REJECT_STATUS_CODES, so the op
+  // is removed from the queue instead of being replayed until the circuit breaker
+  // stops all sync. The reason is a closed server-side set, never driver text.
+  const rejection = result.rejections?.find((r) => r.operationId === operation.id)
+  if (result.failedCount > 0 && rejection) {
+    return {
+      success: false,
+      error: `Refused by the server (${rejection.reason})`,
+      retryable: false,
+      statusCode: 422,
+    }
+  }
+  // Any OTHER server-side failure carries no proof of permanence: non-retryable
+  // with no status code, which core deliberately KEEPS QUEUED (a transient DB
+  // error or an ordering-dependent constraint can clear on replay).
   if (result.failedCount > 0) {
     return { success: false, error: result.error || 'Operation failed on server', retryable: false }
   }

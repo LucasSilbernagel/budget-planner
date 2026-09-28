@@ -1,4 +1,9 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-28m (**75.1 CODE-REVIEWED + CLOSED — `review` -> `done`**, UNCOMMITTED. epic-75 stays in-progress (75.2-75.4 backlog). Next: create-story 75.2 — its local-value decision must also cover edits made AFTER a create is refused.)
+# last_updated: 2026-09-28l (**75.1 DEV DONE -> review**, UNCOMMITTED. Web 3601/231, tsc 0, Biome 0/633.)
+# last_updated: 2026-09-28k (**75.1 DEV STARTED -> in-progress** at `c668e94`.)
+# last_updated: 2026-09-28j (**75.1 CONTEXTED -> ready-for-dev**, epic-75 -> in-progress. Baseline `c668e94`. Permanent set = 23514/23502/22P02/22003/22001/22007/22008 only.)
+# last_updated: 2026-09-28i (**BATCH 15 PLANNED** — epics 75-78 / 11 stories added as `backlog`, from the 2026-09-28 deferred-work triage; FR119-FR127 in `epics.md`. `baseline_commit` 821544f -> c668e94. Next: `create-story` 75.1.)
 # last_updated: 2026-09-28h (**brand-2 CODE-REVIEWED + CLOSED — `review` -> `done`** (3 layers, Opus), UNCOMMITTED. 10 patches, 0 deferred, 9 dismissed. Web 3562/229, tsc 0, Biome 0/630, e2e 99. Sprint has no open story.)
 # last_updated: 2026-09-28g (**brand-2 DEV DONE -> review**, UNCOMMITTED. Web 3561/229, tsc 0, Biome 0/630, e2e 99.)
 # last_updated: 2026-09-28f (**brand-2 DEV STARTED -> in-progress** at `007bd44`.)
@@ -448,8 +453,8 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-27
-baseline_commit: 821544f  # 2026-09-25 reset to HEAD by sprint-planning for BATCH 14 (was 9f9ae1a, set for the now-closed batch 13). Tree clean; epics 1-68 + all standalones committed.
+last_updated: 2026-09-28
+baseline_commit: c668e94  # 2026-09-28 reset to HEAD by sprint-planning for BATCH 15 (was 821544f, set for the now-closed batch 14). Tree clean at reset.
 project: budget-planner
 project_key: NOKEY
 tracking_system: file-system
@@ -1000,6 +1005,30 @@ development_status:
   # ⚠ Do not let 74.2's throttle defect close this on the wrong cause (fixed 5/15min window self-heals).
   74-2-clear-the-email-scoped-throttle-when-an-account-is-erased: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-27 (3 layers, Opus), UNCOMMITTED, baseline `187efd0`. 9 patches, 1 deferred (old-address bucket after email change), 9 dismissed.
   epic-74-retrospective: optional
+
+  # BATCH 15 (added 2026-09-28 by sprint-planning; epics 75-78 / FR119-FR127, from `planning-artifacts/deferred-work-triage-2026-09-28.md` measured at `c668e94`). Re-verify each cited line before contexting — the previous triage went 75% stale in 11 days. Order: 75.1 -> 75.2; epic 76 after 75.1 is done; 75.3, 75.4, 77, 78 in any order.
+  epic-75: in-progress  # A Sync That Refuses One Edit Instead Of Stopping. FR119/FR120/FR123. Decision (Lucas 2026-09-28): a refused edit shows a VISIBLE notice naming the entry. OPEN for 75.2 context: what happens to the refused value still applied locally.
+  75-1-refuse-a-never-acceptable-sync-operation-with-a-permanent-status: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED, baseline `c668e94`. 2 decisions (Lucas: D1 refused create drops its row's queued follow-ups — CORE change; D2 permanent set narrowed to 23514+22003), 7 patches incl. HIGH P1 user-id mismatch 401 (kept) not 422 (dropped) — cross-tab session. 3 deferred, 6 dismissed. Web 3602/231, core 947, db 283+7, tsc 0/0/0, Biome 0/633.
+  75-2-tell-the-user-which-edit-was-refused: backlog
+  75-3-never-lose-a-retryable-sync-operation: backlog
+  75-4-refuse-a-malformed-server-row-before-it-can-discard-my-local-edit: backlog
+  epic-75-retrospective: optional
+
+  epic-76: backlog  # Profiles That Delete Cleanly On Every Device. FR121/FR122. Plan after 75.1 is done. 76.3: PGlite is single-connection — say plainly whether a true race test is possible.
+  76-1-make-a-profile-delete-safe-to-replay-and-to-repeat: backlog
+  76-2-keep-a-remotely-deleted-profile-from-stranding-this-devices-queue: backlog
+  76-3-hold-the-profile-deletion-rules-when-two-devices-act-at-once: backlog
+  epic-76-retrospective: optional
+
+  epic-77: backlog  # A Forecast That Cannot Hang. FR124.
+  77-1-bound-the-forecasts-inputs-at-the-field-and-in-the-engine: backlog
+  epic-77-retrospective: optional
+
+  epic-78: backlog  # Tooling That Catches Its Own Drift. FR125/FR126/FR127. 78.2 measured 970 errors / 201 files (588 TS6305) at c668e94 — may split.
+  78-1-make-the-migration-chain-check-its-own-snapshots: backlog
+  78-2-type-check-the-test-files-in-a-gate-that-runs: backlog
+  78-3-define-once-which-statuses-grant-paid-access: backlog
+  epic-78-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

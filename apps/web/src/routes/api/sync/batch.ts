@@ -27,13 +27,37 @@
  */
 
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
-import type { BatchSyncRequest } from '@/server/api/sync'
+import type { BatchRefusal, BatchSyncRequest } from '@/server/api/sync'
 import { PAID_SYNC_STATUSES, processBatchSync } from '@/server/api/sync'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
 /** Mirror the body-size guard the legacy server function applied (DoS guard). */
 const MAX_REQUEST_SIZE = 1024 * 1024 // 1MB
+
+/**
+ * HTTP status for a request-level refusal (story 75.1).
+ *
+ * `invalid-request` (400) is in core's `PERMANENT_REJECT_STATUS_CODES`, so the op
+ * is DROPPED rather than replayed until the circuit breaker stops all sync.
+ *
+ * `ownership` is 401, which core files as auth-blocked and KEEPS QUEUED. It is
+ * deliberately neither a permanent status (the op can be another account's
+ * genuine pending edit, pushed by a tab whose session changed in another tab —
+ * dropping it deletes that account's edits) nor 403 (core files a 403 as
+ * tier-blocked and tells the user their plan excludes sync). `tier` and
+ * `rate-limit` keep their existing semantics.
+ *
+ * ⚠️ Keyed on the `refusal` discriminant, never on the `error` text — rewording a
+ * message must not silently change a status. (Before 75.1 the 429 arm
+ * string-matched `'Rate limit exceeded'`.)
+ */
+const REFUSAL_STATUS = {
+  'invalid-request': 400,
+  ownership: 401,
+  tier: 403,
+  'rate-limit': 429,
+} as const satisfies Record<BatchRefusal, number>
 
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   // 1) Resolve and authenticate the session (cookie is HMAC-signed + DB-authoritative).
@@ -82,11 +106,12 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     subscriptionStatus: session.data.subscriptionStatus,
   })
 
-  // The BatchSyncResponse body carries per-operation success/conflict/failure,
-  // which the client transport (sendSyncOperation) maps to a ProcessOperationResult.
-  // Surface the rate-limit rejection as a real 429 so the client classifies it as
-  // retryable rather than a permanent failure; everything else is a 200 envelope.
-  const status = result.error === 'Rate limit exceeded' ? 429 : 200
+  // The BatchSyncResponse body carries per-operation success/conflict/failure —
+  // including per-operation PERMANENT refusals in `rejections` — which the client
+  // transport (sendSyncOperation) maps to a ProcessOperationResult. Per-operation
+  // outcomes stay a 200: a batch can mix them, and an HTTP status is batch-level.
+  // Only a refusal of the WHOLE request gets its own status (see REFUSAL_STATUS).
+  const status = result.refusal ? REFUSAL_STATUS[result.refusal] : 200
   return json(result, { status })
 }
 
