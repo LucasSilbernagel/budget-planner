@@ -1620,7 +1620,7 @@ function LockedTileContent({
  * (story 57.1, FR86), so a user can tell when they would open it before clicking
  * in. Every situation it names must be expressible by the shipped engine, and the
  * engine is SMALLER than `ForecastingScenario`'s interface suggests. What
- * `calculateFinancialForecast` actually reads (`core/finance/forecasting.ts:163-344`; the projection loop is `:250-321`):
+ * `calculateFinancialForecast` actually reads (`calculateFinancialForecast` in `core/finance/forecasting.ts` — cited by name, since its line numbers have shifted repeatedly; the projection is its second `for` loop):
  *   1. `incomeGrowthRate` — compounds from year 1 over the user's income items.
  *   2. `expenseGrowthRate` — likewise over expenses.
  *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input. `amount` is SIGNED

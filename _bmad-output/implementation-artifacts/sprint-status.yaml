@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-28zj (**77.1 CODE-REVIEWED + CLOSED -> done; EPIC 77 DONE**, UNCOMMITTED. Next: create-story 78.1.)
+# last_updated: 2026-09-28zi (**77.1 DEV DONE -> review**, UNCOMMITTED. Web 3702/242, core 1050/33, tsc 0x4, Biome 0.)
+# last_updated: 2026-09-28zh (**77.1 DEV STARTED** -> in-progress, baseline `618ad12`.)
+# last_updated: 2026-09-28zg (**77.1 CONTEXTED -> ready-for-dev** at `618ad12`; epic-77 -> in-progress. Next: dev-story 77.1.)
 # last_updated: 2026-09-28zf (**76.3 CODE-REVIEWED + CLOSED -> done; EPIC 76 DONE**, UNCOMMITTED. Next: create-story 77.1.)
 # last_updated: 2026-09-28ze (**76.3 DEV DONE -> review**, UNCOMMITTED. Web 3685/240, tsc 0x4, Biome 0/650. epic-76 stays in-progress until review closes 76.3.)
 # last_updated: 2026-09-28zd (**76.3 DEV STARTED** -> in-progress, baseline `65d6ce1`.)
@@ -1039,8 +1043,8 @@ development_status:
   76-3-hold-the-profile-deletion-rules-when-two-devices-act-at-once: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED. 9 patches incl. UNTESTED AC-3 re-check (new test, mutation RED) and lock-param guard; 4 deferred; 9 dismissed. Web 3686/240, tsc 0, Biome 0/650. # DEV DONE 2026-09-28, UNCOMMITTED, baseline `65d6ce1`. Web 3685/240, core 1015/32, db 283+7, tsc 0x4, Biome 0/650. M1/M2 RED; M3 x4: races GREEN (PGlite, predicted), guard RED per path.  # contexted 2026-09-28 at `65d6ce1`. MEASURED (probe): PGlite REPRODUCES the zero-profiles race (async interleave outside a tx) but its transactions are EXCLUSIVE, so the LOCK is untestable there (a lock-free in-tx count goes green). Design: per-user `users` row lock first (NO KEY UPDATE for writers of the profile set, SHARE for child creates), same first row as erasure. Lock guarded by a statement-order test. D1 TAKEN (Lucas 2026-09-28): A, no real-PG harness.
   epic-76-retrospective: optional
 
-  epic-77: backlog  # A Forecast That Cannot Hang. FR124.
-  77-1-bound-the-forecasts-inputs-at-the-field-and-in-the-engine: backlog
+  epic-77: done  # ✅ 77.1 DONE 2026-09-28 (rollup closed in the same pass). A Forecast That Cannot Hang. FR124.
+  77-1-bound-the-forecasts-inputs-at-the-field-and-in-the-engine: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED. 13 patches incl. P1 legacy saved row lost its savings (now only years reset), P2 summed events overflowed to Infinity/NaN (FORECAST_OUT_OF_RANGE). 4 deferred, 9 dismissed, 0 decisions. Web 3703/242, core 1053/33, db 283+7, tsc 0x4, Biome 0/653. # DEV DONE 2026-09-28, UNCOMMITTED, baseline `618ad12`. Web 3702/242, core 1050/33, db 283+7, tsc 0x4, Biome 0/653. Core M1-M4 + web W1-W5/R1 all RED (read). Chromium: 1e999 -> value '' (0); 1e9 was the hang. Harness = transpile to CJS + spawnSync timeout; passes on Node 20. contexted 2026-09-28 at `618ad12`. D1 engine REFUSES years outside int 1-30 (throw); D3 saved-row filter gets the same predicate (today no upper bound -> hang on OPEN). 1e999 = Infinity, NOT MAX_VALUE (measured). NaN tile likely NOT on screen today (|| 0 + hidden cards; traced). validateAmount ACCEPTS fractions: parity = validate + Math.round. Hang test MUST run out-of-thread (sync loop blocks vitest timeout).
   epic-77-retrospective: optional
 
   epic-78: backlog  # Tooling That Catches Its Own Drift. FR125/FR126/FR127. 78.2 measured 970 errors / 201 files (588 TS6305) at c668e94 — may split.

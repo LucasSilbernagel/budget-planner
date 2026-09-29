@@ -148,7 +148,7 @@ describe('HomePage premium discovery', () => {
     // it exists to break on OVERPROMISING drift, not merely on any edit.
     //
     // ⚠️ Each situation named must be expressible by what the engine actually READS
-    // (`core/finance/forecasting.ts:163-344`), which is LESS than `ForecastingScenario`
+    // (`calculateFinancialForecast` in `core/finance/forecasting.ts`), which is LESS than `ForecastingScenario`
     // declares:
     //   - `incomeGrowthRate` / `expenseGrowthRate` — compound from year 1.
     //   - `oneTimeEvents: {year, amount}` — the only DATED input. `amount` is SIGNED

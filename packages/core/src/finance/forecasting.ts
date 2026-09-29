@@ -13,6 +13,7 @@ import {
   calculateNetPeriodIncome,
   calculateTotalPeriodExpenses,
 } from './netIncome'
+import { validateAmount } from './normalization'
 
 /**
  * ⚠️ THE UNIT BRIDGE OF THIS WHOLE MODULE. Read before touching either loop.
@@ -76,14 +77,79 @@ import {
  * gets a different number than `row.netIncome` in exactly the years a user cares
  * about most. Pinned by the one-time-event test, which asserts the discrepancy.
  *
- * ⚠️ That reconciliation holds for the RECURRING terms in whole cents, but it is
- * NOT an unconditional integer-cents guarantee for the row: `oneTimeForYear` is
- * the one money term that never passes `validateAmount`, so a persisted event
- * amount of `0.5` yields fractional savings and one of `Infinity` poisons every
- * figure. Both are pre-existing and recorded in `deferred-work.md`; do not read
- * the sentence above as a claim that they cannot happen.
+ * The row is in whole cents for the one-time term too (story 77.1): every event
+ * dated INSIDE the projection window passes `validateAmount` and is then
+ * rounded, exactly as `normalizeToMonthly` treats every recurring amount — see
+ * `eventAmountInCents`. (An event dated outside the window is never summed, so
+ * it is never validated either; it contributes nothing.) Until 77.1 it was the
+ * one money term that skipped both, so `0.5` left fractional savings and
+ * `Infinity` poisoned every figure.
+ *
+ * ⚠️ Validating each amount is not enough on its own: several individually
+ * finite events can SUM past `Number.MAX_VALUE` (two of 1.7e308 cents → Infinity,
+ * and a later pair of negatives → NaN; measured by 77.1's code review). The
+ * projection loop therefore also refuses a non-finite running balance — see
+ * `FORECAST_OUT_OF_RANGE`.
  */
 const MONTHS_PER_YEAR = 12
+
+/**
+ * The projection period the engine accepts: a WHOLE number of years, 1 to 30
+ * inclusive (story 77.1, FR124). Defined here, once, and imported by the
+ * Scenario Builder's field and by the saved-forecast filter in
+ * `routes/forecasting.tsx`, so the three can never disagree.
+ *
+ * ⚠️ Why the engine enforces it and does not trust its callers: both loops run
+ * `for (year = 1; year <= years; …)`. `Infinity` never terminates, and
+ * `Number.MAX_VALUE` and a plain finite `1e9` do not finish in any usable time
+ * (1e9 would also push a billion rows into two arrays). MEASURED in the bounded
+ * harness (`__tests__/forecasting-bounds.test.ts`): all three were killed by its
+ * 5 s timeout before this guard existed. (That is what was measured — a child
+ * process timing out — not a browser tab observed freezing.) `years = 0` made `averageAnnualGrowth` 0/0 = NaN, and
+ * a fractional `2.5` produced 2 rows but divided growth by 2.5.
+ */
+export const MIN_FORECAST_YEARS = 1
+export const MAX_FORECAST_YEARS = 30
+/**
+ * The period a forecast opens with, and the one a saved row falls back to when
+ * its own `years` is out of range (`routes/forecasting.tsx`). Also the engine's
+ * default parameter.
+ */
+export const DEFAULT_FORECAST_YEARS = 10
+
+/**
+ * True for an integer `years` in `MIN_FORECAST_YEARS..MAX_FORECAST_YEARS`.
+ * `Number.isInteger` already rejects `NaN` and `±Infinity`; `unknown` because the
+ * value may come from a parsed saved row.
+ */
+export function isValidForecastYears(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= MIN_FORECAST_YEARS &&
+    value <= MAX_FORECAST_YEARS
+  )
+}
+
+/**
+ * The refusal when a projection's running balance stops being a finite number
+ * (story 77.1 code review, P2). Exported so the tests pin the exact text.
+ */
+export const FORECAST_OUT_OF_RANGE = 'Forecast amounts are too large to project'
+
+/**
+ * A one-time event's amount as whole cents, validated exactly as every recurring
+ * amount is: `validateAmount` (throws on `NaN`, `±Infinity`, `null`, a
+ * non-number), then `Math.round` — the same two steps `normalizeToMonthly`
+ * applies. ⚠️ `validateAmount` ACCEPTS a fraction; recurring amounts reach whole
+ * cents only because of the `Math.round` that follows it, so rounding here is
+ * parity, and throwing on a fraction would be a stricter rule than any other
+ * money term follows.
+ */
+function eventAmountInCents(amount: unknown): number {
+  validateAmount(amount)
+  return Math.round(amount)
+}
 
 /**
  * Forecasting scenario input
@@ -116,7 +182,8 @@ export interface ForecastingScenario {
   /**
    * One-time events, keyed to a projection year. **`amount` is SIGNED**:
    * positive is money in, negative is money out (story `forecast-1`). The
-   * engine simply sums them into that year's net income, so both directions
+   * engine sums them (each validated and rounded to whole cents since story
+   * 77.1 — see `eventAmountInCents`) into that year's net income, so both directions
    * work and always have; it was the Scenario Builder's input that clamped
    * everything to >= 0 until `forecast-1` added an explicit direction control.
    * Pinned both ways in `__tests__/forecasting.test.ts`.
@@ -157,8 +224,12 @@ export interface ForecastingResult {
  *
  * @param currentData - Current financial data (income, expenses, savings, investments)
  * @param scenario - Forecasting scenario with assumptions
- * @param years - Number of years to project
+ * @param years - Number of years to project; must satisfy `isValidForecastYears`
  * @returns Complete forecasting result
+ * @throws Error if `years` is not a whole number of years in 1-30; if a one-time
+ *   event dated inside the window has an amount that is not a finite number
+ *   (`validateAmount`); or if the projection's balance overflows
+ *   (`FORECAST_OUT_OF_RANGE`)
  */
 export function calculateFinancialForecast(
   currentData: {
@@ -168,8 +239,18 @@ export function calculateFinancialForecast(
     investments: number // Current investments in cents
   },
   scenario: ForecastingScenario,
-  years = 10
+  years = DEFAULT_FORECAST_YEARS
 ): ForecastingResult {
+  // REFUSE rather than clamp (story 77.1, D1): a clamp would silently project a
+  // period the caller never asked for. Both callers already surface a throw — the
+  // builder as its calculation banner, the server as `{ success: false }`. This
+  // must stay BEFORE the first loop; see `MIN_FORECAST_YEARS`.
+  if (!isValidForecastYears(years)) {
+    throw new Error(
+      `Projection period must be a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}`
+    )
+  }
+
   const baseline: YearlyForecast[] = []
   const projection: YearlyForecast[] = []
 
@@ -282,11 +363,13 @@ export function calculateFinancialForecast(
     // Calculate net income with adjustments
     const netIncome = calculateNetPeriodIncome(adjustedIncome, adjustedExpenses)
 
-    // Add one-time events for this year
-    const oneTimeForYear =
-      scenario.oneTimeEvents
-        ?.filter((e) => e.year === year)
-        .reduce((sum, e) => sum + e.amount, 0) || 0
+    // Add one-time events for this year. Each amount is validated and rounded
+    // (story 77.1). ⚠️ Do not reintroduce a `|| 0` on this sum to "absorb" a bad
+    // amount: it replaced the WHOLE YEAR'S sum, so one `NaN` event silently erased
+    // every valid event dated the same year (measured before 77.1).
+    const oneTimeForYear = (scenario.oneTimeEvents ?? [])
+      .filter((e) => e.year === year)
+      .reduce((sum, e) => sum + eventAmountInCents(e.amount), 0)
 
     // ⚠️ THE ONE-TIME EVENT IS NOT SCALED, AND MUST NOT BE.
     // `netIncome` is a monthly-normalized RECURRING flow, so it needs lifting to
@@ -328,6 +411,12 @@ export function calculateFinancialForecast(
     projSavings += totalNetIncome
     // Investment growth with compounding
     projInvestments = Math.round(projInvestments * 1.07) // Assume 7% return
+    // Refuse, not clamp (D1), once the balance leaves finite numbers — several
+    // individually valid events can sum past MAX_VALUE. Checked on the SUM, so an
+    // overflow in either term (Infinity, or Infinity + -Infinity = NaN) is caught.
+    if (!Number.isFinite(projSavings + projInvestments)) {
+      throw new Error(FORECAST_OUT_OF_RANGE)
+    }
 
     const yearProjection: YearlyForecast = {
       year,
@@ -343,12 +432,14 @@ export function calculateFinancialForecast(
 
   // Calculate summary
   const startingNetWorth = currentData.savings + currentData.investments
-  // `projection` has one entry per year, so a 0-year forecast leaves it empty.
-  // Falling back to the starting figure keeps `totalGrowth` at 0 rather than NaN,
-  // which is what an empty projection means.
+  // `projection` has one entry per year and the guard at the top makes `years`
+  // at least 1, so it is never empty here. The fallback is kept only as a
+  // defensive default; it is no longer reachable (it was, for `years = 0`,
+  // until story 77.1).
   const lastProjection = projection[projection.length - 1]
   const endingNetWorth = lastProjection ? lastProjection.netWorth : startingNetWorth
   const totalGrowth = endingNetWorth - startingNetWorth
+  // `years >= 1` by the guard, so this can no longer be 0/0 = NaN.
   const averageAnnualGrowth = totalGrowth / years
 
   return {

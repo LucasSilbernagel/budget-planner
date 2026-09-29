@@ -308,8 +308,8 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
  * a second name, and the naming actively invites a double-count reading — story
  * 57.1 shipped three comments that got it wrong. Verified here rather than
  * argued: `calculateFinancialForecast` projects from its `currentData` argument
- * alone and never reads those two fields (`forecasting.ts:114-115` declares them; the
- * function reads only its `currentData` argument, `forecasting.ts:163-177`).
+ * alone and never reads those two fields (`ForecastingScenario.newIncome`/`newExpenses`
+ * in `forecasting.ts` declare them; the function reads only its `currentData` argument).
  */
 describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => {
   it('reports the hand-computed year-1 figures', async () => {
@@ -329,8 +329,8 @@ describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => 
 
     // BY HAND: a row's `income` is the monthly-normalized total lifted to a year.
     // ⚠️ `yearOne` here is `result.baseline[0]`, so the figure is built from
-    // `baselineAnnualIncome` (`forecasting.ts:181`), NOT from the projection row's
-    // own expression at `:313`. The two agree only because a fresh scenario pins
+    // `baselineAnnualIncome` (in `forecasting.ts`), NOT from the projection row's
+    // own `income:` expression. The two agree only because a fresh scenario pins
     // both growth rates to 0 — cite the baseline line, or a later growth default
     // would make this comment quietly wrong.
     // One `monthly` row at 720000 cents normalizes to 720000, so a year is

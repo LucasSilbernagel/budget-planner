@@ -356,9 +356,9 @@ describe('calculateFinancialForecast — annual accumulation', () => {
     // ⚠️ HONEST SCOPE: this test is a zero/NaN guard, NOT an annualization guard.
     // 0 × 12 === 0, so every assertion here is green under the ÷12 defect too. It
     // contributes nothing to this block's "make the scale error observable" job.
-    // ⚠️ It also does NOT cover `years: 0`, where `totalGrowth / years` really is
-    // NaN and reaches the UI. That is pre-existing, out of scope by this spec, and
-    // recorded in `deferred-work.md`.
+    // ⚠️ It also does NOT cover `years: 0`, where `totalGrowth / years` used to
+    // be NaN. Since story 77.1 the engine REFUSES `years: 0` outright; that and
+    // the other bounds are pinned in `forecasting-bounds.test.ts`.
   })
 
   it('annualizes the BASELINE loop too, not only the projection', () => {

@@ -12,7 +12,12 @@
  * stored in DanubeData (Germany - EU).
  */
 
-import type { ForecastingResult, ForecastingScenario } from '@budget-planner/core'
+import {
+  DEFAULT_FORECAST_YEARS,
+  type ForecastingResult,
+  type ForecastingScenario,
+  isValidForecastYears,
+} from '@budget-planner/core'
 import { createFileRoute } from '@tanstack/react-router'
 import React, { useState, useEffect, useCallback } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
@@ -150,13 +155,29 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
     // Only surface inputs when well-formed; a corrupt/partial blob (e.g. NaN, a
     // string, or years 0) falls back to defaults on reload — like a pre-bug-3 row
     // — instead of seeding a bad state or a divide-by-zero in the core calc.
+    //
+    // ⚠️ `years` is checked with core's `isValidForecastYears` — the SAME rule the
+    // engine enforces (story 77.1, FR124). This used to be `isFinite && >= 1` with
+    // NO upper bound: a saved `years` of 1e9 passed, seeded the builder, and its
+    // mount-time recompute handed 1e9 to the engine on OPEN (measured with the
+    // engine mocked; the loop would not have finished).
+    //
+    // ⚠️⚠️ Only `years` is replaced, NOT the whole `inputs` (77.1 code review, P1).
+    // Rows saved before 77.1 could legitimately carry 31+ or a fraction — the
+    // field's `max={30}` was an HTML hint — and dropping `inputs` for that reason
+    // alone also dropped their savings/investments, so the reopened forecast
+    // silently re-baselined to a starting net worth of 0 (the thing 62.1 AC-7
+    // forbids). Non-finite money still discards `inputs`, as before.
     const inputs =
       parsed.inputs &&
       Number.isFinite(parsed.inputs.savings) &&
-      Number.isFinite(parsed.inputs.investments) &&
-      Number.isFinite(parsed.inputs.years) &&
-      parsed.inputs.years >= 1
-        ? parsed.inputs
+      Number.isFinite(parsed.inputs.investments)
+        ? {
+            ...parsed.inputs,
+            years: isValidForecastYears(parsed.inputs.years)
+              ? parsed.inputs.years
+              : DEFAULT_FORECAST_YEARS,
+          }
         : undefined
     return {
       id: String(profile.id),

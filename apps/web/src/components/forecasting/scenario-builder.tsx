@@ -10,10 +10,14 @@
  */
 
 import {
+  DEFAULT_FORECAST_YEARS,
   type ForecastingResult,
   type ForecastingScenario,
+  MAX_FORECAST_YEARS,
+  MIN_FORECAST_YEARS,
   calculateFinancialForecast,
   currencySymbol,
+  isValidForecastYears,
   parseFromInput,
   sanitizeMoneyInput,
 } from '@budget-planner/core'
@@ -175,7 +179,7 @@ const DEFAULT_FORM: ScenarioFormData = {
   // into, not an assumption baked into every scenario they open.
   incomeGrowthRate: 0,
   expenseGrowthRate: 0,
-  years: 10,
+  years: DEFAULT_FORECAST_YEARS,
 }
 
 /**
@@ -193,6 +197,13 @@ const PROFILE_ERROR_NOTICE =
   'We could not check your financial profiles, so saving is unavailable right now. Reload the page to try again.'
 const PROFILE_ERROR_SHORT = 'Profile check failed'
 const FALLBACK_SAVE_ERROR = 'Failed to save forecast'
+
+/**
+ * Copy for an out-of-range Projection Period (story 77.1, FR124). The range is
+ * core's, so the message cannot drift from the rule the engine enforces.
+ */
+const YEARS_INVALID_MESSAGE = `Enter a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}.`
+const YEARS_INVALID_SHORT = 'Fix the projection period to save'
 
 const FREQUENCY_OPTIONS = [
   { value: 'weekly' as const, label: 'Weekly' },
@@ -306,7 +317,12 @@ function eventsFromSaved(events: ForecastingScenario['oneTimeEvents']): OneTimeE
   return events.map((event, index) => ({
     id: `event-loaded-${index}`,
     year: event.year,
-    amount: event.amount,
+    // Coerced like `itemsFromSaved` (story 77.1). JSON has no NaN/Infinity, so a
+    // saved non-finite amount comes back as `null`. The engine used to add `null`
+    // as 0; it now REFUSES any non-finite amount, so without this a forecast that
+    // opened fine before 77.1 would open to an error banner. A fraction is rounded,
+    // which is exactly what the engine does to it.
+    amount: Number.isFinite(event.amount) ? Math.round(event.amount) : 0,
     name: (event as { name?: string }).name ?? 'One-time event',
   }))
 }
@@ -357,6 +373,18 @@ export function ScenarioBuilder({
         }
       : DEFAULT_FORM
   )
+  /**
+   * The projection period the builder last saw that the ENGINE accepts (story
+   * 77.1). `formData.years` keeps exactly what the user typed, so they can see
+   * and fix it; this is what everything downstream of the field reads while the
+   * typed value is out of range. Today that is only the one-time event rows'
+   * `maxYear`, which would otherwise clamp every event year against 0 or 1e9.
+   */
+  const [lastValidYears, setLastValidYears] = useState<number>(() =>
+    isValidForecastYears(formData.years) ? formData.years : DEFAULT_FORM.years
+  )
+  const yearsValid = isValidForecastYears(formData.years)
+
   // ⚠️ DECISION REVERSED by story 62.1 (FR94), replacing the story 32.2 / FR59
   // audit note that stood here.
   //
@@ -523,12 +551,20 @@ export function ScenarioBuilder({
    * few hundred milliseconds, a disabled control with no explanation is worse than
    * none, and the page's own save guard still refuses with an accurate message.
    */
+  //
+  // ⚠️ An invalid Projection Period blocks too (story 77.1). The on-screen
+  // `result` is the last VALID one, so saving now would persist an out-of-range
+  // `inputs.years` beside a result computed for a different period — and a saved
+  // row with such a `years` has its inputs dropped to the defaults by
+  // `mapToSavedForecast` on load.
   const saveBlockedReason =
     saveAvailability.kind === 'none'
       ? NO_PROFILE_SHORT
       : saveAvailability.kind === 'error'
         ? PROFILE_ERROR_SHORT
-        : null
+        : !yearsValid
+          ? YEARS_INVALID_SHORT
+          : null
 
   // Keep the latest onResultChange in a ref so the debounced recompute stays
   // correct even if a caller passes a non-memoized callback (review bug-3):
@@ -563,6 +599,21 @@ export function ScenarioBuilder({
    * Calculate forecast based on current inputs
    */
   const calculateForecast = useCallback(async () => {
+    // ⚠️ The field's guard (story 77.1, FR124). An out-of-range `years` never
+    // reaches the engine: `1e9` would freeze the tab (the engine now refuses it,
+    // but the builder must not rely on that throw to report a typing mistake).
+    // The last valid RESULT stays on screen and the inline message under the
+    // field says why it is not updating.
+    //
+    // ⚠️ But a calculation ERROR is cleared (77.1 code review, P3): it described
+    // a computation of inputs that have since changed, and leaving it up would
+    // show a banner whose cause may already be fixed. If the cause remains, the
+    // next valid period recomputes and raises it again. `saveOutcome` is left
+    // alone — Save is blocked with its own reason while the period is invalid.
+    if (!isValidForecastYears(formData.years)) {
+      setError(null)
+      return
+    }
     setIsCalculating(true)
     setError(null)
     // AC-9: a recompute retires the previous save outcome, so the user never sees
@@ -610,6 +661,20 @@ export function ScenarioBuilder({
       [field]: typeof value === 'string' ? value : value,
     }))
   }, [])
+
+  /**
+   * Handle a Projection Period change (story 77.1). The typed value is stored
+   * as-is — the field must show what the user typed — and remembered as the last
+   * valid period only when the engine would accept it.
+   */
+  const handleYearsChange = useCallback(
+    (value: string | number) => {
+      const years = Number(value)
+      handleFormChange('years', years)
+      if (isValidForecastYears(years)) setLastValidYears(years)
+    },
+    [handleFormChange]
+  )
 
   /**
    * Handle savings change. The InputField's parseValue already converts the
@@ -921,12 +986,22 @@ export function ScenarioBuilder({
           <InputField
             label="Projection Period (years)"
             value={formData.years}
-            onChange={(v) => handleFormChange('years', Number(v))}
+            onChange={handleYearsChange}
             type="number"
-            min={1}
-            max={30}
+            min={MIN_FORECAST_YEARS}
+            max={MAX_FORECAST_YEARS}
             step={1}
+            error={yearsValid ? undefined : YEARS_INVALID_MESSAGE}
           />
+          {/* ⚠️ `min`/`max` are HTML hints: they gate the spinner and form
+              validation, never a typed value. The guard is `isValidForecastYears`
+              in `calculateForecast` and in the engine (story 77.1).
+              MEASURED in Chromium (throwaway Playwright probe on a bare
+              `<input type="number" min=1 max=30 step=1>`, 77.1): typing
+              `1e999` gives `value=""`, `badInput=true`, so it reaches the parent
+              as 0 (InputField maps a NaN parse to 0), never as Infinity. `1e9`,
+              `2.5`, `-3` and `31` all arrive verbatim, and `1e9` is the one the
+              engine could not finish (the bounded harness timed out on it). jsdom also reports `1e999` as `""`. */}
 
           {/* Income Growth Rate */}
           {/* ⚠️ `type="text"`, NOT `type="number"` (code review 62.1). These fields
@@ -1105,7 +1180,7 @@ export function ScenarioBuilder({
                 event={event}
                 onUpdate={updateOneTimeEvent}
                 onDelete={deleteOneTimeEvent}
-                maxYear={formData.years}
+                maxYear={lastValidYears}
               />
             ))}
           </div>
@@ -1214,6 +1289,13 @@ interface InputFieldProps {
    * name must keep accepting letters. Only the two money fields pass it.
    */
   sanitize?: (raw: string) => string
+  /**
+   * A validation message for this field (story 77.1). When set, it renders under
+   * the input, which gets `aria-invalid` and an `aria-describedby` pointing at it.
+   * When unset, NEITHER attribute is rendered, so the other call sites stay
+   * byte-identical.
+   */
+  error?: string
 }
 
 function InputField({
@@ -1229,6 +1311,7 @@ function InputField({
   formatValue,
   parseValue,
   sanitize,
+  error,
 }: InputFieldProps): React.ReactElement {
   const [internalValue, setInternalValue] = useState<string>(() => {
     // `formatValue` here is the symbol-bearing display formatter, so a money field
@@ -1260,6 +1343,7 @@ function InputField({
   // Associate the label with its control (story `forecast-2`). `useId` keeps the
   // pairing unique across the seven call sites without threading an id prop.
   const inputId = useId()
+  const errorId = `${inputId}-error`
 
   return (
     <div>
@@ -1276,8 +1360,15 @@ function InputField({
         max={max}
         step={step}
         inputMode={inputMode}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
       />
+      {error && (
+        <p id={errorId} className="mt-1 text-sm text-red-600 dark:text-red-300">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
@@ -1503,6 +1594,17 @@ function OneTimeEventRow({
      * was losing what you typed. Interpret it as the intent it obviously is.
      */
     const cents = Math.round(Math.abs(value) * 100)
+    /**
+     * ⚠️ A finite entry can still overflow once scaled to cents (story 77.1):
+     * `1e308` is a valid number here, and `1e308 * 100` is `Infinity`. The engine
+     * refuses a non-finite event amount, and a saved one would come back as JSON
+     * `null`, so treat it like the mid-edit branch above: write nothing and keep
+     * the last good amount. (`1e999` itself most likely never gets here: a
+     * throwaway Chromium probe in 77.1 found a GENERIC `<input type="number">`
+     * reports it as `""` with `badInput` — measured on a bare input, not on this
+     * field.)
+     */
+    if (!Number.isFinite(cents)) return
     const nextDirection = value < 0 ? 'out' : direction
     if (nextDirection !== direction) setPendingDirection(nextDirection)
     onUpdate(event.id, 'amount', signed(cents, nextDirection))
