@@ -588,13 +588,7 @@ describe('drillUp', () => {
 
 describe('drillToRoot', () => {
   it('should reset to root level', () => {
-    const _state: DrillDownState = {
-      level: 3,
-      path: ['a', 'b', 'c'],
-      currentCategory: 'C',
-      currentType: 'income',
-    }
-
+    // `drillToRoot` takes no state: the root is a constant, whatever the depth.
     const newState = drillToRoot()
 
     expect(newState.level).toBe(0)

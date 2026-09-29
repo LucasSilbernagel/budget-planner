@@ -12,9 +12,9 @@
  *   - a missing transport throws (fails loud, never silent)
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService, createSynchronizationService } from '../index'
-import type { ServerChange } from '../types'
+import type { FetchServerChangesFn, ServerChange } from '../types'
 
 const testUserId = 'user-abc'
 
@@ -39,11 +39,11 @@ function serverChange(overrides: Partial<ServerChange> = {}): ServerChange {
 
 describe('SynchronizationService.pull (Story 4-18)', () => {
   let service: SynchronizationService
-  let fetchServerChanges: ReturnType<typeof vi.fn>
+  let fetchServerChanges: Mock<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>
 
   beforeEach(() => {
     vi.useFakeTimers()
-    fetchServerChanges = vi.fn()
+    fetchServerChanges = vi.fn<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>()
     service = createSynchronizationService(testUserId, {
       autoSync: false,
       debug: false,

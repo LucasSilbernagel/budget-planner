@@ -17,10 +17,16 @@
  * regression), with `isOnline` set so the service actually sends (75.1).
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
 import { SynchronizationService } from '../synchronization'
-import type { SyncOperation, SyncQueueStorage, SyncState } from '../types'
+import type {
+  ProcessOperationFn,
+  ProcessOperationResult,
+  SyncOperation,
+  SyncQueueStorage,
+  SyncState,
+} from '../types'
 
 const USER = '11111111-1111-4111-8111-111111111111'
 const X = '44444444-4444-4444-8444-444444444444'
@@ -74,12 +80,12 @@ function promoteY(withLink = true): SyncOperation {
 describe('push honours dependsOn (story 76.2 code review)', () => {
   let queue: SyncQueue
   let service: SynchronizationService
-  let results: Map<string, Record<string, unknown>>
-  let processOperation: ReturnType<typeof vi.fn>
+  let results: Map<string, ProcessOperationResult>
+  let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
   let rejected: string[][]
 
   const queuedIds = () => queue.getAll().map((o) => o.id)
-  const sentIds = () => processOperation.mock.calls.map(([o]) => (o as SyncOperation).id)
+  const sentIds = () => processOperation.mock.calls.map(([o]) => o.id)
 
   beforeEach(async () => {
     results = new Map()

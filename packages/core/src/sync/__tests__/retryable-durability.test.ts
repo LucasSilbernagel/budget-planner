@@ -19,10 +19,12 @@
  * vacuously. Each test forces `isOnline` and asserts a positive anchor.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
 import { SynchronizationService } from '../synchronization'
 import type {
+  FetchServerChangesFn,
+  ProcessOperationFn,
   ProcessOperationResult,
   ServerChange,
   SyncOperation,
@@ -106,11 +108,10 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
   let queue: SyncQueue
   let service: SynchronizationService
   let resultFor: Map<string, ProcessOperationResult>
-  let processOperation: ReturnType<typeof vi.fn>
-  let fetchServerChanges: ReturnType<typeof vi.fn>
+  let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
+  let fetchServerChanges: Mock<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>
 
-  const sentIds = (): string[] =>
-    processOperation.mock.calls.map(([sent]) => (sent as SyncOperation).id)
+  const sentIds = (): string[] => processOperation.mock.calls.map(([sent]) => sent.id)
 
   beforeEach(async () => {
     vi.useFakeTimers()
@@ -119,7 +120,7 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
     processOperation = vi.fn(
       async (sent: SyncOperation) => resultFor.get(sent.id) ?? { success: true }
     )
-    fetchServerChanges = vi.fn(async () => [] as ServerChange[])
+    fetchServerChanges = vi.fn(async (_since: number | null): Promise<ServerChange[]> => [])
     service = new SynchronizationService(USER, {
       autoSync: false,
       maxRetries: 3,

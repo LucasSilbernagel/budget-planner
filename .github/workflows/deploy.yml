@@ -162,6 +162,11 @@ jobs:
       # so app code's strictness comes from the first program alone. Before 78.2
       # no gate type-checked a test file. validate-deploy-workflow.py pins both
       # this step (exact `run`, no continue-on-error) and the script it calls.
+      #
+      # Story 78.4: core's and db's `type-check` run TWO programs, joined by `&&`:
+      # the build config (tsconfig.json, STRICT, excludes tests) and a no-emit
+      # tsconfig.test.json (tests + root-level TS files, the same RELAXED
+      # index-access flags as web's test programs). Same pin, same validator.
       - name: Type-check web
         run: pnpm --filter web type-check
 

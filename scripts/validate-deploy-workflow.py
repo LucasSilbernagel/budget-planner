@@ -37,6 +37,27 @@ VERDICT_HELPER = ".github/scripts/rapids_verdict.py"
 WEB_PACKAGE = "apps/web/package.json"
 # App (strict, excludes tests), unit tests + test helpers, Playwright specs.
 WEB_TYPECHECK_CONFIGS = ("tsconfig.app.json", "tsconfig.vitest.json", "tsconfig.e2e.json")
+# Story 78.4: the build config (strict, excludes tests) and the no-emit test
+# config (tests + root-level TS files, relaxed index-access flags).
+PACKAGE_TYPECHECK_CONFIGS = ("tsconfig.json", "tsconfig.test.json")
+# package -> (package.json, the deploy step's exact `run`, configs its script must name)
+TYPECHECK_SCRIPTS = {
+    "web": (WEB_PACKAGE, "pnpm --filter web type-check", WEB_TYPECHECK_CONFIGS),
+    "core": (
+        "packages/core/package.json",
+        "pnpm --filter @budget-planner/core type-check",
+        PACKAGE_TYPECHECK_CONFIGS,
+    ),
+    "db": (
+        "packages/db/package.json",
+        "pnpm --filter @budget-planner/db type-check",
+        PACKAGE_TYPECHECK_CONFIGS,
+    ),
+}
+# Story 78.4 review: the package test configs themselves, so a config that still
+# exists but checks nothing (a narrowed `include`, a test-excluding `exclude`)
+# cannot pass on its name alone.
+PACKAGE_TEST_CONFIGS = ("packages/core/tsconfig.test.json", "packages/db/tsconfig.test.json")
 
 failures: list[str] = []
 checked = 0
@@ -163,32 +184,80 @@ def main() -> int:
     # no gate type-checked a test or an e2e spec. Pin the script itself: each
     # config must be named, and the commands must be joined by `&&` so a failing
     # first `tsc` cannot be masked by a passing second one (`;` would do that).
-    print("\n== the web type-check covers the app, the unit tests and the e2e specs ==")
-    # EXACT, not a substring: `pnpm --filter web type-check || true` contains the
-    # substring and would turn the gate into a no-op (78.2 review, measured).
-    check(any(run.strip() == "pnpm --filter web type-check" for run in runs),
-          "the gate runs the web package's own type-check script, unmodified")
+    # Story 78.4 extends the same pin to core and db, whose test files were
+    # excluded by their build tsconfig until then.
     check(not jobs["type-check"].get("continue-on-error")
           and not any(step.get("continue-on-error") for step in jobs["type-check"]["steps"]),
           "no continue-on-error anywhere in the type-check job")
-    # A malformed package.json must be a reported FAIL, not a traceback that
-    # skips every later check.
-    try:
-        web_scripts = json.loads(read(WEB_PACKAGE)).get("scripts")
-    except (OSError, json.JSONDecodeError):
-        web_scripts = None
-    check(isinstance(web_scripts, dict), f"{WEB_PACKAGE} parses and has a scripts table")
-    web_script = web_scripts.get("type-check", "") if isinstance(web_scripts, dict) else ""
-    commands = [part.strip() for part in web_script.split("&&")]
-    check(not re.search(r";|\|\|", web_script), "the type-check commands are joined only by &&")
-    configs = [
-        match.group(1)
-        for command in commands
-        if (match := re.fullmatch(r"tsc --noEmit -p (\S+)", command))
-    ]
-    check(len(configs) == len(commands), "every type-check command is a plain `tsc --noEmit -p <config>`")
-    for config in WEB_TYPECHECK_CONFIGS:
-        check(config in configs, f"the web type-check names {config}")
+    # `if: false` on a step (or the job) skips it and the job still succeeds, so
+    # the exact `run` pin below would hold over a gate that never runs (78.4
+    # review, measured). Nothing in this job is conditional today; keep it so.
+    check("if" not in jobs["type-check"]
+          and not any("if" in step for step in jobs["type-check"]["steps"]),
+          "no `if:` on the type-check job or any of its steps")
+    for name, (package_json, step_run, required_configs) in TYPECHECK_SCRIPTS.items():
+        # Web keeps its pre-78.4 labels; the others name their package.
+        scope = "" if name == "web" else f"{name} "
+        if name == "web":
+            print("\n== the web type-check covers the app, the unit tests and the e2e specs ==")
+        else:
+            print(f"\n== the {name} type-check covers the package and its test files ==")
+        # EXACT, not a substring: `pnpm --filter web type-check || true` contains the
+        # substring and would turn the gate into a no-op (78.2 review, measured).
+        check(any(run.strip() == step_run for run in runs),
+              f"the gate runs the {name} package's own type-check script, unmodified")
+        # A malformed package.json must be a reported FAIL, not a traceback that
+        # skips every later check.
+        try:
+            package = json.loads(read(package_json))
+            scripts = package.get("scripts")
+            package_name = package.get("name")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            scripts = package_name = None
+        check(isinstance(scripts, dict), f"{package_json} parses and has a scripts table")
+        # A `--filter` that matches no project makes pnpm print "No projects
+        # matched the filters" and exit 0: the step would check nothing (78.4
+        # review, measured). pnpm also matches a scoped name by its bare part.
+        step_filter = step_run.split()[2]
+        check(isinstance(package_name, str)
+              and (package_name == step_filter or package_name.endswith("/" + step_filter)),
+              f"the {name} step's --filter {step_filter} matches {package_json}'s name")
+        script = scripts.get("type-check", "") if isinstance(scripts, dict) else ""
+        script = script if isinstance(script, str) else ""
+        commands = [part.strip() for part in script.split("&&")]
+        check(not re.search(r";|\|\|", script), f"the {scope}type-check commands are joined only by &&")
+        configs = [
+            match.group(1)
+            for command in commands
+            if (match := re.fullmatch(r"tsc --noEmit -p (\S+)", command))
+        ]
+        check(len(configs) == len(commands),
+              f"every {scope}type-check command is a plain `tsc --noEmit -p <config>`")
+        for config in required_configs:
+            check(config in configs, f"the {name} type-check names {config}")
+        # Order and exact membership: the STRICT program runs first, and no extra
+        # or duplicated config rides along.
+        check(configs == list(required_configs),
+              f"the {name} type-check runs exactly {' then '.join(required_configs)}")
+
+    print("\n== the core and db test configs check the whole package, and emit nothing ==")
+    for path in PACKAGE_TEST_CONFIGS:
+        try:
+            test_config = json.loads(read(path))
+        except (OSError, json.JSONDecodeError):
+            test_config = None
+        check(isinstance(test_config, dict), f"{path} parses")
+        test_config = test_config if isinstance(test_config, dict) else {}
+        options = test_config.get("compilerOptions") or {}
+        include = test_config.get("include") or []
+        exclude = test_config.get("exclude") or []
+        check(test_config.get("extends") == "./tsconfig.json", f"{path} extends the package build config")
+        check(options.get("noEmit") is True and options.get("composite") is False,
+              f"{path} is noEmit and not composite")
+        check("src/**/*" in include and "*.ts" in include,
+              f"{path} includes all of src/ and every root-level .ts file")
+        check(not any(re.search(r"test|spec", str(pattern)) for pattern in exclude),
+              f"{path} excludes no test files")
 
     print("\n== migration is ordered, abortive, and gated ==")
     steps = jobs["migrate"]["steps"]

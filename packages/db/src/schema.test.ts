@@ -56,14 +56,26 @@ describe('Schema Compilation', () => {
 // Test 2: Type generation - Verify TypeScript types are correctly inferred
 describe('Type Generation', () => {
   it('should have User type with correct properties', () => {
-    // This test verifies that the User type has the expected structure
-    // The actual type checking happens at compile time
+    // This test verifies that the User type has the expected structure.
+    // The actual type checking happens at compile time, in the package's
+    // `type-check` (tsconfig.test.json, story 78.4). Until then no gate compiled
+    // this file, and the literal had fallen ten columns behind `users`.
     const userExample: User = {
       id: '550e8400-e29b-41d4-a716-446655440000',
       email: 'test@example.com',
       paddleId: 'paddle_123',
       subscriptionStatus: 'free',
+      billingInterval: null,
       currency: 'NONE',
+      isDeleted: false,
+      entitlementUpdatedAt: null,
+      emailUpdatedAt: null,
+      lifetimeTransactionId: null,
+      lifetimeGrantTotal: null,
+      sessionsRevokedAt: null,
+      accessEndedAt: null,
+      retentionNoticeSentAt: null,
+      retentionNoticeAttemptedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     }

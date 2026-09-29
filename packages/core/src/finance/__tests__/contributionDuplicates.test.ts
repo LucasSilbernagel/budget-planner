@@ -15,9 +15,10 @@ import {
   findContributionDuplicateCandidates,
   nameSimilarity,
 } from '../contributionDuplicates.js'
+import type { Frequency } from '../normalization.js'
 import { calculateDistributablePool } from '../savingsAllocation.js'
 
-const expense = (id: string, name: string, amount: number, frequency = 'monthly' as const) => ({
+const expense = (id: string, name: string, amount: number, frequency: Frequency = 'monthly') => ({
   id,
   name,
   amount,
@@ -27,7 +28,7 @@ const contribution = (
   id: string,
   name: string,
   amount: number,
-  frequency = 'monthly' as const,
+  frequency: Frequency = 'monthly',
   recordedAsExpense?: boolean
 ) => ({ id, name, amount, frequency, recordedAsExpense })
 
@@ -250,7 +251,7 @@ describe('the detector is fenced off from the pool calculation (AC-4)', () => {
         incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
         expenses: [{ amount: 50_000, frequency: 'monthly' }],
         investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
-        savingsAccounts: [{ id: 'a', targetAmount: 1_000_000, allocationMode: 'automatic' }],
+        savingsAccounts: [{ id: 'a', allocationMode: 'automatic' }],
       })
     ).toBe(200_000)
   })
@@ -266,7 +267,7 @@ describe('the detector is fenced off from the pool calculation (AC-4)', () => {
         incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
         expenses: [{ amount: 50_000, frequency: 'monthly' }],
         investmentContributions: [{ amount: 50_000, frequency: 'monthly' }],
-        savingsAccounts: [{ id: 'a', targetAmount: 1_000_000, allocationMode: 'automatic' }],
+        savingsAccounts: [{ id: 'a', allocationMode: 'automatic' }],
       })
     ).toBe(200_000)
   })

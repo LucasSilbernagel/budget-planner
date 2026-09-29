@@ -35,8 +35,26 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
+import type { SyncOperation } from '../types'
 
 type AnyOp = { id: string; type: string; entityType: string; entityId?: string }
+
+// A complete operation. Each op gets its OWN `entityId` unless the test names
+// one: the service keys rows on `entityType:entityId`, so two ops that share an
+// id are the same row (the refused-create follow-up rule depends on that).
+function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
+  return {
+    id,
+    type: 'update',
+    entityType: 'category',
+    entityId: `entity-${id}`,
+    data: {},
+    timestamp: 5_000,
+    deviceId: 'device-test',
+    userId: 'user-123',
+    ...overrides,
+  }
+}
 
 describe('Non-retryable sync failures', () => {
   let service: SynchronizationService
@@ -48,8 +66,8 @@ describe('Non-retryable sync failures', () => {
   beforeEach(() => {
     const operations: AnyOp[] = []
     mockQueue = {
-      add: vi.fn(async (op: AnyOp) => {
-        operations.push(op)
+      add: vi.fn(async (o: AnyOp) => {
+        operations.push(o)
       }),
       getAll: vi.fn(() => [...operations]),
       getReadyOperations: vi.fn(() => [...operations]),
@@ -72,7 +90,7 @@ describe('Non-retryable sync failures', () => {
     }
 
     resultForOp = new Map()
-    processOperation = vi.fn(async (op: AnyOp) => resultForOp.get(op.id) ?? { success: true })
+    processOperation = vi.fn(async (o: AnyOp) => resultForOp.get(o.id) ?? { success: true })
     service = new SynchronizationService('user-123', {
       autoSync: false,
       processOperation,
@@ -95,18 +113,18 @@ describe('Non-retryable sync failures', () => {
   // (a conflict, never removed) — and the account-wide deadlock returns one op
   // later. The row's other queued ops are therefore refused WITH the create.
   describe("a permanently refused CREATE takes its row's queued follow-ups with it", () => {
-    const create = { id: 'op-create', type: 'create', entityType: 'savingsGoal', entityId: 'g-1' }
-    const update = { id: 'op-update', type: 'update', entityType: 'savingsGoal', entityId: 'g-1' }
-    const del = { id: 'op-delete', type: 'delete', entityType: 'savingsGoal', entityId: 'g-1' }
+    const create = op('op-create', { type: 'create', entityType: 'savingsGoal', entityId: 'g-1' })
+    const update = op('op-update', { type: 'update', entityType: 'savingsGoal', entityId: 'g-1' })
+    const del = op('op-delete', { type: 'delete', entityType: 'savingsGoal', entityId: 'g-1' })
 
     function refuse(id: string) {
       resultForOp.set(id, { success: false, retryable: false, statusCode: 422 })
     }
 
     it('drops the create AND every queued op for the same row, and records them all as rejected', async () => {
-      await service.queue.add(create)
-      await service.queue.add(update)
-      await service.queue.add(del)
+      await service.getQueue().add(create)
+      await service.getQueue().add(update)
+      await service.getQueue().add(del)
       refuse('op-create')
       // What the server answers for an op on a row that was never created.
       resultForOp.set('op-update', { success: false, conflict: true })
@@ -114,41 +132,40 @@ describe('Non-retryable sync failures', () => {
 
       await service.sync()
 
-      expect(service.queue.getAll()).toHaveLength(0)
+      expect(service.getQueue().getAll()).toHaveLength(0)
       // @ts-expect-error - accessing private property for testing
       const state = service.state
-      expect(state.rejectedOperations.map((op: AnyOp) => op.id).sort()).toEqual(
+      expect(state.rejectedOperations.map((o: AnyOp) => o.id).sort()).toEqual(
         ['op-create', 'op-delete', 'op-update'].sort()
       )
       // Not ALSO recorded as a conflict or a retryable failure.
-      expect(state.conflictOperations.map((op: AnyOp) => op.id)).not.toContain('op-update')
-      expect(state.failedOperations.map((op: AnyOp) => op.id)).not.toContain('op-delete')
+      expect(state.conflictOperations.map((o: AnyOp) => o.id)).not.toContain('op-update')
+      expect(state.failedOperations.map((o: AnyOp) => o.id)).not.toContain('op-delete')
     })
 
     it('drops a follow-up that failed RETRYABLY in the same batch, so no retry re-sends it', async () => {
-      await service.queue.add(create)
-      await service.queue.add(update)
+      await service.getQueue().add(create)
+      await service.getQueue().add(update)
       refuse('op-create')
       resultForOp.set('op-update', { success: false, retryable: true })
 
       await service.sync()
 
-      expect(service.queue.getAll()).toHaveLength(0)
+      expect(service.getQueue().getAll()).toHaveLength(0)
       // @ts-expect-error - accessing private property for testing
-      expect(service.state.failedOperations.map((op: AnyOp) => op.id)).not.toContain('op-update')
+      expect(service.state.failedOperations.map((o: AnyOp) => o.id)).not.toContain('op-update')
     })
 
     it('CONTROL — leaves ops for OTHER rows, and ops of another entity type with the same id', async () => {
-      const otherRow = {
-        id: 'op-other',
+      const otherRow = op('op-other', {
         type: 'update',
         entityType: 'savingsGoal',
         entityId: 'g-2',
-      }
-      const otherType = { id: 'op-type', type: 'update', entityType: 'expense', entityId: 'g-1' }
-      await service.queue.add(create)
-      await service.queue.add(otherRow)
-      await service.queue.add(otherType)
+      })
+      const otherType = op('op-type', { type: 'update', entityType: 'expense', entityId: 'g-1' })
+      await service.getQueue().add(create)
+      await service.getQueue().add(otherRow)
+      await service.getQueue().add(otherType)
       refuse('op-create')
       // Both kept by the no-status-code rule, so they must still be queued.
       resultForOp.set('op-other', { success: false, retryable: false })
@@ -157,34 +174,39 @@ describe('Non-retryable sync failures', () => {
       await service.sync()
 
       expect(
-        service.queue
+        service
+          .getQueue()
           .getAll()
-          .map((op: AnyOp) => op.id)
+          .map((o: AnyOp) => o.id)
           .sort()
       ).toEqual(['op-other', 'op-type'])
     })
 
     it("CONTROL — a refused UPDATE does NOT take the row's other ops (the row exists server-side)", async () => {
-      const update2 = {
-        id: 'op-update-2',
+      const update2 = op('op-update-2', {
         type: 'update',
         entityType: 'savingsGoal',
         entityId: 'g-1',
-      }
-      await service.queue.add(update)
-      await service.queue.add(update2)
+      })
+      await service.getQueue().add(update)
+      await service.getQueue().add(update2)
       refuse('op-update')
       resultForOp.set('op-update-2', { success: false, retryable: false })
 
       await service.sync()
 
-      expect(service.queue.getAll().map((op: AnyOp) => op.id)).toEqual(['op-update-2'])
+      expect(
+        service
+          .getQueue()
+          .getAll()
+          .map((o: AnyOp) => o.id)
+      ).toEqual(['op-update-2'])
     })
   })
 
   describe('queue disposition by failure class', () => {
     it('removes an operation the server PERMANENTLY rejected (422) and records it', async () => {
-      await service.queue.add({ id: 'op-reject', type: 'update', entityType: 'category' })
+      await service.getQueue().add(op('op-reject', { type: 'update', entityType: 'category' }))
       resultForOp.set('op-reject', {
         success: false,
         error: 'Unprocessable entity',
@@ -195,29 +217,29 @@ describe('Non-retryable sync failures', () => {
       await service.sync()
 
       // It must NOT still be queued — replaying it forever is the defect.
-      expect(service.queue.getAll()).toHaveLength(0)
+      expect(service.getQueue().getAll()).toHaveLength(0)
       // `discardBatch`, not `removeBatch`, since story 75.3: a refused op leaves the
       // queue even when storage refuses the write.
       expect(mockQueue.discardBatch).toHaveBeenCalledWith(['op-reject'])
       // @ts-expect-error - accessing private property for testing
       const rejected = service.state.rejectedOperations
-      expect(rejected.map((op: AnyOp) => op.id)).toEqual(['op-reject'])
+      expect(rejected.map((o: AnyOp) => o.id)).toEqual(['op-reject'])
     })
 
     it.each([400, 404, 409, 422])(
       'removes an operation rejected with the permanent status %i',
       async (statusCode) => {
-        await service.queue.add({ id: 'op-x', type: 'update', entityType: 'category' })
+        await service.getQueue().add(op('op-x', { type: 'update', entityType: 'category' }))
         resultForOp.set('op-x', { success: false, retryable: false, statusCode })
 
         await service.sync()
 
-        expect(service.queue.getAll()).toHaveLength(0)
+        expect(service.getQueue().getAll()).toHaveLength(0)
       }
     )
 
     it('KEEPS a non-retryable failure that carries NO status code — the transient-fault shape', async () => {
-      await service.queue.add({ id: 'op-blip', type: 'update', entityType: 'category' })
+      await service.getQueue().add(op('op-blip', { type: 'update', entityType: 'category' }))
       // Exactly what `features/api/client.ts` returns for a 200 envelope with
       // `failedCount > 0`, which the server emits when `applyOperation` catches a
       // dropped connection or a statement timeout. Deleting this was data loss.
@@ -229,23 +251,33 @@ describe('Non-retryable sync failures', () => {
 
       await service.sync()
 
-      expect(service.queue.getAll().map((op: AnyOp) => op.id)).toEqual(['op-blip'])
+      expect(
+        service
+          .getQueue()
+          .getAll()
+          .map((o: AnyOp) => o.id)
+      ).toEqual(['op-blip'])
       expect(mockQueue.removeBatch).not.toHaveBeenCalledWith(['op-blip'])
       // @ts-expect-error - accessing private property for testing
       expect(service.state.rejectedOperations).toHaveLength(0)
     })
 
     it('KEEPS a non-retryable failure whose status is transient-shaped (408), not in the allow-list', async () => {
-      await service.queue.add({ id: 'op-timeout', type: 'create', entityType: 'expense' })
+      await service.getQueue().add(op('op-timeout', { type: 'create', entityType: 'expense' }))
       resultForOp.set('op-timeout', { success: false, retryable: false, statusCode: 408 })
 
       await service.sync()
 
-      expect(service.queue.getAll().map((op: AnyOp) => op.id)).toEqual(['op-timeout'])
+      expect(
+        service
+          .getQueue()
+          .getAll()
+          .map((o: AnyOp) => o.id)
+      ).toEqual(['op-timeout'])
     })
 
     it('KEEPS an auth-blocked (401) operation queued and OPENS the circuit', async () => {
-      await service.queue.add({ id: 'op-auth', type: 'create', entityType: 'expense' })
+      await service.getQueue().add(op('op-auth', { type: 'create', entityType: 'expense' }))
       resultForOp.set('op-auth', {
         success: false,
         error: 'Unauthorized',
@@ -257,7 +289,12 @@ describe('Non-retryable sync failures', () => {
 
       // The operation is valid; only the session is not. It must survive to be
       // synced after re-authentication.
-      expect(service.queue.getAll().map((op: AnyOp) => op.id)).toEqual(['op-auth'])
+      expect(
+        service
+          .getQueue()
+          .getAll()
+          .map((o: AnyOp) => o.id)
+      ).toEqual(['op-auth'])
       // @ts-expect-error - accessing private property for testing
       expect(service.state.rejectedOperations).toHaveLength(0)
       // @ts-expect-error - accessing private property for testing
@@ -265,7 +302,7 @@ describe('Non-retryable sync failures', () => {
     })
 
     it('KEEPS a tier-blocked (403) operation queued but does NOT open the circuit', async () => {
-      await service.queue.add({ id: 'op-tier', type: 'create', entityType: 'expense' })
+      await service.getQueue().add(op('op-tier', { type: 'create', entityType: 'expense' }))
       resultForOp.set('op-tier', {
         success: false,
         error: 'Premium feature: server sync requires an active paid subscription',
@@ -277,7 +314,12 @@ describe('Non-retryable sync failures', () => {
 
       // The op is valid and so is the session — the PLAN lapsed. Keep the data
       // for a user who may resubscribe...
-      expect(service.queue.getAll().map((op: AnyOp) => op.id)).toEqual(['op-tier'])
+      expect(
+        service
+          .getQueue()
+          .getAll()
+          .map((o: AnyOp) => o.id)
+      ).toEqual(['op-tier'])
       // @ts-expect-error - accessing private property for testing
       expect(service.state.rejectedOperations).toHaveLength(0)
       // ...but a cooldown buys nothing here, and opening the circuit every sync
@@ -294,8 +336,10 @@ describe('Non-retryable sync failures', () => {
   describe('circuit and retry are independent decisions', () => {
     it('schedules the retry even when an auth failure opened the circuit in the same batch, and RECOVERS the op', async () => {
       vi.useFakeTimers()
-      await service.queue.add({ id: 'op-auth', type: 'create', entityType: 'expense' })
-      await service.queue.add({ id: 'op-transient', type: 'create', entityType: 'incomeSource' })
+      await service.getQueue().add(op('op-auth', { type: 'create', entityType: 'expense' }))
+      await service
+        .getQueue()
+        .add(op('op-transient', { type: 'create', entityType: 'incomeSource' }))
       resultForOp.set('op-auth', {
         success: false,
         error: 'Unauthorized',
@@ -316,7 +360,7 @@ describe('Non-retryable sync failures', () => {
       // ...and the retryable op is recorded as failed. (Since story 75.3 it also
       // stays queued; `failedOperations` is a view of queued ops, not a carrier.)
       // @ts-expect-error - accessing private property for testing
-      expect(service.state.failedOperations.map((op: AnyOp) => op.id)).toEqual(['op-transient'])
+      expect(service.state.failedOperations.map((o: AnyOp) => o.id)).toEqual(['op-transient'])
 
       // The defect: with `else if`, NO timer existed, so nothing would ever put
       // `op-transient` back.
@@ -341,7 +385,9 @@ describe('Non-retryable sync failures', () => {
 
     it('DEFERS a retry past the circuit cooldown and then retries the operation', async () => {
       vi.useFakeTimers()
-      await service.queue.add({ id: 'op-transient', type: 'create', entityType: 'incomeSource' })
+      await service
+        .getQueue()
+        .add(op('op-transient', { type: 'create', entityType: 'incomeSource' }))
       resultForOp.set('op-transient', { success: false, retryable: true })
 
       // Open the circuit first, so scheduleRetry() takes the open-circuit path.
@@ -351,7 +397,7 @@ describe('Non-retryable sync failures', () => {
       await service.sync()
 
       // @ts-expect-error - accessing private property for testing
-      expect(service.state.failedOperations.map((op: AnyOp) => op.id)).toEqual(['op-transient'])
+      expect(service.state.failedOperations.map((o: AnyOp) => o.id)).toEqual(['op-transient'])
       // A deferred timer must exist. Returning early here used to strand the
       // operation in memory, where only `runRetry` could recover it. Since story
       // 75.3 it stays queued, but the timer is still the fast path.
@@ -378,7 +424,9 @@ describe('Non-retryable sync failures', () => {
 
     it('does NOT close a circuit that was re-opened after the deferred timer was armed', async () => {
       vi.useFakeTimers()
-      await service.queue.add({ id: 'op-transient', type: 'create', entityType: 'incomeSource' })
+      await service
+        .getQueue()
+        .add(op('op-transient', { type: 'create', entityType: 'incomeSource' }))
       resultForOp.set('op-transient', { success: false, retryable: true })
 
       // @ts-expect-error - accessing private property for testing

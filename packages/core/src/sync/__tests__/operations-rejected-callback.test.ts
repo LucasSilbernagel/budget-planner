@@ -9,8 +9,9 @@
  * now a capped diagnostic record.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
+import type { ProcessOperationFn, SyncOperation } from '../types'
 
 type AnyOp = { id: string; type: string; entityType: string; entityId?: string }
 
@@ -19,10 +20,20 @@ describe('onOperationsRejected (story 75.2)', () => {
   let mockQueue: any
   let operations: AnyOp[]
   let resultForOp: Map<string, any>
-  let processOperation: ReturnType<typeof vi.fn>
+  let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
 
-  function op(id: string, overrides: Partial<AnyOp> = {}): AnyOp {
-    return { id, type: 'update', entityType: 'savingsGoal', entityId: `row-${id}`, ...overrides }
+  function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
+    return {
+      id,
+      type: 'update',
+      entityType: 'savingsGoal',
+      entityId: `row-${id}`,
+      data: {},
+      timestamp: 5_000,
+      deviceId: 'device-test',
+      userId: 'user-123',
+      ...overrides,
+    }
   }
 
   function refuse(id: string) {
@@ -55,7 +66,7 @@ describe('onOperationsRejected (story 75.2)', () => {
       }),
     }
     resultForOp = new Map()
-    processOperation = vi.fn(async (o: AnyOp) => resultForOp.get(o.id) ?? { success: true })
+    processOperation = vi.fn(async (o: SyncOperation) => resultForOp.get(o.id) ?? { success: true })
     service = new SynchronizationService('user-123', {
       autoSync: false,
       // Large enough that the 60-op cap test is one batch.

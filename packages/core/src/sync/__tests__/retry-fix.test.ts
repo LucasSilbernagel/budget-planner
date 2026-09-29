@@ -12,6 +12,21 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CONFIG, SynchronizationService } from '../synchronization'
+import type { SyncOperation } from '../types'
+
+function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
+  return {
+    id,
+    type: 'update',
+    entityType: 'incomeSource',
+    entityId: `entity-${id}`,
+    data: {},
+    timestamp: 5_000,
+    deviceId: 'device-test',
+    userId: 'user-123',
+    ...overrides,
+  }
+}
 
 describe('SynchronizationService Retry Logic Fix', () => {
   let service: SynchronizationService
@@ -22,8 +37,8 @@ describe('SynchronizationService Retry Logic Fix', () => {
     // Mock queue to track operations
     const operations: any[] = []
     mockQueue = {
-      add: vi.fn(async (op: any) => {
-        operations.push(op)
+      add: vi.fn(async (o: SyncOperation) => {
+        operations.push(o)
       }),
       getAll: vi.fn(() => [...operations]),
       // `runRetry` reads it since story 75.3 (it syncs only if anything is queued).
@@ -33,7 +48,7 @@ describe('SynchronizationService Retry Logic Fix', () => {
       getReadyOperations: vi.fn((_batchSize?: number) => [...operations]),
       removeBatch: vi.fn(async (ids: string[]) => {
         const indices = operations
-          .map((op: any, i: number) => (ids.includes(op.id) ? i : -1))
+          .map((o: SyncOperation, i: number) => (ids.includes(o.id) ? i : -1))
           .filter((i) => i !== -1)
         for (const i of indices.reverse()) {
           operations.splice(i, 1)
@@ -69,8 +84,8 @@ describe('SynchronizationService Retry Logic Fix', () => {
 
   describe('Failed operations handling', () => {
     it('keeps failed operations IN the queue, and records them as a view', async () => {
-      await service.queue.add({ id: 'op1', type: 'create', entityType: 'incomeSource' })
-      await service.queue.add({ id: 'op2', type: 'update', entityType: 'expense' })
+      await service.getQueue().add(op('op1', { type: 'create', entityType: 'incomeSource' }))
+      await service.getQueue().add(op('op2', { type: 'update', entityType: 'expense' }))
 
       // Trigger sync which will fail
       await service.sync()
@@ -78,22 +93,21 @@ describe('SynchronizationService Retry Logic Fix', () => {
       // Positive anchor: both really were sent.
       expect(mockProcessOperation).toHaveBeenCalledTimes(2)
       // @ts-expect-error - accessing private property for testing
-      expect(service.state.failedOperations.map((op: any) => op.id)).toEqual(['op1', 'op2'])
+      expect(service.state.failedOperations.map((o) => o.id)).toEqual(['op1', 'op2'])
       expect(mockQueue.removeBatch).not.toHaveBeenCalled()
-      // @ts-expect-error - accessing private property for testing
-      expect(service.queue.getAll().map((op: any) => op.id)).toEqual(['op1', 'op2'])
+      expect(
+        service
+          .getQueue()
+          .getAll()
+          .map((o) => o.id)
+      ).toEqual(['op1', 'op2'])
     })
 
     it('should not create duplicate operation IDs when retrying', async () => {
       vi.useFakeTimers()
       try {
-        const op = {
-          id: 'op-unique-123',
-          type: 'create',
-          entityType: 'incomeSource',
-          userId: 'user-123',
-        }
-        await service.queue.add(op)
+        const unique = op('op-unique-123', { type: 'create', entityType: 'incomeSource' })
+        await service.getQueue().add(unique)
 
         await service.sync()
         // Let the retry timer fire (this suite uses the default delay); the retry fails too.
@@ -103,8 +117,7 @@ describe('SynchronizationService Retry Logic Fix', () => {
         expect(mockProcessOperation).toHaveBeenCalledTimes(2)
         // Still exactly one copy: `runRetry` must not re-add an op that never left.
         expect(mockQueue.add).toHaveBeenCalledTimes(1)
-        // @ts-expect-error - accessing private property for testing
-        expect(service.queue.getAll()).toEqual([op])
+        expect(service.getQueue().getAll()).toEqual([unique])
       } finally {
         vi.useRealTimers()
       }

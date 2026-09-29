@@ -287,7 +287,16 @@ for (const value of Object.values(schema)) {
       .filter((index) => index.config.unique)
       .map((index) => {
         const cols = index.config.columns
-          .map((c) => (is(c, SQL) ? normalizeExpr(renderSql(c)) : normalizeExpr(c.name)))
+          .map((c) => {
+            if (is(c, SQL)) return normalizeExpr(renderSql(c))
+            // drizzle types the entries as `Partial<SQL | IndexedColumn>`; a plain
+            // column always carries its name. Fail loudly rather than compare
+            // against an index whose column could not be named.
+            if (!('name' in c) || typeof c.name !== 'string') {
+              throw new Error(`${table}: index ${index.config.name} has a column with no name`)
+            }
+            return normalizeExpr(c.name)
+          })
           .join(', ')
         const where = index.config.where
           ? ` WHERE ${normalizeExpr(renderSql(index.config.where))}`

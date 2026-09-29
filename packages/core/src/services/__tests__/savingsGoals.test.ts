@@ -20,14 +20,14 @@ describe('savingsGoals service', () => {
   describe('Type Definitions', () => {
     it('should have ClientSavingsGoal interface with required fields', () => {
       const goal: ClientSavingsGoal = {
-        id: 1,
+        id: 'sg-1',
         name: 'Vacation Fund',
         targetAmount: 500000, // $5000 in cents
         currentBalance: 250000, // $2500 in cents
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
-      expect(goal.id).toBe(1)
+      expect(goal.id).toBe('sg-1')
       expect(goal.name).toBe('Vacation Fund')
       expect(goal.targetAmount).toBe(500000)
       expect(goal.currentBalance).toBe(250000)
@@ -46,7 +46,7 @@ describe('savingsGoals service', () => {
 
     it('should have SavingsGoalWithProgress interface with progress and status', () => {
       const goalWithProgress: SavingsGoalWithProgress = {
-        id: 1,
+        id: 'sg-1',
         name: 'Car Down Payment',
         targetAmount: 2000000, // $20000 in cents
         currentBalance: 500000, // $5000 in cents
@@ -103,7 +103,7 @@ describe('savingsGoals service', () => {
   describe('withProgress', () => {
     it('should add progress and status to savings goal', () => {
       const goal: ClientSavingsGoal = {
-        id: 1,
+        id: 'sg-1',
         name: 'Test Goal',
         targetAmount: 100000,
         currentBalance: 60000,
@@ -119,7 +119,7 @@ describe('savingsGoals service', () => {
 
     it('should return 100% progress for complete goal', () => {
       const goal: ClientSavingsGoal = {
-        id: 2,
+        id: 'sg-2',
         name: 'Complete Goal',
         targetAmount: 100000,
         currentBalance: 100000,
@@ -134,7 +134,7 @@ describe('savingsGoals service', () => {
 
     it('should return 0% progress for not started goal', () => {
       const goal: ClientSavingsGoal = {
-        id: 3,
+        id: 'sg-3',
         name: 'Not Started Goal',
         targetAmount: 100000,
         currentBalance: 0,
@@ -335,7 +335,7 @@ describe('savingsGoals service', () => {
 
       const goals: ClientSavingsGoal[] = [
         {
-          id: 1,
+          id: 'sg-1',
           name: 'Oldest',
           targetAmount: 100,
           currentBalance: 0,
@@ -343,7 +343,7 @@ describe('savingsGoals service', () => {
           updatedAt: oldest.toISOString(),
         },
         {
-          id: 2,
+          id: 'sg-2',
           name: 'Newest',
           targetAmount: 100,
           currentBalance: 0,
@@ -351,7 +351,7 @@ describe('savingsGoals service', () => {
           updatedAt: now.toISOString(),
         },
         {
-          id: 3,
+          id: 'sg-3',
           name: 'Older',
           targetAmount: 100,
           currentBalance: 0,
@@ -361,9 +361,9 @@ describe('savingsGoals service', () => {
       ]
 
       const sorted = sortByCreationDate(goals)
-      expect(sorted[0].id).toBe(2) // Newest first
-      expect(sorted[1].id).toBe(3) // Older second
-      expect(sorted[2].id).toBe(1) // Oldest last
+      expect(sorted[0].id).toBe('sg-2') // Newest first
+      expect(sorted[1].id).toBe('sg-3') // Older second
+      expect(sorted[2].id).toBe('sg-1') // Oldest last
     })
 
     it('should return new array (not mutate original)', () => {
@@ -372,7 +372,7 @@ describe('savingsGoals service', () => {
 
       const goals: ClientSavingsGoal[] = [
         {
-          id: 1,
+          id: 'sg-1',
           name: 'Older',
           targetAmount: 100,
           currentBalance: 0,
@@ -380,7 +380,7 @@ describe('savingsGoals service', () => {
           updatedAt: older.toISOString(),
         },
         {
-          id: 2,
+          id: 'sg-2',
           name: 'Newest',
           targetAmount: 100,
           currentBalance: 0,
@@ -398,7 +398,7 @@ describe('savingsGoals service', () => {
   describe('filterSavingsGoals', () => {
     const goals: SavingsGoalWithProgress[] = [
       {
-        id: 1,
+        id: 'sg-1',
         name: 'Goal A',
         targetAmount: 100,
         currentBalance: 50,
@@ -408,7 +408,7 @@ describe('savingsGoals service', () => {
         status: 'on-track',
       },
       {
-        id: 2,
+        id: 'sg-2',
         name: 'Goal B',
         targetAmount: 100,
         currentBalance: 100,
@@ -418,7 +418,7 @@ describe('savingsGoals service', () => {
         status: 'complete',
       },
       {
-        id: 3,
+        id: 'sg-3',
         name: 'Goal C',
         targetAmount: 100,
         currentBalance: 0,
@@ -432,19 +432,19 @@ describe('savingsGoals service', () => {
     it('should filter by status', () => {
       const filtered = filterSavingsGoals(goals, { status: 'complete' })
       expect(filtered.length).toBe(1)
-      expect(filtered[0].id).toBe(2)
+      expect(filtered[0].id).toBe('sg-2')
     })
 
     it('should filter by search term', () => {
       const filtered = filterSavingsGoals(goals, { search: 'Goal A' })
       expect(filtered.length).toBe(1)
-      expect(filtered[0].id).toBe(1)
+      expect(filtered[0].id).toBe('sg-1')
     })
 
     it('should be case insensitive search', () => {
       const filtered = filterSavingsGoals(goals, { search: 'goal a' })
       expect(filtered.length).toBe(1)
-      expect(filtered[0].id).toBe(1)
+      expect(filtered[0].id).toBe('sg-1')
     })
 
     it('should return all when no filter provided', () => {

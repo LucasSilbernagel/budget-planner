@@ -5,8 +5,10 @@
  * Tests validation, sorting, filtering, and utility functions.
  */
 
+import type { FinanceType } from '@budget-planner/db'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  type BalanceTrackingFilter,
   BalanceTrackingWithTimeline,
   ClientBalanceTracking,
   ClientNewBalanceTracking,
@@ -343,26 +345,32 @@ describe('sortByCreationDate', () => {
   it('should sort entries by creation date (newest first)', () => {
     const entries: ClientBalanceTracking[] = [
       {
-        id: 1,
+        id: 'bt-1',
         type: 'investment',
         name: 'Oldest',
         currentBalance: 100,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
       },
       {
-        id: 2,
+        id: 'bt-2',
         type: 'investment',
         name: 'Middle',
         currentBalance: 200,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-02-01T00:00:00Z',
         updatedAt: '2024-02-01T00:00:00Z',
       },
       {
-        id: 3,
+        id: 'bt-3',
         type: 'investment',
         name: 'Newest',
         currentBalance: 300,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-03-01T00:00:00Z',
         updatedAt: '2024-03-01T00:00:00Z',
       },
@@ -376,18 +384,22 @@ describe('sortByCreationDate', () => {
   it('should not mutate original array', () => {
     const entries: ClientBalanceTracking[] = [
       {
-        id: 1,
+        id: 'bt-1',
         type: 'investment',
         name: 'Oldest',
         currentBalance: 100,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
       },
       {
-        id: 2,
+        id: 'bt-2',
         type: 'investment',
         name: 'Newest',
         currentBalance: 200,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-02-01T00:00:00Z',
         updatedAt: '2024-02-01T00:00:00Z',
       },
@@ -406,26 +418,32 @@ describe('sortByCreationDate', () => {
 describe('filterBalanceTracking', () => {
   const entries: BalanceTrackingWithTimeline[] = [
     {
-      id: 1,
+      id: 'bt-1',
       type: 'investment',
       name: 'Investment 1',
       currentBalance: 100,
+      monthlyContribution: 0,
+      frequency: 'monthly',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     },
     {
-      id: 2,
+      id: 'bt-2',
       type: 'debt',
       name: 'Debt 1',
       currentBalance: -100,
+      monthlyContribution: 0,
+      frequency: 'monthly',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     },
     {
-      id: 3,
+      id: 'bt-3',
       type: 'investment',
       name: 'Investment 2',
       currentBalance: 200,
+      monthlyContribution: 0,
+      frequency: 'monthly',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     },
@@ -502,6 +520,7 @@ describe('toClientBalanceTracking', () => {
       name: 'Test',
       currentBalance: 100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
     }
     const result = toClientBalanceTracking(input)
 
@@ -518,6 +537,7 @@ describe('toClientBalanceTracking', () => {
 describe('getTypeDisplayProperties', () => {
   it('should return investment properties', () => {
     const props = getTypeDisplayProperties('investment')
+    if (!props) throw new Error('no display properties for investment')
     expect(props.theme).toBe('success')
     expect(props.icon).toBe('↗')
     expect(props.label).toBe('Investment')
@@ -527,6 +547,7 @@ describe('getTypeDisplayProperties', () => {
 
   it('should return debt properties', () => {
     const props = getTypeDisplayProperties('debt')
+    if (!props) throw new Error('no display properties for debt')
     expect(props.theme).toBe('danger')
     expect(props.icon).toBe('↓')
     expect(props.label).toBe('Debt')
@@ -538,11 +559,12 @@ describe('getTypeDisplayProperties', () => {
 describe('withTimeline', () => {
   it('passes the entry through and adds the debt display fields', () => {
     const entry: ClientBalanceTracking = {
-      id: 1,
+      id: 'bt-1',
       type: 'investment',
       name: 'Test',
       currentBalance: 100000,
       monthlyContribution: 50000,
+      frequency: 'monthly',
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     }
@@ -649,26 +671,32 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
     it('should handle invalid date strings', () => {
       const entries: ClientBalanceTracking[] = [
         {
-          id: 1,
+          id: 'bt-1',
           type: 'investment',
           name: 'Valid',
           currentBalance: 100,
+          monthlyContribution: 0,
+          frequency: 'monthly',
           createdAt: '2024-01-01T00:00:00Z',
           updatedAt: '2024-01-01T00:00:00Z',
         },
         {
-          id: 2,
+          id: 'bt-2',
           type: 'investment',
           name: 'Invalid Date',
           currentBalance: 200,
+          monthlyContribution: 0,
+          frequency: 'monthly',
           createdAt: 'invalid-date',
           updatedAt: '2024-01-01T00:00:00Z',
         },
         {
-          id: 3,
+          id: 'bt-3',
           type: 'investment',
           name: 'Another Valid',
           currentBalance: 300,
+          monthlyContribution: 0,
+          frequency: 'monthly',
           createdAt: '2024-03-01T00:00:00Z',
           updatedAt: '2024-01-01T00:00:00Z',
         },
@@ -689,18 +717,22 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
   describe('filterBalanceTracking with edge cases', () => {
     const entries: BalanceTrackingWithTimeline[] = [
       {
-        id: 1,
+        id: 'bt-1',
         type: 'investment',
         name: 'Investment 1',
         currentBalance: 100,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
       },
       {
-        id: 2,
+        id: 'bt-2',
         type: 'debt',
         name: 'Debt 1',
         currentBalance: -100,
+        monthlyContribution: 0,
+        frequency: 'monthly',
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
       },

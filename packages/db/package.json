@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "echo 'DB dev script (to be configured)'",
     "build": "tsc",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "lint": "biome check .",
     "lint:fix": "biome check . --apply",
     "test": "vitest run",
