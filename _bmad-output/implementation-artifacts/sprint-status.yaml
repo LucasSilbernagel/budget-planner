@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29r (**79.2 CODE-REVIEWED -> done**, UNCOMMITTED. 3 decisions + 19 patches; core 1114, web 3817, db 295/7, e2e 518/4. Next: create-story 79.3.)
+# last_updated: 2026-09-29q (**79.2 DEV DONE -> review**, UNCOMMITTED. Core 1104, web 3809, db 295/7, e2e 518/4, types 0/0/0, biome 0.)
+# last_updated: 2026-09-29p (**79.2 dev started -> in-progress**, baseline `c0d444a`.)
+# last_updated: 2026-09-29o (79.1 committed `c0d444a`. **79.2 created -> ready-for-dev**; decisions D1-D6 CONFIRMED by Lucas: escalate retryable+unclassified, threshold maxRetries+1 in memory, Try again yes / Discard deferred, cursor pin stays.)
 # last_updated: 2026-09-29n (**79.1 CODE-REVIEWED -> done**, UNCOMMITTED. 8 patches applied; core 1087, web 3782, e2e 518/4. Next: create-story 79.2.)
 # last_updated: 2026-09-29m (**79.1 DEV DONE -> review**, UNCOMMITTED. Core 1084, web 3781, e2e 518/4, types 0/0/0, biome 0.)
 # last_updated: 2026-09-29l (**79.1 DEV STARTED -> in-progress**.)
@@ -1078,7 +1082,7 @@ development_status:
   # BATCH 16 (added 2026-09-29 by sprint-planning; epics 79-81 / FR128-FR132, from `planning-artifacts/deferred-work-triage-2026-09-29.md` measured at `932722f` — read its "Decisions" section first). Re-verify each cited line before contexting. Order: 79.1 -> 79.2; 80.1 -> 80.2; 79.3 and 81.1 in any order. 79.3 and 80.x both edit `server/api/sync.ts` (different functions) — rebase whichever lands second.
   epic-79: in-progress  # Every Sync Edit Ends Somewhere You Can See. FR128/FR129/FR130(1,3,4). FR120 still holds: never drop a retryable op.
   79-1-keep-a-torn-down-sync-from-touching-the-queue: done
-  79-2-tell-the-user-about-an-edit-that-keeps-failing: backlog  # Open at context: attempt threshold; retry/discard offer.
+  79-2-tell-the-user-about-an-edit-that-keeps-failing: done  # D1-D6 confirmed 2026-09-29.
   79-3-stop-three-server-side-causes-of-a-permanently-queued-edit: backlog
   epic-79-retrospective: optional
 

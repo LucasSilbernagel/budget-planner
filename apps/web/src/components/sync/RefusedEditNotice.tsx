@@ -37,8 +37,23 @@ import type { ReactElement } from 'react'
  * Focus is never moved: the notice interrupts nothing. The dismiss buttons are
  * SIBLINGS of the text, never its wrapper — a labelled `<button>` hides its
  * children from the accessibility tree (story 63.1).
+ *
+ * Since story 79.2 (FR128) it also names an edit that KEEPS FAILING to sync
+ * (`'not-synced'`). That is not a refusal: nothing was undone, the edit is kept
+ * and still queued, so it gets its own heading and sentence and never the
+ * refusal wording. It offers "Try again" (`onRetry`, a push now) and clears
+ * itself once the edit lands. There is deliberately no discard: removing a
+ * pending edit safely would need 75.2's full revert (deferred-work).
  */
-export function RefusedEditNotice(): ReactElement | null {
+export function RefusedEditNotice({
+  onRetry,
+  isRetrying = false,
+}: {
+  /** Push the queue now. Shown as "Try again" on `'not-synced'` notices only. */
+  onRetry?: () => void
+  /** A push is running: "Try again" is disabled until it ends. */
+  isRetrying?: boolean
+} = {}): ReactElement | null {
   const notices = useRefusalNotices()
   if (notices.length === 0) {
     return null
@@ -65,11 +80,22 @@ export function RefusedEditNotice(): ReactElement | null {
         >
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-gray-900 dark:text-white">
-              Not saved to your account
+              {noticeHeading(notice)}
             </p>
             <p className="mt-0.5 text-sm text-gray-700 dark:text-gray-300">
               {refusalMessage(notice)}
             </p>
+            {notice.outcome === 'not-synced' && onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={isRetrying}
+                aria-label={`Try again to sync ${subject(notice)}`}
+                className="mt-2 rounded-md border border-amber-400 bg-white px-3 py-1 text-xs font-medium text-gray-800 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+              >
+                Try again
+              </button>
+            ) : null}
           </div>
           <button
             type="button"
@@ -95,8 +121,27 @@ function subject(notice: RefusalNotice): string {
   return notice.fallback.charAt(0).toLowerCase() + notice.fallback.slice(1)
 }
 
-/** Every outcome says the same thing about the account (AC-1). */
+/** Every REFUSAL outcome says the same thing about the account (AC-1). */
 const NOT_SAVED = "couldn't be saved to your account"
+
+/**
+ * The not-synced sentences' shared parts (story 79.2). Worded to be TRUE WHEN
+ * SHOWN (code review 79.2, decision Lucas 2026-09-29): nothing re-sends a
+ * server-fault edit on a timer, so it goes out at the next sync, not "again"
+ * at once; and a pending DELETE has no entry left on this device to be "kept".
+ */
+const NOT_SYNCED_YET = "hasn't reached your account yet."
+const SAVED_SENT_NEXT_SYNC = "It's saved on this device and will be sent the next time it syncs."
+const DELETE_SENT_NEXT_SYNC = 'It will be sent the next time this device syncs.'
+
+/**
+ * The notice's heading. A refusal was not saved; a not-synced edit is kept and
+ * still pending, so it must not say "not saved" (story 79.2). Exported for its
+ * unit test.
+ */
+export function noticeHeading(notice: RefusalNotice): string {
+  return notice.outcome === 'not-synced' ? 'Not synced yet' : 'Not saved to your account'
+}
 
 /**
  * The sentence for one refused row. Exported for its unit test.
@@ -118,8 +163,27 @@ export function refusalMessage(notice: RefusalNotice): string {
         : `${capitalise(what)} ${NOT_SAVED}, so it was removed from this device.`
     case 'restored':
       return `Deleting ${what} ${NOT_SAVED}, so it is being restored from your account.`
-    default:
+    case 'changed-back':
       return `Your change to ${what} ${NOT_SAVED}, so it is being changed back to what your account has.`
+    case 'not-synced':
+      // ⚠️ Never the refusal wording: nothing was undone (story 79.2).
+      if (notice.change === 'create') {
+        return `${capitalise(what)} ${NOT_SYNCED_YET} ${SAVED_SENT_NEXT_SYNC}`
+      }
+      if (notice.change === 'delete') {
+        return `Deleting ${what} ${NOT_SYNCED_YET} ${DELETE_SENT_NEXT_SYNC}`
+      }
+      return `Your change to ${what} ${NOT_SYNCED_YET} ${SAVED_SENT_NEXT_SYNC}`
+    default: {
+      // Exhaustive (story 79.2): this switch used to END in a `default` that
+      // returned the changed-back sentence, so a new outcome with no case of its
+      // own compiled cleanly and told the user their edit was undone. At runtime
+      // (a value the types did not foresee) say only what is certainly true,
+      // never the raw outcome id (code review 79.2).
+      const unhandled: never = notice.outcome
+      console.error('[RefusedEditNotice] unknown notice outcome:', unhandled)
+      return `${capitalise(what)} ${NOT_SYNCED_YET}`
+    }
   }
 }
 

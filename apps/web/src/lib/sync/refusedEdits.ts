@@ -85,15 +85,19 @@ function nonBlankString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
 }
 
+/** Everything a notice says about WHICH row, whatever happened to it. */
+type RowIdentity = Pick<RefusalNotice, 'key' | 'entityType' | 'name' | 'kind' | 'fallback'>
+
 /**
- * Name, kind and outcome for one refused row. `ops` are every refused op for
- * that row (a refused create arrives with its follow-ups, 75.1 D1); `localRow`
- * is the row as this device holds it BEFORE any revert.
+ * Name and kind for one row, from its ops (newest non-blank `data.name` first)
+ * and then the row as this device holds it. Shared by the refusal notice
+ * (story 75.2) and the not-synced notice (story 79.2), so both name an entry the
+ * same way.
  */
-export function describeRefusedRow(
+function identifyRow(
   ops: readonly SyncOperation[],
   localRow: Record<string, unknown> | undefined
-): RefusalNotice {
+): RowIdentity {
   const first = ops[0] as SyncOperation
   const newestFirst = [...ops].sort((a, b) => b.timestamp - a.timestamp)
 
@@ -115,21 +119,80 @@ export function describeRefusedRow(
     }
   }
 
-  let outcome: RefusalOutcome = 'changed-back'
-  if (ops.some((op) => op.type === 'create')) {
-    outcome = 'removed'
-  } else if (ops.some((op) => op.type === 'delete')) {
-    outcome = 'restored'
-  }
-
   return {
     key: `${first.entityType}:${first.entityId}`,
     entityType: first.entityType,
     name,
     kind: label.kind,
     fallback: label.fallback,
-    outcome,
   }
+}
+
+/**
+ * Name, kind and outcome for one refused row. `ops` are every refused op for
+ * that row (a refused create arrives with its follow-ups, 75.1 D1); `localRow`
+ * is the row as this device holds it BEFORE any revert.
+ */
+export function describeRefusedRow(
+  ops: readonly SyncOperation[],
+  localRow: Record<string, unknown> | undefined
+): RefusalNotice {
+  let outcome: RefusalOutcome = 'changed-back'
+  if (ops.some((op) => op.type === 'create')) {
+    outcome = 'removed'
+  } else if (ops.some((op) => op.type === 'delete')) {
+    outcome = 'restored'
+  }
+  return { ...identifyRow(ops, localRow), outcome }
+}
+
+/**
+ * The not-synced notice for one row whose edit keeps failing (story 79.2).
+ * `ops` are the row's ESCALATED ops. Nothing is reverted: the edit is kept and
+ * still queued. `change` says what is pending, from the device's point of view:
+ * a delete, else a create, else an update (code review 79.2). A delete wins over
+ * a create because a created-then-deleted row is already gone from this device,
+ * so "saved on this device" would be false. This is NOT the refusal precedence,
+ * which answers a different question (what gets reverted).
+ */
+export function describeNotSyncedRow(
+  ops: readonly SyncOperation[],
+  localRow: Record<string, unknown> | undefined
+): RefusalNotice {
+  let change: RefusalNotice['change'] = 'update'
+  if (ops.some((op) => op.type === 'delete')) {
+    change = 'delete'
+  } else if (ops.some((op) => op.type === 'create')) {
+    change = 'create'
+  }
+  return { ...identifyRow(ops, localRow), outcome: 'not-synced', change }
+}
+
+/**
+ * One not-synced notice per ROW for the core's escalated ops (story 79.2),
+ * grouped the way `handleRejectedOperations` groups refusals. A row whose local
+ * state cannot be read is named from its ops alone.
+ */
+export function describeNotSyncedRows(
+  ops: readonly SyncOperation[],
+  lookupLocalRow: RefusalHandlerDeps['lookupLocalRow']
+): RefusalNotice[] {
+  const byRow = new Map<string, SyncOperation[]>()
+  for (const op of ops) {
+    const key = `${op.entityType}:${op.entityId}`
+    const list = byRow.get(key)
+    if (list) list.push(op)
+    else byRow.set(key, [op])
+  }
+  return [...byRow.values()].map((rowOps) => {
+    const first = rowOps[0] as SyncOperation
+    try {
+      return describeNotSyncedRow(rowOps, lookupLocalRow(first.entityType, first.entityId))
+    } catch (error) {
+      console.error('[refusedEdits] could not read a not-synced row; naming it generically:', error)
+      return describeNotSyncedRow(rowOps, undefined)
+    }
+  })
 }
 
 /**

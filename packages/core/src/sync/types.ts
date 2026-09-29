@@ -718,6 +718,26 @@ export interface SyncState {
    */
   failedOperations: SyncOperation[]
 
+  /**
+   * The queued ops that have failed too many sync attempts IN A ROW to stay
+   * silent (story 79.2, FR128). The web layer names each one to the user.
+   *
+   * Like `failedOperations`, this is a VIEW: a subset of `pendingOperations`,
+   * refreshed whenever the queue changes under the service, and never the only
+   * copy. An escalated op is NOT removed from the queue (FR120): it keeps being
+   * sent, and it leaves this list when it lands or leaves the queue another way.
+   *
+   * An attempt counts when it ends in a failure that keeps the op queued: the
+   * retryable bucket (5xx, 429, network) or the unclassified one (a per-op
+   * server fault, `retryable: false` with no status). 401, 403, a conflict, a
+   * permanent refusal or a success resets the op's count. The threshold is
+   * `maxRetries + 1` attempts AND a run of failures at least
+   * `maxRetries × retryDelay` long (the time floor; see
+   * `SynchronizationService.escalationThreshold` / `escalationFloorMs`). Counts
+   * live in memory, so a reload starts them again.
+   */
+  escalatedOperations: SyncOperation[]
+
   /** Operations that have conflicts requiring resolution */
   conflictOperations: SyncOperation[]
 

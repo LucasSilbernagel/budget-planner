@@ -38,8 +38,12 @@ import {
   findLocalRow,
   reportRefusedServerChanges,
 } from '../lib/sync/applyServerChanges'
-import { addRefusalNotices, dismissAllRefusalNotices } from '../lib/sync/refusalNoticeStore'
-import { handleRejectedOperations } from '../lib/sync/refusedEdits'
+import {
+  addRefusalNotices,
+  reconcileNotSyncedNotices,
+  resetRefusalNotices,
+} from '../lib/sync/refusalNoticeStore'
+import { describeNotSyncedRows, handleRejectedOperations } from '../lib/sync/refusedEdits'
 import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
 import { toServerPayload } from '../lib/sync/syncBridge'
 import { useProfileStore } from '../stores/profileStore'
@@ -410,9 +414,23 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         lastSyncTimestamp: state.lastSyncTimestamp,
         lastPullTimestamp: state.lastPullTimestamp,
         lastError: state.lastError,
-        isSyncing: false, // Will be set to true during sync
+        // Derived from the status (code review 79.2). This used to write `false`
+        // on EVERY notify, including the IN_PROGRESS one a push emits as it
+        // starts, so `isSyncing` was false for the whole push and "Try again"
+        // (disabled while syncing, D5) re-enabled at once. It also covers syncs
+        // this hook did not start (retry timer, `online`, tab focus).
+        isSyncing: state.status === SyncStatusEnum.IN_PROGRESS,
         retryCount: state.retryCount,
       })
+      // Story 79.2 (FR128): name each edit that keeps failing to sync, and clear
+      // the notice once the core stops reporting it (it landed, or left the queue
+      // another way). Reconciled on EVERY status change, because each way an op
+      // leaves the queue ends in one. The edit is kept, so nothing is reverted.
+      try {
+        reconcileNotSyncedNotices(describeNotSyncedRows(state.escalatedOperations, findLocalRow))
+      } catch (error) {
+        console.error('Naming not-synced sync edits failed:', error)
+      }
     })
 
     // Subscribe to pulled changes: write them into the UI stores (Story 4-18).
@@ -463,8 +481,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       unsubscribeRejected()
       // Notices name THIS account's entries. The store is module-level, so
       // without this a sign-out → sign-in as another paid user in the same tab
-      // would show the first account's entry names (code review 75.2).
-      dismissAllRefusalNotices()
+      // would show the first account's entry names (code review 75.2). A RESET,
+      // not the user's "Dismiss all" (story 79.2): the dismissals of not-synced
+      // notices must go too, or the next session's own edits stay hidden.
+      resetRefusalNotices()
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }

@@ -23,7 +23,8 @@ import { RefusedEditNotice } from './RefusedEditNotice'
  * fallback to diverge from.
  *
  * ⚠️ This is mostly wiring. Its only UI is the refused-edit notice (story
- * 75.2), which renders nothing until the server permanently refuses an edit. The
+ * 75.2, and 79.2's not-synced edits), which renders nothing until the server
+ * permanently refuses an edit or one keeps failing to sync. The
  * one-chunk delay before it mounts is invisible, and the ordering it depends on
  * (`activeProfileReconciled` before the bridge registers) is enforced inside
  * this file, not by when the module arrives.
@@ -48,7 +49,7 @@ export function ActiveSync({ userId }: { userId: string }): ReactElement {
     return active !== undefined && Boolean(active.userId)
   })
 
-  const { queueCreate, queueUpdate, queueDelete, forcePull } = sync
+  const { queueCreate, queueUpdate, queueDelete, forcePull, forceSync, isSyncing } = sync
 
   // Register the push queue ONLY once the active profile is reconciled (review P1):
   // before that, config.profileId is the 'local-default' placeholder, so any pushed
@@ -103,6 +104,14 @@ export function ActiveSync({ userId }: { userId: string }): ReactElement {
   }, [activeProfileReconciled, userId])
 
   // Story 75.2: the only UI the sync engine has — a notice naming each edit the
-  // server permanently refused. Renders nothing until there is one.
-  return <RefusedEditNotice />
+  // server permanently refused, and (story 79.2) each edit that keeps failing to
+  // sync, with a "Try again" that pushes now. Renders nothing until there is one.
+  return (
+    <RefusedEditNotice
+      onRetry={() => {
+        void forceSync()
+      }}
+      isRetrying={isSyncing}
+    />
+  )
 }

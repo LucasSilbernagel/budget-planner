@@ -424,6 +424,13 @@ export class SynchronizationService {
   // arms no timer, writes no state and touches no queue. See `destroy()`.
   private destroyed = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
+  // Consecutive failed attempts per queued op id (story 79.2). In memory only:
+  // the count never travels with the op, so no queue or server shape changes.
+  // Pruned to the queued ids in `refreshEscalated()`, so it cannot outgrow the queue.
+  private failureCounts: Map<string, number> = new Map()
+  // When each op's current run of failures began (story 79.2 code review, the
+  // TIME FLOOR). Set on the first failure of a run, cleared with its count.
+  private firstFailureAt: Map<string, number> = new Map()
 
   // Circuit breaker state for retry logic
   private circuitBroken = false
@@ -482,6 +489,7 @@ export class SynchronizationService {
       lastPullTimestamp: null,
       pendingOperations: [],
       failedOperations: [],
+      escalatedOperations: [],
       conflictOperations: [],
       rejectedOperations: [],
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : false,
@@ -1348,6 +1356,7 @@ export class SynchronizationService {
         // The queue can be emptied outside the service (the web layer's refused-
         // create sweep calls `discardBatch` directly), so refresh this too.
         this.state.pendingOperations = []
+        this.refreshEscalated()
         this.notifyStatusCallbacks()
 
         return {
@@ -1635,6 +1644,21 @@ export class SynchronizationService {
       // are still queued. It is replaced each sync, and is a subset of
       // `pendingOperations`, never in addition to it.
       this.state.failedOperations = this.retryableStillQueued(failedOperations)
+      // Story 79.2: count this sync's attempts, then re-derive the escalated view.
+      // Counted HERE, past every destroyed check, so a torn-down sync counts
+      // nothing, and after 75.1's D1 sweep, so a refused create's follow-ups
+      // (moved out of the failure buckets above) are not counted as failures.
+      this.recordAttemptOutcomes(
+        [...failedOperations, ...unclassifiedFailedOperations],
+        [
+          ...successfullyProcessed,
+          ...conflictOperations,
+          ...authBlockedOperations,
+          ...tierBlockedOperations,
+          ...rejectedOperations,
+        ]
+      )
+      this.refreshEscalated()
       this.state.conflictOperations = [...this.state.conflictOperations, ...conflictOperations]
       // Capped, not unbounded (story 75.2): see `MAX_RECORDED_REJECTIONS`.
       this.state.rejectedOperations = [
@@ -1878,6 +1902,15 @@ export class SynchronizationService {
       return
     }
     this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
+    // The queue can change under the service (the web sweep's `discardBatch`),
+    // and this early return notifies nobody, so say so when the view moved
+    // (story 79.2 code review): otherwise a notice outlives its op.
+    if (
+      this.refreshEscalated() &&
+      (this.state.failedOperations.length === 0 || !this.state.isOnline)
+    ) {
+      this.notifyStatusCallbacks()
+    }
     if (this.state.failedOperations.length === 0 || !this.state.isOnline) {
       return
     }
@@ -1905,6 +1938,94 @@ export class SynchronizationService {
   private retryableStillQueued(operations: SyncOperation[]): SyncOperation[] {
     const queuedIds = new Set(this.queue.getAll().map((op) => op.id))
     return operations.filter((op) => queuedIds.has(op.id))
+  }
+
+  /**
+   * How many consecutive failed attempts escalate an op to the user (story 79.2,
+   * decision D2): `maxRetries + 1`, 4 with the defaults. That is the attempt at
+   * which the fast retry path gives up on a fresh retryable op (the first try
+   * plus `maxRetries` timed retries). Derived from the config so a caller that
+   * tunes `maxRetries` keeps the two in step.
+   *
+   * ⚠️ An UNCLASSIFIED failure arms no retry timer, so it reaches the threshold
+   * only through external syncs (an edit, a tab becoming visible, `online`,
+   * mount). Counts live in memory, so it needs that many in ONE session.
+   */
+  private escalationThreshold(): number {
+    return this.config.maxRetries + 1
+  }
+
+  /**
+   * The TIME FLOOR (story 79.2 code review, decision: Lucas 2026-09-29): an op
+   * escalates only once its run of failures has also lasted as long as the fast
+   * retry path would take, `maxRetries × retryDelay` (15 s with the defaults).
+   * Attempts are counted per sync, whatever triggered it, so without this a few
+   * quick edits during a short blip reached the threshold in seconds.
+   */
+  private escalationFloorMs(): number {
+    return this.config.maxRetries * this.config.retryDelay
+  }
+
+  /**
+   * Record one sync's attempt outcomes (story 79.2). `failed` are the ops whose
+   * attempt ended in a failure that keeps them queued (retryable or
+   * unclassified): their count goes up. Every other ATTEMPTED op (landed,
+   * conflict, 401, 403, refused) starts again from zero. An op this sync did not
+   * attempt (held by `dependsOn`, cut off by going offline) appears in neither
+   * list, so its count is left as it was.
+   *
+   * Counted per unique id (code review): the queue does not dedupe, and a
+   * duplicated id must neither count twice per sync nor count at all when one of
+   * its copies landed.
+   */
+  private recordAttemptOutcomes(failed: SyncOperation[], reset: SyncOperation[]): void {
+    const resetIds = new Set(reset.map((op) => op.id))
+    for (const id of resetIds) {
+      this.failureCounts.delete(id)
+      this.firstFailureAt.delete(id)
+    }
+    const now = Date.now()
+    for (const id of new Set(failed.map((op) => op.id))) {
+      if (resetIds.has(id)) {
+        continue
+      }
+      const count = (this.failureCounts.get(id) ?? 0) + 1
+      this.failureCounts.set(id, count)
+      if (count === 1) {
+        this.firstFailureAt.set(id, now)
+      }
+    }
+  }
+
+  /**
+   * Re-derive `state.escalatedOperations` from the queue (story 79.2), and
+   * forget the count of every op that has left it. Called wherever
+   * `state.failedOperations` is refreshed, and on every pull, so the view never
+   * names an op that is no longer queued. It removes nothing from the queue
+   * (FR120). Returns whether the view changed.
+   */
+  private refreshEscalated(): boolean {
+    const queued = this.queue.getAll()
+    const queuedIds = new Set(queued.map((op) => op.id))
+    for (const id of this.failureCounts.keys()) {
+      if (!queuedIds.has(id)) {
+        this.failureCounts.delete(id)
+        this.firstFailureAt.delete(id)
+      }
+    }
+    const threshold = this.escalationThreshold()
+    const floor = this.escalationFloorMs()
+    const now = Date.now()
+    const next = queued.filter(
+      (op) =>
+        (this.failureCounts.get(op.id) ?? 0) >= threshold &&
+        now - (this.firstFailureAt.get(op.id) ?? now) >= floor
+    )
+    const previous = this.state.escalatedOperations
+    const changed =
+      next.length !== previous.length || next.some((op, i) => op.id !== previous[i]?.id)
+    this.state.escalatedOperations = next
+    return changed
   }
 
   /**
@@ -2218,6 +2339,7 @@ export class SynchronizationService {
         }
         this.state.pendingOperations = this.queue.getAll()
         this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
+        this.refreshEscalated()
       } catch (error) {
         // `discardBatch` does not throw for a storage failure; this is a bug path.
         this.log('Failed to remove stale local ops after pull:', error)
@@ -2243,6 +2365,10 @@ export class SynchronizationService {
     if (refused.length > 0) {
       this.notifyServerChangesRefusedCallbacks(refused)
     }
+    // Every pull re-derives the escalated view (story 79.2 code review): an op
+    // held back only by the time floor becomes visible at the next poll, without
+    // waiting for another push.
+    this.refreshEscalated()
     this.notifyStatusCallbacks()
 
     return {
@@ -2301,6 +2427,7 @@ export class SynchronizationService {
     }
     this.state.pendingOperations = this.queue.getAll()
     this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
+    this.refreshEscalated()
     this.notifyStatusCallbacks()
     return stranded
   }
@@ -2358,6 +2485,15 @@ export class SynchronizationService {
    */
   updateConfig(updates: Partial<SyncConfig>): void {
     this.config = { ...this.config, ...updates }
+    // The escalation threshold and time floor derive from these two (story 79.2
+    // code review), so re-derive the view rather than keep the old rule.
+    if (
+      !this.destroyed &&
+      ('maxRetries' in updates || 'retryDelay' in updates) &&
+      this.refreshEscalated()
+    ) {
+      this.notifyStatusCallbacks()
+    }
   }
 
   /**
