@@ -10,7 +10,8 @@
  * query); the assertions instead pin the security-critical contract: the delta
  * is requested with the SESSION user id (never a client-supplied one) plus the
  * parsed `since`/`limit`/`profileId`. The premium gate is exercised with the
- * REAL PAID_SYNC_STATUSES (active|past_due — matching push, not calculations).
+ * REAL `hasPaidAccess` (active|past_due|lifetime — the same function as push,
+ * not the premium-features gate).
  */
 
 import type { ServerChange } from '@budget-planner/core/sync'
@@ -22,12 +23,11 @@ vi.mock('@/server/api/auth/paddle', () => ({
 }))
 
 // Fully mock the sync module so the test needs no database (and does not load
-// the real sync.ts, which transitively imports db/zod). PAID_SYNC_STATUSES is
-// reproduced verbatim from the source — the route's premium gate (active|
-// past_due, matching push, NOT calculations' active-only) is exercised through
-// it below.
+// the real sync.ts, which transitively imports db/zod). The paid-access gate is
+// NOT mocked: the route imports `hasPaidAccess` from `lib/premium/access-statuses`,
+// so the cases below exercise the real rule. (Until Story 78.3 this mock carried
+// its own `['active', 'past_due']` "verbatim" copy — missing `lifetime`.)
 vi.mock('@/server/api/sync', () => ({
-  PAID_SYNC_STATUSES: ['active', 'past_due'],
   getSyncChanges: vi.fn(),
   checkRateLimit: vi.fn(),
   getLiveProfileIds: vi.fn(async () => []),
@@ -72,6 +72,16 @@ const paidSession = {
 const pastDueSession = {
   success: true,
   data: { userId: SESSION_USER_ID, subscriptionStatus: 'past_due' },
+} as unknown as SessionResult
+
+const lifetimeSession = {
+  success: true,
+  data: { userId: SESSION_USER_ID, subscriptionStatus: 'lifetime' },
+} as unknown as SessionResult
+
+const canceledSession = {
+  success: true,
+  data: { userId: SESSION_USER_ID, subscriptionStatus: 'canceled' },
 } as unknown as SessionResult
 
 const freeSession = {
@@ -146,6 +156,23 @@ describe('GET /api/sync/changes served boundary', () => {
 
     expect(response.status).toBe(200)
     expect(getSyncChanges).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows a lifetime buyer (Story 30.4a — untested at this boundary until 78.3)', async () => {
+    mockSession(lifetimeSession)
+    mockChanges([sampleChange])
+    const response = await GET({ request: getRequest() })
+
+    expect(response.status).toBe(200)
+    expect(getSyncChanges).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a canceled subscriber with 403', async () => {
+    mockSession(canceledSession)
+    const response = await GET({ request: getRequest() })
+
+    expect(response.status).toBe(403)
+    expect(getSyncChanges).not.toHaveBeenCalled()
   })
 
   it('returns 429 when the per-user rate limit is exceeded (review D3)', async () => {

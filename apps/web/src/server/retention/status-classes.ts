@@ -16,28 +16,43 @@
  * (`routes/api/webhooks/paddle.ts`, `mapWebhookSubscriptionStatus`), and a
  * paused subscriber has no access. The privacy policy says so.
  *
- * ⚠️ FIVE hand-rolled copies of the entitled set predate this module and are
- * NOT migrated onto it (Story 73.2, D3 — a separate risk surface, recorded in
- * deferred-work.md). They must stay equal to `ENTITLED_STATUSES`:
- *   - `routes/api/webhooks/paddle.ts` — `ENTITLED_STATUSES`
- *   - `routes/api/paddle/checkout-config.ts` — `ENTITLED_STATUSES`
- *   - `components/settings/account-section.tsx` — `PAID_ACCESS_STATUSES`
- *   - `server/api/sync.ts` — `PAID_SYNC_STATUSES`
- *   - `components/sync/SyncProvider.tsx` — `PAID_SYNC_STATUSES`
+ * Since Story 78.3 the classification is DERIVED from the one table in
+ * `lib/premium/access-statuses.ts` (entitled ⇔ paid access), which every other
+ * paid-access gate — sync, checkout, the account-deletion notice, webhook
+ * adoption — also imports. The six hand-rolled copies Story 73.2 recorded as
+ * five (D3) are gone. It lives there, not here, because this module imports
+ * drizzle and the db schema at runtime and client components need the answer too.
  */
 
+import { PAID_ACCESS_STATUSES, STATUS_ACCESS, hasPaidAccess } from '@/lib/premium/access-statuses'
 import { type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
 import { type SQL, sql } from 'drizzle-orm'
 
 export type StatusClass = 'entitled' | 'lapsed'
 
+function classOf(status: SubscriptionStatus): StatusClass {
+  return STATUS_ACCESS[status].paidAccess ? 'entitled' : 'lapsed'
+}
+
+/**
+ * Every status, keyed here as well as in `STATUS_ACCESS`: both are
+ * `Record<SubscriptionStatus, …>`, so a new enum value is a `tsc` error in each
+ * until it is added — the purge can never inherit a status nobody looked at.
+ *
+ * ⚠️ The CLASSIFICATION is not independent: each value is `classOf(status)`,
+ * i.e. `STATUS_ACCESS[status].paidAccess`. A change to `paidAccess` in
+ * `lib/premium/access-statuses.ts` IS a retention change — e.g. narrowing
+ * `past_due` there would make those rows lapsed, and the purge DELETES lapsed
+ * data. `__tests__/status-classes.test.ts` pins the entitled set by value so
+ * such an edit fails here, loudly, before it can ship.
+ */
 export const STATUS_CLASS = {
-  free: 'lapsed',
-  active: 'entitled',
-  past_due: 'entitled',
-  canceled: 'lapsed',
-  lifetime: 'entitled',
-} as const satisfies Record<SubscriptionStatus, StatusClass>
+  free: classOf('free'),
+  active: classOf('active'),
+  past_due: classOf('past_due'),
+  canceled: classOf('canceled'),
+  lifetime: classOf('lifetime'),
+} satisfies Record<SubscriptionStatus, StatusClass>
 
 function statusesOfClass(cls: StatusClass): readonly SubscriptionStatus[] {
   return (Object.keys(STATUS_CLASS) as SubscriptionStatus[]).filter(
@@ -45,14 +60,15 @@ function statusesOfClass(cls: StatusClass): readonly SubscriptionStatus[] {
   )
 }
 
-/** Statuses that mean the account currently HAS Premium access. */
-export const ENTITLED_STATUSES: readonly SubscriptionStatus[] = statusesOfClass('entitled')
+/** Statuses that mean the account currently HAS paid access — `PAID_ACCESS_STATUSES`. */
+export const ENTITLED_STATUSES: readonly SubscriptionStatus[] = PAID_ACCESS_STATUSES
 
 /** Statuses that mean Premium access has ended. The purge selects ONLY these. */
 export const LAPSED_STATUSES: readonly SubscriptionStatus[] = statusesOfClass('lapsed')
 
+/** Same answer as `hasPaidAccess` (a membership test — never a keyed lookup). */
 export function isEntitledStatus(status: SubscriptionStatus): boolean {
-  return STATUS_CLASS[status] === 'entitled'
+  return hasPaidAccess(status)
 }
 
 /** `"subscriptionStatus" IN (<statuses>)` against the row being read or written. */

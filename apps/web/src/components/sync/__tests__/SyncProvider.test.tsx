@@ -3,7 +3,7 @@
  *
  * The provider is the single gate that decides whether multi-device sync runs:
  *  - unauthenticated / free → no useSync, no bridge registration, no network sync.
- *  - authenticated paid (active | past_due) → mounts useSync and registers the
+ *  - authenticated paid (active | past_due | lifetime) → mounts useSync and registers the
  *    push queue with the bridge, then seeds via an initial pull.
  *
  * `useSync` and the sync bridge are mocked so the test asserts the wiring
@@ -136,6 +136,29 @@ describe('SyncProvider gating', () => {
     stubMe({ userId: SESSION_USER_ID, subscriptionStatus: 'past_due' })
     render(<SyncProvider />)
     await waitFor(() => expect(registerSyncBridge).toHaveBeenCalledTimes(1))
+  })
+
+  /**
+   * Story 34.1a / 78.3: the client gate once lacked `lifetime` while the server
+   * had it, so a lifetime buyer got NO sync — silently, because this component
+   * never fires a request. `sync-status-parity.test.ts` used to compare the
+   * client and server constants; since 78.3 both gates call the ONE
+   * `hasPaidAccess`, so that comparison could no longer fail and was retired in
+   * favour of asserting the behaviour itself.
+   */
+  it('also mounts for a LIFETIME buyer (the status the client gate once lacked)', async () => {
+    stubMe({ userId: SESSION_USER_ID, subscriptionStatus: 'lifetime' })
+    render(<SyncProvider />)
+    await waitFor(() => expect(registerSyncBridge).toHaveBeenCalledTimes(1))
+  })
+
+  it('does NOT mount sync for a CANCELED subscriber (access has ended)', async () => {
+    stubMe({ userId: SESSION_USER_ID, subscriptionStatus: 'canceled' })
+    render(<SyncProvider />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    expect(useSyncMock).not.toHaveBeenCalled()
+    expect(registerSyncBridge).not.toHaveBeenCalled()
   })
 
   it('clears the bridge on unmount (logout / downgrade teardown)', async () => {

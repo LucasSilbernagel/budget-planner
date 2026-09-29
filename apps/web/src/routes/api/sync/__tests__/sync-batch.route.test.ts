@@ -8,8 +8,9 @@
  * The db layer is mocked out by mocking processBatchSync (which owns the Drizzle
  * writes); the assertions pin the security-critical contract: the batch is
  * processed under the SESSION user id mapped to `id` (never a client-supplied
- * one), the premium gate uses the REAL PAID_SYNC_STATUSES (active|past_due —
- * matching pull, not calculations), and a rate-limit rejection surfaces as 429.
+ * one), the premium gate uses the REAL `hasPaidAccess` (active|past_due|lifetime
+ * — the same function as pull, not the premium-features gate), and a rate-limit
+ * rejection surfaces as 429.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,10 +21,12 @@ vi.mock('@/server/api/auth/paddle', () => ({
 }))
 
 // Fully mock the sync module so the test needs no database (and does not load the
-// real sync.ts, which transitively imports db/zod). PAID_SYNC_STATUSES is
-// reproduced verbatim from the source.
+// real sync.ts, which transitively imports db/zod). The paid-access gate is NOT
+// mocked: the route imports `hasPaidAccess` from `lib/premium/access-statuses`,
+// so these cases exercise the real rule. (Until Story 78.3 this mock carried its
+// own `['active', 'past_due']` "verbatim" copy — missing `lifetime`, so no route
+// test ever let a lifetime session through.)
 vi.mock('@/server/api/sync', () => ({
-  PAID_SYNC_STATUSES: ['active', 'past_due'],
   processBatchSync: vi.fn(),
 }))
 
@@ -62,6 +65,16 @@ const paidSession = {
 const pastDueSession = {
   success: true,
   data: { userId: SESSION_USER_ID, subscriptionStatus: 'past_due' },
+} as unknown as SessionResult
+
+const lifetimeSession = {
+  success: true,
+  data: { userId: SESSION_USER_ID, subscriptionStatus: 'lifetime' },
+} as unknown as SessionResult
+
+const canceledSession = {
+  success: true,
+  data: { userId: SESSION_USER_ID, subscriptionStatus: 'canceled' },
 } as unknown as SessionResult
 
 const freeSession = {
@@ -138,6 +151,22 @@ describe('POST /api/sync/batch served boundary', () => {
 
     expect(response.status).toBe(200)
     expect(processBatchSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows a lifetime buyer (Story 30.4a — untested at this boundary until 78.3)', async () => {
+    mockSession(lifetimeSession)
+    const response = await POST({ request: postRequest(sampleBatch) })
+
+    expect(response.status).toBe(200)
+    expect(processBatchSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a canceled subscriber with 403', async () => {
+    mockSession(canceledSession)
+    const response = await POST({ request: postRequest(sampleBatch) })
+
+    expect(response.status).toBe(403)
+    expect(processBatchSync).not.toHaveBeenCalled()
   })
 
   it('rejects a malformed JSON body with 400 (not a 500)', async () => {

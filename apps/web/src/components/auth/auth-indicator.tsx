@@ -1,4 +1,5 @@
 import { signOut } from '@/lib/account/sign-out'
+import { hasPremiumFeatures } from '@/lib/premium/access-statuses'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
@@ -139,7 +140,7 @@ function seedToAuthState(seed: SessionSeed | null): AuthState {
  * email rule read it too; that rule went with the email.)
  */
 function isPremium(subscriptionStatus: string): boolean {
-  return subscriptionStatus === 'active' || subscriptionStatus === 'lifetime'
+  return hasPremiumFeatures(subscriptionStatus)
 }
 
 async function fetchCurrentUser(): Promise<CurrentUser | null> {

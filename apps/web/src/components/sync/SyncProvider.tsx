@@ -9,8 +9,8 @@
  * Lifecycle:
  *  1. On the client, ask `/api/auth/me` who we are (the server resolves the
  *     HMAC-signed, DB-authoritative session — Story 5-7).
- *  2. If the session is a paid sync tier (active | past_due | lifetime, matching
- *     the server push/pull gate), render <ActiveSync>; otherwise render nothing.
+ *  2. If the session has paid access (`hasPaidAccess`, the same rule as the
+ *     server push/pull gate), render <ActiveSync>; otherwise render nothing.
  *  3. <ActiveSync> instantiates `useSync` (auto-pull poller on), registers the
  *     push queue with the sync bridge so paid store mutations are forwarded
  *     (Story 5-15 Task 3), and seeds the local stores with an initial pull.
@@ -25,6 +25,7 @@
  */
 
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
+import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { setSyncSessionStatus } from '@/lib/sync/sessionStatusStore'
 import { type ReactElement, Suspense, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -39,34 +40,26 @@ const ActiveSync = lazyWithRetry(() =>
   import('./ActiveSync').then((m) => ({ default: m.ActiveSync }))
 )
 
-/**
- * Subscription statuses allowed to use server-side sync (push AND pull). Must
- * mirror the server's `PAID_SYNC_STATUSES` (apps/web/src/server/api/sync.ts) —
- * kept as a local literal so this client component never imports the server
- * module (which would pull `@budget-planner/db` into the client bundle).
- *
- * `past_due` keeps sync alive for a paying customer inside the dunning window.
- *
- * ⚠️ THIS LIST WAS WRONG UNTIL STORY 34.1a, AND THE COMMENT ABOVE IT SAID
- * OTHERWISE. `'lifetime'` was missing while the comment claimed the list matched
- * the server "exactly". Because this gate decides whether `<ActiveSync>` mounts at
- * all, a lifetime buyer got NO sync whatsoever — and silently: no 403, no console
- * error, the request was never even fired. It is the same hole the server side
- * already had and fixed (see the server constant's own note), re-opened on the
- * client. Exported solely so `__tests__/sync-status-parity.test.ts` can assert the
- * two real constants against each other instead of restating either one.
- */
-export const PAID_SYNC_STATUSES = ['active', 'past_due', 'lifetime'] as const
-
 interface SessionUser {
   userId: string
   subscriptionStatus: string
 }
 
+/**
+ * Whether this session may use server-side sync (push AND pull) — the same
+ * paid-access rule the server's sync routes apply, imported from the one
+ * definition (Story 78.3). `past_due` keeps sync alive inside the dunning window.
+ *
+ * ⚠️ Until Story 34.1a this component kept its own literal list, and `lifetime`
+ * was missing from it while its comment claimed it matched the server
+ * "exactly". Because this gate decides whether `<ActiveSync>` mounts at all, a
+ * lifetime buyer got NO sync whatsoever — silently: no 403, no console error,
+ * no request. `lib/premium/access-statuses.ts` has no runtime imports, so this
+ * client component can share the server's definition without pulling
+ * `@budget-planner/db` into the client bundle.
+ */
 function isPaidSyncSession(user: SessionUser | null): user is SessionUser {
-  return (
-    user !== null && (PAID_SYNC_STATUSES as readonly string[]).includes(user.subscriptionStatus)
-  )
+  return user !== null && hasPaidAccess(user.subscriptionStatus)
 }
 
 /**

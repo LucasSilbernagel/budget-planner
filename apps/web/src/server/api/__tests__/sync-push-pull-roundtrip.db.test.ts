@@ -36,7 +36,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }))
 
-import { incomeSources, userProfiles, users } from '@budget-planner/db'
+import { type SubscriptionStatus, incomeSources, userProfiles, users } from '@budget-planner/db'
 import { eq } from 'drizzle-orm'
 import { getLiveProfileIds, getSyncChanges, processBatchSync } from '../sync'
 
@@ -229,4 +229,44 @@ describe('sync push → pull round trip (real PostgreSQL)', () => {
   it('getLiveProfileIds lists only live profiles owned by the user', async () => {
     expect(await getLiveProfileIds(USER_A)).toEqual([PROFILE_A])
   })
+})
+
+/**
+ * Story 78.3 review: `processBatchSync`'s OWN tier gate. The route tests mock
+ * `processBatchSync`, and every other DB test pushes as `lifetime`, so nothing
+ * pinned WHICH predicate this gate calls — swapping `hasPaidAccess` for its
+ * sibling `hasPremiumFeatures` (one import away) would have refused a dunning
+ * (`past_due`) customer's push with every test green.
+ */
+describe('processBatchSync tier gate (paid access, not premium features)', () => {
+  function pushAs(subscriptionStatus: SubscriptionStatus, operations: unknown[]) {
+    return processBatchSync(
+      { operations, clientTimestamp: Date.now(), deviceId: 'device-1' } as never,
+      { id: USER_A, subscriptionStatus }
+    )
+  }
+
+  it.each(['past_due', 'active', 'lifetime'] as const)(
+    'accepts a %s push and writes the row',
+    async (status) => {
+      const rowId = nextRowId()
+      const result = await pushAs(status, [incomeCreate(rowId)])
+
+      expect(result).toMatchObject({ success: true, processedCount: 1 })
+      const rows = await db.select().from(incomeSources).where(eq(incomeSources.id, rowId))
+      expect(rows).toHaveLength(1)
+    }
+  )
+
+  it.each(['canceled', 'free'] as const)(
+    'refuses a %s push with `tier` and writes nothing',
+    async (status) => {
+      const rowId = nextRowId()
+      const result = await pushAs(status, [incomeCreate(rowId)])
+
+      expect(result).toMatchObject({ success: false, processedCount: 0, refusal: 'tier' })
+      const rows = await db.select().from(incomeSources).where(eq(incomeSources.id, rowId))
+      expect(rows).toHaveLength(0)
+    }
+  )
 })

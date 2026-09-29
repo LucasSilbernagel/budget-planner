@@ -1,4 +1,5 @@
 import type { SessionSeed } from '../../context/session-seed'
+import { hasPremiumFeatures } from './access-statuses'
 
 /**
  * The one answer to "is this session entitled to Premium?" (story 58.2, AC-8).
@@ -34,7 +35,12 @@ import type { SessionSeed } from '../../context/session-seed'
  *     signed-out state) — unverified is never entitled;
  *   - an unauthenticated seed never qualifies, whatever its status reads, so a
  *     malformed seed cannot yield premium by luck of what the resolver emits;
- *   - only `active` and `lifetime` count. `free`, `past_due` and `canceled` do not.
+ *   - only `active` and `lifetime` count (`hasPremiumFeatures`). `free`,
+ *     `past_due` and `canceled` do not.
+ *
+ * ⚠️ "Entitled" HERE means PREMIUM FEATURES. In `server/retention/status-classes.ts`
+ * (`ENTITLED_STATUSES`, `isEntitledStatus`) it means PAID ACCESS, which also
+ * includes `past_due`. Both come from `lib/premium/access-statuses.ts` (Story 78.3).
  *
  * ⚠️⚠️ **Callers may legitimately want the opposite fail direction, and they invert
  * the ANSWER — never this predicate.** `GlobalNav` fails CLOSED: an unverified
@@ -63,8 +69,5 @@ import type { SessionSeed } from '../../context/session-seed'
  * not flip after hydration.
  */
 export function isEntitledSeed(seed: SessionSeed | null): boolean {
-  return (
-    seed?.isAuthenticated === true &&
-    (seed.subscriptionStatus === 'active' || seed.subscriptionStatus === 'lifetime')
-  )
+  return seed?.isAuthenticated === true && hasPremiumFeatures(seed.subscriptionStatus)
 }

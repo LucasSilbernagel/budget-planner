@@ -478,15 +478,6 @@ export const APP_CONFIG = {
   API_BASE_PATH: '/api',
 } as const
 
-// Subscription status constants
-// Note: 'canceled' spelling used (not 'cancelled') to match database schema
-export const SUBSCRIPTION_STATUS = {
-  FREE: 'free',
-  ACTIVE: 'active',
-  CANCELED: 'canceled',
-  PAST_DUE: 'past_due',
-} as const
-
 // Currency constants
 export const CURRENCY = {
   NONE: 'NONE',

@@ -18,6 +18,7 @@ import {
   calculateSafeMonthlyWithdrawal,
 } from '@budget-planner/core'
 import { z } from 'zod'
+import { hasPremiumFeatures } from '../../lib/premium/access-statuses'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { UserSession } from '../api/auth/paddle'
 
@@ -233,7 +234,7 @@ async function getAuthenticatedUser(request: Request): Promise<FinancialApiResul
   }
 
   // Check if user has access to premium features
-  if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
+  if (!hasPremiumFeatures(user.subscriptionStatus)) {
     return {
       success: false,
       code: 'PREMIUM',

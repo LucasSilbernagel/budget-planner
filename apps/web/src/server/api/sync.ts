@@ -21,6 +21,7 @@
  */
 
 import { logger } from '@/lib/logger'
+import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import type { SyncRejection, SyncRejectionReason } from '@/server/api/sync-rejection'
 import { constraintOf, permanentRejectionReason, sqlStateOf } from '@/server/api/sync-rejection'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
@@ -455,32 +456,6 @@ const RATE_LIMIT_CONFIG = {
   maxRequests: 100, // Max requests per window
   windowMs: 60 * 1000, // 1 minute window
 }
-
-/**
- * Subscription statuses permitted to use server-side sync (push AND pull).
- *
- * The full permitted set, and why each is here:
- *  - `active`    — the ordinary paying subscriber.
- *  - `past_due`  — a paying customer whose latest charge failed keeps access
- *                  during the dunning window. This is why the sync gate differs
- *                  from the calculations gate, which is `active`-only. The pull
- *                  route must match the PUSH gate, not the calculations gate
- *                  (Story 4-18).
- *  - `lifetime`  — a one-time lifetime purchase (Story 25-2). Permanent Premium,
- *                  deliberately distinct from `active` so a subscription
- *                  lifecycle event can never downgrade a lifetime buyer.
- *
- * ⚠️ `lifetime` was MISSING here from Story 25-2 until Story 30.4a. The status
- * was added to the schema and to `usePremiumAccess` (active OR lifetime) but
- * never to this array, so a lifetime buyer saw every premium surface unlocked
- * and received a 403 on both sync push and pull — their data silently never
- * left the device. Restored with a regression test that asserts this set
- * directly, so a future status addition cannot re-open the same hole.
- *
- * Keep in lockstep with `usePremiumAccess` (hooks/usePremiumAccess.ts) and the
- * server tier guards in server/functions/profiles.ts.
- */
-export const PAID_SYNC_STATUSES = ['active', 'past_due', 'lifetime']
 
 /**
  * Check rate limit for a user using DanubeData PostgreSQL
@@ -1587,10 +1562,20 @@ export async function processBatchSync(
 
   const { operations } = validationResult.data
 
-  // Tier gating: server-side sync is a paid-tier feature. Free (and canceled)
-  // users must not be able to persist data to the server even with a valid
-  // session. Only subscriptions with active access may sync.
-  if (!PAID_SYNC_STATUSES.includes(user.subscriptionStatus)) {
+  // Tier gating: server-side sync needs PAID ACCESS — `hasPaidAccess`, the one
+  // definition in `lib/premium/access-statuses.ts` (Story 78.3), also called by
+  // the sync routes (`routes/api/sync/batch.ts`, `changes.ts`) and the client
+  // gate (`components/sync/SyncProvider.tsx`). Free and canceled users must not
+  // persist data to the server even with a valid session.
+  //  - `active`    — the ordinary paying subscriber.
+  //  - `past_due`  — a paying customer whose latest charge failed keeps sync
+  //                  during the dunning window. This is why this gate is NOT the
+  //                  premium-features gate (`hasPremiumFeatures`), which excludes
+  //                  it (Story 4-18). Pinned by `sync-push-pull-roundtrip.db.test.ts`.
+  //  - `lifetime`  — a one-time lifetime purchase (Story 25-2); it was MISSING
+  //                  from this gate's own list from 25-2 until 30.4a, so a
+  //                  lifetime buyer's data silently never left the device.
+  if (!hasPaidAccess(user.subscriptionStatus)) {
     return {
       success: false,
       processedCount: 0,

@@ -13,7 +13,7 @@
  * - Deliberately NOT gated on active-premium status. Right to erasure is not
  *   conditional on a live subscription — a `canceled`/`past_due` user still has
  *   synced rows and the legal right to delete them. Gate is "authenticated"
- *   only. (Contrast sync/batch.ts, which gates on PAID_SYNC_STATUSES — that gate
+ *   only. (Contrast sync/batch.ts, which gates on `hasPaidAccess` — that gate
  *   would be WRONG here. Do not "fix" it to match.)
  */
 

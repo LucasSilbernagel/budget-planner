@@ -1,6 +1,7 @@
 import { planLabel } from '@/lib/account/plan-label'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
 import { returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
+import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src/schema'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -33,13 +34,6 @@ interface CurrentUser {
    */
   billingInterval?: BillingInterval | null
 }
-
-/**
- * Statuses that carry live paid access — the ones for which deleting the
- * account actually forfeits something (Story 5-19, AC-6). `canceled` is absent:
- * that subscription has already ended, so there is nothing left to forfeit.
- */
-const PAID_ACCESS_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']
 
 type AuthState =
   | { status: 'loading' }
@@ -151,8 +145,8 @@ export function AccountSection() {
   // instead. Shown only to someone who actually HAS paid access — telling a
   // free or already-cancelled user their subscription is about to end would be
   // a lie about their own account.
-  const hasPaidAccess = PAID_ACCESS_STATUSES.includes(authState.user.subscriptionStatus)
-  const billingForfeitureNotice = hasPaidAccess
+  // Only live paid access has anything to forfeit; `canceled` has already ended.
+  const billingForfeitureNotice = hasPaidAccess(authState.user.subscriptionStatus)
     ? ' Your Premium subscription is cancelled immediately — any remaining paid time is forfeited and will not be refunded.'
     : ''
 

@@ -12,9 +12,11 @@
  *    entity's operations ever drain again. A missing enum value does not
  *    degrade the new feature; it stops sync for everything.
  *
- * 2. `PAID_SYNC_STATUSES` gates both push and pull. `lifetime` was missing from
- *    it between Story 25-2 and Story 30.4a, so a lifetime buyer saw every
- *    premium surface unlocked and got a 403 on every sync call.
+ * 2. The paid-access set gates both push and pull. `lifetime` was missing from
+ *    sync's own copy of it between Story 25-2 and Story 30.4a, so a lifetime
+ *    buyer saw every premium surface unlocked and got a 403 on every sync call.
+ *    Since Story 78.3 the gate is `hasPaidAccess` from the one definition
+ *    (`lib/premium/access-statuses.ts`); these assert that definition.
  *
  * These assert the SCHEMA and the CONSTANT directly rather than mocking a
  * request, because that is where both defects lived.
@@ -25,11 +27,11 @@ import { subscriptionStatusEnum } from '@budget-planner/db'
 import { getTableName } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {
-  PAID_SYNC_STATUSES,
-  batchSyncRequestSchema,
-  entityTableMap,
-  syncOperationSchema,
-} from '../sync'
+  PAID_ACCESS_STATUSES,
+  PREMIUM_FEATURE_STATUSES,
+  hasPaidAccess,
+} from '../../../lib/premium/access-statuses'
+import { batchSyncRequestSchema, entityTableMap, syncOperationSchema } from '../sync'
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 const ROW_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -231,30 +233,24 @@ describe('entityTableMap — every syncable entity resolves to a table (AC-6)', 
   })
 })
 
-describe('PAID_SYNC_STATUSES — every premium-bearing status may sync (AC-8)', () => {
+describe('the sync gate (hasPaidAccess) — every premium-bearing status may sync (AC-8)', () => {
   it('contains only real subscription statuses', () => {
-    // `PAID_SYNC_STATUSES` is an inferred string[], so a typo like 'lifetme'
-    // compiles cleanly and the exact-set assertion below would simply have been
-    // written to match it. Anchoring on the DB enum makes that impossible.
-    for (const status of PAID_SYNC_STATUSES) {
+    // Anchoring on the DB enum. (A typo is also a tsc error now — the set is
+    // derived from a `Record<SubscriptionStatus, …>` — but this pins the RUNTIME
+    // values against the enum the database actually has.)
+    for (const status of PAID_ACCESS_STATUSES) {
       expect(subscriptionStatusEnum.enumValues).toContain(status)
     }
   })
 
   it('includes every status that grants premium access', () => {
-    // ⚠️ The source of truth for entitlement is usePremiumAccess.ts:79, which
-    // treats `active` and `lifetime` as premium. Sync is deliberately MORE
-    // lenient (it also allows `past_due`), so the invariant is one-directional:
-    // anything premium must be syncable, not the reverse.
-    //
-    // ⚠️ RESIDUAL GAP, stated honestly: there is no shared constant, so this
-    // list is still hand-copied from that hook. Adding a NEW premium status to
-    // both the enum and usePremiumAccess while forgetting this file would still
-    // pass. Closing that properly means extracting one shared constant both
-    // sides import — recorded rather than done, because it touches a widely
-    // consumed hook and belongs in its own change.
-    for (const premiumStatus of ['active', 'lifetime']) {
-      expect(PAID_SYNC_STATUSES).toContain(premiumStatus)
+    // Sync is deliberately MORE lenient than the premium-features gate (it also
+    // allows `past_due`), so the invariant is one-directional: anything premium
+    // must be syncable, not the reverse. Story 78.3 closed the residual gap this
+    // test used to record: the premium set is now IMPORTED (the one that
+    // `usePremiumAccess` and every server feature gate call), not hand-copied.
+    for (const premiumStatus of PREMIUM_FEATURE_STATUSES) {
+      expect(hasPaidAccess(premiumStatus)).toBe(true)
     }
   })
 
@@ -263,17 +259,17 @@ describe('PAID_SYNC_STATUSES — every premium-bearing status may sync (AC-8)', 
     // deliberate act rather than an oversight. `lifetime` was missing here from
     // Story 25-2 until 30.4a: the UI unlocked every premium surface while both
     // sync routes returned 403.
-    expect([...PAID_SYNC_STATUSES].sort()).toEqual(['active', 'lifetime', 'past_due'])
+    expect([...PAID_ACCESS_STATUSES].sort()).toEqual(['active', 'lifetime', 'past_due'])
   })
 
   it('permits a lifetime subscriber', () => {
-    expect(PAID_SYNC_STATUSES.includes('lifetime')).toBe(true)
+    expect(hasPaidAccess('lifetime')).toBe(true)
   })
 
   it('still excludes the non-paying statuses', () => {
     // GREEN NEGATIVE CONTROL: the gate was widened for lifetime only, not opened.
     for (const status of ['free', 'canceled']) {
-      expect(PAID_SYNC_STATUSES.includes(status)).toBe(false)
+      expect(hasPaidAccess(status)).toBe(false)
     }
   })
 })

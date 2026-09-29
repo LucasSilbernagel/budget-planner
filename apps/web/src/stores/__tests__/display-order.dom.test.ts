@@ -18,7 +18,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PAID_SYNC_STATUSES } from '../../components/sync/SyncProvider'
+import { hasPaidAccess } from '../../lib/premium/access-statuses'
 import {
   type SyncBridgeHandle,
   clearSyncBridge,
@@ -486,7 +486,9 @@ describe.each(STORES)('$label — tier matrix (AC-9)', (store) => {
    * status-blind, making the "tier matrix" two states (bridge / no bridge) wearing
    * a three-tier name. The store layer genuinely CANNOT distinguish paid tiers, so
    * the honest fix is to say so and assert the thing that actually varies by
-   * status: that `SyncProvider`'s gate admits this status at all. Without that,
+   * status: that the paid-access rule (`hasPaidAccess`, Story 78.3) admits it.
+   * That SyncProvider actually CALLS that rule is pinned by its own tests
+   * (`SyncProvider.test.tsx`, active/past_due/lifetime/canceled). Without this,
    * 'lifetime' would be an untested word in an array.
    */
   it.each(['active', 'lifetime'] as const)(
@@ -494,7 +496,7 @@ describe.each(STORES)('$label — tier matrix (AC-9)', (store) => {
     (status) => {
       // The status-sensitive gate lives in SyncProvider, not in the store — if this
       // fails, the tier never mounts sync at all and the rest is unreachable.
-      expect(PAID_SYNC_STATUSES as readonly string[]).toContain(status)
+      expect(hasPaidAccess(status)).toBe(true)
 
       const queueCreate = vi.fn<SyncBridgeHandle['queueCreate']>(async () => {})
       registerSyncBridge({

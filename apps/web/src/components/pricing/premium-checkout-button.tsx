@@ -35,6 +35,7 @@ import {
   getPaddleInstance,
   openPaddleCheckout,
 } from '../../lib/paddle/checkout'
+import { type PaidAccessStatus, hasPaidAccess } from '../../lib/premium/access-statuses'
 
 type Plan = 'monthly' | 'annual' | 'lifetime'
 type Status = 'idle' | 'loading' | 'error'
@@ -81,7 +82,7 @@ const FALLBACK_LABEL: Record<Plan, string> = {
  * ended, so checkout is the correct, intended way for them to resubscribe —
  * blocking it would turn the guard into a regression for a real customer.
  */
-function AlreadyPremiumNotice({ status }: { status: 'active' | 'past_due' | 'lifetime' }) {
+function AlreadyPremiumNotice({ status }: { status: PaidAccessStatus }) {
   if (status === 'lifetime') {
     return (
       <p className="mt-6 text-sm text-body">
@@ -99,8 +100,6 @@ function AlreadyPremiumNotice({ status }: { status: 'active' | 'past_due' | 'lif
   }
   return <p className="mt-6 text-sm text-body">You already have an active Premium subscription.</p>
 }
-
-const ALREADY_PREMIUM_STATUSES = ['active', 'past_due', 'lifetime'] as const
 
 /**
  * Resolve the session client-side when the SSR seed is `null` (Story 5-19, AC-5).
@@ -155,8 +154,8 @@ export function PremiumCheckoutButton() {
     return <p className="mt-6 text-sm text-body">Checking your account…</p>
   }
 
-  if ((ALREADY_PREMIUM_STATUSES as readonly string[]).includes(status ?? '')) {
-    return <AlreadyPremiumNotice status={status as 'active' | 'past_due' | 'lifetime'} />
+  if (hasPaidAccess(status)) {
+    return <AlreadyPremiumNotice status={status} />
   }
 
   return <PremiumCheckoutForm seed={seed} />

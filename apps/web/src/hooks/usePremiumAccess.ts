@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { type SessionSeed, useSessionSeed } from '../context/session-seed'
+import { hasPremiumFeatures } from '../lib/premium/access-statuses'
 
 // ============================================================================
 // Type Definitions
@@ -62,13 +63,15 @@ const defaultStatus: PremiumAccessStatus = {
  *
  * No seed → the fail-closed loading default (resolved after mount by a client
  * check). A signed-out seed resolves to a not-authenticated, no-access status.
- * Access requires an *active* subscription; every other state is fail-closed to
- * no access, matching {@link checkPremiumAccessServer}.
+ * Access requires a premium-features status (`hasPremiumFeatures`: active or
+ * lifetime — NOT past_due); every other state is fail-closed to no access,
+ * matching {@link checkPremiumAccessServer}.
  *
  * ⚠️ Its `hasAccess` field and `lib/premium/entitlement.ts`'s `isEntitledSeed`
- * are THE SAME RULE, written twice (story 58.2). This one is not refactored to
- * call the other because it builds a five-field object on the hot path of every
- * premium gate in the app. **Exported solely so `entitlement.test.ts` can assert
+ * are THE SAME RULE (story 58.2). Since story 78.3 both call the same status
+ * predicate (`hasPremiumFeatures`), but each wraps it in its own authentication
+ * conjunct, and this one is not refactored to call `isEntitledSeed` because it
+ * builds a five-field object on the hot path of every premium gate in the app. **Exported solely so `entitlement.test.ts` can assert
  * the two agree for real** — an earlier version of that test recomputed the
  * predicate inline and could never go red, which is exactly the drift it claimed
  * to prevent. If that parity test fails, these two have diverged; fix the code,
@@ -83,9 +86,7 @@ export function seedToStatus(seed: SessionSeed | null): PremiumAccessStatus {
     // premium for a not-authenticated session — fail-closed by construction, not
     // by luck of what the resolver emits (code review 2026-07-14). Both an active
     // subscription and a permanent lifetime purchase (story 25-2) are entitled.
-    hasAccess:
-      seed.isAuthenticated &&
-      (seed.subscriptionStatus === 'active' || seed.subscriptionStatus === 'lifetime'),
+    hasAccess: seed.isAuthenticated && hasPremiumFeatures(seed.subscriptionStatus),
     subscriptionStatus: seed.isAuthenticated ? seed.subscriptionStatus ?? 'free' : null,
     isLoading: false,
     error: null,

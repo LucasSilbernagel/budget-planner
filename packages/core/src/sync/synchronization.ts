@@ -1281,7 +1281,8 @@ export class SynchronizationService {
       const authBlockedOperations: SyncOperation[] = []
       // Tier-blocked (403): the op is VALID and so is the session — the account
       // simply no longer carries server sync (`routes/api/sync/batch.ts` returns
-      // 403 for `!PAID_SYNC_STATUSES.includes(subscriptionStatus)`). Re-auth
+      // 403 when `!hasPaidAccess(subscriptionStatus)` — web's
+      // `lib/premium/access-statuses.ts`). Re-auth
       // cannot clear it, so unlike 401 this must NOT open the circuit every
       // cycle; the data is kept for a user who may re-subscribe.
       const tierBlockedOperations: SyncOperation[] = []

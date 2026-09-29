@@ -37,20 +37,11 @@
  */
 
 import { logger } from '@/lib/logger'
+import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
-
-/**
- * Statuses that already carry paid access. A session in one of these is
- * refused checkout configuration (Story 5-19, AC-5).
- *
- * `canceled` is deliberately absent: that subscription has ended, so checkout
- * is the correct way to resubscribe — blocking it would be a regression for a
- * real customer.
- */
-const ENTITLED_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']
 
 /**
  * This endpoint is deliberately public and unauthenticated (see the module
@@ -114,7 +105,10 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
         { status: 503, ...noStoreHeaders() }
       )
     }
-    if (session.data && ENTITLED_STATUSES.includes(session.data.subscriptionStatus)) {
+    // A session that already holds paid access is refused checkout configuration
+    // (Story 5-19, AC-5). `canceled` has none: that subscription has ended, so
+    // checkout is the correct way to resubscribe.
+    if (session.data && hasPaidAccess(session.data.subscriptionStatus)) {
       logger.info('Paddle checkout-config: refused for an already-entitled session', {
         subscriptionStatus: session.data.subscriptionStatus,
       })

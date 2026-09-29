@@ -20,6 +20,7 @@ import {
   calculateSafeMonthlyWithdrawal as calculateSafeMonthlyWithdrawalClient,
 } from '@budget-planner/core/finance'
 import { useCallback, useState } from 'react'
+import { hasPremiumFeatures } from '../lib/premium/access-statuses'
 import type {
   AggregationInput,
   AggregationResult,
@@ -111,10 +112,7 @@ function detectUserTier(): UserTier {
     // SSR guard: JSON.parse can throw if userSession is malformed
     const userData = userSession ? JSON.parse(userSession) : null
 
-    if (
-      userData &&
-      (userData.subscriptionStatus === 'active' || userData.subscriptionStatus === 'lifetime')
-    ) {
+    if (userData && hasPremiumFeatures(userData.subscriptionStatus)) {
       return 'paid'
     }
 

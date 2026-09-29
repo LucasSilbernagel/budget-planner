@@ -43,9 +43,11 @@ describe('retention status classification (Story 73.2)', () => {
     expect([...LAPSED_STATUSES].sort()).toEqual(['canceled', 'free'])
   })
 
-  it('matches the five pre-existing hand-rolled copies of the entitled set', () => {
-    // Those copies are not migrated onto this module (D3). This pins the value
-    // they all share, so a drift here is visible.
+  it('pins the entitled set every paid-access gate shares', () => {
+    // Story 73.2 D3 left five (really six) hand-rolled copies of this set;
+    // Story 78.3 moved every one onto `lib/premium/access-statuses.ts`, from
+    // which this module derives. The value stays pinned here, independently,
+    // so a change to the shared definition shows up as a retention change too.
     expect([...ENTITLED_STATUSES].sort()).toEqual(['active', 'lifetime', 'past_due'])
   })
 })

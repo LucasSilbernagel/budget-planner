@@ -9,22 +9,20 @@
  * - Auth + premium gate are enforced SERVER-SIDE from the HMAC-signed,
  *   DB-authoritative session cookie (Story 5-7). 401 = no session,
  *   403 = authenticated but not a paid sync tier, 200 = ok.
- * - The premium gate uses the SAME statuses as the sync PUSH path
- *   (`PAID_SYNC_STATUSES` = active|past_due|lifetime), NOT the calculations gate
- *   (active-only): pull must be reachable wherever push is.
- *   ⚠️ `lifetime` added by Story 30.4a AC-8; comment corrected by its code review.
+ * - The premium gate is the SAME `hasPaidAccess` as the sync PUSH path
+ *   (active|past_due|lifetime; one definition since Story 78.3), NOT the
+ *   premium-features gate (`hasPremiumFeatures`, which excludes past_due): pull
+ *   must be reachable wherever push is.
+ *   ⚠️ `lifetime` was missing from the old hand-copied list until Story 30.4a;
+ *   since 78.3 there is no list here to drift.
  * - The delta is strictly scoped to the SESSION user id (and active profile for
  *   profile-scoped entities). A client-supplied userId is never trusted.
  */
 
 import { logger } from '@/lib/logger'
+import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
-import {
-  PAID_SYNC_STATUSES,
-  checkRateLimit,
-  getLiveProfileIds,
-  getSyncChanges,
-} from '@/server/api/sync'
+import { checkRateLimit, getLiveProfileIds, getSyncChanges } from '@/server/api/sync'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
@@ -42,8 +40,9 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     return json({ success: false, error: 'No user session' }, { status: 401 })
   }
 
-  // 2) Premium gate — match the PUSH path (active|past_due|lifetime), not calculations.
-  if (!PAID_SYNC_STATUSES.includes(session.data.subscriptionStatus)) {
+  // 2) Paid-access gate — the same `hasPaidAccess` as the PUSH path (active|past_due|lifetime),
+  //    not the premium-features gate (which excludes past_due).
+  if (!hasPaidAccess(session.data.subscriptionStatus)) {
     return json(
       {
         success: false,

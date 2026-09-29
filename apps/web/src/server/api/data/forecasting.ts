@@ -24,6 +24,7 @@ import {
   calculateGoalTimeline,
 } from '@budget-planner/core'
 import type { Frequency, SubscriptionStatus } from '@budget-planner/db'
+import { hasPremiumFeatures } from '../../../lib/premium/access-statuses'
 import type { UserSession } from '../auth/paddle'
 import type { ApiResult } from '../auth/paddle'
 
@@ -77,7 +78,7 @@ export async function calculateForecastServer(
     }
 
     // Check if user has access to premium features
-    if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
+    if (!hasPremiumFeatures(user.subscriptionStatus)) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to access forecasting tools',
@@ -143,7 +144,7 @@ export async function calculateGoalTimelineServer(
     }
 
     // Check if user has access to premium features
-    if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
+    if (!hasPremiumFeatures(user.subscriptionStatus)) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to access goal tracking',
@@ -206,7 +207,7 @@ export async function checkPremiumAccessServer(
       data: {
         // Both an active subscription and a permanent lifetime purchase
         // (story 25-2) grant premium access.
-        hasAccess: user.subscriptionStatus === 'active' || user.subscriptionStatus === 'lifetime',
+        hasAccess: hasPremiumFeatures(user.subscriptionStatus),
         subscriptionStatus: user.subscriptionStatus,
       },
     }

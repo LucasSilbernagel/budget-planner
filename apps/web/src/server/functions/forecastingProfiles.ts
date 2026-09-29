@@ -13,6 +13,7 @@ import { db } from '@budget-planner/db'
 import type { ForecastingProfile, NewForecastingProfile } from '@budget-planner/db'
 import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
 import { type SQL, and, desc, eq, inArray, ne } from 'drizzle-orm'
+import { hasPremiumFeatures } from '../../lib/premium/access-statuses'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
 
@@ -165,7 +166,7 @@ export async function createForecastingProfile(
     }
 
     // Check premium access
-    if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {
+    if (!hasPremiumFeatures(user.subscriptionStatus)) {
       return {
         success: false,
         error: 'Premium feature: Please upgrade to access forecasting profile management',

@@ -294,9 +294,6 @@ export function entitlementWatermarkGuard(customerId: string, occurredAt: number
   )
 }
 
-/** Statuses that mean the account currently HAS paid access. */
-const ENTITLED_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']
-
 /** Extra columns a lifetime grant records alongside the status. */
 interface LifetimeGrantFields {
   lifetimeTransactionId?: string
@@ -355,7 +352,7 @@ async function reconcileEmailCollision(
   // WHATEVER its status — and adoption clears `isDeleted`, which would
   // resurrect an erased account and re-key it to whoever checked out with that
   // address. Entitlement is the refusal test; the tombstone is not a licence.
-  if (ENTITLED_STATUSES.includes(byEmail.status)) {
+  if (isEntitledStatus(byEmail.status)) {
     logger.error(
       'Webhook: email belongs to a live entitled account under a different Paddle customer — refusing to adopt it',
       { customerId, existingPaddleId: byEmail.paddleId, existingStatus: byEmail.status }
