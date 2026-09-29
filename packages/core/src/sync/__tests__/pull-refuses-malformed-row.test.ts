@@ -397,10 +397,22 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
       expect(refusedCalls).toHaveLength(1)
       expect(late).toEqual([])
 
+      // Story 79.1: a destroyed `pull()` fetches nothing, so this half no longer
+      // pulls AFTER `destroy()` (it used to anchor on a second fetch). It holds a
+      // pull in flight across the teardown instead: the fetch really happened,
+      // and the malformed row it returns reaches no subscriber.
+      let release: (changes: ServerChange[]) => void = () => {}
+      fetchServerChanges.mockImplementationOnce(
+        () =>
+          new Promise<ServerChange[]>((resolve) => {
+            release = resolve
+          })
+      )
+      const inFlight = service.pull()
+      await vi.waitFor(() => expect(fetchServerChanges).toHaveBeenCalledTimes(2))
       service.destroy()
-      fetchServerChanges.mockResolvedValueOnce([incomeChange({ amount: '600000' })])
-      await service.pull()
-      expect(fetchServerChanges).toHaveBeenCalledTimes(2)
+      release([incomeChange({ amount: '600000' })])
+      await inFlight
       expect(refusedCalls).toHaveLength(1)
     })
 

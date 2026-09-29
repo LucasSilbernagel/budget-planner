@@ -1,4 +1,9 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29n (**79.1 CODE-REVIEWED -> done**, UNCOMMITTED. 8 patches applied; core 1087, web 3782, e2e 518/4. Next: create-story 79.2.)
+# last_updated: 2026-09-29m (**79.1 DEV DONE -> review**, UNCOMMITTED. Core 1084, web 3781, e2e 518/4, types 0/0/0, biome 0.)
+# last_updated: 2026-09-29l (**79.1 DEV STARTED -> in-progress**.)
+# last_updated: 2026-09-29k (**79.1 CREATED -> ready-for-dev**; epic-79 -> in-progress. Design: SKIP MUTATION — SyncQueue.close() + service destroyed flag. Next: dev-story 79.1.)
+# last_updated: 2026-09-29j (**BATCH 16 added** — epics 79-81, 6 stories backlog, baseline_commit `932722f`. Batch 15 committed `932722f`. Next: create-story 79.1.)
 # last_updated: 2026-09-29i (**78.4 CODE-REVIEWED -> done**, UNCOMMITTED. epic-78 -> done. BATCH 15 COMPLETE.)
 # last_updated: 2026-09-29h (**78.4 DEV DONE -> review**, UNCOMMITTED.)
 # last_updated: 2026-09-29g (**78.4 DEV STARTED** -> in-progress, baseline `8ea16fa`.)
@@ -492,8 +497,8 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-28
-baseline_commit: c668e94  # 2026-09-28 reset to HEAD by sprint-planning for BATCH 15 (was 821544f, set for the now-closed batch 14). Tree clean at reset.
+last_updated: 2026-09-29
+baseline_commit: 932722f  # 2026-09-29 reset to HEAD by sprint-planning for BATCH 16 (was c668e94, set for the now-closed batch 15). Tree clean at reset.
 project: budget-planner
 project_key: NOKEY
 tracking_system: file-system
@@ -1069,6 +1074,22 @@ development_status:
   78-3-define-once-which-statuses-grant-paid-access: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-29 (3 layers, Opus), UNCOMMITTED. Decision (Lucas): guard keeps test files out. 12 patches incl. processBatchSync gate DB cases (mutation RED), string-aware guard + keyed-table/complement/middle-term shapes (RED on HEAD: 22), import pin, frozen arrays + type pins. 1 deferred, 14 dismissed (Blind HIGH "canceled test vacuous" MEASURED false). Web 3780/243, tsc 0x4, Biome 0/651. # DEV DONE 2026-09-29, UNCOMMITTED, baseline `a0db893`. D1-D4 defaults. 6 paid-access + 15 premium-features sites -> `lib/premium/access-statuses.ts`; guard RED on HEAD sources (21 sites) + probe; M1 20 red/12 files + tsc, M2 12 red/6 files. Bundle: marker chunks unchanged (1 pre-existing lazy paddle-*.js). Web 3753/243, tsc 0x4, Biome 0/651. contexted 2026-09-29 at `a0db893`. D1 DEFAULT A: also name + migrate the premium-FEATURES set {active,lifetime} (15 inline sites; past_due deliberately excluded, 4-18). D2 home `lib/premium/access-statuses.ts` (type-only imports; status-classes.ts runtime-imports drizzle). D3 delete dead stale `SUBSCRIPTION_STATUS` (config, no lifetime). D4 type guards. FOUND: route-test mocks carry a 2-element set missing lifetime; client bundle ALREADY has a db marker in lazy `paddle-*.js` (pre-existing) -> AC-3 is a before/after diff.
   78-4-type-check-the-core-and-db-test-files-in-the-same-gate: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-29 (3 layers, Opus), UNCOMMITTED. 0 decisions, 8 patches (validator: no `if:` [measured bypass], --filter↔package name [pnpm exits 0 on no match, measured], test-config contents pin [hollow include passed, measured], exact config order; `*.ts` include glob; complete op() fixture; shadow renames; raw paste), 1 deferred (db drizzle.config/scripts relaxed-only, 4 TS4111 strict), 17 dismissed. core 1053/33, db 295+7, tsc 0x4, validator 290/290, Biome 0/653, dist IDENTICAL. # DEV DONE 2026-09-29, UNCOMMITTED, baseline `8ea16fa`. core 109->0 (249 strict), db 2->0; tsconfig.test.json (noEmit, non-composite, relaxed like web); reads via getQueue(); 0 hatches added (2 directives + 3 casts removed). core 1053/33 = base, db 295+7 = base, tsc 0x4, validator 273/273, Biome 0/653, dist list IDENTICAL. Entity-grouping trap checked: no test relied on `category:undefined`. schema.test User literal was 10 cols stale (mutation RED). # contexted 2026-09-29 at `8ea16fa`. RE-MEASURED = identical: core strict 249/18 → relaxed 109/10; db 13/4 → 2/2. D1 DEFAULT relax (mirror web). D2 non-composite noEmit tsconfig.test.json. D3 include root TS files (db drizzle.config+scripts measured 0). D4 reads via existing getQueue(), writes unchanged (defer seam). D5 editor routing unchanged. TRAP: id-less ops collide as `category:undefined` (synchronization.ts:1372-1390). # SPLIT from 78.2 at context time 2026-09-28 (D1). core 249/18, db 13/4 at `350e14c`. Open: mirror web's test-only relaxation or stay strict.
   epic-78-retrospective: optional
+
+  # BATCH 16 (added 2026-09-29 by sprint-planning; epics 79-81 / FR128-FR132, from `planning-artifacts/deferred-work-triage-2026-09-29.md` measured at `932722f` — read its "Decisions" section first). Re-verify each cited line before contexting. Order: 79.1 -> 79.2; 80.1 -> 80.2; 79.3 and 81.1 in any order. 79.3 and 80.x both edit `server/api/sync.ts` (different functions) — rebase whichever lands second.
+  epic-79: in-progress  # Every Sync Edit Ends Somewhere You Can See. FR128/FR129/FR130(1,3,4). FR120 still holds: never drop a retryable op.
+  79-1-keep-a-torn-down-sync-from-touching-the-queue: done
+  79-2-tell-the-user-about-an-edit-that-keeps-failing: backlog  # Open at context: attempt threshold; retry/discard offer.
+  79-3-stop-three-server-side-causes-of-a-permanently-queued-edit: backlog
+  epic-79-retrospective: optional
+
+  epic-80: backlog  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
+  80-1-save-a-forecast-only-under-a-live-profile: backlog  # shares `lockUserProfileSet` (private to sync.ts:607 today)
+  80-2-put-every-writer-of-the-default-profile-under-the-same-lock: backlog
+  epic-80-retrospective: optional
+
+  epic-81: backlog  # A Forecast Field That Tells You What's Wrong. FR132.
+  81-1-report-a-bad-scenario-input-on-its-own-field: backlog  # Open at context: growth-rate bounds (proposal -100%..+100%). Outcome was TRACED — reproduce first.
+  epic-81-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

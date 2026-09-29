@@ -40,6 +40,8 @@ describe('SynchronizationService Retry Logic Fix', () => {
       add: vi.fn(async (o: SyncOperation) => {
         operations.push(o)
       }),
+      // `destroy()` closes the queue (story 79.1).
+      close: vi.fn(),
       getAll: vi.fn(() => [...operations]),
       // `runRetry` reads it since story 75.3 (it syncs only if anything is queued).
       getCount: vi.fn(() => operations.length),

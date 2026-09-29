@@ -8,6 +8,7 @@ export {
   SynchronizationService,
   createSynchronizationService,
   SyncQueue,
+  SyncQueueClosedError,
   createSyncQueue,
   LocalStorageSyncQueueStorage,
   DEFAULT_CONFIG,

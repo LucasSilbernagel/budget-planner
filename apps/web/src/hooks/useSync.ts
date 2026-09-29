@@ -468,6 +468,9 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
+      // The unsubscribe order above does not matter (story 79.1): a sync still in
+      // flight on the destroyed service no longer touches the queue, so a refusal
+      // it gets is not lost — the next session sends the op again and names it.
       syncServiceRef.current?.destroy()
       syncServiceRef.current = null
     }
@@ -635,8 +638,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       return undefined
     }
     pullInFlightRef.current = true
+    const service = syncServiceRef.current
     try {
-      const result = await syncServiceRef.current.pull()
+      const result = await service.pull()
+      // Torn down while the pull was in flight (story 79.1): the result belongs
+      // to an ended session. Writing it would put its error and its cursor into
+      // the module-level stores the NEXT session reads.
+      if (service.isDestroyed()) {
+        return result
+      }
       // Store writes happen via the onChangesPulled subscription; here we only
       // surface pull status/counters for UI (success/failure indication).
       store.getState().setState({

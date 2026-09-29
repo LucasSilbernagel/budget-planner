@@ -69,6 +69,8 @@ describe('Non-retryable sync failures', () => {
       add: vi.fn(async (o: AnyOp) => {
         operations.push(o)
       }),
+      // `destroy()` closes the queue (story 79.1).
+      close: vi.fn(),
       getAll: vi.fn(() => [...operations]),
       getReadyOperations: vi.fn(() => [...operations]),
       getCount: vi.fn(() => operations.length),

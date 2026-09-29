@@ -46,6 +46,8 @@ describe('onOperationsRejected (story 75.2)', () => {
       add: vi.fn(async (o: AnyOp) => {
         operations.push(o)
       }),
+      // `destroy()` closes the queue (story 79.1).
+      close: vi.fn(),
       getAll: vi.fn(() => [...operations]),
       getReadyOperations: vi.fn(() => [...operations]),
       getCount: vi.fn(() => operations.length),
@@ -205,20 +207,32 @@ describe('onOperationsRejected (story 75.2)', () => {
     await service.sync()
     expect(unsubscribed).not.toHaveBeenCalled()
 
+    // Story 79.1 changed this half. It used to call `sync()` AFTER `destroy()`
+    // and anchor on the destroyed service still SENDING `bad-2` and REMOVING it
+    // from the queue — the very behaviour 79.1 reverses (a destroyed service
+    // sends nothing and leaves the queue alone). The claim that matters is the
+    // real interleave: a refusal landing after `destroy()` reaches no subscriber
+    // AND stays queued, so the next session can report it.
     const afterDestroy = vi.fn()
     service.onOperationsRejected(afterDestroy)
-    service.destroy()
     operations.push(op('bad-2'))
-    refuse('bad-2')
-    // @ts-expect-error - accessing private property for testing
-    service.state.isOnline = true
-    await service.sync()
-    // Positive anchor (code review 75.2): a destroyed service still runs a sync
-    // it is asked for, and really refused `bad-2` — so the silence below is
-    // `destroy()` clearing the subscriber, not a sync that never ran.
-    expect(processOperation.mock.calls.map(([o]) => o.id)).toContain('bad-2')
-    expect(operations.map((o) => o.id)).not.toContain('bad-2')
+    let release: (result: Awaited<ReturnType<ProcessOperationFn>>) => void = () => {}
+    processOperation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        })
+    )
+    const inFlight = service.sync()
+    // Positive anchor: `bad-2` really went out before the teardown.
+    await vi.waitFor(() =>
+      expect(processOperation.mock.calls.map(([o]) => o.id)).toContain('bad-2')
+    )
+    service.destroy()
+    release({ success: false, retryable: false, statusCode: 422 })
+    await inFlight
     expect(afterDestroy).not.toHaveBeenCalled()
+    expect(operations.map((o) => o.id)).toContain('bad-2')
   })
 
   it('state.rejectedOperations is capped at the 50 most recent, not grown for ever', async () => {

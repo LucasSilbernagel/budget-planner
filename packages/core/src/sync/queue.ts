@@ -15,6 +15,16 @@ import type { SyncOperation, SyncQueueStorage } from './types'
 const MAX_QUEUE_SIZE = 10000
 
 /**
+ * Thrown by every mutator of a CLOSED queue (story 79.1). See `SyncQueue.close()`.
+ */
+export class SyncQueueClosedError extends Error {
+  constructor() {
+    super('SyncQueue is closed: its sync service was destroyed, so it no longer writes')
+    this.name = 'SyncQueueClosedError'
+  }
+}
+
+/**
  * Default storage implementation using localStorage
  * This provides persistence across page refreshes
  */
@@ -87,6 +97,9 @@ export class SyncQueue {
    */
   private mutations: Promise<unknown> = Promise.resolve()
 
+  /** Set by `close()`. Never reset: a closed queue stays closed. */
+  private closed = false
+
   /**
    * Create a new SyncQueue instance
    * @param userId - The user ID for this queue
@@ -128,10 +141,53 @@ export class SyncQueue {
   }
 
   /**
-   * Initialize the queue by loading from storage
+   * Stop this queue from ever writing again (story 79.1, FR129).
+   *
+   * Called by `SynchronizationService.destroy()`. A NEW service for the same user
+   * writes to the SAME storage key, and every write here is a whole-queue write
+   * from memory, so a torn-down queue that kept writing would overwrite what the
+   * new instance has queued since. A closed queue also cannot remove a refused op
+   * that nobody is listening for any more: the op stays persisted, and the next
+   * session sends it, is refused again and names it.
+   *
+   * After it, every mutator rejects with `SyncQueueClosedError` and changes
+   * neither storage nor memory. The check runs when the mutation RUNS inside
+   * `serialize()`, so one already waiting in the chain is refused too. ⚠️ Limit:
+   * a mutation already inside `await storage.saveQueue(...)` completes. That is
+   * not observable with `LocalStorageSyncQueueStorage`, whose write is synchronous.
+   *
+   * A synchronous flag flip, deliberately NOT a serialized mutation: `serialize`
+   * is not re-entrant (see its docblock). Readers keep working on the frozen
+   * memory.
+   */
+  close(): void {
+    this.closed = true
+  }
+
+  /** Whether `close()` has run. */
+  isClosed(): boolean {
+    return this.closed
+  }
+
+  /** First statement of every serialized mutator (story 79.1). */
+  private assertOpen(): void {
+    if (this.closed) {
+      throw new SyncQueueClosedError()
+    }
+  }
+
+  /**
+   * Initialize the queue by loading from storage.
+   *
+   * A closed queue resolves WITHOUT loading (story 79.1): it only reads, and
+   * rejecting would make `useSync` log a failure for a remount that is working as
+   * intended.
    */
   async initialize(): Promise<void> {
     return this.serialize(async () => {
+      if (this.closed) {
+        return
+      }
       this.queue = await this.storage.loadQueue(this.userId)
     })
   }
@@ -142,6 +198,7 @@ export class SyncQueue {
    */
   async add(operation: SyncOperation): Promise<void> {
     return this.serialize(async () => {
+      this.assertOpen()
       // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
       // (serialized, so this now sees the true length rather than a stale one)
       if (this.queue.length >= MAX_QUEUE_SIZE) {
@@ -165,6 +222,7 @@ export class SyncQueue {
    */
   async addBatch(operations: SyncOperation[]): Promise<void> {
     return this.serialize(async () => {
+      this.assertOpen()
       // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
       if (this.queue.length + operations.length > MAX_QUEUE_SIZE) {
         throw new Error(
@@ -209,6 +267,7 @@ export class SyncQueue {
    */
   async remove(operationId: string): Promise<boolean> {
     return this.serialize(async () => {
+      this.assertOpen()
       const filtered = this.queue.filter((op) => op.id !== operationId)
 
       if (filtered.length < this.queue.length) {
@@ -229,6 +288,7 @@ export class SyncQueue {
    */
   async removeBatch(operationIds: string[]): Promise<number> {
     return this.serialize(async () => {
+      this.assertOpen()
       const idsSet = new Set(operationIds)
       const filtered = this.queue.filter((op) => !idsSet.has(op.id))
 
@@ -284,11 +344,14 @@ export class SyncQueue {
    * refusing.
    *
    * Never throws for a storage failure; `persisted` reports it instead, and the
-   * error is logged here so a real bug is not mistaken for a quota error.
+   * error is logged here so a real bug is not mistaken for a quota error. A
+   * CLOSED queue is not a storage failure: it rejects with `SyncQueueClosedError`
+   * like every other mutator (story 79.1).
    * @param operationIds - Array of operation IDs to discard
    */
   async discardBatch(operationIds: string[]): Promise<{ removed: number; persisted: boolean }> {
     return this.serialize(async () => {
+      this.assertOpen()
       const idsSet = new Set(operationIds)
       const filtered = this.queue.filter((op) => !idsSet.has(op.id))
       const removed = this.queue.length - filtered.length
@@ -320,6 +383,7 @@ export class SyncQueue {
    */
   async removeByEntity(entityType: string, entityId: string | number): Promise<number> {
     return this.serialize(async () => {
+      this.assertOpen()
       const normalizedEntityId = String(entityId)
       const filtered = this.queue.filter(
         (op) => !(op.entityType === entityType && op.entityId === normalizedEntityId)
@@ -342,6 +406,7 @@ export class SyncQueue {
    */
   async clear(): Promise<void> {
     return this.serialize(async () => {
+      this.assertOpen()
       // Persist BEFORE mutating in-memory state, matching every other mutator.
       // The previous order emptied memory first, so a throwing `clearQueue` left
       // memory saying "empty" while storage still held the operations — and they
@@ -378,6 +443,7 @@ export class SyncQueue {
    */
   async dequeue(): Promise<SyncOperation | undefined> {
     return this.serialize(async () => {
+      this.assertOpen()
       if (this.queue.length === 0) {
         return undefined
       }

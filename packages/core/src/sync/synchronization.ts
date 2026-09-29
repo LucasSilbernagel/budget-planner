@@ -13,7 +13,12 @@
  */
 
 import { z } from 'zod'
-import { LocalStorageSyncQueueStorage, SyncQueue, createSyncQueue } from './queue'
+import {
+  LocalStorageSyncQueueStorage,
+  SyncQueue,
+  SyncQueueClosedError,
+  createSyncQueue,
+} from './queue'
 import type {
   ChangesPulledCallback,
   ConflictCallback,
@@ -414,6 +419,10 @@ export class SynchronizationService {
   // already in progress, so we run one more pass after the current one finishes
   // instead of dropping the trigger.
   private pendingResync = false
+  // Set FIRST by `destroy()` and never reset (story 79.1). Every entry point and
+  // every point after an `await` checks it: a torn-down service sends nothing,
+  // arms no timer, writes no state and touches no queue. See `destroy()`.
+  private destroyed = false
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
 
   // Circuit breaker state for retry logic
@@ -512,6 +521,13 @@ export class SynchronizationService {
     // Load the queue from storage
     await this.queue.initialize()
 
+    // ⚠️ A `destroy()` that landed during the load removed no listener, because
+    // none was registered yet. Registering them now would leave a dead service
+    // pushing the queue on every tab focus, for good (story 79.1).
+    if (this.destroyed) {
+      return
+    }
+
     // Update state with pending operations
     this.state.pendingOperations = this.queue.getAll()
 
@@ -553,6 +569,12 @@ export class SynchronizationService {
       this.state.isOnline = await this.checkRealConnectivity()
     }
 
+    // A second await above: a `destroy()` that landed during it has already
+    // removed the listeners, so only the timer and the notify are left to skip.
+    if (this.destroyed) {
+      return
+    }
+
     // Start auto-sync if enabled
     if (this.config.autoSync) {
       this.startAutoSync()
@@ -566,7 +588,8 @@ export class SynchronizationService {
    * Start automatic synchronization
    */
   startAutoSync(): void {
-    if (this.autoSyncTimer) {
+    // Public, so it is guarded here too: no interval may outlive `destroy()`.
+    if (this.destroyed || this.autoSyncTimer) {
       return // Already running
     }
 
@@ -591,9 +614,40 @@ export class SynchronizationService {
   }
 
   /**
-   * Clean up resources
+   * Clean up resources, and stop this service from ever touching the queue again
+   * (story 79.1, FR129).
+   *
+   * `useSync` destroys the service on sign-out, account switch or any effect
+   * re-run, while a sync or pull may still be in flight. Before 79.1 that sync
+   * ran on: it removed refused ops after `destroy()` had cleared every listener
+   * (no revert, no notice), wrote its stale in-memory queue over the storage key
+   * a NEW instance for the same user was already using, and could still arm a
+   * retry.
+   *
+   * DECISION: SKIP MUTATION, not deliver later. The destroyed service leaves the
+   * queue exactly as persisted and discards what its in-flight sync learned. The
+   * next session re-sends those ops and learns every outcome again: a refused op
+   * is refused again, now with a listener; an accepted create or delete is
+   * acknowledged by the server as already applied (`processBatchSync`'s
+   * `create-create` arm, 76.1's `alreadyApplied`); an accepted update re-applies.
+   *
+   * ⚠️ The cost of that last case (code review 79.1, accepted by Lucas): the
+   * server's update path does not compare `baseVersion`, so if ANOTHER device
+   * edits the same row before this user's next session, the re-sent update
+   * overwrites that newer edit. It needs a sign-out during a push plus a
+   * concurrent edit elsewhere. It is the same residual as any lost push response
+   * (triage 2026-09-29, M4), and its fix is server-side (`deferred-work.md`).
+   * Delivering the outcome to the next session instead would need refusal state
+   * that outlives this instance, keyed by user and cleared on account switch —
+   * the kind of cross-account state 75.2's review had to remove.
+   *
+   * Two layers: `destroyed` stops sends, timers, state writes and notifications
+   * here; `queue.close()` stops every WRITE, including the web layer's, which
+   * reaches the raw queue through `getQueue()`.
    */
   destroy(): void {
+    this.destroyed = true
+    this.queue.close()
     this.stopAutoSync()
 
     if (this.retryTimeout) {
@@ -622,6 +676,44 @@ export class SynchronizationService {
     this.changesPulledCallbacks.clear()
     this.operationsRejectedCallbacks.clear()
     this.serverChangesRefusedCallbacks.clear()
+  }
+
+  /**
+   * Refuse to queue on a destroyed service (story 79.1). Its queue is closed, so
+   * the add would fail anyway; this names the reason.
+   */
+  private assertNotDestroyed(): void {
+    if (this.destroyed) {
+      throw new Error('Sync service destroyed: cannot queue an operation')
+    }
+  }
+
+  /** What `sync()` returns once the service is destroyed (story 79.1). */
+  private destroyedSyncResult(startTime: number): SyncResult {
+    return {
+      success: false,
+      synchronizedCount: 0,
+      failedCount: 0,
+      conflictCount: 0,
+      state: { ...this.state },
+      error: 'Sync service destroyed',
+      duration: Date.now() - startTime,
+    }
+  }
+
+  /** What `pull()` returns once the service is destroyed (story 79.1). */
+  private destroyedPullResult(since: number | null): PullResult {
+    return {
+      success: false,
+      changesPulledCount: 0,
+      applied: [],
+      conflicts: [],
+      error: 'Sync service destroyed',
+      lastPullTimestamp: since,
+      refused: [],
+      discardedForDeletedProfile: [],
+      droppedDependents: [],
+    }
   }
 
   /**
@@ -834,6 +926,8 @@ export class SynchronizationService {
     data: Record<string, unknown>,
     userId: string
   ): Promise<SyncOperation> {
+    this.assertNotDestroyed()
+
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
       throw new Error(
@@ -891,6 +985,8 @@ export class SynchronizationService {
     baseVersion?: number,
     dependsOn?: SyncOperation['dependsOn']
   ): Promise<SyncOperation> {
+    this.assertNotDestroyed()
+
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
       throw new Error(
@@ -948,6 +1044,8 @@ export class SynchronizationService {
     data: Record<string, unknown> = {},
     baseVersion?: number
   ): Promise<SyncOperation> {
+    this.assertNotDestroyed()
+
     // Security: Validate userId matches authenticated user
     if (userId !== this.userId) {
       throw new Error(
@@ -1192,6 +1290,12 @@ export class SynchronizationService {
    * Uses atomic check-and-set for isProcessing to prevent TOCTOU race conditions
    */
   async sync(): Promise<SyncResult> {
+    // A destroyed service sends nothing (story 79.1). Checked before the lock, so
+    // a dead service never holds it either.
+    if (this.destroyed) {
+      return this.destroyedSyncResult(Date.now())
+    }
+
     // Use isProcessing as the primary lock mechanism
     // Note: In single-threaded JS, this provides practical protection against
     // concurrent sync calls within the same session. For multi-tab scenarios,
@@ -1301,6 +1405,12 @@ export class SynchronizationService {
       const successfullyProcessed: SyncOperation[] = []
 
       for (const operation of operations) {
+        // Torn down mid-batch (story 79.1): send nothing more. Checked first, so a
+        // dead service never sends the rest of a batch it can no longer dequeue.
+        if (this.destroyed) {
+          break
+        }
+
         // Re-check connectivity before each operation: if the device went
         // offline mid-batch, stop sending. Remaining operations stay in the
         // queue (they are only removed after success) and are not wrongly
@@ -1358,6 +1468,15 @@ export class SynchronizationService {
           failedOperations.push(operation)
           failedCount++
         }
+      }
+
+      // ⚠️ Torn down while a push was in flight (story 79.1): throw away what this
+      // sync learned. Every queue write, state write, notification and timer below
+      // would act for a session that has ended — and the queue is closed anyway.
+      // The next session re-sends these ops and learns each outcome again (see
+      // `destroy()`).
+      if (this.destroyed) {
+        return this.destroyedSyncResult(startTime)
       }
 
       // A permanently refused CREATE takes its row's other queued ops with it
@@ -1503,6 +1622,12 @@ export class SynchronizationService {
         )
       }
 
+      // Torn down during a removal await (story 79.1). The closed queue refused
+      // any write that had not started; no state, notification or timer follows.
+      if (this.destroyed) {
+        return this.destroyedSyncResult(startTime)
+      }
+
       // Update state
       this.state.lastSyncTimestamp = Date.now()
       this.state.pendingOperations = this.queue.getAll()
@@ -1597,6 +1722,10 @@ export class SynchronizationService {
         duration: Date.now() - startTime,
       }
     } catch (error) {
+      // No state write for a session that has ended (story 79.1).
+      if (this.destroyed) {
+        return this.destroyedSyncResult(startTime)
+      }
       this.state.status = SyncStatus.FAILED
       this.state.lastError = error instanceof Error ? error.message : String(error)
       this.state.lastSyncTimestamp = Date.now()
@@ -1616,7 +1745,12 @@ export class SynchronizationService {
 
       // If a sync trigger arrived while we were processing (e.g. reconnect),
       // run one more pass now that the lock is released.
-      if (this.pendingResync && this.state.isOnline && this.queue.getCount() > 0) {
+      if (
+        !this.destroyed &&
+        this.pendingResync &&
+        this.state.isOnline &&
+        this.queue.getCount() > 0
+      ) {
         this.pendingResync = false
         setTimeout(() => {
           this.sync().catch((error) => this.log('Pending resync error:', error))
@@ -1656,6 +1790,11 @@ export class SynchronizationService {
    * FIX: Added circuit breaker to prevent hammering failing server
    */
   private scheduleRetry(): void {
+    // No timer may outlive `destroy()` (story 79.1).
+    if (this.destroyed) {
+      return
+    }
+
     if (this.retryTimeout) {
       clearTimeout(this.retryTimeout)
     }
@@ -1680,6 +1819,9 @@ export class SynchronizationService {
           ).toISOString()}. Retry deferred by ${delay}ms.`
         )
         this.retryTimeout = setTimeout(() => {
+          if (this.destroyed) {
+            return
+          }
           // ⚠️ Re-check the deadline instead of closing the circuit blind.
           // `delay` was computed from the `circuitBrokenUntil` observed when this
           // timer was ARMED, but `openCircuit()` can push that deadline out
@@ -1732,6 +1874,9 @@ export class SynchronizationService {
    * ops go out on the `online` event instead.
    */
   private async runRetry(): Promise<void> {
+    if (this.destroyed) {
+      return
+    }
     this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
     if (this.state.failedOperations.length === 0 || !this.state.isOnline) {
       return
@@ -1822,6 +1967,11 @@ export class SynchronizationService {
    * misconfiguration can't masquerade as "no remote changes".
    */
   async pull(): Promise<PullResult> {
+    // A destroyed service fetches nothing (story 79.1).
+    if (this.destroyed) {
+      return this.destroyedPullResult(this.state.lastPullTimestamp)
+    }
+
     if (!this.config.fetchServerChanges) {
       // Fail loud (mirrors processOperation): never present "no transport" as
       // "no changes", which would hide a real wiring bug.
@@ -1836,6 +1986,10 @@ export class SynchronizationService {
     try {
       changes = await this.config.fetchServerChanges(since)
     } catch (error) {
+      // Torn down while the fetch was in flight (story 79.1): no state write.
+      if (this.destroyed) {
+        return this.destroyedPullResult(since)
+      }
       const message = error instanceof Error ? error.message : String(error)
       this.state.lastError = message
       this.log('Pull transport error:', error)
@@ -1851,6 +2005,14 @@ export class SynchronizationService {
         discardedForDeletedProfile: [],
         droppedDependents: [],
       }
+    }
+
+    // ⚠️ Torn down while the fetch was in flight (story 79.1). The LWW drop
+    // below would discard queued ops, and write the queue, for a session that
+    // has ended. The next session's first pull starts from a `null` cursor and
+    // makes the same decisions again.
+    if (this.destroyed) {
+      return this.destroyedPullResult(since)
     }
 
     const applied: ServerChange[] = []
@@ -2065,6 +2227,11 @@ export class SynchronizationService {
       }
     }
 
+    // Torn down during the discard await (story 79.1): no cursor, no callbacks.
+    if (this.destroyed) {
+      return this.destroyedPullResult(since)
+    }
+
     // Persist the advanced pull cursor (separate from the push cursor) and surface
     // the applied changes to the host app for store writes.
     this.state.lastPullTimestamp = newCursor
@@ -2104,7 +2271,8 @@ export class SynchronizationService {
    * from this session.
    */
   async discardOperationsForDeletedProfile(profileId: string): Promise<SyncOperation[]> {
-    if (!profileId) {
+    // A destroyed service drops nothing (story 79.1): its queue is closed.
+    if (!profileId || this.destroyed) {
       return []
     }
     const ids = new Set([profileId])
@@ -2112,9 +2280,24 @@ export class SynchronizationService {
     if (stranded.length === 0) {
       return []
     }
-    const { persisted } = await this.queue.discardBatch(stranded.map((op) => op.id))
+    let persisted: boolean
+    try {
+      ;({ persisted } = await this.queue.discardBatch(stranded.map((op) => op.id)))
+    } catch (error) {
+      // Torn down before the discard ran (story 79.1): the closed queue refused
+      // it, so nothing was dropped. That is the intended outcome, not a failure.
+      if (error instanceof SyncQueueClosedError) {
+        return []
+      }
+      throw error
+    }
     if (!persisted) {
       this.log('Ops of a deleted profile dropped from memory only; storage refused the write')
+    }
+    // The discard had already started when `destroy()` landed: it completed, but
+    // no state write or notification follows for an ended session.
+    if (this.destroyed) {
+      return stranded
     }
     this.state.pendingOperations = this.queue.getAll()
     this.state.failedOperations = this.retryableStillQueued(this.state.failedOperations)
@@ -2178,6 +2361,13 @@ export class SynchronizationService {
   }
 
   /**
+   * Whether `destroy()` has run (story 79.1).
+   */
+  isDestroyed(): boolean {
+    return this.destroyed
+  }
+
+  /**
    * Check if currently processing a sync
    */
   isSyncing(): boolean {
@@ -2223,4 +2413,10 @@ export type {
   OperationsRejectedCallback,
 }
 
-export { SyncQueue, createSyncQueue, LocalStorageSyncQueueStorage, DEFAULT_CONFIG }
+export {
+  SyncQueue,
+  SyncQueueClosedError,
+  createSyncQueue,
+  LocalStorageSyncQueueStorage,
+  DEFAULT_CONFIG,
+}
