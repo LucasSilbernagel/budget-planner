@@ -1,5 +1,5 @@
 /**
- * Migration-chain integrity (Story 4.17, AC-4).
+ * Migration-chain integrity (Story 4.17, AC-4; snapshots added by story 78.1).
  *
  * The production instance is migrated from a clean slate by replaying every
  * journal entry in order, so the chain being internally consistent is a
@@ -7,11 +7,38 @@
  * without a database. `drizzle-kit migrate` reads `meta/_journal.json` and then
  * looks for `<tag>.sql`: a journal entry with no file, or a gap in the sequence,
  * fails mid-migration against production rather than in CI.
+ *
+ * Story 78.1 adds the third leg: journal ↔ `.sql` ↔ `meta/NNNN_snapshot.json`,
+ * plus the snapshot `id → prevId` chain. The snapshots are not read by
+ * `migrate`; they are read by `drizzle-kit generate`, which diffs `schema.ts`
+ * against a baseline to write the NEXT migration. drizzle-kit 0.23.2 picks that
+ * baseline as the lexically LAST file in `meta/` whose name does not start with
+ * `_` (`prepareOutFolder` + `preparePrevSnapshot` in its `bin.cjs`), and takes
+ * the next migration's number from the JOURNAL. So a deleted newest snapshot, a
+ * renumbered one, or a stray VALID snapshot sorting last makes `generate` emit a
+ * WRONG migration, silently, while every other suite stays green. drizzle-kit
+ * itself refuses a `prevId` collision, a malformed or unparseable file and an
+ * outdated snapshot version — loudly, but with exit code 0 — and checks nothing
+ * about count, numbering or chain continuity.
+ *
+ * What this does NOT check: that a snapshot's CONTENT matches the schema its
+ * migration produced (identity and order only). Deferred in the 78.1 review.
  */
 
-import { readFileSync, readdirSync } from 'node:fs'
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 
 interface JournalEntry {
   idx: number
@@ -65,5 +92,305 @@ describe('migration chain', () => {
       (f) => readFileSync(`${migrationsDir}${f}`, 'utf8').trim() === ''
     )
     expect(empties).toEqual([])
+  })
+
+  it('contains no comment-only migration files (an unfilled `generate --custom`)', () => {
+    // `drizzle-kit generate --custom` writes a one-line comment placeholder, not
+    // an empty file, so the check above cannot see a custom migration nobody
+    // filled in: it would replay as a no-op and be recorded as applied.
+    const commentOnly = sqlFiles.filter(
+      (f) =>
+        readFileSync(`${migrationsDir}${f}`, 'utf8')
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('--'))
+          .join('')
+          .trim() === ''
+    )
+    expect(commentOnly, 'a migration must contain at least one SQL statement').toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Snapshots (story 78.1)
+// ---------------------------------------------------------------------------
+
+const ROOT_SNAPSHOT_PREV_ID = '00000000-0000-0000-0000-000000000000'
+
+interface Snapshot {
+  id: string
+  prevId: string
+  dialect: string
+  [key: string]: unknown
+}
+
+function snapshotName(idx: number): string {
+  return `${String(idx).padStart(4, '0')}_snapshot.json`
+}
+
+function readJournal(dir: string): { entries: JournalEntry[] } {
+  return JSON.parse(readFileSync(join(dir, 'meta', '_journal.json'), 'utf8')) as {
+    entries: JournalEntry[]
+  }
+}
+
+/**
+ * Every way `migrations/meta/` can mislead `drizzle-kit generate`, as readable
+ * problems; `[]` means healthy. It takes a DIRECTORY so the negative cases below
+ * can run it over a damaged scratch copy — never over the real chain.
+ */
+function snapshotProblems(dir: string): string[] {
+  const problems: string[] = []
+  const { entries } = readJournal(dir)
+  const expected = entries.map((e) => snapshotName(e.idx))
+
+  // (a) Exactly one snapshot per journal entry and NOTHING else in meta/. The
+  // dangerous extra is a VALID snapshot that sorts last and chains onto the
+  // tail (a backup, a copy from another branch): drizzle-kit accepts it and
+  // silently diffs against it. Junk files (`{}`, `.DS_Store`) and prevId
+  // collisions drizzle-kit refuses itself — but it exits 0 while doing so, so
+  // refusing them here too costs nothing. `withFileTypes` so a directory named
+  // like a snapshot is refused as well.
+  const listing = readdirSync(join(dir, 'meta'), { withFileTypes: true }).filter(
+    (d) => d.name !== '_journal.json'
+  )
+  const present = new Set(listing.filter((d) => d.isFile()).map((d) => d.name))
+  for (const name of expected) {
+    if (!present.has(name)) problems.push(`missing snapshot: meta/${name}`)
+  }
+  for (const d of listing) {
+    if (!d.isFile() || !expected.includes(d.name)) {
+      problems.push(`unexpected entry in meta/: ${d.name}`)
+    }
+  }
+
+  // (b)-(d) Parse what exists and walk the chain in JOURNAL order.
+  const seenIds = new Set<string>()
+  let prev: Snapshot | undefined
+  for (const [i, name] of expected.entries()) {
+    if (!present.has(name)) {
+      prev = undefined
+      continue
+    }
+    let snap: Snapshot
+    try {
+      snap = JSON.parse(readFileSync(join(dir, 'meta', name), 'utf8')) as Snapshot
+    } catch {
+      problems.push(`unparseable snapshot: meta/${name}`)
+      prev = undefined
+      continue
+    }
+    if (snap.dialect !== 'postgresql') {
+      problems.push(`meta/${name} has dialect ${String(snap.dialect)}, expected postgresql`)
+    }
+    // Belt and braces: a duplicate id almost always breaks the chain first.
+    if (seenIds.has(snap.id)) problems.push(`duplicate snapshot id ${snap.id} in meta/${name}`)
+    seenIds.add(snap.id)
+    const expectedPrev = i === 0 ? ROOT_SNAPSHOT_PREV_ID : prev?.id
+    // A missing predecessor is already reported by (a); do not pile on.
+    if (expectedPrev !== undefined && snap.prevId !== expectedPrev) {
+      problems.push(
+        `broken chain: meta/${name} has prevId ${
+          snap.prevId
+        }, expected ${expectedPrev} (the id of ${i === 0 ? 'the root' : `meta/${expected[i - 1]}`})`
+      )
+    }
+    prev = snap
+  }
+  return problems
+}
+
+/** JSON with every object's keys sorted, so key ORDER cannot affect equality. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0
+    )
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+/**
+ * A snapshot's SCHEMA, canonicalised: minus its identity (`id`, `prevId`) and
+ * minus `_meta` (rename bookkeeping, not schema), with keys sorted.
+ */
+function snapshotBody(snapshot: Snapshot): string {
+  const { id: _id, prevId: _prevId, _meta: _ignored, ...body } = snapshot
+  return canonical(body)
+}
+
+function readSnapshot(dir: string, idx: number): Snapshot {
+  return JSON.parse(readFileSync(join(dir, 'meta', snapshotName(idx)), 'utf8')) as Snapshot
+}
+
+describe('migration snapshots', () => {
+  it('has exactly one snapshot per journal entry, chained in journal order', () => {
+    // The non-empty guard in 'migration chain' above keeps this from comparing
+    // an empty journal to an empty meta/ and passing green.
+    expect(
+      snapshotProblems(migrationsDir),
+      'meta/ must hold one snapshot per journal entry, chained id -> prevId, and nothing else'
+    ).toEqual([])
+  })
+
+  it('pins the hand-authored (custom) migrations: their snapshot repeats the previous schema', () => {
+    // MEASURED at story 78.1: a hand-authored migration DOES carry a snapshot
+    // whose schema equals its predecessor's. `0020` got one by a hand copy of
+    // `0019` (its SQL header: "a copy of `0019`'s with a fresh id").
+    // `drizzle-kit generate --custom` produces the same SCHEMA but re-serialises
+    // it, so its keys come out in a different ORDER (measured in the 78.1
+    // review: byte-compare missed it, sorted-key compare caught it) — hence
+    // `canonical`. A GENERATED migration can never repeat its predecessor's
+    // schema: generate refuses with "No schema changes, nothing to migrate".
+    // So "schema equals the previous schema" is exactly "hand-authored", and
+    // this set is pinned EXACTLY: a new custom migration must be added here on
+    // purpose, and a snapshot copied by accident fails.
+    //
+    // Hand-AMENDED migrations (`0003`, `0014`, per migrations/README.md) were
+    // generated first and their SQL edited afterwards; their snapshots differ
+    // from their predecessors' and need no entry here.
+    const copies = journal.entries
+      .filter((e) => e.idx > 0)
+      .filter(
+        (e) =>
+          snapshotBody(readSnapshot(migrationsDir, e.idx)) ===
+          snapshotBody(readSnapshot(migrationsDir, e.idx - 1))
+      )
+      .map((e) => e.idx)
+    expect(copies, 'hand-authored migrations (snapshot schema = previous schema)').toEqual([20])
+  })
+
+  it('treats a key-reordered, _meta-changed copy as the same schema (what --custom writes)', () => {
+    const original = readSnapshot(migrationsDir, 20)
+    const reordered: Snapshot = {
+      ...(JSON.parse(
+        JSON.stringify(original, (_key, value: unknown) =>
+          value !== null && typeof value === 'object' && !Array.isArray(value)
+            ? Object.fromEntries(Object.entries(value as Record<string, unknown>).reverse())
+            : value
+        )
+      ) as Snapshot),
+      _meta: { columns: { a: 'b' }, schemas: {}, tables: {} },
+    }
+    expect(JSON.stringify(reordered), 'the reorder must actually change the bytes').not.toBe(
+      JSON.stringify(original)
+    )
+    expect(snapshotBody(reordered), 'key order and _meta must not count as schema').toBe(
+      snapshotBody(original)
+    )
+  })
+
+  describe('refuses a damaged meta/ (scratch copies — the real chain is never touched)', () => {
+    const scratchDirs: string[] = []
+    afterAll(() => {
+      for (const d of scratchDirs) rmSync(d, { recursive: true, force: true })
+    })
+
+    function scratchCopy(): string {
+      const dir = mkdtempSync(join(tmpdir(), 'bp-migrations-'))
+      scratchDirs.push(dir)
+      cpSync(migrationsDir, dir, { recursive: true })
+      // Healthy before the damage, or the case below proves nothing.
+      expect(snapshotProblems(dir), 'the scratch copy must start healthy').toEqual([])
+      return dir
+    }
+
+    // Derived from the journal so the cases survive the next migration.
+    const newest = Math.max(...journal.entries.map((e) => e.idx))
+    const beforeNewest = newest - 1
+
+    it('has enough migrations for the cases below', () => {
+      // The swap case touches `beforeNewest - 1`, so it needs three entries.
+      expect(
+        journal.entries.length,
+        'the damage cases need >= 3 migrations'
+      ).toBeGreaterThanOrEqual(3)
+    })
+
+    it('a deleted newest snapshot (generate would diff against the one before it)', () => {
+      const dir = scratchCopy()
+      rmSync(join(dir, 'meta', snapshotName(newest)))
+      expect(snapshotProblems(dir), 'deletion must be reported by name').toEqual([
+        `missing snapshot: meta/${snapshotName(newest)}`,
+      ])
+    })
+
+    it('a renumbered snapshot', () => {
+      const dir = scratchCopy()
+      renameSync(
+        join(dir, 'meta', snapshotName(beforeNewest)),
+        join(dir, 'meta', snapshotName(newest + 1))
+      )
+      const problems = snapshotProblems(dir)
+      expect(problems, 'the old number must be reported missing').toContain(
+        `missing snapshot: meta/${snapshotName(beforeNewest)}`
+      )
+      expect(problems, 'the new number must be reported unexpected').toContain(
+        `unexpected entry in meta/: ${snapshotName(newest + 1)}`
+      )
+    })
+
+    it('a stray VALID snapshot chained onto the tail (drizzle-kit would silently use it)', () => {
+      const dir = scratchCopy()
+      const tail = readSnapshot(dir, newest)
+      const backup = { ...tail, id: '11111111-1111-4111-8111-111111111111', prevId: tail.id }
+      writeFileSync(join(dir, 'meta', 'zz-backup.json'), JSON.stringify(backup))
+      expect(snapshotProblems(dir), 'a stray snapshot must be refused by name').toEqual([
+        'unexpected entry in meta/: zz-backup.json',
+      ])
+    })
+
+    it('a directory named like the newest snapshot', () => {
+      const dir = scratchCopy()
+      const name = snapshotName(newest)
+      rmSync(join(dir, 'meta', name))
+      mkdirSync(join(dir, 'meta', name))
+      expect(snapshotProblems(dir), 'a directory is not a snapshot').toEqual([
+        `missing snapshot: meta/${name}`,
+        `unexpected entry in meta/: ${name}`,
+      ])
+    })
+
+    it('an unparseable snapshot', () => {
+      const dir = scratchCopy()
+      const name = snapshotName(newest)
+      writeFileSync(join(dir, 'meta', name), '{ not json')
+      expect(snapshotProblems(dir), 'unparseable JSON must be reported by name').toEqual([
+        `unparseable snapshot: meta/${name}`,
+      ])
+    })
+
+    it('a snapshot of the wrong dialect', () => {
+      const dir = scratchCopy()
+      const name = snapshotName(newest)
+      writeFileSync(
+        join(dir, 'meta', name),
+        JSON.stringify({ ...readSnapshot(dir, newest), dialect: 'mysql' })
+      )
+      expect(snapshotProblems(dir), 'a wrong dialect must be reported by name').toEqual([
+        `meta/${name} has dialect mysql, expected postgresql`,
+      ])
+    })
+
+    it('two snapshots with swapped contents (numbering intact, chain broken)', () => {
+      const dir = scratchCopy()
+      const aName = snapshotName(beforeNewest - 1)
+      const bName = snapshotName(beforeNewest)
+      const a = join(dir, 'meta', aName)
+      const b = join(dir, 'meta', bName)
+      const aText = readFileSync(a, 'utf8')
+      writeFileSync(a, readFileSync(b, 'utf8'))
+      writeFileSync(b, aText)
+      const brokenAt = snapshotProblems(dir).map(
+        (p) => p.match(/^broken chain: meta\/(\S+)/)?.[1] ?? p
+      )
+      // Swapping N-1 and N breaks three links: into N-1, into N, and into N+1.
+      expect(brokenAt, 'only the chain can see a swap, and it must name each broken link').toEqual([
+        aName,
+        bName,
+        snapshotName(newest),
+      ])
+    })
   })
 })

@@ -14,7 +14,9 @@
  *
  * For DanubeData production deployment:
  * - Create a fresh database
- * - Apply Drizzle migrations via `pnpm --filter db db:migrate`
+ * - Apply Drizzle migrations through the in-cluster migrate container, which runs
+ *   the preflight and `drizzle-kit migrate` under an advisory lock (see
+ *   `packages/db/migrations/README.md`, "Applying migrations — production")
  * - No manual migration needed
  */
 

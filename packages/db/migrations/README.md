@@ -18,9 +18,14 @@ and `0020_giant_black_bird.sql` are hand-authored or hand-amended where drizzle-
   journal rather than trusting a list in prose; an out-of-date prose list in this
   file is one of the two things story `cleanup-3` was opened to fix.
 - `meta/NNNN_snapshot.json` — the schema snapshot each migration was generated
-  against. ⚠️ **Not covered by either test below.** `drizzle-kit generate` diffs
-  against the newest snapshot, so a missing or mis-numbered one yields a wrong next
-  migration and both suites still pass.
+  against. `drizzle-kit generate` diffs `schema.ts` against the **lexically last**
+  file in `meta/` whose name does not start with `_`, so a deleted or renumbered
+  newest snapshot, or a stray *valid* snapshot that sorts last (a backup, a copy
+  from another branch), silently yields a wrong next migration. (drizzle-kit
+  refuses junk files and prevId collisions itself, but exits 0 while doing so.)
+  Nothing but snapshots and `_journal.json` may live in `meta/`;
+  `migration-chain.test.ts` enforces that (story 78.1). It checks each snapshot's
+  identity and chain, not its content.
 
 What *is* machine-checked:
 
@@ -28,13 +33,15 @@ What *is* machine-checked:
 |---|---|
 | Every journal migration replays onto an empty database, in one transaction | `packages/db/src/migration-replay.test.ts` |
 | Journal ↔ `.sql` file integrity, both directions (no orphans, no missing entries) | `packages/db/src/migration-chain.test.ts` |
+| Exactly one `meta/NNNN_snapshot.json` per journal entry and no other file in `meta/`; the snapshot `id → prevId` chain is linear in journal order; the set of hand-authored (repeated-schema, compared with key order ignored) migrations is pinned; no `.sql` is comment-only | `packages/db/src/migration-chain.test.ts` |
 
 Run them with `pnpm --filter @budget-planner/db test`.
 
 ## Prerequisites (local)
 
 A repo-root `.env` — `packages/db/drizzle.config.ts` reads `DATABASE_URL` from there
-and nowhere else — containing **both**:
+and nowhere else — containing **both** (⚠️ the migrate *preflight* does NOT load this
+file; see "Applying migrations" below):
 
 ```
 DATABASE_URL=postgresql://…
@@ -55,6 +62,14 @@ pnpm --filter @budget-planner/db db:generate
 This writes a new `.sql`, a `meta/NNNN_snapshot.json`, and a `meta/_journal.json`
 entry. Commit all three together.
 
+A change drizzle-kit 0.23 cannot express (a CHECK constraint, for one) goes in a
+**hand-authored** migration: `pnpm --filter @budget-planner/db db:generate --custom --name <name>`
+writes a `.sql` holding only a placeholder comment for you to replace, a journal
+entry, and a snapshot that repeats the previous one's schema under a fresh id.
+`migration-chain.test.ts` refuses a comment-only `.sql` and pins the exact list of
+such repeated-schema migrations (today: `0020`), so add the new index to that list
+in the same change.
+
 ⚠️ `migration-replay.test.ts` **pins the journal entry count as a literal**, so a new
 migration reddens the db suite until that number is updated in the test. That is
 deliberate — it forces a human to look at the new migration — but it means adding a
@@ -63,12 +78,18 @@ migration is a two-file change, not one.
 ## Applying migrations — local and dev targets
 
 ```bash
-pnpm --filter @budget-planner/db db:migrate:preflight && \
-  pnpm --filter @budget-planner/db db:migrate
+# From the repo root:
+( set -a; . ./.env; set +a
+  pnpm --filter @budget-planner/db db:migrate:preflight && \
+  pnpm --filter @budget-planner/db db:migrate )
 ```
 
 The `&&` is load-bearing: the preflight is only a gate if a non-zero exit actually
-stops the migrate step.
+stops the migrate step. The subshell exists because `migrate-preflight-cli.ts` reads
+the real environment only; `drizzle-kit` loads `.env` through `drizzle.config.ts`,
+the preflight does not. Without it the preflight exits 1 with "DATABASE_URL is not
+set" and the migrate never runs (measured, story 78.1 review). `. ./.env` is shell
+syntax: quote any value containing spaces, `$` or quotes.
 
 `db:migrate:preflight` exits 0 when it classifies the target as `empty` or
 `journaled`, and non-zero otherwise — most importantly for a database built with
@@ -124,9 +145,6 @@ every row written since the dump.
 
 ## Related
 
-- `packages/db/MIGRATIONS.md` — the "how migrations work" guide and schema notes.
-  ⚠️ Its Story-4-2 workflow section predates the preflight and the lock; use the
-  commands on this page instead.
 - `packages/db/scripts/migrate-users-to-uuid.ts` — a historical one-off from story
   4-2 (serial → uuid `users.id`). Its header records its status: **not needed for new
   setups**. `users.id` has been uuid since `0000`; the four entity-table primary keys

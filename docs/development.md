@@ -103,12 +103,18 @@ NODE_ENV=development
 
 **⚠️ IMPORTANT:** Always replace `CHANGE_ME_TO_YOUR_PASSWORD` with your actual PostgreSQL password. Never commit this file to version control.
 
-Database migrations read the **project-root `.env`** (see `packages/db/drizzle.config.ts`,
-which loads `../../.env`). Ensure the root `.env` contains the same `DATABASE_URL`:
+Database migrations use the **project-root `.env`**. Ensure it contains the same
+`DATABASE_URL`, **and** `NODE_ENV=development` (without it a `localhost` URL is rejected
+as "not a DanubeData EU host"):
 
 ```
 DATABASE_URL=postgresql://budget-planner-user:CHANGE_ME_TO_YOUR_PASSWORD@localhost:5432/budget-planner-dev
+NODE_ENV=development
 ```
+
+⚠️ Only `drizzle-kit` loads that file itself (`packages/db/drizzle.config.ts` loads
+`../../.env`). The migrate **preflight** reads the real environment only, so the commands
+below load `.env` into a subshell first.
 
 **Important:** Never commit `.env` files to git (they're in `.gitignore`).
 
@@ -120,12 +126,20 @@ migration in the correct order. Do **not** hand-apply individual `.sql` files wi
 bypasses Drizzle's journal, leaving the schema inconsistent and unrecorded.
 
 ```bash
-# Navigate to db package
-cd packages/db
-
-# Apply all migrations to the local database (reads root .env DATABASE_URL)
-pnpm db:migrate
+# From the repo root. The subshell loads .env for the preflight (which does not
+# read the file itself) without leaving the variables in your shell. Then:
+# classify the target, and apply all migrations only if the preflight passed.
+# The `&&` is load-bearing: the preflight refuses a database drizzle cannot
+# migrate safely, and only a non-zero exit that stops the second command makes
+# it a gate.
+( set -a; . ./.env; set +a
+  pnpm --filter db db:migrate:preflight && pnpm --filter db db:migrate )
 ```
+
+`. ./.env` is shell syntax, so a value with spaces, `$` or quotes in it must be quoted
+in `.env`.
+
+See `packages/db/migrations/README.md` for what the preflight refuses and why.
 
 ### 6. Verify Database Setup
 
@@ -342,16 +356,27 @@ pnpm --filter web preview
 **Problem:** Migrations fail because tables already exist
 
 **Solution:**
-1. Check which migrations have been applied:
+1. Run the preflight from the repo root — it classifies the database and says why it
+   is (or is not) safe to migrate:
+   `( set -a; . ./.env; set +a; pnpm --filter db db:migrate:preflight )`
+2. Check which migrations have been applied (drizzle keeps its journal in its own
+   `drizzle` schema, not in `public`):
    ```bash
-   psql -h localhost -U budget-planner-user -d budget-planner-dev -c "SELECT * FROM drizzle_migrations;"
+   psql -h localhost -U budget-planner-user -d budget-planner-dev -c "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id;"
    ```
-2. If the migration table doesn't exist, the migrations haven't been applied yet
-3. If you need to reset, drop and recreate the public schema, then re-run migrations:
+3. If that table doesn't exist, no migration has been applied through drizzle yet.
+   Tables in `public` with no journal usually mean the database was built with
+   `drizzle-kit push` (or restored from a dump of `public` alone, or created by hand);
+   the preflight refuses all of these (`push-built`).
+4. If you need to reset a LOCAL database, drop **both** schemas, then re-run migrations:
    ```bash
-   psql -h localhost -U budget-planner-user -d budget-planner-dev -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-   cd packages/db && pnpm db:migrate
+   psql -h localhost -U budget-planner-user -d budget-planner-dev -c "DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+   ( set -a; . ./.env; set +a
+     pnpm --filter db db:migrate:preflight && pnpm --filter db db:migrate )
    ```
+   ⚠️ Dropping only `public` leaves drizzle's journal behind: `db:migrate` then
+   believes every migration is already applied and leaves an empty database. The
+   preflight refuses exactly that state (`inconsistent`).
 
 ### A `script-src-elem` CSP error in the browser console (uBlock Origin)
 

@@ -195,7 +195,7 @@ Run these from the repository root unless noted otherwise.
 Database scripts live in the `packages/db` workspace:
 
 - `pnpm --filter db db:generate` - Generate Drizzle migrations from the schema.
-- `pnpm --filter db db:migrate` - Apply pending migrations.
+- `( set -a; . ./.env; set +a; pnpm --filter db db:migrate:preflight && pnpm --filter db db:migrate )` - Classify the target database, then apply pending migrations. The subshell loads the root `.env`, which the preflight does not read itself. Never run `db:migrate` without the preflight in front of it; see `packages/db/migrations/README.md`.
 - `pnpm --filter db db:studio` - Open Drizzle Studio.
 
 ### Scripts to avoid
