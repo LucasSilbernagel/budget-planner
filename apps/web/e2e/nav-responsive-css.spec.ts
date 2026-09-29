@@ -689,10 +689,11 @@ for (const [theme, expected] of [
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    const bg = await page.evaluate(
-      (selector) => globalThis.getComputedStyle(document.querySelector(selector)).backgroundColor,
-      NAV
-    )
+    const bg = await page.evaluate((selector) => {
+      const nav = document.querySelector(selector)
+      if (!nav) throw new Error(`${selector} not found`)
+      return globalThis.getComputedStyle(nav).backgroundColor
+    }, NAV)
 
     // Opacity first: this is what actually fails when the token is dropped.
     expect(bg, `the ${theme} mobile bar is transparent — content shows through`).not.toMatch(
@@ -723,12 +724,11 @@ for (const [theme, expected] of [
     await page.waitForLoadState('networkidle')
     await page.locator(MORE_SUMMARY).click()
 
-    const bg = await page.evaluate(
-      (selector) =>
-        globalThis.getComputedStyle(document.querySelector(`${selector} > ul > li > details > ul`))
-          .backgroundColor,
-      NAV
-    )
+    const bg = await page.evaluate((selector) => {
+      const sheet = document.querySelector(`${selector} > ul > li > details > ul`)
+      if (!sheet) throw new Error(`the More sheet under ${selector} not found`)
+      return globalThis.getComputedStyle(sheet).backgroundColor
+    }, NAV)
     expect(bg, `the ${theme} More sheet is transparent — content shows through`).not.toMatch(
       /rgba\(.*,\s*0\)$/
     )
@@ -746,7 +746,9 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
 
     const measured = await page.evaluate((selector) => {
       const nav = document.querySelector(selector)
+      if (!nav) throw new Error(`${selector} not found`)
       const sheet = nav.querySelector(':scope > ul > li > details > ul')
+      if (!sheet) throw new Error(`the More sheet under ${selector} not found`)
       const s = sheet.getBoundingClientRect()
       const n = nav.getBoundingClientRect()
       return {
@@ -1093,10 +1095,11 @@ test('the desktop nav carries NO background of its own — the wrapper owns it',
   await page.goto('/')
   await page.waitForLoadState('networkidle')
 
-  const bg = await page.evaluate(
-    (selector) => globalThis.getComputedStyle(document.querySelector(selector)).backgroundColor,
-    NAV
-  )
+  const bg = await page.evaluate((selector) => {
+    const nav = document.querySelector(selector)
+    if (!nav) throw new Error(`${selector} not found`)
+    return globalThis.getComputedStyle(nav).backgroundColor
+  }, NAV)
   // An unprefixed `bg-*` leaking to desktop would paint a band inside the shared
   // nav+account row that `__root.tsx` dresses as one bar (story 19-3).
   expect(bg, 'a background leaked onto the desktop nav').toBe('rgba(0, 0, 0, 0)')

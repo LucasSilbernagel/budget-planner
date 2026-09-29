@@ -30,6 +30,7 @@ const ISO = '2026-08-06T00:00:00.000Z'
 const incomeRow = (amount: number) => ({
   id: 'inc-1',
   userId: 0,
+  categoryId: null,
   name: 'Salary',
   amount,
   frequency: 'monthly' as const,

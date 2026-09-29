@@ -259,6 +259,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
   const incomeRow = (amount: number, id = 'inc-1') => ({
     id,
     userId: 0,
+    categoryId: null,
     name: 'Salary',
     amount,
     frequency: 'monthly' as const,
@@ -268,6 +269,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
   const expenseRow = (amount: number, id = 'exp-1') => ({
     id,
     userId: 0,
+    categoryId: null,
     name: 'Rent',
     amount,
     frequency: 'monthly' as const,
@@ -504,6 +506,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
   const salary = (amount: number) => ({
     id: 'i',
     userId: 0,
+    categoryId: null,
     name: 'Salary',
     amount,
     frequency: 'monthly' as const,
@@ -1639,6 +1642,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   const incomeRow = (amount: number, id = 'inc-1') => ({
     id,
     userId: 0,
+    categoryId: null,
     name: 'Salary',
     amount,
     frequency: 'monthly' as const,
@@ -1648,6 +1652,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   const expenseRow = (amount: number, name: string, id = 'exp-1') => ({
     id,
     userId: 0,
+    categoryId: null,
     name,
     amount,
     frequency: 'monthly' as const,

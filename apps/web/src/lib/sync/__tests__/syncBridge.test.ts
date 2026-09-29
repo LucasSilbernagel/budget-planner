@@ -12,6 +12,7 @@
 import type { SyncEntityType } from '@budget-planner/core/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  type SyncBridgeHandle,
   clearSyncBridge,
   isSyncActive,
   registerSyncBridge,
@@ -22,14 +23,26 @@ import {
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 
+// Each mock takes the REAL handle signature, so `mock.calls[i]` is typed by it.
+// Untyped, `vi.fn(async () => {})` records zero parameters and every read of a
+// call's argument was a type error hidden behind a cast (story 78.2).
 function makeHandle() {
   return {
     userId: SESSION_USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
+
+/**
+ * A store row as the bridge receives it. `ClientEntity` declares only `id` and
+ * `updatedAt` on purpose (the bridge reads domain fields through a record view),
+ * so a fresh literal carrying domain fields trips the excess-property check.
+ * Stores hand the bridge typed rows, never literals; passing the fixture
+ * through this generic mirrors that and keeps every field's own type.
+ */
+const row = <T extends { id: string; updatedAt?: string }>(entity: T): T => entity
 
 let handle: ReturnType<typeof makeHandle>
 
@@ -66,13 +79,16 @@ describe('syncBridge — paid tier (handle registered)', () => {
   })
 
   it('create forwards a server-shaped payload with the SESSION userId', () => {
-    syncEntityCreate('incomeSource', {
-      id: 'inc-1',
-      userId: 0, // free-tier local placeholder — must be replaced
-      name: 'Salary',
-      amount: 500000,
-      frequency: 'monthly',
-    })
+    syncEntityCreate(
+      'incomeSource',
+      row({
+        id: 'inc-1',
+        userId: 0, // free-tier local placeholder — must be replaced
+        name: 'Salary',
+        amount: 500000,
+        frequency: 'monthly',
+      })
+    )
 
     expect(handle.queueCreate).toHaveBeenCalledWith('incomeSource', 'inc-1', {
       name: 'Salary',
@@ -172,7 +188,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
       targetAmount: null,
       currentBalance: 0,
     } as { id: string })
-    const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueCreate.mock.calls[0][2]
     expect(payload.allocationMode).toBe('automatic')
     // An automatic account has no manual amount — the nullable column is forwarded
     // as an EXPLICIT null (not omitted) so a manual→automatic switch resets it on
@@ -206,7 +222,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
         updatedAt: '2026-06-27T00:00:00.000Z',
       } as { id: string; updatedAt: string }
     )
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
     expect(payload.allocationMode).toBe('automatic')
     expect('monthlyAllocation' in payload).toBe(true)
     expect(payload.monthlyAllocation).toBeNull()
@@ -225,14 +241,17 @@ describe('syncBridge — paid tier (handle registered)', () => {
    * property the partial-`.set()` hazard in `syncBridge.ts` actually needs.
    */
   it('puts exactly the balanceTracking columns on the wire, and no retired ones', () => {
-    syncEntityCreate('balanceTracking', {
-      id: 'b2',
-      type: 'debt',
-      name: 'Loan',
-      currentBalance: -5000,
-      monthlyContribution: 100,
-    })
-    const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
+    syncEntityCreate(
+      'balanceTracking',
+      row({
+        id: 'b2',
+        type: 'debt',
+        name: 'Loan',
+        currentBalance: -5000,
+        monthlyContribution: 100,
+      })
+    )
+    const payload = handle.queueCreate.mock.calls[0][2]
     expect(Object.keys(payload).sort()).toEqual(
       [
         'type',
@@ -248,14 +267,17 @@ describe('syncBridge — paid tier (handle registered)', () => {
   })
 
   it('defaults a missing frequency to monthly in the payload (Story 16-2)', () => {
-    syncEntityCreate('balanceTracking', {
-      id: 'b3',
-      type: 'debt',
-      name: 'Loan',
-      currentBalance: -5000,
-      monthlyContribution: 100,
-    })
-    const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
+    syncEntityCreate(
+      'balanceTracking',
+      row({
+        id: 'b3',
+        type: 'debt',
+        name: 'Loan',
+        currentBalance: -5000,
+        monthlyContribution: 100,
+      })
+    )
+    const payload = handle.queueCreate.mock.calls[0][2]
     expect(payload.frequency).toBe('monthly')
   })
 
@@ -278,13 +300,16 @@ describe('syncBridge — paid tier (handle registered)', () => {
   })
 
   it('delete forwards id + baseVersion (tombstone source)', () => {
-    syncEntityDelete('expense', {
-      id: 'exp-1',
-      name: 'Rent',
-      amount: 100000,
-      frequency: 'monthly',
-      updatedAt: '2026-06-28T00:00:00.000Z',
-    })
+    syncEntityDelete(
+      'expense',
+      row({
+        id: 'exp-1',
+        name: 'Rent',
+        amount: 100000,
+        frequency: 'monthly',
+        updatedAt: '2026-06-28T00:00:00.000Z',
+      })
+    )
     expect(handle.queueDelete).toHaveBeenCalledWith(
       'expense',
       'exp-1',
@@ -293,19 +318,25 @@ describe('syncBridge — paid tier (handle registered)', () => {
   })
 
   it('passes baseVersion undefined when updatedAt is missing/unparseable', () => {
-    syncEntityDelete('userProfile', { id: 'p1', name: 'Main', isDefault: false, currency: 'NONE' })
+    syncEntityDelete(
+      'userProfile',
+      row({ id: 'p1', name: 'Main', isDefault: false, currency: 'NONE' })
+    )
     expect(handle.queueDelete).toHaveBeenCalledWith('userProfile', 'p1', undefined)
   })
 
   it('swallows a queue rejection (a sync hiccup must not break the local edit)', async () => {
     handle.queueCreate.mockRejectedValueOnce(new Error('offline'))
     expect(() =>
-      syncEntityCreate('incomeSource', {
-        id: 'inc-9',
-        name: 'X',
-        amount: 1,
-        frequency: 'monthly',
-      })
+      syncEntityCreate(
+        'incomeSource',
+        row({
+          id: 'inc-9',
+          name: 'X',
+          amount: 1,
+          frequency: 'monthly',
+        })
+      )
     ).not.toThrow()
     // Allow the rejected promise's .catch to settle.
     await Promise.resolve()
@@ -328,15 +359,18 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
     // with no toast, no error state and nothing in the sync UI. Parsing the schema
     // directly (as `finance-type-gates.test.ts` does) proves the SCHEMA; this
     // proves the BRIDGE actually hands the row on.
-    syncEntityCreate('balanceTracking', {
-      id: 'asset-1',
-      type: 'asset',
-      name: 'Condo',
-      currentBalance: 40_000_000,
-      monthlyContribution: 0,
-      frequency: 'monthly',
-      sortOrder: 0,
-    })
+    syncEntityCreate(
+      'balanceTracking',
+      row({
+        id: 'asset-1',
+        type: 'asset',
+        name: 'Condo',
+        currentBalance: 40_000_000,
+        monthlyContribution: 0,
+        frequency: 'monthly',
+        sortOrder: 0,
+      })
+    )
 
     expect(handle.queueCreate).toHaveBeenCalledWith('balanceTracking', 'asset-1', {
       type: 'asset',
@@ -353,16 +387,19 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
 
   // --- Story 45.1 (FR72), AC-10 gate 3: the bridge payload ------------------
   it('forwards contributionRecordedAsExpense: true on an investment row', () => {
-    syncEntityCreate('balanceTracking', {
-      id: 'tfsa-1',
-      type: 'investment',
-      name: 'TFSA',
-      currentBalance: 1_000_000,
-      monthlyContribution: 50_000,
-      frequency: 'monthly',
-      contributionRecordedAsExpense: true,
-      sortOrder: 0,
-    })
+    syncEntityCreate(
+      'balanceTracking',
+      row({
+        id: 'tfsa-1',
+        type: 'investment',
+        name: 'TFSA',
+        currentBalance: 1_000_000,
+        monthlyContribution: 50_000,
+        frequency: 'monthly',
+        contributionRecordedAsExpense: true,
+        sortOrder: 0,
+      })
+    )
 
     expect(handle.queueCreate).toHaveBeenCalledWith(
       'balanceTracking',
@@ -378,19 +415,22 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
     // previous server value in place — a user unticking the box on one device
     // would see the change never land anywhere else. `toHaveProperty` is the
     // point here: asserting `toBe(false)` alone passes on an absent key too.
-    syncEntityCreate('balanceTracking', {
-      id: 'tfsa-2',
-      type: 'investment',
-      name: 'TFSA',
-      currentBalance: 1_000_000,
-      monthlyContribution: 50_000,
-      frequency: 'monthly',
-      sortOrder: 0,
-    })
+    syncEntityCreate(
+      'balanceTracking',
+      row({
+        id: 'tfsa-2',
+        type: 'investment',
+        name: 'TFSA',
+        currentBalance: 1_000_000,
+        monthlyContribution: 50_000,
+        frequency: 'monthly',
+        sortOrder: 0,
+      })
+    )
 
-    const payload = handle.queueCreate.mock.calls.at(-1)?.[2] as Record<string, unknown>
+    const payload = handle.queueCreate.mock.calls.at(-1)?.[2]
     expect(payload).toHaveProperty('contributionRecordedAsExpense')
-    expect(payload.contributionRecordedAsExpense).toBe(false)
+    expect(payload?.contributionRecordedAsExpense).toBe(false)
     expect(JSON.parse(JSON.stringify(payload))).toHaveProperty('contributionRecordedAsExpense')
   })
 })

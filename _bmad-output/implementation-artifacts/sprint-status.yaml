@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29a (**78.2 CODE-REVIEWED -> done**, UNCOMMITTED. epic-78 stays in-progress (78.3, 78.4 backlog). Next: create-story 78.3.)
+# last_updated: 2026-09-28zq (**78.2 DEV DONE -> review**, UNCOMMITTED.)
+# last_updated: 2026-09-28zp (**78.2 DEV STARTED** -> in-progress, baseline `350e14c`, D1-D5 defaults.)
+# last_updated: 2026-09-28zo (**78.2 CONTEXTED -> ready-for-dev** at `350e14c`; SPLIT: new 78.4 backlog (core/db test files). D1-D5 defaults flagged for Lucas.)
 # last_updated: 2026-09-28zn (**78.1 CODE-REVIEWED -> done**, UNCOMMITTED. Next: create-story 78.2.)
 # last_updated: 2026-09-28zm (**78.1 DEV DONE -> review**, UNCOMMITTED.)
 # last_updated: 2026-09-28zl (**78.1 DEV STARTED** -> in-progress, baseline `59ba232`.)
@@ -1053,8 +1057,9 @@ development_status:
 
   epic-78: in-progress  # Tooling That Catches Its Own Drift. FR125/FR126/FR127. 78.2 measured 970 errors / 201 files (588 TS6305) at c668e94 — may split.
   78-1-make-the-migration-chain-check-its-own-snapshots: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-28 (3 layers, Opus), UNCOMMITTED, baseline `59ba232`. 1 decision (Lucas: (a) docs load .env in a subshell; the preflight never read it). 8 patches incl. HIGH: the pin compared key ORDER, so a real `generate --custom` snapshot was missed (fixed: canonical sorted-key, _meta dropped). 1 deferred (content vs schema.ts), 8 dismissed. Web 3703/242, db 295+7, tsc 0x3 + test-file 0, Biome 0/648.
-  78-2-type-check-the-test-files-in-a-gate-that-runs: backlog
+  78-2-type-check-the-test-files-in-a-gate-that-runs: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-29 (3 layers, Opus), UNCOMMITTED. Decisions (Lucas): keep userId widening, accept named rows, add vitest.setup/config to the vitest program (vite.config.ts deferred). 8 patches incl. validator exact-step pin (|| true / continue-on-error bypass MEASURED), e2e buildinfo out of dist/, rootHead mutation proof; 1 patch dismissed on verification (units); 5 deferred; 16 dismissed. Web 3703/242, web tsc 0, core/db/config 0, validator 261/261, Biome 0/649. # DEV DONE 2026-09-28, UNCOMMITTED, baseline `350e14c`. Web 3703/242 (= baseline), web type-check (app+vitest+e2e) 0, core/db/config 0, validator 259/259, Biome 0/649, e2e 2 edited specs 37 passed. 1044->0 unit, 10->0 e2e, 0 escape hatches added (27 cast/directive lines removed). DEVIATIONS: D4 narrowed to ES2022.Object (full ES2022 Error forced `override` in magic-link.ts); D5 fallback local jsdom.d.ts (no @types/jsdom for v24); prod type-only `userId: number | string` (income/expense).  contexted 2026-09-28 at `350e14c`. RE-MEASURED: web unit 1049/214 as-is -> 346/48 once TS6305 (648) removed (TS7006 281->5, downstream noise); e2e 10/2; core 249/18, db 13/4 (package type-check excludes tests). D1 SPLIT: 78.2 = gate + web unit + e2e; core/db -> 78.4. D2 fold into existing `type-check` scripts (deploy Gate 2, validator ==4 pin holds) + package.json guard. D3 e2e in. D4 lib ES2022 test-only. D5 @types/jsdom. Found: `balanceEntries` no-op seeds, `mode: 'symbols'` typo.
   78-3-define-once-which-statuses-grant-paid-access: backlog
+  78-4-type-check-the-core-and-db-test-files-in-the-same-gate: backlog  # SPLIT from 78.2 at context time 2026-09-28 (D1). core 249/18, db 13/4 at `350e14c`. Open: mirror web's test-only relaxation or stay strict.
   epic-78-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.

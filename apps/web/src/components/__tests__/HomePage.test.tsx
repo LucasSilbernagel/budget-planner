@@ -841,6 +841,7 @@ describe('HomePage financial overview copy (story 11-4)', () => {
         {
           id: 'test-weekly',
           userId: 0,
+          categoryId: null,
           name: 'Weekly gig',
           amount: 10000,
           frequency: 'weekly',
@@ -954,6 +955,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
         {
           id: 'inc-monthly',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 120000,
           frequency: 'monthly',
@@ -967,6 +969,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
         {
           id: 'exp-monthly',
           userId: 0,
+          categoryId: null,
           name: 'Rent',
           amount: 60000,
           frequency: 'monthly',
@@ -1086,6 +1089,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
         {
           id: 'inc-weekly',
           userId: 0,
+          categoryId: null,
           name: 'Weekly',
           amount: 33000,
           frequency: 'weekly',
@@ -1095,6 +1099,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
         {
           id: 'inc-annual',
           userId: 0,
+          categoryId: null,
           name: 'Annual',
           amount: 120000,
           frequency: 'annually',
@@ -1182,6 +1187,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'inc-weekly',
           userId: 0,
+          categoryId: null,
           name: 'Weekly gig',
           amount: 10000,
           frequency: 'weekly',
@@ -1191,6 +1197,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'inc-annual',
           userId: 0,
+          categoryId: null,
           name: 'Annual bonus',
           amount: 10000,
           frequency: 'annually',
@@ -1251,6 +1258,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'exp-weekly',
           userId: 0,
+          categoryId: null,
           name: 'Weekly gig',
           amount: 10000,
           frequency: 'weekly',
@@ -1260,6 +1268,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'exp-annual',
           userId: 0,
+          categoryId: null,
           name: 'Annual bonus',
           amount: 10000,
           frequency: 'annually',
@@ -1287,6 +1296,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'inc-weekly',
           userId: 0,
+          categoryId: null,
           name: 'Weekly salary',
           amount: 15000,
           frequency: 'weekly',
@@ -1296,6 +1306,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'inc-annual',
           userId: 0,
+          categoryId: null,
           name: 'Annual dividend',
           amount: 15000,
           frequency: 'annually',
@@ -1358,6 +1369,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'exp-weekly',
           userId: 0,
+          categoryId: null,
           name: 'Weekly gig',
           amount: 12000,
           frequency: 'weekly',
@@ -1367,6 +1379,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'exp-annual',
           userId: 0,
+          categoryId: null,
           name: 'Annual bonus',
           amount: 6000,
           frequency: 'annually',
@@ -1517,6 +1530,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'inc-only',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 500000,
           frequency: 'monthly',
@@ -1544,6 +1558,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         {
           id: 'inc-only',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 10000,
           frequency: 'weekly',
@@ -1586,6 +1601,7 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
         {
           id: 'inc-1',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 500000,
           frequency: 'monthly',
@@ -1597,7 +1613,7 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
     useSavingsStore.setState({
       savingsGoals: [
         {
-          id: 1,
+          id: 'sav-1',
           name: 'Emergency Fund',
           targetAmount: 1000000,
           currentBalance: 250000,
@@ -1684,6 +1700,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
         {
           id: 'inc-1',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: amountCents,
           frequency: 'monthly',
@@ -1700,6 +1717,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
         {
           id: 'exp-1',
           userId: 0,
+          categoryId: null,
           name: 'Rent',
           amount: amountCents,
           frequency: 'monthly',
@@ -1714,7 +1732,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
     useSavingsStore.setState({
       savingsGoals: [
         {
-          id: 1,
+          id: 'sav-1',
           name: 'Emergency Fund',
           targetAmount: 1000000,
           currentBalance: balanceCents,
@@ -1994,6 +2012,8 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
       incomeSources: [
         {
           id: 'inc-1',
+          userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 500_000,
           frequency: 'monthly',
@@ -2014,6 +2034,8 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
       incomeSources: [
         {
           id: 'inc-1',
+          userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 500_000,
           frequency: 'monthly',

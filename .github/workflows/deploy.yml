@@ -154,6 +154,14 @@ jobs:
       # `config` is included beyond AC-1's web/core/db list because it is a real
       # workspace package that already type-checks clean; leaving it unchecked on
       # the deploy path would be an arbitrary hole.
+      #
+      # Story 78.2: web's `type-check` script runs THREE programs, joined by `&&`:
+      # the app (tsconfig.app.json, STRICT, excludes tests), the unit tests plus
+      # their setup/config (tsconfig.vitest.json) and the Playwright specs
+      # (tsconfig.e2e.json). The two test programs use RELAXED index-access flags,
+      # so app code's strictness comes from the first program alone. Before 78.2
+      # no gate type-checked a test file. validate-deploy-workflow.py pins both
+      # this step (exact `run`, no continue-on-error) and the script it calls.
       - name: Type-check web
         run: pnpm --filter web type-check
 

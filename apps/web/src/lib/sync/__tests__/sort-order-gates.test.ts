@@ -35,6 +35,7 @@ import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'
 import {
+  type SyncBridgeHandle,
   clearSyncBridge,
   registerSyncBridge,
   syncEntityCreate,
@@ -47,9 +48,9 @@ const ROW_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 function makeHandle() {
   return {
     userId: SESSION_USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
 
@@ -133,9 +134,12 @@ describe('Gate 2 — the push payload carries sortOrder on every branch', () => 
   it.each(CASES)(
     'update forwards sortOrder for $entityType, including 0',
     ({ entityType, entity }) => {
-      syncEntityUpdate(entityType, { ...entity, sortOrder: 0 })
+      // A named row, not an inline spread: `syncEntityUpdate` takes the bridge's
+      // `{ id, updatedAt? }` view, and stores hand it rows, never fresh literals.
+      const reordered = { ...entity, sortOrder: 0 }
+      syncEntityUpdate(entityType, reordered)
       expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
-      const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+      const payload = handle.queueUpdate.mock.calls[0][2]
       expect(Object.hasOwn(payload, 'sortOrder')).toBe(true)
       expect(payload.sortOrder).toBe(0)
     }

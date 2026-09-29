@@ -138,8 +138,8 @@ describe('savings sort keys', () => {
 
   it('sorts money columns RAW — a balance is a stock, not a per-period flow', () => {
     const extractors = createSavingsSortExtractors({}, () => null)
-    expect(extractors.currentBalance(goal('a', null, 600_00))).toBe(600_00)
-    expect(extractors.target(goal('a', 900_00, 0))).toBe(900_00)
+    expect(keyOf(extractors, 'currentBalance')(goal('a', null, 600_00))).toBe(600_00)
+    expect(keyOf(extractors, 'target')(goal('a', 900_00, 0))).toBe(900_00)
   })
 
   it('places a goal with no target last, in both directions', () => {
@@ -162,11 +162,11 @@ describe('savings sort keys', () => {
     // (story 26.3) — an automatic row's stored `monthlyAllocation` is not what
     // its row displays.
     const extractors = createSavingsSortExtractors({ auto: 250_00 }, () => null)
-    expect(extractors.monthlyAllocation(goal('auto', 500_00, 0, 999_00))).toBe(250_00)
-    expect(extractors.monthlyAllocation(goal('manual', 500_00, 0, 30_00))).toBe(30_00)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('auto', 500_00, 0, 999_00))).toBe(250_00)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('manual', 500_00, 0, 30_00))).toBe(30_00)
     // A corrupt negative manual amount is floored at 0, matching the cell.
-    expect(extractors.monthlyAllocation(goal('manual-neg', 500_00, 0, -5))).toBe(0)
-    expect(extractors.monthlyAllocation(goal('manual-null', 500_00, 0, null))).toBe(0)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('manual-neg', 500_00, 0, -5))).toBe(0)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('manual-null', 500_00, 0, null))).toBe(0)
   })
 
   it('⚠️ keys a target-less ACCOUNT by its displayed figure, exactly like a goal (72.1)', () => {
@@ -175,9 +175,9 @@ describe('savings sort keys', () => {
     // key must follow it: manual ⇒ its floored stored amount, automatic ⇒ its
     // share from `allocations`.
     const extractors = createSavingsSortExtractors({ 'acct-auto': 250_00 }, () => null)
-    expect(extractors.monthlyAllocation(goal('acct-fixed', null, 0, 300_00))).toBe(300_00)
-    expect(extractors.monthlyAllocation(goal('acct-clean', null, 0, null))).toBe(0)
-    expect(extractors.monthlyAllocation(goal('acct-auto', null, 0, null))).toBe(250_00)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('acct-fixed', null, 0, 300_00))).toBe(300_00)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('acct-clean', null, 0, null))).toBe(0)
+    expect(keyOf(extractors, 'monthlyAllocation')(goal('acct-auto', null, 0, null))).toBe(250_00)
     // Measured descending in 64.1: a 300.00 account and a 100.00 goal. Now both
     // figures are visible, so the account sorts ABOVE the goal by the figure shown.
     const rows = [goal('goal-fixed', 500_00, 0, 100_00), goal('acct-fixed', null, 0, 300_00)]
@@ -298,7 +298,7 @@ describe('balance sort keys', () => {
     const monthly = entry('m', 'investment', 0, 300_00, 'monthly')
     // Raw ascending would be weekly (100_00) then monthly (300_00); normalized,
     // the weekly contribution is worth 433_33/month and outranks it.
-    expect(extractors.contribution(weekly)).toBe(433_33)
+    expect(keyOf(extractors, 'contribution')(weekly)).toBe(433_33)
     expect(
       sortRowsBy([weekly, monthly], keyOf(extractors, 'contribution'), 'asc').map((r) => r.name)
     ).toEqual(['m', 'w'])
@@ -306,8 +306,8 @@ describe('balance sort keys', () => {
 
   it('places a contribution with an unreadable cadence last, without throwing', () => {
     const corrupt = entry('bad', 'investment', 0, 100_00, 'fortnightly')
-    expect(() => extractors.contribution(corrupt)).not.toThrow()
-    expect(extractors.contribution(corrupt)).toBeNull()
+    expect(() => keyOf(extractors, 'contribution')(corrupt)).not.toThrow()
+    expect(keyOf(extractors, 'contribution')(corrupt)).toBeNull()
   })
 
   it('sorts a negative debt balance below every positive one', () => {

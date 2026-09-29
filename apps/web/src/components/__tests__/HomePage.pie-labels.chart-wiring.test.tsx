@@ -129,7 +129,7 @@ beforeEach(() => {
     } satisfies PremiumAccessStatus,
   })
   useSavingsStore.setState({ savingsGoals: [] })
-  useBalanceStore.setState({ balanceEntries: [] })
+  useBalanceStore.setState({ entries: [] })
   useCategoryStore.setState({ categories: [] })
   // ⚠️ BOTH pies must have data. `BreakdownPie` short-circuits to its
   // `emptyLabel` placeholder before `<Pie>` when its list is empty, so an

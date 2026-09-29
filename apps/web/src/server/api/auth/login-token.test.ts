@@ -29,7 +29,7 @@ const {
   const insertValues = vi.fn().mockResolvedValue(undefined)
   const updateReturning = vi.fn()
   const updateWhere = vi.fn(() => ({ returning: updateReturning }))
-  const updateSet = vi.fn(() => ({ where: updateWhere }))
+  const updateSet = vi.fn((_values: Record<string, unknown>) => ({ where: updateWhere }))
   const selectLimit = vi.fn()
   const selectWhere = vi.fn(() => ({ limit: selectLimit }))
   const selectFrom = vi.fn(() => ({ where: selectWhere }))
@@ -133,7 +133,7 @@ describe('consumeLoginToken (atomic single-use)', () => {
 
     // The consume marks the row consumed (single-use) in the same UPDATE that
     // gates on not-yet-consumed + not-expired.
-    const setArg = updateSet.mock.calls[0][0] as { consumedAt: Date }
+    const setArg = updateSet.mock.calls[0][0]
     expect(setArg.consumedAt).toBeInstanceOf(Date)
     expect(updateWhere).toHaveBeenCalledTimes(1)
     expect(updateReturning).toHaveBeenCalledTimes(1)

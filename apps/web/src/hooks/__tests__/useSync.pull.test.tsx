@@ -109,6 +109,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
         {
           id: INCOME_ID,
           userId: 0,
+          categoryId: null,
           name: 'Existing',
           amount: 500,
           frequency: 'monthly',

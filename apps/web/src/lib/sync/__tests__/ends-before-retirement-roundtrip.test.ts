@@ -40,7 +40,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { syncOperationSchema } from '../../../server/api/sync'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { applyServerChangesToStores } from '../applyServerChanges'
-import { clearSyncBridge, registerSyncBridge, syncEntityUpdate } from '../syncBridge'
+import {
+  type SyncBridgeHandle,
+  clearSyncBridge,
+  registerSyncBridge,
+  syncEntityUpdate,
+} from '../syncBridge'
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const PROFILE_ID = '99999999-9999-4999-8999-999999999999'
@@ -96,9 +101,9 @@ afterAll(async () => {
 function makeHandle() {
   return {
     userId: USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
 
@@ -126,7 +131,7 @@ const clientRow = (endsBeforeRetirement: boolean | undefined) => ({
 /** Push one client-side update through the real payload + server gate, then write. */
 async function pushUpdate(endsBeforeRetirement: boolean | undefined): Promise<void> {
   syncEntityUpdate('expense', clientRow(endsBeforeRetirement))
-  const payload = handle.queueUpdate.mock.calls[0]?.[2] as Record<string, unknown>
+  const payload = handle.queueUpdate.mock.calls[0]?.[2]
 
   const parsed = syncOperationSchema.parse({
     id: '22222222-2222-4222-8222-222222222222',
@@ -146,7 +151,8 @@ async function pushUpdate(endsBeforeRetirement: boolean | undefined): Promise<vo
   const { id: _id, profileId: _p, userId: _u, ...fields } = data
   await db
     .update(expenses)
-    // @ts-expect-error - dynamic update, exactly as at the production call site
+    // Typed as the production call site is (`sync.ts` `updatePayload`); the
+    // `@ts-expect-error` once here was unused, surfaced by story 78.2.
     .set({ ...fields, userId: USER_ID, updatedAt: new Date() })
     .where(and(eq(expenses.userId, USER_ID), eq(expenses.id, ROW_ID)))
 }

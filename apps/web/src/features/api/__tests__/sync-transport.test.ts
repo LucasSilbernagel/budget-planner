@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe('sendSyncOperation', () => {
   it('POSTs the operation wrapped in a single-op batch to /api/sync/batch', async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({ success: true, processedCount: 1, failedCount: 0, conflictCount: 0 })
     )
     vi.stubGlobal('fetch', fetchMock)

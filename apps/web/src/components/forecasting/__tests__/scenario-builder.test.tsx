@@ -228,6 +228,12 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
 })
 
 describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
+  // Saved rows and events carry `name` (the builder writes it and the reload reads
+  // it) although the scenario type omits it; named rows, not inline literals, so
+  // the excess-property check does not reject what a real save contains.
+  const savedIncome = [{ name: 'Consulting', amount: 800000, frequency: 'monthly' as const }]
+  const savedExpenses = [{ name: 'Rent', amount: 250000, frequency: 'monthly' as const }]
+  const savedEvents = [{ year: 3, amount: 1000000, name: 'Bonus' }]
   const savedForecast: SavedForecast = {
     id: 'saved-1',
     name: 'My Saved Plan',
@@ -237,9 +243,9 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
       description: 'A loaded scenario',
       incomeGrowthRate: 0.05,
       expenseGrowthRate: 0.03,
-      newIncome: [{ name: 'Consulting', amount: 800000, frequency: 'monthly' }],
-      newExpenses: [{ name: 'Rent', amount: 250000, frequency: 'monthly' }],
-      oneTimeEvents: [{ year: 3, amount: 1000000, name: 'Bonus' }],
+      newIncome: savedIncome,
+      newExpenses: savedExpenses,
+      oneTimeEvents: savedEvents,
     },
     result: {
       scenario: { name: 'My Saved Plan', incomeGrowthRate: 0.05, expenseGrowthRate: 0.03 },
@@ -509,6 +515,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
   })
 
   it('AC-1: a saved NEGATIVE event reloads as money out, showing its magnitude', () => {
+    const deposit = [{ year: 2, amount: -4000000, name: 'Deposit' }]
     const withCost: SavedForecast = {
       id: 'saved-cost',
       name: 'House deposit',
@@ -516,7 +523,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
         name: 'House deposit',
         incomeGrowthRate: 0,
         expenseGrowthRate: 0,
-        oneTimeEvents: [{ year: 2, amount: -4000000, name: 'Deposit' }],
+        oneTimeEvents: deposit,
       },
       result: {
         scenario: { name: 'House deposit', incomeGrowthRate: 0, expenseGrowthRate: 0 },

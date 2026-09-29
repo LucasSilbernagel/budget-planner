@@ -29,6 +29,7 @@ const GENERATED_AT = new Date('2026-08-08T12:00:00.000Z')
 const incomeRow = (id: string, name: string, amount: number, frequency: string) => ({
   id,
   userId: 0,
+  categoryId: null,
   name,
   amount,
   frequency: frequency as 'weekly' | 'biweekly' | 'monthly' | 'annually',
@@ -313,7 +314,7 @@ describe('FinancialSummaryReport — content', () => {
   })
 
   it('formats through the selected currency when symbols mode is on (FR34)', () => {
-    useCurrencyStore.setState({ mode: 'symbols', currency: 'USD' })
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 

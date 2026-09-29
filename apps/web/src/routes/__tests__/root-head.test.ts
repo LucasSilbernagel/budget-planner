@@ -16,12 +16,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COUNTERDEV_SCRIPT_SRC } from '../../lib/analytics/counter'
 import { Route } from '../__root'
 
+/**
+ * The root head, read synchronously. `head()` is typed `Awaitable<…>`, but the
+ * root route's is a plain function, and every read below assumes so. If it ever
+ * turned async, `.scripts`/`.meta` on the Promise would be `undefined` and each
+ * absence assertion would pass on nothing, so that case throws instead.
+ */
+function rootHead() {
+  const head = Route.options.head?.({} as never)
+  if (head instanceof Promise) throw new Error('__root head() is async: read it with await')
+  return head
+}
+
 function headScripts() {
-  return Route.options.head?.({} as never)?.scripts ?? []
+  return rootHead()?.scripts ?? []
 }
 
 function headMeta() {
-  return Route.options.head?.({} as never)?.meta ?? []
+  return rootHead()?.meta ?? []
 }
 
 afterEach(() => {
@@ -32,14 +44,14 @@ describe('__root head() analytics wiring', () => {
   it('emits exactly one counter.dev script (with data-id) when the id is set', () => {
     vi.stubEnv('VITE_COUNTERDEV_ID', 'site-test-123')
     const scripts = headScripts()
-    const counterScripts = scripts.filter((s) => s.src === COUNTERDEV_SCRIPT_SRC)
+    const counterScripts = scripts.filter((s) => s?.src === COUNTERDEV_SCRIPT_SRC)
     expect(counterScripts).toEqual([{ src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123' }])
   })
 
   it('emits no counter.dev script when the id is unset', () => {
     vi.stubEnv('VITE_COUNTERDEV_ID', '')
     const scripts = headScripts()
-    expect(scripts.some((s) => s.src === COUNTERDEV_SCRIPT_SRC)).toBe(false)
+    expect(scripts.some((s) => s?.src === COUNTERDEV_SCRIPT_SRC)).toBe(false)
   })
 })
 
@@ -80,7 +92,9 @@ describe('__root head() subtitle metadata (story 36-1)', () => {
 
   it('the document title reads exactly the AC-2 string', () => {
     const meta = headMeta()
-    const titleEntry = meta.find((m) => 'title' in m) as { title?: string } | undefined
+    const titleEntry = meta.find((m) => m !== undefined && 'title' in m) as
+      | { title?: string }
+      | undefined
     expect(titleEntry?.title).toBe(EXPECTED_TITLE)
     // Kept alongside the exact pin: these name WHAT must not come back, so a
     // failure reads as "the retired tagline returned" rather than "a string
@@ -92,7 +106,7 @@ describe('__root head() subtitle metadata (story 36-1)', () => {
 
   it('the meta description is present and reads exactly the AC-3 string', () => {
     const meta = headMeta()
-    const description = meta.find((m) => m.name === 'description') as
+    const description = meta.find((m) => m?.name === 'description') as
       | { content?: string }
       | undefined
     expect(description).toBeDefined()
@@ -114,7 +128,9 @@ describe('__root head() subtitle metadata (story 36-1)', () => {
    */
   it('the document title carries the formal "Longhand Budget" brand, not the retired one', () => {
     const meta = headMeta()
-    const titleEntry = meta.find((m) => 'title' in m) as { title?: string } | undefined
+    const titleEntry = meta.find((m) => m !== undefined && 'title' in m) as
+      | { title?: string }
+      | undefined
     expect(titleEntry?.title).toContain('Longhand Budget')
     expect(titleEntry?.title).not.toContain('SoluBudget')
   })

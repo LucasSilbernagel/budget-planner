@@ -19,6 +19,7 @@ Exits non-zero on any violation, so it can be wired into CI if wanted.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 
@@ -33,6 +34,9 @@ DEPLOY = ".github/workflows/deploy.yml"
 ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
 DEPLOYED_TAGS_HELPER = ".github/scripts/rapids_deployed_tags.py"
 VERDICT_HELPER = ".github/scripts/rapids_verdict.py"
+WEB_PACKAGE = "apps/web/package.json"
+# App (strict, excludes tests), unit tests + test helpers, Playwright specs.
+WEB_TYPECHECK_CONFIGS = ("tsconfig.app.json", "tsconfig.vitest.json", "tsconfig.e2e.json")
 
 failures: list[str] = []
 checked = 0
@@ -152,6 +156,39 @@ def main() -> int:
     runs = [step.get("run", "") for step in jobs["type-check"]["steps"]]
     check(sum("type-check" in run for run in runs) == 4, "four per-package type-check steps")
     check(not any("tsc:" in run for run in runs), "never invokes the dead tsc:* scripts")
+
+    # Story 78.2. The step above runs `pnpm --filter web type-check`, so what it
+    # actually checks lives in apps/web/package.json, not here. Before 78.2 that
+    # script named only tsconfig.app.json, which EXCLUDES every test file, and
+    # no gate type-checked a test or an e2e spec. Pin the script itself: each
+    # config must be named, and the commands must be joined by `&&` so a failing
+    # first `tsc` cannot be masked by a passing second one (`;` would do that).
+    print("\n== the web type-check covers the app, the unit tests and the e2e specs ==")
+    # EXACT, not a substring: `pnpm --filter web type-check || true` contains the
+    # substring and would turn the gate into a no-op (78.2 review, measured).
+    check(any(run.strip() == "pnpm --filter web type-check" for run in runs),
+          "the gate runs the web package's own type-check script, unmodified")
+    check(not jobs["type-check"].get("continue-on-error")
+          and not any(step.get("continue-on-error") for step in jobs["type-check"]["steps"]),
+          "no continue-on-error anywhere in the type-check job")
+    # A malformed package.json must be a reported FAIL, not a traceback that
+    # skips every later check.
+    try:
+        web_scripts = json.loads(read(WEB_PACKAGE)).get("scripts")
+    except (OSError, json.JSONDecodeError):
+        web_scripts = None
+    check(isinstance(web_scripts, dict), f"{WEB_PACKAGE} parses and has a scripts table")
+    web_script = web_scripts.get("type-check", "") if isinstance(web_scripts, dict) else ""
+    commands = [part.strip() for part in web_script.split("&&")]
+    check(not re.search(r";|\|\|", web_script), "the type-check commands are joined only by &&")
+    configs = [
+        match.group(1)
+        for command in commands
+        if (match := re.fullmatch(r"tsc --noEmit -p (\S+)", command))
+    ]
+    check(len(configs) == len(commands), "every type-check command is a plain `tsc --noEmit -p <config>`")
+    for config in WEB_TYPECHECK_CONFIGS:
+        check(config in configs, f"the web type-check names {config}")
 
     print("\n== migration is ordered, abortive, and gated ==")
     steps = jobs["migrate"]["steps"]

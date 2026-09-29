@@ -171,6 +171,7 @@ function seedFixture(): void {
     incomeSources: INCOME_FIXTURE.map((row) => ({
       ...row,
       userId: 0,
+      categoryId: null,
       createdAt: TS,
       updatedAt: TS,
     })),
@@ -179,6 +180,7 @@ function seedFixture(): void {
     expenses: EXPENSE_FIXTURE.map((row) => ({
       ...row,
       userId: 0,
+      categoryId: null,
       createdAt: TS,
       updatedAt: TS,
     })),

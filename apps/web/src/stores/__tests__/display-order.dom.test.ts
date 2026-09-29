@@ -19,7 +19,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PAID_SYNC_STATUSES } from '../../components/sync/SyncProvider'
-import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
+import {
+  type SyncBridgeHandle,
+  clearSyncBridge,
+  registerSyncBridge,
+} from '../../lib/sync/syncBridge'
 import { useBalanceStore } from '../balanceStore'
 import { useExpenseStore } from '../expenseStore'
 import { useIncomeStore } from '../incomeStore'
@@ -458,9 +462,9 @@ describe.each(STORES)('$label — tier matrix (AC-9)', (store) => {
     // spies below are what turn that from a claim into an assertion.
     const unregistered = {
       userId: SESSION_USER_ID,
-      queueCreate: vi.fn(async () => {}),
-      queueUpdate: vi.fn(async () => {}),
-      queueDelete: vi.fn(async () => {}),
+      queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+      queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+      queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
     }
 
     store.add('free-a')
@@ -492,12 +496,12 @@ describe.each(STORES)('$label — tier matrix (AC-9)', (store) => {
       // fails, the tier never mounts sync at all and the rest is unreachable.
       expect(PAID_SYNC_STATUSES as readonly string[]).toContain(status)
 
-      const queueCreate = vi.fn(async () => {})
+      const queueCreate = vi.fn<SyncBridgeHandle['queueCreate']>(async () => {})
       registerSyncBridge({
         userId: SESSION_USER_ID,
         queueCreate,
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       })
 
       store.add('paid-a')

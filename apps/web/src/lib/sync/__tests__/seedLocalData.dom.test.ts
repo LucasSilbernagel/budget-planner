@@ -15,16 +15,16 @@ import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { hasSeeded, seedLocalDataToServer, seedMarkerKey, seedOnce } from '../seedLocalData'
-import { clearSyncBridge, registerSyncBridge } from '../syncBridge'
+import { type SyncBridgeHandle, clearSyncBridge, registerSyncBridge } from '../syncBridge'
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 function makeHandle() {
   return {
     userId: USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
 
@@ -36,6 +36,7 @@ function seedStores() {
       {
         id: 'inc-1',
         userId: 0,
+        categoryId: null,
         name: 'Salary',
         amount: 500000,
         frequency: 'monthly',
@@ -49,6 +50,7 @@ function seedStores() {
       {
         id: 'exp-1',
         userId: 0,
+        categoryId: null,
         name: 'Rent',
         amount: 100000,
         frequency: 'monthly',
@@ -61,7 +63,6 @@ function seedStores() {
     savingsGoals: [
       {
         id: 'sav-1',
-        userId: 0,
         name: 'Emergency',
         targetAmount: 1000000,
         currentBalance: 250000,
@@ -88,11 +89,11 @@ function seedStores() {
     entries: [
       {
         id: 'bal-1',
-        userId: 0,
         type: 'investment',
         name: 'Brokerage',
         currentBalance: 10000,
         monthlyContribution: 500,
+        frequency: 'monthly',
         createdAt: '2026-06-01T00:00:00.000Z',
         updatedAt: '2026-06-01T00:00:00.000Z',
       },
@@ -204,6 +205,7 @@ describe('seedLocalDataToServer', () => {
         {
           id: 'inc-synced',
           userId: USER_ID, // already server-backed
+          categoryId: null,
           name: 'Synced',
           amount: 1,
           frequency: 'monthly',

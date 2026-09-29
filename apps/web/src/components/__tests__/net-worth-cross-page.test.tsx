@@ -226,6 +226,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
         {
           id: 'inc-salary',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 200_000,
           frequency: 'biweekly',
@@ -239,6 +240,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
         {
           id: 'exp-groceries',
           userId: 0,
+          categoryId: null,
           name: 'Groceries',
           amount: 20_000,
           frequency: 'weekly',

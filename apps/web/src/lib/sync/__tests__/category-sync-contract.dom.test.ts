@@ -135,7 +135,7 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
     // `entityType` travels on the ENVELOPE, not in `data`, and is gated by a
     // separate hard-coded z.enum server-side (syncOperationSchema). This asserts
     // the client half; the server half is covered in sync-category-gates.test.ts.
-    const fetchMock = vi.fn(async () => ok())
+    const fetchMock = vi.fn<typeof fetch>(async () => ok())
     vi.stubGlobal('fetch', fetchMock)
 
     await service.queueCreate(
@@ -146,7 +146,7 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
     )
     await service.forceSync()
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    const init = fetchMock.mock.calls[0]?.[1]
     const body = JSON.parse((init?.body as string) ?? '{}')
     expect(body.operations[0].entityType).toBe('category')
   })

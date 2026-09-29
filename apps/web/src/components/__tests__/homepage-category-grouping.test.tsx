@@ -106,7 +106,7 @@ beforeEach(() => {
   useIncomeStore.setState({ incomeSources: [] })
   useExpenseStore.setState({ expenses: [] })
   useSavingsStore.setState({ savingsGoals: [] })
-  useBalanceStore.setState({ balanceEntries: [] })
+  useBalanceStore.setState({ entries: [] })
   useCategoryStore.setState({ categories: [] })
 })
 

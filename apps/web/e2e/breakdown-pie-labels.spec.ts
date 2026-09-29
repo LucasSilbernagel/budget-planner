@@ -133,8 +133,11 @@ const INCOME: SeedRow[] = [
 const EXPENSE_TOTAL = '$68,400.00'
 const EXPENSE_RATIO_HEADLINE = '54%'
 
-function seed(page: Page, income: SeedRow[], expenses: SeedRow[]): Promise<void> {
-  return page.addInitScript(
+// `addInitScript` resolves to a `Disposable` (Playwright 1.61) that would remove
+// the script; no caller wants that, so it is awaited and dropped rather than
+// returned under a `Promise<void>` signature that did not match (story 78.2).
+async function seed(page: Page, income: SeedRow[], expenses: SeedRow[]): Promise<void> {
+  await page.addInitScript(
     ({ incomeRows, expenseRows }: { incomeRows: SeedRow[]; expenseRows: SeedRow[] }) => {
       const now = new Date().toISOString()
       // ⚠️ `version: 3` and an explicit `sortOrder` — the CURRENT persisted

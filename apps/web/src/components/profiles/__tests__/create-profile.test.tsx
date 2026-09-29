@@ -1,4 +1,4 @@
-import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
+import { type SyncBridgeHandle, clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
 import { renderWithProviders, screen, userEvent } from '@/test/utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -142,16 +142,16 @@ describe('CreateProfileDialog does not stamp an icon (story 54.2, code review)',
   it('queues a create payload with no icon key', async () => {
     const handle = {
       userId: '550e8400-e29b-41d4-a716-446655440000',
-      queueCreate: vi.fn(async () => {}),
-      queueUpdate: vi.fn(async () => {}),
-      queueDelete: vi.fn(async () => {}),
+      queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+      queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+      queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
     }
     registerSyncBridge(handle)
     renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
     await submit()
 
     expect(handle.queueCreate).toHaveBeenCalledTimes(1)
-    const payload = handle.queueCreate.mock.calls[0]?.[2] as Record<string, unknown>
+    const payload = handle.queueCreate.mock.calls[0]?.[2]
     expect(Object.hasOwn(payload, 'icon')).toBe(false)
   })
 })

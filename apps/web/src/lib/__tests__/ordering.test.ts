@@ -284,7 +284,7 @@ describe('stampMissingSortOrder — self-healing for rows that arrive unposition
    * That is precisely what a pull produces while migration 0013 is unapplied.
    */
   it('gives every unpositioned row a position, preserving createdAt order', () => {
-    const pulled = [
+    const pulled: { id: string; createdAt: string; sortOrder?: number }[] = [
       { id: 'b', createdAt: '2026-01-02T00:00:00.000Z' },
       { id: 'a', createdAt: '2026-01-01T00:00:00.000Z' },
     ]

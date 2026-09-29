@@ -274,7 +274,7 @@ describe('ProfileList card is the switcher (story 63.1)', () => {
     const bizCard = screen
       .getByRole('button', { name: 'Switch to Business' })
       .closest('div.surface')
-    if (!bizCard) throw new Error('Business card not found')
+    if (!(bizCard instanceof HTMLElement)) throw new Error('Business card not found')
     await user.click(within(bizCard).getByRole('button', { name: 'Delete Business' }))
     // ⚠️ Story 63.2 put a confirmation in front of the deletion, so the click
     // alone no longer deletes. The test still has to reach a REAL deletion to
@@ -305,7 +305,7 @@ describe('ProfileList card is the switcher (story 63.1)', () => {
     const bizCard = screen
       .getByRole('button', { name: 'Switch to Business' })
       .closest('div.surface')
-    if (!bizCard) throw new Error('Business card not found')
+    if (!(bizCard instanceof HTMLElement)) throw new Error('Business card not found')
     within(bizCard).getByRole('button', { name: 'Delete Business' }).focus()
     await user.keyboard('{Enter}')
     // Story 63.2: confirm from the keyboard too, so this stays a real deletion.

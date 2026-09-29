@@ -24,7 +24,9 @@ interface ClientExpense {
   // under every profile (see apps/web/src/lib/profile-scope.ts). Deliberately not
   // on the `ClientNew*` input: an edit form must never re-home a row.
   profileId?: string | null
-  userId: number
+  // `0` on a free-tier row created here; the server's uuid on a pulled row
+  // (see `lib/sync/applyServerChanges.ts`). Story 78.2 widened it from `number`.
+  userId: number | string
   name: string
   amount: number
   frequency: Frequency

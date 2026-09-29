@@ -191,7 +191,7 @@ describe('Nav + account row (story 19-3)', () => {
  * number for a reason unrelated to this invariant.
  */
 describe('Nav + account row, signed in (story 59.3)', () => {
-  const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' }
+  const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' as const }
 
   it('keeps the account menu and its Sign out out of the nav and out of the More sheet', async () => {
     global.fetch = vi.fn((input: RequestInfo | URL) => {
@@ -215,7 +215,7 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     await user.click(trigger)
     const signOut = screen.getByRole('button', { name: 'Sign out' })
     // Story 69.2: the panel's Settings link is the signed-in route to /settings.
-    const settings = screen.getByRole('link', { name: 'Settings', exact: true })
+    const settings = screen.getByRole('link', { name: 'Settings' })
 
     expect(nav.contains(trigger), 'the account menu trigger was folded into <nav>').toBe(false)
     expect(nav.contains(settings), 'the menu’s Settings link was folded into <nav>').toBe(false)

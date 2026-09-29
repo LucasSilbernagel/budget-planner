@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.vitest.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": [],
+    "tsBuildInfoFile": "./tsconfig.e2e.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/config"
+    }
+  ],
+  "include": [
+    "e2e/**/*",
+    "playwright.config.ts",
+    "src/stores/retirementPlannerStore.ts",
+    "src/lib/premium/benefits.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

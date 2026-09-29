@@ -10,7 +10,7 @@
     "build:sw": "node scripts/generate-sw.mjs",
     "start": "node server-entry.mjs",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit -p tsconfig.app.json",
+    "type-check": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.vitest.json && tsc --noEmit -p tsconfig.e2e.json",
     "lint": "biome check .",
     "lint:fix": "biome check . --apply",
     "test": "vitest run --config vitest.config.ts",

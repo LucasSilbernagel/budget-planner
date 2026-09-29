@@ -43,7 +43,7 @@ afterEach(() => {
 
 describe('push integration — service → sendSyncOperation → /api/sync/batch', () => {
   it('AC-2: a queued create is POSTed to /api/sync/batch and then drains', async () => {
-    const fetchMock = vi.fn(async () => okOnce())
+    const fetchMock = vi.fn<typeof fetch>(async () => okOnce())
     vi.stubGlobal('fetch', fetchMock)
 
     await service.queueCreate(

@@ -74,6 +74,7 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
         {
           id: UUID_A,
           userId: 0,
+          categoryId: null,
           name: 'Salary (local)',
           amount: 500000,
           frequency: 'monthly',
@@ -111,6 +112,7 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
         {
           id: UUID_A,
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 500000,
           frequency: 'monthly',

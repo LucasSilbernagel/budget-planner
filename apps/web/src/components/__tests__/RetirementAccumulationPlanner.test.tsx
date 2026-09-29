@@ -1,5 +1,6 @@
 import { act, fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { projectAccumulatedNestEgg } from '@budget-planner/core/finance/retirement'
+import type { FinanceType, Frequency } from '@budget-planner/db'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
@@ -40,11 +41,15 @@ const ISO = '2026-08-06T00:00:00.000Z'
 // file used before 29.2 were both wrong — one hid behind `as unknown as never`,
 // the other invented a `contributionFrequency` field that does not exist on the
 // type while omitting the required `frequency`/`createdAt`/`updatedAt`. They
-// compiled only because `tsconfig.app.json` excludes test files, so the
-// type-check gate could never catch them.
-const incomeRow = (amount: number, frequency = 'monthly' as const, id = 'inc-1') => ({
+// compiled only because `tsconfig.app.json` excludes test files. Since story
+// 78.2 the web `type-check` also checks this file (`tsconfig.vitest.json`), and
+// it caught the next instance: `incomeRow`/`expenseRow` were missing the
+// required `categoryId`, and their `'monthly' as const` default typed
+// `frequency` as the literal 'monthly'.
+const incomeRow = (amount: number, frequency: Frequency = 'monthly', id = 'inc-1') => ({
   id,
   userId: 0,
+  categoryId: null,
   name: 'Salary',
   amount,
   frequency,
@@ -52,9 +57,10 @@ const incomeRow = (amount: number, frequency = 'monthly' as const, id = 'inc-1')
   updatedAt: ISO,
 })
 
-const expenseRow = (amount: number, frequency = 'monthly' as const, id = 'exp-1') => ({
+const expenseRow = (amount: number, frequency: Frequency = 'monthly', id = 'exp-1') => ({
   id,
   userId: 0,
+  categoryId: null,
   name: 'Rent',
   amount,
   frequency,
@@ -632,6 +638,7 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
         {
           id: 'inc-1',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 1_000_000,
           frequency: 'monthly',
@@ -658,6 +665,7 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
         {
           id: 'inc-1',
           userId: 0,
+          categoryId: null,
           name: 'Shifts',
           amount: 50_000,
           frequency: 'weekly',
@@ -694,6 +702,7 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
           {
             id: 'inc-1',
             userId: 0,
+            categoryId: null,
             name: 'Salary',
             amount: 1_000_000,
             frequency: 'monthly',
@@ -718,6 +727,7 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
         {
           id: 'inc-1',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 1_000_000,
           frequency: 'monthly',
@@ -1870,7 +1880,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 })
 
 describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Story 43.4, D6)', () => {
-  const balanceRow = (id: string, type: string, currentBalance: number) => ({
+  const balanceRow = (id: string, type: FinanceType, currentBalance: number) => ({
     id,
     type,
     name: id,
@@ -2002,11 +2012,10 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
 
   // ⚠️ The frequency parameter is typed explicitly rather than inferred from a
   // `'monthly' as const` default. That default typed the parameter as the LITERAL
-  // 'monthly', making `marked(10_000, 'weekly')` below a type error — and one no
-  // gate could ever catch, because `tsconfig.app.json` excludes `**/*.test.tsx`
-  // (code review 65.2; the same trap this file's own `investmentRow` note records).
-  type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annually'
-  const marked = (amount: number, frequency: Cadence = 'monthly', id = 'exp-m') => ({
+  // 'monthly', making `marked(10_000, 'weekly')` below a type error (code review
+  // 65.2). The review fixed it here but not in `expenseRow`, which `marked`
+  // spreads, and the error survived until story 78.2 type-checked test files.
+  const marked = (amount: number, frequency: Frequency = 'monthly', id = 'exp-m') => ({
     ...expenseRow(amount, frequency, id),
     endsBeforeRetirement: true,
   })

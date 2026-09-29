@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const registerSyncBridge = vi.fn()
 const clearSyncBridge = vi.fn()
 const useSyncMock = vi.fn()
-const seedOnce = vi.fn(async () => 0)
+const seedOnce = vi.fn(async (_userId: string) => 0)
 
 vi.mock('@/lib/sync/syncBridge', () => ({
   registerSyncBridge: (...args: unknown[]) => registerSyncBridge(...args),

@@ -475,6 +475,11 @@ describe('a user with nothing recorded gets an empty builder (62.1 AC-6)', () =>
 })
 
 describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', () => {
+  // Saved rows carry `name` (the builder writes it and `itemsFromSaved` reads it)
+  // although the scenario type declares only `{ amount, frequency }`; named rows,
+  // not inline literals, so the excess-property check does not reject real data.
+  const savedIncome = [{ name: 'Saved Income', amount: 111_100, frequency: 'monthly' as const }]
+  const savedExpenses = [{ name: 'Saved Expense', amount: 222_200, frequency: 'monthly' as const }]
   const savedForecast: SavedForecast = {
     id: 'saved-1',
     name: 'March Plan',
@@ -484,8 +489,8 @@ describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', ()
       description: 'Saved months ago',
       incomeGrowthRate: 0.05,
       expenseGrowthRate: 0.03,
-      newIncome: [{ name: 'Saved Income', amount: 111_100, frequency: 'monthly' }],
-      newExpenses: [{ name: 'Saved Expense', amount: 222_200, frequency: 'monthly' }],
+      newIncome: savedIncome,
+      newExpenses: savedExpenses,
       oneTimeEvents: [],
     },
     result: {

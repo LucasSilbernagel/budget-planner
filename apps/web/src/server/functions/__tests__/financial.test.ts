@@ -25,6 +25,7 @@ vi.mock('@budget-planner/core', () => ({
 }))
 
 import {
+  type CompoundingInput,
   calculateCompoundingProjection,
   calculateRetirementRequirement,
   calculateSafeMonthlyWithdrawal,
@@ -32,6 +33,7 @@ import {
 // Import after mocking
 import { getCurrentUserSession } from '../../api/auth/paddle'
 import {
+  type AggregationInput,
   complexAggregation,
   compoundingProjection,
   netWorthProjection,
@@ -54,12 +56,12 @@ function createMockRequest(userData: any = null): Request {
 
   // Mock getCurrentUserSession based on userData
   if (userData) {
-    ;(getCurrentUserSession as vi.Mock).mockResolvedValue({
+    vi.mocked(getCurrentUserSession).mockResolvedValue({
       success: true,
       data: userData,
     })
   } else {
-    ;(getCurrentUserSession as vi.Mock).mockResolvedValue({
+    vi.mocked(getCurrentUserSession).mockResolvedValue({
       success: false,
       error: 'No user session',
     })
@@ -166,8 +168,15 @@ describe('retirementCalculation', () => {
     const mockRequest = createMockRequest(createMockPaidUser())
     const input = { monthlyIncome: 5000, annualReturnRate: 0.07 }
 
-    const mockResult = { requiredAssets: 857142.86 }
-    ;(calculateRetirementRequirement as vi.Mock).mockReturnValue(mockResult)
+    const mockResult = {
+      requiredAssets: 857142.86,
+      requiredAssetsFormatted: '$8,571.43',
+      monthlyIncome: 5000,
+      monthlyIncomeFormatted: '$50.00',
+      annualReturnRate: 0.07,
+      annualReturnRatePercentage: 7,
+    }
+    vi.mocked(calculateRetirementRequirement).mockReturnValue(mockResult)
 
     const result = await retirementCalculation(mockRequest, input)
 
@@ -211,7 +220,7 @@ describe('safeWithdrawalCalculation', () => {
     const assets = 1000000
     const annualReturnRate = 0.07
     const expectedResult = 7000
-    ;(calculateSafeMonthlyWithdrawal as vi.Mock).mockReturnValue(expectedResult)
+    vi.mocked(calculateSafeMonthlyWithdrawal).mockReturnValue(expectedResult)
 
     const result = await safeWithdrawalCalculation(mockRequest, assets, annualReturnRate)
 
@@ -232,7 +241,12 @@ describe('compoundingProjection', () => {
 
   it('should reject unauthenticated requests', async () => {
     const mockRequest = createMockRequest(null)
-    const input = { principal: 10000, annualReturnRate: 0.07, years: 30 }
+    const input: CompoundingInput = {
+      principal: 10000,
+      annualContribution: 0,
+      annualReturnRate: 0.07,
+      years: 30,
+    }
 
     const result = await compoundingProjection(mockRequest, input)
 
@@ -255,7 +269,12 @@ describe('compoundingProjection', () => {
 
   it('should reject negative principal', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { principal: -1000, annualReturnRate: 0.07, years: 30 }
+    const input: CompoundingInput = {
+      principal: -1000,
+      annualContribution: 0,
+      annualReturnRate: 0.07,
+      years: 30,
+    }
 
     const result = await compoundingProjection(mockRequest, input)
 
@@ -265,7 +284,12 @@ describe('compoundingProjection', () => {
 
   it('should reject negative return rate', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { principal: 10000, annualReturnRate: -0.07, years: 30 }
+    const input: CompoundingInput = {
+      principal: 10000,
+      annualContribution: 0,
+      annualReturnRate: -0.07,
+      years: 30,
+    }
 
     const result = await compoundingProjection(mockRequest, input)
 
@@ -275,7 +299,12 @@ describe('compoundingProjection', () => {
 
   it('should reject non-positive time horizon', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { principal: 10000, annualReturnRate: 0.07, years: 0 }
+    const input: CompoundingInput = {
+      principal: 10000,
+      annualContribution: 0,
+      annualReturnRate: 0.07,
+      years: 0,
+    }
 
     const result = await compoundingProjection(mockRequest, input)
 
@@ -285,9 +314,16 @@ describe('compoundingProjection', () => {
 
   it('should call core function with valid input', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = { principal: 10000, annualReturnRate: 0.07, years: 30 }
-    const mockResult = [{ year: 0, value: 10000 }]
-    ;(calculateCompoundingProjection as vi.Mock).mockReturnValue(mockResult)
+    const input: CompoundingInput = {
+      principal: 10000,
+      annualContribution: 0,
+      annualReturnRate: 0.07,
+      years: 30,
+    }
+    const mockResult = [
+      { year: 0, startingBalance: 10000, annualContribution: 0, endingBalance: 10700 },
+    ]
+    vi.mocked(calculateCompoundingProjection).mockReturnValue(mockResult)
 
     const result = await compoundingProjection(mockRequest, input)
 
@@ -386,7 +422,7 @@ describe('complexAggregation', () => {
 
   it('should reject unauthenticated requests', async () => {
     const mockRequest = createMockRequest(null)
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'sum',
     }
@@ -401,7 +437,7 @@ describe('complexAggregation', () => {
 
   it('should reject empty values array', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [],
       operation: 'sum',
     }
@@ -414,7 +450,7 @@ describe('complexAggregation', () => {
 
   it('should reject invalid operation', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'invalid' as any,
     }
@@ -427,7 +463,7 @@ describe('complexAggregation', () => {
 
   it('should calculate sum correctly', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'sum',
     }
@@ -442,7 +478,7 @@ describe('complexAggregation', () => {
 
   it('should calculate average correctly', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'average',
     }
@@ -456,7 +492,7 @@ describe('complexAggregation', () => {
 
   it('should calculate max correctly', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'max',
     }
@@ -469,7 +505,7 @@ describe('complexAggregation', () => {
 
   it('should calculate min correctly', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'min',
     }
@@ -482,7 +518,7 @@ describe('complexAggregation', () => {
 
   it('should calculate median correctly for odd number of values', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300],
       operation: 'median',
     }
@@ -495,7 +531,7 @@ describe('complexAggregation', () => {
 
   it('should calculate median correctly for even number of values', async () => {
     const mockRequest = createMockRequest(createMockPaidUser())
-    const input = {
+    const input: AggregationInput = {
       values: [100, 200, 300, 400],
       operation: 'median',
     }

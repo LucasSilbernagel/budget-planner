@@ -960,7 +960,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
     it.each(PREMIUM)('links %s to %s', async (label, href) => {
       renderWithSeed(seedWith())
-      const link = within(await nav()).getByRole('link', { name: label, exact: true })
+      const link = within(await nav()).getByRole('link', { name: label })
       expect(link).toHaveAttribute('href', href)
     })
 
@@ -1014,7 +1014,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       // Both halves: the row itself is current, AND the tab that discloses it
       // shows it. `moreActiveClass` reading a different list from the rendered rows
       // is the specific regression this catches.
-      expect(within(navEl).getByRole('link', { name: label, exact: true })).toHaveAttribute(
+      expect(within(navEl).getByRole('link', { name: label })).toHaveAttribute(
         'aria-current',
         'page'
       )

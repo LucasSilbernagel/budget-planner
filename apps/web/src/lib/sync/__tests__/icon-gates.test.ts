@@ -36,6 +36,7 @@ import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'
 import {
+  type SyncBridgeHandle,
   clearSyncBridge,
   registerSyncBridge,
   syncEntityCreate,
@@ -48,9 +49,9 @@ const ROW_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 function makeHandle() {
   return {
     userId: SESSION_USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
 
@@ -83,7 +84,7 @@ describe('Gate 1 — the push payload carries icon', () => {
   it('update forwards a chosen icon', () => {
     syncEntityUpdate('userProfile', profile({ icon: '✈️' }))
     expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
     expect(payload['icon']).toBe('✈️')
     // The rest of the profile still rides along — a new field must not displace
     // the existing ones.
@@ -109,7 +110,7 @@ describe('Gate 1 — the push payload carries icon', () => {
     ['undefined', undefined],
   ])('omits the icon key entirely when it is %s', (_label, value) => {
     syncEntityUpdate('userProfile', profile({ icon: value }))
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
     expect(Object.hasOwn(payload, 'icon')).toBe(false)
   })
 })

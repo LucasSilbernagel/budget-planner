@@ -117,8 +117,13 @@ function headMetaFor(routePath: string, mod: unknown): MetaEntry[] {
   } catch (cause) {
     // A head() that reads loader data throws on `{}`. Say so by name: the raw
     // TypeError names a property, never the fixture that is missing.
-    throw new Error(
-      `head() threw for ${routePath} — if it reads loaderData, add a HEAD_ARGS fixture for it`,
+    // `Object.assign`, not the `{ cause }` option: the test program's lib is
+    // ES2021 plus `ES2022.Object` only (story 78.2), because ES2022's `Error`
+    // types would force an `override` in app code the ES2021 app build rejects.
+    throw Object.assign(
+      new Error(
+        `head() threw for ${routePath} — if it reads loaderData, add a HEAD_ARGS fixture for it`
+      ),
       { cause }
     )
   }
@@ -133,7 +138,11 @@ function descriptionOf(meta: MetaEntry[]): string | undefined {
 }
 
 /** The root default, read from the root route rather than copied as a literal. */
-const rootMeta = (RootRoute.options.head?.({} as never)?.meta ?? []) as MetaEntry[]
+// `head()` is typed `Awaitable<…>`; the root one is synchronous, and this reads
+// it as such. An async head would leave `.meta` undefined, so refuse that.
+const rootHead = RootRoute.options.head?.({} as never)
+if (rootHead instanceof Promise) throw new Error('__root head() is async: read it with await')
+const rootMeta = (rootHead?.meta ?? []) as MetaEntry[]
 const ROOT_DESCRIPTION = descriptionOf(rootMeta)
 const ROOT_TITLE = titleOf(rootMeta)
 

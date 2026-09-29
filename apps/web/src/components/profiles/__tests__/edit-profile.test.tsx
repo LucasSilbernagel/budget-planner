@@ -1,5 +1,10 @@
 import { profileIcon } from '@/lib/profile-appearance'
-import { clearSyncBridge, isSyncActive, registerSyncBridge } from '@/lib/sync/syncBridge'
+import {
+  type SyncBridgeHandle,
+  clearSyncBridge,
+  isSyncActive,
+  registerSyncBridge,
+} from '@/lib/sync/syncBridge'
 import { type ClientProfile, useProfileStore } from '@/stores/profileStore'
 import { act, renderWithProviders, screen, userEvent } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -145,9 +150,9 @@ describe('EditProfileDialog (story 54.1)', () => {
 
     const handle = {
       userId: SESSION_USER_ID,
-      queueCreate: vi.fn(async () => {}),
-      queueUpdate: vi.fn(async () => {}),
-      queueDelete: vi.fn(async () => {}),
+      queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+      queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+      queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
     }
     registerSyncBridge(handle)
 
@@ -164,9 +169,9 @@ describe('EditProfileDialog (story 54.1)', () => {
   it('✕ closes without writing the store or queueing a sync op (code review 54.1)', async () => {
     const handle = {
       userId: SESSION_USER_ID,
-      queueCreate: vi.fn(async () => {}),
-      queueUpdate: vi.fn(async () => {}),
-      queueDelete: vi.fn(async () => {}),
+      queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+      queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+      queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
     }
     registerSyncBridge(handle)
     const user = userEvent.setup()
@@ -218,9 +223,9 @@ describe('EditProfileDialog (story 54.1)', () => {
   it("queues a sync update that clears the description and keeps the profile's currency", async () => {
     const handle = {
       userId: SESSION_USER_ID,
-      queueCreate: vi.fn(async () => {}),
-      queueUpdate: vi.fn(async () => {}),
-      queueDelete: vi.fn(async () => {}),
+      queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+      queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+      queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
     }
     registerSyncBridge(handle)
     const user = userEvent.setup()
@@ -293,9 +298,9 @@ describe('EditProfileDialog (story 54.1)', () => {
       useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
       const handle = {
         userId: SESSION_USER_ID,
-        queueCreate: vi.fn(async () => {}),
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       }
       registerSyncBridge(handle)
       const user = userEvent.setup()
@@ -409,9 +414,9 @@ describe('EditProfileDialog (story 54.1)', () => {
       useProfileStore.setState({ profiles: [MAIN, { ...BUSINESS, icon: '✈️' }] })
       const handle = {
         userId: SESSION_USER_ID,
-        queueCreate: vi.fn(async () => {}),
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       }
       registerSyncBridge(handle)
       const user = userEvent.setup()
@@ -425,16 +430,16 @@ describe('EditProfileDialog (story 54.1)', () => {
       // The local updates object carried no icon — the stored value is untouched…
       expect(storeProfile('biz')?.icon).toBe('✈️')
       // …but the PAYLOAD carries it, because the bridge merges `previous`.
-      const payload = handle.queueUpdate.mock.calls[0]?.[2] as Record<string, unknown>
+      const payload = handle.queueUpdate.mock.calls[0]?.[2]
       expect(payload['icon']).toBe('✈️')
     })
 
     it('does not send an icon when the user only renamed the profile', async () => {
       const handle = {
         userId: SESSION_USER_ID,
-        queueCreate: vi.fn(async () => {}),
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       }
       registerSyncBridge(handle)
       const user = userEvent.setup()
@@ -446,16 +451,16 @@ describe('EditProfileDialog (story 54.1)', () => {
       await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
       expect(Object.hasOwn(storeProfile('biz') as object, 'icon')).toBe(false)
-      const payload = handle.queueUpdate.mock.calls[0]?.[2] as Record<string, unknown>
+      const payload = handle.queueUpdate.mock.calls[0]?.[2]
       expect(Object.hasOwn(payload, 'icon')).toBe(false)
     })
 
     it('queues a sync update carrying the chosen icon', async () => {
       const handle = {
         userId: SESSION_USER_ID,
-        queueCreate: vi.fn(async () => {}),
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       }
       registerSyncBridge(handle)
       const user = userEvent.setup()
@@ -615,9 +620,9 @@ describe('EditProfileDialog (story 54.1)', () => {
     ])('%s after choosing an icon writes nothing and queues nothing', async (_label, dismiss) => {
       const handle = {
         userId: SESSION_USER_ID,
-        queueCreate: vi.fn(async () => {}),
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       }
       registerSyncBridge(handle)
       const user = userEvent.setup()
@@ -637,9 +642,9 @@ describe('EditProfileDialog (story 54.1)', () => {
       useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
       const handle = {
         userId: SESSION_USER_ID,
-        queueCreate: vi.fn(async () => {}),
-        queueUpdate: vi.fn(async () => {}),
-        queueDelete: vi.fn(async () => {}),
+        queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+        queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+        queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
       }
       registerSyncBridge(handle)
       const user = userEvent.setup()

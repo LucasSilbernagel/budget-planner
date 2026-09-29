@@ -59,6 +59,8 @@ function seedIncomeExpensesAndGoal(): void {
     incomeSources: [
       {
         id: 'inc-1',
+        userId: 0,
+        categoryId: null,
         name: 'Salary',
         amount: 300_000,
         frequency: 'monthly',
@@ -71,6 +73,8 @@ function seedIncomeExpensesAndGoal(): void {
     expenses: [
       {
         id: 'exp-1',
+        userId: 0,
+        categoryId: null,
         name: 'TFSA contribution',
         amount: 50_000,
         frequency: 'monthly',

@@ -33,50 +33,86 @@ describe('validateProfileForm (story 54.1)', () => {
   })
 
   it('rejects a whitespace-only name', () => {
-    expect(validateProfileForm({ name: '   ', description: '' }, PROFILES, null)['name']).toBe(
-      'Profile name is required'
-    )
+    expect(
+      validateProfileForm({ ...EMPTY_PROFILE_FORM, name: '   ', description: '' }, PROFILES, null)[
+        'name'
+      ]
+    ).toBe('Profile name is required')
   })
 
   it('accepts a 255-character name and rejects a 256-character one', () => {
-    expect(validateProfileForm({ name: 'a'.repeat(255), description: '' }, PROFILES, null)).toEqual(
-      {}
-    )
     expect(
-      validateProfileForm({ name: 'a'.repeat(256), description: '' }, PROFILES, null)['name']
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'a'.repeat(255), description: '' },
+        PROFILES,
+        null
+      )
+    ).toEqual({})
+    expect(
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'a'.repeat(256), description: '' },
+        PROFILES,
+        null
+      )['name']
     ).toBe('Profile name must be 255 characters or less')
   })
 
   it('accepts a 500-character description and rejects a 501-character one', () => {
     expect(
-      validateProfileForm({ name: 'New', description: 'd'.repeat(500) }, PROFILES, null)
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'New', description: 'd'.repeat(500) },
+        PROFILES,
+        null
+      )
     ).toEqual({})
     expect(
-      validateProfileForm({ name: 'New', description: 'd'.repeat(501) }, PROFILES, null)[
-        'description'
-      ]
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'New', description: 'd'.repeat(501) },
+        PROFILES,
+        null
+      )['description']
     ).toBe('Description must be 500 characters or less')
   })
 
   it('lets the profile being edited keep its own name', () => {
-    expect(validateProfileForm({ name: 'Business', description: '' }, PROFILES, 'biz')).toEqual({})
+    expect(
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'Business', description: '' },
+        PROFILES,
+        'biz'
+      )
+    ).toEqual({})
   })
 
   it("rejects another profile's name when the edited profile is NOT the active one", () => {
     // `biz` is not active (the active profile is `main` in every real store seed);
     // the old active-id exclusion would have skipped `main` and let this through.
     expect(
-      validateProfileForm({ name: 'Main Profile', description: '' }, PROFILES, 'biz')['name']
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'Main Profile', description: '' },
+        PROFILES,
+        'biz'
+      )['name']
     ).toBe('A profile with this name already exists')
   })
 
   it("create (null exclusion) rejects the ACTIVE profile's name", () => {
     expect(
-      validateProfileForm({ name: 'Main Profile', description: '' }, PROFILES, null)['name']
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'Main Profile', description: '' },
+        PROFILES,
+        null
+      )['name']
     ).toBe('A profile with this name already exists')
   })
 
   it('returns no errors for a valid, unique form', () => {
-    expect(validateProfileForm({ name: 'Savings', description: '' }, PROFILES, null)).toEqual({})
+    expect(
+      validateProfileForm(
+        { ...EMPTY_PROFILE_FORM, name: 'Savings', description: '' },
+        PROFILES,
+        null
+      )
+    ).toEqual({})
   })
 })

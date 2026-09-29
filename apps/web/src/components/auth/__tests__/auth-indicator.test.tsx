@@ -153,7 +153,7 @@ function renderWithNavigableRouter() {
       <>
         <AuthIndicator />
         <Outlet />
-        <Link to="/other">go-other</Link>
+        <Link to="/forecasting">go-other</Link>
       </>
     ),
   })
@@ -164,7 +164,10 @@ function renderWithNavigableRouter() {
   })
   const otherRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/other',
+    // Any registered path AuthIndicator does not special-case (it branches only
+    // on /login, /pricing and /settings). It was '/other', which `Link` and
+    // `navigate` reject as unregistered; a test-file type-check (78.2) caught it.
+    path: '/forecasting',
     component: () => <div>other</div>,
   })
   // Story 41.3: the strip's unauthenticated branch is route-dependent, so a
@@ -289,7 +292,7 @@ describe('AuthIndicator', () => {
     // returns no user. Navigating must drop the stale email + Premium marker.
     currentUser = null
     await act(async () => {
-      await router.navigate({ to: '/other' })
+      await router.navigate({ to: '/forecasting' })
     })
 
     expect(await screen.findByRole('link', { name: /sign in/i })).toBeInTheDocument()
@@ -780,7 +783,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     expect(el).toHaveTextContent(/^Settings\s*Sign out$/)
     // Structure, in DOM order: the link, the separator, the button.
     expect([...el.children].map((c) => c.tagName)).toEqual(['A', 'HR', 'BUTTON'])
-    const settings = within(el).getByRole('link', { name: 'Settings', exact: true })
+    const settings = within(el).getByRole('link', { name: 'Settings' })
     expect(settings).toHaveAttribute('href', '/settings')
     expect(within(el).getAllByRole('link')).toHaveLength(1)
     expect(within(el).getAllByRole('button')).toHaveLength(1)
@@ -806,9 +809,10 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     await within(await findAccountStatus()).findByText(USER.email)
     const user = userEvent.setup()
     await user.click(trigger())
-    expect(
-      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
-    ).toHaveAttribute('aria-current', 'page')
+    expect(within(panel() as HTMLElement).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    )
   })
 
   it('marks the Settings row current on /Settings too (case-insensitive)', async () => {
@@ -817,9 +821,10 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     await within(await findAccountStatus()).findByText(USER.email)
     const user = userEvent.setup()
     await user.click(trigger())
-    expect(
-      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
-    ).toHaveAttribute('aria-current', 'page')
+    expect(within(panel() as HTMLElement).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    )
   })
 
   it('does not mark the Settings row current elsewhere', async () => {
@@ -827,7 +832,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     const user = userEvent.setup()
     await user.click(trigger())
     expect(
-      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
+      within(panel() as HTMLElement).getByRole('link', { name: 'Settings' })
     ).not.toHaveAttribute('aria-current')
   })
 
@@ -842,9 +847,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     await within(await findAccountStatus()).findByText(USER.email)
     const user = userEvent.setup()
     await user.click(trigger())
-    await user.click(
-      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
-    )
+    await user.click(within(panel() as HTMLElement).getByRole('link', { name: 'Settings' }))
     expect(panel(), 'the panel stayed open after a same-route click on Settings').toBeNull()
     expect(trigger()).toHaveAttribute('aria-expanded', 'false')
     expect(trigger()).toHaveFocus()
@@ -922,9 +925,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     await within(await findAccountStatus()).findByText(USER.email)
     const user = userEvent.setup()
     await user.click(trigger())
-    await user.click(
-      within(panel() as HTMLElement).getByRole('link', { name: 'Settings', exact: true })
-    )
+    await user.click(within(panel() as HTMLElement).getByRole('link', { name: 'Settings' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/settings'))
     expect(panel()).toBeNull()
     expect(trigger()).toHaveAttribute('aria-expanded', 'false')
@@ -946,7 +947,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     await user.click(trigger())
     expect(panel()).not.toBeNull()
     await act(async () => {
-      await router.navigate({ to: '/other' })
+      await router.navigate({ to: '/forecasting' })
     })
     expect(trigger()).toHaveAttribute('aria-expanded', 'false')
 
@@ -962,7 +963,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
 
     currentUser = USER
     await act(async () => {
-      await router.navigate({ to: '/other' })
+      await router.navigate({ to: '/forecasting' })
     })
     await within(await findAccountStatus()).findByText(USER.email)
     expect(trigger()).toHaveAttribute('aria-expanded', 'false')

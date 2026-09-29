@@ -13,10 +13,13 @@
  * what eliminates the old client-temp-id ↔ server-serial-id duplicate-on-create
  * gap (DN1): there is no longer a numeric/string id split to bridge.
  *
- * NOTE: the client store item types still model the free-tier `userId` as a
- * number while a pulled row carries a uuid `userId`. That is harmless at runtime
- * (the value is only read back for display/aggregation) and is a separate concern
- * from the id unification this story delivers — out of scope here.
+ * NOTE: a locally created row carries the free-tier `userId` (`0`) while a pulled
+ * row carries the server's uuid `userId`. The value is NOT only cosmetic:
+ * `seedLocalData.needsSeeding` compares `String(row.userId ?? '')` with the session
+ * uuid to decide whether a row is already server-backed, so a pulled row's uuid is
+ * what keeps it from being re-created. Since story 78.2 the income/expense client
+ * types say so (`userId: number | string`); before that they claimed `number`
+ * alone, and the pull tests that seed realistic rows could not type-check.
  *
  * ## Validation (Story 66.2, FR103; moved into core by story 75.4, FR123)
  *

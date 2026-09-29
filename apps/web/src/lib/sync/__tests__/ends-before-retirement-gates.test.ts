@@ -30,6 +30,7 @@ import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'
 import {
+  type SyncBridgeHandle,
   clearSyncBridge,
   registerSyncBridge,
   syncEntityCreate,
@@ -61,9 +62,9 @@ const op = (data: Record<string, unknown>) => ({
 function makeHandle() {
   return {
     userId: USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
 
@@ -185,7 +186,7 @@ describe('Gate 5 — the push payload carries the flag, in both directions', () 
   it('update forwards a ticked flag', () => {
     syncEntityUpdate('expense', expenseRow({ endsBeforeRetirement: true }))
     expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
     expect(payload['endsBeforeRetirement']).toBe(true)
     // The rest of the row still rides along — a new field must not displace the
     // existing ones.
@@ -202,7 +203,7 @@ describe('Gate 5 — the push payload carries the flag, in both directions', () 
 
   it('⚠️ UNTICKING sends an explicit false — the untick actually clears the server value', () => {
     syncEntityUpdate('expense', expenseRow({ endsBeforeRetirement: false }))
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
     expect(Object.hasOwn(payload, 'endsBeforeRetirement')).toBe(true)
     expect(payload['endsBeforeRetirement']).toBe(false)
   })
@@ -215,7 +216,7 @@ describe('Gate 5 — the push payload carries the flag, in both directions', () 
     (_label, value) => {
       const row = value === 'OMIT' ? expenseRow() : expenseRow({ endsBeforeRetirement: undefined })
       syncEntityUpdate('expense', row)
-      const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+      const payload = handle.queueUpdate.mock.calls[0][2]
       // `JSON.stringify` drops an undefined-valued key, so "present but
       // undefined" is the same wire outcome as "absent" — both must coerce.
       expect(payload['endsBeforeRetirement']).toBe(false)
@@ -241,7 +242,7 @@ describe('Gate 5 — the push payload carries the flag, in both directions', () 
       // client queue gate rejects the whole operation before it is queued, so
       // the row reads as unmarked while ALL of its edits stop syncing.
       syncEntityUpdate('expense', expenseRow({ endsBeforeRetirement: junk }))
-      const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+      const payload = handle.queueUpdate.mock.calls[0][2]
       expect(payload['endsBeforeRetirement']).toBe(false)
       // …and the payload still passes the gate it would otherwise have failed.
       expect(() => syncOperationDataSchema.parse({ ...payload, userId: USER_ID })).not.toThrow()
@@ -257,7 +258,7 @@ describe('Gate 5 — the push payload carries the flag, in both directions', () 
     // does not declare it, so any future `.strict()` there would break ALL
     // income sync for a key that never meant anything.
     syncEntityUpdate('incomeSource', expenseRow({ endsBeforeRetirement: true }))
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
     expect(Object.hasOwn(payload, 'endsBeforeRetirement')).toBe(false)
     // …while the income row's own fields are untouched by the split.
     expect(payload['name']).toBe('Mortgage')
@@ -341,7 +342,7 @@ describe('Gate 1 — the flag survives payload -> server schema -> generated SQL
     const db = drizzle({} as never)
 
     syncEntityUpdate('expense', expenseRow({ endsBeforeRetirement: true }))
-    const payload = handle.queueUpdate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueUpdate.mock.calls[0][2]
 
     // The server's own parse, then the exact destructuring `updateEntity` does
     // (`sync.ts`: drop id/profileId/userId, re-stamp userId and updatedAt).
@@ -352,8 +353,9 @@ describe('Gate 1 — the flag survives payload -> server schema -> generated SQL
 
     const sql = db
       .update(expenses)
-      // @ts-expect-error - the production call site is `@ts-expect-error`-free
-      // only because `data` is `Record<string, unknown>`; mirror that here.
+      // No directive needed: `data` is `Record<string, unknown>`, exactly as at the
+      // production call site (`sync.ts` `updatePayload`). The `@ts-expect-error`
+      // that sat here was unused, which only a test-file type-check (78.2) shows.
       .set(updateData)
       .where(and(eq(expenses.userId, USER_ID), eq(expenses.id, ROW_ID)))
       .toSQL().sql
@@ -372,7 +374,7 @@ describe('Gate 1 — the flag survives payload -> server schema -> generated SQL
     const db = drizzle({} as never)
 
     syncEntityCreate('expense', expenseRow({ endsBeforeRetirement: true }))
-    const payload = handle.queueCreate.mock.calls[0][2] as Record<string, unknown>
+    const payload = handle.queueCreate.mock.calls[0][2]
     const parsed = syncOperationSchema.parse(op({ ...payload, userId: USER_ID }))
 
     const sql = db

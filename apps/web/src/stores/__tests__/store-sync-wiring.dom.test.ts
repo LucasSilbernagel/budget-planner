@@ -9,7 +9,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
+import {
+  type SyncBridgeHandle,
+  clearSyncBridge,
+  registerSyncBridge,
+} from '../../lib/sync/syncBridge'
 import { useExpenseStore } from '../expenseStore'
 import { useIncomeStore } from '../incomeStore'
 import { useSavingsStore } from '../savingsStore'
@@ -19,9 +23,9 @@ const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 function makeHandle() {
   return {
     userId: SESSION_USER_ID,
-    queueCreate: vi.fn(async () => {}),
-    queueUpdate: vi.fn(async () => {}),
-    queueDelete: vi.fn(async () => {}),
+    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
   }
 }
 
@@ -83,6 +87,7 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
         {
           id: 'inc-1',
           userId: 0,
+          categoryId: null,
           name: 'Salary',
           amount: 500000,
           frequency: 'monthly',
@@ -108,6 +113,7 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
         {
           id: 'exp-1',
           userId: 0,
+          categoryId: null,
           name: 'Rent',
           amount: 100000,
           frequency: 'monthly',
