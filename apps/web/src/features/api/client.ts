@@ -284,6 +284,8 @@ interface BatchSyncResponseLite {
   /**
    * A refusal of the WHOLE request, set by `processBatchSync` (story 75.1) and
    * mapped to the HTTP status by the route. Only `'invalid-request'` is permanent.
+   * The route's own 413 also carries one, `'too-large'` (story 79.3), which is
+   * permanent too; `processBatchSync` never sets that one.
    */
   refusal?: string
 }
@@ -357,6 +359,23 @@ export async function sendSyncOperation(operation: SyncOperation): Promise<Proce
     // with no status code is the unclassified bucket, which core keeps queued.
     const serverRefused = errorData.refusal === 'invalid-request'
     const withheld = PERMANENT_HTTP_STATUSES.has(response.status) && !serverRefused
+    // Story 79.3 (D1): the same rule for a 413. The sync route stamps its OWN size
+    // refusal with `refusal: 'too-large'`; since this function posts exactly ONE
+    // op per request, that refusal names this op on every replay. It becomes 422
+    // (the per-op "sync server refused it" status, in core's allow-list), so the
+    // op leaves the queue. Any other 413 (a proxy, CDN or ingress) keeps
+    // `statusCode: 413`, which core keeps queued. ⚠️ Core's allow-list is left
+    // without 413 on purpose: a 413 names the REQUEST, and only this one-op
+    // premise makes it a verdict on the op. If this function ever batches, remove
+    // this mapping together with the `invalid-request` one.
+    if (response.status === 413 && errorData.refusal === 'too-large') {
+      return {
+        success: false,
+        error: errorData.error || 'Request too large',
+        retryable: false,
+        statusCode: 422,
+      }
+    }
     return {
       success: false,
       error: errorData.error || `Sync request failed (${response.status})`,

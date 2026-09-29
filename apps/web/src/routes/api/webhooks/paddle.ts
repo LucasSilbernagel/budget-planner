@@ -93,7 +93,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 
-/** Mirror the body-size guard `routes/api/sync/batch.ts` applies (DoS guard). */
+/** Body-size DoS guard (1 MiB; the sync push route uses 512 KiB since story 79.3). */
 const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024 // 1MB
 
 /**

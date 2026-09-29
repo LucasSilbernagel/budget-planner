@@ -1,4 +1,9 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29w (**79.3 CODE-REVIEWED -> done**, UNCOMMITTED. Route limit 512 KiB (Lucas). Core 1114, web 3837, db 295/7, e2e 518/4, types 0/0/0, biome 0.)
+# last_updated: 2026-09-29v (Epic 82 added to epics.md: FR133-135, 3 stories backlog — gate speed. 79.3 review in progress.)
+# last_updated: 2026-09-29u (**79.3 DEV DONE -> review**, UNCOMMITTED. Core 1114, web 3835, db 295/7, e2e 518/4, types 0/0/0, biome 0. Fact C corrected: checkConflict now reads via getEntity.)
+# last_updated: 2026-09-29t (**79.3 dev started -> in-progress**, baseline `429906e`. D1-D3 confirmed; Fact C corrected: checkConflict uses getEntity.)
+# last_updated: 2026-09-29s (79.2 committed `429906e`. **79.3 CREATED -> ready-for-dev**; D1 route stamps 413 refusal:too-large + client maps proven 413 -> 422 (core untouched); D2 repair try/catch + lock-free precheck on non-profile batches; D3 checkConflict catch -> failureFromError failure (FAILED). AWAITING Lucas confirmation.)
 # last_updated: 2026-09-29r (**79.2 CODE-REVIEWED -> done**, UNCOMMITTED. 3 decisions + 19 patches; core 1114, web 3817, db 295/7, e2e 518/4. Next: create-story 79.3.)
 # last_updated: 2026-09-29q (**79.2 DEV DONE -> review**, UNCOMMITTED. Core 1104, web 3809, db 295/7, e2e 518/4, types 0/0/0, biome 0.)
 # last_updated: 2026-09-29p (**79.2 dev started -> in-progress**, baseline `c0d444a`.)
@@ -1083,7 +1088,7 @@ development_status:
   epic-79: in-progress  # Every Sync Edit Ends Somewhere You Can See. FR128/FR129/FR130(1,3,4). FR120 still holds: never drop a retryable op.
   79-1-keep-a-torn-down-sync-from-touching-the-queue: done
   79-2-tell-the-user-about-an-edit-that-keeps-failing: done  # D1-D6 confirmed 2026-09-29.
-  79-3-stop-three-server-side-causes-of-a-permanently-queued-edit: backlog
+  79-3-stop-three-server-side-causes-of-a-permanently-queued-edit: done  # Opus review 2026-09-29: 1 decision (512 KiB limit) + 5 patches, 2 deferred. Web 3837, e2e 518/4.
   epic-79-retrospective: optional
 
   epic-80: backlog  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
@@ -1094,6 +1099,12 @@ development_status:
   epic-81: backlog  # A Forecast Field That Tells You What's Wrong. FR132.
   81-1-report-a-bad-scenario-input-on-its-own-field: backlog  # Open at context: growth-rate bounds (proposal -100%..+100%). Outcome was TRACED — reproduce first.
   epic-81-retrospective: optional
+
+  epic-82: backlog  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
+  82-1-run-the-gates-side-by-side: backlog  # committed runner; measure concurrent vs sequential stability (>=5 runs); which gates a story must run = Lucas decision.
+  82-2-let-the-web-unit-suite-run-its-files-in-parallel: backlog  # reproduce first; hypothesis: all workers share one SQLite-backed --localstorage-file. CI already runs parallel on Node 20.
+  82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: backlog  # inventory 61 specs into critical / integration-able / layout; critical list + layout home agreed with Lucas; may split after inventory.
+  epic-82-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

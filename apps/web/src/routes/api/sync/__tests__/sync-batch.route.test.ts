@@ -179,6 +179,46 @@ describe('POST /api/sync/batch served boundary', () => {
     expect(processBatchSync).not.toHaveBeenCalled()
   })
 
+  // Story 79.3 (D1): the route stamps its OWN 413 with a refusal discriminant, so
+  // the client can tell it from a proxy's 413 (which proves nothing about the op).
+  // The limit is 512 KiB (code review 79.3, decision — Lucas): BELOW nginx's 1 MiB
+  // default, so the route's labelled 413 answers before a common ingress limit.
+  const LIMIT = 512 * 1024
+  it('refuses a body over 512 KiB with 413 + `refusal: too-large`, before reading it', async () => {
+    mockSession(paidSession)
+    const response = await POST({
+      request: postRequest(sampleBatch, { 'content-length': String(LIMIT + 1) }),
+    })
+    const payload = await response.json()
+
+    expect(response.status).toBe(413)
+    expect(payload).toEqual({ success: false, error: 'Request too large', refusal: 'too-large' })
+    expect(processBatchSync).not.toHaveBeenCalled()
+  })
+
+  it('accepts a body of exactly 512 KiB (the guard is strictly greater-than)', async () => {
+    mockSession(paidSession)
+    const response = await POST({
+      request: postRequest(sampleBatch, { 'content-length': String(LIMIT) }),
+    })
+    expect(response.status).toBe(200)
+  })
+
+  it.each([
+    ['no session', 401, noSession],
+    ['a free-tier session', 403, freeSession],
+  ] as const)(
+    'keeps the order auth → paid gate → size: an oversize body with %s is still %i',
+    async (_label, status, session) => {
+      mockSession(session)
+      const response = await POST({
+        request: postRequest(sampleBatch, { 'content-length': String(LIMIT + 1) }),
+      })
+      expect(response.status).toBe(status)
+      expect((await response.json()).refusal).toBeUndefined()
+    }
+  )
+
   it('processes the batch under the SESSION user id mapped to `id`', async () => {
     mockSession(paidSession)
     const response = await POST({ request: postRequest(sampleBatch) })

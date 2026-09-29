@@ -65,6 +65,7 @@ vi.mock('@/server/api/auth/paddle', () => ({
   })),
 }))
 
+import { logger } from '@/lib/logger'
 import { POST as batchPOST } from '@/routes/api/sync/batch'
 import { processBatchSync } from '@/server/api/sync'
 import { createSynchronizationService } from '@budget-planner/core/sync'
@@ -86,10 +87,23 @@ let service: ReturnType<typeof createSynchronizationService> | undefined
 /** Every response the route served, so a test can read what went over the wire. */
 const served: { status: number; body: string }[] = []
 
+/**
+ * Route a `fetch` to the real handler, the way a BROWSER would send it.
+ *
+ * ⚠️ `content-length` is set HERE (story 79.3). A browser sends it for a string
+ * body, but undici's `new Request(url, { body })` does not put it on the Request
+ * (MEASURED on Node 26: `headers.get('content-length')` is `null`), and
+ * `sendSyncOperation` sets none. Without it the route's size guard is never
+ * reached and a "413" test here is vacuous.
+ */
 async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input), 'https://app.test')
   if (url.pathname !== '/api/sync/batch') throw new Error(`unrouted fetch ${url}`)
-  const response = await batchPOST({ request: new Request(url, init) })
+  const headers = new Headers(init?.headers)
+  if (typeof init?.body === 'string') {
+    headers.set('content-length', String(new TextEncoder().encode(init.body).byteLength))
+  }
+  const response = await batchPOST({ request: new Request(url, { ...init, headers }) })
   const body = await response.clone().text()
   served.push({ status: response.status, body })
   return response
@@ -278,6 +292,50 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
     expect(sync.getState().failedOperations.map((o) => o.id)).not.toContain(op.id)
   })
 
+  it('KEEPS an op whose conflict CHECK fails transiently (40001) — a failure, not a conflict (story 79.3)', async () => {
+    // Before 79.3 `checkConflict`'s existence SELECT swallowed the error as "row
+    // absent", so this update was an `update-delete` CONFLICT: kept for ever and,
+    // since core counts a conflict as a successful attempt, never escalated to
+    // the user (79.2). A failure is kept too, and IS escalated.
+    let fired = 0
+    const select = vi.spyOn(db, 'select').mockImplementationOnce(() => {
+      fired++
+      throw Object.assign(new Error('could not serialize access'), { code: '40001' })
+    })
+    const op = queuedOp({ data: { userId: USER, name: 'Emergency fund', currentBalance: 5 } })
+    seedQueue([op])
+    const sync = await startService()
+    vi.mocked(logger.error).mockClear()
+
+    try {
+      await sync.forceSync()
+    } finally {
+      select.mockRestore()
+    }
+    // ...and it fired inside `checkConflict`, not in some other SELECT.
+    expect(vi.mocked(logger.error).mock.calls.map((call) => call[0])).toContain(
+      '[Conflict Check Error]'
+    )
+
+    // Positive anchors: the stub fired once, on the server, and the route answered.
+    expect(fired).toBe(1)
+    expect(served.map((r) => r.status)).toEqual([200])
+    expect(JSON.parse(served[0]?.body ?? '{}')).toMatchObject({
+      failedCount: 1,
+      conflictCount: 0,
+      conflicts: [],
+      rejections: [],
+      status: 'FAILED',
+    })
+    // Not applied.
+    const [row] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, GOAL))
+    expect(row?.currentBalance).toBe(1000)
+    // THE CLAIM: kept in the persisted queue, in none of the terminal buckets.
+    expect(persistedQueueIds()).toContain(op.id)
+    expect(sync.getState().conflictOperations.map((o) => o.id)).not.toContain(op.id)
+    expect(sync.getState().rejectedOperations.map((o) => o.id)).not.toContain(op.id)
+  })
+
   it('drops an op whose payload fails the server schema (request-level, HTTP 400)', async () => {
     const bad = queuedOp({
       type: 'create',
@@ -294,6 +352,38 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
     expect(served[0]?.status).toBe(400)
     expect(persistedQueueIds()).not.toContain(bad.id)
     expect(sync.getState().rejectedOperations.map((op) => op.id)).toContain(bad.id)
+  })
+
+  it('drops an op whose request is over the size limit (HTTP 413 + `too-large`, story 79.3)', async () => {
+    // An op over the route's 512 KiB limit needs an unbounded EXTRA key: the per-entity schemas bound every
+    // declared string but do not strip undeclared keys (see the 34.1a comment in
+    // `server/api/sync.ts`). An old or corrupt queue, or a future field.
+    const huge = queuedOp({
+      data: {
+        userId: USER,
+        name: 'Emergency fund',
+        currentBalance: 5,
+        notes: 'x'.repeat(1_100_000),
+      },
+    })
+    seedQueue([huge])
+    const sync = await startService()
+    const handedOn: string[][] = []
+    sync.onOperationsRejected((ops) => handedOn.push(ops.map((op) => op.id)))
+
+    await sync.forceSync()
+
+    // Positive anchor FIRST: the route's own size guard answered, not a later arm.
+    expect(served.map((r) => r.status)).toEqual([413])
+    expect(JSON.parse(served[0]?.body ?? '{}')).toMatchObject({ refusal: 'too-large' })
+    // The server wrote nothing.
+    const [row] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, GOAL))
+    expect(row?.currentBalance).toBe(1000)
+    // THE CLAIM: it left the persisted queue and was handed on as rejected.
+    expect(persistedQueueIds()).not.toContain(huge.id)
+    expect(sync.getState().rejectedOperations.map((op) => op.id)).toContain(huge.id)
+    // ...to the path that names and reverts it (`lib/sync/refusedEdits.ts`).
+    expect(handedOn).toEqual([[huge.id]])
   })
 
   it("KEEPS an op whose userId is not the session user (HTTP 401) — it may be another account's edit", async () => {
@@ -397,8 +487,9 @@ describe('processBatchSync classification (story 75.1, AC-1/AC-3)', () => {
   })
 
   it('refuses a non-uuid entityId at the REQUEST level (it used to become a permanent conflict)', async () => {
-    // Before 75.1 this reached `checkConflict`, whose SELECT raised 22P02 and whose
-    // catch reported a `server-check-failed` conflict — never removed client-side.
+    // Before 75.1 this reached `checkConflict`, whose SELECT raised 22P02 and
+    // became a conflict — never removed client-side. (Since 79.3 a failed check
+    // is a kept-queued failure, but a non-uuid id never gets that far.)
     const op = queuedOp({ entityId: 'not-a-uuid' })
     const result = await push(op)
     expect(result).toMatchObject({ refusal: 'invalid-request', conflictCount: 0 })

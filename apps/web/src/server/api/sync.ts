@@ -332,8 +332,10 @@ export const syncOperationSchema = z
     // A uuid (story 75.1). Every entity table's `id` is a uuid column and every
     // client id generator mints a v4-shaped uuid (`lib/uuid.ts`, story 5-14), so a
     // non-uuid id can never succeed on any path. Before this, `checkConflict`'s
-    // SELECT raised `22P02`, its catch reported a `server-check-failed` CONFLICT,
-    // and a conflict is never removed from the client queue — a permanent loop.
+    // SELECT raised `22P02` and the op became a CONFLICT (`server-check-failed`
+    // or, through `entityExists`, `update-delete`), and a conflict is never
+    // removed from the client queue — a permanent loop. (Since story 79.3 a
+    // failed check is a kept-queued FAILURE, not a conflict.)
     // Refused here it is a clean 400 that core drops.
     entityId: z.string().uuid(),
     data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
@@ -1055,6 +1057,29 @@ async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
 }
 
 /**
+ * Whether the user has live profiles but NO live default: the state
+ * {@link ensureUserHasDefaultProfile} repairs (story 79.3).
+ *
+ * One unlocked, autocommit SELECT. It is NOT a transaction, so the lock-order
+ * table above {@link lockUserProfileSet} needs no row for it. Unlocked is safe in
+ * the SKIP direction: if a default is removed right after this read, that removal
+ * was itself a `userProfile` op, whose own batch runs the repair. A `true` is
+ * re-checked under the lock by the repair itself.
+ *
+ * ⚠️ Why a precheck and not the locked repair on every batch: the repair takes
+ * the `users` row `FOR NO KEY UPDATE`, which conflicts with the `'share'` lock of
+ * every profile-scoped child create, so it would serialize every create of the
+ * user behind every other push, for a state that should never exist.
+ */
+async function accountLacksLiveDefault(userId: string): Promise<boolean> {
+  const live = await db
+    .select({ isDefault: userProfiles.isDefault })
+    .from(userProfiles)
+    .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+  return live.length > 0 && !live.some((profile) => profile.isDefault)
+}
+
+/**
  * Every profile-scoped CHILD table, in the order `server/api/account.ts`'s erasure transaction
  * deletes them (story 66.3, AC-4/AC-9).
  *
@@ -1436,7 +1461,14 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
 }
 
 /**
- * Check if an operation conflicts with current server state
+ * Check if an operation conflicts with current server state.
+ *
+ * ⚠️ The existence checks use `getEntity`, NOT `entityExists` (story 79.3):
+ * `entityExists` swallows a failed SELECT as "absent", so a transient error
+ * (`40001`, a dropped connection) used to become an `update-delete` or
+ * `delete-update` CONFLICT, or let a create through unchecked. A conflict is
+ * kept queued for ever and 79.2 never escalates it. `getEntity` throws, and the
+ * catch below reports a FAILURE instead.
  */
 async function checkConflict(operation: SyncOperation): Promise<{
   hasConflict: boolean
@@ -1447,6 +1479,11 @@ async function checkConflict(operation: SyncOperation): Promise<{
    * user has already tombstoned. `processBatchSync` counts it as processed.
    */
   alreadyApplied?: boolean
+  /**
+   * The check itself failed (story 79.3). `processBatchSync` counts the op as
+   * FAILED, exactly like an `applyOperation` failure, and never applies it.
+   */
+  failure?: OperationResult
 }> {
   const entityType = operation.entityType as keyof EntityTableMap
   const entityId = operation.entityId
@@ -1462,21 +1499,16 @@ async function checkConflict(operation: SyncOperation): Promise<{
     switch (operation.type) {
       case 'create': {
         // Conflict if entity already exists on server
-        const exists = await entityExists(entityType, entityId, userId, profileId)
-        if (exists) {
-          const serverData = await getEntity(entityType, entityId, userId, profileId)
-          return {
-            hasConflict: true,
-            conflictType: 'create-create',
-            serverData: serverData || undefined,
-          }
+        const serverData = await getEntity(entityType, entityId, userId, profileId)
+        if (serverData) {
+          return { hasConflict: true, conflictType: 'create-create', serverData }
         }
         break
       }
 
       case 'update': {
         // Conflict if entity doesn't exist on server
-        const existsForUpdate = await entityExists(entityType, entityId, userId, profileId)
+        const existsForUpdate = await getEntity(entityType, entityId, userId, profileId)
         if (!existsForUpdate) {
           return { hasConflict: true, conflictType: 'update-delete', serverData: undefined }
         }
@@ -1485,7 +1517,7 @@ async function checkConflict(operation: SyncOperation): Promise<{
 
       case 'delete': {
         // Conflict if entity doesn't exist on server
-        const existsForDelete = await entityExists(entityType, entityId, userId, profileId)
+        const existsForDelete = await getEntity(entityType, entityId, userId, profileId)
         if (!existsForDelete) {
           // Already tombstoned for THIS user: a replay whose first response was
           // lost, or a second device deleting the same row (story 76.1). Before,
@@ -1502,12 +1534,23 @@ async function checkConflict(operation: SyncOperation): Promise<{
 
     return { hasConflict: false }
   } catch (error) {
-    // If we can't check server state, be conservative and assume conflict
-    // This prevents data resurrection from stale updates
+    // The server state could not be read, so the op is NOT applied (no data
+    // resurrection from a stale update). It is a FAILURE, not a conflict (story
+    // 79.3). Both are kept queued and re-sent on each sync; the difference is
+    // 79.2: core counts a conflict as a SUCCESSFUL attempt, so a conflict is never
+    // escalated to the user, while a failure is, once it keeps failing.
+    // `failureFromError` classifies it like `applyOperation`'s pre-check catch.
+    // ⚠️ An error from `getEntity` arrives WRAPPED (`Failed to get entity: …`, no
+    // SQLSTATE, already logged once by `getEntity`), so it can never be a
+    // rejection. Harmless today: every permanent SQLSTATE comes from a write, not
+    // a SELECT. Only the delete arm's `tombstoneExists` throws the raw error.
     // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = error instanceof Error ? error.message : String(error)
     logger.error('[Conflict Check Error]', { error: sanitizedError })
-    return { hasConflict: true, conflictType: 'server-check-failed' }
+    return {
+      hasConflict: false,
+      failure: failureFromError(error, { entityType, entityId, userId }),
+    }
   }
 }
 
@@ -1543,7 +1586,9 @@ export async function processBatchSync(
   // [operation]`), so refusing the request refuses exactly the op that is wrong.
   // If the client ever batches several ops per request, one bad op would take its
   // valid neighbours down with it — at which point these refusals must become
-  // per-operation, like `rejections` below.
+  // per-operation, like `rejections` below. The same premise makes the route's
+  // oversize 413 (`refusal: 'too-large'`, story 79.3) a verdict on the op: the
+  // client maps it to 422 and drops the op, and that mapping must go too.
   const validationResult = batchSyncRequestSchema.safeParse(request)
   if (!validationResult.success) {
     return {
@@ -1639,10 +1684,27 @@ export async function processBatchSync(
   const failedOperationIds: string[] = []
   const rejections: SyncRejection[] = []
 
+  /** Count one op as failed. Shared by the conflict check and `applyOperation`. */
+  const recordFailure = (operation: SyncOperation, result: OperationResult) => {
+    failedCount++
+    failedOperationIds.push(operation.id)
+    // Counted as failed AS WELL, so a client that does not read `rejections`
+    // sees exactly the envelope it saw before story 75.1.
+    if (result.rejection) {
+      rejections.push({ operationId: operation.id, reason: result.rejection })
+    }
+  }
+
   // Process each operation
   for (const operation of operations) {
     // Check for conflicts
     const conflictCheck = await checkConflict(operation)
+
+    // The check itself failed (story 79.3): never applied, reported FAILED.
+    if (conflictCheck.failure) {
+      recordFailure(operation, conflictCheck.failure)
+      continue
+    }
 
     // A create whose uuid the server already holds (for this user + profile) is
     // an ALREADY-APPLIED create — ids are client-generated uuids, so no other
@@ -1684,13 +1746,7 @@ export async function processBatchSync(
     if (result.success) {
       processedCount++
     } else {
-      failedCount++
-      failedOperationIds.push(operation.id)
-      // Counted as failed AS WELL, so a client that does not read `rejections`
-      // sees exactly the envelope it saw before story 75.1.
-      if (result.rejection) {
-        rejections.push({ operationId: operation.id, reason: result.rejection })
-      }
+      recordFailure(operation, result)
     }
   }
 
@@ -1723,8 +1779,26 @@ export async function processBatchSync(
   // legitimate unset-then-set sequence (demote A, promote B in one batch), as
   // its own positive-control test proved. Repairing after the batch leaves every
   // valid ordering alone: a batch that ends with a default never triggers it.
-  if (operations.some((operation) => operation.entityType === 'userProfile')) {
-    await ensureUserHasDefaultProfile(user.id)
+  //
+  // ⚠️ A repair ERROR is logged, never thrown (story 79.3, FR130.3). The ops above
+  // have already committed, so throwing made the route answer 500 for a push that
+  // had landed. But the 500 was also the only thing that re-ran a failed repair
+  // (the client replayed the op, and the replay repaired). So a batch with NO
+  // `userProfile` op repairs too, whenever the lock-free
+  // {@link accountLacksLiveDefault} finds the seat empty. The response is built
+  // from the op counters only, so a failed repair changes nothing on the wire.
+  try {
+    if (
+      operations.some((operation) => operation.entityType === 'userProfile') ||
+      (await accountLacksLiveDefault(user.id))
+    ) {
+      await ensureUserHasDefaultProfile(user.id)
+    }
+  } catch (error) {
+    logger.error('[Default Repair Error]', {
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 
   const endTime = Date.now()

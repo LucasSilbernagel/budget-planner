@@ -34,8 +34,18 @@ import { processBatchSync } from '@/server/api/sync'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
-/** Mirror the body-size guard the legacy server function applied (DoS guard). */
-const MAX_REQUEST_SIZE = 1024 * 1024 // 1MB
+/**
+ * Body-size guard (DoS guard). 512 KiB, NOT the legacy server function's 1 MiB
+ * (code review of story 79.3, decision — Lucas, 2026-09-29): the route's OWN 413
+ * carries `refusal: 'too-large'`, which is what lets the client drop an oversize
+ * op. An ingress in front with a limit at or below this one answers 413 first,
+ * with no refusal, and the op stays queued for ever. nginx's default
+ * `client_max_body_size` is exactly 1 MiB, so the route stays well under it.
+ * ⚠️ DEPLOY PRECONDITION: the ingress must accept bodies larger than 512 KiB.
+ * A legitimate op is a few KB (every declared string is capped at ≤500 chars);
+ * only an unbounded undeclared key can come near this.
+ */
+const MAX_REQUEST_SIZE = 512 * 1024
 
 /**
  * HTTP status for a request-level refusal (story 75.1).
@@ -84,9 +94,22 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   }
 
   // 3) Body-size guard (before reading the body).
+  //
+  // ⚠️ `refusal: 'too-large'` is the PROOF that the sync route itself refused the
+  // request (story 79.3, D1). `sendSyncOperation` maps a 413 carrying it to 422,
+  // which core drops: the client sends ONE operation per request, so the same op
+  // is over the limit on every replay and would otherwise stay queued for ever. A
+  // 413 WITHOUT it (a proxy or ingress with its own smaller limit) proves nothing
+  // about the op and stays queued. It is NOT a `BatchRefusal`: `processBatchSync`
+  // never sees an oversize body. ⚠️ If the client ever batches several ops per
+  // request, the client's proven-413 mapping must go, together with the
+  // `invalid-request` one (see `processBatchSync`'s validation comment).
   const contentLength = request.headers.get('content-length')
   if (contentLength && Number.parseInt(contentLength, 10) > MAX_REQUEST_SIZE) {
-    return json({ success: false, error: 'Request too large' }, { status: 413 })
+    return json(
+      { success: false, error: 'Request too large', refusal: 'too-large' },
+      { status: 413 }
+    )
   }
 
   // 4) Parse the body (bad JSON is a 400, not a 500).
