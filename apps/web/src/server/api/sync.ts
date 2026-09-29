@@ -38,6 +38,7 @@ import {
   incomeSources,
   savingsGoals,
   userProfiles,
+  users,
 } from '@budget-planner/db'
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { z } from 'zod'
@@ -547,6 +548,95 @@ function syncInMemoryFallback(
 // Database Operations (DanubeData PostgreSQL)
 // ============================================================================
 
+/** The handle a `db.transaction` callback receives. */
+type SyncTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Where a read or write runs: autocommit on `db`, or inside a transaction. */
+type Executor = typeof db | SyncTx
+
+/**
+ * Lock the requesting user's `users` row: the ONE lock every sync-path
+ * transaction that depends on the SET OF LIVE PROFILES takes, as its FIRST
+ * statement (story 76.3, FR122).
+ *
+ * - WRITERS of the set take `'no key update'`: {@link deleteProfileWithChildren}
+ *   (the last-profile count), {@link promoteProfile} and
+ *   {@link ensureUserHasDefaultProfile} (the default seat).
+ * - A profile-scoped child CREATE takes `'share'`, then re-checks that its
+ *   profile is live, then inserts ({@link createProfileScopedEntity}).
+ *
+ * Only after this lock are `userProfiles` rows, then child rows, touched.
+ *
+ * ## Why the `users` row
+ *
+ * It is ONE row per user, it exists for every authenticated push, and it is
+ * the row account erasure already locks first (`eraseAccountRows` in
+ * `server/api/account.ts`). So every path shares one first lock, in one order.
+ * Locking "the user's live `userProfiles` rows" instead would lock a SET whose
+ * membership is the thing being raced (a row created after the lock is not
+ * covered), and `promoteProfile` touches the default row and its target in a
+ * data-dependent order, which could form a cycle with a cascade that locked
+ * profiles by id.
+ *
+ * ## Why these strengths
+ *
+ * - `FOR NO KEY UPDATE` for writers, NOT `FOR UPDATE`: every child INSERT's
+ *   foreign-key check on `userId -> users.id` takes `FOR KEY SHARE` on this row.
+ *   `FOR UPDATE` conflicts with `KEY SHARE`, so it would stall every other push
+ *   of the user that inserts a row. `NO KEY UPDATE` does not conflict with
+ *   `KEY SHARE`, and does conflict with itself and with `SHARE`: exactly the
+ *   writer/writer and writer/reader exclusion wanted.
+ * - `FOR SHARE` for the child create: creates do not block each other, but they
+ *   wait for (and are waited on by) any writer of the profile set. Under READ
+ *   COMMITTED every statement takes a fresh snapshot, so the liveness re-check
+ *   that runs AFTER this lock is granted sees a cascade that committed while it
+ *   waited. That is why the re-check is a separate statement after the lock.
+ *
+ * ## ⚠️ No deadlock with the existing contenders (REASONED from the source and
+ * the PostgreSQL row-lock matrix, NOT measured: PGlite is one connection, so no
+ * test here can make two transactions wait on each other)
+ *
+ * Audited 2026-09-28 at `65d6ce1`, BEFORE this story, by grepping `apps/web/src`
+ * (tests excluded) for `.transaction(` (6 sites; this story adds 2 more, both
+ * taking this lock first) and `.update(users)` (10 sites). A point-in-time
+ * measurement: a new transaction must be checked against this table.
+ *
+ * | Contender | Its first lock | Conflicts with ours? | Why no cycle |
+ * |---|---|---|---|
+ * | Account erasure (`account.ts`, `eraseAccountRows`) | `users` `FOR UPDATE` | yes, both strengths | Same first row, so the two serialize before either touches another row. This also closes a latent cycle: erasure deletes `forecastingProfiles` FIRST while the cascade reaches it LAST, and two transactions taking child-row locks in different orders could deadlock. |
+ * | Retention purge (`retention/sweep.ts`) | `users` `FOR UPDATE SKIP LOCKED` | yes | It SKIPS a row we hold; if it holds the row first, we wait while holding nothing. |
+ * | Rate-limit reaper (`rate-limit/db-window.ts`) | `rateLimits` rows, `SKIP LOCKED` | no shared row | No edge in the wait-for graph. |
+ * | `checkRateLimit` upsert | one `rateLimits` row, autocommit | no shared row | It commits before any op transaction in `processBatchSync` opens. |
+ * | Paddle webhook (`routes/api/webhooks/paddle.ts`, `runGuarded`) | the event-claim row, then `users` rows | yes, on `users` | It touches NO `userProfiles` or child rows inside its transaction (`ensureDefaultProfile` runs after it commits), so it never holds a lock we wait for after our first statement. |
+ * | Autocommit `users` updates (`auth/paddle.ts`, `retention/sweep.ts` notices) | one `users` row, one statement | yes | Single-statement: they hold nothing while waiting. |
+ * | `server/functions/profiles.ts:deleteProfile` | child rows, then `userProfiles` | not on the live path | ZERO production callers (story 63.2). It takes no `users` lock and orders children differently; if it is ever wired up it must take this lock first. |
+ * | Sync single-statement child writers (`updateEntity`, `deleteEntity`) | one child row, autocommit, NO `users` lock | with the cascade's child rows | NOT covered by this lock. A cycle is possible through a unique index: a category rename to the name of a row the cascade has just tombstoned waits on the cascade's index entry while holding its own row, which the cascade's sweep wants. PostgreSQL aborts one side with `40P01`, which is transient and kept queued; no data is lost. |
+ *
+ * ⚠️ Costs, accepted:
+ * - A lock WAIT is not an error and has no bound: the pool sets no
+ *   `lock_timeout` or `statement_timeout` (`packages/db/src/client.ts`), so a
+ *   waiting request holds a pool connection until the holder commits. Every
+ *   holder above is short and makes no external call inside its transaction.
+ * - A child create's `FOR SHARE` now also waits behind every `NO KEY UPDATE` of
+ *   the `users` row, including the webhook's and the autocommit `users`
+ *   updates, which the foreign-key `KEY SHARE` alone never waited for.
+ * - A deadlock abort (`40P01`) is transient: `failureFromError` keeps the op
+ *   queued, never permanent.
+ *
+ * ⚠️ If the `users` row is gone (erasure or the retention purge committed while
+ * this waited), the SELECT locks nothing and returns no row. That is safe, not
+ * checked: every caller then finds no live profile (the cascade answers
+ * `already-deleted`, a create is refused, a promotion throws and stays queued,
+ * the repair returns early), so no row is written for an erased account.
+ */
+async function lockUserProfileSet(
+  tx: SyncTx,
+  userId: string,
+  strength: 'no key update' | 'share'
+): Promise<void> {
+  await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for(strength)
+}
+
 /**
  * Get entity from database by type and ID
  */
@@ -554,7 +644,8 @@ async function getEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
   userId: string,
-  profileId?: string
+  profileId?: string,
+  executor: Executor = db
 ): Promise<Record<string, unknown> | null> {
   try {
     const table = getTable(entityType)
@@ -577,7 +668,7 @@ async function getEntity(
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
-    const result = await db.select().from(table).where(whereClause).limit(1)
+    const result = await executor.select().from(table).where(whereClause).limit(1)
 
     return result[0] || null
   } catch (error) {
@@ -595,10 +686,11 @@ async function entityExists(
   entityType: keyof EntityTableMap,
   entityId: string,
   userId: string,
-  profileId?: string
+  profileId?: string,
+  executor: Executor = db
 ): Promise<boolean> {
   try {
-    const entity = await getEntity(entityType, entityId, userId, profileId)
+    const entity = await getEntity(entityType, entityId, userId, profileId, executor)
     return !!entity
   } catch {
     return false
@@ -608,8 +700,12 @@ async function entityExists(
 /**
  * Whether `profileId` is a live (non-tombstoned) profile owned by `userId`.
  */
-async function profileBelongsToUser(profileId: string, userId: string): Promise<boolean> {
-  const rows = await db
+async function profileBelongsToUser(
+  profileId: string,
+  userId: string,
+  executor: Executor = db
+): Promise<boolean> {
+  const rows = await executor
     .select({ id: userProfiles.id })
     .from(userProfiles)
     .where(
@@ -715,7 +811,8 @@ function updatePayload(data: Record<string, unknown>, userId: string) {
  */
 async function createEntity(
   entityType: keyof EntityTableMap,
-  data: Record<string, unknown> & { userId: string; profileId?: string }
+  data: Record<string, unknown> & { userId: string; profileId?: string },
+  executor: Executor = db
 ): Promise<OperationResult> {
   try {
     const table = getTable(entityType)
@@ -725,10 +822,70 @@ async function createEntity(
     // soft-delete are uniform and a freshly created row is always pull-visible.
     const insertData = { ...data, updatedAt: new Date() }
     // @ts-expect-error - Dynamic table insert
-    await db.insert(table).values(insertData)
+    await executor.insert(table).values(insertData)
     return { success: true }
   } catch (error) {
     return failureFromError(error, { entityType, entityId: data['id'], userId: data.userId })
+  }
+}
+
+/**
+ * Carries a handled failure out of a transaction callback. Only a THROW rolls a
+ * transaction back; a callback that returns normally commits (the same rule
+ * `runGuarded` in `routes/api/webhooks/paddle.ts` records).
+ */
+class RollbackWith extends Error {
+  constructor(readonly result: OperationResult) {
+    super(result.error ?? 'rolled back')
+  }
+}
+
+/**
+ * Create a row in a profile-scoped table so that it can never end up LIVE under
+ * a TOMBSTONED profile (story 76.3, FR122(2)).
+ *
+ * The liveness check used to run outside any transaction, so another device's
+ * cascade could sweep the profile between the check and the INSERT, and the row
+ * committed afterwards: a live orphan, the exact class story 66.3 removed. Now
+ * the lock, the check and the INSERT are ONE transaction: the create either
+ * commits before the cascade (which then sweeps it) or sees the cascade's commit
+ * and is refused. See {@link lockUserProfileSet} for why the lock is `'share'`.
+ *
+ * ⚠️ The refusal stays `Profile not found` with NO `rejection`, so it is kept
+ * queued: the device's next pull applies the profile's tombstone and drops the
+ * op (story 76.2). A permanent rejection would raise 75.2's notice for a row the
+ * user can no longer see.
+ */
+async function createProfileScopedEntity(
+  entityType: keyof EntityTableMap,
+  data: Record<string, unknown> & { id: string; userId: string; profileId: string }
+): Promise<OperationResult> {
+  const { id: entityId, userId, profileId } = data
+  try {
+    return await db.transaction(async (tx) => {
+      await lockUserProfileSet(tx, userId, 'share')
+      if (!(await profileBelongsToUser(profileId, userId, tx))) {
+        return { success: false, error: 'Profile not found' }
+      }
+      // `getEntity`, NOT `entityExists`: the latter swallows a failed SELECT as
+      // "absent", and inside a transaction that SELECT has already aborted it, so
+      // the INSERT would report `25P02` instead of the real error. `getEntity`
+      // logs and throws, which rolls back and is classified below.
+      if (await getEntity(entityType, entityId, userId, profileId, tx)) {
+        return { success: false, error: 'Entity already exists' }
+      }
+      const result = await createEntity(entityType, data, tx)
+      if (!result.success) {
+        // The failed INSERT aborted the transaction; roll it back explicitly.
+        throw new RollbackWith(result)
+      }
+      return result
+    })
+  } catch (error) {
+    if (error instanceof RollbackWith) {
+      return error.result
+    }
+    return failureFromError(error, { entityType, entityId, userId })
   }
 }
 
@@ -806,12 +963,17 @@ async function updateEntity(
  * (story 76.2; pinned by core's `pull-drops-deleted-profile-ops.test.ts`, "a
  * queued edit of the deleted profile ITSELF is drained by the same pull").
  *
- * ⚠️ Concurrency, REASONED not measured (PGlite is single-connection): two
- * promotions racing under READ COMMITTED can still make the later one fail on the
- * unique index, because its demotion's snapshot cannot see the winner's new
- * default. That 23505 stays queued (not permanent) and the replay demotes the
- * winner and takes the seat, so the classification is deliberately left alone.
- * Story 76.3 owns true concurrency.
+ * ⚠️ Concurrency (story 76.3): the transaction's FIRST statement takes the
+ * user's `FOR NO KEY UPDATE` lock ({@link lockUserProfileSet}). Two promotions,
+ * a promotion and a profile cascade, or a promotion and the post-batch repair
+ * therefore run one after the other, and each one's demotion sees the default
+ * the previous one committed. Before the lock, two promotions racing under READ
+ * COMMITTED could make the later one fail on `userProfiles_one_default_per_user`,
+ * because its demotion's snapshot could not see the winner's new default.
+ * REASONED, not measured: PGlite is one connection, so no test here can make two
+ * transactions wait on each other (`sync-profile-concurrency.db.test.ts` guards
+ * the statement order instead). A 23505 is still not permanent (75.1), so if one
+ * ever slips through, the replay takes the seat.
  */
 async function promoteProfile(
   profileId: string,
@@ -820,6 +982,7 @@ async function promoteProfile(
 ): Promise<OperationResult> {
   try {
     await db.transaction(async (tx) => {
+      await lockUserProfileSet(tx, userId, 'no key update')
       // ⚠️ No `id <> profileId` exclusion, deliberately: when the target already
       // holds the seat (a rename re-sending its own flag) it is demoted and
       // re-promoted inside this transaction — the same end state, and a mutation
@@ -871,34 +1034,49 @@ async function promoteProfile(
  * which can differ between two devices repairing the same account.
  */
 async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
-  const live = await db
-    .select({ id: userProfiles.id, createdAt: userProfiles.createdAt })
-    .from(userProfiles)
-    .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+  // ⚠️ One transaction behind the user's `FOR NO KEY UPDATE` lock (story 76.3,
+  // deferred-work "the post-batch default repair can race a concurrent
+  // `promoteProfile`"). As three autocommit statements, the repair could read
+  // "no default", lose the seat to another request's promotion, and then throw
+  // 23505 out of `processBatchSync` AFTER the batch had committed: a 500 for a
+  // push that succeeded. The lock serializes it with `promoteProfile`, the
+  // cascade and other repairs (see `lockUserProfileSet`). ⚠️ NOT with every
+  // writer of the seat: a sync `userProfile` CREATE carrying `isDefault: true`
+  // (autocommit `createEntity`) and `createDefaultProfileForUser` take no lock,
+  // so the repair can still lose to them with a 23505 (deferred-work.md, code
+  // review of 76.3).
+  await db.transaction(async (tx) => {
+    await lockUserProfileSet(tx, userId, 'no key update')
 
-  if (live.length === 0) return
+    const live = await tx
+      .select({ id: userProfiles.id, createdAt: userProfiles.createdAt })
+      .from(userProfiles)
+      .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
 
-  const hasDefault = await db
-    .select({ id: userProfiles.id })
-    .from(userProfiles)
-    .where(
-      and(
-        eq(userProfiles.userId, userId),
-        eq(userProfiles.isDefault, true),
-        eq(userProfiles.isDeleted, false)
+    if (live.length === 0) return
+
+    const hasDefault = await tx
+      .select({ id: userProfiles.id })
+      .from(userProfiles)
+      .where(
+        and(
+          eq(userProfiles.userId, userId),
+          eq(userProfiles.isDefault, true),
+          eq(userProfiles.isDeleted, false)
+        )
       )
-    )
-  if (hasDefault.length > 0) return
+    if (hasDefault.length > 0) return
 
-  const successor = [...live].sort(
-    (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
-  )[0]
-  if (!successor) return
+    const successor = [...live].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
+    )[0]
+    if (!successor) return
 
-  await db
-    .update(userProfiles)
-    .set({ isDefault: true, updatedAt: new Date() })
-    .where(and(eq(userProfiles.id, successor.id), eq(userProfiles.userId, userId)))
+    await tx
+      .update(userProfiles)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(and(eq(userProfiles.id, successor.id), eq(userProfiles.userId, userId)))
+  })
 }
 
 /**
@@ -923,6 +1101,16 @@ const PROFILE_CHILD_TABLES = [
   savingsGoals,
   balanceTracking,
 ] as const
+
+/** What {@link deleteProfileWithChildren} did (story 76.3). */
+type ProfileDeleteOutcome =
+  /** Tombstoned, with its children. */
+  | { kind: 'deleted' }
+  /** Another writer tombstoned it after the pre-checks: the target state holds (76.1). */
+  | { kind: 'already-deleted' }
+  /** It is the user's last live profile: nothing was written (66.3, AC-3). */
+  | { kind: 'last-profile' }
+  | { kind: 'failed'; result: OperationResult }
 
 /**
  * Tombstone a profile AND everything it owns, atomically (story 66.3, AC-4/AC-9).
@@ -955,13 +1143,41 @@ const PROFILE_CHILD_TABLES = [
  * ⚠️ The profile row itself is tombstoned LAST, inside the same transaction, so a
  * failure part-way leaves the profile live rather than orphaning its children
  * behind a deleted parent.
+ *
+ * ## ⚠️⚠️ The last-profile rule lives INSIDE this transaction (story 76.3)
+ *
+ * The count used to be a plain SELECT before the transaction, so two devices
+ * deleting the two profiles of a 2-profile account both counted 2, both passed,
+ * and the account was left with ZERO live profiles, which
+ * `ensureUserHasDefaultProfile` cannot repair. Now the transaction takes the
+ * user's `FOR NO KEY UPDATE` lock first ({@link lockUserProfileSet}), then
+ * re-checks that the target is still live, then counts. So the second delete
+ * waits for the first to commit and then counts 1.
+ *
+ * Returns what happened rather than a finished envelope, so the caller keeps the
+ * one place that explains why a refused last-profile delete is ACKNOWLEDGED.
  */
 async function deleteProfileWithChildren(
   profileId: string,
   userId: string
-): Promise<OperationResult> {
+): Promise<ProfileDeleteOutcome> {
   try {
-    await db.transaction(async (tx) => {
+    return await db.transaction(async (tx): Promise<ProfileDeleteOutcome> => {
+      await lockUserProfileSet(tx, userId, 'no key update')
+
+      // Both reads run AFTER the lock, so each sees every delete that committed
+      // while this one waited (READ COMMITTED: a fresh snapshot per statement).
+      if (!(await profileBelongsToUser(profileId, userId, tx))) {
+        return { kind: 'already-deleted' }
+      }
+      const live = await tx
+        .select({ id: userProfiles.id })
+        .from(userProfiles)
+        .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+      if (live.length <= 1) {
+        return { kind: 'last-profile' }
+      }
+
       const now = new Date()
       for (const table of PROFILE_CHILD_TABLES) {
         await tx
@@ -981,8 +1197,8 @@ async function deleteProfileWithChildren(
         .update(userProfiles)
         .set({ isDeleted: true, updatedAt: now })
         .where(and(eq(userProfiles.userId, userId), eq(userProfiles.id, profileId)))
+      return { kind: 'deleted' }
     })
-    return { success: true }
   } catch (error) {
     // ⚠️ The detail goes to the LOG, not into the envelope (code review). The
     // envelope's `error` is discarded by `processBatchSync` today, so nothing
@@ -1001,7 +1217,7 @@ async function deleteProfileWithChildren(
     // ⚠️ NEVER classified permanent (story 75.1 code review): the op names only
     // the profile, and the cascade writes only `isDeleted`/`updatedAt`, so no
     // failure here can be caused by the op's own data.
-    return { success: false, error: 'Failed to delete profile' }
+    return { kind: 'failed', result: { success: false, error: 'Failed to delete profile' } }
   }
 }
 
@@ -1102,23 +1318,38 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
       // (story 76.2): the pull that applies its tombstone drops these ops, and a
       // refused profile create drops them too. A server refusal here would
       // instead raise 75.2's notice for rows the user can no longer see.
-      if (!(await profileBelongsToUser(profileId, userId))) {
+      //
+      // ⚠️ A CREATE checks it again INSIDE its transaction, after the per-user lock
+      // (`createProfileScopedEntity`, story 76.3). A check out here alone let a
+      // concurrent cascade sweep the profile before the INSERT committed.
+      if (operation.type !== 'create' && !(await profileBelongsToUser(profileId, userId))) {
         return { success: false, error: 'Profile not found' }
       }
     }
 
     switch (operation.type) {
       case 'create': {
-        // Check if entity already exists
-        const exists = await entityExists(entityType, entityId, userId, profileId)
-        if (exists) {
-          return { success: false, error: 'Entity already exists' }
-        }
         // `id: entityId` inserts the CLIENT's uuid (Story 5-14). Without it the
         // row took a fresh `defaultRandom()` id, so the creating device's local
         // row and the server row never matched: every later update/delete of it
         // was "Entity not found", and a pull delivered it as a duplicate.
         const { id: _id, ...fields } = operation.data
+        // Profile-scoped: the lock, the profile re-check, the duplicate check and
+        // the INSERT run in one transaction (story 76.3). `profileId` is always
+        // set here: the pre-check above refuses a profile-scoped op without one.
+        if (profileId && 'profileId' in getTable(entityType)) {
+          return createProfileScopedEntity(entityType, {
+            ...fields,
+            id: entityId,
+            userId,
+            profileId,
+          })
+        }
+        // Check if entity already exists
+        const exists = await entityExists(entityType, entityId, userId, profileId)
+        if (exists) {
+          return { success: false, error: 'Entity already exists' }
+        }
         return createEntity(entityType, { ...fields, id: entityId, userId, profileId })
       }
 
@@ -1167,12 +1398,24 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
           // profiles" has no repair: there is nothing left to promote and
           // inventing a replacement profile would be the server fabricating user
           // data. So this one refuses and that one repairs.
-          const liveProfiles = await getLiveProfileIds(userId)
-          if (liveProfiles.length <= 1) {
+          //
+          // ⚠️⚠️ The COUNT runs inside `deleteProfileWithChildren`'s transaction,
+          // after the per-user lock (story 76.3). Counted out here, two devices
+          // deleting the two profiles of a 2-profile account both saw 2 and left
+          // ZERO live profiles.
+          //
+          // ⚠️ NOT `deleteEntity` — the profile's children must go with it
+          // (AC-4/AC-9), in ONE transaction. `deleteEntity` tombstones the named
+          // row and nothing else, which is the defect this story closes.
+          const outcome = await deleteProfileWithChildren(entityId, userId)
+          if (outcome.kind === 'failed') {
+            return outcome.result
+          }
+          if (outcome.kind === 'last-profile') {
             // ⚠⚠ ACKNOWLEDGED, NOT TOMBSTONED — and the distinction is the whole
             // point (code review, Lucas's call). The INVARIANT AC-3 exists for is
             // "an account is never left with zero live profiles", and that holds
-            // here: nothing below runs, the profile stays live. What changes is
+            // here: the transaction wrote nothing, the profile stays live. What changes is
             // the ENVELOPE.
             //
             // ⚠⚠ WHY NOT `success: false`. The first version returned a failure,
@@ -1197,13 +1440,11 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
               userId,
               entityId,
             })
-            return { success: true }
           }
-
-          // ⚠️ NOT `deleteEntity` — the profile's children must go with it
-          // (AC-4/AC-9), in ONE transaction. `deleteEntity` tombstones the named
-          // row and nothing else, which is the defect this story closes.
-          return deleteProfileWithChildren(entityId, userId)
+          // 'deleted', 'already-deleted' (another writer got there after the
+          // pre-checks: the target state holds, 76.1) and 'last-profile' (above)
+          // are all acknowledged.
+          return { success: true }
         }
 
         return deleteEntity(entityType, entityId, userId, profileId)

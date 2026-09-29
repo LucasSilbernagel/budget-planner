@@ -338,7 +338,9 @@ function stubSelectsAsLive(count: number, id: string) {
 
 describe('the row is tombstoned between checkConflict and applyOperation (AC-1, the race arm)', () => {
   // ⚠️⚠️ A SIMULATED INTERLEAVING, NOT A RACE. PGlite is single-connection, so two
-  // writers cannot really interleave here (story 76.3 owns the true race). This
+  // writers cannot really interleave here, and no suite in this repo runs two
+  // PostgreSQL connections (story 76.3, D1: no real-PostgreSQL harness; its
+  // `sync-profile-concurrency.db.test.ts` interleaves two HANDLERS instead). This
   // stubs the FIRST `db.select` — `checkConflict`'s existence check — to report
   // the row as live, while the database already holds its tombstone: exactly the
   // state `applyOperation` sees if another device's delete commits in between.
