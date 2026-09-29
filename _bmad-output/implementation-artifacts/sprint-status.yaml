@@ -1,4 +1,7 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29z (**80.1 CODE-REVIEWED -> done**, UNCOMMITTED. Web 3855, core 1114, db 295/7, e2e 518/4, types 0/0/0, biome 0/664.)
+# last_updated: 2026-09-29y (**80.1 DEV DONE -> review**, UNCOMMITTED. Web 3849, core 1114, db 295/7, e2e 518/4, types 0/0/0, biome 0. Also fixed: a refused default forecast save no longer demotes the old default.)
+# last_updated: 2026-09-29x (**80.1 created -> ready-for-dev**, epic-80 in-progress. Epic 79 committed `9144e0a`. D0 open: Fact R, forecast server fns are bundled client-side and fail on `Buffer` in Chromium, MEASURED.)
 # last_updated: 2026-09-29w (**79.3 CODE-REVIEWED -> done**, UNCOMMITTED. Route limit 512 KiB (Lucas). Core 1114, web 3837, db 295/7, e2e 518/4, types 0/0/0, biome 0.)
 # last_updated: 2026-09-29v (Epic 82 added to epics.md: FR133-135, 3 stories backlog — gate speed. 79.3 review in progress.)
 # last_updated: 2026-09-29u (**79.3 DEV DONE -> review**, UNCOMMITTED. Core 1114, web 3835, db 295/7, e2e 518/4, types 0/0/0, biome 0. Fact C corrected: checkConflict now reads via getEntity.)
@@ -1091,8 +1094,8 @@ development_status:
   79-3-stop-three-server-side-causes-of-a-permanently-queued-edit: done  # Opus review 2026-09-29: 1 decision (512 KiB limit) + 5 patches, 2 deferred. Web 3837, e2e 518/4.
   epic-79-retrospective: optional
 
-  epic-80: backlog  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
-  80-1-save-a-forecast-only-under-a-live-profile: backlog  # shares `lockUserProfileSet` (private to sync.ts:607 today)
+  epic-80: in-progress  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
+  80-1-save-a-forecast-only-under-a-live-profile: done  # Opus review 2026-09-29: 1 decision (strip create arm too) + 7 patches, 2 deferred. Uncommitted. Web 3855, e2e 518/4. D0 = (a) (Lucas): ship as scoped; Fact R HIGH logged; correct-course transport story after
   80-2-put-every-writer-of-the-default-profile-under-the-same-lock: backlog
   epic-80-retrospective: optional
 

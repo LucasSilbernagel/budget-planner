@@ -16,6 +16,10 @@ import { type SQL, and, desc, eq, inArray, ne } from 'drizzle-orm'
 import { hasPremiumFeatures } from '../../lib/premium/access-statuses'
 import { getCurrentUserSession } from '../api/auth/paddle'
 import type { ApiResult } from '../api/auth/paddle'
+import { type DbTx, lockUserProfileSet } from '../api/profile-set-lock'
+
+/** Where a read or write runs: autocommit on `db`, or inside a transaction. */
+type Executor = typeof db | DbTx
 
 // ============================================================================
 // Type Definitions
@@ -83,9 +87,13 @@ function validateScenarioData(data: unknown): string {
 /**
  * Validate that a profile belongs to the current user
  */
-async function validateProfileOwnership(profileId: string, userId: string): Promise<boolean> {
-  const [profile] = await db
-    .select()
+async function validateProfileOwnership(
+  profileId: string,
+  userId: string,
+  executor: Executor = db
+): Promise<boolean> {
+  const [profile] = await executor
+    .select({ id: userProfiles.id })
     .from(userProfiles)
     // A soft-deleted profile (Story 4-18) is not a valid ownership target.
     .where(
@@ -106,9 +114,10 @@ async function validateProfileOwnership(profileId: string, userId: string): Prom
 async function ensureSingleDefault(
   userId: string,
   profileId: string,
-  excludeId?: number
+  excludeId?: number,
+  executor: Executor = db
 ): Promise<void> {
-  await db
+  await executor
     .update(forecastingProfiles)
     .set({ isDefault: false })
     .where(
@@ -140,6 +149,15 @@ function isUniqueViolation(error: unknown): boolean {
 /**
  * Create a new forecasting profile
  * Requires premium access (subscriptionStatus 'active' or 'lifetime')
+ *
+ * The write runs in ONE transaction behind the per-user lock
+ * (`lockUserProfileSet`, `server/api/profile-set-lock.ts`), so a forecast can
+ * never be left under a profile another device just deleted (story 80.1, FR131,
+ * triage M6). See the comment at the transaction.
+ *
+ * ⚠️ Not reached from the browser in production today (story 80.1 Fact R): the
+ * route imports this module client-side, and that import fails on `Buffer`
+ * (`deferred-work.md`, "Deferred from: create-story of 80-1").
  */
 export async function createForecastingProfile(
   request: Request,
@@ -188,44 +206,81 @@ export async function createForecastingProfile(
       }
     }
 
-    // Validate that the profile belongs to the current user
-    const profileOwned = await validateProfileOwnership(input.profileId, user.userId)
-    if (!profileOwned) {
+    // Validate and stringify scenarioData BEFORE the transaction: it touches no
+    // row, and its throw still maps to its own message in the catch below.
+    const scenarioDataString = validateScenarioData(input.scenarioData)
+
+    // ⚠️⚠️ ONE transaction, behind the per-user lock (story 80.1, FR131). The
+    // ownership check used to run in autocommit before an unguarded INSERT, so a
+    // profile cascade from another device (`deleteProfileWithChildren` in
+    // `server/api/sync.ts`, which HARD-deletes this table's rows for the
+    // profile) could commit in between and leave a forecast under a tombstoned
+    // profile: FR122(2)'s orphan class, on a writer outside the sync push. The
+    // foreign key does not stop it: it takes only `KEY SHARE` on the profile row,
+    // which the cascade's UPDATE does not conflict with.
+    //
+    // Now the lock, the liveness check, the default reset, the INSERT and the
+    // name lookup commit together. The save either commits before the cascade
+    // (which then deletes it) or waits for it and sees the tombstone. See
+    // `lockUserProfileSet` for why the lock is `'share'` and why the check is a
+    // separate statement after it. The same pattern as `createProfileScopedEntity`.
+    //
+    // ⚠️ No autocommit pre-check before it: the one inside is authoritative, and
+    // a second copy outside would only be a check nothing can observe.
+    //
+    // ⚠️ It also makes a FAILED save atomic: the default reset used to commit on
+    // its own, so a default save refused by the unique name index left the
+    // profile with no default forecast (MEASURED on `9144e0a`, story 80.1).
+    //
+    // ⚠️ Not reached from the browser in production today: the route imports this
+    // module client-side and the import fails on `Buffer` (`deferred-work.md`,
+    // "Deferred from: create-story of 80-1"). The fix is correct server code
+    // waiting for a real server boundary.
+    const created = await db.transaction(async (tx) => {
+      await lockUserProfileSet(tx, user.userId, 'share')
+      if (!(await validateProfileOwnership(input.profileId, user.userId, tx))) {
+        // Returned, not thrown: nothing was written, so the empty transaction
+        // commits.
+        return null
+      }
+
+      // Handle isDefault flag: only one default per user/profile
+      if (input.isDefault) {
+        await ensureSingleDefault(user.userId, input.profileId, undefined, tx)
+      }
+
+      // A unique violation here THROWS, which rolls the default reset back and
+      // reaches `isUniqueViolation` in the catch below.
+      const [newProfile] = await tx
+        .insert(forecastingProfiles)
+        .values({
+          userId: user.userId,
+          profileId: input.profileId,
+          name: input.name.trim(),
+          description: input.description?.trim(),
+          scenarioData: scenarioDataString,
+          version: input.version || 1,
+          isDefault: input.isDefault || false,
+        } as NewForecastingProfile)
+        .returning()
+
+      // Get the profile name for the output
+      const [userProfile] = await tx
+        .select({ name: userProfiles.name })
+        .from(userProfiles)
+        .where(eq(userProfiles.id, input.profileId))
+        .limit(1)
+
+      return { newProfile, profileName: userProfile?.name }
+    })
+
+    if (!created) {
       return {
         success: false,
         error: 'Invalid profile ID or profile does not belong to current user',
       }
     }
-
-    // Handle isDefault flag
-    if (input.isDefault) {
-      // Ensure only one default per user/profile
-      await ensureSingleDefault(user.userId, input.profileId)
-    }
-
-    // Validate and stringify scenarioData
-    const scenarioDataString = validateScenarioData(input.scenarioData)
-
-    // Create the forecasting profile
-    const [newProfile] = await db
-      .insert(forecastingProfiles)
-      .values({
-        userId: user.userId,
-        profileId: input.profileId,
-        name: input.name.trim(),
-        description: input.description?.trim(),
-        scenarioData: scenarioDataString,
-        version: input.version || 1,
-        isDefault: input.isDefault || false,
-      } as NewForecastingProfile)
-      .returning()
-
-    // Get the profile name for the output
-    const [userProfile] = await db
-      .select({ name: userProfiles.name })
-      .from(userProfiles)
-      .where(eq(userProfiles.id, input.profileId))
-      .limit(1)
+    const { newProfile } = created
 
     // ⚠️ `.returning()` yields an array, so the destructured row is
     // possibly-undefined. Without this guard, spreading `undefined` produced a
@@ -239,7 +294,7 @@ export async function createForecastingProfile(
       success: true,
       data: {
         ...newProfile,
-        profileName: userProfile?.name,
+        profileName: created.profileName,
       },
     }
   } catch (error) {

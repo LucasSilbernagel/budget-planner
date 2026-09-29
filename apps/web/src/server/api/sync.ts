@@ -22,6 +22,7 @@
 
 import { logger } from '@/lib/logger'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
+import { type DbTx, lockUserProfileSet } from '@/server/api/profile-set-lock'
 import type { SyncRejection, SyncRejectionReason } from '@/server/api/sync-rejection'
 import { constraintOf, permanentRejectionReason, sqlStateOf } from '@/server/api/sync-rejection'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
@@ -39,7 +40,6 @@ import {
   incomeSources,
   savingsGoals,
   userProfiles,
-  users,
 } from '@budget-planner/db'
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { z } from 'zod'
@@ -525,94 +525,15 @@ function syncInMemoryFallback(
 // Database Operations (DanubeData PostgreSQL)
 // ============================================================================
 
-/** The handle a `db.transaction` callback receives. */
-type SyncTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+/**
+ * The handle a `db.transaction` callback receives. The lock every transaction
+ * below takes first lives in `profile-set-lock.ts` (story 80.1 moved it there so
+ * the forecast save shares it).
+ */
+type SyncTx = DbTx
 
 /** Where a read or write runs: autocommit on `db`, or inside a transaction. */
 type Executor = typeof db | SyncTx
-
-/**
- * Lock the requesting user's `users` row: the ONE lock every sync-path
- * transaction that depends on the SET OF LIVE PROFILES takes, as its FIRST
- * statement (story 76.3, FR122).
- *
- * - WRITERS of the set take `'no key update'`: {@link deleteProfileWithChildren}
- *   (the last-profile count), {@link promoteProfile} and
- *   {@link ensureUserHasDefaultProfile} (the default seat).
- * - A profile-scoped child CREATE takes `'share'`, then re-checks that its
- *   profile is live, then inserts ({@link createProfileScopedEntity}).
- *
- * Only after this lock are `userProfiles` rows, then child rows, touched.
- *
- * ## Why the `users` row
- *
- * It is ONE row per user, it exists for every authenticated push, and it is
- * the row account erasure already locks first (`eraseAccountRows` in
- * `server/api/account.ts`). So every path shares one first lock, in one order.
- * Locking "the user's live `userProfiles` rows" instead would lock a SET whose
- * membership is the thing being raced (a row created after the lock is not
- * covered), and `promoteProfile` touches the default row and its target in a
- * data-dependent order, which could form a cycle with a cascade that locked
- * profiles by id.
- *
- * ## Why these strengths
- *
- * - `FOR NO KEY UPDATE` for writers, NOT `FOR UPDATE`: every child INSERT's
- *   foreign-key check on `userId -> users.id` takes `FOR KEY SHARE` on this row.
- *   `FOR UPDATE` conflicts with `KEY SHARE`, so it would stall every other push
- *   of the user that inserts a row. `NO KEY UPDATE` does not conflict with
- *   `KEY SHARE`, and does conflict with itself and with `SHARE`: exactly the
- *   writer/writer and writer/reader exclusion wanted.
- * - `FOR SHARE` for the child create: creates do not block each other, but they
- *   wait for (and are waited on by) any writer of the profile set. Under READ
- *   COMMITTED every statement takes a fresh snapshot, so the liveness re-check
- *   that runs AFTER this lock is granted sees a cascade that committed while it
- *   waited. That is why the re-check is a separate statement after the lock.
- *
- * ## ⚠️ No deadlock with the existing contenders (REASONED from the source and
- * the PostgreSQL row-lock matrix, NOT measured: PGlite is one connection, so no
- * test here can make two transactions wait on each other)
- *
- * Audited 2026-09-28 at `65d6ce1`, BEFORE this story, by grepping `apps/web/src`
- * (tests excluded) for `.transaction(` (6 sites; this story adds 2 more, both
- * taking this lock first) and `.update(users)` (10 sites). A point-in-time
- * measurement: a new transaction must be checked against this table.
- *
- * | Contender | Its first lock | Conflicts with ours? | Why no cycle |
- * |---|---|---|---|
- * | Account erasure (`account.ts`, `eraseAccountRows`) | `users` `FOR UPDATE` | yes, both strengths | Same first row, so the two serialize before either touches another row. This also closes a latent cycle: erasure deletes `forecastingProfiles` FIRST while the cascade reaches it LAST, and two transactions taking child-row locks in different orders could deadlock. |
- * | Retention purge (`retention/sweep.ts`) | `users` `FOR UPDATE SKIP LOCKED` | yes | It SKIPS a row we hold; if it holds the row first, we wait while holding nothing. |
- * | Rate-limit reaper (`rate-limit/db-window.ts`) | `rateLimits` rows, `SKIP LOCKED` | no shared row | No edge in the wait-for graph. |
- * | `checkRateLimit` upsert | one `rateLimits` row, autocommit | no shared row | It commits before any op transaction in `processBatchSync` opens. |
- * | Paddle webhook (`routes/api/webhooks/paddle.ts`, `runGuarded`) | the event-claim row, then `users` rows | yes, on `users` | It touches NO `userProfiles` or child rows inside its transaction (`ensureDefaultProfile` runs after it commits), so it never holds a lock we wait for after our first statement. |
- * | Autocommit `users` updates (`auth/paddle.ts`, `retention/sweep.ts` notices) | one `users` row, one statement | yes | Single-statement: they hold nothing while waiting. |
- * | `server/functions/profiles.ts:deleteProfile` | child rows, then `userProfiles` | not on the live path | ZERO production callers (story 63.2). It takes no `users` lock and orders children differently; if it is ever wired up it must take this lock first. |
- * | Sync single-statement child writers (`updateEntity`, `deleteEntity`) | one child row, autocommit, NO `users` lock | with the cascade's child rows | NOT covered by this lock. A cycle is possible through a unique index: a category rename to the name of a row the cascade has just tombstoned waits on the cascade's index entry while holding its own row, which the cascade's sweep wants. PostgreSQL aborts one side with `40P01`, which is transient and kept queued; no data is lost. |
- *
- * ⚠️ Costs, accepted:
- * - A lock WAIT is not an error and has no bound: the pool sets no
- *   `lock_timeout` or `statement_timeout` (`packages/db/src/client.ts`), so a
- *   waiting request holds a pool connection until the holder commits. Every
- *   holder above is short and makes no external call inside its transaction.
- * - A child create's `FOR SHARE` now also waits behind every `NO KEY UPDATE` of
- *   the `users` row, including the webhook's and the autocommit `users`
- *   updates, which the foreign-key `KEY SHARE` alone never waited for.
- * - A deadlock abort (`40P01`) is transient: `failureFromError` keeps the op
- *   queued, never permanent.
- *
- * ⚠️ If the `users` row is gone (erasure or the retention purge committed while
- * this waited), the SELECT locks nothing and returns no row. That is safe, not
- * checked: every caller then finds no live profile (the cascade answers
- * `already-deleted`, a create is refused, a promotion throws and stays queued,
- * the repair returns early), so no row is written for an erased account.
- */
-async function lockUserProfileSet(
-  tx: SyncTx,
-  userId: string,
-  strength: 'no key update' | 'share'
-): Promise<void> {
-  await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for(strength)
-}
 
 /**
  * Get entity from database by type and ID
@@ -777,9 +698,36 @@ async function isAlreadyDeleted(operation: SyncOperation): Promise<boolean> {
  * user's account. Drizzle's defaultNow() only fires on INSERT, so an UPDATE that
  * does not set updatedAt would leave the cursor stale and a delta-by-updatedAt
  * pull would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
+ *
+ * ⚠️ `isDeleted` and `createdAt` are dropped too (story 80.1, FR131 rider):
+ * - `isDeleted: true` tombstoned the row with NONE of the delete path's rules. For
+ *   a profile that skipped `deleteProfileWithChildren`'s cascade (children left
+ *   live under a tombstone) and the last-profile rule; for a child, deletion
+ *   belongs to the `delete` op. `isDeleted: false` could revive a row that a
+ *   cascade tombstoned between `applyOperation`'s checks and this UPDATE. ⚠️
+ *   Stripping stops only the REVIVAL: in that window the UPDATE still writes
+ *   its other fields onto the tombstone and bumps `updatedAt` (still open in
+ *   `deferred-work.md`, "Profile-scoped child UPDATE/DELETE still check profile
+ *   liveness outside any transaction").
+ * - `createdAt` orders the default repair's successor
+ *   (`ensureUserHasDefaultProfile`: the oldest live profile). MEASURED on
+ *   `9144e0a`: a string `createdAt` made the UPDATE throw (a kept-queued failure
+ *   with no rejection, so the op replayed for ever); now the rest of the update
+ *   applies.
+ * A legitimate client never sends either key: `toServerPayload`
+ * (`lib/sync/syncBridge.ts`) lists its fields, and core's outbound
+ * `syncOperationDataSchema` strips undeclared keys. So an extra key is DROPPED,
+ * not refused, and no op shape an older client queues is rejected.
  */
 function updatePayload(data: Record<string, unknown>, userId: string) {
-  const { id: _id, profileId: _profileId, userId: _userId, ...fields } = data
+  const {
+    id: _id,
+    profileId: _profileId,
+    userId: _userId,
+    isDeleted: _isDeleted,
+    createdAt: _createdAt,
+    ...fields
+  } = data
   return { ...fields, userId, updatedAt: new Date() }
 }
 
@@ -1061,7 +1009,7 @@ async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
  * {@link ensureUserHasDefaultProfile} repairs (story 79.3).
  *
  * One unlocked, autocommit SELECT. It is NOT a transaction, so the lock-order
- * table above {@link lockUserProfileSet} needs no row for it. Unlocked is safe in
+ * table on {@link lockUserProfileSet} (`profile-set-lock.ts`) needs no row for it. Unlocked is safe in
  * the SKIP direction: if a default is removed right after this read, that removal
  * was itself a `userProfile` op, whose own batch runs the repair. A `true` is
  * re-checked under the lock by the repair itself.
@@ -1333,7 +1281,13 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
         // row took a fresh `defaultRandom()` id, so the creating device's local
         // row and the server row never matched: every later update/delete of it
         // was "Entity not found", and a pull delivered it as a duplicate.
-        const { id: _id, ...fields } = operation.data
+        //
+        // ⚠️ `isDeleted` and `createdAt` are dropped for the reasons in
+        // `updatePayload` (story 80.1 code review): a create must not insert a
+        // tombstone, and a string `createdAt` made the INSERT throw with no
+        // SQLSTATE, a kept-queued failure replayed for ever (MEASURED on
+        // `9144e0a`). A legitimate client never sends either key.
+        const { id: _id, isDeleted: _isDeleted, createdAt: _createdAt, ...fields } = operation.data
         // Profile-scoped: the lock, the profile re-check, the duplicate check and
         // the INSERT run in one transaction (story 76.3). `profileId` is always
         // set here: the pre-check above refuses a profile-scoped op without one.
