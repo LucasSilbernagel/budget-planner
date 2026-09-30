@@ -1,0 +1,114 @@
+name: Screenshots
+
+# Screenshot baselines (story 84.1, FR137).
+#
+# The `screenshots` / `screenshots-paid` Playwright projects compare pages
+# against PNGs in `apps/web/e2e/__screenshots__/`. Those PNGs must be rendered
+# where CI compares them: CI resolves `system-ui` to DejaVu Sans, a dev box to
+# Noto Sans, so a baseline made locally never matches. This workflow is the ONLY
+# place baselines are made.
+#
+#   mode=update   render every shot and upload them as `screenshot-baselines`:
+#                   gh workflow run screenshots.yml --ref <branch> -f mode=update
+#                   gh run download <run-id> -n screenshot-baselines -D apps/web/e2e/__screenshots__
+#                 Look at every changed PNG before committing it: a blank or
+#                 half-rendered shot becomes a baseline that always passes.
+#   mode=compare  run the shots against the committed baselines (the same check
+#                 ci.yml's e2e step runs on every push), without a deploy.
+#
+# ⚠️ `runs-on` must match ci.yml's `e2e-tests` job (ubuntu-24.04), or the
+# baselines made here are compared on a different image. A Playwright upgrade
+# or a runner image change means re-running mode=update.
+#
+# GitHub only dispatches a workflow that exists on the default branch; the run
+# then uses the file as it is on `--ref`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'update (write baselines) or compare (check against them)'
+        required: true
+        default: compare
+        type: choice
+        options: [compare, update]
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  screenshots:
+    name: Screenshots (${{ inputs.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve Playwright version
+        id: playwright
+        run: |
+          set -euo pipefail
+          version=$(pnpm --filter @budget-planner/web exec playwright --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
+      - name: Install Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @budget-planner/web exec playwright install --with-deps chromium
+
+      - name: Install Playwright OS dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @budget-planner/web exec playwright install-deps chromium
+
+      - name: Run the screenshot projects
+        working-directory: apps/web
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          args=(--project=screenshots --project=screenshots-paid)
+          if [ "$MODE" = update ]; then args+=(--update-snapshots=all); fi
+          ./node_modules/.bin/playwright test "${args[@]}"
+
+      - name: Upload the baselines
+        if: ${{ inputs.mode == 'update' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-baselines
+          path: apps/web/e2e/__screenshots__/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-report
+          path: apps/web/playwright-report/
+          retention-days: 7

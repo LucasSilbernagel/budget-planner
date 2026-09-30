@@ -161,7 +161,12 @@ jobs:
 
   e2e-tests:
     name: E2E tests (Playwright)
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest` (story 84.1): this job also runs the
+    # `screenshots` projects, whose baselines are rendered by
+    # `.github/workflows/screenshots.yml` on this SAME image. When `latest`
+    # moves, fonts and rasterisation move with it and every shot goes RED.
+    # Change both files together, then re-run screenshots.yml in update mode.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -219,6 +224,9 @@ jobs:
       # skips without `--layout`. So this step is where layout is always checked,
       # and it blocks deploy (deploy.yml calls this workflow). Never add a
       # `--project`/`--grep` here; `gates-lib.test.ts` pins that.
+      #
+      # Story 84.1: it also runs `screenshots` / `screenshots-paid`, which
+      # `pnpm gates` never runs locally (their baselines are CI-rendered).
       - name: Run Playwright tests
         run: pnpm test:e2e
 
