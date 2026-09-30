@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
 
@@ -169,7 +170,13 @@ const prodServer = {
   },
 }
 
+// Resolved against the shell's cwd: Playwright resolves a relative template
+// against THIS file's directory, which would drop scratch PNGs inside apps/web.
+// A first run into an empty directory FAILS with "writing actual" by design;
+// the second run compares (story 84.1 review).
 const screenshotDir = process.env['SCREENSHOT_DIR']
+  ? resolve(process.cwd(), process.env['SCREENSHOT_DIR'])
+  : undefined
 
 export default defineConfig({
   testDir: './e2e',
@@ -214,6 +221,10 @@ export default defineConfig({
     {
       name: 'screenshots',
       testMatch: /\.screenshot\.spec\.ts$/,
+      // No retry (story 84.1 review, Lucas): a shot that passes only on retry
+      // is a real flake (CI run 36784606423 was a blank-chart race) and must
+      // turn the run red, not hide as "flaky".
+      retries: 0,
       use: { ...devices['Desktop Chrome'] },
     },
     // ⚠️ Dropped entirely when PLAYWRIGHT_BASE_URL is set. That escape hatch points
@@ -244,6 +255,7 @@ export default defineConfig({
           {
             name: 'screenshots-paid',
             testMatch: /\.screenshot\.paid\.spec\.ts$/,
+            retries: 0,
             use: { ...devices['Desktop Chrome'], baseURL: paidBaseURL },
           },
           // Dropped with PLAYWRIGHT_BASE_URL too: it needs its own server, with

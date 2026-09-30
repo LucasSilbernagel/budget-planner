@@ -510,6 +510,20 @@ describe('buildGates', () => {
     expect(pkg.scripts['test:e2e']).toBe('playwright test')
   })
 
+  // Story 84.1 review: the screenshot baselines are rendered by screenshots.yml
+  // and compared by ci.yml's e2e job, so both must run on the SAME image.
+  it('ci.yml e2e-tests and screenshots.yml run on the same pinned runner image (story 84.1)', () => {
+    const workflows = join(__dirname, '../../../../.github/workflows')
+    const runsOn = (file: string, job: string) => {
+      const text = readFileSync(join(workflows, file), 'utf8')
+      const block = text.slice(text.indexOf(`\n  ${job}:\n`))
+      return block.match(/^ {4}runs-on: (\S+)$/m)?.[1]
+    }
+    const ci = runsOn('ci.yml', 'e2e-tests')
+    expect(ci).toMatch(/^ubuntu-\d{2}\.\d{2}$/)
+    expect(runsOn('screenshots.yml', 'screenshots')).toBe(ci)
+  })
+
   it('CI never sets PLAYWRIGHT_BASE_URL (it drops the paid, prod and paid-layout projects)', () => {
     const ci = readFileSync(join(__dirname, '../../../../.github/workflows/ci.yml'), 'utf8')
     expect(ci).not.toMatch(/PLAYWRIGHT_BASE_URL/)
@@ -561,6 +575,9 @@ describe('buildGates', () => {
       const e2e = buildGates({ root: '/r', runDir: '/d', typeCheckScripts: {}, layout }).find(
         (g) => g.id === 'e2e'
       )
+      // Non-empty first: an e2e gate with NO --project flag runs EVERY project,
+      // screenshot ones included, and would pass the not.toContain below.
+      expect(projectsOf(e2e).length).toBeGreaterThan(0)
       for (const name of E2E_SCREENSHOT_PROJECTS) expect(projectsOf(e2e)).not.toContain(name)
     }
   })

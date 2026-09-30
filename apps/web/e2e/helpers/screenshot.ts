@@ -4,8 +4,9 @@ import { type Locator, type Page, expect } from '@playwright/test'
  * Shared by the two screenshot specs (story 84.1): the clock every shot runs
  * at and how long a shot may wait for two identical frames.
  *
- * `FIXED_NOW` is the date `seedFinanceRows` stamps its rows with, so the
- * footer's copyright year and every "as of" date in a shot are fixed.
+ * `FIXED_NOW` is the date `seedFinanceRows` stamps its rows with, so every date
+ * the BROWSER renders is fixed. It does NOT fix the footer's copyright year,
+ * which the server renders (see `copyrightYear`).
  */
 export const FIXED_NOW = new Date('2026-08-11T12:00:00.000Z')
 
@@ -20,8 +21,12 @@ export const SHOT_TIMEOUT = 15_000
  * Task 2: with the clock at 2031 the footer still read `Copyright 2026`. Unmasked,
  * every full-page shot would turn RED on 1 January and block the deploy.
  */
-export function copyrightYear(page: Page): Locator[] {
-  return [page.locator('footer span').filter({ hasText: /^Copyright \d{4}/ })]
+export async function copyrightYear(page: Page): Promise<Locator[]> {
+  const year = page.locator('footer span').filter({ hasText: /^Copyright \d{4}/ })
+  // Exactly one, asserted: a mask that matches nothing masks nothing and passes,
+  // so a footer copy change would only show up on 1 January (story 84.1 review).
+  await expect(year, 'the copyright-year mask matched no footer text').toHaveCount(1)
+  return [year]
 }
 
 /**

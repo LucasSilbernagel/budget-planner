@@ -14,7 +14,13 @@ name: Screenshots
 #                 Look at every changed PNG before committing it: a blank or
 #                 half-rendered shot becomes a baseline that always passes.
 #   mode=compare  run the shots against the committed baselines (the same check
-#                 ci.yml's e2e step runs on every push), without a deploy.
+#                 ci.yml's e2e step runs on every PR to main and every deploy),
+#                 without a deploy.
+#
+# Update mode DELETES apps/web/e2e/__screenshots__ first, so a renamed or
+# removed shot's old PNG is not re-uploaded and re-committed forever
+# (Playwright never flags an unused snapshot). Commit the artifact as the
+# whole directory: `git rm -r` the old one, then download.
 #
 # ⚠️ `runs-on` must match ci.yml's `e2e-tests` job (ubuntu-24.04), or the
 # baselines made here are compared on a different image. A Playwright upgrade
@@ -33,9 +39,10 @@ on:
         type: choice
         options: [compare, update]
 
-# Queue, never cancel: an update run cancelled by a compare dispatched right
-# after it loses the baselines (MEASURED in story 84.1: back-to-back compare
-# dispatches cancelled each other).
+# Don't cancel the RUNNING run: an update run cancelled by a compare dispatched
+# right after it loses the baselines (MEASURED in story 84.1: back-to-back
+# dispatches cancelled each other). GitHub still keeps only ONE pending run per
+# group, so a third dispatch cancels the pending second: dispatch one at a time.
 concurrency:
   group: screenshots-${{ github.ref }}
   cancel-in-progress: false
@@ -95,8 +102,17 @@ jobs:
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
+          # An API dispatch bypasses the `choice` list, so check it here: an
+          # unknown mode must fail, not silently run a compare.
+          case "$MODE" in
+            update | compare) ;;
+            *) echo "::error::unknown mode '$MODE' (expected update or compare)"; exit 1 ;;
+          esac
           args=(--project=screenshots --project=screenshots-paid)
-          if [ "$MODE" = update ]; then args+=(--update-snapshots=all); fi
+          if [ "$MODE" = update ]; then
+            rm -rf e2e/__screenshots__
+            args+=(--update-snapshots=all)
+          fi
           ./node_modules/.bin/playwright test "${args[@]}"
 
       - name: Upload the baselines

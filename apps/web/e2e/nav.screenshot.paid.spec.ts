@@ -14,8 +14,10 @@ import { seedFinanceRows } from './helpers/seed-finance-rows'
  * header has the free anchors and `/forecasting` is the upgrade prompt.
  *
  * `/forecasting` fetches `/api/profiles` and `/api/forecasts` (story 83.1) and
- * the dev servers have no database, so both are STUBBED with one saved
- * forecast. Unstubbed, the shot would pin the page's error state.
+ * the dev servers have no database, so both are STUBBED: one profile and NO
+ * saved forecasts. That keeps the page's profile state `ready` rather than an
+ * error. The shot is of the default Scenario Builder tab; the saved list isn't
+ * in the picture (story 84.1 review corrected an earlier "one saved forecast").
  *
  * ⚠️ `mockSignedIn` + `expectSignedInAs` for the same reason as
  * `account-menu.paid.spec.ts`: the seed paints a signed-in cluster, but the
@@ -24,7 +26,6 @@ import { seedFinanceRows } from './helpers/seed-finance-rows'
  * showed the signed-out cluster.
  */
 
-const STAMP = FIXED_NOW.toISOString()
 /** Short and fixed, so the avatar initial and the sr-only identity never move. */
 const PAID_EMAIL = 'paid@example.test'
 const PROFILE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -34,23 +35,7 @@ async function stubForecastApi(page: Page) {
   await page.route('**/api/profiles', (route) =>
     ok(route, [{ id: PROFILE_ID, isDefault: true, name: 'Personal' }])
   )
-  await page.route('**/api/forecasts**', (route) =>
-    ok(route, [
-      {
-        id: 1,
-        userId: 'e2e-paid-user',
-        profileId: PROFILE_ID,
-        name: 'Screenshot plan',
-        description: null,
-        scenarioData: JSON.stringify({}),
-        version: 1,
-        isDefault: false,
-        createdAt: STAMP,
-        updatedAt: STAMP,
-        profileName: 'Personal',
-      },
-    ])
-  )
+  await page.route('**/api/forecasts**', (route) => ok(route, []))
 }
 
 async function open(page: Page, path: string, width: number, charts: number) {
@@ -71,7 +56,7 @@ test('forecasting-1280-light', async ({ page }) => {
   await open(page, '/forecasting', 1280, 0)
   await expect(page).toHaveScreenshot('forecasting-1280-light.png', {
     fullPage: true,
-    mask: copyrightYear(page),
+    mask: await copyrightYear(page),
     timeout: SHOT_TIMEOUT,
   })
 })
@@ -80,7 +65,7 @@ for (const width of [768, 1280]) {
   test(`paid-header-${width}-light`, async ({ page }) => {
     await open(page, '/', width, 4)
     await expect(page).toHaveScreenshot(`paid-header-${width}-light.png`, {
-      mask: copyrightYear(page),
+      mask: await copyrightYear(page),
       timeout: SHOT_TIMEOUT,
     })
   })
