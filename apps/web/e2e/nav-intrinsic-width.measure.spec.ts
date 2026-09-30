@@ -127,19 +127,25 @@ async function measureFreeNav(page: Page, lgRow: string[], panelRows: number) {
   expect(wrappingWidths, 'the free row wraps at these desktop widths').toEqual([])
 }
 
-test('MEASURE: the free desktop row — five items below lg, six anchors from lg', async ({
-  page,
-}) => {
-  await measureFreeNav(
-    page,
-    ['Overview', 'Income', 'Expenses', 'Savings', 'Balances', 'Retirement'],
-    2
-  )
-})
+test(
+  'MEASURE: the free desktop row — five items below lg, six anchors from lg',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await measureFreeNav(
+      page,
+      ['Overview', 'Income', 'Expenses', 'Savings', 'Balances', 'Retirement'],
+      2
+    )
+  }
+)
 
 // Epic AC-6 / story AC-5: a user with the planner off has one fewer anchor, so
 // the row is measured in BOTH states.
-test('MEASURE: the free desktop row with the Retirement planner hidden', async ({ page }) => {
-  await hidePlannerBeforeLoad(page)
-  await measureFreeNav(page, ['Overview', 'Income', 'Expenses', 'Savings', 'Balances'], 1)
-})
+test(
+  'MEASURE: the free desktop row with the Retirement planner hidden',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await hidePlannerBeforeLoad(page)
+    await measureFreeNav(page, ['Overview', 'Income', 'Expenses', 'Savings', 'Balances'], 1)
+  }
+)

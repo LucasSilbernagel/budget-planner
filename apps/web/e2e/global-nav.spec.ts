@@ -499,52 +499,58 @@ test.describe('the More sheet at 320px (story 31.5)', () => {
    * having a perfect rect and passing `toBeVisible()`. `max-sm:z-50` on the nav
    * breaks the tie in its favour (the nav renders after `<InstallPrompt/>`).
    */
-  test('every sheet row stays tappable underneath the PWA install banner', async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 640 })
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test(
+    'every sheet row stays tappable underneath the PWA install banner',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 640 })
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
 
-    await page.evaluate(() => {
-      const event = new Event('beforeinstallprompt') as Event & {
-        prompt?: () => Promise<void>
-        userChoice?: Promise<{ outcome: string; platform: string }>
+      await page.evaluate(() => {
+        const event = new Event('beforeinstallprompt') as Event & {
+          prompt?: () => Promise<void>
+          userChoice?: Promise<{ outcome: string; platform: string }>
+        }
+        event.prompt = async () => {}
+        event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' })
+        globalThis.dispatchEvent(event)
+      })
+      const banner = page.getByRole('region', { name: /install/i })
+      await expect(banner).toBeVisible()
+
+      await moreOf(page).click()
+
+      const probe = await page.evaluate((PANEL) => {
+        const nav = document.querySelector('nav[aria-label="Primary"]')
+        const sheet = document.querySelector(PANEL)
+        const bannerEl = document.querySelector('section[aria-label*="Install"]')
+        if (!nav || !sheet || !bannerEl) return null
+        const b = bannerEl.getBoundingClientRect()
+        const s = sheet.getBoundingClientRect()
+        return {
+          // Anti-vacuity: if the two do not actually overlap, this test proves
+          // nothing and must be re-tuned rather than left passing.
+          overlaps: s.top < b.bottom && b.top < s.bottom,
+          rows: [...sheet.querySelectorAll('a')].map((a) => {
+            const r = a.getBoundingClientRect()
+            const el = document.elementFromPoint(
+              Math.round(r.x + r.width / 2),
+              Math.round(r.y + r.height / 2)
+            )
+            return { label: a.textContent?.trim() ?? '', hitsSelf: a.contains(el) || a === el }
+          }),
+        }
+      }, MORE_PANEL)
+
+      expect(probe, 'nav/sheet/banner not all present').not.toBeNull()
+      const p = probe as NonNullable<typeof probe>
+      expect(p.overlaps, 'the banner and the sheet do not overlap — this test is vacuous').toBe(
+        true
+      )
+      for (const { label, hitsSelf } of p.rows) {
+        expect(hitsSelf, `sheet row "${label}" is occluded by the install banner`).toBe(true)
       }
-      event.prompt = async () => {}
-      event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' })
-      globalThis.dispatchEvent(event)
-    })
-    const banner = page.getByRole('region', { name: /install/i })
-    await expect(banner).toBeVisible()
-
-    await moreOf(page).click()
-
-    const probe = await page.evaluate((PANEL) => {
-      const nav = document.querySelector('nav[aria-label="Primary"]')
-      const sheet = document.querySelector(PANEL)
-      const bannerEl = document.querySelector('section[aria-label*="Install"]')
-      if (!nav || !sheet || !bannerEl) return null
-      const b = bannerEl.getBoundingClientRect()
-      const s = sheet.getBoundingClientRect()
-      return {
-        // Anti-vacuity: if the two do not actually overlap, this test proves
-        // nothing and must be re-tuned rather than left passing.
-        overlaps: s.top < b.bottom && b.top < s.bottom,
-        rows: [...sheet.querySelectorAll('a')].map((a) => {
-          const r = a.getBoundingClientRect()
-          const el = document.elementFromPoint(
-            Math.round(r.x + r.width / 2),
-            Math.round(r.y + r.height / 2)
-          )
-          return { label: a.textContent?.trim() ?? '', hitsSelf: a.contains(el) || a === el }
-        }),
-      }
-    }, MORE_PANEL)
-
-    expect(probe, 'nav/sheet/banner not all present').not.toBeNull()
-    const p = probe as NonNullable<typeof probe>
-    expect(p.overlaps, 'the banner and the sheet do not overlap — this test is vacuous').toBe(true)
-    for (const { label, hitsSelf } of p.rows) {
-      expect(hitsSelf, `sheet row "${label}" is occluded by the install banner`).toBe(true)
     }
-  })
+  )
 })

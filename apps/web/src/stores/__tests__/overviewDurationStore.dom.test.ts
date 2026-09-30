@@ -11,7 +11,7 @@
  * Runs in jsdom (`.dom.test.ts`) for a real `localStorage`.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DURATION_LABEL,
   DURATION_OPTION_LABEL,
@@ -27,8 +27,19 @@ beforeEach(() => {
 })
 
 describe('overviewDurationStore', () => {
-  it('defaults to annually (deterministic, SSR-safe)', () => {
-    expect(useOverviewDurationStore.getState().duration).toBe('annually')
+  it('defaults to annually (deterministic, SSR-safe)', async () => {
+    // A FRESH module, not the singleton: `beforeEach` sets 'annually' on the
+    // singleton, so asserting on it passed whatever the default was (story
+    // 82.3, mutation M11: default → 'monthly' left this file green). That
+    // `setState` also WRITES the key, so it is removed here: a first visit has
+    // empty storage, and a rehydrate of an empty key must keep the default too.
+    localStorage.removeItem(OVERVIEW_DURATION_STORAGE_KEY)
+    expect(localStorage.getItem(OVERVIEW_DURATION_STORAGE_KEY)).toBeNull()
+    vi.resetModules()
+    const fresh = await import('../overviewDurationStore')
+    expect(fresh.useOverviewDurationStore.getState().duration).toBe('annually')
+    await fresh.useOverviewDurationStore.persist.rehydrate()
+    expect(fresh.useOverviewDurationStore.getState().duration).toBe('annually')
   })
 
   it('setDuration sets the duration', () => {

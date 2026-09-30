@@ -188,42 +188,54 @@ async function measure(page: Page) {
 
 for (const width of [320, 1280]) {
   test.describe(`retirement target model group at ${width}px`, () => {
-    test('the label sits clear ABOVE the panel, not jammed inside its edge', async ({ page }) => {
-      await gotoPlanner(page, width)
-      const m = await measure(page)
+    test(
+      'the label sits clear ABOVE the panel, not jammed inside its edge',
+      { tag: '@layout' },
+      async ({ page }) => {
+        await gotoPlanner(page, width)
+        const m = await measure(page)
 
-      // ⚠️ THE LOAD-BEARING ASSERTION. Reverting the fix puts the label back
-      // inside the panel and makes this negative (measured -20px before the fix).
-      expect(m.gapLabelToPanel).toBeGreaterThan(0)
-      expect(m.labelOverlapsFirstCard).toBe(false)
-    })
+        // ⚠️ THE LOAD-BEARING ASSERTION. Reverting the fix puts the label back
+        // inside the panel and makes this negative (measured -20px before the fix).
+        expect(m.gapLabelToPanel).toBeGreaterThan(0)
+        expect(m.labelOverlapsFirstCard).toBe(false)
+      }
+    )
 
-    test('the label is left-aligned with the panel it heads', async ({ page }) => {
-      await gotoPlanner(page, width)
-      const m = await measure(page)
+    test(
+      'the label is left-aligned with the panel it heads',
+      { tag: '@layout' },
+      async ({ page }) => {
+        await gotoPlanner(page, width)
+        const m = await measure(page)
 
-      // ⚠️ RENAMED AND NARROWED IN REVIEW. This used to be called "does not
-      // overflow or clip" and also asserted `labelWidth <= panelWidth + 1` —
-      // which is true BY CONSTRUCTION, since the legend is `w-full` and the
-      // panel is a full-span sibling in the same unpadded fieldset. It was
-      // insensitive to both clipping and wrapping, the two things its name
-      // claimed. Alignment is what it actually measures, and that does reverse:
-      // a rendered legend carries `px-1` inside a padded fieldset and sits ~17px
-      // right of the panel's edge.
-      expect(Math.abs(m.labelLeft - m.panelLeft)).toBeLessThanOrEqual(1)
-    })
+        // ⚠️ RENAMED AND NARROWED IN REVIEW. This used to be called "does not
+        // overflow or clip" and also asserted `labelWidth <= panelWidth + 1` —
+        // which is true BY CONSTRUCTION, since the legend is `w-full` and the
+        // panel is a full-span sibling in the same unpadded fieldset. It was
+        // insensitive to both clipping and wrapping, the two things its name
+        // claimed. Alignment is what it actually measures, and that does reverse:
+        // a rendered legend carries `px-1` inside a padded fieldset and sits ~17px
+        // right of the panel's edge.
+        expect(Math.abs(m.labelLeft - m.panelLeft)).toBeLessThanOrEqual(1)
+      }
+    )
 
-    test('the two-column desktop / one-column mobile grid is unchanged', async ({ page }) => {
-      // ⚠️ ADDED IN REVIEW. AC-4's "the grid is unchanged" clause was satisfied by
-      // the code but pinned by nothing — the claim rested on a one-time manual
-      // probe. Moving `grid-cols-1 sm:grid-cols-2` off the panel during a future
-      // refactor would have been caught by no test at all.
-      await gotoPlanner(page, width)
-      const m = await measure(page)
-      expect(m.columns).toBe(width >= 640 ? 2 : 1)
-    })
+    test(
+      'the two-column desktop / one-column mobile grid is unchanged',
+      { tag: '@layout' },
+      async ({ page }) => {
+        // ⚠️ ADDED IN REVIEW. AC-4's "the grid is unchanged" clause was satisfied by
+        // the code but pinned by nothing — the claim rested on a one-time manual
+        // probe. Moving `grid-cols-1 sm:grid-cols-2` off the panel during a future
+        // refactor would have been caught by no test at all.
+        await gotoPlanner(page, width)
+        const m = await measure(page)
+        expect(m.columns).toBe(width >= 640 ? 2 : 1)
+      }
+    )
 
-    test('the label is neither clipped nor wrapped', async ({ page }) => {
+    test('the label is neither clipped nor wrapped', { tag: '@layout' }, async ({ page }) => {
       await gotoPlanner(page, width)
       const m = await measure(page)
 
@@ -239,82 +251,90 @@ for (const width of [320, 1280]) {
 }
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`the label is legible against the surface it sits on in ${theme} mode`, async ({ page }) => {
-    await gotoPlanner(page, 1280, theme)
-    // The theme actually took, asserted on the PAINTED canvas.
-    // ⚠️ This used to read `<html>`'s class list, with a note about token
-    // membership vs substring matching. Story 61.1 (FR93) removed that class
-    // entirely — the theme is `prefers-color-scheme` now — so the check moved to
-    // the thing the scheme actually changes. Re-reading the emulated colorScheme
-    // would not be an assertion at all. `body` is bg-gray-50 / bg-gray-900.
-    await expect
-      .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
-      .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
+  test(
+    `the label is legible against the surface it sits on in ${theme} mode`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await gotoPlanner(page, 1280, theme)
+      // The theme actually took, asserted on the PAINTED canvas.
+      // ⚠️ This used to read `<html>`'s class list, with a note about token
+      // membership vs substring matching. Story 61.1 (FR93) removed that class
+      // entirely — the theme is `prefers-color-scheme` now — so the check moved to
+      // the thing the scheme actually changes. Re-reading the emulated colorScheme
+      // would not be an assertion at all. `body` is bg-gray-50 / bg-gray-900.
+      await expect
+        .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+        .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
-    // ⚠️ The fix moved the label OFF `.surface-inset` and onto the card behind
-    // it, so the background this is measured against is not the one it had
-    // before — a contrast claim carried over from the old surface would be about
-    // the wrong pair of colours.
-    // ⚠️ COLLECT THE WHOLE ANCESTOR STACK, not just the first painter. A
-    // background can be translucent — `.surface-inset` is `dark:bg-gray-700/40`
-    // — and stopping at the first non-`rgba(0,0,0,0)` value then discarding its
-    // alpha scores it as opaque. Measured cost of that shortcut: slate-200 over
-    // a 50% overlay on white computes 14.48:1 while the painted result is
-    // 2.77:1, so a hard AA failure certifies as AAA. Composite instead.
-    const { fg, stack } = await page.evaluate(
-      ({ legendSel }) => {
-        const legend = document.querySelector(legendSel) as HTMLElement
-        const backgrounds: string[] = []
-        let node: HTMLElement | null = legend
-        while (node) {
-          backgrounds.push(getComputedStyle(node).backgroundColor)
-          node = node.parentElement
+      // ⚠️ The fix moved the label OFF `.surface-inset` and onto the card behind
+      // it, so the background this is measured against is not the one it had
+      // before — a contrast claim carried over from the old surface would be about
+      // the wrong pair of colours.
+      // ⚠️ COLLECT THE WHOLE ANCESTOR STACK, not just the first painter. A
+      // background can be translucent — `.surface-inset` is `dark:bg-gray-700/40`
+      // — and stopping at the first non-`rgba(0,0,0,0)` value then discarding its
+      // alpha scores it as opaque. Measured cost of that shortcut: slate-200 over
+      // a 50% overlay on white computes 14.48:1 while the painted result is
+      // 2.77:1, so a hard AA failure certifies as AAA. Composite instead.
+      const { fg, stack } = await page.evaluate(
+        ({ legendSel }) => {
+          const legend = document.querySelector(legendSel) as HTMLElement
+          const backgrounds: string[] = []
+          let node: HTMLElement | null = legend
+          while (node) {
+            backgrounds.push(getComputedStyle(node).backgroundColor)
+            node = node.parentElement
+          }
+          // The page's own canvas is the final backdrop.
+          backgrounds.push(getComputedStyle(document.documentElement).backgroundColor)
+          return { fg: getComputedStyle(legend).color, stack: backgrounds }
+        },
+        { legendSel: LEGEND }
+      )
+
+      // Flatten from the bottom up, starting from an opaque white canvas.
+      let backdrop: readonly number[] = [255, 255, 255, 1]
+      for (const layer of [...stack].reverse()) {
+        const colour = parseColour(layer)
+        if (colour[3] > 0) {
+          backdrop = [...over(colour, backdrop), 1]
         }
-        // The page's own canvas is the final backdrop.
-        backgrounds.push(getComputedStyle(document.documentElement).backgroundColor)
-        return { fg: getComputedStyle(legend).color, stack: backgrounds }
-      },
-      { legendSel: LEGEND }
-    )
-
-    // Flatten from the bottom up, starting from an opaque white canvas.
-    let backdrop: readonly number[] = [255, 255, 255, 1]
-    for (const layer of [...stack].reverse()) {
-      const colour = parseColour(layer)
-      if (colour[3] > 0) {
-        backdrop = [...over(colour, backdrop), 1]
       }
-    }
-    const foreground = parseColour(fg)
-    const painted = over(foreground, backdrop)
+      const foreground = parseColour(fg)
+      const painted = over(foreground, backdrop)
 
-    const ratio = contrastRatio(painted, backdrop)
-    // ⚠️ The bar is AAA (7:1), deliberately stricter than the AA 4.5:1 this text
-    // legally needs. The headroom is the point: it is what makes M7
-    // (`.text-label` -> `.text-faint`) redden in BOTH themes rather than only in
-    // light, where `gray-400` measures ~2.6:1 against ~5.6:1 dark. A legitimate
-    // future colour change that lands between 4.5 and 7 will fail here and
-    // should be re-ratified rather than silently loosened.
-    expect(
-      ratio,
-      `${theme}: ${fg} over ${stack.join(' / ')} = ${ratio.toFixed(2)}:1`
-    ).toBeGreaterThanOrEqual(7)
-  })
+      const ratio = contrastRatio(painted, backdrop)
+      // ⚠️ The bar is AAA (7:1), deliberately stricter than the AA 4.5:1 this text
+      // legally needs. The headroom is the point: it is what makes M7
+      // (`.text-label` -> `.text-faint`) redden in BOTH themes rather than only in
+      // light, where `gray-400` measures ~2.6:1 against ~5.6:1 dark. A legitimate
+      // future colour change that lands between 4.5 and 7 will fail here and
+      // should be re-ratified rather than silently loosened.
+      expect(
+        ratio,
+        `${theme}: ${fg} over ${stack.join(' / ')} = ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(7)
+    }
+  )
 }
 
-test('the radio cards keep their focus ring and 44px targets (AC-5)', async ({ page }) => {
-  await gotoPlanner(page, 1280)
+test(
+  'the radio cards keep their focus ring and 44px targets (AC-5)',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await gotoPlanner(page, 1280)
 
-  const cards = page.locator(`${PANEL} label`)
-  await expect(cards).toHaveCount(2)
-  for (let i = 0; i < 2; i++) {
-    const box = await cards.nth(i).boundingBox()
-    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+    const cards = page.locator(`${PANEL} label`)
+    await expect(cards).toHaveCount(2)
+    for (let i = 0; i < 2; i++) {
+      const box = await cards.nth(i).boundingBox()
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+    }
+
+    const radio = page.locator(`${PANEL} input[type="radio"]`).first()
+    const blurred = await radio.evaluate((el) => getComputedStyle(el).boxShadow)
+    await radio.focus()
+    const focused = await radio.evaluate((el) => getComputedStyle(el).boxShadow)
+    expect(focused).not.toBe(blurred)
   }
-
-  const radio = page.locator(`${PANEL} input[type="radio"]`).first()
-  const blurred = await radio.evaluate((el) => getComputedStyle(el).boxShadow)
-  await radio.focus()
-  const focused = await radio.evaluate((el) => getComputedStyle(el).boxShadow)
-  expect(focused).not.toBe(blurred)
-})
+)

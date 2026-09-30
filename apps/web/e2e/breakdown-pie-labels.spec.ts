@@ -227,7 +227,10 @@ test.describe('Overview breakdown pies paint no in-plot slice labels', () => {
     expect(response?.ok()).toBeTruthy()
     await page.waitForLoadState('networkidle')
 
-    await assertNoInPlotLabels(page, { expenseRatioSlices: EXPENSES.length + 1, expenseSlices: 6 })
+    await assertNoInPlotLabels(page, {
+      expenseRatioSlices: EXPENSES.length + 1,
+      expenseSlices: 6,
+    })
 
     // AC-5: the slice list beneath each pie is what carries the breakdown now,
     // so it must name every slice. One <li> per slice, no more and no fewer.

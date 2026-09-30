@@ -160,34 +160,40 @@ const THEMES = [
 test.describe('skeleton footprints', () => {
   for (const viewport of VIEWPORTS) {
     for (const theme of THEMES) {
-      test(`the three Overview figures keep their exact box at ${viewport.name} (${theme.name})`, async ({
-        page,
-      }) => {
-        const ids = ['overview-total-income', 'overview-total-expenses', 'overview-net-worth']
+      test(
+        `the three Overview figures keep their exact box at ${viewport.name} (${theme.name})`,
+        { tag: '@layout' },
+        async ({ page }) => {
+          const ids = ['overview-total-income', 'overview-total-expenses', 'overview-net-worth']
 
-        const blocked = await open(page, { pending: true, width: viewport.width, dark: theme.dark })
-        const pending = [
-          await boxOf(page, ids[0]),
-          await boxOf(page, ids[1]),
-          await boxOf(page, ids[2]),
-        ]
-        await assertStillPending(page, blocked)
+          const blocked = await open(page, {
+            pending: true,
+            width: viewport.width,
+            dark: theme.dark,
+          })
+          const pending = [
+            await boxOf(page, ids[0]),
+            await boxOf(page, ids[1]),
+            await boxOf(page, ids[2]),
+          ]
+          await assertStillPending(page, blocked)
 
-        await page.unroute('**/*')
-        await open(page, { pending: false, width: viewport.width, dark: theme.dark })
-        const resolved = [
-          await boxOf(page, ids[0]),
-          await boxOf(page, ids[1]),
-          await boxOf(page, ids[2]),
-        ]
+          await page.unroute('**/*')
+          await open(page, { pending: false, width: viewport.width, dark: theme.dark })
+          const resolved = [
+            await boxOf(page, ids[0]),
+            await boxOf(page, ids[1]),
+            await boxOf(page, ids[2]),
+          ]
 
-        for (const [i, id] of ids.entries()) {
-          expect(
-            pending[i],
-            `${id} moved or resized between pending and resolved at ${viewport.name}/${theme.name}`
-          ).toEqual(resolved[i])
+          for (const [i, id] of ids.entries()) {
+            expect(
+              pending[i],
+              `${id} moved or resized between pending and resolved at ${viewport.name}/${theme.name}`
+            ).toEqual(resolved[i])
+          }
         }
-      })
+      )
     }
   }
 
@@ -198,15 +204,19 @@ test.describe('skeleton footprints', () => {
    * stack — those two resolved states differ by roughly a thousand pixels — and
    * the story records that residual rather than pretending it is zero.
    */
-  test('the sections block matches the resolved EMPTY card exactly', async ({ page }) => {
-    const blocked = await open(page, { pending: true, width: 1280, dark: false })
-    const pending = await boxOf(page, 'overview-sections-skeleton')
-    await assertStillPending(page, blocked)
+  test(
+    'the sections block matches the resolved EMPTY card exactly',
+    { tag: '@layout' },
+    async ({ page }) => {
+      const blocked = await open(page, { pending: true, width: 1280, dark: false })
+      const pending = await boxOf(page, 'overview-sections-skeleton')
+      await assertStillPending(page, blocked)
 
-    await page.unroute('**/*')
-    await open(page, { pending: false, width: 1280, dark: false })
-    const resolved = await boxOf(page, 'overview-onboarding')
+      await page.unroute('**/*')
+      await open(page, { pending: false, width: 1280, dark: false })
+      const resolved = await boxOf(page, 'overview-onboarding')
 
-    expect(pending).toEqual(resolved)
-  })
+      expect(pending).toEqual(resolved)
+    }
+  )
 })

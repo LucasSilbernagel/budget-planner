@@ -44,7 +44,7 @@ async function measureCluster(page: Page, state: string) {
   }
 }
 
-test('MEASURE: signed-out cluster', async ({ page }) => {
+test('MEASURE: signed-out cluster', { tag: '@layout' }, async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/income')
   // The paid seam's post-mount fetch resolves signed OUT (no real session).
@@ -55,7 +55,7 @@ test('MEASURE: signed-out cluster', async ({ page }) => {
 })
 
 for (const status of ['free', 'active'] as const) {
-  test(`MEASURE: signed-in cluster (${status})`, async ({ page }) => {
+  test(`MEASURE: signed-in cluster (${status})`, { tag: '@layout' }, async ({ page }) => {
     await mockSignedIn(page, { subscriptionStatus: status })
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/income')
@@ -67,10 +67,14 @@ for (const status of ['free', 'active'] as const) {
 test.describe('JavaScript off', () => {
   test.use({ javaScriptEnabled: false })
 
-  test('MEASURE: signed-in Premium cluster with the <noscript> gear', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 })
-    await page.goto('/income')
-    await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible()
-    await measureCluster(page, 'JS off, signed in active, <noscript> gear')
-  })
+  test(
+    'MEASURE: signed-in Premium cluster with the <noscript> gear',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await page.goto('/income')
+      await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible()
+      await measureCluster(page, 'JS off, signed in active, <noscript> gear')
+    }
+  )
 })

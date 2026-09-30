@@ -107,21 +107,27 @@ async function measurePaidNav(
   expect(wrappingWidths, 'the paid row wraps at these desktop widths').toEqual([])
 }
 
-test('MEASURE: the paid desktop row — five items below lg, six anchors + More from lg', async ({
-  page,
-}) => {
-  await measurePaidNav(
-    page,
-    ['Overview', 'Income', 'Expenses', 'Savings', 'Balances', 'Retirement', 'More'],
-    { belowLg: 6, lg: 4 }
-  )
-})
+test(
+  'MEASURE: the paid desktop row — five items below lg, six anchors + More from lg',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await measurePaidNav(
+      page,
+      ['Overview', 'Income', 'Expenses', 'Savings', 'Balances', 'Retirement', 'More'],
+      { belowLg: 6, lg: 4 }
+    )
+  }
+)
 
 // Epic AC-6 / story AC-5: a user with the planner off has one fewer anchor.
-test('MEASURE: the paid desktop row with the Retirement planner hidden', async ({ page }) => {
-  await hidePlannerBeforeLoad(page)
-  await measurePaidNav(page, ['Overview', 'Income', 'Expenses', 'Savings', 'Balances', 'More'], {
-    belowLg: 5,
-    lg: 4,
-  })
-})
+test(
+  'MEASURE: the paid desktop row with the Retirement planner hidden',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await hidePlannerBeforeLoad(page)
+    await measurePaidNav(page, ['Overview', 'Income', 'Expenses', 'Savings', 'Balances', 'More'], {
+      belowLg: 5,
+      lg: 4,
+    })
+  }
+)

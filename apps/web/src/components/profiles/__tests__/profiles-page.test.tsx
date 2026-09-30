@@ -1,7 +1,8 @@
 /**
  * `ProfilesPage` gating tests — the component `/profiles` renders (Story 13-3,
- * AC-1/AC-2/AC-3). The route's own wiring is guarded by
- * `e2e/profiles-premium.spec.ts`; this suite covers the three tiers.
+ * AC-1/AC-2/AC-3). The route's own wiring, with the REAL hook, is guarded by
+ * `profiles-page.locked-route.test.tsx` (moved from e2e by story 82.3); this
+ * suite covers the three tiers.
  *
  * Custom profiles is a Premium feature. The page must:
  *   - loading (SSR + first client paint) → neither the management UI nor the

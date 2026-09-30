@@ -28,6 +28,10 @@ import { expect, test } from '@playwright/test'
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
+ *
+ * Stays e2e (story 82.3, FR135): the claim is the real HTTP 404 status and the
+ * docs card the RUNNING server returns for an unknown slug; the card's theming
+ * is pinned by `components/docs/__tests__/doc-not-found.test.tsx`.
  */
 
 const UNKNOWN_DOC = '/docs/this-doc-does-not-exist'

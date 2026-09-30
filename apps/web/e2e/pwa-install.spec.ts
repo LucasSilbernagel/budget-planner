@@ -80,47 +80,51 @@ test.describe('PWA install affordance (story 17-1)', () => {
     await expect(page.getByRole('region', REGION)).toBeHidden()
   })
 
-  test('fits a 320px viewport without horizontal overflow and clears the bottom nav', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 640 })
-    await page.goto('/')
-    const region = await showPrompt(page)
+  test(
+    'fits a 320px viewport without horizontal overflow and clears the bottom nav',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 640 })
+      await page.goto('/')
+      const region = await showPrompt(page)
 
-    // No horizontal overflow at the smallest supported width (UX-DR9).
-    const overflows = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-    )
-    expect(overflows).toBe(false)
+      // No horizontal overflow at the smallest supported width (UX-DR9).
+      const overflows = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      )
+      expect(overflows).toBe(false)
 
-    // The affordance stays within the viewport and above the fixed bottom nav.
-    const box = await region.boundingBox()
-    expect(box).not.toBeNull()
-    if (box) {
-      expect(box.x).toBeGreaterThanOrEqual(0)
-      expect(box.x + box.width).toBeLessThanOrEqual(321)
+      // The affordance stays within the viewport and above the fixed bottom nav.
+      const box = await region.boundingBox()
+      expect(box).not.toBeNull()
+      if (box) {
+        expect(box.x).toBeGreaterThanOrEqual(0)
+        expect(box.x + box.width).toBeLessThanOrEqual(321)
+      }
+
+      // Vertical clearance: the banner's bottom edge must sit above the top of the
+      // fixed bottom navigation, not merely fit horizontally.
+      //
+      // ⚠️ Two-sided since story 31.5. `bottom-[calc(3.75rem_+_env(...))]` here is
+      // one of THREE coupled call sites (`__root.tsx`'s reserve and the nav's own
+      // inset are the others), and the one-directional form of this check fails
+      // only when the offset is too SMALL. Left at the old 6rem against the
+      // 56.75px bar, the banner floats 39.25px above it and this assertion passes
+      // MORE comfortably than on a correct build — so the gap is bounded above too.
+      const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
+      expect(navBox).not.toBeNull()
+      if (box && navBox) {
+        const gap = navBox.y - (box.y + box.height)
+        expect(
+          gap,
+          `the install banner overlaps the bottom nav (gap ${gap}px)`
+        ).toBeGreaterThanOrEqual(0)
+        expect(gap, `the install banner floats ${gap}px above the bottom nav`).toBeLessThanOrEqual(
+          8
+        )
+      }
     }
-
-    // Vertical clearance: the banner's bottom edge must sit above the top of the
-    // fixed bottom navigation, not merely fit horizontally.
-    //
-    // ⚠️ Two-sided since story 31.5. `bottom-[calc(3.75rem_+_env(...))]` here is
-    // one of THREE coupled call sites (`__root.tsx`'s reserve and the nav's own
-    // inset are the others), and the one-directional form of this check fails
-    // only when the offset is too SMALL. Left at the old 6rem against the
-    // 56.75px bar, the banner floats 39.25px above it and this assertion passes
-    // MORE comfortably than on a correct build — so the gap is bounded above too.
-    const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
-    expect(navBox).not.toBeNull()
-    if (box && navBox) {
-      const gap = navBox.y - (box.y + box.height)
-      expect(
-        gap,
-        `the install banner overlaps the bottom nav (gap ${gap}px)`
-      ).toBeGreaterThanOrEqual(0)
-      expect(gap, `the install banner floats ${gap}px above the bottom nav`).toBeLessThanOrEqual(8)
-    }
-  })
+  )
 
   /**
    * ⚠️⚠️ THE TEST ABOVE RUNS AT THE DEFAULT ROOT FONT SIZE ONLY, AND THAT IS NOT
@@ -139,36 +143,38 @@ test.describe('PWA install affordance (story 17-1)', () => {
    * pre-31.5 `6rem`) while every other assertion stays green.
    */
   for (const root of [12, 24]) {
-    test(`the install banner clears the bottom nav at a ${root}px root font size`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: 320, height: 640 })
-      await page.addInitScript((px) => {
-        document.addEventListener('DOMContentLoaded', () => {
+    test(
+      `the install banner clears the bottom nav at a ${root}px root font size`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 640 })
+        await page.addInitScript((px) => {
+          document.addEventListener('DOMContentLoaded', () => {
+            document.documentElement.style.fontSize = `${px}px`
+          })
+        }, root)
+        await page.goto('/')
+        await page.evaluate((px) => {
           document.documentElement.style.fontSize = `${px}px`
-        })
-      }, root)
-      await page.goto('/')
-      await page.evaluate((px) => {
-        document.documentElement.style.fontSize = `${px}px`
-      }, root)
-      const region = await showPrompt(page)
+        }, root)
+        const region = await showPrompt(page)
 
-      const box = await region.boundingBox()
-      const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
-      expect(box).not.toBeNull()
-      expect(navBox).not.toBeNull()
-      if (box && navBox) {
-        const gap = Math.round((navBox.y - (box.y + box.height)) * 100) / 100
-        expect(
-          gap,
-          `the install banner overlaps the bottom nav at a ${root}px root font (gap ${gap}px)`
-        ).toBeGreaterThanOrEqual(0)
-        expect(
-          gap,
-          `the install banner floats ${gap}px above the bottom nav at a ${root}px root font`
-        ).toBeLessThanOrEqual(8)
+        const box = await region.boundingBox()
+        const navBox = await page.getByRole('navigation', { name: 'Primary' }).boundingBox()
+        expect(box).not.toBeNull()
+        expect(navBox).not.toBeNull()
+        if (box && navBox) {
+          const gap = Math.round((navBox.y - (box.y + box.height)) * 100) / 100
+          expect(
+            gap,
+            `the install banner overlaps the bottom nav at a ${root}px root font (gap ${gap}px)`
+          ).toBeGreaterThanOrEqual(0)
+          expect(
+            gap,
+            `the install banner floats ${gap}px above the bottom nav at a ${root}px root font`
+          ).toBeLessThanOrEqual(8)
+        }
       }
-    })
+    )
   }
 })

@@ -85,129 +85,141 @@ test('signs out end to end: one logout POST, then a document load to /', async (
 const ROUTES = ['/', '/income', '/settings', '/login', '/pricing', '/forecasting'] as const
 
 for (const width of [320, 1280] as const) {
-  test(`the menu opens, holds Settings and Sign out, and is painted over on no page at ${width}px`, async ({
-    page,
-  }) => {
-    // ⚠️ SIX full document loads, each one gated on the post-mount session
-    // fetch before the menu can be opened and swept. That does not fit the
-    // default 30s test budget on a loaded runner: both widths of this test
-    // flaked in CI run 35773034960 and again in 35782927398. `test.slow()`
-    // triples the budget; it does not weaken a single assertion below.
-    test.slow()
-    await page.setViewportSize({ width, height: 800 })
-    await mockSignedIn(page, { subscriptionStatus: 'free' })
-    const problems: string[] = []
-    for (const route of ROUTES) {
-      await page.goto(route)
-      await expect(accountTrigger(page), `no trigger on ${route}`).toBeVisible({
-        timeout: SESSION_SETTLE_MS,
-      })
-      const panel = await openAccountMenu(page)
-      await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
-      await expect(panel.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
-      // Story 69.2 (decision D2): the address is no longer in the panel.
-      await expect(panel).not.toContainText(LONG_EMAIL)
-      for (const miss of await panelOcclusion(panel)) problems.push(`${route}: ${miss}`)
+  test(
+    `the menu opens, holds Settings and Sign out, and is painted over on no page at ${width}px`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      // ⚠️ SIX full document loads, each one gated on the post-mount session
+      // fetch before the menu can be opened and swept. That does not fit the
+      // default 30s test budget on a loaded runner: both widths of this test
+      // flaked in CI run 35773034960 and again in 35782927398. `test.slow()`
+      // triples the budget; it does not weaken a single assertion below.
+      test.slow()
+      await page.setViewportSize({ width, height: 800 })
+      await mockSignedIn(page, { subscriptionStatus: 'free' })
+      const problems: string[] = []
+      for (const route of ROUTES) {
+        await page.goto(route)
+        await expect(accountTrigger(page), `no trigger on ${route}`).toBeVisible({
+          timeout: SESSION_SETTLE_MS,
+        })
+        const panel = await openAccountMenu(page)
+        await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
+        await expect(panel.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+        // Story 69.2 (decision D2): the address is no longer in the panel.
+        await expect(panel).not.toContainText(LONG_EMAIL)
+        for (const miss of await panelOcclusion(panel)) problems.push(`${route}: ${miss}`)
+      }
+      expect(problems, 'something paints over the open account panel').toEqual([])
     }
-    expect(problems, 'something paints over the open account panel').toEqual([])
-  })
+  )
 }
 
-test('at 320px the panel hangs DOWN from the strip, full width, over the page', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 320, height: 640 })
-  await gotoSignedIn(page, '/')
-  const panel = await openAccountMenu(page)
-  const strip = await page.locator('[data-auth-indicator]').boundingBox()
-  const box = await panel.boundingBox()
-  expect(strip).not.toBeNull()
-  expect(box).not.toBeNull()
-  if (!strip || !box) return
-  // Downward: the mirror of the nav sheet, which opens UP from the bottom bar.
-  expect(box.y, 'the panel does not start at the bottom of the strip').toBeGreaterThanOrEqual(
-    strip.y + strip.height - 1
-  )
-  expect(box.y, 'the panel is detached from the strip').toBeLessThanOrEqual(
-    strip.y + strip.height + 1
-  )
-  expect(box.x).toBeCloseTo(0, 0)
-  expect(box.width).toBeCloseTo(320, 0)
-  // Opaque: the page must not show through.
-  const bg = await panel.evaluate((el) => getComputedStyle(el).backgroundColor)
-  expect(bg, 'the panel is transparent').not.toMatch(/rgba\(.*, 0\)|transparent/)
-})
+test(
+  'at 320px the panel hangs DOWN from the strip, full width, over the page',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 640 })
+    await gotoSignedIn(page, '/')
+    const panel = await openAccountMenu(page)
+    const strip = await page.locator('[data-auth-indicator]').boundingBox()
+    const box = await panel.boundingBox()
+    expect(strip).not.toBeNull()
+    expect(box).not.toBeNull()
+    if (!strip || !box) return
+    // Downward: the mirror of the nav sheet, which opens UP from the bottom bar.
+    expect(box.y, 'the panel does not start at the bottom of the strip').toBeGreaterThanOrEqual(
+      strip.y + strip.height - 1
+    )
+    expect(box.y, 'the panel is detached from the strip').toBeLessThanOrEqual(
+      strip.y + strip.height + 1
+    )
+    expect(box.x).toBeCloseTo(0, 0)
+    expect(box.width).toBeCloseTo(320, 0)
+    // Opaque: the page must not show through.
+    const bg = await panel.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(bg, 'the panel is transparent').not.toMatch(/rgba\(.*, 0\)|transparent/)
+  }
+)
 
-test('at 1280px the panel hangs below the trigger, right-aligned and on screen', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await gotoSignedIn(page, '/')
-  const trigger = await accountTrigger(page).boundingBox()
-  const panel = await openAccountMenu(page)
-  const box = await panel.boundingBox()
-  expect(trigger).not.toBeNull()
-  expect(box).not.toBeNull()
-  if (!trigger || !box) return
-  expect(box.y).toBeGreaterThanOrEqual(trigger.y + trigger.height)
-  expect(box.x + box.width, 'the panel is not right-aligned to the trigger').toBeCloseTo(
-    trigger.x + trigger.width,
-    0
-  )
-  expect(box.x).toBeGreaterThanOrEqual(0)
-  expect(box.x + box.width).toBeLessThanOrEqual(1280)
-})
-
-for (const width of [320, 1280] as const) {
-  test(`the trigger and both panel rows meet the 28px target floor at ${width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 800 })
+test(
+  'at 1280px the panel hangs below the trigger, right-aligned and on screen',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
     await gotoSignedIn(page, '/')
     const trigger = await accountTrigger(page).boundingBox()
-    expect(trigger?.height ?? 0, 'trigger height').toBeGreaterThanOrEqual(28)
-    expect(trigger?.width ?? 0, 'trigger width').toBeGreaterThanOrEqual(28)
     const panel = await openAccountMenu(page)
-    const row = await panel.getByRole('button', { name: 'Sign out' }).boundingBox()
-    expect(row?.height ?? 0, 'Sign out row height').toBeGreaterThanOrEqual(28)
-    const settings = await panel.getByRole('link', { name: 'Settings', exact: true }).boundingBox()
-    expect(settings?.height ?? 0, 'Settings row height').toBeGreaterThanOrEqual(28)
-  })
+    const box = await panel.boundingBox()
+    expect(trigger).not.toBeNull()
+    expect(box).not.toBeNull()
+    if (!trigger || !box) return
+    expect(box.y).toBeGreaterThanOrEqual(trigger.y + trigger.height)
+    expect(box.x + box.width, 'the panel is not right-aligned to the trigger').toBeCloseTo(
+      trigger.x + trigger.width,
+      0
+    )
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(1280)
+  }
+)
+
+for (const width of [320, 1280] as const) {
+  test(
+    `the trigger and both panel rows meet the 28px target floor at ${width}px`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 })
+      await gotoSignedIn(page, '/')
+      const trigger = await accountTrigger(page).boundingBox()
+      expect(trigger?.height ?? 0, 'trigger height').toBeGreaterThanOrEqual(28)
+      expect(trigger?.width ?? 0, 'trigger width').toBeGreaterThanOrEqual(28)
+      const panel = await openAccountMenu(page)
+      const row = await panel.getByRole('button', { name: 'Sign out' }).boundingBox()
+      expect(row?.height ?? 0, 'Sign out row height').toBeGreaterThanOrEqual(28)
+      const settings = await panel
+        .getByRole('link', { name: 'Settings', exact: true })
+        .boundingBox()
+      expect(settings?.height ?? 0, 'Settings row height').toBeGreaterThanOrEqual(28)
+    }
+  )
 }
 
-test('the 320px strip is the same height signed in as signed out (no layout shift)', async ({
-  page,
-}) => {
-  // Story 13-2's reserve. MEASURED during 59.3: the first build grew the
-  // signed-in strip to 33px, because a 32px trigger and a 32px status region
-  // both sat inside a row whose 32px includes its 1px bottom border. The
-  // primary claim is the COMPARISON — signed-in against signed-out, same page
-  // and viewport — so the host font cannot move it. The absolute pin below is
-  // there because the comparison alone cannot see a reserve that grew in both
-  // states at once.
-  await page.setViewportSize({ width: 320, height: 720 })
-  await page.goto('/')
-  const strip = page.locator('[data-auth-indicator]')
-  await expect(strip.getByRole('link', { name: /sign in/i })).toBeVisible()
-  const signedOut = await strip.boundingBox()
+test(
+  'the 320px strip is the same height signed in as signed out (no layout shift)',
+  { tag: '@layout' },
+  async ({ page }) => {
+    // Story 13-2's reserve. MEASURED during 59.3: the first build grew the
+    // signed-in strip to 33px, because a 32px trigger and a 32px status region
+    // both sat inside a row whose 32px includes its 1px bottom border. The
+    // primary claim is the COMPARISON — signed-in against signed-out, same page
+    // and viewport — so the host font cannot move it. The absolute pin below is
+    // there because the comparison alone cannot see a reserve that grew in both
+    // states at once.
+    await page.setViewportSize({ width: 320, height: 720 })
+    await page.goto('/')
+    const strip = page.locator('[data-auth-indicator]')
+    await expect(strip.getByRole('link', { name: /sign in/i })).toBeVisible()
+    const signedOut = await strip.boundingBox()
 
-  await mockSignedIn(page, { subscriptionStatus: 'active' })
-  await page.reload()
-  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
-  const signedIn = await strip.boundingBox()
+    await mockSignedIn(page, { subscriptionStatus: 'active' })
+    await page.reload()
+    await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
+    const signedIn = await strip.boundingBox()
 
-  expect(signedOut?.height ?? 0).toBeGreaterThan(0)
-  expect(signedIn?.height, 'the strip changed height when the user signed in').toBe(
-    signedOut?.height
-  )
-  // ⚠️ The equality alone is not enough, and a mutation proved it: put the
-  // status region's mobile reserve back to a full 32px and BOTH states become
-  // 33px, so they still match. 32 is the reserve itself (`min-h-[2rem]`,
-  // border included) — a design constant from story 13-2, not a font-dependent
-  // measurement — so it is pinned outright.
-  expect(signedIn?.height, 'the 320px strip is no longer the 2rem reserve').toBe(32)
-  expect(signedOut?.height).toBe(32)
-})
+    expect(signedOut?.height ?? 0).toBeGreaterThan(0)
+    expect(signedIn?.height, 'the strip changed height when the user signed in').toBe(
+      signedOut?.height
+    )
+    // ⚠️ The equality alone is not enough, and a mutation proved it: put the
+    // status region's mobile reserve back to a full 32px and BOTH states become
+    // 33px, so they still match. 32 is the reserve itself (`min-h-[2rem]`,
+    // border included) — a design constant from story 13-2, not a font-dependent
+    // measurement — so it is pinned outright.
+    expect(signedIn?.height, 'the 320px strip is no longer the 2rem reserve').toBe(32)
+    expect(signedOut?.height).toBe(32)
+  }
+)
 
 /**
  * Two disclosures, one bar (UX record 2026-09-21, §5.4). Each closes the other
@@ -293,24 +305,26 @@ test('Tab from the open trigger reaches Settings then Sign out, and Escape retur
 // email" half of this test (under 24px at 640px was the failure) has nothing
 // left to measure and went with it. The ONE-ROW half stays: a free signed-in
 // cluster beside the free nav at 640px is still a combination worth sweeping.
-test('a FREE signed-in user keeps one header row, and the trigger shows no email', async ({
-  page,
-}) => {
-  await mockSignedIn(page, { subscriptionStatus: 'free' })
-  await page.setViewportSize({ width: 640, height: 800 })
-  await page.goto('/')
-  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
-  const strip = page.getByRole('status', { name: /account status/i })
-  await expect(strip.getByText('Premium', { exact: true })).toHaveCount(0)
-  // The mocked identity HAS landed (it is announced), and none of it is visible
-  // in the trigger.
-  await expect(strip).toContainText(LONG_EMAIL)
-  await expect(accountTrigger(page)).not.toContainText('@')
+test(
+  'a FREE signed-in user keeps one header row, and the trigger shows no email',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await mockSignedIn(page, { subscriptionStatus: 'free' })
+    await page.setViewportSize({ width: 640, height: 800 })
+    await page.goto('/')
+    await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
+    const strip = page.getByRole('status', { name: /account status/i })
+    await expect(strip.getByText('Premium', { exact: true })).toHaveCount(0)
+    // The mocked identity HAS landed (it is announced), and none of it is visible
+    // in the trigger.
+    await expect(strip).toContainText(LONG_EMAIL)
+    await expect(accountTrigger(page)).not.toContainText('@')
 
-  expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
-})
+    expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
+  }
+)
 
-test('an open account panel never reaches paper', async ({ page }) => {
+test('an open account panel never reaches paper', { tag: '@layout' }, async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await gotoSignedIn(page, '/')
   const panel = await openAccountMenu(page)
@@ -321,18 +335,20 @@ test('an open account panel never reaches paper', async ({ page }) => {
   await expect(panel).toBeVisible()
 })
 
-test('a PREMIUM signed-in cluster on the free nav also keeps the header to one row', async ({
-  page,
-}) => {
-  // The tier x server combination AC-12 asks for that the paid spec cannot
-  // cover: the Premium pill beside the FREE nav. Review found only two of the
-  // four combinations were swept.
-  await mockSignedIn(page, { subscriptionStatus: 'active' })
-  await page.setViewportSize({ width: 640, height: 800 })
-  await page.goto('/')
-  await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
-  await expect(
-    page.getByRole('status', { name: /account status/i }).getByText('Premium', { exact: true })
-  ).toBeVisible()
-  expect(await sweepHeaderRow(page), 'the premium-cluster free header row broke').toEqual([])
-})
+test(
+  'a PREMIUM signed-in cluster on the free nav also keeps the header to one row',
+  { tag: '@layout' },
+  async ({ page }) => {
+    // The tier x server combination AC-12 asks for that the paid spec cannot
+    // cover: the Premium pill beside the FREE nav. Review found only two of the
+    // four combinations were swept.
+    await mockSignedIn(page, { subscriptionStatus: 'active' })
+    await page.setViewportSize({ width: 640, height: 800 })
+    await page.goto('/')
+    await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
+    await expect(
+      page.getByRole('status', { name: /account status/i }).getByText('Premium', { exact: true })
+    ).toBeVisible()
+    expect(await sweepHeaderRow(page), 'the premium-cluster free header row broke').toEqual([])
+  }
+)

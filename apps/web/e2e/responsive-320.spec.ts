@@ -88,7 +88,7 @@ async function assertNoHorizontalOverflow(evaluate: <R>(fn: () => R) => Promise<
 
 test.describe('no horizontal overflow at 320px', () => {
   for (const route of ROUTES) {
-    test(`${route} fits a 320px viewport`, async ({ page }) => {
+    test(`${route} fits a 320px viewport`, { tag: '@layout' }, async ({ page }) => {
       await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
 
       const response = await page.goto(route)
@@ -121,126 +121,131 @@ test.describe('no horizontal overflow at 320px', () => {
   // beneath each plot — since story 36.2 removed the in-plot slice labels at
   // every width, that list plus the hover tooltip is the ONLY way to read the
   // breakdown, so we assert it names every seeded slice.
-  test('dashboard with multi-category data and currency symbols fits a 320px viewport', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+  test(
+    'dashboard with multi-category data and currency symbols fits a 320px viewport',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
 
-    await page.addInitScript(() => {
-      const now = new Date().toISOString()
-      const row = (name: string, amount: number, frequency: string) => ({
-        id: crypto.randomUUID(),
-        userId: 0,
-        name,
-        amount,
-        frequency,
-        // Story 30.4a: persist v2 shape. Seeding the CURRENT shape (rather than
-        // a v1 payload) keeps this a fixture of what a real user's storage holds
-        // instead of silently exercising the migration path.
-        categoryId: null,
-        createdAt: now,
-        updatedAt: now,
+      await page.addInitScript(() => {
+        const now = new Date().toISOString()
+        const row = (name: string, amount: number, frequency: string) => ({
+          id: crypto.randomUUID(),
+          userId: 0,
+          name,
+          amount,
+          frequency,
+          // Story 30.4a: persist v2 shape. Seeding the CURRENT shape (rather than
+          // a v1 payload) keeps this a fixture of what a real user's storage holds
+          // instead of silently exercising the migration path.
+          categoryId: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        // Amounts are in cents; large values stress numeric wrapping. These rows
+        // are UNCATEGORIZED (`categoryId: null`), and story 30.4b makes an
+        // uncategorized row fall back to its own name (Decision 10) — so distinct
+        // names still become distinct slices here. Rows that SHARE a category
+        // would merge into one; that path is covered by HomePage's unit suite.
+        localStorage.setItem(
+          'budget-planner-income-v1',
+          JSON.stringify({
+            state: {
+              incomeSources: [
+                row('Primary Salary Long Name', 1234567890, 'monthly'),
+                row('Freelance & Consulting', 45678900, 'monthly'),
+                row('Dividends', 12345600, 'monthly'),
+              ],
+            },
+            version: 2,
+          })
+        )
+        localStorage.setItem(
+          'budget-planner-expenses-v1',
+          JSON.stringify({
+            state: {
+              expenses: [
+                row('Mortgage & Housing Costs', 987654321, 'monthly'),
+                row('Groceries', 65432100, 'monthly'),
+                row('Transportation', 43210000, 'monthly'),
+                row('Utilities', 32100000, 'monthly'),
+                row('Insurance Premiums', 21000000, 'monthly'),
+                row('Entertainment & Dining', 19000000, 'monthly'),
+              ],
+            },
+            version: 2,
+          })
+        )
+        // Explicit-symbols mode renders both currency + locale selects in the
+        // toggle — its widest layout.
+        localStorage.setItem(
+          'budget-planner-currency-prefs-v1',
+          JSON.stringify({
+            state: { mode: 'symbol', currency: 'USD', locale: 'en-US' },
+            version: 0,
+          })
+        )
       })
-      // Amounts are in cents; large values stress numeric wrapping. These rows
-      // are UNCATEGORIZED (`categoryId: null`), and story 30.4b makes an
-      // uncategorized row fall back to its own name (Decision 10) — so distinct
-      // names still become distinct slices here. Rows that SHARE a category
-      // would merge into one; that path is covered by HomePage's unit suite.
-      localStorage.setItem(
-        'budget-planner-income-v1',
-        JSON.stringify({
-          state: {
-            incomeSources: [
-              row('Primary Salary Long Name', 1234567890, 'monthly'),
-              row('Freelance & Consulting', 45678900, 'monthly'),
-              row('Dividends', 12345600, 'monthly'),
-            ],
-          },
-          version: 2,
-        })
-      )
-      localStorage.setItem(
-        'budget-planner-expenses-v1',
-        JSON.stringify({
-          state: {
-            expenses: [
-              row('Mortgage & Housing Costs', 987654321, 'monthly'),
-              row('Groceries', 65432100, 'monthly'),
-              row('Transportation', 43210000, 'monthly'),
-              row('Utilities', 32100000, 'monthly'),
-              row('Insurance Premiums', 21000000, 'monthly'),
-              row('Entertainment & Dining', 19000000, 'monthly'),
-            ],
-          },
-          version: 2,
-        })
-      )
-      // Explicit-symbols mode renders both currency + locale selects in the
-      // toggle — its widest layout.
-      localStorage.setItem(
-        'budget-planner-currency-prefs-v1',
-        JSON.stringify({ state: { mode: 'symbol', currency: 'USD', locale: 'en-US' }, version: 0 })
-      )
-    })
 
-    const response = await page.goto('/')
-    expect(response?.ok()).toBeTruthy()
-    await page.waitForLoadState('networkidle')
+      const response = await page.goto('/')
+      expect(response?.ok()).toBeTruthy()
+      await page.waitForLoadState('networkidle')
 
-    // Confirm the data path actually rendered a chart (not the empty state).
-    const chart = page.locator('.recharts-responsive-container').first()
-    await expect(chart).toBeVisible()
+      // Confirm the data path actually rendered a chart (not the empty state).
+      const chart = page.locator('.recharts-responsive-container').first()
+      await expect(chart).toBeVisible()
 
-    await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/ (with data)')
+      await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/ (with data)')
 
-    // ⚠️ This replaced a probe that could not fail (story 36.2). It looked for
-    // `.recharts-legend-wrapper` inside the chart container and returned
-    // `{ ok: true, reason: 'no legend rendered' }` when it found none — but
-    // `BreakdownPie` renders NO Recharts `<Legend>` at all (story 12-4 removed
-    // it; `HomePage.tsx` does not even import `Legend`), so that branch was the
-    // only one ever taken and the assertion was vacuous.
-    //
-    // The real failure mode was never vertical clipping — the list is a plain
-    // `<ul>` in normal document flow BELOW the fixed-height chart box, so it
-    // grows the card rather than being clipped by it. What can actually go
-    // wrong is the list being short or missing, which since story 36.2 would
-    // leave a narrow user with no way at all to read the breakdown. So assert
-    // that: one row per seeded slice, each naming its category.
-    //
-    // Story UX-3 gave the LEFT pie the SAME expense-category rows as the
-    // RIGHT pie (its testid changed from `breakdown-pie-income`), PLUS one
-    // "Remaining income" filler row — so its count is the expense category
-    // count + 1, not the seeded income category count.
-    const expensePie = page.locator('[data-testid="breakdown-pie-expense"]')
-    const expenseRatioPie = page.locator('[data-testid="breakdown-pie-expense-ratio"]')
-    await expect(expensePie.locator('li')).toHaveCount(6)
-    await expect(expenseRatioPie.locator('li')).toHaveCount(7)
-    const expenseCategoryNames = [
-      'Mortgage & Housing Costs',
-      'Groceries',
-      'Transportation',
-      'Utilities',
-      'Insurance Premiums',
-      'Entertainment & Dining',
-    ]
-    for (const name of expenseCategoryNames) {
-      await expect(expensePie.locator('li').filter({ hasText: name })).toBeVisible()
-      await expect(expenseRatioPie.locator('li').filter({ hasText: name })).toBeVisible()
+      // ⚠️ This replaced a probe that could not fail (story 36.2). It looked for
+      // `.recharts-legend-wrapper` inside the chart container and returned
+      // `{ ok: true, reason: 'no legend rendered' }` when it found none — but
+      // `BreakdownPie` renders NO Recharts `<Legend>` at all (story 12-4 removed
+      // it; `HomePage.tsx` does not even import `Legend`), so that branch was the
+      // only one ever taken and the assertion was vacuous.
+      //
+      // The real failure mode was never vertical clipping — the list is a plain
+      // `<ul>` in normal document flow BELOW the fixed-height chart box, so it
+      // grows the card rather than being clipped by it. What can actually go
+      // wrong is the list being short or missing, which since story 36.2 would
+      // leave a narrow user with no way at all to read the breakdown. So assert
+      // that: one row per seeded slice, each naming its category.
+      //
+      // Story UX-3 gave the LEFT pie the SAME expense-category rows as the
+      // RIGHT pie (its testid changed from `breakdown-pie-income`), PLUS one
+      // "Remaining income" filler row — so its count is the expense category
+      // count + 1, not the seeded income category count.
+      const expensePie = page.locator('[data-testid="breakdown-pie-expense"]')
+      const expenseRatioPie = page.locator('[data-testid="breakdown-pie-expense-ratio"]')
+      await expect(expensePie.locator('li')).toHaveCount(6)
+      await expect(expenseRatioPie.locator('li')).toHaveCount(7)
+      const expenseCategoryNames = [
+        'Mortgage & Housing Costs',
+        'Groceries',
+        'Transportation',
+        'Utilities',
+        'Insurance Premiums',
+        'Entertainment & Dining',
+      ]
+      for (const name of expenseCategoryNames) {
+        await expect(expensePie.locator('li').filter({ hasText: name })).toBeVisible()
+        await expect(expenseRatioPie.locator('li').filter({ hasText: name })).toBeVisible()
+      }
+      await expect(
+        expenseRatioPie.locator('li').filter({ hasText: 'Remaining income' })
+      ).toBeVisible()
+
+      // The CurrencyToggle's widest layout (currency <select> revealed in symbol
+      // mode) now lives on /settings, not the page headers. The seeded symbol-mode
+      // preference persists across this navigation, so this exercises that widest
+      // control state at 320px.
+      const settingsResponse = await page.goto('/settings')
+      expect(settingsResponse?.ok()).toBeTruthy()
+      await page.waitForLoadState('networkidle')
+      await expect(page.getByRole('combobox', { name: /currency/i })).toBeVisible()
+      await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/settings (symbol mode)')
     }
-    await expect(
-      expenseRatioPie.locator('li').filter({ hasText: 'Remaining income' })
-    ).toBeVisible()
-
-    // The CurrencyToggle's widest layout (currency <select> revealed in symbol
-    // mode) now lives on /settings, not the page headers. The seeded symbol-mode
-    // preference persists across this navigation, so this exercises that widest
-    // control state at 320px.
-    const settingsResponse = await page.goto('/settings')
-    expect(settingsResponse?.ok()).toBeTruthy()
-    await page.waitForLoadState('networkidle')
-    await expect(page.getByRole('combobox', { name: /currency/i })).toBeVisible()
-    await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/settings (symbol mode)')
-  })
+  )
 
   /**
    * brand-1 AC-6 — the positioning framing line WRAPS rather than overflowing.
@@ -256,44 +261,46 @@ test.describe('no horizontal overflow at 320px', () => {
    *   - >1 line box  → it actually wrapped, rather than being clipped or
    *                    truncated into looking fine
    */
-  test('the positioning framing line wraps, not overflows, at 320px (brand-1 AC-6)', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-    const response = await page.goto('/')
-    expect(response?.ok(), 'expected / to load').toBeTruthy()
-    await page.waitForLoadState('networkidle')
+  test(
+    'the positioning framing line wraps, not overflows, at 320px (brand-1 AC-6)',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+      const response = await page.goto('/')
+      expect(response?.ok(), 'expected / to load').toBeTruthy()
+      await page.waitForLoadState('networkidle')
 
-    const framing = page.getByText('Intentional budgeting without bank sync or AI integrations.')
-    await expect(framing).toBeVisible()
+      const framing = page.getByText('Intentional budgeting without bank sync or AI integrations.')
+      await expect(framing).toBeVisible()
 
-    // Line boxes are counted with a Range over the TEXT, not el.getClientRects():
-    // on a block-level <p> the latter always returns exactly one rect (the border
-    // box), so it can never detect wrapping. This is a real trap — the first
-    // version of this test used it and reported "1 line box" for copy that does
-    // in fact wrap. A Range returns one rect per rendered line.
-    const box = await framing.evaluate((el) => {
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      return {
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-        lineBoxes: range.getClientRects().length,
-      }
-    })
+      // Line boxes are counted with a Range over the TEXT, not el.getClientRects():
+      // on a block-level <p> the latter always returns exactly one rect (the border
+      // box), so it can never detect wrapping. This is a real trap — the first
+      // version of this test used it and reported "1 line box" for copy that does
+      // in fact wrap. A Range returns one rect per rendered line.
+      const box = await framing.evaluate((el) => {
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        return {
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          lineBoxes: range.getClientRects().length,
+        }
+      })
 
-    expect(
-      box.scrollWidth,
-      `framing line overflows: scrollWidth ${box.scrollWidth} > clientWidth ${box.clientWidth}`
-    ).toBeLessThanOrEqual(box.clientWidth)
-    expect(
-      box.lineBoxes,
-      `framing line did not wrap at 320px (rendered on ${box.lineBoxes} line box)`
-    ).toBeGreaterThan(1)
+      expect(
+        box.scrollWidth,
+        `framing line overflows: scrollWidth ${box.scrollWidth} > clientWidth ${box.clientWidth}`
+      ).toBeLessThanOrEqual(box.clientWidth)
+      expect(
+        box.lineBoxes,
+        `framing line did not wrap at 320px (rendered on ${box.lineBoxes} line box)`
+      ).toBeGreaterThan(1)
 
-    // And the block as a whole still does not widen the page.
-    await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/ (positioning block)')
-  })
+      // And the block as a whole still does not widen the page.
+      await assertNoHorizontalOverflow((fn) => page.evaluate(fn), '/ (positioning block)')
+    }
+  )
 })
 
 /**
@@ -500,31 +507,35 @@ async function assertDesktopActionTarget(button: Locator, label: string): Promis
 test.describe('finance tables fit a 320px viewport with real rows (story 31.2)', () => {
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
     for (const theme of ['light', 'dark'] as const) {
-      test(`${route} fits 320px with seeded rows (${theme})`, async ({ page }) => {
-        await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-        await page.emulateMedia({ colorScheme: theme })
-        await seedFinanceRows(page)
+      test(
+        `${route} fits 320px with seeded rows (${theme})`,
+        { tag: '@layout' },
+        async ({ page }) => {
+          await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+          await page.emulateMedia({ colorScheme: theme })
+          await seedFinanceRows(page)
 
-        const response = await page.goto(route)
-        expect(response?.ok(), `expected ${route} to load`).toBeTruthy()
-        await page.waitForLoadState('networkidle')
+          const response = await page.goto(route)
+          expect(response?.ok(), `expected ${route} to load`).toBeTruthy()
+          await page.waitForLoadState('networkidle')
 
-        // The theme actually took. ⚠️ Asserts the PAINTED canvas, not the lever:
-        // story 61.1 made `prefers-color-scheme` the only theme input, and
-        // re-reading the scheme we just emulated could not fail. `body` is
-        // bg-gray-50 light / bg-gray-900 dark.
-        await expect
-          .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
-          .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
+          // The theme actually took. ⚠️ Asserts the PAINTED canvas, not the lever:
+          // story 61.1 made `prefers-color-scheme` the only theme input, and
+          // re-reading the scheme we just emulated could not fail. `body` is
+          // bg-gray-50 light / bg-gray-900 dark.
+          await expect
+            .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+            .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
 
-        // Anti-vacuous guard: an empty table would satisfy every check below
-        // trivially. Prove the seeded row actually rendered first.
-        await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+          // Anti-vacuous guard: an empty table would satisfy every check below
+          // trivially. Prove the seeded row actually rendered first.
+          await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-        await assertFinanceTablesFit(page, `${route} (${theme}, seeded)`)
-        await assertRowsStackAsCards(page, `${route} (${theme}, seeded)`)
-        await assertRowActionTapTargets(page, `${route} (${theme}, seeded)`)
-      })
+          await assertFinanceTablesFit(page, `${route} (${theme}, seeded)`)
+          await assertRowsStackAsCards(page, `${route} (${theme}, seeded)`)
+          await assertRowActionTapTargets(page, `${route} (${theme}, seeded)`)
+        }
+      )
     }
   }
 
@@ -533,71 +544,78 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   // visible, cells SIDE BY SIDE. Without this the suite would happily accept a
   // change that stacked every table at every width.
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
-    test(`${route} still renders as a real table at 1280px (AC-2)`, async ({ page }) => {
-      await page.setViewportSize({ width: 1280, height: 720 })
-      await seedFinanceRows(page)
+    test(
+      `${route} still renders as a real table at 1280px (AC-2)`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 720 })
+        await seedFinanceRows(page)
 
-      await page.goto(route)
-      await page.waitForLoadState('networkidle')
-      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+        await page.goto(route)
+        await page.waitForLoadState('networkidle')
+        await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-      // The column header row is back — in EVERY table. Asserted per-table
-      // rather than via a page-wide `.first()`, so a route that renders more
-      // than one table cannot pass on its first table while a later one's
-      // <thead> stays hidden at all widths.
-      const headers = await page.evaluate(() =>
-        [...document.querySelectorAll('div.overflow-x-auto table')].map((table, index) => ({
-          index,
-          visibleHeaderCells: [...table.querySelectorAll('thead th')].filter(
-            (th) => getComputedStyle(th).display !== 'none' && th.getBoundingClientRect().height > 0
-          ).length,
-        }))
-      )
-      expect(headers.length).toBeGreaterThan(0)
-      for (const header of headers) {
-        expect(
-          header.visibleHeaderCells,
-          `table #${header.index} has no visible column headers at 1280px`
-        ).toBeGreaterThan(0)
-      }
-
-      // Cells sit on one line — checked for every row of every table.
-      const rows = await page.evaluate(() =>
-        [...document.querySelectorAll('div.overflow-x-auto table')].flatMap((table, tableIndex) =>
-          [...table.querySelectorAll('tbody tr')].map((row, rowIndex) => ({
-            tableIndex,
-            rowIndex,
-            tops: [...row.children].map((cell) => cell.getBoundingClientRect().top),
+        // The column header row is back — in EVERY table. Asserted per-table
+        // rather than via a page-wide `.first()`, so a route that renders more
+        // than one table cannot pass on its first table while a later one's
+        // <thead> stays hidden at all widths.
+        const headers = await page.evaluate(() =>
+          [...document.querySelectorAll('div.overflow-x-auto table')].map((table, index) => ({
+            index,
+            visibleHeaderCells: [...table.querySelectorAll('thead th')].filter(
+              (th) =>
+                getComputedStyle(th).display !== 'none' && th.getBoundingClientRect().height > 0
+            ).length,
           }))
         )
-      )
-      expect(rows.length).toBeGreaterThan(0)
-      for (const row of rows) {
-        expect(row.tops.length).toBeGreaterThan(1)
-        const [first] = row.tops
-        for (const top of row.tops) {
+        expect(headers.length).toBeGreaterThan(0)
+        for (const header of headers) {
           expect(
-            Math.abs(top - (first as number)),
-            `table #${row.tableIndex} row #${row.rowIndex}: desktop cells are no longer on one line`
-          ).toBeLessThanOrEqual(1)
+            header.visibleHeaderCells,
+            `table #${header.index} has no visible column headers at 1280px`
+          ).toBeGreaterThan(0)
+        }
+
+        // Cells sit on one line — checked for every row of every table.
+        const rows = await page.evaluate(() =>
+          [...document.querySelectorAll('div.overflow-x-auto table')].flatMap((table, tableIndex) =>
+            [...table.querySelectorAll('tbody tr')].map((row, rowIndex) => ({
+              tableIndex,
+              rowIndex,
+              tops: [...row.children].map((cell) => cell.getBoundingClientRect().top),
+            }))
+          )
+        )
+        expect(rows.length).toBeGreaterThan(0)
+        for (const row of rows) {
+          expect(row.tops.length).toBeGreaterThan(1)
+          const [first] = row.tops
+          for (const top of row.tops) {
+            expect(
+              Math.abs(top - (first as number)),
+              `table #${row.tableIndex} row #${row.rowIndex}: desktop cells are no longer on one line`
+            ).toBeLessThanOrEqual(1)
+          }
+        }
+
+        // And EVERY mobile-only field label is out of the desktop rendering —
+        // `display: none`, so it is also out of the accessibility tree.
+        const labels = await page.evaluate(() =>
+          [...document.querySelectorAll('div.overflow-x-auto table tbody span.sm\\:hidden')].map(
+            (el) => ({
+              text: (el.textContent ?? '').trim(),
+              display: getComputedStyle(el).display,
+            })
+          )
+        )
+        expect(labels.length, 'expected mobile field labels in the DOM at 1280px').toBeGreaterThan(
+          0
+        )
+        for (const label of labels) {
+          expect(label.display, `field label "${label.text}" is visible on desktop`).toBe('none')
         }
       }
-
-      // And EVERY mobile-only field label is out of the desktop rendering —
-      // `display: none`, so it is also out of the accessibility tree.
-      const labels = await page.evaluate(() =>
-        [...document.querySelectorAll('div.overflow-x-auto table tbody span.sm\\:hidden')].map(
-          (el) => ({
-            text: (el.textContent ?? '').trim(),
-            display: getComputedStyle(el).display,
-          })
-        )
-      )
-      expect(labels.length, 'expected mobile field labels in the DOM at 1280px').toBeGreaterThan(0)
-      for (const label of labels) {
-        expect(label.display, `field label "${label.text}" is visible on desktop`).toBe('none')
-      }
-    })
+    )
   }
 
   /**
@@ -689,41 +707,49 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     }
 
     for (const route of ['/income', '/expenses'] as const) {
-      test(`${route} headline total fits 320px with a large annual figure`, async ({ page }) => {
-        // $12,802,467.90/month → "$153,629,614.80" at the `annually` default.
-        // This is the exact figure the seeded-rows tests above produce, and the
-        // one that overflowed CI to 325px.
-        const total = await renderTotal(page, route, 1_280_246_790)
-        expect(total.text, 'expected the annually-denormalized total').toBe('$153,629,614.80')
+      test(
+        `${route} headline total fits 320px with a large annual figure`,
+        { tag: '@layout' },
+        async ({ page }) => {
+          // $12,802,467.90/month → "$153,629,614.80" at the `annually` default.
+          // This is the exact figure the seeded-rows tests above produce, and the
+          // one that overflowed CI to 325px.
+          const total = await renderTotal(page, route, 1_280_246_790)
+          expect(total.text, 'expected the annually-denormalized total').toBe('$153,629,614.80')
 
-        // 1. The page itself.
-        await assertNoHorizontalOverflow(
-          (fn) => page.evaluate(fn),
-          `${route} (wide font, big total)`
-        )
+          // 1. The page itself.
+          await assertNoHorizontalOverflow(
+            (fn) => page.evaluate(fn),
+            `${route} (wide font, big total)`
+          )
 
-        // 2. A realistic large total is not made to wrap. Money broken across
-        //    two lines mid-digits is legible only by accident.
-        expect(
-          total.lines,
-          `${route}: "${total.text}" wrapped onto ${total.lines} lines at 320px`
-        ).toBe(1)
-      })
+          // 2. A realistic large total is not made to wrap. Money broken across
+          //    two lines mid-digits is legible only by accident.
+          expect(
+            total.lines,
+            `${route}: "${total.text}" wrapped onto ${total.lines} lines at 320px`
+          ).toBe(1)
+        }
+      )
 
-      test(`${route} headline total stays inside its card at any magnitude`, async ({ page }) => {
-        // Deliberately absurd ($1.23bn/month). The figure may wrap here — what it
-        // must never do is paint outside the card, which no page-level overflow
-        // assertion can see.
-        const total = await renderTotal(page, route, 123_456_789_000)
-        expect(
-          total.scrollWidth,
-          `${route}: "${total.text}" spills out of its card (scrollWidth ${total.scrollWidth} > clientWidth ${total.clientWidth})`
-        ).toBeLessThanOrEqual(total.clientWidth)
-        await assertNoHorizontalOverflow(
-          (fn) => page.evaluate(fn),
-          `${route} (wide font, extreme total)`
-        )
-      })
+      test(
+        `${route} headline total stays inside its card at any magnitude`,
+        { tag: '@layout' },
+        async ({ page }) => {
+          // Deliberately absurd ($1.23bn/month). The figure may wrap here — what it
+          // must never do is paint outside the card, which no page-level overflow
+          // assertion can see.
+          const total = await renderTotal(page, route, 123_456_789_000)
+          expect(
+            total.scrollWidth,
+            `${route}: "${total.text}" spills out of its card (scrollWidth ${total.scrollWidth} > clientWidth ${total.clientWidth})`
+          ).toBeLessThanOrEqual(total.clientWidth)
+          await assertNoHorizontalOverflow(
+            (fn) => page.evaluate(fn),
+            `${route} (wide font, extreme total)`
+          )
+        }
+      )
     }
   })
 
@@ -737,34 +763,38 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
     { route: '/savings', editTitle: 'Edit Savings Goal' },
     { route: '/balance', editTitle: 'Edit Balance Entry' },
   ] as const) {
-    test(`${route} row Edit and Delete are operable at 320px`, async ({ page }) => {
-      await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-      await seedFinanceRows(page)
+    test(
+      `${route} row Edit and Delete are operable at 320px`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+        await seedFinanceRows(page)
 
-      await page.goto(route)
-      await page.waitForLoadState('networkidle')
-      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+        await page.goto(route)
+        await page.waitForLoadState('networkidle')
+        await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-      // Per-row accessible names (story 31.2 AC-4/§4): every row used to expose
-      // an identically named "Edit"/"Delete", so a bare-name query was
-      // ambiguous. Scoping by the row name is the point of the rename.
-      const editButton = page.getByRole('button', { name: `Edit ${LONG_UNBROKEN_NAME}` })
-      await expect(editButton).toBeVisible()
-      await editButton.click()
-      const editModal = page.getByRole('dialog', { name: editTitle })
-      await expect(editModal).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(editModal).toBeHidden()
+        // Per-row accessible names (story 31.2 AC-4/§4): every row used to expose
+        // an identically named "Edit"/"Delete", so a bare-name query was
+        // ambiguous. Scoping by the row name is the point of the rename.
+        const editButton = page.getByRole('button', { name: `Edit ${LONG_UNBROKEN_NAME}` })
+        await expect(editButton).toBeVisible()
+        await editButton.click()
+        const editModal = page.getByRole('dialog', { name: editTitle })
+        await expect(editModal).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(editModal).toBeHidden()
 
-      const deleteButton = page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` })
-      await expect(deleteButton).toBeVisible()
-      await deleteButton.click()
-      // ConfirmDialog is an `alertdialog` titled "Confirm Delete"; the row name
-      // appears in its message, which is what proves the RIGHT row was wired.
-      const confirm = page.getByRole('alertdialog', { name: 'Confirm Delete' })
-      await expect(confirm).toBeVisible()
-      await expect(confirm).toContainText(LONG_UNBROKEN_NAME)
-    })
+        const deleteButton = page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` })
+        await expect(deleteButton).toBeVisible()
+        await deleteButton.click()
+        // ConfirmDialog is an `alertdialog` titled "Confirm Delete"; the row name
+        // appears in its message, which is what proves the RIGHT row was wired.
+        const confirm = page.getByRole('alertdialog', { name: 'Confirm Delete' })
+        await expect(confirm).toBeVisible()
+        await expect(confirm).toContainText(LONG_UNBROKEN_NAME)
+      }
+    )
   }
 
   /**
@@ -899,78 +929,80 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
      * narrow below `sm`, escape it — but the control now also renders while the
      * table is in manual order, because it is how a phone STARTS a sort. */
     for (const scheme of ['light', 'dark'] as const) {
-      test(`${route} sort started on desktop stays escapable at 320px, ${scheme} (34.2/48.1)`, async ({
-        page,
-      }) => {
-        const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
-        const names = expected.asc
-        await page.setViewportSize({ width: 1280, height: 720 })
-        await page.emulateMedia({ colorScheme: scheme })
-        await seedFinanceRows(page)
+      test(
+        `${route} sort started on desktop stays escapable at 320px, ${scheme} (34.2/48.1)`,
+        { tag: '@layout' },
+        async ({ page }) => {
+          const expected = SORT_BY_NAME_EXPECTATIONS[route] as { asc: string[]; desc: string[] }
+          const names = expected.asc
+          await page.setViewportSize({ width: 1280, height: 720 })
+          await page.emulateMedia({ colorScheme: scheme })
+          await seedFinanceRows(page)
 
-        await page.goto(route)
-        await page.waitForLoadState('networkidle')
-        await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+          await page.goto(route)
+          await page.waitForLoadState('networkidle')
+          await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-        // ⚠️ AT 1280px THE CONTROL IS `sm:hidden`, so this is the DESKTOP half
-        // of the visibility rule. Asserting it here rather than "the control
-        // reports manual order" — that claim needs a narrow viewport and lives
-        // in `mobile-table-sort.spec.ts`, and asserted at this width it passes
-        // for the wrong reason: a role query finds nothing in a hidden subtree.
-        await expect(sortControl(page)).toBeHidden()
+          // ⚠️ AT 1280px THE CONTROL IS `sm:hidden`, so this is the DESKTOP half
+          // of the visibility rule. Asserting it here rather than "the control
+          // reports manual order" — that claim needs a narrow viewport and lives
+          // in `mobile-table-sort.spec.ts`, and asserted at this width it passes
+          // for the wrong reason: a role query finds nothing in a hidden subtree.
+          await expect(sortControl(page)).toBeHidden()
 
-        // ⚠️ Sort to a state that DIFFERS from manual order on every route. On
-        // `/balance` the ascending order deliberately equals manual, so stopping at
-        // one click would leave both the post-sort and the post-reset assertions
-        // comparing an order that never changed — a broken reset would pass.
-        const sortButton = sortHeader(page, 'Name').getByRole('button', { name: 'Name' })
-        const manual = await editableOrder(page, names)
-        await sortButton.click()
-        // ⚠️ Track WHICH state the header reached, so the narrow-viewport
-        // assertion below can pin the exact value rather than merely
-        // "not manual" — see the comment there.
-        let expectedValue = 'name:asc'
-        if ((await editableOrder(page, names)).join('|') === manual.join('|')) {
+          // ⚠️ Sort to a state that DIFFERS from manual order on every route. On
+          // `/balance` the ascending order deliberately equals manual, so stopping at
+          // one click would leave both the post-sort and the post-reset assertions
+          // comparing an order that never changed — a broken reset would pass.
+          const sortButton = sortHeader(page, 'Name').getByRole('button', { name: 'Name' })
+          const manual = await editableOrder(page, names)
           await sortButton.click()
-          expectedValue = 'name:desc'
+          // ⚠️ Track WHICH state the header reached, so the narrow-viewport
+          // assertion below can pin the exact value rather than merely
+          // "not manual" — see the comment there.
+          let expectedValue = 'name:asc'
+          if ((await editableOrder(page, names)).join('|') === manual.join('|')) {
+            await sortButton.click()
+            expectedValue = 'name:desc'
+          }
+          await expect.poll(() => editableOrder(page, names)).not.toEqual(manual)
+
+          // Narrow BELOW `sm`. The header that started this sort is now
+          // `display: none`, so without the control the sort would be inescapable.
+          await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+          await expect(sortHeader(page, 'Name')).toBeHidden()
+
+          // The control reports the sort the DESKTOP header started — the
+          // single-source-of-truth claim, observed across a viewport change.
+          //
+          // ⚠️ The EXACT value, not `not.toHaveValue('manual')`. That weaker form
+          // is satisfied by any wrong non-manual state — a hardcoded value, the
+          // wrong column, the wrong direction, another table's stale slice — and
+          // the test it replaced pinned the column ("Sorted by Name").
+          const control = sortControl(page)
+          await expect(control).toBeVisible()
+          await expect(control).toHaveValue(expectedValue)
+
+          // ⚠️ A RENDERED box, not a class. `assertHasMobileTapTarget` proves the
+          // `max-sm:` tokens are declared; only a real layout can prove they
+          // resolve to 44px on an element that is not `display: none`.
+          const box = await control.boundingBox()
+          expect(box, 'the mobile sort control has no layout box at 320px').not.toBeNull()
+          expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+          expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
+
+          await control.selectOption('manual')
+          await expect(control).toHaveValue('manual')
+          // Manual order restored — compared against the order MEASURED before the
+          // sort, not a hand-written literal, so it cannot drift from the seed.
+          await expect.poll(() => editableOrder(page, names)).toEqual(manual)
+
+          await assertNoHorizontalOverflow(
+            (fn) => page.evaluate(fn),
+            `${route} with the mobile sort control at 320px (${scheme})`
+          )
         }
-        await expect.poll(() => editableOrder(page, names)).not.toEqual(manual)
-
-        // Narrow BELOW `sm`. The header that started this sort is now
-        // `display: none`, so without the control the sort would be inescapable.
-        await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-        await expect(sortHeader(page, 'Name')).toBeHidden()
-
-        // The control reports the sort the DESKTOP header started — the
-        // single-source-of-truth claim, observed across a viewport change.
-        //
-        // ⚠️ The EXACT value, not `not.toHaveValue('manual')`. That weaker form
-        // is satisfied by any wrong non-manual state — a hardcoded value, the
-        // wrong column, the wrong direction, another table's stale slice — and
-        // the test it replaced pinned the column ("Sorted by Name").
-        const control = sortControl(page)
-        await expect(control).toBeVisible()
-        await expect(control).toHaveValue(expectedValue)
-
-        // ⚠️ A RENDERED box, not a class. `assertHasMobileTapTarget` proves the
-        // `max-sm:` tokens are declared; only a real layout can prove they
-        // resolve to 44px on an element that is not `display: none`.
-        const box = await control.boundingBox()
-        expect(box, 'the mobile sort control has no layout box at 320px').not.toBeNull()
-        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
-        expect(box?.width ?? 0).toBeGreaterThanOrEqual(44)
-
-        await control.selectOption('manual')
-        await expect(control).toHaveValue('manual')
-        // Manual order restored — compared against the order MEASURED before the
-        // sort, not a hand-written literal, so it cannot drift from the seed.
-        await expect.poll(() => editableOrder(page, names)).toEqual(manual)
-
-        await assertNoHorizontalOverflow(
-          (fn) => page.evaluate(fn),
-          `${route} with the mobile sort control at 320px (${scheme})`
-        )
-      })
+      )
     }
   }
 
@@ -985,7 +1017,7 @@ test.describe('finance tables fit a 320px viewport with real rows (story 31.2)',
   // the table narrower, so it cannot fail for a new reason. Its move-button
   // visibility assertion is gone; the DOCUMENT-level overflow claim is not.
   for (const route of ['/income', '/expenses', '/savings', '/balance'] as const) {
-    test(`${route} finance tables fit 768px`, async ({ page }) => {
+    test(`${route} finance tables fit 768px`, { tag: '@layout' }, async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 900 })
       await seedFinanceRows(page)
 
@@ -1295,52 +1327,56 @@ async function assertTallModalFitsAndScrolls(
 }
 
 test.describe('modals fit height-constrained viewports (story 31.3)', () => {
-  test(`the tallest modal fits and scrolls at ${NARROW_WIDTH}x${SHORT_HEIGHT}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    // Deliberately UNSEEDED: the Add form renders its full field set on an empty
-    // /balance because the type defaults to `investment`, the only arm that shows
-    // the contribution amount, the frequency AND the recorded-as-expense checkbox.
-    await page.goto('/balance')
-    await page.waitForLoadState('networkidle')
+  test(
+    `the tallest modal fits and scrolls at ${NARROW_WIDTH}x${SHORT_HEIGHT}`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+      // Deliberately UNSEEDED: the Add form renders its full field set on an empty
+      // /balance because the type defaults to `investment`, the only arm that shows
+      // the contribution amount, the frequency AND the recorded-as-expense checkbox.
+      await page.goto('/balance')
+      await page.waitForLoadState('networkidle')
 
-    const card = await openBalanceAddModal(page)
-    const submit = card.getByRole('button', { name: 'Add Balance Entry' })
+      const card = await openBalanceAddModal(page)
+      const submit = card.getByRole('button', { name: 'Add Balance Entry' })
 
-    await assertTallModalFitsAndScrolls(
-      card,
-      submit,
-      `/balance add (${NARROW_WIDTH}x${SHORT_HEIGHT})`
-    )
+      await assertTallModalFitsAndScrolls(
+        card,
+        submit,
+        `/balance add (${NARROW_WIDTH}x${SHORT_HEIGHT})`
+      )
 
-    // AC-6 at the element level. A document-level "no new horizontal overflow"
-    // claim is UNFALSIFIABLE inside a modal: `overflow-y-auto` computes
-    // `overflow-x` to `auto` too (CSS Overflow 3), so the card absorbs its own
-    // horizontal overflow, and the body lock hides it from `documentElement`.
-    const metrics = await readCardMetrics(card)
-    expect(metrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
-    expect(metrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
-  })
+      // AC-6 at the element level. A document-level "no new horizontal overflow"
+      // claim is UNFALSIFIABLE inside a modal: `overflow-y-auto` computes
+      // `overflow-x` to `auto` too (CSS Overflow 3), so the card absorbs its own
+      // horizontal overflow, and the body lock hides it from `documentElement`.
+      const metrics = await readCardMetrics(card)
+      expect(metrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
+      expect(metrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
+    }
+  )
 
-  test(`the tallest modal fits and scrolls at ${LANDSCAPE.width}x${LANDSCAPE.height} (landscape)`, async ({
-    page,
-  }) => {
-    // iPhone SE landscape: only 320px of HEIGHT. Harsher than 640x360 and the
-    // epic's literal floor.
-    await page.setViewportSize({ width: LANDSCAPE.width, height: LANDSCAPE.height })
-    await page.goto('/balance')
-    await page.waitForLoadState('networkidle')
+  test(
+    `the tallest modal fits and scrolls at ${LANDSCAPE.width}x${LANDSCAPE.height} (landscape)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      // iPhone SE landscape: only 320px of HEIGHT. Harsher than 640x360 and the
+      // epic's literal floor.
+      await page.setViewportSize({ width: LANDSCAPE.width, height: LANDSCAPE.height })
+      await page.goto('/balance')
+      await page.waitForLoadState('networkidle')
 
-    const card = await openBalanceAddModal(page)
-    const submit = card.getByRole('button', { name: 'Add Balance Entry' })
+      const card = await openBalanceAddModal(page)
+      const submit = card.getByRole('button', { name: 'Add Balance Entry' })
 
-    await assertTallModalFitsAndScrolls(
-      card,
-      submit,
-      `/balance add (${LANDSCAPE.width}x${LANDSCAPE.height})`
-    )
-  })
+      await assertTallModalFitsAndScrolls(
+        card,
+        submit,
+        `/balance add (${LANDSCAPE.width}x${LANDSCAPE.height})`
+      )
+    }
+  )
 
   /**
    * Story 36.3 (UX-DR40 / AC-7) — the debt guidance at the narrow floor.
@@ -1366,110 +1402,112 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
    * now measured and the criterion is retired. (Review 49.2, Edge Case Hunter.)
    */
   for (const arm of ['debt', 'asset'] as const) {
-    test(`the ${arm} guidance fits at ${NARROW_WIDTH}x${SHORT_HEIGHT} in both themes (36.3, 49.2)`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-      await page.goto('/balance')
-      await page.waitForLoadState('networkidle')
+    test(
+      `the ${arm} guidance fits at ${NARROW_WIDTH}x${SHORT_HEIGHT} in both themes (36.3, 49.2)`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+        await page.goto('/balance')
+        await page.waitForLoadState('networkidle')
 
-      const card = await openBalanceAddModal(page)
-      await card.getByLabel(/type/i).selectOption(arm)
+        const card = await openBalanceAddModal(page)
+        await card.getByLabel(/type/i).selectOption(arm)
 
-      const hint = card.getByTestId(`balance-${arm}-hint`)
-      await expect(hint).toBeVisible()
+        const hint = card.getByTestId(`balance-${arm}-hint`)
+        await expect(hint).toBeVisible()
 
-      // (1) The hint wraps INSIDE its own box rather than widening it, and the
-      //     box stays within the card. `scrollWidth > clientWidth` here would mean
-      //     an unbreakable run of text pushing the card wider than the viewport.
-      const box = await hint.evaluate((el) => ({
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-        right: el.getBoundingClientRect().right,
-        left: el.getBoundingClientRect().left,
-      }))
-      // ⚠️ `+ 1`, matching every sibling comparison in this file (`:1363`, `:1587`).
-      // `scrollWidth` and `clientWidth` round independently under subpixel layout,
-      // so a paragraph whose content box lands on a fraction can report one pixel
-      // of phantom overflow. A CI font change is exactly what moves a wrap point
-      // onto such a boundary.
-      expect(box.scrollWidth, `${arm} hint overflows its own box`).toBeLessThanOrEqual(
-        box.clientWidth + 1
-      )
-      expect(box.left, `${arm} hint starts left of the viewport`).toBeGreaterThanOrEqual(0)
-      expect(box.right, `${arm} hint extends past 320px`).toBeLessThanOrEqual(NARROW_WIDTH)
+        // (1) The hint wraps INSIDE its own box rather than widening it, and the
+        //     box stays within the card. `scrollWidth > clientWidth` here would mean
+        //     an unbreakable run of text pushing the card wider than the viewport.
+        const box = await hint.evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          right: el.getBoundingClientRect().right,
+          left: el.getBoundingClientRect().left,
+        }))
+        // ⚠️ `+ 1`, matching every sibling comparison in this file (`:1363`, `:1587`).
+        // `scrollWidth` and `clientWidth` round independently under subpixel layout,
+        // so a paragraph whose content box lands on a fraction can report one pixel
+        // of phantom overflow. A CI font change is exactly what moves a wrap point
+        // onto such a boundary.
+        expect(box.scrollWidth, `${arm} hint overflows its own box`).toBeLessThanOrEqual(
+          box.clientWidth + 1
+        )
+        expect(box.left, `${arm} hint starts left of the viewport`).toBeGreaterThanOrEqual(0)
+        expect(box.right, `${arm} hint extends past 320px`).toBeLessThanOrEqual(NARROW_WIDTH)
 
-      // (2) The CARD must not be pushed past the viewport by the taller content.
-      //
-      // ⚠️ This deliberately does NOT use `assertNoHorizontalOverflow`. A
-      // document-level overflow claim is UNFALSIFIABLE inside a modal — the same
-      // fact the sibling test records above: `overflow-y-auto` computes
-      // `overflow-x` to `auto`, so the card absorbs its own horizontal overflow,
-      // and the body lock hides it from `documentElement`. The first draft of this
-      // test asserted it anyway and would have passed against any defect.
-      // (Review 36.3.)
-      const cardMetrics = await readCardMetrics(card)
-      expect(cardMetrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
-      expect(cardMetrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
+        // (2) The CARD must not be pushed past the viewport by the taller content.
+        //
+        // ⚠️ This deliberately does NOT use `assertNoHorizontalOverflow`. A
+        // document-level overflow claim is UNFALSIFIABLE inside a modal — the same
+        // fact the sibling test records above: `overflow-y-auto` computes
+        // `overflow-x` to `auto`, so the card absorbs its own horizontal overflow,
+        // and the body lock hides it from `documentElement`. The first draft of this
+        // test asserted it anyway and would have passed against any defect.
+        // (Review 36.3.)
+        const cardMetrics = await readCardMetrics(card)
+        expect(cardMetrics.left, 'card starts left of the viewport').toBeGreaterThanOrEqual(0)
+        expect(cardMetrics.right, 'card extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
 
-      // (3) The full house assertion — over-tall precondition, both ends inside the
-      //     viewport, internal scroll, and the submit control reachable.
-      //
-      // ⚠️ MEASURED, and it overturned story 36.3's own written assumption. That
-      // spec predicted the helper's over-tall precondition would REJECT the debt
-      // form (Debt rendered one field fewer than investment) and told the
-      // implementer to substitute a hand-rolled reachability check. Probed in
-      // review 36.3: the helper PASSES — the debt form plus this hint is still
-      // over-tall at 320x480. So the real assertion is used rather than the weaker
-      // substitute, and the prediction is recorded as wrong rather than quietly
-      // inherited. (Still true after story 49.1 removed the contribution-limit
-      // field from every arm — re-measured; see `openBalanceAddModal`'s table.)
-      const submit = card.getByRole('button', { name: 'Add Balance Entry' })
-      await assertTallModalFitsAndScrolls(
-        card,
-        submit,
-        `/balance add ${arm} (${NARROW_WIDTH}x${SHORT_HEIGHT})`
-      )
+        // (3) The full house assertion — over-tall precondition, both ends inside the
+        //     viewport, internal scroll, and the submit control reachable.
+        //
+        // ⚠️ MEASURED, and it overturned story 36.3's own written assumption. That
+        // spec predicted the helper's over-tall precondition would REJECT the debt
+        // form (Debt rendered one field fewer than investment) and told the
+        // implementer to substitute a hand-rolled reachability check. Probed in
+        // review 36.3: the helper PASSES — the debt form plus this hint is still
+        // over-tall at 320x480. So the real assertion is used rather than the weaker
+        // substitute, and the prediction is recorded as wrong rather than quietly
+        // inherited. (Still true after story 49.1 removed the contribution-limit
+        // field from every arm — re-measured; see `openBalanceAddModal`'s table.)
+        const submit = card.getByRole('button', { name: 'Add Balance Entry' })
+        await assertTallModalFitsAndScrolls(
+          card,
+          submit,
+          `/balance add ${arm} (${NARROW_WIDTH}x${SHORT_HEIGHT})`
+        )
 
-      // (4) Dark mode.
-      //
-      // ⚠️ The assertion must be something a THEME can change. A first draft
-      // re-measured `scrollWidth` here, which is font geometry — no `.dark` token
-      // touches it, so that arm could not fail independently of step (1) and the
-      // "both themes" in this test's name was unearned (review 36.3). The colour
-      // is what dark mode alters, so the colour is what gets asserted: it must
-      // actually differ from the light value, and it must not be transparent.
-      const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
+        // (4) Dark mode.
+        //
+        // ⚠️ The assertion must be something a THEME can change. A first draft
+        // re-measured `scrollWidth` here, which is font geometry — no `.dark` token
+        // touches it, so that arm could not fail independently of step (1) and the
+        // "both themes" in this test's name was unearned (review 36.3). The colour
+        // is what dark mode alters, so the colour is what gets asserted: it must
+        // actually differ from the light value, and it must not be transparent.
+        const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
 
-      // Switch the device preference and confirm it REACHED THE PAINT. Story 61.1
-      // (FR93) made `prefers-color-scheme` the app's only theme input, so this
-      // emulates the media query; before that it added a `.dark` class that
-      // `ThemeProvider` could strip. Either way the guard must assert a painted
-      // consequence — polling `classList.contains('dark')` after adding the class
-      // yourself cannot fail, and under `darkMode: 'media'` it would pass on a
-      // page that rendered entirely light. `body` is bg-gray-900 in dark.
-      //
-      // ⚠️ Deliberately NOT `waitForFunction(colour !== light)`: that form makes a
-      // theme-invariant colour fail as a 30s TIMEOUT instead of naming the defect.
-      // Verified — it did exactly that before this was split (review 36.3).
-      await page.emulateMedia({ colorScheme: 'dark' })
-      await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
-        .toBe('rgb(17, 24, 39)')
+        // Switch the device preference and confirm it REACHED THE PAINT. Story 61.1
+        // (FR93) made `prefers-color-scheme` the app's only theme input, so this
+        // emulates the media query; before that it added a `.dark` class that
+        // `ThemeProvider` could strip. Either way the guard must assert a painted
+        // consequence — polling `classList.contains('dark')` after adding the class
+        // yourself cannot fail, and under `darkMode: 'media'` it would pass on a
+        // page that rendered entirely light. `body` is bg-gray-900 in dark.
+        //
+        // ⚠️ Deliberately NOT `waitForFunction(colour !== light)`: that form makes a
+        // theme-invariant colour fail as a 30s TIMEOUT instead of naming the defect.
+        // Verified — it did exactly that before this was split (review 36.3).
+        await page.emulateMedia({ colorScheme: 'dark' })
+        await expect
+          .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+          .toBe('rgb(17, 24, 39)')
 
-      await expect(hint).toBeVisible()
-      const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
-      expect(darkColor, `${arm} hint colour is unchanged in dark mode`).not.toBe(lightColor)
-      expect(darkColor, `${arm} hint is transparent in dark mode`).not.toMatch(/rgba\(.*,\s*0\)$/)
+        await expect(hint).toBeVisible()
+        const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
+        expect(darkColor, `${arm} hint colour is unchanged in dark mode`).not.toBe(lightColor)
+        expect(darkColor, `${arm} hint is transparent in dark mode`).not.toMatch(/rgba\(.*,\s*0\)$/)
 
-      const darkBox = await hint.evaluate((el) => ({
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-      }))
-      expect(darkBox.scrollWidth, `${arm} hint overflows its box in dark`).toBeLessThanOrEqual(
-        darkBox.clientWidth + 1
-      )
-    })
+        const darkBox = await hint.evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }))
+        expect(darkBox.scrollWidth, `${arm} hint overflows its box in dark`).toBeLessThanOrEqual(
+          darkBox.clientWidth + 1
+        )
+      }
+    )
   }
 
   /**
@@ -1478,190 +1516,200 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
    * anywhere opened the Expenses modal at this width. Added in review 36.3
    * rather than left as a disclosure, because "both" is the AC's word.
    */
-  test(`the expenses guidance fits at ${NARROW_WIDTH}x${SHORT_HEIGHT} in both themes (36.3)`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    await page.goto('/expenses')
-    await page.waitForLoadState('networkidle')
+  test(
+    `the expenses guidance fits at ${NARROW_WIDTH}x${SHORT_HEIGHT} in both themes (36.3)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+      await page.goto('/expenses')
+      await page.waitForLoadState('networkidle')
 
-    await page.getByRole('button', { name: '+ Add Expense' }).click()
-    const card = page.getByRole('dialog', { name: 'Add Expense' })
-    await expect(card).toBeVisible()
+      await page.getByRole('button', { name: '+ Add Expense' }).click()
+      const card = page.getByRole('dialog', { name: 'Add Expense' })
+      await expect(card).toBeVisible()
 
-    const hint = card.getByTestId('expense-mortgage-hint')
-    await expect(hint).toBeVisible()
+      const hint = card.getByTestId('expense-mortgage-hint')
+      await expect(hint).toBeVisible()
 
-    const box = await hint.evaluate((el) => ({
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
-      left: el.getBoundingClientRect().left,
-      right: el.getBoundingClientRect().right,
-    }))
-    expect(box.scrollWidth, 'expenses hint overflows its own box').toBeLessThanOrEqual(
-      box.clientWidth + 1
-    )
-    expect(box.left, 'expenses hint starts left of the viewport').toBeGreaterThanOrEqual(0)
-    expect(box.right, 'expenses hint extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
+      const box = await hint.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        left: el.getBoundingClientRect().left,
+        right: el.getBoundingClientRect().right,
+      }))
+      expect(box.scrollWidth, 'expenses hint overflows its own box').toBeLessThanOrEqual(
+        box.clientWidth + 1
+      )
+      expect(box.left, 'expenses hint starts left of the viewport').toBeGreaterThanOrEqual(0)
+      expect(box.right, 'expenses hint extends past 320px').toBeLessThanOrEqual(NARROW_WIDTH)
 
-    const submit = card.getByRole('button', { name: 'Add Expense' })
-    await submit.scrollIntoViewIfNeeded()
-    await expect(submit).toBeVisible()
+      const submit = card.getByRole('button', { name: 'Add Expense' })
+      await submit.scrollIntoViewIfNeeded()
+      await expect(submit).toBeVisible()
 
-    // Dark: assert the COLOUR, the one thing a theme actually changes here.
-    const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
-    await page.emulateMedia({ colorScheme: 'dark' })
-    await expect
-      .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
-      .toBe('rgb(17, 24, 39)')
-    await expect(hint).toBeVisible()
-    const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
-    expect(darkColor, 'expenses hint colour is unchanged in dark mode').not.toBe(lightColor)
-  })
+      // Dark: assert the COLOUR, the one thing a theme actually changes here.
+      const lightColor = await hint.evaluate((el) => getComputedStyle(el).color)
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await expect
+        .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+        .toBe('rgb(17, 24, 39)')
+      await expect(hint).toBeVisible()
+      const darkColor = await hint.evaluate((el) => getComputedStyle(el).color)
+      expect(darkColor, 'expenses hint colour is unchanged in dark mode').not.toBe(lightColor)
+    }
+  )
 
-  test(`a short modal is unchanged at ${NARROW_WIDTH}x${SHORT_HEIGHT} (AC-5, AC-6)`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    await seedFinanceRows(page)
-    await page.goto('/balance')
-    await page.waitForLoadState('networkidle')
-    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+  test(
+    `a short modal is unchanged at ${NARROW_WIDTH}x${SHORT_HEIGHT} (AC-5, AC-6)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+      await seedFinanceRows(page)
+      await page.goto('/balance')
+      await page.waitForLoadState('networkidle')
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-    await page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` }).click()
-    const card = page.getByRole('alertdialog', { name: 'Confirm Delete' })
-    await expect(card).toBeVisible()
+      await page.getByRole('button', { name: `Delete ${LONG_UNBROKEN_NAME}` }).click()
+      const card = page.getByRole('alertdialog', { name: 'Confirm Delete' })
+      await expect(card).toBeVisible()
 
-    const metrics = await readCardMetrics(card)
+      const metrics = await readCardMetrics(card)
 
-    // Nothing to scroll. This is what catches an `h-full` typo for `max-h-full`
-    // or a stray `min-h`: without it, a change that stretched EVERY modal to
-    // full height would ship green against the tall-modal tests above.
-    const reached = await probeScrollability(card)
-    expect(reached, 'a short dialog must have nothing to scroll').toBe(0)
+      // Nothing to scroll. This is what catches an `h-full` typo for `max-h-full`
+      // or a stray `min-h`: without it, a change that stretched EVERY modal to
+      // full height would ship green against the tall-modal tests above.
+      const reached = await probeScrollability(card)
+      expect(reached, 'a short dialog must have nothing to scroll').toBe(0)
 
-    // Not stretched: strictly under the cap (viewport minus the overlay's 1rem
-    // gutter on each side). `h-full` would land exactly ON the cap.
-    const cap = metrics.innerHeight - 32
-    expect(metrics.height, `short dialog was stretched to the height cap (${cap})`).toBeLessThan(
-      cap
-    )
+      // Not stretched: strictly under the cap (viewport minus the overlay's 1rem
+      // gutter on each side). `h-full` would land exactly ON the cap.
+      const cap = metrics.innerHeight - 32
+      expect(metrics.height, `short dialog was stretched to the height cap (${cap})`).toBeLessThan(
+        cap
+      )
 
-    // Still centred with the existing gutter.
-    expect(metrics.top, 'short dialog is not centred').toBeGreaterThan(0)
-    expect(metrics.bottom).toBeLessThan(metrics.innerHeight)
-    expect(
-      Math.abs(metrics.top - (metrics.innerHeight - metrics.height) / 2),
-      'short dialog is no longer vertically centred'
-    ).toBeLessThanOrEqual(2)
+      // Still centred with the existing gutter.
+      expect(metrics.top, 'short dialog is not centred').toBeGreaterThan(0)
+      expect(metrics.bottom).toBeLessThan(metrics.innerHeight)
+      expect(
+        Math.abs(metrics.top - (metrics.innerHeight - metrics.height) / 2),
+        'short dialog is no longer vertically centred'
+      ).toBeLessThanOrEqual(2)
 
-    // AC-6 — the element-level horizontal check, the only version of this
-    // assertion that can fail. The delete message interpolates a 138-character
-    // unbroken name; before `break-words` this measured scrollWidth 1214 vs
-    // clientWidth 288, entirely invisible to `documentElement`.
-    expect(
-      metrics.scrollWidth,
-      `confirm dialog scrolls horizontally: scrollWidth ${metrics.scrollWidth} > clientWidth ${metrics.clientWidth}`
-    ).toBeLessThanOrEqual(metrics.clientWidth + 1)
-    expect(metrics.left).toBeGreaterThanOrEqual(0)
-    expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
-  })
+      // AC-6 — the element-level horizontal check, the only version of this
+      // assertion that can fail. The delete message interpolates a 138-character
+      // unbroken name; before `break-words` this measured scrollWidth 1214 vs
+      // clientWidth 288, entirely invisible to `documentElement`.
+      expect(
+        metrics.scrollWidth,
+        `confirm dialog scrolls horizontally: scrollWidth ${metrics.scrollWidth} > clientWidth ${metrics.clientWidth}`
+      ).toBeLessThanOrEqual(metrics.clientWidth + 1)
+      expect(metrics.left).toBeGreaterThanOrEqual(0)
+      expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
+    }
+  )
 
   for (const viewport of [
     { width: NARROW_WIDTH, height: SHORT_HEIGHT },
     { width: LANDSCAPE.width, height: LANDSCAPE.height },
   ] as const) {
-    test(`dismissal still works at ${viewport.width}x${viewport.height} (AC-7, UX-DR10)`, async ({
-      page,
-    }) => {
-      await page.setViewportSize(viewport)
-      await page.goto('/balance')
-      await page.waitForLoadState('networkidle')
+    test(
+      `dismissal still works at ${viewport.width}x${viewport.height} (AC-7, UX-DR10)`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize(viewport)
+        await page.goto('/balance')
+        await page.waitForLoadState('networkidle')
 
-      const card = await openBalanceAddModal(page)
-      await page.keyboard.press('Escape')
-      await expect(card).toBeHidden()
+        const card = await openBalanceAddModal(page)
+        await page.keyboard.press('Escape')
+        await expect(card).toBeHidden()
 
-      const reopened = await openBalanceAddModal(page)
-      // Confirm the corner is actually backdrop at THIS viewport rather than
-      // inheriting `modal-dismissal.spec.ts`'s assumption — the card is wider
-      // relative to the viewport here, and a press that lands on the card
-      // would (correctly, per AC-7) no longer dismiss.
-      const cornerIsOverlay = await page.evaluate(() => {
-        const el = document.elementFromPoint(8, 8)
-        return el?.matches('.fixed.inset-0') ?? false
-      })
-      expect(cornerIsOverlay, 'the 8,8 corner is not the backdrop at this viewport').toBe(true)
+        const reopened = await openBalanceAddModal(page)
+        // Confirm the corner is actually backdrop at THIS viewport rather than
+        // assuming it — the card is wider relative to the viewport here, and a
+        // press that lands on the card would (correctly, per AC-7) no longer
+        // dismiss. Since story 82.3 this is the ONLY real-engine check that a
+        // backdrop press dismisses (the handler wiring moved to
+        // `IncomePage.test.tsx`), so keep it.
+        const cornerIsOverlay = await page.evaluate(() => {
+          const el = document.elementFromPoint(8, 8)
+          return el?.matches('.fixed.inset-0') ?? false
+        })
+        expect(cornerIsOverlay, 'the 8,8 corner is not the backdrop at this viewport').toBe(true)
 
-      await page.mouse.click(8, 8)
-      await expect(reopened).toBeHidden()
-    })
+        await page.mouse.click(8, 8)
+        await expect(reopened).toBeHidden()
+      }
+    )
   }
 
-  test(`the premium prompt fits and scrolls at ${NARROW_WIDTH}x${SHORT_HEIGHT}`, async ({
-    page,
-  }) => {
-    // The only OTHER tall modal reachable unauthenticated, and the one that
-    // covers the transparent-outer-card branch `/balance` cannot.
-    //
-    // Still accurate after story 41.1 made the sync box activatable: sync opens
-    // this SAME `PremiumPrompt`, so the count of tall modal TYPES is unchanged —
-    // there are just five gates that can open this one now instead of four. The
-    // locator below stays on Advanced Forecasting deliberately; measuring the
-    // prompt from any single gate is enough, and `premium-locked.spec.ts` is what
-    // proves every gate reaches it.
-    await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
-    await page.goto('/')
+  test(
+    `the premium prompt fits and scrolls at ${NARROW_WIDTH}x${SHORT_HEIGHT}`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      // The only OTHER tall modal reachable unauthenticated, and the one that
+      // covers the transparent-outer-card branch `/balance` cannot.
+      //
+      // Still accurate after story 41.1 made the sync box activatable: sync opens
+      // this SAME `PremiumPrompt`, so the count of tall modal TYPES is unchanged —
+      // there are just five gates that can open this one now instead of four. The
+      // locator below stays on Advanced Forecasting deliberately; measuring the
+      // prompt from any single gate is enough, and `premium-locked.spec.ts` is what
+      // proves every gate reaches it.
+      await page.setViewportSize({ width: NARROW_WIDTH, height: SHORT_HEIGHT })
+      await page.goto('/')
 
-    const lockedFeature = page.getByRole('button', {
-      name: /advanced forecasting — premium, locked/i,
-    })
-    const goPremium = page.getByRole('heading', { name: /go premium/i })
-    await expect(async () => {
-      if (!(await goPremium.isVisible())) {
-        await lockedFeature.click()
-      }
-      await expect(goPremium).toBeVisible({ timeout: 1000 })
-    }).toPass()
+      const lockedFeature = page.getByRole('button', {
+        name: /advanced forecasting — premium, locked/i,
+      })
+      const goPremium = page.getByRole('heading', { name: /go premium/i })
+      await expect(async () => {
+        if (!(await goPremium.isVisible())) {
+          await lockedFeature.click()
+        }
+        await expect(goPremium).toBeVisible({ timeout: 1000 })
+      }).toPass()
 
-    const card = page.getByRole('dialog', { name: 'Go Premium' })
-    // Use the SHARED assertion, not a hand-rolled subset. The first version of
-    // this test ran the scrollability probe alone, and the `overflow-hidden`
-    // mutation left it green while both `/balance` tests went red — the one
-    // fixture covering the transparent-outer-card branch had the weakest
-    // assertions in the file.
-    const upgrade = card.getByRole('link', { name: /upgrade to premium/i })
-    await assertTallModalFitsAndScrolls(
-      card,
-      upgrade,
-      `premium prompt (${NARROW_WIDTH}x${SHORT_HEIGHT})`
-    )
+      const card = page.getByRole('dialog', { name: 'Go Premium' })
+      // Use the SHARED assertion, not a hand-rolled subset. The first version of
+      // this test ran the scrollability probe alone, and the `overflow-hidden`
+      // mutation left it green while both `/balance` tests went red — the one
+      // fixture covering the transparent-outer-card branch had the weakest
+      // assertions in the file.
+      const upgrade = card.getByRole('link', { name: /upgrade to premium/i })
+      await assertTallModalFitsAndScrolls(
+        card,
+        upgrade,
+        `premium prompt (${NARROW_WIDTH}x${SHORT_HEIGHT})`
+      )
 
-    // This card is fully TRANSPARENT — the visible gradient panel is its child.
-    // Now that the wrapper is the scroll (and therefore clip) box, its clip
-    // radius must MATCH the panel's, or the panel's corners are cropped.
-    // Asserting equality rather than "not 0px": any nonzero radius passes a
-    // not-0px check while still cropping an `xl` corner.
-    const radii = await card.evaluate((el) => {
-      const panel = el.firstElementChild
-      return {
-        clipBox: getComputedStyle(el).borderTopLeftRadius,
-        panel: panel === null ? null : getComputedStyle(panel).borderTopLeftRadius,
-      }
-    })
-    expect(
-      radii.panel,
-      'the inner premium panel is not rounded — fixture assumption broken'
-    ).not.toBe('0px')
-    expect(
-      radii.clipBox,
-      `the scroll box radius (${radii.clipBox}) does not match the panel it clips (${radii.panel})`
-    ).toBe(radii.panel)
+      // This card is fully TRANSPARENT — the visible gradient panel is its child.
+      // Now that the wrapper is the scroll (and therefore clip) box, its clip
+      // radius must MATCH the panel's, or the panel's corners are cropped.
+      // Asserting equality rather than "not 0px": any nonzero radius passes a
+      // not-0px check while still cropping an `xl` corner.
+      const radii = await card.evaluate((el) => {
+        const panel = el.firstElementChild
+        return {
+          clipBox: getComputedStyle(el).borderTopLeftRadius,
+          panel: panel === null ? null : getComputedStyle(panel).borderTopLeftRadius,
+        }
+      })
+      expect(
+        radii.panel,
+        'the inner premium panel is not rounded — fixture assumption broken'
+      ).not.toBe('0px')
+      expect(
+        radii.clipBox,
+        `the scroll box radius (${radii.clipBox}) does not match the panel it clips (${radii.panel})`
+      ).toBe(radii.panel)
 
-    const metrics = await readCardMetrics(card)
-    expect(metrics.left).toBeGreaterThanOrEqual(0)
-    expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
-  })
+      const metrics = await readCardMetrics(card)
+      expect(metrics.left).toBeGreaterThanOrEqual(0)
+      expect(metrics.right).toBeLessThanOrEqual(NARROW_WIDTH)
+    }
+  )
 })
 
 /**
@@ -1696,46 +1744,48 @@ test.describe('modals fit height-constrained viewports (story 31.3)', () => {
  * (`useStoresHydrated()`), which is data-independent, so it is present with
  * empty localStorage. Seeding would imply the affordance depends on data.
  */
-test('the /savings leftover disclosure is a 44x44 target at 320px (story 51.2, AC-8)', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
+test(
+  'the /savings leftover disclosure is a 44x44 target at 320px (story 51.2, AC-8)',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
 
-  const response = await page.goto('/savings')
-  expect(response?.ok(), 'expected /savings to load').toBeTruthy()
-  await page.waitForLoadState('networkidle')
+    const response = await page.goto('/savings')
+    expect(response?.ok(), 'expected /savings to load').toBeTruthy()
+    await page.waitForLoadState('networkidle')
 
-  const disclosure = page.getByRole('button', { name: 'How is this worked out?' })
-  await expect(disclosure).toBeVisible()
+    const disclosure = page.getByRole('button', { name: 'How is this worked out?' })
+    await expect(disclosure).toBeVisible()
 
-  const box = await disclosure.boundingBox()
-  expect(box, 'the disclosure has no layout box').not.toBeNull()
-  // BOTH dimensions — SC 2.5.5 is 44x44, and the title said "44px target"
-  // while only height was measured. Width is amply satisfied by the text, but
-  // an icon-only variant would have passed the one-dimensional version at 12px.
-  expect(
-    box?.height ?? 0,
-    `the disclosure is only ${box?.height ?? 0}px tall at ${NARROW_WIDTH}px`
-  ).toBeGreaterThanOrEqual(44)
-  expect(
-    box?.width ?? 0,
-    `the disclosure is only ${box?.width ?? 0}px wide at ${NARROW_WIDTH}px`
-  ).toBeGreaterThanOrEqual(44)
+    const box = await disclosure.boundingBox()
+    expect(box, 'the disclosure has no layout box').not.toBeNull()
+    // BOTH dimensions — SC 2.5.5 is 44x44, and the title said "44px target"
+    // while only height was measured. Width is amply satisfied by the text, but
+    // an icon-only variant would have passed the one-dimensional version at 12px.
+    expect(
+      box?.height ?? 0,
+      `the disclosure is only ${box?.height ?? 0}px tall at ${NARROW_WIDTH}px`
+    ).toBeGreaterThanOrEqual(44)
+    expect(
+      box?.width ?? 0,
+      `the disclosure is only ${box?.width ?? 0}px wide at ${NARROW_WIDTH}px`
+    ).toBeGreaterThanOrEqual(44)
 
-  // ⚠️ THE GLYPH'S OWN BOX. The button clears 44px from `min-h` no matter what
-  // the chevron does, so an `h-0 w-0` icon would leave the affordance invisible
-  // and pass every assertion above. The jsdom suite pins the `h-3 w-3` tokens;
-  // this proves they paint.
-  const glyph = await disclosure.locator('svg').boundingBox()
-  expect(glyph, 'the chevron has no layout box').not.toBeNull()
-  expect(glyph?.height ?? 0, 'the chevron paints no height').toBeGreaterThan(0)
-  expect(glyph?.width ?? 0, 'the chevron paints no width').toBeGreaterThan(0)
+    // ⚠️ THE GLYPH'S OWN BOX. The button clears 44px from `min-h` no matter what
+    // the chevron does, so an `h-0 w-0` icon would leave the affordance invisible
+    // and pass every assertion above. The jsdom suite pins the `h-3 w-3` tokens;
+    // this proves they paint.
+    const glyph = await disclosure.locator('svg').boundingBox()
+    expect(glyph, 'the chevron has no layout box').not.toBeNull()
+    expect(glyph?.height ?? 0, 'the chevron paints no height').toBeGreaterThan(0)
+    expect(glyph?.width ?? 0, 'the chevron paints no width').toBeGreaterThan(0)
 
-  // Anti-vacuous partner: a 44px box that does not operate is worse than a
-  // small one that does. UX-DR9 wants controls reachable AND operable here.
-  await disclosure.click()
-  await expect(page.locator('#savings-leftover-breakdown-body')).toBeVisible()
-})
+    // Anti-vacuous partner: a 44px box that does not operate is worse than a
+    // small one that does. UX-DR9 wants controls reachable AND operable here.
+    await disclosure.click()
+    await expect(page.locator('#savings-leftover-breakdown-body')).toBeVisible()
+  }
+)
 
 /**
  * Story 51.2 review — the DESKTOP half of the same control, with the >= 24x24
@@ -1749,20 +1799,22 @@ test('the /savings leftover disclosure is a 44x44 target at 320px (story 51.2, A
  * padding; the code review measured the result at 16px. Nothing in the repo
  * could see it — the 320px test above passes either way.
  */
-test('the /savings leftover disclosure clears 24px at desktop (story 51.2 review, SC 2.5.8)', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto('/savings')
-  await page.waitForLoadState('networkidle')
+test(
+  'the /savings leftover disclosure clears 24px at desktop (story 51.2 review, SC 2.5.8)',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto('/savings')
+    await page.waitForLoadState('networkidle')
 
-  const disclosure = page.getByRole('button', { name: 'How is this worked out?' })
-  await expect(disclosure).toBeVisible()
+    const disclosure = page.getByRole('button', { name: 'How is this worked out?' })
+    await expect(disclosure).toBeVisible()
 
-  const box = await disclosure.boundingBox()
-  expect(box, 'the disclosure has no layout box at 1280px').not.toBeNull()
-  expect(
-    box?.height ?? 0,
-    `the desktop target is only ${box?.height ?? 0}px tall (SC 2.5.8 wants >= 24)`
-  ).toBeGreaterThanOrEqual(24)
-})
+    const box = await disclosure.boundingBox()
+    expect(box, 'the disclosure has no layout box at 1280px').not.toBeNull()
+    expect(
+      box?.height ?? 0,
+      `the desktop target is only ${box?.height ?? 0}px tall (SC 2.5.8 wants >= 24)`
+    ).toBeGreaterThanOrEqual(24)
+  }
+)

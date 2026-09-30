@@ -43,6 +43,19 @@ export interface SessionSeed {
   subscriptionStatus: SeedSubscriptionStatus
 }
 
+/**
+ * The authoritative signed-out seed: what the server resolves for a request with
+ * no (or an invalid) session cookie, and what `/api/auth/me`'s `{ user: null }`
+ * maps to. One definition, so the SSR seed, the client re-check and the tests
+ * that model a signed-out visitor cannot drift apart (story 82.3 review P2).
+ */
+export const SIGNED_OUT_SEED: Readonly<SessionSeed> = Object.freeze({
+  isAuthenticated: false,
+  userId: null,
+  email: null,
+  subscriptionStatus: null,
+})
+
 const SessionSeedContext = createContext<SessionSeed | null>(null)
 
 export function SessionSeedProvider({

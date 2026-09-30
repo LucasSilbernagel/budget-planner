@@ -3,6 +3,7 @@
 //   pnpm gates                     # all gates: phase A in order, phase B at once
 //   pnpm gates --sequential        # phase B one at a time (the fallback)
 //   pnpm gates --only core,web     # a subset (phase A comes along when needed)
+//   pnpm gates --layout            # also the @layout e2e tests (CI always runs them)
 //
 // Exit 0 only when every gate is GREEN (see `verdict` in `gates-lib.mjs`),
 // 1 when any gate is not, 2 when the run cannot start (a port is taken, a bad
@@ -33,6 +34,7 @@ import {
   buildGates,
   formatDuration,
   formatLine,
+  layoutNotice,
   parseArgs,
   selectGates,
   spawnEnv,
@@ -268,6 +270,20 @@ async function runGate(gate, runDir, options) {
   }
 }
 
+/** The working tree's changed and untracked files, repo-relative; [] if git fails. */
+function changedFiles() {
+  try {
+    const git = (args) =>
+      execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean)
+    return [
+      ...git(['diff', '--name-only', 'HEAD']),
+      ...git(['ls-files', '--others', '--exclude-standard']),
+    ]
+  } catch {
+    return []
+  }
+}
+
 async function main() {
   let options
   try {
@@ -291,6 +307,7 @@ async function main() {
         root: ROOT,
         runDir,
         typeCheckScripts: typeCheckScriptsOf(workspacePackages()),
+        layout: options.layout,
       }),
       options.only
     )
@@ -311,8 +328,15 @@ async function main() {
     }
   }
 
+  const notice = layoutNotice({
+    layout: options.layout,
+    e2e: gates.some((gate) => gate.id === 'e2e'),
+    changedFiles: changedFiles(),
+  })
   console.log(`Gate logs: ${runDir}`)
-  console.log(`Mode: ${options.sequential ? 'sequential' : 'phase B concurrent'}\n`)
+  console.log(`Mode: ${options.sequential ? 'sequential' : 'phase B concurrent'}`)
+  for (const line of notice) console.log(line)
+  console.log('')
 
   const results = new Map()
   let interrupted = false
@@ -378,6 +402,7 @@ async function main() {
       ? 'ALL GATES GREEN'
       : `${failed.length} GATE(S) NOT GREEN: ${failed.map((r) => r.id).join(', ')}`
   console.log(`\n${headline} in ${formatDuration(Date.now() - started)}`)
+  for (const line of notice) console.log(line)
   console.log(`Gate logs: ${runDir}`)
   await Promise.all(stopping)
   process.exit(interrupted ? 130 : failed.length === 0 ? 0 : 1)

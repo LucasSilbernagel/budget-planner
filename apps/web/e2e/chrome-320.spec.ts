@@ -112,83 +112,91 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
     await expect(page.locator(NAV)).toHaveCSS('position', 'fixed')
   })
 
-  test('the bar holds exactly the four primary tabs plus the More trigger', async ({ page }) => {
-    const nav = page.getByRole('navigation', { name: 'Primary' })
+  test(
+    'the bar holds exactly the four primary tabs plus the More trigger',
+    { tag: '@layout' },
+    async ({ page }) => {
+      const nav = page.getByRole('navigation', { name: 'Primary' })
 
-    const cells = await readBarCells(page)
-    expect(cells.map((c) => c.label)).toEqual([...BAR_LABELS])
+      const cells = await readBarCells(page)
+      expect(cells.map((c) => c.label)).toEqual([...BAR_LABELS])
 
-    // Exactly one More trigger. Since story 59.2 it is a native `<summary>`,
-    // which Playwright gives NO role, so it is located by selector
-    // (`helpers/nav-more.ts`). Its label is pinned so the count cannot pass on
-    // some other `<summary>`.
-    await expect(page.locator(MORE_SUMMARY)).toHaveCount(1)
-    await expect(page.locator(MORE_SUMMARY)).toHaveText('More')
+      // Exactly one More trigger. Since story 59.2 it is a native `<summary>`,
+      // which Playwright gives NO role, so it is located by selector
+      // (`helpers/nav-more.ts`). Its label is pinned so the count cannot pass on
+      // some other `<summary>`.
+      await expect(page.locator(MORE_SUMMARY)).toHaveCount(1)
+      await expect(page.locator(MORE_SUMMARY)).toHaveText('More')
 
-    // The negative claim this story is actually about: with the sheet closed the
-    // More destinations are not reachable in the bar. Role locators exclude the
-    // content of a CLOSED `<details>` (the sheet's mechanism since story 59.2;
-    // it was `display: none` before). The CSS `locator('a')` count
-    // deliberately is NOT used here
-    // because it still returns every anchor (7 since 43.3) and would pass on a
-    // bar that shows all of them.
-    // ⚠️ POSITIVE CONTROL, added by story 59.1 — do not drop it. The absence
-    // loop below is `toHaveCount(0)` on a full-string role match, so it passes
-    // for ANY string that matches nothing in the DOM: let a label here go stale
-    // (59.1 renamed "Balance Tracking" -> "Balances") and the probe stays green
-    // while guarding nothing. This proves the strings are the real sheet
-    // anchors first.
-    // ⚠️ Read the DOM, not `a:text-is(...)`. `:text-is` matches an element's OWN
-    // direct text nodes, and the label lives in a child `<span data-nav-label>`
-    // (`GlobalNav.tsx`), so `a:text-is("Balances")` matches NOTHING — it returns
-    // 0 on a fully VISIBLE anchor too. Verified in Playwright 1.61.1 both by
-    // probe (`a:text-is("Overview")` = 0 while visible; `span:text-is` = 1 while
-    // hidden) and in source: `shouldSkipForTextMatching` skips only SCRIPT /
-    // NOSCRIPT / STYLE / <head>, and `textIsEngine` matches `elementText.immediate`.
-    // ⚠️⚠️ VISIBILITY IS NOT THE REASON, though 59.1 first wrote that it was.
-    // Playwright's text engine does NOT skip `display: none`: `getByText`,
-    // `has-text` and `span:text-is` all match this sheet while it is hidden.
-    // Only ROLE locators exclude hidden nodes — which is exactly what makes the
-    // absence loop below a real "not visible in the bar" check. Do not carry the
-    // old claim forward; a text locator is a poor visibility assertion.
-    const sheetLabels = await page
-      .locator(`${MORE_PANEL} > li > a`)
-      .evaluateAll((els) => els.map((el) => el.textContent?.trim()))
-    expect(
-      sheetLabels,
-      'the sheet rows do not match SHEET_LABELS (stale label, reordered sheet, or a changed row count) — the absence loop below would be vacuous'
-    ).toEqual([...SHEET_LABELS])
+      // The negative claim this story is actually about: with the sheet closed the
+      // More destinations are not reachable in the bar. Role locators exclude the
+      // content of a CLOSED `<details>` (the sheet's mechanism since story 59.2;
+      // it was `display: none` before). The CSS `locator('a')` count
+      // deliberately is NOT used here
+      // because it still returns every anchor (7 since 43.3) and would pass on a
+      // bar that shows all of them.
+      // ⚠️ POSITIVE CONTROL, added by story 59.1 — do not drop it. The absence
+      // loop below is `toHaveCount(0)` on a full-string role match, so it passes
+      // for ANY string that matches nothing in the DOM: let a label here go stale
+      // (59.1 renamed "Balance Tracking" -> "Balances") and the probe stays green
+      // while guarding nothing. This proves the strings are the real sheet
+      // anchors first.
+      // ⚠️ Read the DOM, not `a:text-is(...)`. `:text-is` matches an element's OWN
+      // direct text nodes, and the label lives in a child `<span data-nav-label>`
+      // (`GlobalNav.tsx`), so `a:text-is("Balances")` matches NOTHING — it returns
+      // 0 on a fully VISIBLE anchor too. Verified in Playwright 1.61.1 both by
+      // probe (`a:text-is("Overview")` = 0 while visible; `span:text-is` = 1 while
+      // hidden) and in source: `shouldSkipForTextMatching` skips only SCRIPT /
+      // NOSCRIPT / STYLE / <head>, and `textIsEngine` matches `elementText.immediate`.
+      // ⚠️⚠️ VISIBILITY IS NOT THE REASON, though 59.1 first wrote that it was.
+      // Playwright's text engine does NOT skip `display: none`: `getByText`,
+      // `has-text` and `span:text-is` all match this sheet while it is hidden.
+      // Only ROLE locators exclude hidden nodes — which is exactly what makes the
+      // absence loop below a real "not visible in the bar" check. Do not carry the
+      // old claim forward; a text locator is a poor visibility assertion.
+      const sheetLabels = await page
+        .locator(`${MORE_PANEL} > li > a`)
+        .evaluateAll((els) => els.map((el) => el.textContent?.trim()))
+      expect(
+        sheetLabels,
+        'the sheet rows do not match SHEET_LABELS (stale label, reordered sheet, or a changed row count) — the absence loop below would be vacuous'
+      ).toEqual([...SHEET_LABELS])
 
-    for (const label of SHEET_LABELS) {
-      await expect(
-        nav.getByRole('link', { name: label, exact: true }),
-        `"${label}" is still in the closed bar — it belongs behind More`
-      ).toHaveCount(0)
+      for (const label of SHEET_LABELS) {
+        await expect(
+          nav.getByRole('link', { name: label, exact: true }),
+          `"${label}" is still in the closed bar — it belongs behind More`
+        ).toHaveCount(0)
+      }
+      await expect(nav.getByRole('link')).toHaveCount(BAR_LABELS.length)
     }
-    await expect(nav.getByRole('link')).toHaveCount(BAR_LABELS.length)
-  })
+  )
 
-  test('every bottom-bar label fits its cell and stays a 44px tap target', async ({ page }) => {
-    const cells = await readBarCells(page)
-    expect(cells).toHaveLength(BAR_LABELS.length)
+  test(
+    'every bottom-bar label fits its cell and stays a 44px tap target',
+    { tag: '@layout' },
+    async ({ page }) => {
+      const cells = await readBarCells(page)
+      expect(cells).toHaveLength(BAR_LABELS.length)
 
-    for (const { label, overflows, height, lineCount } of cells) {
-      expect(overflows, `"${label}" label overflows its cell at 320px`).toBe(false)
-      // A clean single-word wrap fits horizontally (no overflow) but still reads
-      // as crushed. Require exactly one line — of the LABEL, not the anchor.
-      expect(lineCount, `"${label}" label wraps to ${lineCount} lines at 320px`).toBe(1)
-      expect(height, `"${label}" tap target is under 44px`).toBeGreaterThanOrEqual(44)
+      for (const { label, overflows, height, lineCount } of cells) {
+        expect(overflows, `"${label}" label overflows its cell at 320px`).toBe(false)
+        // A clean single-word wrap fits horizontally (no overflow) but still reads
+        // as crushed. Require exactly one line — of the LABEL, not the anchor.
+        expect(lineCount, `"${label}" label wraps to ${lineCount} lines at 320px`).toBe(1)
+        expect(height, `"${label}" tap target is under 44px`).toBeGreaterThanOrEqual(44)
+      }
+
+      // The More trigger is a cell too, and it is not an anchor (a `<summary>`
+      // since story 59.2), so every anchor-scoped sweep in this suite skips it.
+      const trigger = await page.locator(MORE_SUMMARY).evaluate((el) => ({
+        height: Math.round(el.getBoundingClientRect().height),
+        overflows: el.scrollWidth > el.clientWidth,
+      }))
+      expect(trigger.overflows, 'the More label overflows its cell at 320px').toBe(false)
+      expect(trigger.height, 'the More tap target is under 44px').toBeGreaterThanOrEqual(44)
     }
-
-    // The More trigger is a cell too, and it is not an anchor (a `<summary>`
-    // since story 59.2), so every anchor-scoped sweep in this suite skips it.
-    const trigger = await page.locator(MORE_SUMMARY).evaluate((el) => ({
-      height: Math.round(el.getBoundingClientRect().height),
-      overflows: el.scrollWidth > el.clientWidth,
-    }))
-    expect(trigger.overflows, 'the More label overflows its cell at 320px').toBe(false)
-    expect(trigger.height, 'the More tap target is under 44px').toBeGreaterThanOrEqual(44)
-  })
+  )
 
   /**
    * ⚠️⚠️ THE DEFECT THIS TEST EXISTS TO CATCH IS THE ONE THE OLD VERSION COULD
@@ -200,31 +208,33 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
    * across 320x568 / 320x720 / 360x640 / 390x844 / 412x915 / 639x720 and both
    * themes.
    */
-  test('the fixed bottom bar neither covers the Footer nor strands it above a dead gap', async ({
-    page,
-  }) => {
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  test(
+    'the fixed bottom bar neither covers the Footer nor strands it above a dead gap',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
 
-    const readGap = () =>
-      page.evaluate((selector) => {
-        const footer = document.querySelector('footer')?.getBoundingClientRect()
-        const nav = document.querySelector(selector)?.getBoundingClientRect()
-        if (!footer || !nav) return null
-        return Math.round((nav.top - footer.bottom) * 100) / 100
-      }, NAV)
+      const readGap = () =>
+        page.evaluate((selector) => {
+          const footer = document.querySelector('footer')?.getBoundingClientRect()
+          const nav = document.querySelector(selector)?.getBoundingClientRect()
+          if (!footer || !nav) return null
+          return Math.round((nav.top - footer.bottom) * 100) / 100
+        }, NAV)
 
-    // Polled rather than read once so the scroll has a chance to settle; each
-    // poll re-measures, so a genuinely wrong reserve times out and reports the
-    // measured gap rather than flaking.
-    // Footer's last content must sit above the fixed bar's top edge...
-    await expect.poll(readGap, { message: 'the fixed bar covers the Footer' }).toBeGreaterThan(0)
-    // ...but only just. A too-large reserve is the silent half of this coupling:
-    // the old 96px reserve leaves 39.25px of dead space and passes the check
-    // above more comfortably than a correct build does.
-    await expect
-      .poll(readGap, { message: 'the reserve strands the Footer above a dead gap' })
-      .toBeLessThanOrEqual(8)
-  })
+      // Polled rather than read once so the scroll has a chance to settle; each
+      // poll re-measures, so a genuinely wrong reserve times out and reports the
+      // measured gap rather than flaking.
+      // Footer's last content must sit above the fixed bar's top edge...
+      await expect.poll(readGap, { message: 'the fixed bar covers the Footer' }).toBeGreaterThan(0)
+      // ...but only just. A too-large reserve is the silent half of this coupling:
+      // the old 96px reserve leaves 39.25px of dead space and passes the check
+      // above more comfortably than a correct build does.
+      await expect
+        .poll(readGap, { message: 'the reserve strands the Footer above a dead gap' })
+        .toBeLessThanOrEqual(8)
+    }
+  )
 
   /**
    * ⚠️⚠️ FOUND BY CODE REVIEW: the two-sided gap above is measured only at the
@@ -240,34 +250,38 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
    * composition, holding the gap constant at every size.
    */
   for (const root of [12, 14, 20, 24]) {
-    test(`the footer clearance holds at a ${root}px root font size`, async ({ page }) => {
-      await page.addInitScript((px) => {
-        document.addEventListener('DOMContentLoaded', () => {
+    test(
+      `the footer clearance holds at a ${root}px root font size`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.addInitScript((px) => {
+          document.addEventListener('DOMContentLoaded', () => {
+            document.documentElement.style.fontSize = `${px}px`
+          })
+        }, root)
+        await page.goto('/')
+        await page.waitForLoadState('networkidle')
+        await page.evaluate((px) => {
           document.documentElement.style.fontSize = `${px}px`
-        })
-      }, root)
-      await page.goto('/')
-      await page.waitForLoadState('networkidle')
-      await page.evaluate((px) => {
-        document.documentElement.style.fontSize = `${px}px`
-      }, root)
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+        }, root)
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
 
-      const readGap = () =>
-        page.evaluate((selector) => {
-          const footer = document.querySelector('footer')?.getBoundingClientRect()
-          const nav = document.querySelector(selector)?.getBoundingClientRect()
-          if (!footer || !nav) return null
-          return Math.round((nav.top - footer.bottom) * 100) / 100
-        }, NAV)
+        const readGap = () =>
+          page.evaluate((selector) => {
+            const footer = document.querySelector('footer')?.getBoundingClientRect()
+            const nav = document.querySelector(selector)?.getBoundingClientRect()
+            if (!footer || !nav) return null
+            return Math.round((nav.top - footer.bottom) * 100) / 100
+          }, NAV)
 
-      await expect
-        .poll(readGap, { message: `the bar covers the Footer at a ${root}px root font` })
-        .toBeGreaterThan(0)
-      await expect
-        .poll(readGap, { message: `dead gap above the Footer at a ${root}px root font` })
-        .toBeLessThanOrEqual(8)
-    })
+        await expect
+          .poll(readGap, { message: `the bar covers the Footer at a ${root}px root font` })
+          .toBeGreaterThan(0)
+        await expect
+          .poll(readGap, { message: `dead gap above the Footer at a ${root}px root font` })
+          .toBeLessThanOrEqual(8)
+      }
+    )
   }
 
   /**
@@ -277,17 +291,21 @@ test.describe('global chrome at 320px (story 18-2, 5-tab bar since 31.5)', () =>
    * label) would have gone completely unnoticed, and it is exactly what the
    * `__root.tsx` / `InstallPrompt.tsx` reserves are sized against.
    */
-  test('the bar is a single row of the height the root reserve is sized for', async ({ page }) => {
-    const height = await page
-      .locator(NAV)
-      .evaluate((el) => Math.round(el.getBoundingClientRect().height * 100) / 100)
-    // Measured 56.75px: py-2 16 + h-6 icon 24 + gap-0.5 2 + 11px label at
-    // leading-tight 13.75 + 1px border-t. The window is tight on purpose — the
-    // 60px reserve is only correct for a bar of about this size.
-    expect(
-      height,
-      `the mobile bar is ${height}px — the 3.75rem reserve assumes ~56.75px`
-    ).toBeGreaterThanOrEqual(56)
-    expect(height).toBeLessThanOrEqual(58)
-  })
+  test(
+    'the bar is a single row of the height the root reserve is sized for',
+    { tag: '@layout' },
+    async ({ page }) => {
+      const height = await page
+        .locator(NAV)
+        .evaluate((el) => Math.round(el.getBoundingClientRect().height * 100) / 100)
+      // Measured 56.75px: py-2 16 + h-6 icon 24 + gap-0.5 2 + 11px label at
+      // leading-tight 13.75 + 1px border-t. The window is tight on purpose — the
+      // 60px reserve is only correct for a bar of about this size.
+      expect(
+        height,
+        `the mobile bar is ${height}px — the 3.75rem reserve assumes ~56.75px`
+      ).toBeGreaterThanOrEqual(56)
+      expect(height).toBeLessThanOrEqual(58)
+    }
+  )
 })

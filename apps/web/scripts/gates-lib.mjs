@@ -94,7 +94,7 @@ export function parseVitestJson(text) {
  * Playwright's JSON report. `expected` = passed, `unexpected` = failed.
  * @param {string} text
  */
-export function parsePlaywrightJson(text) {
+export function parsePlaywrightJson(text, projects = null) {
   const report = safeJson(text)
   const stats = report?.stats
   if (!stats || typeof stats.expected !== 'number') return null
@@ -102,7 +102,19 @@ export function parsePlaywrightJson(text) {
   const failed = stats.unexpected ?? 0
   const skipped = stats.skipped ?? 0
   const flaky = stats.flaky ?? 0
-  return { passed, failed, skipped, flaky, total: passed + failed + skipped + flaky }
+  const summary = { passed, failed, skipped, flaky, total: passed + failed + skipped + flaky }
+  if (!projects) return summary
+  // Story 82.3 review P1: Playwright fails a run only when the TOTAL is zero, so
+  // a requested project that selected nothing would pass unnoticed.
+  const seen = new Set()
+  const walk = (suite) => {
+    for (const spec of suite.specs ?? []) {
+      for (const test of spec.tests ?? []) seen.add(test.projectName)
+    }
+    for (const child of suite.suites ?? []) walk(child)
+  }
+  for (const suite of report.suites ?? []) walk(suite)
+  return { ...summary, emptyProjects: projects.filter((name) => !seen.has(name)).length }
 }
 
 /**
@@ -217,6 +229,7 @@ export function verdict({
     if (!ran) reasons.push('nothing ran')
     if (summary.failed > 0) reasons.push(`${summary.failed} failed`)
     if (summary.flaky > 0) reasons.push(`${summary.flaky} flaky`)
+    if (summary.emptyProjects > 0) reasons.push(`${summary.emptyProjects} project(s) ran no tests`)
   }
   if (exitCode === null && !timedOut && !signal && !interrupted && !spawnError) {
     reasons.push('no exit code')
@@ -283,6 +296,10 @@ export function spawnEnv(processEnv, gateEnv) {
   return { ...processEnv, ...gateEnv }
 }
 
+/** The Playwright projects `pnpm gates` always runs, and the ones `--layout` adds. */
+const E2E_FLOW_PROJECTS = ['chromium', 'chromium-paid', 'chromium-prod']
+const E2E_LAYOUT_PROJECTS = ['chromium-layout', 'chromium-paid-layout']
+
 /**
  * The gate table. Phase A runs one step at a time and WRITES the tree
  * (`packages/*\/dist`, `apps/web/dist`, `src/routeTree.gen.ts`); phase B runs
@@ -301,11 +318,13 @@ export function spawnEnv(processEnv, gateEnv) {
  * machine-readable reporters added (they change what is printed, not what runs).
  * No gate sets NODE_OPTIONS, so an ambient one reaches every gate unchanged.
  *
- * @param {{root: string, runDir: string, typeCheckScripts: Record<string, string>}} options
+ * @param {{root: string, runDir: string, typeCheckScripts: Record<string, string>, layout?: boolean}} options
  *   `typeCheckScripts` maps a package dir (relative to root) to its `type-check` script.
+ *   `layout` adds the `@layout` Playwright projects to the e2e gate (story 82.3).
  */
-export function buildGates({ root, runDir, typeCheckScripts }) {
+export function buildGates({ root, runDir, typeCheckScripts, layout = false }) {
   const web = join(root, 'apps/web')
+  const e2eProjects = [...E2E_FLOW_PROJECTS, ...(layout ? E2E_LAYOUT_PROJECTS : [])]
   return [
     {
       id: 'build-pkgs',
@@ -399,7 +418,10 @@ export function buildGates({ root, runDir, typeCheckScripts }) {
       ports: [5173, 5174, 5175],
       cwd: web,
       command: './node_modules/.bin/playwright',
-      args: ['test', '--reporter=line,json'],
+      // Story 82.3 (D2): the `@layout` projects (playwright.config.ts) run on every
+      // CI push and here only with `--layout`. ONE Playwright run either way: two
+      // runs would race for the same three server ports.
+      args: ['test', '--reporter=line,json', ...e2eProjects.map((name) => `--project=${name}`)],
       env: {
         PLAYWRIGHT_JSON_OUTPUT_FILE: join(runDir, 'e2e.json'),
         // An ambient PLAYWRIGHT_BASE_URL drops all three webServers and the
@@ -408,7 +430,10 @@ export function buildGates({ root, runDir, typeCheckScripts }) {
         PLAYWRIGHT_BASE_URL: '',
       },
       timeoutMs: 20 * MINUTE,
-      parse: { from: join(runDir, 'e2e.json'), fn: parsePlaywrightJson },
+      parse: {
+        from: join(runDir, 'e2e.json'),
+        fn: (text) => parsePlaywrightJson(text, e2eProjects),
+      },
     },
   ]
 }
@@ -457,9 +482,11 @@ export function typeCheckScriptsOf(packages) {
   )
 }
 
-export const USAGE = `Usage: pnpm gates [--sequential] [--only <id,id,...>]
+export const USAGE = `Usage: pnpm gates [--sequential] [--layout] [--only <id,id,...>]
 
   --sequential   run phase B one gate (and one tsc program) at a time
+  --layout       also run the @layout e2e tests (CI always does). Required for
+                 any story that changes a .tsx or .css file (story 82.3).
   --only         run only these gates. types and e2e need the build, so they
                  bring phase A (build-pkgs, build-web, bundle) with them.
 
@@ -470,10 +497,10 @@ Gates: build-pkgs, build-web, bundle (phase A); types, biome, core, db, web, e2e
  * repeated `--only` (the second would otherwise silently replace the first).
  *
  * @param {string[]} argv
- * @returns {{sequential: boolean, only: string[]|null, help: boolean}}
+ * @returns {{sequential: boolean, only: string[]|null, help: boolean, layout: boolean}}
  */
 export function parseArgs(argv) {
-  const options = { sequential: false, only: null, help: false }
+  const options = { sequential: false, only: null, help: false, layout: false }
   const setOnly = (value) => {
     if (options.only) throw new Error('--only given twice; list every gate in one --only')
     options.only = (value ?? '').split(',').filter(Boolean)
@@ -482,12 +509,40 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--sequential') options.sequential = true
+    else if (arg === '--layout') options.layout = true
     else if (arg === '--only') setOnly(argv[++i])
     else if (arg.startsWith('--only=')) setOnly(arg.slice('--only='.length))
     else if (arg === '--help' || arg === '-h') options.help = true
     else throw new Error(`Unknown argument: ${arg}`)
   }
+  if (options.layout && options.only && !options.only.includes('e2e')) {
+    throw new Error('--layout needs the e2e gate; add e2e to --only')
+  }
   return options
+}
+
+/**
+ * The lines that say whether the `@layout` half ran (story 82.3 review P4).
+ * Printed with the mode and again under the final verdict, so a GREEN run
+ * without `--layout` never reads as a full e2e pass. `changedFiles` are the
+ * working tree's changes (tracked + untracked); a `.tsx`/`.css` among them
+ * means this story must run `--layout` (project-context.md). A warning, not a
+ * failure: CI runs the layout projects on every push regardless.
+ *
+ * @param {{layout: boolean, e2e: boolean, changedFiles: string[]}} options
+ * @returns {string[]}
+ */
+export function layoutNotice({ layout, e2e, changedFiles }) {
+  if (!e2e) return []
+  if (layout) return ['e2e ran WITH the @layout tests.']
+  const lines = ['e2e ran WITHOUT the @layout tests (CI runs them).']
+  const styled = changedFiles.filter((file) => /\.(tsx|css)$/.test(file))
+  if (styled.length > 0) {
+    lines.push(
+      `⚠ ${styled.length} changed .tsx/.css file(s): this story must run \`pnpm gates --layout\` (project-context.md).`
+    )
+  }
+  return lines
 }
 
 /**

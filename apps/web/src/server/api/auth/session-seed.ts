@@ -33,7 +33,7 @@
  */
 
 import { createServerFn } from '@tanstack/react-start'
-import type { SessionSeed } from '../../../context/session-seed'
+import { SIGNED_OUT_SEED, type SessionSeed } from '../../../context/session-seed'
 
 export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
   async (): Promise<SessionSeed | null> => {
@@ -116,12 +116,7 @@ export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
       }
 
       // Authoritative signed-out: no / invalid session cookie. Resolved, fail-closed.
-      return {
-        isAuthenticated: false,
-        userId: null,
-        email: null,
-        subscriptionStatus: null,
-      }
+      return { ...SIGNED_OUT_SEED }
     } catch (error) {
       // Unexpected throw (e.g. import/runtime failure) — unverified; the client
       // will re-check and self-heal. Log for observability so "why am I seeing

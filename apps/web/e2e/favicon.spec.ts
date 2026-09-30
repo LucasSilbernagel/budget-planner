@@ -5,6 +5,10 @@ import { expect, test } from '@playwright/test'
  * document head and that every referenced asset actually resolves as an image —
  * i.e. no dead <link> references ship. The 512 maskable PNG is intentionally not
  * linked here; it belongs to the PWA manifest (story 7-1).
+ *
+ * Stays e2e (story 82.3, FR135): the claim is what the RUNNING server serves
+ * (links in the served head, assets answered with an image type); the asset
+ * files themselves are pinned by `src/__tests__/favicon-assets.test.ts`.
  */
 test.describe('favicon', () => {
   test('document head links the refreshed favicon set', async ({ page }) => {

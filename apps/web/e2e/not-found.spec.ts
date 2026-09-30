@@ -11,6 +11,9 @@ import { expect, test } from '@playwright/test'
  *
  * Requires browser binaries:
  *   pnpm --filter @budget-planner/web exec playwright install chromium
+ *
+ * Stays e2e (story 82.3, FR135): the claim is the real HTTP 404 status and the
+ * branded page the RUNNING server returns for an unknown route.
  */
 
 const UNKNOWN_ROUTE = '/this-route-does-not-exist'
@@ -43,20 +46,24 @@ test.describe('Not-found page (story 6-4)', () => {
     expect(response?.status()).toBe(404)
   })
 
-  test('fits a 320px viewport without horizontal overflow', async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto(UNKNOWN_ROUTE)
-    await expect(page.getByRole('heading', { level: 1, name: /page not found/i })).toBeVisible()
+  test(
+    'fits a 320px viewport without horizontal overflow',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 720 })
+      await page.goto(UNKNOWN_ROUTE)
+      await expect(page.getByRole('heading', { level: 1, name: /page not found/i })).toBeVisible()
 
-    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }))
-    expect(
-      scrollWidth,
-      `404 overflows horizontally: scrollWidth ${scrollWidth} > clientWidth ${clientWidth}`
-    ).toBeLessThanOrEqual(clientWidth)
-  })
+      const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }))
+      expect(
+        scrollWidth,
+        `404 overflows horizontally: scrollWidth ${scrollWidth} > clientWidth ${clientWidth}`
+      ).toBeLessThanOrEqual(clientWidth)
+    }
+  )
 
   test('"Go home" navigates back to the dashboard', async ({ page }) => {
     await page.goto(UNKNOWN_ROUTE)

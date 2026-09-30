@@ -105,62 +105,68 @@ const VIEWPORTS = [
 ] as const
 
 for (const viewport of VIEWPORTS) {
-  test(`every /balance summary figure fits its card at ${viewport.width}px`, async ({ page }) => {
-    await page.setViewportSize(viewport)
+  test(
+    `every /balance summary figure fits its card at ${viewport.width}px`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize(viewport)
+      await page.addInitScript(seedWideFigures)
+      await page.goto('/balance')
+      await page.waitForLoadState('networkidle')
+
+      // Prove the fixture actually landed — a page showing $0.00 everywhere would
+      // pass every width assertion below while testing nothing.
+      await expect(page.getByTestId('stat-net-worth')).toHaveText('-$127,000.00')
+      await expect(page.getByTestId('stat-total-assets')).toHaveText('$127,000.00')
+
+      // Collect EVERY violation before asserting. Failing at the first one hides
+      // how widespread the problem is, which is the difference between "one card
+      // is 3px short" and "the whole row clips".
+      const violations: string[] = []
+      for (const testId of FIGURE_TESTIDS) {
+        const box = await page.getByTestId(testId).evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          text: el.textContent,
+        }))
+        if (box.scrollWidth > box.clientWidth) {
+          violations.push(
+            `${testId}: needs ${box.scrollWidth}px, has ${box.clientWidth}px for "${box.text}"`
+          )
+        }
+      }
+
+      expect(
+        violations,
+        `figures clip at ${viewport.width}px:\n  ${violations.join('\n  ')}`
+      ).toEqual([])
+    }
+  )
+}
+
+test(
+  'POSITIVE CONTROL: the clipping check fails when a figure genuinely overflows',
+  { tag: '@layout' },
+  async ({ page }) => {
+    // ⚠️ Without this, a green file above proves only that the assertions RAN.
+    // Force a figure far wider than any card can hold and confirm the exact
+    // comparison used above actually reports the overflow. If this test ever goes
+    // green, the check is measuring something that cannot fail and the five tests
+    // above are worthless.
+    await page.setViewportSize({ width: 320, height: 900 })
     await page.addInitScript(seedWideFigures)
     await page.goto('/balance')
     await page.waitForLoadState('networkidle')
 
-    // Prove the fixture actually landed — a page showing $0.00 everywhere would
-    // pass every width assertion below while testing nothing.
-    await expect(page.getByTestId('stat-net-worth')).toHaveText('-$127,000.00')
-    await expect(page.getByTestId('stat-total-assets')).toHaveText('$127,000.00')
-
-    // Collect EVERY violation before asserting. Failing at the first one hides
-    // how widespread the problem is, which is the difference between "one card
-    // is 3px short" and "the whole row clips".
-    const violations: string[] = []
-    for (const testId of FIGURE_TESTIDS) {
-      const box = await page.getByTestId(testId).evaluate((el) => ({
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-        text: el.textContent,
-      }))
-      if (box.scrollWidth > box.clientWidth) {
-        violations.push(
-          `${testId}: needs ${box.scrollWidth}px, has ${box.clientWidth}px for "${box.text}"`
-        )
-      }
-    }
+    const box = await page.getByTestId('stat-net-worth').evaluate((el) => {
+      // Same no-wrap, same font — only the content is absurd.
+      el.textContent = '-$127,000,000,000,000,000.00'
+      return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
+    })
 
     expect(
-      violations,
-      `figures clip at ${viewport.width}px:\n  ${violations.join('\n  ')}`
-    ).toEqual([])
-  })
-}
-
-test('POSITIVE CONTROL: the clipping check fails when a figure genuinely overflows', async ({
-  page,
-}) => {
-  // ⚠️ Without this, a green file above proves only that the assertions RAN.
-  // Force a figure far wider than any card can hold and confirm the exact
-  // comparison used above actually reports the overflow. If this test ever goes
-  // green, the check is measuring something that cannot fail and the five tests
-  // above are worthless.
-  await page.setViewportSize({ width: 320, height: 900 })
-  await page.addInitScript(seedWideFigures)
-  await page.goto('/balance')
-  await page.waitForLoadState('networkidle')
-
-  const box = await page.getByTestId('stat-net-worth').evaluate((el) => {
-    // Same no-wrap, same font — only the content is absurd.
-    el.textContent = '-$127,000,000,000,000,000.00'
-    return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
-  })
-
-  expect(
-    box.scrollWidth,
-    'the clipping detector did not fire on a deliberately over-wide figure'
-  ).toBeGreaterThan(box.clientWidth)
-})
+      box.scrollWidth,
+      'the clipping detector did not fire on a deliberately over-wide figure'
+    ).toBeGreaterThan(box.clientWidth)
+  }
+)

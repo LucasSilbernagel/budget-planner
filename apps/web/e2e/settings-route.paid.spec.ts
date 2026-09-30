@@ -63,16 +63,18 @@ test.describe('signed in, JavaScript OFF (AC-6)', () => {
   // (`nav-responsive-css.spec.ts`), measured by
   // `nav-intrinsic-width.measure.clusters.paid.spec.ts`. This is the bound:
   // one header line at EVERY width, not just no overlap.
-  test('the gear never makes the cluster cover the nav, overflow, or wrap, 640-1400px', async ({
-    page,
-  }) => {
-    test.setTimeout(180_000)
-    await page.setViewportSize({ width: 1280, height: 800 })
-    await page.goto('/income')
-    await expect(settingsOutsideNav(page)).toHaveCount(1)
-    expect(await sweepForOverlap(page), 'the JS-off cluster covers the nav').toEqual([])
-    expect(await sweepHeaderRow(page), 'the JS-off header row broke').toEqual([])
-  })
+  test(
+    'the gear never makes the cluster cover the nav, overflow, or wrap, 640-1400px',
+    { tag: '@layout' },
+    async ({ page }) => {
+      test.setTimeout(180_000)
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.goto('/income')
+      await expect(settingsOutsideNav(page)).toHaveCount(1)
+      expect(await sweepForOverlap(page), 'the JS-off cluster covers the nav').toEqual([])
+      expect(await sweepHeaderRow(page), 'the JS-off header row broke').toEqual([])
+    }
+  )
 })
 
 test.describe('signed in, JavaScript ON (AC-6)', () => {

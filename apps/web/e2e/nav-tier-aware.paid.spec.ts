@@ -167,88 +167,96 @@ test.describe('the paid nav really is the paid nav', () => {
 test.describe('the paid desktop row (story 59.2)', () => {
   // Story 69.3 (FR110): at `lg` and up the paid row is SEVEN items (Balances and
   // Retirement join it, More stays for the premium four). Five below `lg`.
-  test('is ONE row of seven items at 1280px, with no overflow', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 })
-    await gotoNav(page)
-
-    const measured = await page.evaluate((selector) => {
-      const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
-      if (!list) return null
-      // The ROW ITEMS. `list.querySelectorAll('a')` would also count the
-      // rows inside the closed More panel, whose tops are not in the row.
-      // RENDERED ones only (story 69.3): a `display:none` item's top is 0.
-      const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
-        (li) => li.getClientRects().length > 0
-      )
-      // Distinct top offsets = wrapped row count. Reading `height` alone cannot
-      // distinguish one tall row from two short ones.
-      const rows = new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))
-      return {
-        rowCount: rows.size,
-        items: items.length,
-        listHeight: Math.round(list.getBoundingClientRect().height),
-        listOverflow: list.scrollWidth - list.clientWidth,
-        documentOverflow:
-          document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      }
-    }, NAV)
-
-    expect(measured, 'nav list not found').not.toBeNull()
-    const m = measured as NonNullable<typeof measured>
-
-    // eslint-disable-next-line no-console -- the measurement IS the deliverable
-    console.log('[59.2] 1280px paid row:', JSON.stringify(m))
-
-    // The precondition this is the paid nav, not the free one: 12 anchors in the
-    // DOM (10 destinations + the two lg row copies, story 69.3; 11 until story
-    // 69.2).
-    expect(await anchorCount(page), 'not measuring the paid nav').toBe(12)
-    expect(m.items, 'the paid row is not seven items at lg').toBe(7)
-    // A PIN at 1, tightened from the pre-59.2 ceiling of 2 — the direction that
-    // ceiling's own comment asked for ("a pass at 1 row is an improvement").
-    expect(m.rowCount, 'the paid desktop nav wraps').toBe(1)
-    // 52px is the one-row desktop nav; 92px was the two-row one.
-    expect(m.listHeight, 'the paid desktop nav is not one row tall').toBe(52)
-    expect(m.listOverflow, 'the nav list overflows its own box at 1280px').toBeLessThanOrEqual(0)
-    expect(m.documentOverflow, 'the document is wider than 1280px').toBeLessThanOrEqual(0)
-  })
-
-  // The narrow end of the desktop cascade, where the signed-out fit is
-  // tightest (headroom in `nav-responsive-css.spec.ts`'s record).
-  for (const width of [640, 700, 760]) {
-    test(`the paid row is one row inside a ${width}px viewport, with no overflow`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width, height: 720 })
+  test(
+    'is ONE row of seven items at 1280px, with no overflow',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 720 })
       await gotoNav(page)
 
-      const m = await page.evaluate((selector) => {
+      const measured = await page.evaluate((selector) => {
         const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
         if (!list) return null
-        // RENDERED items only (story 69.3): see the 1280px test above.
+        // The ROW ITEMS. `list.querySelectorAll('a')` would also count the
+        // rows inside the closed More panel, whose tops are not in the row.
+        // RENDERED ones only (story 69.3): a `display:none` item's top is 0.
         const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
           (li) => li.getClientRects().length > 0
         )
+        // Distinct top offsets = wrapped row count. Reading `height` alone cannot
+        // distinguish one tall row from two short ones.
+        const rows = new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))
         return {
-          rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
+          rowCount: rows.size,
+          items: items.length,
+          listHeight: Math.round(list.getBoundingClientRect().height),
           listOverflow: list.scrollWidth - list.clientWidth,
-          widestItemRight: Math.max(...items.map((li) => li.getBoundingClientRect().right)),
-          innerWidth: globalThis.innerWidth,
           documentOverflow:
             document.documentElement.scrollWidth - document.documentElement.clientWidth,
         }
       }, NAV)
 
-      expect(m).not.toBeNull()
-      const r = m as NonNullable<typeof m>
-      expect(r.rows, `the paid row wraps at ${width}px`).toBe(1)
-      expect(r.listOverflow, `the nav list overflows its box at ${width}px`).toBeLessThanOrEqual(0)
-      expect(
-        r.widestItemRight,
-        `a row item paints past the ${width}px viewport edge`
-      ).toBeLessThanOrEqual(r.innerWidth)
-      expect(r.documentOverflow, `the document is wider than ${width}px`).toBeLessThanOrEqual(0)
-    })
+      expect(measured, 'nav list not found').not.toBeNull()
+      const m = measured as NonNullable<typeof measured>
+
+      // eslint-disable-next-line no-console -- the measurement IS the deliverable
+      console.log('[59.2] 1280px paid row:', JSON.stringify(m))
+
+      // The precondition this is the paid nav, not the free one: 12 anchors in the
+      // DOM (10 destinations + the two lg row copies, story 69.3; 11 until story
+      // 69.2).
+      expect(await anchorCount(page), 'not measuring the paid nav').toBe(12)
+      expect(m.items, 'the paid row is not seven items at lg').toBe(7)
+      // A PIN at 1, tightened from the pre-59.2 ceiling of 2 — the direction that
+      // ceiling's own comment asked for ("a pass at 1 row is an improvement").
+      expect(m.rowCount, 'the paid desktop nav wraps').toBe(1)
+      // 52px is the one-row desktop nav; 92px was the two-row one.
+      expect(m.listHeight, 'the paid desktop nav is not one row tall').toBe(52)
+      expect(m.listOverflow, 'the nav list overflows its own box at 1280px').toBeLessThanOrEqual(0)
+      expect(m.documentOverflow, 'the document is wider than 1280px').toBeLessThanOrEqual(0)
+    }
+  )
+
+  // The narrow end of the desktop cascade, where the signed-out fit is
+  // tightest (headroom in `nav-responsive-css.spec.ts`'s record).
+  for (const width of [640, 700, 760]) {
+    test(
+      `the paid row is one row inside a ${width}px viewport, with no overflow`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 720 })
+        await gotoNav(page)
+
+        const m = await page.evaluate((selector) => {
+          const list = document.querySelector(`${selector} > ul`) as HTMLElement | null
+          if (!list) return null
+          // RENDERED items only (story 69.3): see the 1280px test above.
+          const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
+            (li) => li.getClientRects().length > 0
+          )
+          return {
+            rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
+            listOverflow: list.scrollWidth - list.clientWidth,
+            widestItemRight: Math.max(...items.map((li) => li.getBoundingClientRect().right)),
+            innerWidth: globalThis.innerWidth,
+            documentOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          }
+        }, NAV)
+
+        expect(m).not.toBeNull()
+        const r = m as NonNullable<typeof m>
+        expect(r.rows, `the paid row wraps at ${width}px`).toBe(1)
+        expect(r.listOverflow, `the nav list overflows its box at ${width}px`).toBeLessThanOrEqual(
+          0
+        )
+        expect(
+          r.widestItemRight,
+          `a row item paints past the ${width}px viewport edge`
+        ).toBeLessThanOrEqual(r.innerWidth)
+        expect(r.documentOverflow, `the document is wider than ${width}px`).toBeLessThanOrEqual(0)
+      }
+    )
   }
 })
 
@@ -288,53 +296,59 @@ test.describe('the paid desktop row (story 59.2)', () => {
  */
 test.describe('the More sheet at 6 rows (AC-5)', () => {
   for (const width of [320, 360, 390, 412]) {
-    test(`every row is on-screen and reachable at ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 640 })
-      await gotoNav(page)
-      await page.locator(MORE_TRIGGER).click()
+    test(
+      `every row is on-screen and reachable at ${width}px`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 640 })
+        await gotoNav(page)
+        await page.locator(MORE_TRIGGER).click()
 
-      const m = await page.evaluate(
-        (sel) => {
-          const sheet = document.querySelector(sel.sheet) as HTMLElement | null
-          if (!sheet) return null
-          const rows = [...sheet.querySelectorAll(':scope > li > a')] as HTMLElement[]
-          const box = sheet.getBoundingClientRect()
-          return {
-            rows: rows.length,
-            sheetTop: Math.round(box.top),
-            sheetHeight: Math.round(box.height),
-            scrollable: sheet.scrollHeight > sheet.clientHeight,
-            // Horizontal absorption: `overflow-y-auto` makes this a scroll
-            // container on BOTH axes, so an over-wide label would be swallowed
-            // silently rather than overflowing visibly.
-            overflowX: sheet.scrollWidth - sheet.clientWidth,
-            // The LAST row is the one the cap strands if it is wrong.
-            lastRowBottom: Math.round(rows[rows.length - 1].getBoundingClientRect().bottom),
-            minRowHeight: Math.min(
-              ...rows.map((r) => Math.round(r.getBoundingClientRect().height))
-            ),
-            viewportHeight: globalThis.innerHeight,
-          }
-        },
-        { sheet: SHEET }
-      )
+        const m = await page.evaluate(
+          (sel) => {
+            const sheet = document.querySelector(sel.sheet) as HTMLElement | null
+            if (!sheet) return null
+            const rows = [...sheet.querySelectorAll(':scope > li > a')] as HTMLElement[]
+            const box = sheet.getBoundingClientRect()
+            return {
+              rows: rows.length,
+              sheetTop: Math.round(box.top),
+              sheetHeight: Math.round(box.height),
+              scrollable: sheet.scrollHeight > sheet.clientHeight,
+              // Horizontal absorption: `overflow-y-auto` makes this a scroll
+              // container on BOTH axes, so an over-wide label would be swallowed
+              // silently rather than overflowing visibly.
+              overflowX: sheet.scrollWidth - sheet.clientWidth,
+              // The LAST row is the one the cap strands if it is wrong.
+              lastRowBottom: Math.round(rows[rows.length - 1].getBoundingClientRect().bottom),
+              minRowHeight: Math.min(
+                ...rows.map((r) => Math.round(r.getBoundingClientRect().height))
+              ),
+              viewportHeight: globalThis.innerHeight,
+            }
+          },
+          { sheet: SHEET }
+        )
 
-      expect(m).not.toBeNull()
-      const r = m as NonNullable<typeof m>
+        expect(m).not.toBeNull()
+        const r = m as NonNullable<typeof m>
 
-      // eslint-disable-next-line no-console -- the measurement IS the deliverable
-      console.log(`[58.1 AC-5] ${width}px sheet:`, JSON.stringify(r))
+        // eslint-disable-next-line no-console -- the measurement IS the deliverable
+        console.log(`[58.1 AC-5] ${width}px sheet:`, JSON.stringify(r))
 
-      expect(r.rows, 'not measuring the paid sheet').toBe(6)
-      // The cap's whole job: the panel's top edge stays on screen.
-      expect(r.sheetTop, 'the sheet has grown off the top of the screen').toBeGreaterThanOrEqual(0)
-      expect(r.lastRowBottom, 'the last sheet row paints below the viewport').toBeLessThanOrEqual(
-        r.viewportHeight
-      )
-      expect(r.overflowX, 'the sheet absorbed horizontal overflow').toBeLessThanOrEqual(0)
-      // Every row keeps a real 44px touch target at 6 rows, not just at 2.
-      expect(r.minRowHeight, 'a sheet row fell below the 44px target').toBeGreaterThanOrEqual(44)
-    })
+        expect(r.rows, 'not measuring the paid sheet').toBe(6)
+        // The cap's whole job: the panel's top edge stays on screen.
+        expect(r.sheetTop, 'the sheet has grown off the top of the screen').toBeGreaterThanOrEqual(
+          0
+        )
+        expect(r.lastRowBottom, 'the last sheet row paints below the viewport').toBeLessThanOrEqual(
+          r.viewportHeight
+        )
+        expect(r.overflowX, 'the sheet absorbed horizontal overflow').toBeLessThanOrEqual(0)
+        // Every row keeps a real 44px touch target at 6 rows, not just at 2.
+        expect(r.minRowHeight, 'a sheet row fell below the 44px target').toBeGreaterThanOrEqual(44)
+      }
+    )
   }
 
   /**
@@ -359,43 +373,47 @@ test.describe('the More sheet at 6 rows (AC-5)', () => {
     [320, 360],
     [568, 320],
   ]) {
-    test(`scrolls rather than stranding rows at ${width}x${height}`, async ({ page }) => {
-      await page.setViewportSize({ width, height })
-      await gotoNav(page)
-      await page.locator(MORE_TRIGGER).click()
+    test(
+      `scrolls rather than stranding rows at ${width}x${height}`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height })
+        await gotoNav(page)
+        await page.locator(MORE_TRIGGER).click()
 
-      const sheet = page.locator(SHEET)
-      const rows = sheet.locator(':scope > li > a')
+        const sheet = page.locator(SHEET)
+        const rows = sheet.locator(':scope > li > a')
 
-      const m = await sheet.evaluate((el) => ({
-        scrollHeight: el.scrollHeight,
-        clientHeight: el.clientHeight,
-        top: Math.round(el.getBoundingClientRect().top),
-        overflowY: globalThis.getComputedStyle(el).overflowY,
-      }))
+        const m = await sheet.evaluate((el) => ({
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+          top: Math.round(el.getBoundingClientRect().top),
+          overflowY: globalThis.getComputedStyle(el).overflowY,
+        }))
 
-      // eslint-disable-next-line no-console -- the measurement IS the deliverable
-      console.log(`[58.1 AC-5] ${width}x${height} sheet:`, JSON.stringify(m))
+        // eslint-disable-next-line no-console -- the measurement IS the deliverable
+        console.log(`[58.1 AC-5] ${width}x${height} sheet:`, JSON.stringify(m))
 
-      // THE PRECONDITION. Without it the rest passes on a sheet that never
-      // overflowed, which is exactly how this test was vacuous before.
-      expect(
-        m.scrollHeight,
-        `the sheet does not overflow at ${width}x${height} — this test proves nothing here, pick a shorter viewport`
-      ).toBeGreaterThan(m.clientHeight)
-      expect(m.overflowY, 'the sheet is not a scroll container').toBe('auto')
-      // The cap's job: the panel's top edge stays on screen instead of growing
-      // off the top, where page scrolling cannot reach it.
-      expect(m.top, 'the sheet has grown off the top of the screen').toBeGreaterThanOrEqual(0)
+        // THE PRECONDITION. Without it the rest passes on a sheet that never
+        // overflowed, which is exactly how this test was vacuous before.
+        expect(
+          m.scrollHeight,
+          `the sheet does not overflow at ${width}x${height} — this test proves nothing here, pick a shorter viewport`
+        ).toBeGreaterThan(m.clientHeight)
+        expect(m.overflowY, 'the sheet is not a scroll container').toBe('auto')
+        // The cap's job: the panel's top edge stays on screen instead of growing
+        // off the top, where page scrolling cannot reach it.
+        expect(m.top, 'the sheet has grown off the top of the screen').toBeGreaterThanOrEqual(0)
 
-      // And with real overflow, both ends are still reachable BY SCROLLING.
-      const first = rows.first()
-      const last = rows.last()
-      await last.scrollIntoViewIfNeeded()
-      await expect(last).toBeInViewport()
-      await first.scrollIntoViewIfNeeded()
-      await expect(first).toBeInViewport()
-    })
+        // And with real overflow, both ends are still reachable BY SCROLLING.
+        const first = rows.first()
+        const last = rows.last()
+        await last.scrollIntoViewIfNeeded()
+        await expect(last).toBeInViewport()
+        await first.scrollIntoViewIfNeeded()
+        await expect(first).toBeInViewport()
+      }
+    )
   }
 
   /**
@@ -410,63 +428,67 @@ test.describe('the More sheet at 6 rows (AC-5)', () => {
    * `toBeVisible()` and geometry assertions are both blind to occlusion, so the
    * probe has to be `elementFromPoint` per row.
    */
-  test('every row of the 6-row sheet stays tappable under the InstallPrompt banner', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 640 })
-    await gotoNav(page)
+  test(
+    'every row of the 6-row sheet stays tappable under the InstallPrompt banner',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 640 })
+      await gotoNav(page)
 
-    // ⚠️ Fire the REAL `beforeinstallprompt` so the REAL `InstallPrompt` renders,
-    // exactly as `global-nav.spec.ts` does. A hand-built stand-in appended to
-    // `document.body` is not equivalent and this test failed against one: the
-    // nav and the banner are BOTH `z-50`, so the tie is broken by DOM order, and
-    // `__root.tsx` renders `<InstallPrompt/>` (`:195`) BEFORE `<GlobalNav/>`
-    // (`:266`) precisely so the nav wins it. Appending to `body` puts the
-    // stand-in after the nav and inverts that — manufacturing an occlusion the
-    // real app does not have.
-    await page.evaluate(() => {
-      const event = new Event('beforeinstallprompt') as Event & {
-        prompt?: () => Promise<void>
-        userChoice?: Promise<{ outcome: string; platform: string }>
+      // ⚠️ Fire the REAL `beforeinstallprompt` so the REAL `InstallPrompt` renders,
+      // exactly as `global-nav.spec.ts` does. A hand-built stand-in appended to
+      // `document.body` is not equivalent and this test failed against one: the
+      // nav and the banner are BOTH `z-50`, so the tie is broken by DOM order, and
+      // `__root.tsx` renders `<InstallPrompt/>` (`:195`) BEFORE `<GlobalNav/>`
+      // (`:266`) precisely so the nav wins it. Appending to `body` puts the
+      // stand-in after the nav and inverts that — manufacturing an occlusion the
+      // real app does not have.
+      await page.evaluate(() => {
+        const event = new Event('beforeinstallprompt') as Event & {
+          prompt?: () => Promise<void>
+          userChoice?: Promise<{ outcome: string; platform: string }>
+        }
+        event.prompt = async () => {}
+        event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' })
+        globalThis.dispatchEvent(event)
+      })
+      await expect(page.getByRole('region', { name: /install/i })).toBeVisible()
+
+      await page.locator(MORE_TRIGGER).click()
+
+      const probe = await page.evaluate((sel) => {
+        const sheet = document.querySelector(sel) as HTMLElement | null
+        const bannerEl = document.querySelector('section[aria-label*="Install"]')
+        if (!sheet || !bannerEl) return null
+        const b = bannerEl.getBoundingClientRect()
+        const s = sheet.getBoundingClientRect()
+        return {
+          // Anti-vacuity: at 7 rows the sheet is far taller than at 3, but if the
+          // two do not actually overlap this proves nothing and must be re-tuned
+          // rather than left green.
+          overlaps: s.top < b.bottom && b.top < s.bottom,
+          rows: [...sheet.querySelectorAll(':scope > li > a')].map((a) => {
+            const r = a.getBoundingClientRect()
+            const hit = document.elementFromPoint(
+              Math.round(r.x + r.width / 2),
+              Math.round(r.y + r.height / 2)
+            )
+            return { label: a.textContent?.trim() ?? '', hitsSelf: a.contains(hit) || a === hit }
+          }),
+        }
+      }, SHEET)
+
+      expect(probe, 'nav/sheet/banner not all present').not.toBeNull()
+      const p = probe as NonNullable<typeof probe>
+      expect(p.overlaps, 'sheet and banner do not overlap — this test proves nothing here').toBe(
+        true
+      )
+      expect(p.rows).toHaveLength(6)
+      for (const row of p.rows) {
+        expect(row.hitsSelf, `"${row.label}" is occluded — a tap there lands elsewhere`).toBe(true)
       }
-      event.prompt = async () => {}
-      event.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' })
-      globalThis.dispatchEvent(event)
-    })
-    await expect(page.getByRole('region', { name: /install/i })).toBeVisible()
-
-    await page.locator(MORE_TRIGGER).click()
-
-    const probe = await page.evaluate((sel) => {
-      const sheet = document.querySelector(sel) as HTMLElement | null
-      const bannerEl = document.querySelector('section[aria-label*="Install"]')
-      if (!sheet || !bannerEl) return null
-      const b = bannerEl.getBoundingClientRect()
-      const s = sheet.getBoundingClientRect()
-      return {
-        // Anti-vacuity: at 7 rows the sheet is far taller than at 3, but if the
-        // two do not actually overlap this proves nothing and must be re-tuned
-        // rather than left green.
-        overlaps: s.top < b.bottom && b.top < s.bottom,
-        rows: [...sheet.querySelectorAll(':scope > li > a')].map((a) => {
-          const r = a.getBoundingClientRect()
-          const hit = document.elementFromPoint(
-            Math.round(r.x + r.width / 2),
-            Math.round(r.y + r.height / 2)
-          )
-          return { label: a.textContent?.trim() ?? '', hitsSelf: a.contains(hit) || a === hit }
-        }),
-      }
-    }, SHEET)
-
-    expect(probe, 'nav/sheet/banner not all present').not.toBeNull()
-    const p = probe as NonNullable<typeof probe>
-    expect(p.overlaps, 'sheet and banner do not overlap — this test proves nothing here').toBe(true)
-    expect(p.rows).toHaveLength(6)
-    for (const row of p.rows) {
-      expect(row.hitsSelf, `"${row.label}" is occluded — a tap there lands elsewhere`).toBe(true)
     }
-  })
+  )
 })
 
 /**

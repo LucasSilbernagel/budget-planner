@@ -63,202 +63,214 @@ async function openNarrow(page: Page, route: string): Promise<void> {
 
 test.describe('Story 42.3 — value and tag on one line at 320px', () => {
   // AC-1: the headline defect. Pre-fix these read 2 lines / different lines.
-  test('AC-1 the Monthly Allocation amount and its pill share one line', async ({ page }) => {
-    await openNarrow(page, '/savings')
+  test(
+    'AC-1 the Monthly Allocation amount and its pill share one line',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await openNarrow(page, '/savings')
 
-    // ⚠️ Ids are hardcoded, so assert the fixture still has exactly these rows —
-    // otherwise a third seeded row would be silently unchecked, which is the
-    // "[0] indexing" hole in a different costume.
-    //
-    // Story 72.1 (reverses 64.1 / FR98): BOTH seeded rows carry a pill again —
-    // `sav-1` (a manual goal) and `sav-2` (a target-less account, automatic).
-    // 64.1 expected only `sav-1` here because it gave accounts a dash and no pill.
-    const rowIds = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('[data-testid^="savings-allocation-mode-"]')).map((el) =>
-        (el.getAttribute('data-testid') ?? '').replace('savings-allocation-mode-', '')
+      // ⚠️ Ids are hardcoded, so assert the fixture still has exactly these rows —
+      // otherwise a third seeded row would be silently unchecked, which is the
+      // "[0] indexing" hole in a different costume.
+      //
+      // Story 72.1 (reverses 64.1 / FR98): BOTH seeded rows carry a pill again —
+      // `sav-1` (a manual goal) and `sav-2` (a target-less account, automatic).
+      // 64.1 expected only `sav-1` here because it gave accounts a dash and no pill.
+      const rowIds = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('[data-testid^="savings-allocation-mode-"]')).map(
+          (el) => (el.getAttribute('data-testid') ?? '').replace('savings-allocation-mode-', '')
+        )
       )
-    )
-    expect(rowIds.sort()).toEqual(['sav-1', 'sav-2'])
+      expect(rowIds.sort()).toEqual(['sav-1', 'sav-2'])
 
-    // The account row, pinned at 320px: it shows a real figure and an Auto pill,
-    // and its amount keeps the nowrap class token. `sav-2` is the ONLY automatic
-    // row (`sav-1` is manual), so it receives the WHOLE pool. That figure depends
-    // on the seeded income, expenses and contributions, so it is not hard-coded:
-    // it is compared against the pool the leftover summary shows ("<pool>/mo split
-    // across 1 automatic entry"), which a zero or stale figure cannot match.
-    const account = await page.evaluate(() => {
-      const amount = document.querySelector('[data-testid="savings-allocation-sav-2"]')
-      const pill = document.querySelector('[data-testid="savings-allocation-mode-sav-2"]')
-      if (!amount) {
-        throw new Error('the account row rendered no allocation cell')
-      }
-      return {
-        text: amount.textContent?.trim() ?? '',
-        nowrap: (amount.getAttribute('class') ?? '').includes('whitespace-nowrap'),
-        pill: pill?.textContent?.trim() ?? null,
-        summary:
-          document.querySelector('[data-testid="savings-leftover-summary"]')?.textContent ?? '',
-      }
-    })
-    expect(account.text, 'the account row must show a figure, not a dash').toMatch(/\d\.\d{2}/)
-    expect(account.pill, 'the account row must carry its Auto/Fixed pill').toBe('Auto')
-    expect(account.summary, 'sav-2 must receive the whole pool').toContain(
-      `${account.text}/mo split across 1 automatic entry`
-    )
-    expect(account.text, 'the whole pool here is non-zero').not.toMatch(/^\D*0\.00$/)
-    expect(account.nowrap, 'the account row amount lost its nowrap protection').toBe(true)
+      // The account row, pinned at 320px: it shows a real figure and an Auto pill,
+      // and its amount keeps the nowrap class token. `sav-2` is the ONLY automatic
+      // row (`sav-1` is manual), so it receives the WHOLE pool. That figure depends
+      // on the seeded income, expenses and contributions, so it is not hard-coded:
+      // it is compared against the pool the leftover summary shows ("<pool>/mo split
+      // across 1 automatic entry"), which a zero or stale figure cannot match.
+      const account = await page.evaluate(() => {
+        const amount = document.querySelector('[data-testid="savings-allocation-sav-2"]')
+        const pill = document.querySelector('[data-testid="savings-allocation-mode-sav-2"]')
+        if (!amount) {
+          throw new Error('the account row rendered no allocation cell')
+        }
+        return {
+          text: amount.textContent?.trim() ?? '',
+          nowrap: (amount.getAttribute('class') ?? '').includes('whitespace-nowrap'),
+          pill: pill?.textContent?.trim() ?? null,
+          summary:
+            document.querySelector('[data-testid="savings-leftover-summary"]')?.textContent ?? '',
+        }
+      })
+      expect(account.text, 'the account row must show a figure, not a dash').toMatch(/\d\.\d{2}/)
+      expect(account.pill, 'the account row must carry its Auto/Fixed pill').toBe('Auto')
+      expect(account.summary, 'sav-2 must receive the whole pool').toContain(
+        `${account.text}/mo split across 1 automatic entry`
+      )
+      expect(account.text, 'the whole pool here is non-zero').not.toMatch(/^\D*0\.00$/)
+      expect(account.nowrap, 'the account row amount lost its nowrap protection').toBe(true)
 
-    for (const id of rowIds) {
-      const m = await page.evaluate((goalId) => {
+      for (const id of rowIds) {
+        const m = await page.evaluate((goalId) => {
+          const lineCount = (el: Element): number => {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            return range.getClientRects().length
+          }
+          const amount = document.querySelector(`[data-testid="savings-allocation-${goalId}"]`)
+          const pill = document.querySelector(`[data-testid="savings-allocation-mode-${goalId}"]`)
+          if (!amount || !pill) {
+            throw new Error(`row ${goalId} rendered no amount/pill pair`)
+          }
+          const amountRect = amount.getBoundingClientRect()
+          const pillRect = pill.getBoundingClientRect()
+          return {
+            text: amount.textContent?.trim() ?? '',
+            pill: pill.textContent?.trim() ?? '',
+            amountLines: lineCount(amount),
+            pillLines: lineCount(pill),
+            topDelta: Math.abs(amountRect.top - pillRect.top),
+          }
+        }, id)
+
+        expect(
+          m.amountLines,
+          `${id}: amount "${m.text}" wrapped onto ${m.amountLines} lines at 320px (pre-fix: 2). The fix is whitespace-nowrap on the AMOUNT and on the TAG. Do NOT reach for the cell's max-sm:whitespace-normal / [overflow-wrap:anywhere] — three SEPARATE mutations each blew the 240px wrapper open: dropping a cell token, ~1134px (recorded in ResponsiveTable.tsx); nowrap on the NAME, 1185px (arm M3); dropping max-sm:whitespace-normal, 1212px (arm M5).`
+        ).toBe(1)
+
+        // "Goal" once rendered one character per line — the tag needs its own guard.
+        expect(m.pillLines, `${id}: pill "${m.pill}" broke onto ${m.pillLines} lines`).toBe(1)
+
+        // Without this, a "fix" that pushes the pill onto its own row underneath
+        // still satisfies the line-count check above.
+        expect(
+          m.topDelta,
+          `${id}: amount and pill are on different lines (top delta ${m.topDelta}px; pre-fix: a full line height)`
+        ).toBeLessThan(2)
+      }
+    }
+  )
+
+  // AC-2: the fix must not have been bought by reverting the wrapping contract.
+  test(
+    'AC-2 a long unbroken name still wraps, and its badge stays intact',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await openNarrow(page, '/savings')
+
+      const m = await page.evaluate(() => {
         const lineCount = (el: Element): number => {
           const range = document.createRange()
           range.selectNodeContents(el)
           return range.getClientRects().length
         }
-        const amount = document.querySelector(`[data-testid="savings-allocation-${goalId}"]`)
-        const pill = document.querySelector(`[data-testid="savings-allocation-mode-${goalId}"]`)
-        if (!amount || !pill) {
-          throw new Error(`row ${goalId} rendered no amount/pill pair`)
+        const badge = document.querySelector('[data-testid="savings-badge-sav-1"]')
+        const pair = badge?.parentElement
+        const nameSpan = pair?.firstElementChild
+        // ⚠️ The WIDEST tag in this table is "Account" (7 chars), and it sits on
+        // sav-2. Checking only sav-1's 4-char "Goal" would leave the widest tag
+        // unmeasured at any layer.
+        const widestBadge = document.querySelector('[data-testid="savings-badge-sav-2"]')
+        if (!badge || !nameSpan || !widestBadge) {
+          throw new Error('the savings name cells rendered no name/badge pair')
         }
-        const amountRect = amount.getBoundingClientRect()
-        const pillRect = pill.getBoundingClientRect()
         return {
-          text: amount.textContent?.trim() ?? '',
-          pill: pill.textContent?.trim() ?? '',
-          amountLines: lineCount(amount),
-          pillLines: lineCount(pill),
-          topDelta: Math.abs(amountRect.top - pillRect.top),
+          nameLines: lineCount(nameSpan),
+          badgeLines: lineCount(badge),
+          badgeWidth: Math.round(badge.getBoundingClientRect().width),
+          badgeText: badge.textContent?.trim() ?? '',
+          widestBadgeLines: lineCount(widestBadge),
+          widestBadgeWidth: Math.round(widestBadge.getBoundingClientRect().width),
+          widestBadgeText: widestBadge.textContent?.trim() ?? '',
         }
-      }, id)
+      })
 
+      // ⚠️ The name is unbounded user free text (no maxLength on the input), so it
+      // MUST keep wrapping. `whitespace-nowrap` on the NAME is the ~1134px revert
+      // the module forbids. Only the BADGE is protected.
       expect(
-        m.amountLines,
-        `${id}: amount "${m.text}" wrapped onto ${m.amountLines} lines at 320px (pre-fix: 2). The fix is whitespace-nowrap on the AMOUNT and on the TAG. Do NOT reach for the cell's max-sm:whitespace-normal / [overflow-wrap:anywhere] — three SEPARATE mutations each blew the 240px wrapper open: dropping a cell token, ~1134px (recorded in ResponsiveTable.tsx); nowrap on the NAME, 1185px (arm M3); dropping max-sm:whitespace-normal, 1212px (arm M5).`
+        m.nameLines,
+        `the 138-character seeded name collapsed to ${m.nameLines} line(s). If this is 1, whitespace-nowrap reached the NAME as well as the tag — that reverts the 320px card layout. Protect the tag, never the free-text value.`
+      ).toBeGreaterThan(1)
+
+      // Pre-fix the four-letter badge "Goal" rendered on 4 lines at 25px wide.
+      expect(m.badgeLines, `badge "${m.badgeText}" broke onto ${m.badgeLines} lines`).toBe(1)
+      expect(
+        m.badgeWidth,
+        `badge "${m.badgeText}" was crushed to ${m.badgeWidth}px, 16px of which is px-2 padding (pre-fix: 25px)`
+      ).toBeGreaterThan(30)
+
+      // Measured: "Account" is 64px on one line.
+      expect(
+        m.widestBadgeLines,
+        `the widest badge "${m.widestBadgeText}" broke onto ${m.widestBadgeLines} lines`
       ).toBe(1)
-
-      // "Goal" once rendered one character per line — the tag needs its own guard.
-      expect(m.pillLines, `${id}: pill "${m.pill}" broke onto ${m.pillLines} lines`).toBe(1)
-
-      // Without this, a "fix" that pushes the pill onto its own row underneath
-      // still satisfies the line-count check above.
-      expect(
-        m.topDelta,
-        `${id}: amount and pill are on different lines (top delta ${m.topDelta}px; pre-fix: a full line height)`
-      ).toBeLessThan(2)
+      expect(m.widestBadgeWidth).toBeGreaterThan(30)
     }
-  })
-
-  // AC-2: the fix must not have been bought by reverting the wrapping contract.
-  test('AC-2 a long unbroken name still wraps, and its badge stays intact', async ({ page }) => {
-    await openNarrow(page, '/savings')
-
-    const m = await page.evaluate(() => {
-      const lineCount = (el: Element): number => {
-        const range = document.createRange()
-        range.selectNodeContents(el)
-        return range.getClientRects().length
-      }
-      const badge = document.querySelector('[data-testid="savings-badge-sav-1"]')
-      const pair = badge?.parentElement
-      const nameSpan = pair?.firstElementChild
-      // ⚠️ The WIDEST tag in this table is "Account" (7 chars), and it sits on
-      // sav-2. Checking only sav-1's 4-char "Goal" would leave the widest tag
-      // unmeasured at any layer.
-      const widestBadge = document.querySelector('[data-testid="savings-badge-sav-2"]')
-      if (!badge || !nameSpan || !widestBadge) {
-        throw new Error('the savings name cells rendered no name/badge pair')
-      }
-      return {
-        nameLines: lineCount(nameSpan),
-        badgeLines: lineCount(badge),
-        badgeWidth: Math.round(badge.getBoundingClientRect().width),
-        badgeText: badge.textContent?.trim() ?? '',
-        widestBadgeLines: lineCount(widestBadge),
-        widestBadgeWidth: Math.round(widestBadge.getBoundingClientRect().width),
-        widestBadgeText: widestBadge.textContent?.trim() ?? '',
-      }
-    })
-
-    // ⚠️ The name is unbounded user free text (no maxLength on the input), so it
-    // MUST keep wrapping. `whitespace-nowrap` on the NAME is the ~1134px revert
-    // the module forbids. Only the BADGE is protected.
-    expect(
-      m.nameLines,
-      `the 138-character seeded name collapsed to ${m.nameLines} line(s). If this is 1, whitespace-nowrap reached the NAME as well as the tag — that reverts the 320px card layout. Protect the tag, never the free-text value.`
-    ).toBeGreaterThan(1)
-
-    // Pre-fix the four-letter badge "Goal" rendered on 4 lines at 25px wide.
-    expect(m.badgeLines, `badge "${m.badgeText}" broke onto ${m.badgeLines} lines`).toBe(1)
-    expect(
-      m.badgeWidth,
-      `badge "${m.badgeText}" was crushed to ${m.badgeWidth}px, 16px of which is px-2 padding (pre-fix: 25px)`
-    ).toBeGreaterThan(30)
-
-    // Measured: "Account" is 64px on one line.
-    expect(
-      m.widestBadgeLines,
-      `the widest badge "${m.widestBadgeText}" broke onto ${m.widestBadgeLines} lines`
-    ).toBe(1)
-    expect(m.widestBadgeWidth).toBeGreaterThan(30)
-  })
+  )
 
   // AC-3: assert against the widest amount a 320px viewport can produce, not a
   // short fixture that would fit either way.
-  test('AC-3 the widest amount that fits still renders on one line', async ({ page }) => {
-    await openNarrow(page, '/savings')
+  test(
+    'AC-3 the widest amount that fits still renders on one line',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await openNarrow(page, '/savings')
 
-    // ⚠️ A WIDTH PROBE, not a data assertion: the text is substituted in place
-    // so the guard measures the ceiling rather than only the seeded figure.
-    // Measured (DejaVu, 320px, USD): $987,654,321.00 (15 chars, pair 175px)
-    // fits; $9,876,543,210.00 (17 chars, pair 189px) overflows the cell, because
-    // max-sm:justify-between serves the "Monthly Allocation" label first and
-    // crushes it to ~21px. Recorded beside the constant in ResponsiveTable.tsx.
-    // ⚠️ THE BOUND IS CURRENCY-SPECIFIC, and USD is the narrowest common case.
-    // CHF formats the same figure as `CHF 987'654'321.00` — 18 chars, already
-    // past the tip — so a CHF user reaches it around $98M, roughly an order of
-    // magnitude lower. The seed pins USD, so no test here covers that.
-    // Do NOT widen this fixture without re-measuring that ceiling.
-    const WIDEST_THAT_FITS = '$987,654,321.00'
+      // ⚠️ A WIDTH PROBE, not a data assertion: the text is substituted in place
+      // so the guard measures the ceiling rather than only the seeded figure.
+      // Measured (DejaVu, 320px, USD): $987,654,321.00 (15 chars, pair 175px)
+      // fits; $9,876,543,210.00 (17 chars, pair 189px) overflows the cell, because
+      // max-sm:justify-between serves the "Monthly Allocation" label first and
+      // crushes it to ~21px. Recorded beside the constant in ResponsiveTable.tsx.
+      // ⚠️ THE BOUND IS CURRENCY-SPECIFIC, and USD is the narrowest common case.
+      // CHF formats the same figure as `CHF 987'654'321.00` — 18 chars, already
+      // past the tip — so a CHF user reaches it around $98M, roughly an order of
+      // magnitude lower. The seed pins USD, so no test here covers that.
+      // Do NOT widen this fixture without re-measuring that ceiling.
+      const WIDEST_THAT_FITS = '$987,654,321.00'
 
-    const m = await page.evaluate((widest) => {
-      const lineCount = (el: Element): number => {
-        const range = document.createRange()
-        range.selectNodeContents(el)
-        return range.getClientRects().length
-      }
-      const amount = document.querySelector('[data-testid="savings-allocation-sav-1"]')
-      const pill = document.querySelector('[data-testid="savings-allocation-mode-sav-1"]')
-      const cell = amount?.closest('td')
-      if (!amount || !pill || !cell) {
-        throw new Error('the savings allocation cell did not render')
-      }
-      const seededText = amount.textContent?.trim() ?? ''
-      amount.textContent = widest
-      const amountRect = amount.getBoundingClientRect()
-      const pillRect = pill.getBoundingClientRect()
-      const out = {
-        seededText,
-        amountLines: lineCount(amount),
-        topDelta: Math.abs(amountRect.top - pillRect.top),
-        cellOverflow: cell.scrollWidth > cell.clientWidth,
-      }
-      amount.textContent = seededText
-      return out
-    }, WIDEST_THAT_FITS)
+      const m = await page.evaluate((widest) => {
+        const lineCount = (el: Element): number => {
+          const range = document.createRange()
+          range.selectNodeContents(el)
+          return range.getClientRects().length
+        }
+        const amount = document.querySelector('[data-testid="savings-allocation-sav-1"]')
+        const pill = document.querySelector('[data-testid="savings-allocation-mode-sav-1"]')
+        const cell = amount?.closest('td')
+        if (!amount || !pill || !cell) {
+          throw new Error('the savings allocation cell did not render')
+        }
+        const seededText = amount.textContent?.trim() ?? ''
+        amount.textContent = widest
+        const amountRect = amount.getBoundingClientRect()
+        const pillRect = pill.getBoundingClientRect()
+        const out = {
+          seededText,
+          amountLines: lineCount(amount),
+          topDelta: Math.abs(amountRect.top - pillRect.top),
+          cellOverflow: cell.scrollWidth > cell.clientWidth,
+        }
+        amount.textContent = seededText
+        return out
+      }, WIDEST_THAT_FITS)
 
-    // The seeded figure must itself be wide enough to have reproduced the bug.
-    expect(
-      m.seededText.length,
-      `the seeded allocation "${m.seededText}" is too short to prove anything — it must be wide enough to wrap on the pre-fix code`
-    ).toBeGreaterThanOrEqual(11)
+      // The seeded figure must itself be wide enough to have reproduced the bug.
+      expect(
+        m.seededText.length,
+        `the seeded allocation "${m.seededText}" is too short to prove anything — it must be wide enough to wrap on the pre-fix code`
+      ).toBeGreaterThanOrEqual(11)
 
-    expect(m.amountLines, `"${WIDEST_THAT_FITS}" wrapped onto ${m.amountLines} lines`).toBe(1)
-    expect(m.topDelta).toBeLessThan(2)
-    expect(
-      m.cellOverflow,
-      `"${WIDEST_THAT_FITS}" overflowed its cell — the measured ceiling has moved. Re-measure it and update the comment in ResponsiveTable.tsx; do not delete this assertion.`
-    ).toBe(false)
-  })
+      expect(m.amountLines, `"${WIDEST_THAT_FITS}" wrapped onto ${m.amountLines} lines`).toBe(1)
+      expect(m.topDelta).toBeLessThan(2)
+      expect(
+        m.cellOverflow,
+        `"${WIDEST_THAT_FITS}" overflowed its cell — the measured ceiling has moved. Re-measure it and update the comment in ResponsiveTable.tsx; do not delete this assertion.`
+      ).toBe(false)
+    }
+  )
 
   // AC-4: the audit, codified. These three cells hold a pill with NO sibling
   // value. ⚠️ They render on one line because nothing COMPETES for the width —
@@ -275,71 +287,79 @@ test.describe('Story 42.3 — value and tag on one line at 320px', () => {
     { route: '/expenses', widest: 'biweekly', label: 'Frequency' },
     { route: '/balance', widest: 'Investment', label: 'Type' },
   ]) {
-    test(`AC-4 ${route} lone ${label} pill stays on one line`, async ({ page }) => {
-      await openNarrow(page, route)
+    test(
+      `AC-4 ${route} lone ${label} pill stays on one line`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await openNarrow(page, route)
 
-      const m = await page.evaluate((widestLabel) => {
-        const lineCount = (el: Element): number => {
-          const range = document.createRange()
-          range.selectNodeContents(el)
-          return range.getClientRects().length
-        }
-        const pills = Array.from(
-          document.querySelectorAll<HTMLElement>('td:has(> span.rounded-full) span.rounded-full')
-        )
-        const first = pills[0]
-        if (!first) {
-          throw new Error('this route rendered no tag pills')
-        }
-        // EVERY pill, not just [0] — 42.2's review found exactly that hole.
-        const seeded = pills.map((pill) => ({
-          text: pill.textContent?.trim() ?? '',
-          lines: lineCount(pill),
-        }))
-        const original = first.textContent
-        first.textContent = widestLabel
-        const widestCase = { text: widestLabel, lines: lineCount(first) }
-        first.textContent = original
-        return { seeded, widestCase }
-      }, widest)
+        const m = await page.evaluate((widestLabel) => {
+          const lineCount = (el: Element): number => {
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            return range.getClientRects().length
+          }
+          const pills = Array.from(
+            document.querySelectorAll<HTMLElement>('td:has(> span.rounded-full) span.rounded-full')
+          )
+          const first = pills[0]
+          if (!first) {
+            throw new Error('this route rendered no tag pills')
+          }
+          // EVERY pill, not just [0] — 42.2's review found exactly that hole.
+          const seeded = pills.map((pill) => ({
+            text: pill.textContent?.trim() ?? '',
+            lines: lineCount(pill),
+          }))
+          const original = first.textContent
+          first.textContent = widestLabel
+          const widestCase = { text: widestLabel, lines: lineCount(first) }
+          first.textContent = original
+          return { seeded, widestCase }
+        }, widest)
 
-      for (const pill of m.seeded) {
-        expect(pill.lines, `${route}: pill "${pill.text}" broke onto ${pill.lines} lines`).toBe(1)
+        for (const pill of m.seeded) {
+          expect(pill.lines, `${route}: pill "${pill.text}" broke onto ${pill.lines} lines`).toBe(1)
+        }
+        expect(
+          m.widestCase.lines,
+          `${route}: the widest label "${m.widestCase.text}" broke onto ${m.widestCase.lines} lines`
+        ).toBe(1)
       }
-      expect(
-        m.widestCase.lines,
-        `${route}: the widest label "${m.widestCase.text}" broke onto ${m.widestCase.lines} lines`
-      ).toBe(1)
-    })
+    )
   }
 
   // AC-5: the fix must not buy one-line rendering with horizontal overflow.
   // ⚠️ This is where `whitespace-nowrap` lands when it is applied too widely —
   // the M3 arm (nowrap on the name) tripped it at 1185 against 240.
-  test('AC-5 no horizontal overflow is introduced at 320px', async ({ page }) => {
-    await openNarrow(page, '/savings')
+  test(
+    'AC-5 no horizontal overflow is introduced at 320px',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await openNarrow(page, '/savings')
 
-    const m = await page.evaluate(() => {
-      const table = document.querySelector('table')
-      const wrapper = table?.closest('div.overflow-x-auto')
-      if (!wrapper) {
-        throw new Error('the savings table sits in no scroll wrapper')
-      }
-      const doc = document.documentElement
-      return {
-        wrapperScrollWidth: wrapper.scrollWidth,
-        wrapperClientWidth: wrapper.clientWidth,
-        docScrollWidth: doc.scrollWidth,
-        docClientWidth: doc.clientWidth,
-      }
-    })
+      const m = await page.evaluate(() => {
+        const table = document.querySelector('table')
+        const wrapper = table?.closest('div.overflow-x-auto')
+        if (!wrapper) {
+          throw new Error('the savings table sits in no scroll wrapper')
+        }
+        const doc = document.documentElement
+        return {
+          wrapperScrollWidth: wrapper.scrollWidth,
+          wrapperClientWidth: wrapper.clientWidth,
+          docScrollWidth: doc.scrollWidth,
+          docClientWidth: doc.clientWidth,
+        }
+      })
 
-    // Measured baseline AND post-fix: 240 === 240.
-    expect(
-      m.wrapperScrollWidth,
-      `the wrapper overflowed (${m.wrapperScrollWidth} > ${m.wrapperClientWidth}) — whitespace-nowrap trades a wrap defect for an overflow defect, and this is where that lands`
-    ).toBe(m.wrapperClientWidth)
-    // Measured: 320 === 320.
-    expect(m.docScrollWidth).toBe(m.docClientWidth)
-  })
+      // Measured baseline AND post-fix: 240 === 240.
+      expect(
+        m.wrapperScrollWidth,
+        `the wrapper overflowed (${m.wrapperScrollWidth} > ${m.wrapperClientWidth}) — whitespace-nowrap trades a wrap defect for an overflow defect, and this is where that lands`
+      ).toBe(m.wrapperClientWidth)
+      // Measured: 320 === 320.
+      expect(m.docScrollWidth).toBe(m.docClientWidth)
+    }
+  )
 })

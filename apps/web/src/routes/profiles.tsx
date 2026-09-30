@@ -14,7 +14,8 @@
  *
  * The component now lives in
  * `components/profiles/profiles-page.tsx`; the premium gating contract is
- * documented there, and `e2e/profiles-premium.spec.ts` guards the wiring below.
+ * documented there, and `profiles-page.locked-route.test.tsx` guards the wiring
+ * below (moved from e2e by story 82.3).
  */
 
 import { ProfilesPage } from '@/components/profiles/profiles-page'

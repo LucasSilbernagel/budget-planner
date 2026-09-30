@@ -88,45 +88,11 @@ function seedWeeklyIncomeAndExpense() {
   )
 }
 
-test('breakdown control defaults to Annually, offers all four durations, and re-aggregates on toggle', async ({
-  page,
-}) => {
-  await page.addInitScript(seedWeeklyIncomeAndExpense)
-
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-
-  const selector = page.getByRole(BREAKDOWN_SELECT.role, { name: BREAKDOWN_SELECT.name })
-  await expect(selector).toBeVisible()
-  await expect(selector).toHaveValue('annually')
-
-  // Four options since 32.3 — the same VALID_DURATIONS set the overview selector
-  // renders. Still no date-range presets: that is 12-3's original guarantee.
-  await expect(selector.getByRole('option')).toHaveText([
-    'Weekly',
-    'Bi-weekly',
-    'Monthly',
-    'Annually',
-  ])
-
-  // Scope figure assertions to the breakdown section: the same weekly→annual
-  // amount also appears in the overview income card, which since 32.3 reads the
-  // SAME store — so a page-wide match would be ambiguous.
-  const breakdown = page
-    .locator('section')
-    .filter({ has: page.getByRole('heading', { name: 'Income vs Expense Breakdown' }) })
-
-  // Annually: the weekly figure is normalized (weekly × 52/12 × 12), not raw.
-  // This is the seeded EXPENSE's figure — see the file header for why an
-  // income-only witness can no longer come from this section (story UX-3).
-  await expect(breakdown.getByText('6,240.00').first()).toBeVisible()
-
-  // Switch to Monthly — the hydrated chart re-aggregates client-side.
-  await selector.selectOption('monthly')
-  await expect(selector).toHaveValue('monthly')
-  await expect(breakdown.getByText('520.00').first()).toBeVisible()
-  await expect(breakdown.getByText('6,240.00')).toHaveCount(0)
-})
+// Story 82.3 moved "defaults to Annually, offers all four durations, and
+// re-aggregates on toggle" below the browser: `HomePage.test.tsx` › breakdown
+// period control AC-1/AC-2 and `overviewDurationStore.dom.test.ts` › "defaults
+// to annually" (each shown RED by the mutation that failed the e2e test). What
+// stays here is the RELOAD half, which only a real page load proves.
 
 /**
  * Story 32.3, AC-8 — the two controls are LOCKSTEP, not coincidentally aligned.

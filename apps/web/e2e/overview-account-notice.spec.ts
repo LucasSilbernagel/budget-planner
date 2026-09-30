@@ -199,38 +199,44 @@ test.describe('dismissing the account notice (AC-1, AC-2)', () => {
    * can only assert that the floor classes are declared. Story 51.2's review
    * found a desktop target-size defect that every unit gate passed.
    */
-  test('the close button meets the 24px minimum target size', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test(
+    'the close button meets the 24px minimum target size',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
 
-    const box = await page.getByRole('button', { name: DISMISS, exact: true }).boundingBox()
-    expect(box, 'the close button had no bounding box').not.toBeNull()
-    expect(
-      box?.width ?? 0,
-      'close button width is under the SC 2.5.8 floor'
-    ).toBeGreaterThanOrEqual(24)
-    expect(
-      box?.height ?? 0,
-      'close button height is under the SC 2.5.8 floor'
-    ).toBeGreaterThanOrEqual(24)
-  })
+      const box = await page.getByRole('button', { name: DISMISS, exact: true }).boundingBox()
+      expect(box, 'the close button had no bounding box').not.toBeNull()
+      expect(
+        box?.width ?? 0,
+        'close button width is under the SC 2.5.8 floor'
+      ).toBeGreaterThanOrEqual(24)
+      expect(
+        box?.height ?? 0,
+        'close button height is under the SC 2.5.8 floor'
+      ).toBeGreaterThanOrEqual(24)
+    }
+  )
 
-  test('the box still wraps inside a 320px viewport with the close button added', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 320, height: 720 })
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test(
+    'the box still wraps inside a 320px viewport with the close button added',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 720 })
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
 
-    const box = page.locator(BOX)
-    await expect(box).toBeVisible()
+      const box = page.locator(BOX)
+      await expect(box).toBeVisible()
 
-    // No horizontal overflow: the box must not be wider than its container.
-    const overflows = await box.evaluate(
-      (el) => el.scrollWidth > el.clientWidth + 1 || el.getBoundingClientRect().right > 320
-    )
-    expect(overflows, 'the notice overflowed a 320px viewport').toBe(false)
-  })
+      // No horizontal overflow: the box must not be wider than its container.
+      const overflows = await box.evaluate(
+        (el) => el.scrollWidth > el.clientWidth + 1 || el.getBoundingClientRect().right > 320
+      )
+      expect(overflows, 'the notice overflowed a 320px viewport').toBe(false)
+    }
+  )
 })
 
 test.describe('hydration (AC-3)', () => {
@@ -439,64 +445,72 @@ async function measureEdge(page: Page, theme: 'light' | 'dark'): Promise<EdgeMea
 }
 
 test.describe('the notice reads as its own block (story 60.1, FR91)', () => {
-  test('light mode: the box carries a visible edge against an identically-coloured canvas', async ({
-    page,
-  }) => {
-    const edge = await measureEdge(page, 'light')
+  test(
+    'light mode: the box carries a visible edge against an identically-coloured canvas',
+    { tag: '@layout' },
+    async ({ page }) => {
+      const edge = await measureEdge(page, 'light')
 
-    // The premise of the defect, pinned so a later change to either token cannot
-    // quietly remove the reason this border exists. If these two ever diverge,
-    // re-read the component docblock rather than deleting the border.
-    expect(
-      edge.boxBackground,
-      'the box fill moved — story 60.1 deliberately left it identical to the canvas'
-    ).toBe('rgb(249, 250, 251)')
-    expect(edge.canvasBackground, 'the page canvas is no longer gray-50').toBe('rgb(249, 250, 251)')
+      // The premise of the defect, pinned so a later change to either token cannot
+      // quietly remove the reason this border exists. If these two ever diverge,
+      // re-read the component docblock rather than deleting the border.
+      expect(
+        edge.boxBackground,
+        'the box fill moved — story 60.1 deliberately left it identical to the canvas'
+      ).toBe('rgb(249, 250, 251)')
+      expect(edge.canvasBackground, 'the page canvas is no longer gray-50').toBe(
+        'rgb(249, 250, 251)'
+      )
 
-    // THE FIX, and the palette-independent half of it. At `c44068a` these were
-    // `0px` on all four sides.
-    expect(edge.borderWidths, 'the notice has no rendered border on some side').toEqual([
-      '1px',
-      '1px',
-      '1px',
-      '1px',
-    ])
+      // THE FIX, and the palette-independent half of it. At `c44068a` these were
+      // `0px` on all four sides.
+      expect(edge.borderWidths, 'the notice has no rendered border on some side').toEqual([
+        '1px',
+        '1px',
+        '1px',
+        '1px',
+      ])
 
-    // gray-300, NOT `border-default`'s gray-200. This assertion is only a real
-    // guard because gray-300 is not a preflight default: Tailwind 3 sets every
-    // element's `border-color` to gray-200, so the gray-200 version of this line
-    // passed with every colour class deleted.
-    expect(edge.borderColors, 'the light border is not gray-300').toEqual([
-      'rgb(209, 213, 219)',
-      'rgb(209, 213, 219)',
-      'rgb(209, 213, 219)',
-      'rgb(209, 213, 219)',
-    ])
-  })
+      // gray-300, NOT `border-default`'s gray-200. This assertion is only a real
+      // guard because gray-300 is not a preflight default: Tailwind 3 sets every
+      // element's `border-color` to gray-200, so the gray-200 version of this line
+      // passed with every colour class deleted.
+      expect(edge.borderColors, 'the light border is not gray-300').toEqual([
+        'rgb(209, 213, 219)',
+        'rgb(209, 213, 219)',
+        'rgb(209, 213, 219)',
+        'rgb(209, 213, 219)',
+      ])
+    }
+  )
 
-  test('dark mode: the fill is unchanged and the edge is additive', async ({ page }) => {
-    const edge = await measureEdge(page, 'dark')
+  test(
+    'dark mode: the fill is unchanged and the edge is additive',
+    { tag: '@layout' },
+    async ({ page }) => {
+      const edge = await measureEdge(page, 'dark')
 
-    // Dark mode was never the defect and story 60.1 does not move it:
-    // `gray-700/40` on `gray-900`, exactly as before.
-    expect(edge.boxBackground, 'the dark fill changed — it was gray-700/40 before 60.1').toBe(
-      'rgba(55, 65, 81, 0.4)'
-    )
-    expect(edge.canvasBackground, 'the dark canvas is no longer gray-900').toBe('rgb(17, 24, 39)')
+      // Dark mode was never the defect and story 60.1 does not move it:
+      // `gray-700/40` on `gray-900`, exactly as before.
+      expect(edge.boxBackground, 'the dark fill changed — it was gray-700/40 before 60.1').toBe(
+        'rgba(55, 65, 81, 0.4)'
+      )
+      expect(edge.canvasBackground, 'the dark canvas is no longer gray-900').toBe('rgb(17, 24, 39)')
 
-    expect(edge.borderWidths, 'the notice has no rendered border on some side').toEqual([
-      '1px',
-      '1px',
-      '1px',
-      '1px',
-    ])
-    // Unchanged from `border-default`'s dark half — this is the whole reason the
-    // dark theme is additive rather than altered.
-    expect(edge.borderColors, 'the dark border is not gray-700').toEqual([
-      'rgb(55, 65, 81)',
-      'rgb(55, 65, 81)',
-      'rgb(55, 65, 81)',
-      'rgb(55, 65, 81)',
-    ])
-  })
+      expect(edge.borderWidths, 'the notice has no rendered border on some side').toEqual([
+        '1px',
+        '1px',
+        '1px',
+        '1px',
+      ])
+      // Unchanged from `border-default`'s dark half — this is the whole reason the
+      // dark theme is additive rather than altered.
+      expect(edge.borderColors, 'the dark border is not gray-700').toEqual([
+        'rgb(55, 65, 81)',
+        'rgb(55, 65, 81)',
+        'rgb(55, 65, 81)',
+        'rgb(55, 65, 81)',
+      ])
+    }
+  )
 })

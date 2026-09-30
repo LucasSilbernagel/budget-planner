@@ -19,17 +19,21 @@ import { sweepForOverlap, withRootFont } from './helpers/nav-more'
  */
 
 for (const root of [18, 20] as const) {
-  test(`signed out, ${root}px root: the cluster never covers the nav, 640-1400px`, async ({
-    page,
-  }) => {
-    test.setTimeout(120_000)
-    await page.setViewportSize({ width: 1280, height: 800 })
-    await withRootFont(page, root)
-    // The signed-out strip must have resolved, or the sweep measures the
-    // loading placeholder, which is narrower than "Upgrade · Sign in · gear".
-    await expect(
-      page.getByRole('status', { name: /account status/i }).getByRole('link', { name: /sign in/i })
-    ).toBeVisible()
-    expect(await sweepForOverlap(page)).toEqual([])
-  })
+  test(
+    `signed out, ${root}px root: the cluster never covers the nav, 640-1400px`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      test.setTimeout(120_000)
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await withRootFont(page, root)
+      // The signed-out strip must have resolved, or the sweep measures the
+      // loading placeholder, which is narrower than "Upgrade · Sign in · gear".
+      await expect(
+        page
+          .getByRole('status', { name: /account status/i })
+          .getByRole('link', { name: /sign in/i })
+      ).toBeVisible()
+      expect(await sweepForOverlap(page)).toEqual([])
+    }
+  )
 }

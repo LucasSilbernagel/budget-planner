@@ -25,6 +25,11 @@ import { expect, test } from '@playwright/test'
  *
  * Live cross-device install/offline confirmation is deferred to Story 5-6's
  * launch-gate verification matrix.
+ *
+ * Stays e2e (story 82.3, FR135): the claim is what the RUNNING server serves
+ * (manifest, icons, service-worker cache policy) and a real service worker
+ * registering and serving offline; the manifest's identity is pinned by
+ * `src/__tests__/pwa-manifest.test.ts`.
  */
 
 test.describe('pwa (manifest)', () => {

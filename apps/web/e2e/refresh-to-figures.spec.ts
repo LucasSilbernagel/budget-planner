@@ -693,73 +693,75 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
     expect(reading.observerRan, 'the observer never ran, so it proved nothing').toBe(true)
   })
 
-  test('FOOTPRINT: deferring the charts changes no box, on EVERY deferred surface (AC-11)', async ({
-    page,
-  }) => {
-    // Long enough that every measurement below finishes while the chunk is still
-    // in flight — the pending state is held open, not raced.
-    const held = await holdChartChunk(page, 8000)
+  test(
+    'FOOTPRINT: deferring the charts changes no box, on EVERY deferred surface (AC-11)',
+    { tag: '@layout' },
+    async ({ page }) => {
+      // Long enough that every measurement below finishes while the chunk is still
+      // in flight — the pending state is held open, not raced.
+      const held = await holdChartChunk(page, 8000)
 
-    await page.goto('about:blank')
-    await page.goto('/', { waitUntil: 'commit' })
-    await expect(page.getByTestId('overview-net-worth')).toHaveText(EXPECTED_NET_WORTH, {
-      timeout: COLD_COMPILE_TIMEOUT_MS,
-    })
+      await page.goto('about:blank')
+      await page.goto('/', { waitUntil: 'commit' })
+      await expect(page.getByTestId('overview-net-worth')).toHaveText(EXPECTED_NET_WORTH, {
+        timeout: COLD_COMPILE_TIMEOUT_MS,
+      })
 
-    // ⚠️ ALL THREE deferred surfaces, not one. Code review found this test measuring
-    // only the left pie's testid — and the surface it skipped, the bar chart, is the
-    // one sized by a COMPUTED inline style (`categoryChartHeight(data.length)`) rather
-    // than a fixed class, i.e. the one most able to drift. The pie-labels test in this
-    // same change preaches the rule: "Asserting only [0] would let one pie stand in
-    // for two — the per-surface blind spot stories 30-4b, 33.3, 34.1b and 34.2 each hit."
-    // Story UX-3 renamed the left pie's testid from `breakdown-pie-income` to
-    // `breakdown-pie-expense-ratio` (it no longer shows income categories).
-    const SURFACES = [
-      'breakdown-pie-expense-ratio',
-      'breakdown-pie-expense',
-      'category-bar-flows',
-    ] as const
+      // ⚠️ ALL THREE deferred surfaces, not one. Code review found this test measuring
+      // only the left pie's testid — and the surface it skipped, the bar chart, is the
+      // one sized by a COMPUTED inline style (`categoryChartHeight(data.length)`) rather
+      // than a fixed class, i.e. the one most able to drift. The pie-labels test in this
+      // same change preaches the rule: "Asserting only [0] would let one pie stand in
+      // for two — the per-surface blind spot stories 30-4b, 33.3, 34.1b and 34.2 each hit."
+      // Story UX-3 renamed the left pie's testid from `breakdown-pie-income` to
+      // `breakdown-pie-expense-ratio` (it no longer shows income categories).
+      const SURFACES = [
+        'breakdown-pie-expense-ratio',
+        'breakdown-pie-expense',
+        'category-bar-flows',
+      ] as const
 
-    const pending = new Map<string, BoundingBox | null>()
-    for (const testId of SURFACES) {
-      const block = page.getByTestId(testId)
-      await expect(block, `${testId} is not on the page`).toBeVisible()
-      pending.set(testId, await block.boundingBox())
+      const pending = new Map<string, BoundingBox | null>()
+      for (const testId of SURFACES) {
+        const block = page.getByTestId(testId)
+        await expect(block, `${testId} is not on the page`).toBeVisible()
+        pending.set(testId, await block.boundingBox())
+      }
+
+      // Anti-vacuity, first half: the charts genuinely have not arrived yet.
+      await expect(page.locator('.recharts-responsive-container')).toHaveCount(0)
+
+      // Now let them land.
+      await expect(page.locator('.recharts-responsive-container').first()).toBeVisible({
+        timeout: 30_000,
+      })
+
+      expect(
+        held.count,
+        'the chart chunk was never held — nothing was measured pending'
+      ).toBeGreaterThanOrEqual(1)
+
+      for (const testId of SURFACES) {
+        const resolved = await page.getByTestId(testId).boundingBox()
+        const before = pending.get(testId)
+        // A SAME-ELEMENT before/after comparison, never a pixel constant — the
+        // host-independent shape `loading-state-footprint.spec.ts:6-18` established.
+        // Whatever the font does, it does to both readings.
+        console.log(
+          `[footprint] ${testId} pending=${JSON.stringify(before)} resolved=${JSON.stringify(
+            resolved
+          )}`
+        )
+        expect(before, `${testId}: no pending box`).not.toBeNull()
+        expect(resolved, `${testId}: no resolved box`).not.toBeNull()
+        expect(resolved?.height, `${testId} changed height when the chart landed`).toBe(
+          before?.height
+        )
+        expect(resolved?.width, `${testId} changed width when the chart landed`).toBe(before?.width)
+        expect(resolved?.y, `${testId} MOVED when the chart landed`).toBe(before?.y)
+      }
     }
-
-    // Anti-vacuity, first half: the charts genuinely have not arrived yet.
-    await expect(page.locator('.recharts-responsive-container')).toHaveCount(0)
-
-    // Now let them land.
-    await expect(page.locator('.recharts-responsive-container').first()).toBeVisible({
-      timeout: 30_000,
-    })
-
-    expect(
-      held.count,
-      'the chart chunk was never held — nothing was measured pending'
-    ).toBeGreaterThanOrEqual(1)
-
-    for (const testId of SURFACES) {
-      const resolved = await page.getByTestId(testId).boundingBox()
-      const before = pending.get(testId)
-      // A SAME-ELEMENT before/after comparison, never a pixel constant — the
-      // host-independent shape `loading-state-footprint.spec.ts:6-18` established.
-      // Whatever the font does, it does to both readings.
-      console.log(
-        `[footprint] ${testId} pending=${JSON.stringify(before)} resolved=${JSON.stringify(
-          resolved
-        )}`
-      )
-      expect(before, `${testId}: no pending box`).not.toBeNull()
-      expect(resolved, `${testId}: no resolved box`).not.toBeNull()
-      expect(resolved?.height, `${testId} changed height when the chart landed`).toBe(
-        before?.height
-      )
-      expect(resolved?.width, `${testId} changed width when the chart landed`).toBe(before?.width)
-      expect(resolved?.y, `${testId} MOVED when the chart landed`).toBe(before?.y)
-    }
-  })
+  )
 
   /**
    * The numbers the story reports. Gated because the default `pnpm test:e2e` boots

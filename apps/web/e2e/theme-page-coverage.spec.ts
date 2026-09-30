@@ -86,17 +86,24 @@ const PAGES = [
 ]
 
 for (const path of PAGES) {
-  test(`${path} renders dark surfaces (no white-card-on-dark)`, async ({ page }) => {
-    await page.emulateMedia({ colorScheme: 'dark' })
-    await page.goto(path)
+  test(
+    `${path} renders dark surfaces (no white-card-on-dark)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await page.goto(path)
 
-    await expect(page.locator('.surface-sunken').first()).toBeVisible()
+      await expect(page.locator('.surface-sunken').first()).toBeVisible()
 
-    // The page canvas is the dark gray-900, not the light gray-50 it is by day.
-    await expect(page.locator('.surface-sunken').first()).toHaveCSS('background-color', CANVAS_DARK)
+      // The page canvas is the dark gray-900, not the light gray-50 it is by day.
+      await expect(page.locator('.surface-sunken').first()).toHaveCSS(
+        'background-color',
+        CANVAS_DARK
+      )
 
-    // The first card surface renders dark gray-800 — never a white card bleeding
-    // through on the dark canvas.
-    await expect(page.locator('.surface').first()).toHaveCSS('background-color', CARD_DARK)
-  })
+      // The first card surface renders dark gray-800 — never a white card bleeding
+      // through on the dark canvas.
+      await expect(page.locator('.surface').first()).toHaveCSS('background-color', CARD_DARK)
+    }
+  )
 }

@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
+  SIGNED_OUT_SEED,
   type SeedSubscriptionStatus,
   type SessionSeed,
   useSessionSeed,
@@ -253,10 +254,7 @@ async function fetchSessionSeed(): Promise<
   }
   const { user } = body
   if (user === null) {
-    return {
-      ok: true,
-      seed: { isAuthenticated: false, userId: null, email: null, subscriptionStatus: null },
-    }
+    return { ok: true, seed: { ...SIGNED_OUT_SEED } }
   }
   if (!isRecord(user) || typeof user['userId'] !== 'string' || user['userId'] === '') {
     return { ok: false, error: 'Failed to check premium access (unexpected response)' }

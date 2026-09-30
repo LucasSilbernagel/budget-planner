@@ -51,7 +51,26 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  * (where Vite serves modules differently) could not show it truthfully. So this
  * project builds first and serves the real `dist/`. See
  * `e2e/forecasting-roundtrip.prod.spec.ts` for what is real and what is stubbed.
+ *
+ * ## Layout tests are their own projects (story 82.3, FR135, D2)
+ *
+ * A test whose claim needs a real layout engine (boxes, overflow, wrapping,
+ * computed style, paint, print, viewport-bound composition) carries
+ * `{ tag: '@layout' }`. `chromium` / `chromium-paid` exclude those tests and
+ * `chromium-layout` / `chromium-paid-layout` run only them, on the SAME servers.
+ * `chromium-prod` excludes them too and has no layout twin: a prod-bundle test
+ * is a flow test by construction, so a `@layout` tag in a `*.prod.spec.ts`
+ * would run NOWHERE. `gates-lib.test.ts` pins that no prod spec carries one.
+ * Every other test is in exactly one of the two halves, because `grep` and
+ * `grepInvert` use the same pattern.
+ *
+ * A plain `playwright test` (CI's `pnpm test:e2e`) runs every project, so CI
+ * blocks a merge and a deploy on layout. `pnpm gates` runs the layout projects
+ * only with `--layout` (see `project-context.md` for when a story must).
+ * An untagged layout test is not lost: it runs in the default half, every time.
  */
+const LAYOUT_TAG = /@layout\b/
+
 const externalBaseURL = process.env['PLAYWRIGHT_BASE_URL']
 const baseURL = externalBaseURL || 'http://localhost:5173'
 
@@ -156,6 +175,14 @@ export default defineConfig({
       // here, against the free server, and their paid assertions would fail for a
       // reason that looks nothing like "wrong server".
       testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/],
+      grepInvert: LAYOUT_TAG,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // Story 82.3 (D2): the same free server, only the `@layout` tests.
+    {
+      name: 'chromium-layout',
+      testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/],
+      grep: LAYOUT_TAG,
       use: { ...devices['Desktop Chrome'] },
     },
     // ⚠️ Dropped entirely when PLAYWRIGHT_BASE_URL is set. That escape hatch points
@@ -171,6 +198,13 @@ export default defineConfig({
           {
             name: 'chromium-paid',
             testMatch: /\.paid\.spec\.ts$/,
+            grepInvert: LAYOUT_TAG,
+            use: { ...devices['Desktop Chrome'], baseURL: paidBaseURL },
+          },
+          {
+            name: 'chromium-paid-layout',
+            testMatch: /\.paid\.spec\.ts$/,
+            grep: LAYOUT_TAG,
             use: { ...devices['Desktop Chrome'], baseURL: paidBaseURL },
           },
           // Dropped with PLAYWRIGHT_BASE_URL too: it needs its own server, with
@@ -178,6 +212,7 @@ export default defineConfig({
           {
             name: 'chromium-prod',
             testMatch: /\.prod\.spec\.ts$/,
+            grepInvert: LAYOUT_TAG,
             use: { ...devices['Desktop Chrome'], baseURL: prodBaseURL },
           },
         ]),

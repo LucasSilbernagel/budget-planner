@@ -131,106 +131,114 @@ test.describe('the mobile nav paints its final position on the first frame (AC-2
   // the More tab's active state is the one piece of this nav that is DERIVED
   // rather than declarative, so it is the only plausible source of a new flash.
   for (const path of ['/', '/retirement']) {
-    test(`nav position + geometry at DOMContentLoaded are already the settled values (${path})`, async ({
-      page,
-    }) => {
-      await page.addInitScript((selector) => {
-        document.addEventListener('DOMContentLoaded', () => {
-          const nav = document.querySelector(selector)
-          const snapshot = nav
-            ? (() => {
-                const r = nav.getBoundingClientRect()
-                const details = nav.querySelector(
-                  ':scope > ul > li > details'
-                ) as HTMLDetailsElement | null
-                const sheet = details?.querySelector(':scope > ul') ?? null
-                const trigger = details?.querySelector(':scope > summary') ?? null
-                return {
-                  position: globalThis.getComputedStyle(nav).position,
-                  rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
-                  innerHeight: globalThis.innerHeight,
-                  sheetVisible: sheet ? sheet.checkVisibility() : null,
-                  detailsOpen: details ? details.open : null,
-                  moreActive: trigger
-                    ? globalThis.getComputedStyle(trigger).backgroundColor === 'rgb(240, 253, 244)'
-                    : false,
-                }
-              })()
-            : null
-          ;(globalThis as unknown as { __navAtDCL?: unknown }).__navAtDCL = snapshot
-        })
-      }, NAV)
+    test(
+      `nav position + geometry at DOMContentLoaded are already the settled values (${path})`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.addInitScript((selector) => {
+          document.addEventListener('DOMContentLoaded', () => {
+            const nav = document.querySelector(selector)
+            const snapshot = nav
+              ? (() => {
+                  const r = nav.getBoundingClientRect()
+                  const details = nav.querySelector(
+                    ':scope > ul > li > details'
+                  ) as HTMLDetailsElement | null
+                  const sheet = details?.querySelector(':scope > ul') ?? null
+                  const trigger = details?.querySelector(':scope > summary') ?? null
+                  return {
+                    position: globalThis.getComputedStyle(nav).position,
+                    rect: { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom },
+                    innerHeight: globalThis.innerHeight,
+                    sheetVisible: sheet ? sheet.checkVisibility() : null,
+                    detailsOpen: details ? details.open : null,
+                    moreActive: trigger
+                      ? globalThis.getComputedStyle(trigger).backgroundColor ===
+                        'rgb(240, 253, 244)'
+                      : false,
+                  }
+                })()
+              : null
+            ;(globalThis as unknown as { __navAtDCL?: unknown }).__navAtDCL = snapshot
+          })
+        }, NAV)
 
-      const response = await page.goto(path)
-      expect(response?.ok(), `expected ${path} to load`).toBeTruthy()
+        const response = await page.goto(path)
+        expect(response?.ok(), `expected ${path} to load`).toBeTruthy()
 
-      const atDCL = (await page.evaluate(
-        () => (globalThis as unknown as { __navAtDCL?: NavSnapshot | null }).__navAtDCL ?? null
-      )) as NavSnapshot | null
+        const atDCL = (await page.evaluate(
+          () => (globalThis as unknown as { __navAtDCL?: NavSnapshot | null }).__navAtDCL ?? null
+        )) as NavSnapshot | null
 
-      // Anti-vacuous precondition: a null snapshot (listener never fired, nav not
-      // in the pre-hydration HTML) or a zero-area box would satisfy the equality
-      // check below while proving nothing.
-      expect(atDCL, 'no nav was present/measured at DOMContentLoaded').not.toBeNull()
-      const dcl = atDCL as NavSnapshot
-      expect(dcl.rect.width, 'nav had a zero-width box at DOMContentLoaded').toBeGreaterThan(0)
-      expect(dcl.rect.height, 'nav had a zero-height box at DOMContentLoaded').toBeGreaterThan(0)
+        // Anti-vacuous precondition: a null snapshot (listener never fired, nav not
+        // in the pre-hydration HTML) or a zero-area box would satisfy the equality
+        // check below while proving nothing.
+        expect(atDCL, 'no nav was present/measured at DOMContentLoaded').not.toBeNull()
+        const dcl = atDCL as NavSnapshot
+        expect(dcl.rect.width, 'nav had a zero-width box at DOMContentLoaded').toBeGreaterThan(0)
+        expect(dcl.rect.height, 'nav had a zero-height box at DOMContentLoaded').toBeGreaterThan(0)
 
-      // (a) The first painted frame is already the fixed bottom bar.
-      expect(dcl.position, 'nav is not fixed on the first painted frame').toBe('fixed')
-      expect(
-        Math.abs(dcl.rect.bottom - dcl.innerHeight),
-        `nav bottom ${dcl.rect.bottom} is not flush with the viewport bottom ${dcl.innerHeight}`
-      ).toBeLessThanOrEqual(2)
+        // (a) The first painted frame is already the fixed bottom bar.
+        expect(dcl.position, 'nav is not fixed on the first painted frame').toBe('fixed')
+        expect(
+          Math.abs(dcl.rect.bottom - dcl.innerHeight),
+          `nav bottom ${dcl.rect.bottom} is not flush with the viewport bottom ${dcl.innerHeight}`
+        ).toBeLessThanOrEqual(2)
 
-      // (b) The sheet is CLOSED on the first frame (story 31.5). Open state is
-      // user-initiated and initialised to closed precisely so the server render
-      // and the first client render agree — a viewport-derived or effect-derived
-      // open state would flash the sheet on every page load.
-      // Both reads must be non-null: `null` means the `<details>` was not found,
-      // and a missing element must not pass as "closed".
-      expect(dcl.sheetVisible, 'the More sheet is not closed on the first painted frame').toBe(
-        false
-      )
-      expect(dcl.detailsOpen, 'the More disclosure is not closed at first paint').toBe(false)
+        // (b) The sheet is CLOSED on the first frame (story 31.5). Open state is
+        // user-initiated and initialised to closed precisely so the server render
+        // and the first client render agree — a viewport-derived or effect-derived
+        // open state would flash the sheet on every page load.
+        // Both reads must be non-null: `null` means the `<details>` was not found,
+        // and a missing element must not pass as "closed".
+        expect(dcl.sheetVisible, 'the More sheet is not closed on the first painted frame').toBe(
+          false
+        )
+        expect(dcl.detailsOpen, 'the More disclosure is not closed at first paint').toBe(false)
 
-      // (c) The derived More-active state is already correct at first paint.
-      expect(
-        dcl.moreActive,
-        `the More tab's active state at DCL does not match the route (${path})`
-      ).toBe(path === '/retirement')
+        // (c) The derived More-active state is already correct at first paint.
+        expect(
+          dcl.moreActive,
+          `the More tab's active state at DCL does not match the route (${path})`
+        ).toBe(path === '/retirement')
 
-      // (d) Nothing moves afterwards — the flash was exactly this delta.
-      await page.waitForLoadState('networkidle')
-      const settled = await readNav(page)
-      expect(settled, 'nav disappeared after hydration').not.toBeNull()
-      expect(settled).toEqual(dcl)
-    })
+        // (d) Nothing moves afterwards — the flash was exactly this delta.
+        await page.waitForLoadState('networkidle')
+        const settled = await readNav(page)
+        expect(settled, 'nav disappeared after hydration').not.toBeNull()
+        expect(settled).toEqual(dcl)
+      }
+    )
   }
 })
 
 test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   for (const width of [640, 1280]) {
-    test(`at ${width}px the nav is a static top bar, not a fixed bottom bar`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 720 })
-      const response = await page.goto('/')
-      expect(response?.ok(), 'expected / to load').toBeTruthy()
-      await page.waitForLoadState('networkidle')
+    test(
+      `at ${width}px the nav is a static top bar, not a fixed bottom bar`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 720 })
+        const response = await page.goto('/')
+        expect(response?.ok(), 'expected / to load').toBeTruthy()
+        await page.waitForLoadState('networkidle')
 
-      const snapshot = await readNav(page)
-      expect(snapshot).not.toBeNull()
-      const nav = snapshot as NavSnapshot
+        const snapshot = await readNav(page)
+        expect(snapshot).not.toBeNull()
+        const nav = snapshot as NavSnapshot
 
-      expect(nav.position, `nav is out of flow at ${width}px`).toBe('static')
-      // In flow at the top of the document, NOT anchored to the viewport bottom.
-      expect(nav.rect.y, `nav does not sit at the top of the document at ${width}px`).toBeLessThan(
-        120
-      )
-      expect(
-        Math.abs(nav.rect.bottom - nav.innerHeight),
-        `nav is bottom-anchored at ${width}px — the mobile layout leaked to desktop`
-      ).toBeGreaterThan(2)
-    })
+        expect(nav.position, `nav is out of flow at ${width}px`).toBe('static')
+        // In flow at the top of the document, NOT anchored to the viewport bottom.
+        expect(
+          nav.rect.y,
+          `nav does not sit at the top of the document at ${width}px`
+        ).toBeLessThan(120)
+        expect(
+          Math.abs(nav.rect.bottom - nav.innerHeight),
+          `nav is bottom-anchored at ${width}px — the mobile layout leaked to desktop`
+        ).toBeGreaterThan(2)
+      }
+    )
   }
 
   // THE DESKTOP ROW — the single live record of its widths. The paid-tier
@@ -394,59 +402,61 @@ test.describe('desktop (>= 640px) keeps the in-flow top bar (AC-3)', () => {
   // container between the list and <html> would absorb the former (31.2), while
   // the latter cannot be absorbed.
   for (const width of [640, 700, 760]) {
-    test(`the desktop nav row is ONE row inside a ${width}px viewport, with no overflow`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width, height: 720 })
-      await page.goto('/')
-      await page.waitForLoadState('networkidle')
+    test(
+      `the desktop nav row is ONE row inside a ${width}px viewport, with no overflow`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 720 })
+        await page.goto('/')
+        await page.waitForLoadState('networkidle')
 
-      const measured = await page.evaluate((selector) => {
-        const list = document.querySelector(`${selector} > ul`)
-        if (!list) return null
-        // The five ROW ITEMS, deliberately — not `list.querySelectorAll('a')`.
-        // Since story 59.2 that query also returns the three anchors inside the
-        // closed More panel, which are not in the row, and it skips the More
-        // `<summary>`, which is.
-        // ⚠️ RENDERED items only, since story 69.3 (the one edit this test got,
-        // and the only one: it read the DOM, not the render). Balances and
-        // Retirement have a ROW copy in the outer list that is `display:none`
-        // below `lg`, with an all-zero rect, so counting it would report seven
-        // items and a phantom second row.
-        const items = [...list.querySelectorAll(':scope > li')].filter(
-          (li) => li.getClientRects().length > 0
-        )
-        const rights = items.map((li) => li.getBoundingClientRect().right)
-        return {
-          items: items.length,
-          rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
-          listOverflow: list.scrollWidth - list.clientWidth,
-          widestItemRight: Math.max(...rights),
-          documentOverflow:
-            document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          innerWidth: globalThis.innerWidth,
-          wrap: globalThis.getComputedStyle(list).flexWrap,
-        }
-      }, NAV)
+        const measured = await page.evaluate((selector) => {
+          const list = document.querySelector(`${selector} > ul`)
+          if (!list) return null
+          // The five ROW ITEMS, deliberately — not `list.querySelectorAll('a')`.
+          // Since story 59.2 that query also returns the three anchors inside the
+          // closed More panel, which are not in the row, and it skips the More
+          // `<summary>`, which is.
+          // ⚠️ RENDERED items only, since story 69.3 (the one edit this test got,
+          // and the only one: it read the DOM, not the render). Balances and
+          // Retirement have a ROW copy in the outer list that is `display:none`
+          // below `lg`, with an all-zero rect, so counting it would report seven
+          // items and a phantom second row.
+          const items = [...list.querySelectorAll(':scope > li')].filter(
+            (li) => li.getClientRects().length > 0
+          )
+          const rights = items.map((li) => li.getBoundingClientRect().right)
+          return {
+            items: items.length,
+            rows: new Set(items.map((li) => Math.round(li.getBoundingClientRect().top))).size,
+            listOverflow: list.scrollWidth - list.clientWidth,
+            widestItemRight: Math.max(...rights),
+            documentOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            innerWidth: globalThis.innerWidth,
+            wrap: globalThis.getComputedStyle(list).flexWrap,
+          }
+        }, NAV)
 
-      expect(measured, 'nav list not found').not.toBeNull()
-      const m = measured as NonNullable<typeof measured>
-      expect(m.items, 'the desktop row is not five items').toBe(5)
-      expect(m.rows, `the desktop nav row wraps at ${width}px`).toBe(1)
-      // Inert at >= 640px since the nav became `sm:shrink-0` (see the record
-      // above). It stays pinned because the token is still shipped, and the
-      // `GlobalNav.tsx` comment records why it was kept rather than removed.
-      expect(m.wrap, `the desktop nav row lost \`flex-wrap\` at ${width}px`).toBe('wrap')
-      expect(
-        m.listOverflow,
-        `the nav list overflows its own box at ${width}px`
-      ).toBeLessThanOrEqual(0)
-      expect(
-        m.widestItemRight,
-        `a nav item paints past the ${width}px viewport edge`
-      ).toBeLessThanOrEqual(m.innerWidth)
-      expect(m.documentOverflow, `the document is wider than ${width}px`).toBeLessThanOrEqual(0)
-    })
+        expect(measured, 'nav list not found').not.toBeNull()
+        const m = measured as NonNullable<typeof measured>
+        expect(m.items, 'the desktop row is not five items').toBe(5)
+        expect(m.rows, `the desktop nav row wraps at ${width}px`).toBe(1)
+        // Inert at >= 640px since the nav became `sm:shrink-0` (see the record
+        // above). It stays pinned because the token is still shipped, and the
+        // `GlobalNav.tsx` comment records why it was kept rather than removed.
+        expect(m.wrap, `the desktop nav row lost \`flex-wrap\` at ${width}px`).toBe('wrap')
+        expect(
+          m.listOverflow,
+          `the nav list overflows its own box at ${width}px`
+        ).toBeLessThanOrEqual(0)
+        expect(
+          m.widestItemRight,
+          `a nav item paints past the ${width}px viewport edge`
+        ).toBeLessThanOrEqual(m.innerWidth)
+        expect(m.documentOverflow, `the document is wider than ${width}px`).toBeLessThanOrEqual(0)
+      }
+    )
   }
 })
 
@@ -463,98 +473,106 @@ test.describe('exactly one nav layout applies at each viewport width', () => {
   for (const width of [320, 375, 414, 639, 640, 641, 1280]) {
     const mobile = width < 640
 
-    test(`${width}px renders the ${
-      mobile ? 'bottom-bar' : 'top-bar'
-    } layout and only that`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 720 })
-      await page.goto('/')
-      await page.waitForLoadState('networkidle')
+    test(
+      `${width}px renders the ${mobile ? 'bottom-bar' : 'top-bar'} layout and only that`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.setViewportSize({ width, height: 720 })
+        await page.goto('/')
+        await page.waitForLoadState('networkidle')
 
-      const measured = await page.evaluate((selector) => {
-        const nav = document.querySelector(selector)
-        // Anchored to the bar's own outer list / first cell — see the note on
-        // `readMergedStyles` about document-order helpers drifting onto the sheet.
-        const list = nav?.querySelector(':scope > ul')
-        const link = nav?.querySelector(':scope > ul > li > a')
-        if (!nav || !list || !link) return null
-        const navStyle = globalThis.getComputedStyle(nav)
-        const linkStyle = globalThis.getComputedStyle(link)
-        return {
-          navPosition: navStyle.position,
-          navBorderTop: navStyle.borderTopWidth,
-          listDisplay: globalThis.getComputedStyle(list).display,
-          linkDisplay: linkStyle.display,
-          linkRadius: linkStyle.borderRadius,
+        const measured = await page.evaluate((selector) => {
+          const nav = document.querySelector(selector)
+          // Anchored to the bar's own outer list / first cell — see the note on
+          // `readMergedStyles` about document-order helpers drifting onto the sheet.
+          const list = nav?.querySelector(':scope > ul')
+          const link = nav?.querySelector(':scope > ul > li > a')
+          if (!nav || !list || !link) return null
+          const navStyle = globalThis.getComputedStyle(nav)
+          const linkStyle = globalThis.getComputedStyle(link)
+          return {
+            navPosition: navStyle.position,
+            navBorderTop: navStyle.borderTopWidth,
+            listDisplay: globalThis.getComputedStyle(list).display,
+            linkDisplay: linkStyle.display,
+            linkRadius: linkStyle.borderRadius,
+          }
+        }, NAV)
+
+        expect(measured, 'nav/list/link not found').not.toBeNull()
+        const m = measured as NonNullable<typeof measured>
+
+        if (mobile) {
+          expect(m.navPosition).toBe('fixed')
+          expect(m.navBorderTop, 'the mobile bar has no border of its own').toBe('1px')
+          expect(m.listDisplay).toBe('grid')
+          expect(m.linkDisplay).toBe('flex')
+          // `rounded-md` is unprefixed and would otherwise reach every mobile cell.
+          expect(m.linkRadius, 'mobile tab cells picked up desktop corner rounding').toBe('0px')
+        } else {
+          expect(m.navPosition).toBe('static')
+          // The desktop bar's chrome lives on the `__root.tsx` wrapper (19-3).
+          expect(m.navBorderTop, 'the mobile border-top leaked onto desktop').toBe('0px')
+          expect(m.listDisplay).toBe('flex')
+          expect(m.linkDisplay).toBe('inline-block')
+          expect(m.linkRadius, 'desktop lost its `rounded-md` corners').toBe('6px')
         }
-      }, NAV)
-
-      expect(measured, 'nav/list/link not found').not.toBeNull()
-      const m = measured as NonNullable<typeof measured>
-
-      if (mobile) {
-        expect(m.navPosition).toBe('fixed')
-        expect(m.navBorderTop, 'the mobile bar has no border of its own').toBe('1px')
-        expect(m.listDisplay).toBe('grid')
-        expect(m.linkDisplay).toBe('flex')
-        // `rounded-md` is unprefixed and would otherwise reach every mobile cell.
-        expect(m.linkRadius, 'mobile tab cells picked up desktop corner rounding').toBe('0px')
-      } else {
-        expect(m.navPosition).toBe('static')
-        // The desktop bar's chrome lives on the `__root.tsx` wrapper (19-3).
-        expect(m.navBorderTop, 'the mobile border-top leaked onto desktop').toBe('0px')
-        expect(m.listDisplay).toBe('flex')
-        expect(m.linkDisplay).toBe('inline-block')
-        expect(m.linkRadius, 'desktop lost its `rounded-md` corners').toBe('6px')
       }
-    })
+    )
   }
 })
 
 test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', () => {
   test.use({ viewport: { width: 320, height: 720 } })
 
-  test('the list reproduces the 5x64px grid with no inherited desktop spacing', async ({
-    page,
-  }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test(
+    'the list reproduces the 5x64px grid with no inherited desktop spacing',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
 
-    const list = await page.evaluate((selector) => {
-      const el = document.querySelector(`${selector} > ul`)
-      if (!el) return null
-      const s = globalThis.getComputedStyle(el)
-      return {
-        display: s.display,
-        gridTemplateColumns: s.gridTemplateColumns,
-        gap: s.gap,
-        padding: s.padding,
-      }
-    }, NAV)
+      const list = await page.evaluate((selector) => {
+        const el = document.querySelector(`${selector} > ul`)
+        if (!el) return null
+        const s = globalThis.getComputedStyle(el)
+        return {
+          display: s.display,
+          gridTemplateColumns: s.gridTemplateColumns,
+          gap: s.gap,
+          padding: s.padding,
+        }
+      }, NAV)
 
-    expect(list).not.toBeNull()
-    const m = list as NonNullable<typeof list>
+      expect(list).not.toBeNull()
+      const m = list as NonNullable<typeof list>
 
-    // The exact tracks measured on the 31.5 mobile bar. This is the assertion
-    // with teeth: `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so leaving ANY of
-    // the desktop `gap-1 pl-4 py-2` un-neutralised resizes every track. The
-    // 64px figure is also the fit budget the labels were chosen against —
-    // `max-sm:px-1` leaves a 56px content box, and the widest bar label
-    // ("Expenses", 48.45px at 11px) clears it by 3.8px per side.
-    expect(m.display).toBe('grid')
-    expect(m.gridTemplateColumns, 'the mobile grid is not 5 x 64px at 320px').toBe(
-      '64px 64px 64px 64px 64px'
-    )
-    expect(m.padding, 'the desktop `pl-4 py-2` leaked onto the mobile bar').toBe('0px')
-    // A grid with no gap declared computes `normal`, with `gap-0` it computes
-    // `0px`; both render identically, and `gap-1` would compute `4px`.
-    expect(['0px', 'normal'], 'the desktop `gap-1` leaked onto the mobile bar').toContain(m.gap)
-  })
+      // The exact tracks measured on the 31.5 mobile bar. This is the assertion
+      // with teeth: `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so leaving ANY of
+      // the desktop `gap-1 pl-4 py-2` un-neutralised resizes every track. The
+      // 64px figure is also the fit budget the labels were chosen against —
+      // `max-sm:px-1` leaves a 56px content box, and the widest bar label
+      // ("Expenses", 48.45px at 11px) clears it by 3.8px per side.
+      expect(m.display).toBe('grid')
+      expect(m.gridTemplateColumns, 'the mobile grid is not 5 x 64px at 320px').toBe(
+        '64px 64px 64px 64px 64px'
+      )
+      expect(m.padding, 'the desktop `pl-4 py-2` leaked onto the mobile bar').toBe('0px')
+      // A grid with no gap declared computes `normal`, with `gap-0` it computes
+      // `0px`; both render identically, and `gap-1` would compute `4px`.
+      expect(['0px', 'normal'], 'the desktop `gap-1` leaked onto the mobile bar').toContain(m.gap)
+    }
+  )
 
-  test('every mobile-only utility has a measurable computed consequence', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    expect(await readMergedStyles(page)).toEqual(MOBILE_STYLES)
-  })
+  test(
+    'every mobile-only utility has a measurable computed consequence',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      expect(await readMergedStyles(page)).toEqual(MOBILE_STYLES)
+    }
+  )
 
   /**
    * ⚠️ Re-scoped in 31.5, and NOT merely by changing an 8 to a 5.
@@ -565,87 +583,93 @@ test.describe('mobile bottom-bar geometry and ink parity at 320px (AC-4/AC-5)', 
    * are read separately, and BOTH are asserted square: the sheet's rows are new
    * anchors that inherit none of the bar's ink coverage.
    */
-  test('every mobile cell has square corners (no `rounded-md` leak), bar and sheet', async ({
-    page,
-  }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test(
+    'every mobile cell has square corners (no `rounded-md` leak), bar and sheet',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
 
-    const read = (selector: string) =>
-      page.evaluate(
-        (sel) =>
-          // Rendered only (story 69.3): the promoted row copies match
-          // `${NAV} > ul > li > a` too, and are `display:none` at 320px.
-          [...document.querySelectorAll(sel)]
-            .filter((a) => getComputedStyle(a.parentElement as HTMLElement).display !== 'none')
-            .map((a) => ({
-              label: a.textContent?.trim() ?? '',
-              radius: globalThis.getComputedStyle(a).borderRadius,
-            })),
-        selector
-      )
+      const read = (selector: string) =>
+        page.evaluate(
+          (sel) =>
+            // Rendered only (story 69.3): the promoted row copies match
+            // `${NAV} > ul > li > a` too, and are `display:none` at 320px.
+            [...document.querySelectorAll(sel)]
+              .filter((a) => getComputedStyle(a.parentElement as HTMLElement).display !== 'none')
+              .map((a) => ({
+                label: a.textContent?.trim() ?? '',
+                radius: globalThis.getComputedStyle(a).borderRadius,
+              })),
+          selector
+        )
 
-    const barCells = await read(`${NAV} > ul > li > a`)
-    expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
+      const barCells = await read(`${NAV} > ul > li > a`)
+      expect(barCells.map((c) => c.label)).toEqual(['Overview', 'Income', 'Expenses', 'Savings'])
 
-    const sheetRows = await read(`${NAV} > ul > li > details > ul > li > a`)
-    expect(sheetRows.map((r) => r.label)).toEqual(['Balances', 'Retirement'])
+      const sheetRows = await read(`${NAV} > ul > li > details > ul > li > a`)
+      expect(sheetRows.map((r) => r.label)).toEqual(['Balances', 'Retirement'])
 
-    // The More trigger is not an anchor (a <button> until story 59.2, a
-    // <summary> since), so every anchor sweep in this file misses it —
-    // including this one before 31.5 added the line below.
-    const triggerRadius = await page
-      .locator(MORE_SUMMARY)
-      .evaluate((el) => globalThis.getComputedStyle(el).borderRadius)
+      // The More trigger is not an anchor (a <button> until story 59.2, a
+      // <summary> since), so every anchor sweep in this file misses it —
+      // including this one before 31.5 added the line below.
+      const triggerRadius = await page
+        .locator(MORE_SUMMARY)
+        .evaluate((el) => globalThis.getComputedStyle(el).borderRadius)
 
-    for (const { label, radius } of [...barCells, ...sheetRows]) {
-      expect(radius, `"${label}" cell paints rounded corners at 320px`).toBe('0px')
+      for (const { label, radius } of [...barCells, ...sheetRows]) {
+        expect(radius, `"${label}" cell paints rounded corners at 320px`).toBe('0px')
+      }
+      expect(triggerRadius, 'the More trigger paints rounded corners at 320px').toBe('0px')
     }
-    expect(triggerRadius, 'the More trigger paints rounded corners at 320px').toBe('0px')
-  })
+  )
 
-  test('the keyboard focus ring paints INSIDE the cell, not off the screen edge', async ({
-    page,
-  }) => {
+  test(
+    'the keyboard focus ring paints INSIDE the cell, not off the screen edge',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+
+      // Keyboard focus (not `.focus()`) so `:focus-visible` is guaranteed to match.
+      // Only the ring's INK is read here — never the element's position, which
+      // focus scrolling would have moved (31.3).
+      const focused = await tabToFirstNavLink(page)
+      expect(focused, 'never reached a nav link by tabbing').not.toBeNull()
+
+      // The grid columns are 64px x 5, flush to x=0..320. An OUTSET 2px ring paints
+      // at x=-2 and x=322, i.e. clipped away on the 1st and 5th cells; `ring-inset`
+      // is what keeps it on screen, and it is mobile-only.
+      expect(hasVisibleRing(focused), `the mobile nav has no visible focus ring (${focused})`).toBe(
+        true
+      )
+      expect(focused, 'the mobile focus ring is outset — clipped at the viewport edge').toContain(
+        'inset'
+      )
+    }
+  )
+})
+
+test(
+  'the desktop focus ring stays OUTSET — `ring-inset` did not leak to >= 640px',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
-    // Keyboard focus (not `.focus()`) so `:focus-visible` is guaranteed to match.
-    // Only the ring's INK is read here — never the element's position, which
-    // focus scrolling would have moved (31.3).
     const focused = await tabToFirstNavLink(page)
     expect(focused, 'never reached a nav link by tabbing').not.toBeNull()
-
-    // The grid columns are 64px x 5, flush to x=0..320. An OUTSET 2px ring paints
-    // at x=-2 and x=322, i.e. clipped away on the 1st and 5th cells; `ring-inset`
-    // is what keeps it on screen, and it is mobile-only.
-    expect(hasVisibleRing(focused), `the mobile nav has no visible focus ring (${focused})`).toBe(
+    // `not.toContain('inset')` alone is satisfied by `box-shadow: none` AND by a
+    // zero-width ring (`ring-0` computes to `... 0px 0px 0px 0px`, which is not
+    // the string 'none'), so this test would pass on a desktop nav whose focus
+    // ring is invisible. Existence has to be asserted separately from inset-ness.
+    expect(hasVisibleRing(focused), `the desktop nav has no visible focus ring (${focused})`).toBe(
       true
     )
-    expect(focused, 'the mobile focus ring is outset — clipped at the viewport edge').toContain(
-      'inset'
-    )
-  })
-})
-
-test('the desktop focus ring stays OUTSET — `ring-inset` did not leak to >= 640px', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-
-  const focused = await tabToFirstNavLink(page)
-  expect(focused, 'never reached a nav link by tabbing').not.toBeNull()
-  // `not.toContain('inset')` alone is satisfied by `box-shadow: none` AND by a
-  // zero-width ring (`ring-0` computes to `... 0px 0px 0px 0px`, which is not
-  // the string 'none'), so this test would pass on a desktop nav whose focus
-  // ring is invisible. Existence has to be asserted separately from inset-ness.
-  expect(hasVisibleRing(focused), `the desktop nav has no visible focus ring (${focused})`).toBe(
-    true
-  )
-  expect(focused, '`ring-inset` leaked onto the desktop nav').not.toContain('inset')
-})
+    expect(focused, '`ring-inset` leaked onto the desktop nav').not.toContain('inset')
+  }
+)
 
 /**
  * A focus ring is only real if some length in its `box-shadow` is non-zero.
@@ -682,25 +706,29 @@ for (const [theme, expected] of [
   ['light', 'rgb(255, 255, 255)'],
   ['dark', 'rgb(31, 41, 55)'],
 ] as const) {
-  test(`the mobile bar paints an opaque ${theme} background of its own`, async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 720 })
-    // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`.
-    await page.emulateMedia({ colorScheme: theme })
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
+  test(
+    `the mobile bar paints an opaque ${theme} background of its own`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 720 })
+      // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`.
+      await page.emulateMedia({ colorScheme: theme })
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
 
-    const bg = await page.evaluate((selector) => {
-      const nav = document.querySelector(selector)
-      if (!nav) throw new Error(`${selector} not found`)
-      return globalThis.getComputedStyle(nav).backgroundColor
-    }, NAV)
+      const bg = await page.evaluate((selector) => {
+        const nav = document.querySelector(selector)
+        if (!nav) throw new Error(`${selector} not found`)
+        return globalThis.getComputedStyle(nav).backgroundColor
+      }, NAV)
 
-    // Opacity first: this is what actually fails when the token is dropped.
-    expect(bg, `the ${theme} mobile bar is transparent — content shows through`).not.toMatch(
-      /rgba\(.*,\s*0\)$/
-    )
-    expect(bg, `the ${theme} mobile bar lost its background`).toBe(expected)
-  })
+      // Opacity first: this is what actually fails when the token is dropped.
+      expect(bg, `the ${theme} mobile bar is transparent — content shows through`).not.toMatch(
+        /rgba\(.*,\s*0\)$/
+      )
+      expect(bg, `the ${theme} mobile bar lost its background`).toBe(expected)
+    }
+  )
 }
 
 /**
@@ -716,83 +744,94 @@ for (const [theme, expected] of [
   ['light', 'rgb(255, 255, 255)'],
   ['dark', 'rgb(31, 41, 55)'],
 ] as const) {
-  test(`the open More sheet paints an opaque ${theme} background of its own`, async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 720 })
-    // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`.
-    await page.emulateMedia({ colorScheme: theme })
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.locator(MORE_SUMMARY).click()
+  test(
+    `the open More sheet paints an opaque ${theme} background of its own`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 720 })
+      // Story 61.1 (FR93): the theme follows the device's `prefers-color-scheme`.
+      await page.emulateMedia({ colorScheme: theme })
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      await page.locator(MORE_SUMMARY).click()
 
-    const bg = await page.evaluate((selector) => {
-      const sheet = document.querySelector(`${selector} > ul > li > details > ul`)
-      if (!sheet) throw new Error(`the More sheet under ${selector} not found`)
-      return globalThis.getComputedStyle(sheet).backgroundColor
-    }, NAV)
-    expect(bg, `the ${theme} More sheet is transparent — content shows through`).not.toMatch(
-      /rgba\(.*,\s*0\)$/
-    )
-    expect(bg, `the ${theme} More sheet lost its background`).toBe(expected)
-  })
+      const bg = await page.evaluate((selector) => {
+        const sheet = document.querySelector(`${selector} > ul > li > details > ul`)
+        if (!sheet) throw new Error(`the More sheet under ${selector} not found`)
+        return globalThis.getComputedStyle(sheet).backgroundColor
+      }, NAV)
+      expect(bg, `the ${theme} More sheet is transparent — content shows through`).not.toMatch(
+        /rgba\(.*,\s*0\)$/
+      )
+      expect(bg, `the ${theme} More sheet lost its background`).toBe(expected)
+    }
+  )
 }
 
 test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
   test.use({ viewport: { width: 320, height: 720 } })
 
-  test('the open sheet sits ON SCREEN, flush on top of the bar', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.locator(MORE_SUMMARY).click()
+  test(
+    'the open sheet sits ON SCREEN, flush on top of the bar',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      await page.locator(MORE_SUMMARY).click()
 
-    const measured = await page.evaluate((selector) => {
-      const nav = document.querySelector(selector)
-      if (!nav) throw new Error(`${selector} not found`)
-      const sheet = nav.querySelector(':scope > ul > li > details > ul')
-      if (!sheet) throw new Error(`the More sheet under ${selector} not found`)
-      const s = sheet.getBoundingClientRect()
-      const n = nav.getBoundingClientRect()
-      return {
-        position: globalThis.getComputedStyle(sheet).position,
-        top: s.top,
-        bottom: s.bottom,
-        left: s.left,
-        right: s.right,
-        navTop: n.top,
-        innerHeight: globalThis.innerHeight,
-        innerWidth: globalThis.innerWidth,
-        // `overflow-y-auto` computes `overflow-x` to `auto` as well, which would
-        // make the panel a horizontal scroll container silently absorbing any
-        // overflowing label (31.2's absorption trap). Element-level, so no
-        // ancestor can absorb it either.
-        overflowX: sheet.scrollWidth - sheet.clientWidth,
-      }
-    }, NAV)
+      const measured = await page.evaluate((selector) => {
+        const nav = document.querySelector(selector)
+        if (!nav) throw new Error(`${selector} not found`)
+        const sheet = nav.querySelector(':scope > ul > li > details > ul')
+        if (!sheet) throw new Error(`the More sheet under ${selector} not found`)
+        const s = sheet.getBoundingClientRect()
+        const n = nav.getBoundingClientRect()
+        return {
+          position: globalThis.getComputedStyle(sheet).position,
+          top: s.top,
+          bottom: s.bottom,
+          left: s.left,
+          right: s.right,
+          navTop: n.top,
+          innerHeight: globalThis.innerHeight,
+          innerWidth: globalThis.innerWidth,
+          // `overflow-y-auto` computes `overflow-x` to `auto` as well, which would
+          // make the panel a horizontal scroll container silently absorbing any
+          // overflowing label (31.2's absorption trap). Element-level, so no
+          // ancestor can absorb it either.
+          overflowX: sheet.scrollWidth - sheet.clientWidth,
+        }
+      }, NAV)
 
-    // ⚠️⚠️ `toBeVisible()` CANNOT MAKE THIS CLAIM. Measured on the `max-sm:fixed`
-    // version of this sheet — the mistake this assertion exists to catch —
-    // `bottom: 100%` resolved against the VIEWPORT and put the sheet at
-    // {x: 0, y: -279}, entirely above the top edge of the screen, and
-    // `toBeVisible()` PASSED on it because Playwright only checks for a
-    // non-empty box. Assert the rect is actually inside the viewport.
-    expect(measured.position, 'the sheet is not `absolute` — see the y=-279 trap').toBe('absolute')
-    expect(measured.top, 'the sheet is rendered above the top edge of the screen').toBeGreaterThan(
-      0
-    )
-    expect(measured.bottom, 'the sheet hangs below the viewport').toBeLessThanOrEqual(
-      measured.innerHeight
-    )
-    expect(measured.left).toBeGreaterThanOrEqual(0)
-    expect(measured.right).toBeLessThanOrEqual(measured.innerWidth)
-    // Anchored to the bar, not floating: its bottom edge is the bar's top edge.
-    expect(
-      Math.abs(measured.bottom - measured.navTop),
-      'the sheet is not flush on the bar'
-    ).toBeLessThanOrEqual(2)
-    expect(
-      measured.overflowX,
-      'the sheet absorbs a horizontally overflowing row'
-    ).toBeLessThanOrEqual(0)
-  })
+      // ⚠️⚠️ `toBeVisible()` CANNOT MAKE THIS CLAIM. Measured on the `max-sm:fixed`
+      // version of this sheet — the mistake this assertion exists to catch —
+      // `bottom: 100%` resolved against the VIEWPORT and put the sheet at
+      // {x: 0, y: -279}, entirely above the top edge of the screen, and
+      // `toBeVisible()` PASSED on it because Playwright only checks for a
+      // non-empty box. Assert the rect is actually inside the viewport.
+      expect(measured.position, 'the sheet is not `absolute` — see the y=-279 trap').toBe(
+        'absolute'
+      )
+      expect(
+        measured.top,
+        'the sheet is rendered above the top edge of the screen'
+      ).toBeGreaterThan(0)
+      expect(measured.bottom, 'the sheet hangs below the viewport').toBeLessThanOrEqual(
+        measured.innerHeight
+      )
+      expect(measured.left).toBeGreaterThanOrEqual(0)
+      expect(measured.right).toBeLessThanOrEqual(measured.innerWidth)
+      // Anchored to the bar, not floating: its bottom edge is the bar's top edge.
+      expect(
+        Math.abs(measured.bottom - measured.navTop),
+        'the sheet is not flush on the bar'
+      ).toBeLessThanOrEqual(2)
+      expect(
+        measured.overflowX,
+        'the sheet absorbs a horizontally overflowing row'
+      ).toBeLessThanOrEqual(0)
+    }
+  )
 
   /**
    * ⚠️⚠️ FOUND BY CODE REVIEW. The panel's height is content-driven and anchored
@@ -828,167 +867,177 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
       [320, 260, 24],
       [360, 200, 20],
     ] as const) {
-      test(`every row is reachable at ${w}x${h} with a ${root}px root font`, async ({ page }) => {
-        await page.setViewportSize({ width: w, height: h })
-        await page.addInitScript((px) => {
-          document.addEventListener('DOMContentLoaded', () => {
+      test(
+        `every row is reachable at ${w}x${h} with a ${root}px root font`,
+        { tag: '@layout' },
+        async ({ page }) => {
+          await page.setViewportSize({ width: w, height: h })
+          await page.addInitScript((px) => {
+            document.addEventListener('DOMContentLoaded', () => {
+              document.documentElement.style.fontSize = `${px}px`
+            })
+          }, root)
+          await page.goto('/')
+          await page.waitForLoadState('networkidle')
+          await page.evaluate((px) => {
             document.documentElement.style.fontSize = `${px}px`
-          })
-        }, root)
-        await page.goto('/')
-        await page.waitForLoadState('networkidle')
-        await page.evaluate((px) => {
-          document.documentElement.style.fontSize = `${px}px`
-        }, root)
+          }, root)
 
-        await page.locator(MORE_SUMMARY).click()
+          await page.locator(MORE_SUMMARY).click()
 
-        const measured = await page.evaluate((selector) => {
-          const sheet = document.querySelector(
-            `${selector} > ul > li > details > ul`
-          ) as HTMLElement
-          const r = sheet.getBoundingClientRect()
-          const style = globalThis.getComputedStyle(sheet)
-          return {
-            top: Math.round(r.top * 100) / 100,
-            overflowY: style.overflowY,
-            // The panel must be capped, and if content exceeds the cap it must
-            // be scrollable rather than clipped.
-            scrollable: sheet.scrollHeight > sheet.clientHeight,
-            // Element-level: `overflow-y-auto` computes `overflow-x` to `auto`
-            // too, so the panel could silently absorb an overflowing label.
-            overflowX: sheet.scrollWidth - sheet.clientWidth,
-            // Each row is scrolled into view within the PANEL before it is
-            // hit-tested, because once the panel is capped a lower row is
-            // legitimately below its fold. The claim is "reachable", not
-            // "reachable without scrolling".
-            //
-            // ⚠️ This is NOT the tautology 31.3 warned about (a probe that
-            // reaches its target by scripting the very affordance under test).
-            // The affordance under test is scrollABILITY, and that is pinned
-            // separately and independently by the computed `overflow-y`
-            // assertion below — a check that scrolling cannot manufacture.
-            // Neither subsumes the other: computed style cannot prove there is
-            // anything to scroll to, and the hit test cannot prove the user is
-            // allowed to scroll.
-            rows: [...sheet.querySelectorAll('a')].map((a) => {
-              a.scrollIntoView({ block: 'nearest' })
-              const rr = a.getBoundingClientRect()
-              const cx = Math.round(rr.x + rr.width / 2)
-              const cy = Math.round(rr.y + rr.height / 2)
-              const hit =
-                cy > 0 && cy < globalThis.innerHeight ? document.elementFromPoint(cx, cy) : null
+          const measured = await page.evaluate((selector) => {
+            const sheet = document.querySelector(
+              `${selector} > ul > li > details > ul`
+            ) as HTMLElement
+            const r = sheet.getBoundingClientRect()
+            const style = globalThis.getComputedStyle(sheet)
+            return {
+              top: Math.round(r.top * 100) / 100,
+              overflowY: style.overflowY,
+              // The panel must be capped, and if content exceeds the cap it must
+              // be scrollable rather than clipped.
+              scrollable: sheet.scrollHeight > sheet.clientHeight,
+              // Element-level: `overflow-y-auto` computes `overflow-x` to `auto`
+              // too, so the panel could silently absorb an overflowing label.
+              overflowX: sheet.scrollWidth - sheet.clientWidth,
+              // Each row is scrolled into view within the PANEL before it is
+              // hit-tested, because once the panel is capped a lower row is
+              // legitimately below its fold. The claim is "reachable", not
+              // "reachable without scrolling".
+              //
+              // ⚠️ This is NOT the tautology 31.3 warned about (a probe that
+              // reaches its target by scripting the very affordance under test).
+              // The affordance under test is scrollABILITY, and that is pinned
+              // separately and independently by the computed `overflow-y`
+              // assertion below — a check that scrolling cannot manufacture.
+              // Neither subsumes the other: computed style cannot prove there is
+              // anything to scroll to, and the hit test cannot prove the user is
+              // allowed to scroll.
+              rows: [...sheet.querySelectorAll('a')].map((a) => {
+                a.scrollIntoView({ block: 'nearest' })
+                const rr = a.getBoundingClientRect()
+                const cx = Math.round(rr.x + rr.width / 2)
+                const cy = Math.round(rr.y + rr.height / 2)
+                const hit =
+                  cy > 0 && cy < globalThis.innerHeight ? document.elementFromPoint(cx, cy) : null
+                return {
+                  label: a.textContent?.trim() ?? '',
+                  top: Math.round(rr.top),
+                  reachable: !!hit && (a.contains(hit) || a === hit),
+                }
+              }),
+            }
+          }, NAV)
+
+          expect(
+            measured.top,
+            'the sheet is rendered off the top of the screen'
+          ).toBeGreaterThanOrEqual(0)
+          expect(measured.overflowY, 'the sheet cannot scroll when it does not fit').toMatch(
+            /^(auto|scroll)$/
+          )
+          // ⚠️ THE ANTI-VACUITY GUARD. `overflow-y: auto` is satisfied by a panel
+          // with nothing to scroll, so without this the whole describe passes on a
+          // sheet that fits — which is exactly what happened when 43.3 removed a
+          // row. This asserts the fixture still produces the condition it names.
+          expect(
+            measured.scrollable,
+            `the sheet does not overflow at ${w}x${h}@${root}px — this fixture no longer tests the cap`
+          ).toBe(true)
+          expect(
+            measured.overflowX,
+            'the sheet absorbs a horizontally overflowing row'
+          ).toBeLessThanOrEqual(0)
+          for (const row of measured.rows) {
+            expect(row.reachable, `sheet row "${row.label}" is unreachable (top ${row.top})`).toBe(
+              true
+            )
+          }
+        }
+      )
+    }
+  })
+
+  test(
+    'every sheet row is a >=44px target with an INSET focus ring',
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      await page.locator(MORE_SUMMARY).click()
+
+      const rows = await page.evaluate(
+        (selector) =>
+          [...document.querySelectorAll(`${selector} > ul > li > details > ul > li > a`)].map(
+            (a) => {
+              // ⚠️ `lineCount` is NOT decoration, and story 43.2 proved it by mutation.
+              // A sheet row is `display: flex` with a wrapping label, so a label too
+              // wide for its box WRAPS instead of overflowing: `scrollWidth` never
+              // exceeds `clientWidth` and the height only GROWS, which the `>= 44`
+              // floor accepts. Measured under a mutation that cut the row's content
+              // box to 28px (`max-sm:px-4` -> `px-32`): "Balance Tracking" went to two
+              // lines at height 59 and this test stayed GREEN on every assertion it
+              // had. So the two guards below cannot see a label that WRAPS — the exact
+              // property 43.2's longer label needed verified.
+              // ⚠️ KEEP IT, but know its premise is currently dormant: story 59.1
+              // renamed "Balance Tracking" -> "Balances", the LAST multi-word sheet
+              // label in either tier. Every sheet label is now a single token, and a
+              // single token cannot wrap at a space — it can only overflow, which the
+              // `overflows` check already catches. So `lineCount` cannot fire for the
+              // failure it documents until a multi-word label returns (or CSS adds
+              // `overflow-wrap: anywhere` / `word-break`). It still pins one line, and
+              // a future sheet label WILL be multi-word again.
+              //
+              // ⚠️ That does NOT make `overflows` dead, and code review caught this
+              // comment implying it was: an UNBREAKABLE token (no space to wrap at)
+              // still overflows its box and `overflows` still fires. The two guards
+              // and this one cover different failures — wrappable vs unwrappable
+              // content — so none of the three is redundant. Ranged over
+              // the LABEL, mirroring `e2e/chrome-320.spec.ts`'s bar-cell probe: on the
+              // whole anchor a correct row measures 2 rects (icon box + label), not 1.
+              const label = a.querySelector('[data-nav-label]')
+              const range = document.createRange()
+              if (label) range.selectNodeContents(label)
               return {
                 label: a.textContent?.trim() ?? '',
-                top: Math.round(rr.top),
-                reachable: !!hit && (a.contains(hit) || a === hit),
+                height: Math.round(a.getBoundingClientRect().height),
+                overflows: a.scrollWidth > a.clientWidth,
+                lineCount: label ? range.getClientRects().length : -1,
               }
-            }),
-          }
-        }, NAV)
+            }
+          ),
+        NAV
+      )
 
-        expect(
-          measured.top,
-          'the sheet is rendered off the top of the screen'
-        ).toBeGreaterThanOrEqual(0)
-        expect(measured.overflowY, 'the sheet cannot scroll when it does not fit').toMatch(
-          /^(auto|scroll)$/
-        )
-        // ⚠️ THE ANTI-VACUITY GUARD. `overflow-y: auto` is satisfied by a panel
-        // with nothing to scroll, so without this the whole describe passes on a
-        // sheet that fits — which is exactly what happened when 43.3 removed a
-        // row. This asserts the fixture still produces the condition it names.
-        expect(
-          measured.scrollable,
-          `the sheet does not overflow at ${w}x${h}@${root}px — this fixture no longer tests the cap`
-        ).toBe(true)
-        expect(
-          measured.overflowX,
-          'the sheet absorbs a horizontally overflowing row'
-        ).toBeLessThanOrEqual(0)
-        for (const row of measured.rows) {
-          expect(row.reachable, `sheet row "${row.label}" is unreachable (top ${row.top})`).toBe(
-            true
-          )
-        }
-      })
-    }
-  })
-
-  test('every sheet row is a >=44px target with an INSET focus ring', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.locator(MORE_SUMMARY).click()
-
-    const rows = await page.evaluate(
-      (selector) =>
-        [...document.querySelectorAll(`${selector} > ul > li > details > ul > li > a`)].map((a) => {
-          // ⚠️ `lineCount` is NOT decoration, and story 43.2 proved it by mutation.
-          // A sheet row is `display: flex` with a wrapping label, so a label too
-          // wide for its box WRAPS instead of overflowing: `scrollWidth` never
-          // exceeds `clientWidth` and the height only GROWS, which the `>= 44`
-          // floor accepts. Measured under a mutation that cut the row's content
-          // box to 28px (`max-sm:px-4` -> `px-32`): "Balance Tracking" went to two
-          // lines at height 59 and this test stayed GREEN on every assertion it
-          // had. So the two guards below cannot see a label that WRAPS — the exact
-          // property 43.2's longer label needed verified.
-          // ⚠️ KEEP IT, but know its premise is currently dormant: story 59.1
-          // renamed "Balance Tracking" -> "Balances", the LAST multi-word sheet
-          // label in either tier. Every sheet label is now a single token, and a
-          // single token cannot wrap at a space — it can only overflow, which the
-          // `overflows` check already catches. So `lineCount` cannot fire for the
-          // failure it documents until a multi-word label returns (or CSS adds
-          // `overflow-wrap: anywhere` / `word-break`). It still pins one line, and
-          // a future sheet label WILL be multi-word again.
-          //
-          // ⚠️ That does NOT make `overflows` dead, and code review caught this
-          // comment implying it was: an UNBREAKABLE token (no space to wrap at)
-          // still overflows its box and `overflows` still fires. The two guards
-          // and this one cover different failures — wrappable vs unwrappable
-          // content — so none of the three is redundant. Ranged over
-          // the LABEL, mirroring `e2e/chrome-320.spec.ts`'s bar-cell probe: on the
-          // whole anchor a correct row measures 2 rects (icon box + label), not 1.
-          const label = a.querySelector('[data-nav-label]')
-          const range = document.createRange()
-          if (label) range.selectNodeContents(label)
-          return {
-            label: a.textContent?.trim() ?? '',
-            height: Math.round(a.getBoundingClientRect().height),
-            overflows: a.scrollWidth > a.clientWidth,
-            lineCount: label ? range.getClientRects().length : -1,
-          }
-        }),
-      NAV
-    )
-
-    expect(rows.map((r) => r.label)).toEqual(['Balances', 'Retirement'])
-    for (const { label, height, overflows, lineCount } of rows) {
-      expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
-      expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)
-      expect(lineCount, `sheet row "${label}" wraps to ${lineCount} lines at 320px`).toBe(1)
-    }
-
-    // The rows are new anchors and inherit NONE of the bar's ink coverage.
-    // Keyboard focus so `:focus-visible` is guaranteed to match.
-    let ring: string | null = null
-    for (let i = 0; i < 20; i++) {
-      await page.keyboard.press('Tab')
-      const found = await page.evaluate((selector) => {
-        const active = document.activeElement
-        if (!active?.closest(`${selector} > ul > li > details > ul`)) return null
-        return globalThis.getComputedStyle(active).boxShadow
-      }, NAV)
-      if (found !== null) {
-        ring = found
-        break
+      expect(rows.map((r) => r.label)).toEqual(['Balances', 'Retirement'])
+      for (const { label, height, overflows, lineCount } of rows) {
+        expect(height, `sheet row "${label}" is under 44px`).toBeGreaterThanOrEqual(44)
+        expect(overflows, `sheet row "${label}" overflows its box`).toBe(false)
+        expect(lineCount, `sheet row "${label}" wraps to ${lineCount} lines at 320px`).toBe(1)
       }
+
+      // The rows are new anchors and inherit NONE of the bar's ink coverage.
+      // Keyboard focus so `:focus-visible` is guaranteed to match.
+      let ring: string | null = null
+      for (let i = 0; i < 20; i++) {
+        await page.keyboard.press('Tab')
+        const found = await page.evaluate((selector) => {
+          const active = document.activeElement
+          if (!active?.closest(`${selector} > ul > li > details > ul`)) return null
+          return globalThis.getComputedStyle(active).boxShadow
+        }, NAV)
+        if (found !== null) {
+          ring = found
+          break
+        }
+      }
+      expect(ring, 'never reached a sheet row by tabbing').not.toBeNull()
+      expect(hasVisibleRing(ring), `a sheet row has no visible focus ring (${ring})`).toBe(true)
+      expect(ring, 'the sheet row focus ring is outset — clipped at the viewport edge').toContain(
+        'inset'
+      )
     }
-    expect(ring, 'never reached a sheet row by tabbing').not.toBeNull()
-    expect(hasVisibleRing(ring), `a sheet row has no visible focus ring (${ring})`).toBe(true)
-    expect(ring, 'the sheet row focus ring is outset — clipped at the viewport edge').toContain(
-      'inset'
-    )
-  })
+  )
 })
 
 /**
@@ -1028,82 +1077,92 @@ test.describe('the More sheet below `sm` (story 31.5, AC-2/AC-6/AC-11)', () => {
 // session has no More (Balances and Retirement are on the row), so there is no
 // overlay to test. 1000px is a free desktop width that has one (the widest is
 // 1023px).
-test('the More disclosure is a real overlay in the desktop row at 1000px', async ({ page }) => {
-  await page.setViewportSize({ width: 1000, height: 720 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
+test(
+  'the More disclosure is a real overlay in the desktop row at 1000px',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 720 })
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
 
-  const read = () =>
-    page.evaluate((selector) => {
-      const nav = document.querySelector(selector) as HTMLElement
-      // Every item that is not `display: none` (story 69.3: the promoted row
-      // copies are, below `lg`). Deliberately NOT a rect filter: mutations (a)
-      // and (d) above make the More cell `display: contents`, which has an
-      // empty rect, and they must still find it as the last item.
-      const items = ([...nav.querySelectorAll(':scope > ul > li')] as HTMLElement[]).filter(
-        (li) => getComputedStyle(li).display !== 'none'
-      )
-      const cell = items.at(-1) as HTMLElement
-      const details = cell.querySelector(':scope > details') as HTMLDetailsElement | null
-      const panel = details?.querySelector(':scope > ul') as HTMLElement | null
-      const trigger = details?.querySelector(':scope > summary') as HTMLElement | null
-      return {
-        itemCount: items.length,
-        rowTops: [...new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))],
-        cellDisplay: getComputedStyle(cell).display,
-        found: details !== null && panel !== null && trigger !== null,
-        triggerDisplay: trigger ? getComputedStyle(trigger).display : 'MISSING',
-        panelPosition: panel ? getComputedStyle(panel).position : 'MISSING',
-        panelVisible: panel ? panel.checkVisibility() : null,
-        navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
-        bodyHeight: document.body.scrollHeight,
-        // Icons are mobile-only elements; a stray one adds 24px to every cell.
-        // ⚠️ ICONS only since story 69.1: the More trigger's disclosure chevron
-        // is the one svg that MUST be visible here, and it is counted
-        // separately below. Never satisfy this count by hiding the chevron.
-        visibleIcons: [...nav.querySelectorAll('svg:not([data-disclosure-chevron])')].filter(
-          (svg) => svg.checkVisibility()
-        ).length,
-        visibleChevrons: [...nav.querySelectorAll('svg[data-disclosure-chevron]')].filter((svg) =>
-          svg.checkVisibility()
-        ).length,
-      }
+    const read = () =>
+      page.evaluate((selector) => {
+        const nav = document.querySelector(selector) as HTMLElement
+        // Every item that is not `display: none` (story 69.3: the promoted row
+        // copies are, below `lg`). Deliberately NOT a rect filter: mutations (a)
+        // and (d) above make the More cell `display: contents`, which has an
+        // empty rect, and they must still find it as the last item.
+        const items = ([...nav.querySelectorAll(':scope > ul > li')] as HTMLElement[]).filter(
+          (li) => getComputedStyle(li).display !== 'none'
+        )
+        const cell = items.at(-1) as HTMLElement
+        const details = cell.querySelector(':scope > details') as HTMLDetailsElement | null
+        const panel = details?.querySelector(':scope > ul') as HTMLElement | null
+        const trigger = details?.querySelector(':scope > summary') as HTMLElement | null
+        return {
+          itemCount: items.length,
+          rowTops: [...new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))],
+          cellDisplay: getComputedStyle(cell).display,
+          found: details !== null && panel !== null && trigger !== null,
+          triggerDisplay: trigger ? getComputedStyle(trigger).display : 'MISSING',
+          panelPosition: panel ? getComputedStyle(panel).position : 'MISSING',
+          panelVisible: panel ? panel.checkVisibility() : null,
+          navHeight: Math.round(nav.getBoundingClientRect().height * 100) / 100,
+          bodyHeight: document.body.scrollHeight,
+          // Icons are mobile-only elements; a stray one adds 24px to every cell.
+          // ⚠️ ICONS only since story 69.1: the More trigger's disclosure chevron
+          // is the one svg that MUST be visible here, and it is counted
+          // separately below. Never satisfy this count by hiding the chevron.
+          visibleIcons: [...nav.querySelectorAll('svg:not([data-disclosure-chevron])')].filter(
+            (svg) => svg.checkVisibility()
+          ).length,
+          visibleChevrons: [...nav.querySelectorAll('svg[data-disclosure-chevron]')].filter((svg) =>
+            svg.checkVisibility()
+          ).length,
+        }
+      }, NAV)
+
+    const closed = await read()
+    expect(closed.found, 'the More <details>/<summary>/<ul> is incomplete').toBe(true)
+    expect(closed.itemCount, 'the desktop row is not five items').toBe(5)
+    expect(closed.cellDisplay, 'the More cell dissolved into the row').not.toBe('contents')
+    expect(closed.rowTops, 'the desktop row wraps').toHaveLength(1)
+    expect(closed.triggerDisplay, 'the More trigger is hidden on desktop').not.toBe('none')
+    expect(closed.panelVisible, 'the panel is showing while closed').toBe(false)
+    expect(closed.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
+    expect(closed.visibleChevrons, 'the More chevron is not visible on desktop (story 69.1)').toBe(
+      1
+    )
+    expect(closed.navHeight, 'the desktop nav height moved — an icon or layout regression').toBe(52)
+
+    await page.locator(MORE_SUMMARY).click()
+    const open = await read()
+    expect(open.panelVisible, 'the panel did not open').toBe(true)
+    expect(open.panelPosition, 'the desktop panel is not an overlay').toBe('absolute')
+    expect(open.navHeight, 'opening the panel grew the bar — it is in flow').toBe(closed.navHeight)
+    expect(open.bodyHeight, 'opening the panel pushed the page down').toBe(closed.bodyHeight)
+    expect(open.visibleIcons, 'a panel-row icon is visible on desktop').toBe(0)
+  }
+)
+
+test(
+  'the desktop nav carries NO background of its own — the wrapper owns it',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+
+    const bg = await page.evaluate((selector) => {
+      const nav = document.querySelector(selector)
+      if (!nav) throw new Error(`${selector} not found`)
+      return globalThis.getComputedStyle(nav).backgroundColor
     }, NAV)
-
-  const closed = await read()
-  expect(closed.found, 'the More <details>/<summary>/<ul> is incomplete').toBe(true)
-  expect(closed.itemCount, 'the desktop row is not five items').toBe(5)
-  expect(closed.cellDisplay, 'the More cell dissolved into the row').not.toBe('contents')
-  expect(closed.rowTops, 'the desktop row wraps').toHaveLength(1)
-  expect(closed.triggerDisplay, 'the More trigger is hidden on desktop').not.toBe('none')
-  expect(closed.panelVisible, 'the panel is showing while closed').toBe(false)
-  expect(closed.visibleIcons, 'an icon is missing `sm:hidden` and reached desktop').toBe(0)
-  expect(closed.visibleChevrons, 'the More chevron is not visible on desktop (story 69.1)').toBe(1)
-  expect(closed.navHeight, 'the desktop nav height moved — an icon or layout regression').toBe(52)
-
-  await page.locator(MORE_SUMMARY).click()
-  const open = await read()
-  expect(open.panelVisible, 'the panel did not open').toBe(true)
-  expect(open.panelPosition, 'the desktop panel is not an overlay').toBe('absolute')
-  expect(open.navHeight, 'opening the panel grew the bar — it is in flow').toBe(closed.navHeight)
-  expect(open.bodyHeight, 'opening the panel pushed the page down').toBe(closed.bodyHeight)
-  expect(open.visibleIcons, 'a panel-row icon is visible on desktop').toBe(0)
-})
-
-test('the desktop nav carries NO background of its own — the wrapper owns it', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-
-  const bg = await page.evaluate((selector) => {
-    const nav = document.querySelector(selector)
-    if (!nav) throw new Error(`${selector} not found`)
-    return globalThis.getComputedStyle(nav).backgroundColor
-  }, NAV)
-  // An unprefixed `bg-*` leaking to desktop would paint a band inside the shared
-  // nav+account row that `__root.tsx` dresses as one bar (story 19-3).
-  expect(bg, 'a background leaked onto the desktop nav').toBe('rgba(0, 0, 0, 0)')
-})
+    // An unprefixed `bg-*` leaking to desktop would paint a band inside the shared
+    // nav+account row that `__root.tsx` dresses as one bar (story 19-3).
+    expect(bg, 'a background leaked onto the desktop nav').toBe('rgba(0, 0, 0, 0)')
+  }
+)
 
 /**
  * The full merged-class inventory, read as COMPUTED style rather than as class
@@ -1239,14 +1298,16 @@ const DESKTOP_STYLES = {
   linkBorderRadius: '6px',
 }
 
-test('the desktop cascade is untouched — every mobile utility is absent at 1280px', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 720 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-  expect(await readMergedStyles(page)).toEqual(DESKTOP_STYLES)
-})
+test(
+  'the desktop cascade is untouched — every mobile utility is absent at 1280px',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    expect(await readMergedStyles(page)).toEqual(DESKTOP_STYLES)
+  }
+)
 
 /**
  * Tab until the active element is a nav link, then return its `box-shadow`.

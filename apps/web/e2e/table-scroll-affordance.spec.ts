@@ -180,42 +180,48 @@ const OVERFLOW_ROUTES = ['/income', '/expenses', '/savings', '/balance'] as cons
 // ---------------------------------------------------------------------------
 
 for (const route of OVERFLOW_ROUTES) {
-  test(`${route} signposts horizontal overflow at 768px (AC-1)`, async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 900 })
-    await seedFinanceRows(page)
-    await page.goto(route)
-    await page.waitForLoadState('networkidle')
-    await page.addStyleTag({ content: WIDE_FONT })
-    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+  test(
+    `${route} signposts horizontal overflow at 768px (AC-1)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 768, height: 900 })
+      await seedFinanceRows(page)
+      await page.goto(route)
+      await page.waitForLoadState('networkidle')
+      await page.addStyleTag({ content: WIDE_FONT })
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-    const wrapper = wrapperOf(page)
-    const m = await metrics(wrapper)
+      const wrapper = wrapperOf(page)
+      const m = await metrics(wrapper)
 
-    // Precondition, asserted separately so a fixture that stopped overflowing
-    // reddens HERE rather than silently making the affordance claim vacuous.
-    expect(
-      m.scrollWidth,
-      `${route} fixture no longer overflows at 768px — the affordance claim below would be vacuous`
-    ).toBeGreaterThan(m.clientWidth)
-    expect(m.scrollLeft, 'the page must be measured unscrolled').toBe(0)
+      // Precondition, asserted separately so a fixture that stopped overflowing
+      // reddens HERE rather than silently making the affordance claim vacuous.
+      expect(
+        m.scrollWidth,
+        `${route} fixture no longer overflows at 768px — the affordance claim below would be vacuous`
+      ).toBeGreaterThan(m.clientWidth)
+      expect(m.scrollLeft, 'the page must be measured unscrolled').toBe(0)
 
-    const right = await edgeColour(page, wrapper, 'right')
-    const left = await edgeColour(page, wrapper, 'left')
+      const right = await edgeColour(page, wrapper, 'right')
+      const left = await edgeColour(page, wrapper, 'left')
 
-    expect(
-      delta(right, SURFACE_LIGHT),
-      `${route}: no affordance on the right edge — ${JSON.stringify(right)} reads as surface, so ${
-        m.scrollWidth - m.clientWidth
-      }px of table is hidden with nothing saying so`
-    ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
+      expect(
+        delta(right, SURFACE_LIGHT),
+        `${route}: no affordance on the right edge — ${JSON.stringify(
+          right
+        )} reads as surface, so ${
+          m.scrollWidth - m.clientWidth
+        }px of table is hidden with nothing saying so`
+      ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
 
-    // The mirror half: unscrolled, the LEFT cover masks the left shadow. A
-    // permanently-painted shadow (the AC-6 defect) fails here.
-    expect(
-      delta(left, SURFACE_LIGHT),
-      `${route}: the left edge is shadowed at scrollLeft=0 — the cover layer is not masking, so the affordance is permanent rather than responsive`
-    ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
-  })
+      // The mirror half: unscrolled, the LEFT cover masks the left shadow. A
+      // permanently-painted shadow (the AC-6 defect) fails here.
+      expect(
+        delta(left, SURFACE_LIGHT),
+        `${route}: the left edge is shadowed at scrollLeft=0 — the cover layer is not masking, so the affordance is permanent rather than responsive`
+      ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
+    }
+  )
 }
 
 // ⚠️ THE DARK PRESENCE CASE IS NOT OPTIONAL, AND ITS ABSENCE HID A REAL DEFECT.
@@ -225,106 +231,116 @@ for (const route of OVERFLOW_ROUTES) {
 // `rgba(0,0,0,0.55)`, which over gray-800 reaches 18 against a surface of 31.
 // A delta of 13 is invisible, and no test could see it. The dark shadow is a
 // light glow for that reason; this case is what holds it there.
-test('an overflowing table signposts in DARK mode too (AC-1)', async ({ page }) => {
-  await page.setViewportSize({ width: 768, height: 900 })
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await seedFinanceRows(page)
-  await page.goto('/income')
-  await page.waitForLoadState('networkidle')
-  await page.addStyleTag({ content: WIDE_FONT })
-  await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
-  await expectSchemeApplied(page, 'dark')
+test(
+  'an overflowing table signposts in DARK mode too (AC-1)',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 900 })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await seedFinanceRows(page)
+    await page.goto('/income')
+    await page.waitForLoadState('networkidle')
+    await page.addStyleTag({ content: WIDE_FONT })
+    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+    await expectSchemeApplied(page, 'dark')
 
-  const wrapper = wrapperOf(page)
-  const m = await metrics(wrapper)
-  expect(m.scrollWidth, 'dark fixture does not overflow').toBeGreaterThan(m.clientWidth)
+    const wrapper = wrapperOf(page)
+    const m = await metrics(wrapper)
+    expect(m.scrollWidth, 'dark fixture does not overflow').toBeGreaterThan(m.clientWidth)
 
-  const right = await edgeColour(page, wrapper, 'right')
-  const left = await edgeColour(page, wrapper, 'left')
-  expect(
-    delta(right, SURFACE_DARK),
-    `dark: no affordance on the right edge — ${JSON.stringify(
-      right
-    )} against surface ${JSON.stringify(
-      SURFACE_DARK
-    )}. A black shadow has no headroom on a dark card; this must be a light glow.`
-  ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
-  expect(
-    delta(left, SURFACE_DARK),
-    'dark: the left edge is shadowed at scrollLeft=0 — the cover is not masking'
-  ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
-})
+    const right = await edgeColour(page, wrapper, 'right')
+    const left = await edgeColour(page, wrapper, 'left')
+    expect(
+      delta(right, SURFACE_DARK),
+      `dark: no affordance on the right edge — ${JSON.stringify(
+        right
+      )} against surface ${JSON.stringify(
+        SURFACE_DARK
+      )}. A black shadow has no headroom on a dark card; this must be a light glow.`
+    ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
+    expect(
+      delta(left, SURFACE_DARK),
+      'dark: the left edge is shadowed at scrollLeft=0 — the cover is not masking'
+    ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
+  }
+)
 
-test('the affordance follows the scroll position, not merely the presence of overflow (AC-1)', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 768, height: 900 })
-  await seedFinanceRows(page)
-  await page.goto('/income')
-  await page.waitForLoadState('networkidle')
-  await page.addStyleTag({ content: WIDE_FONT })
-  await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+test(
+  'the affordance follows the scroll position, not merely the presence of overflow (AC-1)',
+  { tag: '@layout' },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 900 })
+    await seedFinanceRows(page)
+    await page.goto('/income')
+    await page.waitForLoadState('networkidle')
+    await page.addStyleTag({ content: WIDE_FONT })
+    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-  const wrapper = wrapperOf(page)
-  await wrapper.evaluate((el) => {
-    el.scrollLeft = el.scrollWidth
-  })
-  await expect.poll(() => wrapper.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+    const wrapper = wrapperOf(page)
+    await wrapper.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth
+    })
+    await expect.poll(() => wrapper.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
 
-  const left = await edgeColour(page, wrapper, 'left')
-  const right = await edgeColour(page, wrapper, 'right')
+    const left = await edgeColour(page, wrapper, 'left')
+    const right = await edgeColour(page, wrapper, 'right')
 
-  expect(
-    delta(left, SURFACE_LIGHT),
-    'scrolled to the end, the LEFT shadow must appear — content is now hidden to the left'
-  ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
-  expect(
-    delta(right, SURFACE_LIGHT),
-    'scrolled to the end, the RIGHT shadow must be masked — there is nothing further right'
-  ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
-})
+    expect(
+      delta(left, SURFACE_LIGHT),
+      'scrolled to the end, the LEFT shadow must appear — content is now hidden to the left'
+    ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
+    expect(
+      delta(right, SURFACE_LIGHT),
+      'scrolled to the end, the RIGHT shadow must be masked — there is nothing further right'
+    ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
+  }
+)
 
 // ---------------------------------------------------------------------------
 // AC-6 — a table that FITS paints nothing, in both themes.
 // ---------------------------------------------------------------------------
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`a table that fits paints no affordance (${theme}) (AC-6)`, async ({ page }) => {
-    const surface = theme === 'dark' ? SURFACE_DARK : SURFACE_LIGHT
-    await page.setViewportSize({ width: 768, height: 900 })
-    await page.emulateMedia({ colorScheme: theme })
-    await page.addInitScript(seedShortRows)
-    await page.goto('/income')
-    await page.waitForLoadState('networkidle')
-    await page.addStyleTag({ content: WIDE_FONT })
-    await expect(page.getByText('Pay').first()).toBeVisible()
+  test(
+    `a table that fits paints no affordance (${theme}) (AC-6)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      const surface = theme === 'dark' ? SURFACE_DARK : SURFACE_LIGHT
+      await page.setViewportSize({ width: 768, height: 900 })
+      await page.emulateMedia({ colorScheme: theme })
+      await page.addInitScript(seedShortRows)
+      await page.goto('/income')
+      await page.waitForLoadState('networkidle')
+      await page.addStyleTag({ content: WIDE_FONT })
+      await expect(page.getByText('Pay').first()).toBeVisible()
 
-    // The theme actually took — asserted on the PAINTED canvas, not on the lever.
-    // ⚠️ Until story 61.1 this app read a `.dark` class and never
-    // `prefers-color-scheme`, so `emulateMedia({colorScheme})` was a no-op here;
-    // that is now the real and only input. The hazard has inverted, not gone:
-    // re-reading the scheme you just set would pass on a page that ignored it.
-    await expectSchemeApplied(page, theme)
+      // The theme actually took — asserted on the PAINTED canvas, not on the lever.
+      // ⚠️ Until story 61.1 this app read a `.dark` class and never
+      // `prefers-color-scheme`, so `emulateMedia({colorScheme})` was a no-op here;
+      // that is now the real and only input. The hazard has inverted, not gone:
+      // re-reading the scheme you just set would pass on a page that ignored it.
+      await expectSchemeApplied(page, theme)
 
-    const wrapper = wrapperOf(page)
-    const m = await metrics(wrapper)
-    expect(
-      m.scrollWidth,
-      `the "fits" fixture overflows (${m.scrollWidth} > ${m.clientWidth}) — AC-6 would be tested against the wrong case`
-    ).toBeLessThanOrEqual(m.clientWidth)
-
-    for (const edge of ['left', 'right'] as const) {
-      const c = await edgeColour(page, wrapper, edge)
+      const wrapper = wrapperOf(page)
+      const m = await metrics(wrapper)
       expect(
-        delta(c, surface),
-        `${theme}: the ${edge} edge paints an affordance on a table that fits — ${JSON.stringify(
-          c
-        )} vs surface ${JSON.stringify(
-          surface
-        )}. A permanent shadow on a table with nothing to scroll is a new visual defect.`
-      ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
+        m.scrollWidth,
+        `the "fits" fixture overflows (${m.scrollWidth} > ${m.clientWidth}) — AC-6 would be tested against the wrong case`
+      ).toBeLessThanOrEqual(m.clientWidth)
+
+      for (const edge of ['left', 'right'] as const) {
+        const c = await edgeColour(page, wrapper, edge)
+        expect(
+          delta(c, surface),
+          `${theme}: the ${edge} edge paints an affordance on a table that fits — ${JSON.stringify(
+            c
+          )} vs surface ${JSON.stringify(
+            surface
+          )}. A permanent shadow on a table with nothing to scroll is a new visual defect.`
+        ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
+      }
     }
-  })
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -332,40 +348,44 @@ for (const theme of ['light', 'dark'] as const) {
 // ---------------------------------------------------------------------------
 
 for (const route of OVERFLOW_ROUTES) {
-  test(`${route} scroll region is keyboard-reachable and scrolls (AC-5)`, async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 900 })
-    await seedFinanceRows(page)
-    await page.goto(route)
-    await page.waitForLoadState('networkidle')
-    await page.addStyleTag({ content: WIDE_FONT })
-    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+  test(
+    `${route} scroll region is keyboard-reachable and scrolls (AC-5)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 768, height: 900 })
+      await seedFinanceRows(page)
+      await page.goto(route)
+      await page.waitForLoadState('networkidle')
+      await page.addStyleTag({ content: WIDE_FONT })
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-    const wrapper = wrapperOf(page)
-    // Precondition: without overflow there is nothing to scroll, and the
-    // ArrowRight assertion below would fail saying "unreachable without a
-    // pointer" when the truth is "nothing to reach".
-    const pre = await metrics(wrapper)
-    expect(
-      pre.scrollWidth,
-      `${route} fixture does not overflow — the keyboard claim would be vacuous`
-    ).toBeGreaterThan(pre.clientWidth)
-    await expect(wrapper).toHaveAttribute('tabindex', '0')
-    await expect(wrapper).toHaveAttribute('role', 'region')
-    await expect(wrapper).toHaveAccessibleName(/\S/)
+      const wrapper = wrapperOf(page)
+      // Precondition: without overflow there is nothing to scroll, and the
+      // ArrowRight assertion below would fail saying "unreachable without a
+      // pointer" when the truth is "nothing to reach".
+      const pre = await metrics(wrapper)
+      expect(
+        pre.scrollWidth,
+        `${route} fixture does not overflow — the keyboard claim would be vacuous`
+      ).toBeGreaterThan(pre.clientWidth)
+      await expect(wrapper).toHaveAttribute('tabindex', '0')
+      await expect(wrapper).toHaveAttribute('role', 'region')
+      await expect(wrapper).toHaveAccessibleName(/\S/)
 
-    // Reachability is proven by focusing and DRIVING it, never by
-    // `toBeVisible()` — Playwright's actionability auto-scroll and unclipped
-    // getBoundingClientRect both mask real failures here
-    // (`ux-evaluation-mobile-nav-2026-08-13.md:185-187`).
-    await wrapper.focus()
-    await expect(wrapper).toBeFocused()
-    await page.keyboard.press('ArrowRight')
-    await expect
-      .poll(() => wrapper.evaluate((el) => el.scrollLeft), {
-        message: `${route}: the focused scroll region did not move on ArrowRight — the Actions column is unreachable without a pointer`,
-      })
-      .toBeGreaterThan(0)
-  })
+      // Reachability is proven by focusing and DRIVING it, never by
+      // `toBeVisible()` — Playwright's actionability auto-scroll and unclipped
+      // getBoundingClientRect both mask real failures here
+      // (`ux-evaluation-mobile-nav-2026-08-13.md:185-187`).
+      await wrapper.focus()
+      await expect(wrapper).toBeFocused()
+      await page.keyboard.press('ArrowRight')
+      await expect
+        .poll(() => wrapper.evaluate((el) => el.scrollLeft), {
+          message: `${route}: the focused scroll region did not move on ArrowRight — the Actions column is unreachable without a pointer`,
+        })
+        .toBeGreaterThan(0)
+    }
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -461,65 +481,71 @@ const BASELINE_SCROLL_WIDTH: Record<(typeof OVERFLOW_ROUTES)[number], number> = 
 }
 
 for (const route of OVERFLOW_ROUTES) {
-  test(`${route} affordance costs zero layout width at 768px (AC-8)`, async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 900 })
-    await seedFinanceRows(page)
-    await page.goto(route)
-    await page.waitForLoadState('networkidle')
-    await page.addStyleTag({ content: WIDE_FONT })
-    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+  test(
+    `${route} affordance costs zero layout width at 768px (AC-8)`,
+    { tag: '@layout' },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 768, height: 900 })
+      await seedFinanceRows(page)
+      await page.goto(route)
+      await page.waitForLoadState('networkidle')
+      await page.addStyleTag({ content: WIDE_FONT })
+      await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-    const m = await metrics(wrapperOf(page))
-    // Backgrounds do not affect box size, so this is an EQUALITY, not a budget.
-    // The free-tier table sits at 656/656 on this font: anything that reserves
-    // width flips it to overflowing on the runner while passing on a dev box.
-    expect(
-      m.scrollWidth,
-      `${route} table width moved (${BASELINE_SCROLL_WIDTH[route]} -> measured). If this story's affordance is unchanged, the cause is elsewhere: a column, label, currency format or page-shell padding edit. Backgrounds cost no width, so re-measure before assuming the shadow is at fault — but do NOT relax this to a tolerance, because the 640-1024px budget has none.`
-    ).toBe(BASELINE_SCROLL_WIDTH[route])
-    expect(m.clientWidth, `${route} wrapper client width moved`).toBe(656)
-  })
+      const m = await metrics(wrapperOf(page))
+      // Backgrounds do not affect box size, so this is an EQUALITY, not a budget.
+      // The free-tier table sits at 656/656 on this font: anything that reserves
+      // width flips it to overflowing on the runner while passing on a dev box.
+      expect(
+        m.scrollWidth,
+        `${route} table width moved (${BASELINE_SCROLL_WIDTH[route]} -> measured). If this story's affordance is unchanged, the cause is elsewhere: a column, label, currency format or page-shell padding edit. Backgrounds cost no width, so re-measure before assuming the shadow is at fault — but do NOT relax this to a tolerance, because the 640-1024px budget has none.`
+      ).toBe(BASELINE_SCROLL_WIDTH[route])
+      expect(m.clientWidth, `${route} wrapper client width moved`).toBe(656)
+    }
+  )
 }
 
 // ---------------------------------------------------------------------------
 // POSITIVE CONTROL
 // ---------------------------------------------------------------------------
 
-test('POSITIVE CONTROL: the pixel probe reports surface when the affordance is removed', async ({
-  page,
-}) => {
-  // ⚠️ Without this, every "affordance is painted" assertion above could be
-  // reading a dark pixel that has nothing to do with the shadow layers. Strip
-  // the background off the live element and confirm the SAME probe, at the SAME
-  // edge, on the SAME overflowing fixture, now reports surface.
-  //
-  // ⚠️ READ THE OUTCOME THE RIGHT WAY ROUND: this test passing IS the healthy
-  // state — it means removing the background layers changed what the probe
-  // reads, so the probe is measuring them. If it ever goes RED (or its
-  // precondition fails) while the AC-1 tests still pass, the probe is reading
-  // something incidental — cell text, a border, the scrollbar — and every
-  // affordance assertion in this file is worthless.
-  await page.setViewportSize({ width: 768, height: 900 })
-  await seedFinanceRows(page)
-  await page.goto('/income')
-  await page.waitForLoadState('networkidle')
-  await page.addStyleTag({ content: WIDE_FONT })
-  await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
+test(
+  'POSITIVE CONTROL: the pixel probe reports surface when the affordance is removed',
+  { tag: '@layout' },
+  async ({ page }) => {
+    // ⚠️ Without this, every "affordance is painted" assertion above could be
+    // reading a dark pixel that has nothing to do with the shadow layers. Strip
+    // the background off the live element and confirm the SAME probe, at the SAME
+    // edge, on the SAME overflowing fixture, now reports surface.
+    //
+    // ⚠️ READ THE OUTCOME THE RIGHT WAY ROUND: this test passing IS the healthy
+    // state — it means removing the background layers changed what the probe
+    // reads, so the probe is measuring them. If it ever goes RED (or its
+    // precondition fails) while the AC-1 tests still pass, the probe is reading
+    // something incidental — cell text, a border, the scrollbar — and every
+    // affordance assertion in this file is worthless.
+    await page.setViewportSize({ width: 768, height: 900 })
+    await seedFinanceRows(page)
+    await page.goto('/income')
+    await page.waitForLoadState('networkidle')
+    await page.addStyleTag({ content: WIDE_FONT })
+    await expect(page.getByText(LONG_UNBROKEN_NAME).first()).toBeVisible()
 
-  const wrapper = wrapperOf(page)
-  const before = await edgeColour(page, wrapper, 'right')
-  expect(
-    delta(before, SURFACE_LIGHT),
-    'precondition: the affordance must be painted before we remove it'
-  ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
+    const wrapper = wrapperOf(page)
+    const before = await edgeColour(page, wrapper, 'right')
+    expect(
+      delta(before, SURFACE_LIGHT),
+      'precondition: the affordance must be painted before we remove it'
+    ).toBeGreaterThanOrEqual(SHADOW_MIN_DELTA)
 
-  await wrapper.evaluate((el) => {
-    ;(el as HTMLElement).style.backgroundImage = 'none'
-  })
-  const after = await edgeColour(page, wrapper, 'right')
+    await wrapper.evaluate((el) => {
+      ;(el as HTMLElement).style.backgroundImage = 'none'
+    })
+    const after = await edgeColour(page, wrapper, 'right')
 
-  expect(
-    delta(after, SURFACE_LIGHT),
-    'the probe still reports an affordance after the background layers were removed — it is measuring something else (cell content, a border, the scrollbar), and every assertion above is worthless'
-  ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
-})
+    expect(
+      delta(after, SURFACE_LIGHT),
+      'the probe still reports an affordance after the background layers were removed — it is measuring something else (cell content, a border, the scrollbar), and every assertion above is worthless'
+    ).toBeLessThanOrEqual(SURFACE_TOLERANCE)
+  }
+)

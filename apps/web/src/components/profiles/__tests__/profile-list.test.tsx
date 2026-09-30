@@ -461,8 +461,9 @@ describe('ProfileList card is the switcher (story 63.1)', () => {
  *
  * ⚠️ WHY A CLASS SWEEP AND NOT AN E2E TEST. `/profiles` renders this component
  * only for an ACTIVE premium session, and the Playwright preview runtime cannot
- * mint one — `e2e/profiles-premium.spec.ts:10-14` states it outright, and that
- * spec asserts only the locked upgrade surface. `/profiles` is likewise absent
+ * mint one (the former `e2e/profiles-premium.spec.ts` said so outright and
+ * asserted only the locked upgrade surface; story 82.3 moved that claim to
+ * `profiles-page.locked-route.test.tsx`). `/profiles` is likewise absent
  * from `e2e/theme-page-coverage.spec.ts`'s hand-maintained `PAGES`. So there is
  * no browser-level route to this UI, and the jsdom class assertions below are the
  * automated proof; the rendered two-theme check is manual and recorded in the

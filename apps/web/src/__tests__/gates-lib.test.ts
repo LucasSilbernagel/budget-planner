@@ -10,12 +10,15 @@
  * (a failed or flaky count), the values are edited in the real shape, and say so.
  */
 
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   aggregateParts,
   buildGates,
   formatDuration,
   formatLine,
+  layoutNotice,
   parseArgs,
   parseBiome,
   parseBundleCheck,
@@ -122,6 +125,57 @@ describe('parsers', () => {
       skipped: 4,
       flaky: 0,
       total: 524,
+    })
+  })
+
+  // Story 82.3 review P1: Playwright errors only when the TOTAL is zero, so a
+  // requested project that selects nothing (every paid test tagged @layout, a
+  // broadened tag pattern) left the gate green. Shape: `suites[].specs[].tests[]`
+  // with `projectName`, nested describes under `suites[].suites[]` (real report).
+  const report = (projects: string[]) =>
+    JSON.stringify({
+      suites: [
+        {
+          title: 'a.spec.ts',
+          specs: [],
+          suites: [
+            {
+              title: 'describe',
+              specs: [{ tests: projects.map((projectName) => ({ projectName })) }],
+            },
+          ],
+        },
+      ],
+      errors: [],
+      stats: { expected: projects.length, skipped: 0, unexpected: 0, flaky: 0 },
+    })
+
+  it('playwright JSON: a requested project with no tests is counted (story 82.3 P1)', () => {
+    expect(parsePlaywrightJson(report(['chromium']), ['chromium', 'chromium-paid'])).toMatchObject({
+      passed: 1,
+      emptyProjects: 1,
+    })
+    expect(
+      parsePlaywrightJson(report(['chromium', 'chromium-paid']), ['chromium', 'chromium-paid'])
+    ).toMatchObject({ emptyProjects: 0 })
+    expect(parsePlaywrightJson(report(['chromium']))).not.toHaveProperty('emptyProjects')
+  })
+
+  it('an empty requested project makes the gate RED', () => {
+    expect(
+      verdict({
+        exitCode: 0,
+        summary: { passed: 5, failed: 0, skipped: 0, flaky: 0, total: 5, emptyProjects: 1 },
+      })
+    ).toEqual({ green: false, reasons: ['1 project(s) ran no tests'] })
+  })
+
+  it('the e2e gate parses with the projects it asked for', () => {
+    const e2e = buildGates({ root: '/r', runDir: '/d', typeCheckScripts: {} }).find(
+      (g) => g.id === 'e2e'
+    )
+    expect(e2e?.parse.fn(report(['chromium', 'chromium-paid']))).toMatchObject({
+      emptyProjects: 1,
     })
   })
 
@@ -421,6 +475,80 @@ describe('buildGates', () => {
     expect(byId['e2e']?.env?.['PLAYWRIGHT_BASE_URL']).toBe('')
   })
 
+  // Story 82.3 (D2): the `@layout` projects run in CI on every push, and here
+  // only with `--layout`. The selection is by project NAME, so a renamed project
+  // must fail this file rather than silently drop out of the gate.
+  const projectsOf = (gate: (typeof gates)[number] | undefined) =>
+    (gate?.args ?? []).filter((a) => a.startsWith('--project=')).map((a) => a.slice(10))
+
+  it('e2e runs the flow projects and NOT the layout ones by default (story 82.3)', () => {
+    expect(projectsOf(byId['e2e'])).toEqual(['chromium', 'chromium-paid', 'chromium-prod'])
+  })
+
+  it('--layout adds the two layout projects to the same e2e run (story 82.3)', () => {
+    const withLayout = buildGates({
+      root: '/repo',
+      runDir: '/run',
+      typeCheckScripts: {},
+      layout: true,
+    }).find((g) => g.id === 'e2e')
+    expect(projectsOf(withLayout)).toEqual([
+      'chromium',
+      'chromium-paid',
+      'chromium-prod',
+      'chromium-layout',
+      'chromium-paid-layout',
+    ])
+  })
+
+  it('CI runs every Playwright project, so layout always blocks a merge and a deploy', () => {
+    const ci = readFileSync(join(__dirname, '../../../../.github/workflows/ci.yml'), 'utf8')
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'))
+    expect(ci).toMatch(/^\s*run: pnpm test:e2e$/m)
+    expect(pkg.scripts['test:e2e']).toBe('playwright test')
+  })
+
+  it('CI never sets PLAYWRIGHT_BASE_URL (it drops the paid, prod and paid-layout projects)', () => {
+    const ci = readFileSync(join(__dirname, '../../../../.github/workflows/ci.yml'), 'utf8')
+    expect(ci).not.toMatch(/PLAYWRIGHT_BASE_URL/)
+  })
+
+  it('every e2e tag is exactly @layout, no title carries it, and no prod spec is tagged (82.3 P5/P8)', () => {
+    const dir = join(__dirname, '../../e2e')
+    const specs = readdirSync(dir).filter((f) => f.endsWith('.spec.ts'))
+    expect(specs.length).toBeGreaterThan(50)
+    let tagged = 0
+    for (const file of specs) {
+      const text = readFileSync(join(dir, file), 'utf8')
+      for (const m of text.matchAll(/tag:\s*(['"`])([^'"`]*)\1/g)) {
+        expect(m[2], `${file}: unknown tag`).toBe('@layout')
+        tagged++
+      }
+      // The tag reaches grep through `details.tag`; one in a title would be
+      // matched too (grep reads titles), silently moving a test or a block.
+      expect(text.replace(/tag:\s*'@layout'/g, ''), `${file}: '@layout' outside a tag`).not.toMatch(
+        /['"`][^'"`\n]*@layout/
+      )
+      if (file.endsWith('.prod.spec.ts')) {
+        expect(text, `${file}: a prod test is excluded from every layout run`).not.toMatch(/tag:/)
+      }
+    }
+    expect(tagged).toBeGreaterThan(100)
+  })
+
+  it('the --layout run names every Playwright project, and nothing else', () => {
+    const config = readFileSync(join(__dirname, '../../playwright.config.ts'), 'utf8')
+    const declared = [...config.matchAll(/^\s*name: '([^']+)',$/gm)].map((m) => m[1]).sort()
+    const withLayout = buildGates({
+      root: '/repo',
+      runDir: '/run',
+      typeCheckScripts: {},
+      layout: true,
+    }).find((g) => g.id === 'e2e')
+    expect(declared).toHaveLength(5)
+    expect(projectsOf(withLayout).sort()).toEqual(declared)
+  })
+
   it('a bad type-check script names its package', () => {
     expect(() =>
       buildGates({ root: '/r', runDir: '/d', typeCheckScripts: { 'packages/x': 'vue-tsc' } })
@@ -466,18 +594,25 @@ describe('typeCheckScriptsOf', () => {
 
 describe('parseArgs', () => {
   it('flags', () => {
-    expect(parseArgs([])).toEqual({ sequential: false, only: null, help: false })
+    expect(parseArgs([])).toEqual({ sequential: false, only: null, help: false, layout: false })
     expect(parseArgs(['--sequential', '--only', 'core,web'])).toEqual({
       sequential: true,
       only: ['core', 'web'],
       help: false,
+      layout: false,
     })
+    expect(parseArgs(['--layout']).layout).toBe(true)
     expect(parseArgs(['--only=e2e']).only).toEqual(['e2e'])
     expect(parseArgs(['-h']).help).toBe(true)
   })
 
   it('a second --only is an error, not a silent replacement', () => {
     expect(() => parseArgs(['--only', 'core', '--only', 'web'])).toThrow(/--only given twice/)
+  })
+
+  it('--layout with an --only that leaves out e2e is an error, not a no-op (82.3 P7)', () => {
+    expect(() => parseArgs(['--only', 'web', '--layout'])).toThrow(/--layout needs the e2e gate/)
+    expect(parseArgs(['--only', 'e2e', '--layout']).layout).toBe(true)
   })
 
   it('an empty --only and an unknown flag are errors', () => {
@@ -507,5 +642,30 @@ describe('treeOf (the process tree a stop must reach)', () => {
 
   it('ignores junk lines and survives a cycle', () => {
     expect(treeOf('garbage\n  5 4\n  4 5\n', 4)).toEqual([5])
+  })
+})
+
+describe('layoutNotice (story 82.3 review P4)', () => {
+  it('says the layout half was skipped, and warns when a .tsx/.css file changed', () => {
+    expect(layoutNotice({ layout: false, e2e: true, changedFiles: ['README.md'] })).toEqual([
+      'e2e ran WITHOUT the @layout tests (CI runs them).',
+    ])
+    expect(
+      layoutNotice({
+        layout: false,
+        e2e: true,
+        changedFiles: ['apps/web/src/components/HomePage.tsx', 'apps/web/src/styles/app.css'],
+      })
+    ).toEqual([
+      'e2e ran WITHOUT the @layout tests (CI runs them).',
+      '⚠ 2 changed .tsx/.css file(s): this story must run `pnpm gates --layout` (project-context.md).',
+    ])
+  })
+
+  it('says nothing when layout ran or e2e was not selected', () => {
+    expect(layoutNotice({ layout: true, e2e: true, changedFiles: ['a.tsx'] })).toEqual([
+      'e2e ran WITH the @layout tests.',
+    ])
+    expect(layoutNotice({ layout: false, e2e: false, changedFiles: ['a.tsx'] })).toEqual([])
   })
 })

@@ -142,6 +142,91 @@ describe('IncomePage delete confirmation', () => {
     expect(screen.getByText('No income sources yet')).toBeInTheDocument()
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
+
+  // Moved from `e2e/confirm-dialog.spec.ts` (story 82.3): the page wires
+  // ConfirmDialog's dismissal to ABORT, on every dismissal path. Whether the
+  // backdrop really covers the viewport corner is a layout claim, kept in a real
+  // engine by `responsive-320.spec.ts` › "dismissal still works" (@layout).
+  it('Escape aborts the delete — the row remains', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Salary' }))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Salary')).toBeInTheDocument()
+    expect(useIncomeStore.getState().incomeSources).toHaveLength(1)
+  })
+
+  it('a backdrop click aborts the delete — the row remains', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Salary' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Confirm Delete' })
+    await user.click(dialog.parentElement as HTMLElement)
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Salary')).toBeInTheDocument()
+    expect(useIncomeStore.getState().incomeSources).toHaveLength(1)
+  })
+})
+
+/**
+ * Dismissing the Add dialog creates nothing (story 6-2, UX-DR10). Moved from
+ * `e2e/modal-dismissal.spec.ts` (story 82.3). The fields are FILLED before each
+ * dismissal, so a dismissal that submitted the draft would add a row.
+ */
+describe('IncomePage add dialog dismissal', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  async function openFilledAddDialog(user: ReturnType<typeof userEvent.setup>) {
+    renderWithProviders(<IncomePage />)
+    expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add Income Source' })
+    await user.type(within(dialog).getByLabelText('Name *'), 'Draft')
+    await user.type(within(dialog).getByLabelText('Amount *'), '1000')
+    return dialog
+  }
+
+  it('closes on Escape with no income added', async () => {
+    const user = userEvent.setup()
+    await openFilledAddDialog(user)
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Add Income Source' })).not.toBeInTheDocument()
+    expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+    expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
+  })
+
+  it('closes on a backdrop click with no income added', async () => {
+    const user = userEvent.setup()
+    const dialog = await openFilledAddDialog(user)
+
+    await user.click(dialog.parentElement as HTMLElement)
+
+    expect(screen.queryByRole('dialog', { name: 'Add Income Source' })).not.toBeInTheDocument()
+    expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+    expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
+  })
+
+  it('does not close when clicking inside the dialog content', async () => {
+    const user = userEvent.setup()
+    const dialog = await openFilledAddDialog(user)
+
+    await user.click(within(dialog).getByRole('heading', { name: 'Add Income Source' }))
+
+    expect(screen.getByRole('dialog', { name: 'Add Income Source' })).toBeInTheDocument()
+  })
 })
 
 /**

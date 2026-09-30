@@ -1230,6 +1230,10 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     render(<HomePage />)
 
     const select = breakdownSelect()
+    // The select SHOWS the store's value; this file's setup puts 'annually'
+    // there, so this does not prove the store's DEFAULT. That is pinned by
+    // `overviewDurationStore.dom.test.ts` › "defaults to annually" (story 82.3
+    // mutation M11: default → 'monthly' left this assertion green).
     expect(select.value).toBe('annually')
 
     // Four options since 32.3 — the same set the overview selector offers,

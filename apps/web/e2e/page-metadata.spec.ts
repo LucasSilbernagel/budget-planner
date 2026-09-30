@@ -16,6 +16,12 @@ import { expect, test } from '@playwright/test'
  * TanStack merges route meta over the root's, and the merge is what AC-4
  * depends on — a per-route description that loses the merge would still appear
  * in the source somewhere while the wrong one won.
+ *
+ * Stays e2e (story 82.3, FR135): the claim is the metadata in the SERVED HTML
+ * before any JavaScript, and robots.txt/sitemap.xml answered by the app
+ * origin; the head config is pinned by
+ * `routes/__tests__/route-head-coverage.test.ts` and the file contents by
+ * `robots-sitemap-coverage.test.ts`.
  */
 
 const ROOT_DEFAULT_TITLE = 'Longhand Budget — track your finances with privacy and control'

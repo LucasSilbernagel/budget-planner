@@ -213,6 +213,12 @@ jobs:
       # no database). GitHub Actions sets CI=true automatically, which enables one
       # retry + 4 workers and disables dev-server reuse (see
       # apps/web/playwright.config.ts).
+      #
+      # ⚠️ Story 82.3: this runs EVERY project, including `chromium-layout` and
+      # `chromium-paid-layout` (the `@layout` tests), which local `pnpm gates`
+      # skips without `--layout`. So this step is where layout is always checked,
+      # and it blocks deploy (deploy.yml calls this workflow). Never add a
+      # `--project`/`--grep` here; `gates-lib.test.ts` pins that.
       - name: Run Playwright tests
         run: pnpm test:e2e
 

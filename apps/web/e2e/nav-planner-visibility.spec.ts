@@ -186,7 +186,7 @@ for (const { label, width, height } of [
 test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
   test.use({ viewport: { width: 320, height: 720 } })
 
-  test('holds exactly its other row, still a 44px target', async ({ page }) => {
+  test('holds exactly its other row, still a 44px target', { tag: '@layout' }, async ({ page }) => {
     await page.addInitScript(
       (key) =>
         localStorage.setItem(

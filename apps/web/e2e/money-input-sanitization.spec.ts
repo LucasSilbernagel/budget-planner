@@ -140,26 +140,30 @@ for (const { path, trigger, dialog: dialogName, fields } of PAGES) {
   })
 
   for (const theme of ['light', 'dark'] as const) {
-    test(`${path} modal controls show a visible focus ring (${theme})`, async ({ page }) => {
-      await page.emulateMedia({ colorScheme: theme })
-      await page.goto(path)
-      const dialog = await openDialog(page, trigger, dialogName)
+    test(
+      `${path} modal controls show a visible focus ring (${theme})`,
+      { tag: '@layout' },
+      async ({ page }) => {
+        await page.emulateMedia({ colorScheme: theme })
+        await page.goto(path)
+        const dialog = await openDialog(page, trigger, dialogName)
 
-      for (const testid of fields) {
-        const field = dialog.getByTestId(testid)
+        for (const testid of fields) {
+          const field = dialog.getByTestId(testid)
 
-        // These controls carry `shadow-sm`, so `boxShadow` is NEVER "none" —
-        // asserting that alone passes with focus:ring-2 deleted. The ring is only
-        // proven by the shadow CHANGING on focus, and by a non-zero ring width
-        // appearing in the focused value.
-        const blurred = await field.evaluate((el) => getComputedStyle(el).boxShadow)
-        await field.focus()
-        const focused = await field.evaluate((el) => getComputedStyle(el).boxShadow)
+          // These controls carry `shadow-sm`, so `boxShadow` is NEVER "none" —
+          // asserting that alone passes with focus:ring-2 deleted. The ring is only
+          // proven by the shadow CHANGING on focus, and by a non-zero ring width
+          // appearing in the focused value.
+          const blurred = await field.evaluate((el) => getComputedStyle(el).boxShadow)
+          await field.focus()
+          const focused = await field.evaluate((el) => getComputedStyle(el).boxShadow)
 
-        expect(focused, `${testid}: focus paints nothing new in ${theme} mode`).not.toBe(blurred)
-        // Tailwind's ring renders as a spread-only shadow: "<color> 0px 0px 0px 2px".
-        expect(focused, `${testid}: no 2px ring in ${theme} mode`).toMatch(/0px 0px 0px 2px/)
+          expect(focused, `${testid}: focus paints nothing new in ${theme} mode`).not.toBe(blurred)
+          // Tailwind's ring renders as a spread-only shadow: "<color> 0px 0px 0px 2px".
+          expect(focused, `${testid}: no 2px ring in ${theme} mode`).toMatch(/0px 0px 0px 2px/)
+        }
       }
-    })
+    )
   }
 }

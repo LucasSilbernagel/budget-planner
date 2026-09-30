@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-30p (**82.3 CODE-REVIEWED -> done**, UNCOMMITTED. pnpm gates 498s -> 314s; epic 82 stories all done.)
+# last_updated: 2026-09-30o (**82.3 DEV DONE -> review**, UNCOMMITTED. pnpm gates 498s -> 293s; layout split.)
+# last_updated: 2026-09-30n (**82.3 in-progress**: Task 0 baseline, Task 1 inventory, then HALT for D1-D5.)
+# last_updated: 2026-09-30m (**82.3 CONTEXTED -> ready-for-dev**; 82.2 committed `bc1845a`. D1-D5 open for Lucas before any spec moves.)
 # last_updated: 2026-09-30l (**82.2 CODE-REVIEWED -> done**, UNCOMMITTED. pnpm gates 429 s all green; e2e is now the slowest gate. Next: commit 82.2, create-story 82.3.)
 # last_updated: 2026-09-30k (**82.2 DEV DONE -> review**, UNCOMMITTED. Web suite parallel, no Node flag; pnpm gates 608s -> 436s; e2e now the slowest gate.)
 # last_updated: 2026-09-30j (**82.2 dev started -> in-progress**, baseline `67ff51f`. D1-D5 confirmed.)
@@ -1129,7 +1133,7 @@ development_status:
   epic-82: in-progress  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
   82-1-run-the-gates-side-by-side: done  # committed runner; D8 (Lucas 2026-09-30): repeated measurement SKIPPED, interference UNMEASURED, --sequential fallback; D1-D8 CONFIRMED 2026-09-30 (D3: all gates every time).
   82-2-let-the-web-unit-suite-run-its-files-in-parallel: done  # Fable review 2026-09-30: 14 patch (13 applied, 1 false at premise), 1 deferred, 3 dismissed. UNCOMMITTED. Web suite parallel, no Node flag; shim branches tested on any Node (5 mutation arms red on 26 AND 20). pnpm gates 429 s all green: web 4068/261, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/690.
-  82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: backlog  # inventory 61 specs into critical / integration-able / layout; critical list + layout home agreed with Lucas; may split after inventory.
+  82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: done  # Fable review 2026-09-30: 1 decision (untag data claims → P15) + 14 patches applied, 1 deferred, 4 dismissed. UNCOMMITTED. Review close: pnpm gates 314 s, --layout 484 s, all green; web 4087, e2e 223+4 default / 516+4 all. DEV DONE 2026-09-30 (uncommitted, baseline `bc1845a`). D2(ii) @layout split: CI always, `pnpm gates --layout` locally (amends 82.1 D3); workers stay 4 (6 slower); reload specs stay e2e (Lucas). 9 e2e tests moved w/ mutation proof, 1 vacuous unit test fixed, new finance-row-lifecycle flow spec. pnpm gates 498 s → 293 s; --layout 503 s. Web 4078, e2e 201+4 default / 516+4 all.
   epic-82-retrospective: optional
 
   epic-83: done  # Saved Forecasts That Reach the Server. FR136. From correct-course 2026-09-29 (80.1 Fact R). Order: BEFORE 80.2. Every RED against dist/client, never dev/SSR.
