@@ -167,8 +167,15 @@ describe('the Projection Period field refuses what the engine cannot run (AC-1)'
 
   it('an invalid period retires a stale calculation error (review P3)', async () => {
     const field = await renderBuilder()
-    // An emptied growth field parses to NaN, which the engine refuses: a banner.
-    fireEvent.change(screen.getByLabelText('Income Growth Rate'), { target: { value: '' } })
+    // A banner from an input no field can refuse: an income amount of 1e306 is
+    // 1e308 cents (finite, so the row accepts it), and annualized it overflows,
+    // so the engine refuses with FORECAST_OUT_OF_RANGE.
+    // ⚠️ This used an EMPTIED growth rate until story 81.1. That now shows a
+    // field message and never reaches the engine, so it raises no banner at all.
+    const [salary] = screen
+      .getAllByLabelText('Amount')
+      .filter((el) => !el.id.startsWith('event-amount-'))
+    fireEvent.change(salary as HTMLElement, { target: { value: '1e306' } })
     expect(
       await screen.findByTestId('calculation-error', {}, { timeout: 3000 })
     ).toBeInTheDocument()
@@ -209,7 +216,7 @@ describe('the Projection Period field refuses what the engine cannot run (AC-1)'
 })
 
 describe('one-time event amounts reach the engine finite and in whole cents (AC-4)', () => {
-  it('an amount that overflows to Infinity once scaled to cents is not stored', async () => {
+  it('an amount that overflows to Infinity once scaled to cents never reaches the engine', async () => {
     const field = await renderBuilder()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     // Income rows are labelled "Amount" too; the event's input has its own id prefix.
@@ -217,14 +224,26 @@ describe('one-time event amounts reach the engine finite and in whole cents (AC-
     expect(amount, 'the new event row rendered').not.toBeNull()
 
     fireEvent.change(amount, { target: { value: '12.34' } })
+    await waitFor(() => expect(engineCalls.at(-1)?.events.map((e) => e.amount)).toEqual([1234]), {
+      timeout: 3000,
+    })
     // `1e308` is a finite number the input accepts; `* 100` makes it Infinity.
     fireEvent.change(amount, { target: { value: '1e308' } })
-    // Force a recompute through another input, so the record shows the event
-    // state AFTER the overflow attempt.
+    // ⚠️ Retitled by 81.1's code review (P1). Until 81.1 this test forced a
+    // recompute through the period field to show the STORED amount was still 1234
+    // ("is not stored"). Since 81.1 an invalid field HOLDS every recompute (D4,
+    // confirmed by Lucas; it overrides AC-2's "unmodified" wording for this test),
+    // so the stored amount is no longer observable while the field is invalid.
+    // What the record CAN show is the claim that matters: nothing non-finite ever
+    // reaches the engine, even when another field changes. The field's own message
+    // is pinned in `scenario-builder.fields.test.tsx`.
     fireEvent.change(field, { target: { value: '11' } })
-    await waitFor(() => expect(engineCalls.at(-1)?.years).toBe(11), { timeout: 3000 })
+    await pastDebounce()
 
-    expect(engineCalls.at(-1)?.events.map((e) => e.amount)).toEqual([1234])
+    expect(
+      engineCalls.flatMap((c) => c.events.map((e) => e.amount)).filter((a) => !Number.isFinite(a)),
+      'no engine call may carry a non-finite event amount'
+    ).toEqual([])
   })
 
   it('a saved event amount of null (a JSON-flattened NaN/Infinity) or a fraction loads usable', async () => {

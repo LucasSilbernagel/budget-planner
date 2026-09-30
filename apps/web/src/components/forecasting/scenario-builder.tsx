@@ -14,10 +14,13 @@ import {
   type ForecastingResult,
   type ForecastingScenario,
   MAX_FORECAST_YEARS,
+  MAX_GROWTH_RATE,
   MIN_FORECAST_YEARS,
+  MIN_GROWTH_RATE,
   calculateFinancialForecast,
   currencySymbol,
   isValidForecastYears,
+  isValidGrowthRate,
   parseFromInput,
   sanitizeMoneyInput,
 } from '@budget-planner/core'
@@ -205,6 +208,38 @@ const FALLBACK_SAVE_ERROR = 'Failed to save forecast'
 const YEARS_INVALID_MESSAGE = `Enter a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}.`
 const YEARS_INVALID_SHORT = 'Fix the projection period to save'
 
+/**
+ * Copy for the other fields a scenario can hold a bad value in (story 81.1,
+ * FR132). Each is shown on ITS field, never as the engine's banner: before 81.1 an
+ * emptied growth rate surfaced as "Amount must be a finite number" — an amount the
+ * user never touched — and, with no rows of that kind, as nothing at all.
+ *
+ * The growth range is core's, so the message cannot drift from the engine's rule.
+ */
+const GROWTH_INVALID_MESSAGE = `Enter a growth rate from ${MIN_GROWTH_RATE * 100}% to ${
+  MAX_GROWTH_RATE * 100
+}%.`
+const AMOUNT_NEGATIVE_MESSAGE = 'Enter an amount of 0 or more.'
+const AMOUNT_TOO_LARGE_MESSAGE = 'Enter a smaller amount.'
+const AMOUNT_NOT_A_NUMBER_MESSAGE = 'Enter a number.'
+/**
+ * The Save reason for any invalid field OTHER than the period alone. When the
+ * period is the only bad field it keeps `YEARS_INVALID_SHORT` (77.1's copy);
+ * once anything else is also wrong, this general reason is the accurate one.
+ */
+const FIELDS_INVALID_SHORT = 'Fix the highlighted fields to save'
+
+/**
+ * A saved growth rate as the builder should hold it (story 81.1, D3). JSON has no
+ * NaN, so a rate saved while its field was empty comes back as `null`; the engine
+ * ran it as 0 (`1 + null === 1`), and the field would display `formatPercentage(null)`
+ * = "0.00%" beside a field error. Load it as 0. A FINITE rate outside the range is
+ * kept: the field shows why, and the user fixes it (refuse, not clamp).
+ */
+function growthRateFromSaved(rate: unknown): number {
+  return typeof rate === 'number' && Number.isFinite(rate) ? rate : 0
+}
+
 const FREQUENCY_OPTIONS = [
   { value: 'weekly' as const, label: 'Weekly' },
   { value: 'biweekly' as const, label: 'Biweekly' },
@@ -367,8 +402,8 @@ export function ScenarioBuilder({
       ? {
           name: initialForecast.scenario.name,
           description: initialForecast.scenario.description ?? '',
-          incomeGrowthRate: initialForecast.scenario.incomeGrowthRate,
-          expenseGrowthRate: initialForecast.scenario.expenseGrowthRate,
+          incomeGrowthRate: growthRateFromSaved(initialForecast.scenario.incomeGrowthRate),
+          expenseGrowthRate: growthRateFromSaved(initialForecast.scenario.expenseGrowthRate),
           years: initialForecast.inputs?.years ?? DEFAULT_FORM.years,
         }
       : DEFAULT_FORM
@@ -384,6 +419,31 @@ export function ScenarioBuilder({
     isValidForecastYears(formData.years) ? formData.years : DEFAULT_FORM.years
   )
   const yearsValid = isValidForecastYears(formData.years)
+  // The growth-rate fields keep what the user TYPED (InputField's own display
+  // string); what the builder validates is the parsed value (story 81.1, D8).
+  const incomeGrowthValid = isValidGrowthRate(formData.incomeGrowthRate)
+  const expenseGrowthValid = isValidGrowthRate(formData.expenseGrowthRate)
+
+  /**
+   * The income, expense and event amount fields currently holding a value that
+   * was NOT written to state (story 81.1, D4), keyed by row id. Each row reports
+   * from its own change handler — synchronously, in the same batch as any write —
+   * so the debounced recompute below never runs with a bad value it cannot see.
+   * A row that unmounts (removed, or re-keyed by a load) withdraws its key.
+   */
+  const [invalidAmountRows, setInvalidAmountRows] = useState<ReadonlySet<string>>(() => new Set())
+  const setAmountRowValidity = useCallback((rowId: string, valid: boolean) => {
+    setInvalidAmountRows((prev) => {
+      if (valid !== prev.has(rowId)) return prev
+      const next = new Set(prev)
+      if (valid) next.delete(rowId)
+      else next.add(rowId)
+      return next
+    })
+  }, [])
+  // Any invalid field other than the period. Kept apart from `yearsValid` only for
+  // the Save reason's wording (see FIELDS_INVALID_SHORT).
+  const otherFieldInvalid = !incomeGrowthValid || !expenseGrowthValid || invalidAmountRows.size > 0
 
   // ⚠️ DECISION REVERSED by story 62.1 (FR94), replacing the story 32.2 / FR59
   // audit note that stood here.
@@ -557,14 +617,21 @@ export function ScenarioBuilder({
   // `inputs.years` beside a result computed for a different period — and a saved
   // row with such a `years` has its inputs dropped to the defaults by
   // `mapToSavedForecast` on load.
+  //
+  // ⚠️ So does ANY other invalid field (story 81.1, D4), for the same reason: the
+  // bad value never reached the engine, so the result on screen does not describe
+  // what the form shows. The period alone keeps its own reason; any other bad
+  // field, with or without the period, gets the general one.
   const saveBlockedReason =
     saveAvailability.kind === 'none'
       ? NO_PROFILE_SHORT
       : saveAvailability.kind === 'error'
         ? PROFILE_ERROR_SHORT
-        : !yearsValid
-          ? YEARS_INVALID_SHORT
-          : null
+        : otherFieldInvalid
+          ? FIELDS_INVALID_SHORT
+          : !yearsValid
+            ? YEARS_INVALID_SHORT
+            : null
 
   // Keep the latest onResultChange in a ref so the debounced recompute stays
   // correct even if a caller passes a non-memoized callback (review bug-3):
@@ -593,7 +660,7 @@ export function ScenarioBuilder({
         clearTimeout(debounceTimer.current)
       }
     }
-  }, [incomeItems, expenseItems, formData, savings, investments, oneTimeEvents])
+  }, [incomeItems, expenseItems, formData, savings, investments, oneTimeEvents, invalidAmountRows])
 
   /**
    * Calculate forecast based on current inputs
@@ -610,7 +677,17 @@ export function ScenarioBuilder({
     // show a banner whose cause may already be fixed. If the cause remains, the
     // next valid period recomputes and raises it again. `saveOutcome` is left
     // alone — Save is blocked with its own reason while the period is invalid.
-    if (!isValidForecastYears(formData.years)) {
+    //
+    // ⚠️ The same holds for every other field that can hold a bad value (story
+    // 81.1, FR132): either growth rate, and any amount a row has reported invalid.
+    // Each shows its own message; the engine's banner is not the place to learn
+    // which field is wrong.
+    if (
+      !isValidForecastYears(formData.years) ||
+      !isValidGrowthRate(formData.incomeGrowthRate) ||
+      !isValidGrowthRate(formData.expenseGrowthRate) ||
+      invalidAmountRows.size > 0
+    ) {
       setError(null)
       return
     }
@@ -650,7 +727,7 @@ export function ScenarioBuilder({
     } finally {
       setIsCalculating(false)
     }
-  }, [incomeItems, expenseItems, formData, savings, investments, oneTimeEvents])
+  }, [incomeItems, expenseItems, formData, savings, investments, oneTimeEvents, invalidAmountRows])
 
   /**
    * Handle form input change
@@ -1015,12 +1092,15 @@ export function ScenarioBuilder({
               inert on a text input and implying otherwise is worse than
               omitting them.
               ⚠️ This comment first claimed "clamping already lives in
-              `handleFormChange`". It does NOT — that handler is a pass-through
-              (`:476-481`) and nothing bounds a growth rate at either call site.
-              Nothing is LOST by dropping `min`/`max` (they never clamped a typed
-              value on a number input either; they gate the spinner and form
-              validation only), but the absence of clamping is pre-existing and
-              real. Caught re-reading my own comment during code review 62.1. */}
+              `handleFormChange`". It does NOT — that handler is a pass-through,
+              and nothing CLAMPS a growth rate. Nothing is LOST by dropping
+              `min`/`max` (they never clamped a typed value on a number input
+              either; they gate the spinner and form validation only). Caught
+              re-reading my own comment during code review 62.1.
+              ⚠️ Since story 81.1 the rate is BOUNDED, though still not clamped:
+              `isValidGrowthRate` (−100%..+100%) marks the field invalid, the
+              recompute and Save are held, and the engine refuses it too. The
+              field keeps what was typed so it can be fixed. */}
           <InputField
             label="Income Growth Rate"
             value={formData.incomeGrowthRate}
@@ -1029,6 +1109,7 @@ export function ScenarioBuilder({
             inputMode="decimal"
             formatValue={formatPercentage}
             parseValue={(v) => parseFloat(v) / 100}
+            error={incomeGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
 
           {/* Expense Growth Rate */}
@@ -1043,12 +1124,15 @@ export function ScenarioBuilder({
               inert on a text input and implying otherwise is worse than
               omitting them.
               ⚠️ This comment first claimed "clamping already lives in
-              `handleFormChange`". It does NOT — that handler is a pass-through
-              (`:476-481`) and nothing bounds a growth rate at either call site.
-              Nothing is LOST by dropping `min`/`max` (they never clamped a typed
-              value on a number input either; they gate the spinner and form
-              validation only), but the absence of clamping is pre-existing and
-              real. Caught re-reading my own comment during code review 62.1. */}
+              `handleFormChange`". It does NOT — that handler is a pass-through,
+              and nothing CLAMPS a growth rate. Nothing is LOST by dropping
+              `min`/`max` (they never clamped a typed value on a number input
+              either; they gate the spinner and form validation only). Caught
+              re-reading my own comment during code review 62.1.
+              ⚠️ Since story 81.1 the rate is BOUNDED, though still not clamped:
+              `isValidGrowthRate` (−100%..+100%) marks the field invalid, the
+              recompute and Save are held, and the engine refuses it too. The
+              field keeps what was typed so it can be fixed. */}
           <InputField
             label="Expense Growth Rate"
             value={formData.expenseGrowthRate}
@@ -1057,6 +1141,7 @@ export function ScenarioBuilder({
             inputMode="decimal"
             formatValue={formatPercentage}
             parseValue={(v) => parseFloat(v) / 100}
+            error={expenseGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
 
           {/* Current Savings */}
@@ -1124,6 +1209,7 @@ export function ScenarioBuilder({
                 updateFinancialItem(incomeItems, setIncomeItems, item.id, field, value)
               }
               onDelete={() => deleteFinancialItem(incomeItems, setIncomeItems, item.id)}
+              onValidityChange={setAmountRowValidity}
             />
           ))}
         </div>
@@ -1152,6 +1238,7 @@ export function ScenarioBuilder({
                 updateFinancialItem(expenseItems, setExpenseItems, item.id, field, value)
               }
               onDelete={() => deleteFinancialItem(expenseItems, setExpenseItems, item.id)}
+              onValidityChange={setAmountRowValidity}
             />
           ))}
         </div>
@@ -1181,6 +1268,7 @@ export function ScenarioBuilder({
                 onUpdate={updateOneTimeEvent}
                 onDelete={deleteOneTimeEvent}
                 maxYear={lastValidYears}
+                onValidityChange={setAmountRowValidity}
               />
             ))}
           </div>
@@ -1334,7 +1422,11 @@ function InputField({
       onChange(parseValue(rawValue))
     } else if (type === 'number') {
       const numValue = parseFloat(rawValue)
-      onChange(Number.isNaN(numValue) ? 0 : numValue)
+      // `isFinite`, not `isNaN` (story 81.1, D7): no raw Infinity is ever lifted to
+      // the parent. Only the Projection Period uses this arm, and it already refuses
+      // 0 and Infinity alike, so no user sees a difference; the parent simply never
+      // receives a value no field means.
+      onChange(Number.isFinite(numValue) ? numValue : 0)
     } else {
       onChange(rawValue)
     }
@@ -1381,6 +1473,34 @@ interface FinancialItemRowProps {
   frequencyOptions: { value: string; label: string }[]
   onUpdate: (field: keyof LocalFinancialItem, value: string | number) => void
   onDelete: () => void
+  /** Reports whether this row's amount field holds a usable value (story 81.1). */
+  onValidityChange: (rowId: string, valid: boolean) => void
+}
+
+/**
+ * Why an entry in an amount field cannot be used, or `null` when it can (story
+ * 81.1, FR132). Shared by the income/expense and one-time event rows.
+ *
+ * ⚠️ `cents` is checked, not `value`: `1e308` is a finite number the input accepts,
+ * and `Math.round(1e308 * 100)` is Infinity. Checking before the ×100 lets exactly
+ * that case through (it did, at every site, before 81.1).
+ */
+function amountProblem(badInput: boolean, cents: number): string | null {
+  if (badInput || Number.isNaN(cents)) return AMOUNT_NOT_A_NUMBER_MESSAGE
+  if (!Number.isFinite(cents)) return AMOUNT_TOO_LARGE_MESSAGE
+  return null
+}
+
+/**
+ * Withdraws a row's invalid-amount report when the row unmounts (removed, or
+ * re-keyed by a load or the store seed), so a row that no longer exists can never
+ * keep Save blocked (story 81.1, D4).
+ */
+function useWithdrawValidityOnUnmount(
+  rowId: string,
+  onValidityChange: (rowId: string, valid: boolean) => void
+): void {
+  useEffect(() => () => onValidityChange(rowId, true), [rowId, onValidityChange])
 }
 
 function FinancialItemRow({
@@ -1388,6 +1508,7 @@ function FinancialItemRow({
   frequencyOptions,
   onUpdate,
   onDelete,
+  onValidityChange,
 }: FinancialItemRowProps): React.ReactElement {
   // The amount prefix follows the user's currency mode: the selected currency's
   // symbol in symbol mode, nothing in currency-less mode (a hard-coded `$` was
@@ -1403,16 +1524,46 @@ function FinancialItemRow({
   const amountId = useId()
   const frequencyId = useId()
 
+  /**
+   * ⚠️ The field shows a DRAFT string, not `item.amount / 100` (story 81.1, D5).
+   * A bad entry is no longer written to state, so a controlled `value` would
+   * reconcile the input back to the last good amount on the very re-render that
+   * shows the message — the user would lose what they typed at the moment they
+   * are told it is wrong. The draft keeps it on screen until they fix it.
+   * Nothing outside this input changes `item.amount` while the row is mounted:
+   * seeding and loading re-key the row, which remounts it with a fresh draft.
+   */
+  const [draft, setDraft] = useState<string>(() => String(item.amount / 100))
+  const [amountError, setAmountError] = useState<string | null>(null)
+  useWithdrawValidityOnUnmount(item.id, onValidityChange)
+
+  /**
+   * Before story 81.1 this wrote `0` for anything it could not use — a negative,
+   * text the browser rejected — and passed `Infinity` for `1e308`, which the
+   * engine refused with a banner naming no field. Now a bad entry is reported
+   * HERE and nothing is written, so the last good amount stays in the forecast.
+   * An EMPTY field is still 0: a cleared amount means nothing, not a mistake.
+   */
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value)
-    // Validate: ensure value is a valid number and not negative
-    if (Number.isNaN(value) || value < 0) {
+    const raw = e.target.value
+    setDraft(raw)
+    // `validity` is optional-chained: jsdom never reports badInput (MEASURED,
+    // 81.1), while Chromium reports it for text a number input cannot hold.
+    const badInput = e.target.validity?.badInput === true
+    let problem: string | null = null
+    if (!badInput && raw.trim() === '') {
       onUpdate('amount', 0)
     } else {
+      const value = parseFloat(raw)
       const cents = Math.round(value * 100)
-      onUpdate('amount', cents)
+      problem = amountProblem(badInput, cents)
+      if (problem === null && value < 0) problem = AMOUNT_NEGATIVE_MESSAGE
+      if (problem === null) onUpdate('amount', cents)
     }
+    setAmountError(problem)
+    onValidityChange(item.id, problem === null)
   }
+  const amountErrorId = `${amountId}-error`
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
@@ -1446,16 +1597,23 @@ function FinancialItemRow({
             <input
               id={amountId}
               type="number"
-              value={item.amount / 100}
+              value={draft}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
+              aria-invalid={amountError ? true : undefined}
+              aria-describedby={amountError ? amountErrorId : undefined}
               className={`w-full ${
                 mode === 'symbol' ? 'px-6' : 'px-2'
               } py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
               placeholder="0.00"
             />
           </div>
+          {amountError && (
+            <p id={amountErrorId} className="mt-1 text-xs text-red-600 dark:text-red-300">
+              {amountError}
+            </p>
+          )}
         </div>
 
         {/* Frequency */}
@@ -1500,6 +1658,8 @@ interface OneTimeEventRowProps {
   onUpdate: (id: string, field: keyof OneTimeEvent, value: string | number) => void
   onDelete: (id: string) => void
   maxYear: number
+  /** Reports whether this row's amount field holds a usable value (story 81.1). */
+  onValidityChange: (rowId: string, valid: boolean) => void
 }
 
 function OneTimeEventRow({
@@ -1507,6 +1667,7 @@ function OneTimeEventRow({
   onUpdate,
   onDelete,
   maxYear,
+  onValidityChange,
 }: OneTimeEventRowProps): React.ReactElement {
   // Currency-mode-aware amount prefix (see FinancialItemRow) — never a literal `$`.
   const { mode, currency } = useCurrencyPreferences()
@@ -1545,11 +1706,52 @@ function OneTimeEventRow({
   const signed = (cents: number, dir: 'in' | 'out') =>
     dir === 'out' && cents !== 0 ? -cents : cents
 
+  /**
+   * The field shows a DRAFT magnitude string (story 81.1, D6), for the reason
+   * `FinancialItemRow` gives: a refused entry is not written to state, and a
+   * controlled `value` would snap the input back to the last good amount on the
+   * re-render that shows the message. Flipping direction re-signs the stored
+   * amount without changing its magnitude, so the draft stays correct.
+   */
+  const [draft, setDraft] = useState<string>(() => String(Math.abs(event.amount) / 100))
+  const [amountError, setAmountError] = useState<string | null>(null)
+  useWithdrawValidityOnUnmount(event.id, onValidityChange)
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
     const value = parseFloat(raw)
+    // A typed minus selects "Money out" (below) and the field shows the magnitude,
+    // as it did when the input was controlled by `Math.abs(event.amount)`.
+    setDraft(value < 0 ? raw.replace(/^\s*-/, '') : raw)
 
     if (Number.isNaN(value)) {
+      /**
+       * ⚠️ 81.1 code review (R1, Lucas: parity with `FinancialItemRow`). Two
+       * arms used to share this silent branch, and both left the forecast on the
+       * LAST amount while the field showed something else:
+       *   - text the browser cannot hold (`1e999`, a half-typed `1e`, a lone "-"
+       *     in Chromium) arrives as `""` with `badInput`. It is now REPORTED and
+       *     held, exactly as an income/expense row reports it. A lone "-" shows
+       *     the message for one keystroke; the next digit resolves it (below).
+       *   - an EMPTIED field now writes 0, as an income/expense row does. That was
+       *     unsafe while the input was controlled by the amount (see the ⚠️
+       *     below), and is safe since the draft: the input renders exactly what
+       *     the DOM reports, so a 0 in state resets nothing on screen.
+       */
+      const badInput = e.target.validity?.badInput === true
+      if (badInput) {
+        setAmountError(AMOUNT_NOT_A_NUMBER_MESSAGE)
+        onValidityChange(event.id, false)
+        return
+      }
+      setAmountError(null)
+      onValidityChange(event.id, true)
+      if (raw.trim() === '') {
+        // Keep the chosen direction through the zero, where the sign cannot hold it.
+        if (pendingDirection !== direction) setPendingDirection(direction)
+        onUpdate(event.id, 'amount', 0)
+        return
+      }
       /**
        * Mid-edit: the field is empty, or holds a lone "-" (which an
        * `<input type="number">` reports as `""` — badInput).
@@ -1566,6 +1768,10 @@ function OneTimeEventRow({
        * Leaving state untouched keeps the partial entry in the DOM. The row is
        * already 0 if nothing was entered, and a real clear is committed by the
        * next parseable keystroke.
+       *
+       * (Story 81.1: the `setDraft` above IS a state write, but a safe one. The
+       * input now renders the draft, which is exactly what the DOM reports, so
+       * the re-render has nothing to reset. The hazard was writing the AMOUNT.)
        */
       /**
        * MEASURED in Chromium (throwaway Playwright probe, story `forecast-2`):
@@ -1598,15 +1804,32 @@ function OneTimeEventRow({
      * ⚠️ A finite entry can still overflow once scaled to cents (story 77.1):
      * `1e308` is a valid number here, and `1e308 * 100` is `Infinity`. The engine
      * refuses a non-finite event amount, and a saved one would come back as JSON
-     * `null`, so treat it like the mid-edit branch above: write nothing and keep
-     * the last good amount. (`1e999` itself most likely never gets here: a
-     * throwaway Chromium probe in 77.1 found a GENERIC `<input type="number">`
-     * reports it as `""` with `badInput` — measured on a bare input, not on this
-     * field.)
+     * `null`, so write nothing and keep the last good amount. (`1e999` itself
+     * most likely never gets here: a throwaway Chromium probe in 77.1 found a
+     * GENERIC `<input type="number">` reports it as `""` with `badInput` —
+     * measured on a bare input, not on this field.)
+     *
+     * ⚠️ Since story 81.1 (FR132) the refusal is REPORTED on this field. Before,
+     * it returned silently, so the field showed a number the forecast was not using.
      */
-    if (!Number.isFinite(cents)) return
+    // The minus is honoured BEFORE the overflow check (81.1 code review, P2): a
+    // typed `-1e308` is refused, but its "Money out" intent must survive to the
+    // corrected entry, or `5` would be stored as money in.
     const nextDirection = value < 0 ? 'out' : direction
     if (nextDirection !== direction) setPendingDirection(nextDirection)
+    const problem = amountProblem(false, cents)
+    setAmountError(problem)
+    onValidityChange(event.id, problem === null)
+    if (problem !== null) {
+      // A NON-zero amount's sign IS the direction (see `direction` above), so
+      // `pendingDirection` alone would be ignored: re-sign the kept amount, as the
+      // direction control does. The magnitude is unchanged, and the row is invalid,
+      // so nothing is recomputed until the entry is fixed.
+      if (nextDirection !== direction && event.amount !== 0) {
+        onUpdate(event.id, 'amount', signed(Math.abs(event.amount), nextDirection))
+      }
+      return
+    }
     onUpdate(event.id, 'amount', signed(cents, nextDirection))
   }
 
@@ -1679,16 +1902,23 @@ function OneTimeEventRow({
               id={amountId}
               type="number"
               // Magnitude only — `direction` carries the sign.
-              value={Math.abs(event.amount) / 100}
+              value={draft}
               onChange={handleAmountChange}
               min={0}
               step={0.01}
+              aria-invalid={amountError ? true : undefined}
+              aria-describedby={amountError ? `${amountId}-error` : undefined}
               className={`w-full ${
                 mode === 'symbol' ? 'px-6' : 'px-2'
               } py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
               placeholder="0.00"
             />
           </div>
+          {amountError && (
+            <p id={`${amountId}-error`} className="mt-1 text-xs text-red-600 dark:text-red-300">
+              {amountError}
+            </p>
+          )}
         </div>
 
         {/* Year */}

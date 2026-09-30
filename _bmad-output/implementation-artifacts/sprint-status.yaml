@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-30b (**81.1 CODE-REVIEWED -> done**, UNCOMMITTED. Web 4009, core 1170, e2e 520/4. Epic 81 has one story, so epic-81 can close at commit; batch 16 is then complete.)
+# last_updated: 2026-09-30a (**81.1 DEV DONE -> review**, UNCOMMITTED. Web 4001, core 1156, e2e 520/4.)
+# last_updated: 2026-09-29ak (**81.1 dev started -> in-progress**, D1-D9 confirmed, baseline `65ba8fc`.)
+# last_updated: 2026-09-29aj (**81.1 CREATED -> ready-for-dev**, epic-81 in-progress. D1-D9 recommended, not yet confirmed.)
 # last_updated: 2026-09-29ai (**80.2 CODE-REVIEWED -> done**, UNCOMMITTED. Web 3980, e2e 520/4. Epic 80's two stories are done: epic-80 can close at commit.)
 # last_updated: 2026-09-29ah (**80.2 DEV DONE -> review**, UNCOMMITTED. Web 3978, e2e 520/4.)
 # last_updated: 2026-09-29ag (**80.2 dev started -> in-progress**, baseline `2497ce4`.)
@@ -1108,8 +1112,8 @@ development_status:
   80-2-put-every-writer-of-the-default-profile-under-the-same-lock: done  # Opus review 2026-09-29: 1 decision (accept erased-account consequence of D1; store entry → MED) + 7 patches, 2 deferred. UNCOMMITTED. Web 3980, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/681, bundle OK.
   epic-80-retrospective: optional
 
-  epic-81: backlog  # A Forecast Field That Tells You What's Wrong. FR132.
-  81-1-report-a-bad-scenario-input-on-its-own-field: backlog  # Open at context: growth-rate bounds (proposal -100%..+100%). Outcome was TRACED — reproduce first.
+  epic-81: in-progress  # A Forecast Field That Tells You What's Wrong. FR132.
+  81-1-report-a-bad-scenario-input-on-its-own-field: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-30 (3 layers, Opus), UNCOMMITTED. 1 decision (Lucas: R1 event-row parity: badInput reported, an emptied field writes 0) + 9 patches, 4 deferred, 14 dismissed. Frozen close: web 4009/258 exit 0, core 1170, db 295/7, types 0/0/0, biome 0/683, e2e 520/4, bundle OK. Layout at md+ NOT checked (deferred LOW). D1-D9 confirmed by Lucas 2026-09-29.
   epic-81-retrospective: optional
 
   epic-82: backlog  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.

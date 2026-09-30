@@ -592,7 +592,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     expect(screen.getAllByLabelText(/^frequency$/i).length).toBeGreaterThanOrEqual(4)
   })
 
-  it('AC-3: income and expense amounts still clamp at zero', () => {
+  it('AC-3: income and expense amounts never take a negative (refused on the field since 81.1)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     // The financial-item clamp is a SEPARATE handler from the one-time-event one
@@ -608,12 +608,20 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     // cannot.
     const salaryAmount = screen.getByDisplayValue('5000') // DEFAULT_INCOME, cents/100
     fireEvent.change(salaryAmount, { target: { value: '-500' } })
-    expect(salaryAmount).toHaveValue(0)
+    // ⚠️ Story 81.1 (D5, confirmed by Lucas) REPLACED the silent clamp to 0: a
+    // negative is now refused ON THE FIELD. The typed text stays so it can be
+    // fixed, and nothing is written, so the forecast keeps the last good amount.
+    // What this test protects is unchanged: an income/expense row never gains
+    // the event row's "minus means money out" reading.
+    expect(salaryAmount).toHaveValue(-500)
+    expect(salaryAmount).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Enter an amount of 0 or more.')).toBeInTheDocument()
 
     // Positive control: the same field accepts an ordinary positive edit, so the
-    // clamp above is a clamp and not an input that rejects everything.
+    // refusal above is a refusal and not an input that rejects everything.
     fireEvent.change(salaryAmount, { target: { value: '6000' } })
     expect(salaryAmount).toHaveValue(6000)
+    expect(salaryAmount).not.toHaveAttribute('aria-invalid')
   })
 
   it('AC-3: the one-time-event row does NOT give income rows a direction control', () => {

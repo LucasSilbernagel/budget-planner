@@ -132,6 +132,46 @@ export function isValidForecastYears(value: unknown): value is number {
 }
 
 /**
+ * The growth rates the engine accepts, as decimals: −100% to +100% inclusive
+ * (story 81.1, FR132). Defined here, once, and imported by the Scenario Builder's
+ * two growth-rate fields, so the field and the engine cannot disagree.
+ *
+ * ⚠️ Why −100% is the floor: growth is applied as `amount * (1 + rate) ** year`.
+ * Below −1 the base is negative, so a row's amount ALTERNATES SIGN every year
+ * (MEASURED before 81.1: −150% gave year-1 income −3,000,000 and year-10 income
+ * +5,856). −1 itself is meaningful: the income or expense stops from year 1.
+ *
+ * ⚠️ Why +100% is the ceiling: doubling every year is already far beyond any
+ * real wage or price growth. Above it figures run to 1e24-1e38 cents over 30
+ * years (MEASURED: +1000% gave an ending net worth of 1.15e38) long before
+ * anything overflows, and render as nonsense.
+ */
+export const MIN_GROWTH_RATE = -1
+export const MAX_GROWTH_RATE = 1
+
+/**
+ * The refusal for a growth rate outside `MIN_GROWTH_RATE..MAX_GROWTH_RATE`, or not
+ * a finite number. Exported so the tests pin the exact text.
+ */
+export const GROWTH_RATE_OUT_OF_RANGE = `Growth rates must be from ${MIN_GROWTH_RATE * 100}% to ${
+  MAX_GROWTH_RATE * 100
+}%`
+
+/**
+ * True for a finite number in `MIN_GROWTH_RATE..MAX_GROWTH_RATE`. `unknown`
+ * because the value may come from a parsed saved row (a JSON-flattened NaN is
+ * `null`).
+ */
+export function isValidGrowthRate(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= MIN_GROWTH_RATE &&
+    value <= MAX_GROWTH_RATE
+  )
+}
+
+/**
  * The refusal when a projection's running balance stops being a finite number
  * (story 77.1 code review, P2). Exported so the tests pin the exact text.
  */
@@ -158,9 +198,11 @@ export interface ForecastingScenario {
   name: string
   description?: string
   // Income adjustments (percentage changes)
-  incomeGrowthRate: number // Annual growth rate as decimal (e.g., 0.05 for 5%)
-  // Expense adjustments (percentage changes)
-  expenseGrowthRate: number // Annual growth rate as decimal
+  // Annual growth rate as a decimal (e.g., 0.05 for 5%), from -1 to 1 inclusive:
+  // the engine refuses anything else (`isValidGrowthRate`, story 81.1).
+  incomeGrowthRate: number
+  // Expense adjustments (percentage changes); same decimal form and bounds.
+  expenseGrowthRate: number
   /**
    * ⚠️⚠️ THESE TWO ARE A PERSISTENCE CARRIER, NOT AN ENGINE INPUT.
    *
@@ -226,10 +268,11 @@ export interface ForecastingResult {
  * @param scenario - Forecasting scenario with assumptions
  * @param years - Number of years to project; must satisfy `isValidForecastYears`
  * @returns Complete forecasting result
- * @throws Error if `years` is not a whole number of years in 1-30; if a one-time
- *   event dated inside the window has an amount that is not a finite number
- *   (`validateAmount`); or if the projection's balance overflows
- *   (`FORECAST_OUT_OF_RANGE`)
+ * @throws Error if `years` is not a whole number of years in 1-30; if either
+ *   growth rate is not a finite number from −1 to 1 (`GROWTH_RATE_OUT_OF_RANGE`);
+ *   if the starting `savings` or `investments`, or a one-time event dated inside
+ *   the window, is not a finite number (`validateAmount`); or if the projection's
+ *   balance overflows (`FORECAST_OUT_OF_RANGE`)
  */
 export function calculateFinancialForecast(
   currentData: {
@@ -250,6 +293,23 @@ export function calculateFinancialForecast(
       `Projection period must be a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}`
     )
   }
+  // Refuse, not clamp, a growth rate outside −100%..+100% (story 81.1, D2). Both
+  // are checked EVEN WHEN no rows of that kind exist: `[].map(...)` never
+  // evaluates the rate, so before 81.1 a NaN rate with no rows passed silently and
+  // a Save would persist `null` (TRACED: JSON has no NaN). With rows, a NaN rate surfaced only as
+  // `validateAmount`'s "Amount must be a finite number", which names the wrong input.
+  if (
+    !isValidGrowthRate(scenario.incomeGrowthRate) ||
+    !isValidGrowthRate(scenario.expenseGrowthRate)
+  ) {
+    throw new Error(GROWTH_RATE_OUT_OF_RANGE)
+  }
+  // The starting balances are money terms like every other (story 81.1, the 77.1
+  // review rider). Unvalidated, a NaN/Infinity here was caught only by the
+  // running-balance check below and reported as FORECAST_OUT_OF_RANGE ("too large
+  // to project"), which misdescribes a missing or corrupt starting figure.
+  validateAmount(currentData.savings)
+  validateAmount(currentData.investments)
 
   const baseline: YearlyForecast[] = []
   const projection: YearlyForecast[] = []
