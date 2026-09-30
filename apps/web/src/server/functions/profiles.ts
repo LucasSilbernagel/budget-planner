@@ -11,6 +11,7 @@
 
 import { logger } from '@/lib/logger'
 import { hasPremiumFeatures } from '@/lib/premium/access-statuses'
+import { lockUserProfileSet } from '@/server/api/profile-set-lock'
 import type { Currency } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import type { NewUserProfile, UserProfile } from '@budget-planner/db'
@@ -607,12 +608,29 @@ export async function setDefaultProfile(
  * What makes it safe is the partial unique index
  * `userProfiles_one_default_per_user` (migration 0017) plus the
  * `onConflictDoNothing` below: the loser of the race inserts nothing and reads
- * back the winner's row. The pre-check remains as a cheap fast path for the
- * common (already-provisioned) case, not as the guarantee.
+ * back the winner's row. The index is still the guarantee.
+ *
+ * ⚠️ Since story 80.2 (FR130(2)) the WRITE runs in a transaction whose first
+ * statement is the per-user writer lock (`lockUserProfileSet`, `'no key
+ * update'`), with the "no live profile" check re-run under it. That orders this
+ * writer against the post-batch default repair, promotions and sync profile
+ * creates, which take the same lock; before it, the repair could read "no
+ * default", lose the seat to this insert and 23505 after its batch committed.
+ * Every live-path writer of the seat is now locked, so the conflict below is no
+ * longer reachable from them; `onConflictDoNothing` and the read-back stay for
+ * `createProfile`/`setDefaultProfile` in this file (no production importer,
+ * unlocked).
+ *
+ * The first SELECT is a lock-free, READ-ONLY fast path (decision D2): this runs
+ * on every pull, and a lock there would make every pull conflict with the
+ * `FOR SHARE` of every child create of the user.
  */
 export async function createDefaultProfileForUser(userId: string): Promise<ApiResult<UserProfile>> {
   try {
-    // Fast path: user already has a LIVE profile.
+    // Fast path: user already has a LIVE profile. Read-only and lock-free (D2).
+    // Safe in the SKIP direction: once a user has a live profile, no sync path
+    // can take them to zero (the last-profile rule runs under the same lock), and
+    // erasure/purge delete the `users` row too, so an insert would fail its FK.
     // ⚠️ `isDeleted` filter is load-bearing — code review. Without it a user
     // whose only profile is a tombstone is reported as already provisioned, and
     // the tombstone is handed back as their default profile. It also matches
@@ -630,66 +648,89 @@ export async function createDefaultProfileForUser(userId: string): Promise<ApiRe
       }
     }
 
-    // Get user's currency preference
-    const [user] = await db
-      .select({ currency: users.currency })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1)
+    // ⚠️ EVERY statement below uses `tx`: an autocommit `db` query issued while
+    // this transaction is open waits for it on a single connection (PGlite), and
+    // on PostgreSQL it would run outside the lock.
+    return await db.transaction(async (tx): Promise<ApiResult<UserProfile>> => {
+      await lockUserProfileSet(tx, userId, 'no key update')
 
-    const userCurrency = user?.currency || 'NONE'
-
-    // Create default profile. `onConflictDoNothing` absorbs the concurrent
-    // insert: the index covers (userId) WHERE isDefault AND NOT isDeleted, so a
-    // second caller for the same brand-new user writes nothing.
-    const [defaultProfile] = await db
-      .insert(userProfiles)
-      .values({
-        userId,
-        name: 'Main Profile',
-        description: 'Your primary financial profile',
-        currency: userCurrency,
-        isDefault: true,
-      } as NewUserProfile)
-      .onConflictDoNothing()
-      .returning()
-
-    if (defaultProfile) {
-      return {
-        success: true,
-        data: defaultProfile,
+      // Re-check under the lock: another writer may have committed a profile
+      // since the fast path read.
+      const [liveProfile] = await tx
+        .select()
+        .from(userProfiles)
+        .where(and(eq(userProfiles.userId, userId), eq(userProfiles.isDeleted, false)))
+        .limit(1)
+      if (liveProfile) {
+        return { success: true, data: liveProfile }
       }
-    }
 
-    // Lost the race: the winner's row is committed, so read it back rather than
-    // reporting a failure the caller would log as a provisioning error.
-    const [existingDefault] = await db
-      .select()
-      .from(userProfiles)
-      .where(
-        and(
-          eq(userProfiles.userId, userId),
-          eq(userProfiles.isDefault, true),
-          // Tombstones excluded, matching the partial unique index this
-          // read-back complements — `(userId) WHERE isDefault AND NOT
-          // isDeleted`. Without it a soft-deleted default could be returned as
-          // the caller's live default profile.
-          eq(userProfiles.isDeleted, false)
+      // Get user's currency preference
+      const [user] = await tx
+        .select({ currency: users.currency })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+
+      const userCurrency = user?.currency || 'NONE'
+
+      // Create default profile. `onConflictDoNothing` absorbs a concurrent insert
+      // by an unlocked writer (see the docblock): the index covers (userId) WHERE
+      // isDefault AND NOT isDeleted, so a second insert writes nothing.
+      const [defaultProfile] = await tx
+        .insert(userProfiles)
+        .values({
+          userId,
+          name: 'Main Profile',
+          description: 'Your primary financial profile',
+          currency: userCurrency,
+          isDefault: true,
+          // Stamped here, AFTER the lock (code review 80.2): the column default
+          // `now()` is the TRANSACTION start, before the lock wait, and a row of
+          // the user committed during the wait could move a device's pull cursor
+          // (`updatedAt > since`) past this profile. `createEntity` stamps the same.
+          updatedAt: new Date(),
+        } as NewUserProfile)
+        .onConflictDoNothing()
+        .returning()
+
+      if (defaultProfile) {
+        return {
+          success: true,
+          data: defaultProfile,
+        }
+      }
+
+      // Lost the race: the winner's row is committed, so read it back rather than
+      // reporting a failure the caller would log as a provisioning error.
+      const [existingDefault] = await tx
+        .select()
+        .from(userProfiles)
+        .where(
+          and(
+            eq(userProfiles.userId, userId),
+            eq(userProfiles.isDefault, true),
+            // Tombstones excluded, matching the partial unique index this
+            // read-back complements — `(userId) WHERE isDefault AND NOT
+            // isDeleted`. Without it a soft-deleted default could be returned as
+            // the caller's live default profile.
+            eq(userProfiles.isDeleted, false)
+          )
         )
-      )
-      .limit(1)
+        .limit(1)
 
-    if (existingDefault) {
-      return {
-        success: true,
-        data: existingDefault,
+      if (existingDefault) {
+        return {
+          success: true,
+          data: existingDefault,
+        }
       }
-    }
 
-    return {
-      success: false,
-      error: 'Failed to create default profile',
-    }
+      return {
+        success: false,
+        error: 'Failed to create default profile',
+      }
+    })
   } catch (error) {
     return {
       success: false,

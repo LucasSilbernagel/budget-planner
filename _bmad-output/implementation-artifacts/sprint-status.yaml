@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29ai (**80.2 CODE-REVIEWED -> done**, UNCOMMITTED. Web 3980, e2e 520/4. Epic 80's two stories are done: epic-80 can close at commit.)
+# last_updated: 2026-09-29ah (**80.2 DEV DONE -> review**, UNCOMMITTED. Web 3978, e2e 520/4.)
+# last_updated: 2026-09-29ag (**80.2 dev started -> in-progress**, baseline `2497ce4`.)
+# last_updated: 2026-09-29af (epic-83 committed `2497ce4` -> done. **80.2 CREATED -> ready-for-dev**: D1/D2 recommended, not yet confirmed; Fact T traced.)
 # last_updated: 2026-09-29ae (**83.1 CODE-REVIEWED -> done**, UNCOMMITTED. Web 3964, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/679. Epic 83 has one story: epic-83 can close at commit.)
 # last_updated: 2026-09-29ad (**83.1 DEV DONE -> review**, UNCOMMITTED. Web 3946, core 1114, db 295/7, e2e 519/4 (+chromium-prod), types 0/0/0, biome 0/679. AC-5 RED on 31e74bf = the Buffer assertion, both paths.)
 # last_updated: 2026-09-29ac (**83.1 dev started -> in-progress**, baseline `31e74bf`; D1-D7 confirmed.)
@@ -1101,7 +1105,7 @@ development_status:
 
   epic-80: in-progress  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
   80-1-save-a-forecast-only-under-a-live-profile: done  # Opus review 2026-09-29: 1 decision (strip create arm too) + 7 patches, 2 deferred. Uncommitted. Web 3855, e2e 518/4. D0 = (a) (Lucas): ship as scoped; Fact R HIGH logged; correct-course transport story after
-  80-2-put-every-writer-of-the-default-profile-under-the-same-lock: backlog
+  80-2-put-every-writer-of-the-default-profile-under-the-same-lock: done  # Opus review 2026-09-29: 1 decision (accept erased-account consequence of D1; store entry → MED) + 7 patches, 2 deferred. UNCOMMITTED. Web 3980, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/681, bundle OK.
   epic-80-retrospective: optional
 
   epic-81: backlog  # A Forecast Field That Tells You What's Wrong. FR132.
@@ -1114,7 +1118,7 @@ development_status:
   82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: backlog  # inventory 61 specs into critical / integration-able / layout; critical list + layout home agreed with Lucas; may split after inventory.
   epic-82-retrospective: optional
 
-  epic-83: in-progress  # Saved Forecasts That Reach the Server. FR136. From correct-course 2026-09-29 (80.1 Fact R). Order: BEFORE 80.2. Every RED against dist/client, never dev/SSR.
+  epic-83: done  # Saved Forecasts That Reach the Server. FR136. From correct-course 2026-09-29 (80.1 Fact R). Order: BEFORE 80.2. Every RED against dist/client, never dev/SSR.
   83-1-save-list-and-delete-forecasts-through-the-server: done  # Opus review 2026-09-29: 1 decision (keep prod build in every e2e run) + 12 patches, 5 deferred. UNCOMMITTED. Web 3964, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/679, guard GREEN.
   epic-83-retrospective: optional
 

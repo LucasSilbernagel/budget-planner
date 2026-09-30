@@ -30,11 +30,13 @@
  *   longer refuses a sync-path promotion by ORDER: since story 76.1 a promotion
  *   demotes the current default in the same transaction (`promoteProfile` in
  *   `sync.ts`). What can still raise it there is a promotion RACING another
- *   promotion or the post-batch repair, which clears on replay — and a
- *   `userProfile` CREATE carrying `isDefault: true` while a default exists, which
- *   does NOT clear on replay (recorded in `deferred-work.md`, 76.1 review). That
- *   last case is why this code is not simply classified permanent for profiles:
- *   the create is a legitimate profile the user made, and dropping it loses it.
+ *   promotion or the post-batch repair, which clears on replay. A `userProfile`
+ *   CREATE carrying `isDefault: true` while a default exists no longer raises it:
+ *   since story 80.2 it is inserted as non-default under the per-user lock
+ *   (`createUserProfile` in `sync.ts`). A profile create can still 23505 on the
+ *   PRIMARY KEY (an id another user owns; deferred-work, code review of 80.2).
+ *   Dropping a profile create would lose a profile the user made, which is why
+ *   23505 is not classified permanent for profiles.
  * - Transient errors (`40001`, `40P01`, `57014`, connection loss, anything with no
  *   `code`). ⚠️ They stay in the KEPT-queued bucket too, NOT the retryable one.
  *   One leg of that choice was that a retryable op used to leave the persisted

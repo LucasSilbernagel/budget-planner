@@ -815,6 +815,87 @@ async function createProfileScopedEntity(
 }
 
 /**
+ * Create a `userProfile` under the per-user WRITER lock (story 80.2, FR130(2)).
+ *
+ * A profile create WRITES the set of live profiles, and with `isDefault: true`
+ * the default seat, so it takes `'no key update'` (like `promoteProfile` and the
+ * repair), not a child create's `'share'`. The duplicate check, the seat check and
+ * the INSERT run in one transaction behind that lock. Before 80.2 it was the
+ * autocommit `createEntity`, which neither the repair nor a promotion waited for.
+ *
+ * ⚠️ D1 (a), Lucas 2026-09-29: `isDefault: true` while the user already has a
+ * live default inserts the profile as NON-default; the current holder keeps the
+ * seat. Before, the INSERT hit `userProfiles_one_default_per_user` (23505,
+ * non-permanent) and the op was replayed for ever. Both traced sources of such a
+ * create are STALE snapshots, never the user's explicit promotion (that is an
+ * UPDATE, `promoteProfile`, where the last promotion wins):
+ * - a second device re-uploading an erased (or purged) account's old default
+ *   through `uploadMissingProfiles` after the account is provisioned again;
+ * - a local-only profile promoted while the push bridge was unwired, uploaded
+ *   later with its flag.
+ * Costs, accepted:
+ * - in the second case the device's local choice of default is not honoured; its
+ *   next pull brings the row back as non-default;
+ * - in the first case the erased account's old default is created LIVE in the new
+ *   account, so the second device's queued rows under it now land too (before,
+ *   the 23505 kept them all out). Its non-default profiles could already do this;
+ *   the root cause is that the client profile store is not keyed by user
+ *   (`deferred-work.md`, MED, code review of 80.2; Lucas, 2026-09-29).
+ *
+ * A 23505 or any other failure thrown inside still rolls back and is classified
+ * by `failureFromError` as before (a 23505 stays non-permanent).
+ */
+async function createUserProfile(
+  data: Record<string, unknown> & { id: string; userId: string }
+): Promise<OperationResult> {
+  const { id: entityId, userId } = data
+  try {
+    return await db.transaction(async (tx) => {
+      await lockUserProfileSet(tx, userId, 'no key update')
+      // `getEntity`, NOT `entityExists` (which swallows a failed SELECT, 79.3).
+      if (await getEntity('userProfile', entityId, userId, undefined, tx)) {
+        return { success: false, error: 'Entity already exists' }
+      }
+      // `=== true` only, matching the update arm's promotion test.
+      let isDefault = data['isDefault']
+      if (isDefault === true) {
+        const seatHolder = await tx
+          .select({ id: userProfiles.id })
+          .from(userProfiles)
+          .where(
+            and(
+              eq(userProfiles.userId, userId),
+              eq(userProfiles.isDefault, true),
+              eq(userProfiles.isDeleted, false)
+            )
+          )
+          .limit(1)
+        if (seatHolder.length > 0) {
+          isDefault = false
+          // Ids only: how often D1 fires is otherwise unobservable.
+          logger.info('[Sync] profile create inserted non-default: default seat taken', {
+            entityType: 'userProfile',
+            entityId,
+            userId,
+          })
+        }
+      }
+      const result = await createEntity('userProfile', { ...data, isDefault }, tx)
+      if (!result.success) {
+        // The failed INSERT aborted the transaction; roll it back explicitly.
+        throw new RollbackWith(result)
+      }
+      return result
+    })
+  } catch (error) {
+    if (error instanceof RollbackWith) {
+      return error.result
+    }
+    return failureFromError(error, { entityType: 'userProfile', entityId, userId })
+  }
+}
+
+/**
  * Update entity in database
  */
 async function updateEntity(
@@ -965,11 +1046,10 @@ async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
   // "no default", lose the seat to another request's promotion, and then throw
   // 23505 out of `processBatchSync` AFTER the batch had committed: a 500 for a
   // push that succeeded. The lock serializes it with `promoteProfile`, the
-  // cascade and other repairs (see `lockUserProfileSet`). ⚠️ NOT with every
-  // writer of the seat: a sync `userProfile` CREATE carrying `isDefault: true`
-  // (autocommit `createEntity`) and `createDefaultProfileForUser` take no lock,
-  // so the repair can still lose to them with a 23505 (deferred-work.md, code
-  // review of 76.3).
+  // cascade and other repairs (see `lockUserProfileSet`), and since story 80.2
+  // with every other live-path writer of the seat: the sync `userProfile` CREATE
+  // (`createUserProfile`) and `createDefaultProfileForUser`, which until then took
+  // no lock and could beat the repair to the seat with a 23505.
   await db.transaction(async (tx) => {
     await lockUserProfileSet(tx, userId, 'no key update')
 
@@ -1298,6 +1378,11 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
             userId,
             profileId,
           })
+        }
+        // A profile create writes the set of live profiles: writer lock, seat
+        // check (story 80.2).
+        if (entityType === 'userProfile') {
+          return createUserProfile({ ...fields, id: entityId, userId })
         }
         // Check if entity already exists
         const exists = await entityExists(entityType, entityId, userId, profileId)

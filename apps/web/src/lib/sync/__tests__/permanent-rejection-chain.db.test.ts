@@ -457,33 +457,37 @@ describe('processBatchSync classification (story 75.1, AC-1/AC-3)', () => {
   })
 
   it('does NOT reject a 23505 — a unique violation can clear once its paired op lands', async () => {
-    // A second DEFAULT profile: `userProfiles_one_default_per_user` refuses it now,
-    // but the same promotion succeeds once the old default's demotion arrives.
-    const op = queuedOp({
-      type: 'create',
-      entityType: 'userProfile',
-      entityId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-      profileId: undefined,
-      data: { userId: USER, name: 'Second', isDefault: true, currency: 'USD' },
-    })
-    try {
-      const result = await push(op)
-      expect(result).toMatchObject({ failedCount: 1, failedOperationIds: [op.id], rejections: [] })
-
-      // Positive control: the SAME op minus the second default is accepted, so the
-      // failure above really was the one-default unique index and not some other
-      // fault in the payload.
-      const accepted = await push({
-        ...op,
-        id: `${op.id}-b`,
-        data: { ...op.data, isDefault: false },
+    // A second LIVE category of the same name and kind: the index
+    // `categories_userId_profileId_kind_name_live_unique` is on `lower(name)`
+    // (migration 0012), so `groceries` collides with `Groceries`. It refuses it now, but the
+    // same create succeeds once the first row's rename or delete arrives.
+    // ⚠️ Until story 80.2 this used a second DEFAULT profile create. That create
+    // is now accepted as NON-default (decision D1,
+    // `server/api/__tests__/sync-profile-create-default.db.test.ts`), so it no
+    // longer produces a 23505.
+    const first = '30000000-0000-4000-8000-0000000000c1'
+    const second = '30000000-0000-4000-8000-0000000000c2'
+    const categoryCreate = (entityId: string, name: string) =>
+      queuedOp({
+        type: 'create',
+        entityType: 'category',
+        entityId,
+        data: { userId: USER, name, kind: 'expense' },
       })
-      expect(accepted).toMatchObject({ processedCount: 1, failedCount: 0 })
-    } finally {
-      await db
-        .delete(userProfiles)
-        .where(eq(userProfiles.id, 'ffffffff-ffff-4fff-8fff-ffffffffffff'))
-    }
+    expect(await push(categoryCreate(first, 'Groceries'))).toMatchObject({
+      processedCount: 1,
+      failedCount: 0,
+    })
+
+    const op = categoryCreate(second, 'groceries')
+    const result = await push(op)
+    expect(result).toMatchObject({ failedCount: 1, failedOperationIds: [op.id], rejections: [] })
+
+    // Positive control: the SAME op under another name is accepted, so the failure
+    // above really was the live-name unique index and not some other fault in
+    // the payload.
+    const accepted = await push({ ...op, id: `${op.id}-b`, data: { ...op.data, name: 'Rent' } })
+    expect(accepted).toMatchObject({ processedCount: 1, failedCount: 0 })
   })
 
   it('refuses a non-uuid entityId at the REQUEST level (it used to become a permanent conflict)', async () => {
