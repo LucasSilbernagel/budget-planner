@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import { type Locator, type Page, expect } from '@playwright/test'
 
 /**
  * Shared by the two screenshot specs (story 84.1): the clock every shot runs
@@ -22,4 +22,19 @@ export const SHOT_TIMEOUT = 15_000
  */
 export function copyrightYear(page: Page): Locator[] {
   return [page.locator('footer span').filter({ hasText: /^Copyright \d{4}/ })]
+}
+
+/**
+ * Wait until the page has drawn exactly `count` Recharts charts.
+ *
+ * ⚠️ `toHaveScreenshot`'s wait for two identical frames is NOT enough. The
+ * Overview's pies and bars are lazy chunks behind `Suspense`; MEASURED in story
+ * 84.1 (CI run 36784606423): one capture caught every chart area BLANK, the blank
+ * page stayed identical for 250 ms, so Playwright called it stable and compared
+ * it (36344 pixels differed; it passed on retry). A baseline taken in that state
+ * would pin blank charts forever. `count` is exact, so a chart that stops
+ * loading, or an unexpected one, fails here with a message, not as a pixel diff.
+ */
+export async function chartsDrawn(page: Page, count: number): Promise<void> {
+  await expect(page.locator('.recharts-surface')).toHaveCount(count, { timeout: SHOT_TIMEOUT })
 }

@@ -1,7 +1,7 @@
 import { type Page, type Route, expect, test } from '@playwright/test'
 import { expectSignedInAs } from './helpers/account-menu'
 import { mockSignedIn } from './helpers/nav-more'
-import { FIXED_NOW, SHOT_TIMEOUT, copyrightYear } from './helpers/screenshot'
+import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
 /**
@@ -53,7 +53,7 @@ async function stubForecastApi(page: Page) {
   )
 }
 
-async function open(page: Page, path: string, width: number) {
+async function open(page: Page, path: string, width: number, charts: number) {
   await page.setViewportSize({ width, height: 900 })
   await page.emulateMedia({ colorScheme: 'light' })
   await page.clock.setFixedTime(FIXED_NOW)
@@ -64,10 +64,11 @@ async function open(page: Page, path: string, width: number) {
   await page.waitForLoadState('networkidle')
   await expectSignedInAs(page, PAID_EMAIL)
   await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
+  await chartsDrawn(page, charts)
 }
 
 test('forecasting-1280-light', async ({ page }) => {
-  await open(page, '/forecasting', 1280)
+  await open(page, '/forecasting', 1280, 0)
   await expect(page).toHaveScreenshot('forecasting-1280-light.png', {
     fullPage: true,
     mask: copyrightYear(page),
@@ -77,7 +78,7 @@ test('forecasting-1280-light', async ({ page }) => {
 
 for (const width of [768, 1280]) {
   test(`paid-header-${width}-light`, async ({ page }) => {
-    await open(page, '/', width)
+    await open(page, '/', width, 4)
     await expect(page).toHaveScreenshot(`paid-header-${width}-light.png`, {
       mask: copyrightYear(page),
       timeout: SHOT_TIMEOUT,

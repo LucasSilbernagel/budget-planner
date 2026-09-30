@@ -1,6 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import { MORE_PANEL, MORE_SUMMARY } from './helpers/nav-more'
-import { FIXED_NOW, SHOT_TIMEOUT, copyrightYear } from './helpers/screenshot'
+import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
 /**
@@ -35,24 +35,26 @@ interface Shot {
   path: string
   width: number
   dark?: boolean
+  /** How many Recharts charts the page draws (see `chartsDrawn`). */
+  charts: number
 }
 
 const PAGE_SHOTS: Shot[] = [
-  { name: 'overview-320-light', path: '/', width: 320 },
-  { name: 'overview-320-dark', path: '/', width: 320, dark: true },
-  { name: 'overview-1280-light', path: '/', width: 1280 },
-  { name: 'overview-1280-dark', path: '/', width: 1280, dark: true },
-  { name: 'income-320-light', path: '/income', width: 320 },
-  { name: 'income-768-light', path: '/income', width: 768 },
-  { name: 'income-1280-dark', path: '/income', width: 1280, dark: true },
-  { name: 'balance-768-light', path: '/balance', width: 768 },
-  { name: 'balance-1280-light', path: '/balance', width: 1280 },
-  { name: 'retirement-320-light', path: '/retirement', width: 320 },
-  { name: 'retirement-1280-dark', path: '/retirement', width: 1280, dark: true },
-  { name: 'settings-320-light', path: '/settings', width: 320 },
+  { name: 'overview-320-light', path: '/', width: 320, charts: 4 },
+  { name: 'overview-320-dark', path: '/', width: 320, dark: true, charts: 4 },
+  { name: 'overview-1280-light', path: '/', width: 1280, charts: 4 },
+  { name: 'overview-1280-dark', path: '/', width: 1280, dark: true, charts: 4 },
+  { name: 'income-320-light', path: '/income', width: 320, charts: 0 },
+  { name: 'income-768-light', path: '/income', width: 768, charts: 0 },
+  { name: 'income-1280-dark', path: '/income', width: 1280, dark: true, charts: 0 },
+  { name: 'balance-768-light', path: '/balance', width: 768, charts: 0 },
+  { name: 'balance-1280-light', path: '/balance', width: 1280, charts: 0 },
+  { name: 'retirement-320-light', path: '/retirement', width: 320, charts: 1 },
+  { name: 'retirement-1280-dark', path: '/retirement', width: 1280, dark: true, charts: 1 },
+  { name: 'settings-320-light', path: '/settings', width: 320, charts: 0 },
 ]
 
-async function open(page: Page, { path, width, dark }: Omit<Shot, 'name'>) {
+async function open(page: Page, { path, width, dark, charts }: Omit<Shot, 'name'>) {
   await page.setViewportSize({ width, height: 900 })
   await page.emulateMedia({ colorScheme: dark ? 'dark' : 'light' })
   await page.clock.setFixedTime(FIXED_NOW)
@@ -60,6 +62,7 @@ async function open(page: Page, { path, width, dark }: Omit<Shot, 'name'>) {
   await page.goto(path)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
+  await chartsDrawn(page, charts)
 }
 
 for (const shot of PAGE_SHOTS) {
@@ -74,7 +77,7 @@ for (const shot of PAGE_SHOTS) {
 }
 
 test('nav-more-sheet-320-light', async ({ page }) => {
-  await open(page, { path: '/', width: 320 })
+  await open(page, { path: '/', width: 320, charts: 4 })
   await page.locator(MORE_SUMMARY).click()
   await expect(page.locator(MORE_PANEL)).toBeVisible()
   await expect(page).toHaveScreenshot('nav-more-sheet-320-light.png', {
