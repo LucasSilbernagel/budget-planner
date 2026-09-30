@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
 
 /**
  * Playwright E2E configuration for @budget-planner/web.
@@ -38,6 +39,18 @@ import { defineConfig, devices } from '@playwright/test'
  * ⚠️ With `PLAYWRIGHT_BASE_URL` set, the `chromium-paid` project is DROPPED, not
  * pointed elsewhere. The seam is compiled out of a production build, so the paid
  * nav cannot be rendered against an external server at all.
+ *
+ * ## A third server: the PRODUCTION build (story 83.1)
+ *
+ *   - `chromium-prod` :5175, `pnpm build && node server-entry.mjs`, NO database
+ *                                          → only `*.prod.spec.ts`.
+ *
+ * Some defects exist only in the production CLIENT bundle. Story 80.1 Fact R was
+ * one: the forecasting page `import()`ed server code in the browser, the prod
+ * chunk carried `pg` and failed with `Buffer is not defined`, and the dev server
+ * (where Vite serves modules differently) could not show it truthfully. So this
+ * project builds first and serves the real `dist/`. See
+ * `e2e/forecasting-roundtrip.prod.spec.ts` for what is real and what is stubbed.
  */
 const externalBaseURL = process.env['PLAYWRIGHT_BASE_URL']
 const baseURL = externalBaseURL || 'http://localhost:5173'
@@ -86,6 +99,39 @@ const devServer = (port: number, sessionSeed: string) => ({
   env: { E2E_SESSION_SEED: sessionSeed },
 })
 
+const PROD_PORT = 5175
+const prodBaseURL = `http://127.0.0.1:${PROD_PORT}`
+
+/**
+ * The production-build server for `chromium-prod` (story 83.1).
+ *
+ * ⚠️⚠️ `DATABASE_URL: ''` is a SAFETY requirement, not tidiness. Playwright MERGES
+ * the ambient environment into the server's (see `devServer`), so a shell with
+ * `DATABASE_URL` exported would point this server at a real database. Empty,
+ * `getPool()` throws on first use (`packages/db/src/client.ts`), which is also what
+ * makes the signed e2e cookie resolve to a NULL session seed
+ * (`e2e/helpers/prod-session.ts`).
+ *
+ * ⚠️ `reuseExistingServer: false`, unlike the dev servers: a server left running
+ * from an earlier build would serve an OLD bundle, and this project exists to
+ * test the bundle. The build runs every time (~10 s of vite, story 83.1 M1).
+ */
+const prodServer = {
+  command: 'pnpm build && node server-entry.mjs',
+  url: `${prodBaseURL}/api/health`,
+  reuseExistingServer: false,
+  timeout: 180_000,
+  env: {
+    NODE_ENV: 'production',
+    PORT: String(PROD_PORT),
+    HOST: '127.0.0.1',
+    SITE_URL: prodBaseURL,
+    SESSION_SECRET: PROD_E2E_SESSION_SECRET,
+    DATABASE_URL: '',
+    E2E_SESSION_SEED: '',
+  },
+}
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -109,7 +155,7 @@ export default defineConfig({
       // Excluded, not merely unlisted: without this the paid specs would ALSO run
       // here, against the free server, and their paid assertions would fail for a
       // reason that looks nothing like "wrong server".
-      testIgnore: /\.paid\.spec\.ts$/,
+      testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/],
       use: { ...devices['Desktop Chrome'] },
     },
     // ⚠️ Dropped entirely when PLAYWRIGHT_BASE_URL is set. That escape hatch points
@@ -127,6 +173,13 @@ export default defineConfig({
             testMatch: /\.paid\.spec\.ts$/,
             use: { ...devices['Desktop Chrome'], baseURL: paidBaseURL },
           },
+          // Dropped with PLAYWRIGHT_BASE_URL too: it needs its own server, with
+          // its own session secret, which an external server does not share.
+          {
+            name: 'chromium-prod',
+            testMatch: /\.prod\.spec\.ts$/,
+            use: { ...devices['Desktop Chrome'], baseURL: prodBaseURL },
+          },
         ]),
   ],
   // Auto-start the dev servers unless an external base URL was provided.
@@ -136,5 +189,6 @@ export default defineConfig({
         // The free server is explicitly handed an EMPTY seed — see `devServer`.
         devServer(5173, ''),
         devServer(PAID_PORT, PAID_SESSION_SEED),
+        prodServer,
       ],
 })

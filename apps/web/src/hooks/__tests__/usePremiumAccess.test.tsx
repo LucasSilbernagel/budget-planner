@@ -8,21 +8,37 @@
  * still requires an *active* subscription; every other state is fail-closed.
  *
  * Without a seed the hook keeps its pre-UX-1 behaviour: it starts in the loading
- * state and resolves via the client `checkAccess()` round-trip. The dynamically
- * imported server module is mocked so that path is deterministic and never
- * touches a real server import in jsdom.
+ * state and resolves via the client `checkAccess()` round-trip, which since story
+ * 83.1 (FR136) is `GET /api/auth/me`. `fetch` is stubbed so that path is
+ * deterministic. (Before 83.1 the hook `import()`ed `server/api/data/forecasting`
+ * in the browser, which in the production bundle failed on `Buffer` and locked a
+ * paid user out: MEASURED, story 83.1 M3.)
  */
 
 import { render, screen, waitFor } from '@/test/utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type SessionSeed, SessionSeedProvider } from '../../context/session-seed'
 import { usePremiumAccess } from '../usePremiumAccess'
 
-const checkPremiumAccessServer = vi.fn()
+const fetchMock = vi.fn()
 
-vi.mock('../../server/api/data/forecasting', () => ({
-  checkPremiumAccessServer: (request: Request) => checkPremiumAccessServer(request),
-}))
+/** A `/api/auth/me` answer: `{ user }` as the route sends it. */
+function meResponse(body: unknown, status = 200): Response {
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+const PAID_USER = {
+  userId: 'user-1',
+  email: 'user@example.com',
+  paddleId: 'ctm_1',
+  subscriptionStatus: 'active',
+  billingInterval: 'year',
+  currency: 'EUR',
+  isAuthenticated: true,
+}
 
 function Probe() {
   const { status } = usePremiumAccess()
@@ -48,6 +64,11 @@ const val = (id: string) => screen.getByTestId(id).textContent
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('usePremiumAccess — SSR seed (story UX-1)', () => {
@@ -65,7 +86,7 @@ describe('usePremiumAccess — SSR seed (story UX-1)', () => {
     expect(val('isAuthenticated')).toBe('true')
     expect(val('subscriptionStatus')).toBe('active')
     // The whole point: a seeded paint never round-trips to the server.
-    expect(checkPremiumAccessServer).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it.each(['free', 'past_due', 'canceled'] as const)(
@@ -82,7 +103,7 @@ describe('usePremiumAccess — SSR seed (story UX-1)', () => {
       expect(val('hasAccess')).toBe('false')
       expect(val('isAuthenticated')).toBe('true')
       expect(val('subscriptionStatus')).toBe(subscriptionStatus)
-      expect(checkPremiumAccessServer).not.toHaveBeenCalled()
+      expect(fetchMock).not.toHaveBeenCalled()
     }
   )
 
@@ -103,7 +124,7 @@ describe('usePremiumAccess — SSR seed (story UX-1)', () => {
     expect(val('hasAccess')).toBe('true')
     expect(val('isAuthenticated')).toBe('true')
     expect(val('subscriptionStatus')).toBe('lifetime')
-    expect(checkPremiumAccessServer).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('is fail-closed by construction: a not-authenticated seed never yields premium even if subscriptionStatus is active', () => {
@@ -119,7 +140,7 @@ describe('usePremiumAccess — SSR seed (story UX-1)', () => {
     expect(val('isLoading')).toBe('false')
     expect(val('hasAccess')).toBe('false')
     expect(val('isAuthenticated')).toBe('false')
-    expect(checkPremiumAccessServer).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('a signed-out seed resolves to unauthenticated / no access, no client check', () => {
@@ -134,16 +155,13 @@ describe('usePremiumAccess — SSR seed (story UX-1)', () => {
     expect(val('hasAccess')).toBe('false')
     expect(val('isAuthenticated')).toBe('false')
     expect(val('subscriptionStatus')).toBe('null')
-    expect(checkPremiumAccessServer).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
 describe('usePremiumAccess — no seed (pre-UX-1 fallback)', () => {
-  it('starts loading and resolves via the client check when there is no seed', async () => {
-    checkPremiumAccessServer.mockResolvedValue({
-      success: true,
-      data: { hasAccess: false, subscriptionStatus: 'free' },
-    })
+  it('starts loading and resolves via GET /api/auth/me when there is no seed', async () => {
+    fetchMock.mockResolvedValue(meResponse({ user: { ...PAID_USER, subscriptionStatus: 'free' } }))
 
     renderWithSeed(null)
 
@@ -151,12 +169,73 @@ describe('usePremiumAccess — no seed (pre-UX-1 fallback)', () => {
     expect(val('isLoading')).toBe('true')
 
     await waitFor(() => expect(val('isLoading')).toBe('false'))
-    expect(checkPremiumAccessServer).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/auth/me')
     expect(val('hasAccess')).toBe('false')
+    expect(val('isAuthenticated')).toBe('true')
+    expect(val('subscriptionStatus')).toBe('free')
+  })
+
+  it.each(['active', 'lifetime'] as const)(
+    'a %s user with no seed ends with access (story 83.1, FR136 AC-2)',
+    async (subscriptionStatus) => {
+      fetchMock.mockResolvedValue(meResponse({ user: { ...PAID_USER, subscriptionStatus } }))
+
+      renderWithSeed(null)
+
+      await waitFor(() => expect(val('isLoading')).toBe('false'))
+      expect(val('hasAccess')).toBe('true')
+      expect(val('isAuthenticated')).toBe('true')
+      expect(val('subscriptionStatus')).toBe(subscriptionStatus)
+    }
+  )
+
+  it('past_due has no premium features, as the seed rule says', async () => {
+    fetchMock.mockResolvedValue(
+      meResponse({ user: { ...PAID_USER, subscriptionStatus: 'past_due' } })
+    )
+
+    renderWithSeed(null)
+
+    await waitFor(() => expect(val('isLoading')).toBe('false'))
+    expect(val('hasAccess')).toBe('false')
+    expect(val('isAuthenticated')).toBe('true')
+  })
+
+  it.each(['trialing', 'constructor', 42])(
+    'an unknown status (%s) from the server grants nothing',
+    async (subscriptionStatus) => {
+      // The payload is unvalidated JSON; a newer server's status, or a prototype
+      // key, must not unlock anything or be echoed as a status.
+      fetchMock.mockResolvedValue(meResponse({ user: { ...PAID_USER, subscriptionStatus } }))
+
+      renderWithSeed(null)
+
+      await waitFor(() => expect(val('isLoading')).toBe('false'))
+      expect(val('hasAccess')).toBe('false')
+      expect(val('isAuthenticated')).toBe('true')
+      expect(val('subscriptionStatus')).toBe('free')
+    }
+  )
+
+  it('a signed-out answer ({ user: null }) is NOT authenticated, exactly like a signed-out seed', async () => {
+    // ⚠️ Story 83.1. The old server check answered `{hasAccess:false,
+    // subscriptionStatus:'free'}` for no session and the hook then set
+    // `isAuthenticated: true` on EVERY successful check, so a signed-out visitor
+    // was reported as a signed-in free user. The re-check now goes through
+    // `seedToStatus`, the same rule as the SSR seed.
+    fetchMock.mockResolvedValue(meResponse({ user: null }))
+
+    renderWithSeed(null)
+
+    await waitFor(() => expect(val('isLoading')).toBe('false'))
+    expect(val('hasAccess')).toBe('false')
+    expect(val('isAuthenticated')).toBe('false')
+    expect(val('subscriptionStatus')).toBe('null')
   })
 
   /**
-   * The ERRORED path — both shapes it can take.
+   * The ERRORED path — every shape it can take.
    *
    * ⚠️ Added by the story 33.3 code review, which found this pinned nowhere.
    * Every premium gate in the app is fail-closed *by relying on this*: they
@@ -166,16 +245,26 @@ describe('usePremiumAccess — no seed (pre-UX-1 fallback)', () => {
    * `CategoriesPage`, `ReportPage` and the story 33.3 Category column — while
    * resting entirely on reading the source.
    *
-   * The two shapes are genuinely different code paths in the hook: a RESOLVED
-   * failure envelope (`success: false`) takes the fallback branch, while a
-   * THROWN error takes the catch. Both must land fail-closed, and `isLoading`
+   * A non-OK answer and an unreadable body take the hook's fallback branch; a
+   * THROWN fetch takes the catch. All must land fail-closed, and `isLoading`
    * must clear either way — a gate stuck loading forever is its own defect.
    */
-  it('a failed check (success: false) resolves fail-closed, not stuck loading', async () => {
-    checkPremiumAccessServer.mockResolvedValue({
-      success: false,
-      error: 'subscription lookup failed',
-    })
+  it('a 503 (session could not be resolved) resolves fail-closed, not stuck loading', async () => {
+    fetchMock.mockResolvedValue(meResponse({ success: false, error: 'db down' }, 503))
+
+    renderWithSeed(null)
+
+    await waitFor(() => expect(val('isLoading')).toBe('false'))
+    expect(val('hasAccess')).toBe('false')
+    expect(val('isAuthenticated')).toBe('false')
+  })
+
+  it.each([
+    ['a non-JSON body', 'upstream <html> error page'],
+    ['a body with no user key', { ok: true }],
+    ['a user with no id', { user: { subscriptionStatus: 'active' } }],
+  ])('%s on a 200 resolves fail-closed', async (_label, body) => {
+    fetchMock.mockResolvedValue(meResponse(body))
 
     renderWithSeed(null)
 
@@ -185,10 +274,8 @@ describe('usePremiumAccess — no seed (pre-UX-1 fallback)', () => {
   })
 
   it('a THROWN check resolves fail-closed too — the catch branch, not the fallback branch', async () => {
-    // The real-world instance of this is the known "Buffer is not defined"
-    // failure on the no-seed client path: the dynamic server import throws
-    // rather than returning an envelope.
-    checkPremiumAccessServer.mockRejectedValue(new Error('Buffer is not defined'))
+    // A network failure: `fetch` rejects instead of answering.
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
 
     renderWithSeed(null)
 

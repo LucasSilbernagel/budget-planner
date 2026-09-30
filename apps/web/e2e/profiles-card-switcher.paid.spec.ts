@@ -24,11 +24,13 @@ import type { Page } from '@playwright/test'
  *
  * ⚠️ MEASURED AT CONTEXT TIME, and worth not re-deriving: `/profiles` renders its
  * management UI on this server with cards seeded purely from localStorage. It is
- * NOT blocked the way `/forecasting` is — `getProfiles` (which throws
- * `ReferenceError: Buffer is not defined` here, because Vite bundles the `pg`
- * driver into the dev client) has exactly ONE caller in `apps/web/src`, and it is
- * `routes/forecasting.tsx`. `ProfilesPage` never calls it: it gates on
- * `usePremiumAccess`, and the cards come from the persisted `profileStore`.
+ * NOT blocked the way `/forecasting` is — the server profile list
+ * (`GET /api/profiles` since story 83.1, which answers 401 here: this server has
+ * no real session cookie; before 83.1 a client-side `getProfiles` import that
+ * threw `ReferenceError: Buffer is not defined`) has exactly ONE caller in
+ * `apps/web/src`, and it is `routes/forecasting.tsx`. `ProfilesPage` never calls
+ * it: it gates on `usePremiumAccess`, and the cards come from the persisted
+ * `profileStore`.
  *
  * ⚠️ The seed works because `addInitScript` runs before any page script, so the
  * key is already in localStorage when the store reads it. That is true of any

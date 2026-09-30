@@ -14,9 +14,10 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
  * (resolved decision #1, 2026-07-04). Also surfaces sign-out — before this
  * there was NO signed-in place to log out. This component uses a plain
  * `fetch('/api/auth/me')` rather than react-query (the app mounts no
- * `QueryClientProvider`), which also avoids the client-bundled
- * `checkPremiumAccessServer` "Buffer is not defined" hazard. The same
- * fetch pattern backs the persistent `AuthIndicator` (story 13-2).
+ * `QueryClientProvider`). It also avoided the client-bundled
+ * `checkPremiumAccessServer` "Buffer is not defined" hazard, which story 83.1
+ * removed (the premium hook now asks this route too). The same fetch pattern
+ * backs the persistent `AuthIndicator` (story 13-2).
  *
  * AC-4: the whole section renders ONLY for an authenticated user — free /
  * unauthenticated visitors (and the pre-resolution loading state) see nothing,

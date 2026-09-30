@@ -13,11 +13,12 @@ import { expect, test } from '@playwright/test'
  * dark mode and retirement are all free), so this path is the primary one, not
  * an edge case.
  *
- * ⚠️ DELIBERATELY NOT a `.paid.spec.ts`. On the paid server (:5174) `getProfiles`
- * throws `ReferenceError: Buffer is not defined` inside its dynamic import —
- * Vite bundles the `pg` driver into the client in dev — so profile-dependent
- * paid surfaces always land on their error arm. A paid arm here would be green
- * and VACUOUS, measuring a dev-only bundling artifact rather than this feature.
+ * ⚠️ DELIBERATELY NOT a `.paid.spec.ts`. The paid server (:5174) has an entitled
+ * SSR seed but no real session cookie, so `/api/profiles` answers 401 there and
+ * profile-dependent paid surfaces always land on their error arm. A paid arm here
+ * would be green and VACUOUS, measuring the harness rather than this feature.
+ * (Until story 83.1 the cause was different, the same outcome: the page's
+ * client-side `getProfiles` import threw `ReferenceError: Buffer is not defined`.)
  * The sync half of this field is pinned by contract tests
  * (`src/lib/sync/__tests__/ends-before-retirement-gates.test.ts`) and by the
  * real-DB round trip recorded in the story.

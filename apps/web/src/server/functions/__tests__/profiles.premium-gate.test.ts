@@ -8,6 +8,11 @@
  * after the auth check and before any DB work, so an unauthenticated caller
  * still gets the auth error, not the premium error.
  *
+ * ⚠️ `getProfiles` is NOT here since story 83.1: it became a user-scoped core
+ * (`getProfiles(userId)`), and its tier boundary moved to its only caller,
+ * `routes/api/profiles.ts`, where `routes/api/__tests__/profiles.route.db.test.ts`
+ * pins it (free / past_due / canceled → 403).
+ *
  * `getCurrentUserSession` and the Drizzle `db` are mocked; the rejection paths
  * never touch the DB (the guard short-circuits), and the one active-path check
  * uses a minimal chainable stub.
@@ -45,7 +50,6 @@ import {
   createProfile,
   deleteProfile,
   getProfile,
-  getProfiles,
   setDefaultProfile,
   updateProfile,
 } from '../profiles'
@@ -76,12 +80,6 @@ describe('profiles server functions — premium tier boundary (13-3 AC-2)', () =
     it('createProfile', async () => {
       session(status)
       const r = await createProfile(req, { name: 'X' })
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/premium/i)
-    })
-    it('getProfiles', async () => {
-      session(status)
-      const r = await getProfiles(req)
       expect(r.success).toBe(false)
       expect(r.error).toMatch(/premium/i)
     })
@@ -119,9 +117,10 @@ describe('profiles server functions — premium tier boundary (13-3 AC-2)', () =
     expect(r.error).toMatch(/auth/i)
   })
 
-  it('an active subscription passes the tier guard (getProfiles proceeds)', async () => {
+  it('an active subscription passes the tier guard (getProfile proceeds to the lookup)', async () => {
     session('active')
-    const r = await getProfiles(req)
-    expect(r.success).toBe(true)
+    const r = await getProfile(req, 'p1')
+    // The stub returns no row, so the function reached its query: past the guard.
+    expect(r).toEqual({ success: false, error: 'Profile not found or not authorized' })
   })
 })

@@ -104,7 +104,7 @@ jobs:
       # ⚠️ The positive control is not optional. A grep that finds nothing
       # because it searched the wrong directory looks exactly like a pass, so we
       # first assert a string that MUST be present.
-      - name: Dev-only session seam is absent from a production build
+      - name: Dev-only session seam and server-only code are absent from the client build
         run: |
           set -euo pipefail
           pnpm --filter web build
@@ -119,6 +119,15 @@ jobs:
             exit 1
           fi
           echo "OK: positive control present, E2E_SESSION_SEED absent from apps/web/dist/."
+
+          # Story 83.1 (FR136, AC-4). No server-only code in the CLIENT bundle.
+          # The forecasting page once `import()`ed `server/functions/*` in the
+          # browser: Vite put `pg` and the DB config into `dist/client`, the chunk
+          # failed there with `Buffer is not defined`, and no saved forecast ever
+          # reached the server while every test stayed green. The script scans
+          # every file in `dist/client` for server-only markers and carries its
+          # own positive controls (the markers must be present in `dist/server`).
+          node apps/web/scripts/check-client-bundle.mjs
 
   unit-tests:
     name: Unit tests (Vitest)
@@ -198,9 +207,12 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm --filter @budget-planner/web exec playwright install-deps chromium
 
-      # Playwright boots the app itself (webServer: `pnpm dev`). GitHub Actions
-      # sets CI=true automatically, which enables one retry + 4 workers and
-      # disables dev-server reuse (see apps/web/playwright.config.ts).
+      # Playwright boots the app itself: two `pnpm dev` servers (free and paid
+      # seams) and, since story 83.1, a PRODUCTION build served by
+      # `node server-entry.mjs` for the `chromium-prod` project (`*.prod.spec.ts`,
+      # no database). GitHub Actions sets CI=true automatically, which enables one
+      # retry + 4 workers and disables dev-server reuse (see
+      # apps/web/playwright.config.ts).
       - name: Run Playwright tests
         run: pnpm test:e2e
 

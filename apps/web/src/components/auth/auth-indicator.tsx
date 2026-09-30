@@ -32,10 +32,10 @@ import { SettingsIcon } from '../ui/SettingsIcon'
  *
  * Session resolution mirrors `settings/account-section.tsx`: a plain
  * `fetch('/api/auth/me')` in a mount effect, NOT `@tanstack/react-query` (the
- * app mounts no `QueryClientProvider`) and NOT the `usePremiumAccess` hook /
- * `checkPremiumAccessServer` server import (which throws "Buffer is not defined"
- * in the browser bundle — see the premium-check e2e Buffer gap). The fetch fails
- * closed: any error resolves to the signed-out state.
+ * app mounts no `QueryClientProvider`) and NOT the `usePremiumAccess` hook
+ * (which, until story 83.1, imported `checkPremiumAccessServer` into the browser
+ * bundle, where it threw "Buffer is not defined"; since 83.1 the hook asks this
+ * same route). The fetch fails closed: any error resolves to the signed-out state.
  *
  * Because this strip is mounted once at the root and never remounts on client
  * navigation, it re-resolves the session whenever the route changes (the effect

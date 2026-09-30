@@ -7,8 +7,9 @@ import { expect, test } from '@playwright/test'
  * session, the route must resolve (client-side, via `usePremiumAccess`) to the
  * discoverable LOCKED upgrade surface — not the create/switch management UI.
  *
- * The preview runtime cannot mint an active session (no test session + the
- * premium-check Buffer gap makes `checkPremiumAccessServer` fail closed), so the
+ * The dev e2e servers cannot mint an active session (no real session cookie;
+ * before story 83.1 the premium check also failed closed on the client-bundled
+ * `checkPremiumAccessServer` `Buffer` error), so the
  * UNLOCKED (active) path — the working `/profiles` management UI — is covered by
  * the mocked unit tests (`src/components/profiles/__tests__/profiles-page.test.tsx`). Here we assert
  * the locked path e2e, which is exactly what a free/anonymous visitor sees.

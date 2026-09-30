@@ -23,9 +23,10 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
  * resolved at CONFIRM time via a best-effort `fetch('/api/auth/me')` — NOT
  * prefetched into state — so a signed-in user who confirms quickly can never
  * purge with a stale `undefined` and silently leave the queue behind. This
- * mirrors AccountSection's session pattern (plain fetch, no react-query, no
- * client-bundled `checkPremiumAccessServer` "Buffer is not defined" hazard); a
- * free user (no session) resolves to `undefined`, which skips the queue step.
+ * mirrors AccountSection's session pattern (plain fetch, no react-query; the
+ * client-bundled `checkPremiumAccessServer` hazard it also avoided is gone since
+ * story 83.1); a free user (no session) resolves to `undefined`, which skips the
+ * queue step.
  */
 
 async function fetchCurrentUserId(): Promise<string | undefined> {

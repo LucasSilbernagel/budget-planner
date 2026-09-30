@@ -15,10 +15,10 @@
  * lock. The lock is guarded by the statement-order test at the bottom, and its
  * blocking is REASONED (see `lockUserProfileSet`'s docblock), not measured.
  *
- * ⚠️ `createForecastingProfile` is not reached from the browser in production
- * today (its client-side import fails on `Buffer`; see `deferred-work.md`,
- * "Deferred from: create-story of 80-1"). These tests call it directly, so they
- * prove the function, not a user-visible path.
+ * These tests call `createForecastingProfile` directly. Since story 83.1 it is
+ * the user-scoped core behind `POST /api/forecasts` (the route authenticates
+ * and passes `userId`); before that the page imported it in the browser and the
+ * import failed on `Buffer` (story 80.1 Fact R), so no save reached it.
  */
 
 import { readFileSync } from 'node:fs'
@@ -48,21 +48,6 @@ vi.mock('@/lib/logger', () => ({
 }))
 
 const USER = '11111111-1111-4111-8111-111111111111'
-
-vi.mock('../../api/auth/paddle', () => ({
-  getCurrentUserSession: vi.fn(async () => ({
-    success: true,
-    data: {
-      userId: USER,
-      email: 'a@example.test',
-      paddleId: 'ctm_a',
-      subscriptionStatus: 'lifetime',
-      currency: 'NONE',
-      billingInterval: null,
-      isAuthenticated: true,
-    },
-  })),
-}))
 
 import { forecastingProfiles, userProfiles, users } from '@budget-planner/db'
 import { eq } from 'drizzle-orm'
@@ -177,7 +162,7 @@ const deleteProfile = (id: string) => {
 }
 
 function save(overrides: Record<string, unknown> = {}) {
-  return createForecastingProfile(new Request('http://localhost/forecasting'), {
+  return createForecastingProfile(USER, {
     name: 'Plan A',
     scenarioData: { scenario: {}, result: {}, inputs: {} },
     profileId: P,
@@ -290,7 +275,7 @@ describe('a forecast save interleaves with the cascade of its profile (AC-1)', (
     expect(await forecastsUnder(P), 'forecast under tombstoned profile').toEqual([])
 
     // The caller gets the existing refusal.
-    expect(result).toEqual({ success: false, error: REFUSAL })
+    expect(result).toEqual({ success: false, error: REFUSAL, reason: 'not-found' })
   })
 
   it('a save that lands BEFORE the cascade is removed by it', async () => {
@@ -303,8 +288,10 @@ describe('a forecast save interleaves with the cascade of its profile (AC-1)', (
 describe('a save under a live profile behaves as before (positive controls)', () => {
   it('creates the forecast and names its profile', async () => {
     const result = await save()
-    expect(result.success).toBe(true)
-    expect(result.data).toMatchObject({ name: 'Plan A', profileId: P, profileName: 'Main' })
+    expect(result).toMatchObject({
+      success: true,
+      data: { name: 'Plan A', profileId: P, profileName: 'Main' },
+    })
     expect(await forecastsUnder(P)).toHaveLength(1)
   })
 
@@ -321,13 +308,14 @@ describe('a save under a live profile behaves as before (positive controls)', ()
     expect(duplicate).toEqual({
       success: false,
       error: 'A forecast with this name already exists for this profile.',
+      reason: 'conflict',
     })
     expect(await forecastsUnder(P)).toHaveLength(1)
   })
 
   it('a profile tombstoned before the save is refused without a write', async () => {
     await db.update(userProfiles).set({ isDeleted: true }).where(eq(userProfiles.id, P))
-    expect(await save()).toEqual({ success: false, error: REFUSAL })
+    expect(await save()).toEqual({ success: false, error: REFUSAL, reason: 'not-found' })
     expect(await forecastsUnder(P)).toEqual([])
   })
 })
@@ -342,6 +330,7 @@ describe('a refused save writes nothing (the transaction is atomic)', () => {
     expect(await save({ isDefault: true })).toEqual({
       success: false,
       error: 'A forecast with this name already exists for this profile.',
+      reason: 'conflict',
     })
     const rows = await forecastsUnder(P)
     expect(
@@ -361,6 +350,7 @@ describe('a malformed scenario is refused before anything is written (Task 2, co
     expect(result).toEqual({
       success: false,
       error: 'scenarioData must be a JSON object or a valid JSON string',
+      reason: 'invalid-input',
     })
     // On `9144e0a` the old default was demoted BEFORE the scenario was validated.
     expect(statements, 'no statement for a malformed scenario').toEqual([])
@@ -373,6 +363,7 @@ describe('a malformed scenario is refused before anything is written (Task 2, co
     expect(await save({ scenarioData: 'not json' })).toEqual({
       success: false,
       error: 'scenarioData must be valid JSON',
+      reason: 'invalid-input',
     })
   })
 })

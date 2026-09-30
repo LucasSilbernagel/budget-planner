@@ -25,7 +25,13 @@ import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
 import { ScenarioBuilder } from '../components/forecasting/scenario-builder'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
-import type { ForecastingProfileOutput } from '../server/functions/forecastingProfiles'
+import {
+  type ForecastWire,
+  deleteForecast,
+  fetchForecasts,
+  fetchProfiles,
+  saveForecast,
+} from '../lib/forecasting/forecast-api'
 
 // ============================================================================
 // Route Configuration
@@ -138,7 +144,7 @@ export interface SavedForecast {
  * scenarioData is a JSON string of { scenario, result }; returns null if it
  * cannot be parsed into the expected shape so a corrupt row can't crash the UI.
  */
-function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | null {
+function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
   try {
     const parsed = JSON.parse(profile.scenarioData) as {
       scenario?: ForecastingScenario
@@ -187,11 +193,10 @@ function mapToSavedForecast(profile: ForecastingProfileOutput): SavedForecast | 
       result: parsed.result,
       inputs,
       version: profile.version,
-      // Drizzle returns `Date` for a timestamp column, but `SavedForecast` declares
-      // these as ISO strings — the shape the rest of the app serialises. Both
-      // consumers (`forecast-list.tsx:109,368`) pass the value straight to
-      // `new Date(...)`, so this is behaviour-preserving; it just stops the type
-      // claiming `string` while holding a `Date`.
+      // The row arrives over JSON (`GET /api/forecasts`, story 83.1), so these are
+      // ISO strings already. Re-serialising normalises the format and turns an
+      // unparseable value into a throw, which the `catch` below maps to a skipped
+      // row rather than an "Invalid Date" on screen.
       createdAt: new Date(profile.createdAt).toISOString(),
       updatedAt: new Date(profile.updatedAt).toISOString(),
     }
@@ -233,7 +238,7 @@ function ForecastingPage(): React.ReactElement {
   }, [])
 
   // State for server-side forecasts
-  const [serverForecasts, setServerForecasts] = useState<ForecastingProfileOutput[]>([])
+  const [serverForecasts, setServerForecasts] = useState<ForecastWire[]>([])
   /**
    * The user profile that newly-saved forecasts are attached to, as an EXPLICIT
    * four-arm status (story 62.2, FR95).
@@ -283,22 +288,19 @@ function ForecastingPage(): React.ReactElement {
   const [isSavingForecast, setIsSavingForecast] = useState(false)
 
   // Load the user's default profile and saved forecasts from the server on mount
+  // (`/api/profiles`, `/api/forecasts`: story 83.1)
   useEffect(() => {
     const loadData = async () => {
       try {
-        // In TanStack Start, the framework supplies the request context; for
-        // client-side calls we pass the current location as the request.
-        const request = new Request(window.location.href)
-
         // Resolve the user's default profile (or first profile) so saves have a
-        // valid profileId to attach to.
-        const { getProfiles } = await import('../server/functions/profiles')
-        const profilesResult = await getProfiles(request)
+        // valid profileId to attach to. Same-origin `fetch` to `/api/profiles`
+        // (story 83.1); the session cookie travels on its own.
+        const profilesResult = await fetchProfiles()
         let resolvedProfileId: string | null = null
         if (!profilesResult.success) {
-          // ⚠️ NOT "no profile". `getProfiles` returns `success: false` for an
-          // expired session and for a premium denial at the server boundary, and
-          // this account may well have profiles it simply could not read.
+          // ⚠️ NOT "no profile". `/api/profiles` fails for an expired session
+          // (401), a premium denial at the server boundary (403) and an outage
+          // (503), and this account may well have profiles it simply could not read.
           setProfileState({ kind: 'error' })
         } else if (!Array.isArray(profilesResult.data)) {
           // ⚠️ A malformed success is an ERROR, not an empty account (code review
@@ -310,8 +312,8 @@ function ForecastingPage(): React.ReactElement {
         } else if (profilesResult.data.length === 0) {
           // The ONLY branch that means the account genuinely has no profile: a
           // well-formed success carrying an empty array. Soft-deleted tombstones
-          // are already excluded server-side (`profiles.ts:157-160`), so an empty
-          // list really is empty.
+          // are already excluded server-side (`getProfiles` in
+          // `server/functions/profiles.ts`), so an empty list really is empty.
           setProfileState({ kind: 'none' })
         } else {
           const defaultProfile =
@@ -332,22 +334,22 @@ function ForecastingPage(): React.ReactElement {
 
         // Load saved forecasts scoped to the same profile saves target, so the
         // "My Forecasts" list and the save destination stay consistent.
-        const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-        const result = await getForecastingProfiles(request, resolvedProfileId ?? undefined)
+        const result = await fetchForecasts(resolvedProfileId ?? undefined)
         if (result.success && result.data) {
           setServerForecasts(result.data)
         }
       } catch (error) {
-        // ⚠️ A throw is an ERROR arm, never the "no profile" arm. MEASURED on the
-        // e2e dev server: `getProfiles` throws `ReferenceError: Buffer is not
-        // defined` before it reaches the server at all, because Vite bundles the
-        // `pg` driver into the client in dev. Treating that as "you have no
-        // profiles" would have put wrong advice on screen for a bundling artifact.
+        // ⚠️ A throw is an ERROR arm, never the "no profile" arm. It is a network
+        // failure (`fetch` rejects; a non-JSON body is already a `success: false`
+        // result, see `forecast-api.ts`). Until story 83.1 it was also the
+        // `ReferenceError: Buffer is not defined` of the client-side server import
+        // this page used to make (story 80.1 Fact R). Treating either as "you have
+        // no profiles" would put wrong advice on screen.
         // The log stays: it is the only record of WHICH error occurred, and it is
         // explicitly not the user-facing feedback (that is the notice below).
         console.error('Failed to load forecasting data:', error)
         // ⚠️⚠️ ONLY demote a state that is still UNRESOLVED (code review 62.2).
-        // This `try` wraps BOTH fetches. `getForecastingProfiles` runs AFTER the
+        // This `try` wraps BOTH fetches. `fetchForecasts` runs AFTER the
         // profile arm has been set, so an unconditional `{kind:'error'}` here let
         // a failure of the SAVED-FORECAST LIST flip a perfectly good `ready` to
         // `error` — disabling Save and stating "We could not check your financial
@@ -362,7 +364,7 @@ function ForecastingPage(): React.ReactElement {
     }
   }, [status.hasAccess, status.isAuthenticated])
 
-  // Handle saving a forecast - uses server function
+  // Handle saving a forecast - `POST /api/forecasts`
   const handleSaveForecast = useCallback(
     async (forecast: {
       name: string
@@ -391,12 +393,6 @@ function ForecastingPage(): React.ReactElement {
         return { success: false, error }
       }
       try {
-        // Import server function dynamically
-        const { createForecastingProfile } = await import('../server/functions/forecastingProfiles')
-
-        // Create request
-        const request = new Request(window.location.href)
-
         // Convert forecast to input format
         const input = {
           name: forecast.name,
@@ -412,12 +408,13 @@ function ForecastingPage(): React.ReactElement {
           profileId: defaultProfileId,
         }
 
-        const result = await createForecastingProfile(request, input)
+        // `POST /api/forecasts` (story 83.1). A refusal's `error` is the server's
+        // message (duplicate name, deleted profile, …) and is shown verbatim.
+        const result = await saveForecast(input)
 
         if (result.success && result.data) {
           // Reload forecasts (scoped to the same profile) to get the updated list
-          const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-          const getResult = await getForecastingProfiles(request, defaultProfileId)
+          const getResult = await fetchForecasts(defaultProfileId)
 
           if (getResult.success && getResult.data) {
             setServerForecasts(getResult.data)
@@ -450,25 +447,18 @@ function ForecastingPage(): React.ReactElement {
     [defaultProfileId, profileState.kind]
   )
 
-  // Handle deleting a forecast - uses server function
+  // Handle deleting a forecast - `DELETE /api/forecasts`
   const handleDeleteForecast = useCallback(
     async (id: string) => {
       // The confirmation names a forecast by name; deleting one must not leave a
       // banner claiming it was just saved (code review 62.2).
       setSaveSuccess(null)
       try {
-        // Import server function dynamically
-        const { deleteForecastingProfile } = await import('../server/functions/forecastingProfiles')
-
-        // Create request
-        const request = new Request(window.location.href)
-
-        const result = await deleteForecastingProfile(request, parseInt(id))
+        const result = await deleteForecast(id)
 
         if (result.success) {
           // Reload forecasts (scoped to the same profile) to get the updated list
-          const { getForecastingProfiles } = await import('../server/functions/forecastingProfiles')
-          const getResult = await getForecastingProfiles(request, defaultProfileId ?? undefined)
+          const getResult = await fetchForecasts(defaultProfileId ?? undefined)
 
           if (getResult.success && getResult.data) {
             setServerForecasts(getResult.data)

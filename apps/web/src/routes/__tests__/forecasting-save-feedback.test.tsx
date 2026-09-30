@@ -19,13 +19,14 @@ import { Route } from '../forecasting'
  * carries an explicit four-arm status, and the "create a profile" prompt renders for
  * exactly one of them.
  *
- * ⚠️ NOT COVERED BY E2E, DELIBERATELY. MEASURED 2026-09-23 on the `chromium-paid`
- * server (:5174): `await getProfiles(request)` THROWS
- * `ReferenceError: Buffer is not defined` inside its dynamic import — Vite bundles
- * the `pg` driver into the client in dev — so the request never reaches the server
- * and no `ApiResult` is ever produced. `/forecasting` therefore lands on the `error`
- * arm in e2e whatever the account holds, and an e2e written for the no-profile arm
- * would be a green test measuring a dev-only bundling artifact. See story §1 D4.
+ * ⚠️ The transport (`lib/forecasting/forecast-api.ts`) is mocked with the same
+ * `ApiResult` shapes the routes answer. That the page and the REAL routes agree is
+ * proven in `forecasting-transport-chain.db.test.tsx` (story 83.1), and the save
+ * round trip on the production build in `e2e/forecasting-roundtrip.prod.spec.ts`.
+ * The profile ARMS stay unit-tested here: the paid dev e2e server (:5174) has no
+ * real session, so `/api/profiles` answers 401 there and every account lands on the
+ * `error` arm. (Until story 83.1 it landed there because the page's client-side
+ * server import threw `ReferenceError: Buffer is not defined`, story 80.1 Fact R.)
  */
 
 const usePremiumAccess = vi.fn()
@@ -34,18 +35,15 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-const getProfiles = vi.fn()
-const getForecastingProfiles = vi.fn()
-const createForecastingProfile = vi.fn()
+const fetchProfiles = vi.fn()
+const fetchForecasts = vi.fn()
+const saveForecast = vi.fn()
 
-vi.mock('../../server/functions/profiles', () => ({
-  getProfiles: (...args: unknown[]) => getProfiles(...args),
-}))
-
-vi.mock('../../server/functions/forecastingProfiles', () => ({
-  getForecastingProfiles: (...args: unknown[]) => getForecastingProfiles(...args),
-  createForecastingProfile: (...args: unknown[]) => createForecastingProfile(...args),
-  deleteForecastingProfile: vi.fn(async () => ({ success: true, data: null })),
+vi.mock('../../lib/forecasting/forecast-api', () => ({
+  fetchProfiles: (...args: unknown[]) => fetchProfiles(...args),
+  fetchForecasts: (...args: unknown[]) => fetchForecasts(...args),
+  saveForecast: (...args: unknown[]) => saveForecast(...args),
+  deleteForecast: vi.fn(async () => ({ success: true })),
 }))
 
 const ForecastingPage = Route.options.component as () => React.ReactElement
@@ -101,9 +99,9 @@ async function findSaveButton(): Promise<HTMLElement> {
 beforeEach(() => {
   mockPaidUser()
   seedOwnFinances()
-  getProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
-  getForecastingProfiles.mockResolvedValue({ success: true, data: [] })
-  createForecastingProfile.mockResolvedValue({ success: true, data: { id: 1 } })
+  fetchProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
+  fetchForecasts.mockResolvedValue({ success: true, data: [] })
+  saveForecast.mockResolvedValue({ success: true, data: { id: 1 } })
 })
 
 afterEach(() => {
@@ -116,7 +114,7 @@ afterEach(() => {
 
 describe('an account with no financial profile is told BEFORE it builds anything (AC-1, AC-8)', () => {
   it('explains the missing profile and links to /profiles', async () => {
-    getProfiles.mockResolvedValue({ success: true, data: [] })
+    fetchProfiles.mockResolvedValue({ success: true, data: [] })
     renderWithRouter(<ForecastingPage />)
 
     const notice = await screen.findByTestId('save-blocked-notice')
@@ -128,13 +126,13 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('says nothing of the sort once a profile exists', async () => {
-    getProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
+    fetchProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
     renderWithRouter(<ForecastingPage />)
 
     // Positive control: the page really rendered the builder. Without it a
     // `queryBy… toBeNull()` pair passes just as happily on a blank render.
     await findSaveButton()
-    await waitFor(() => expect(getProfiles).toHaveBeenCalled())
+    await waitFor(() => expect(fetchProfiles).toHaveBeenCalled())
 
     expect(screen.queryByTestId('save-blocked-notice')).toBeNull()
 
@@ -144,10 +142,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
     // carried a usable profile id.
     fireEvent.click(screen.getByRole('button', { name: /save forecast/i }))
     expect(await screen.findByTestId('save-success')).toBeInTheDocument()
-    expect(createForecastingProfile).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ profileId: 'prof-1' })
-    )
+    expect(saveForecast).toHaveBeenCalledWith(expect.objectContaining({ profileId: 'prof-1' }))
   })
 
   it('keeps a resolved profile when the SAVED-FORECAST LIST fetch fails', async () => {
@@ -156,12 +151,12 @@ describe('an account with no financial profile is told BEFORE it builds anything
     // failure of the forecast LIST demote an already-resolved `ready` — disabling
     // Save and claiming the PROFILE check had failed, for a save that worked at
     // `581c3f8`.
-    getProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
-    getForecastingProfiles.mockRejectedValue(new Error('list fetch exploded'))
+    fetchProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
+    fetchForecasts.mockRejectedValue(new Error('list fetch exploded'))
     renderWithRouter(<ForecastingPage />)
 
     const saveButton = await findSaveButton()
-    await waitFor(() => expect(getForecastingProfiles).toHaveBeenCalled())
+    await waitFor(() => expect(fetchForecasts).toHaveBeenCalled())
 
     expect(screen.queryByTestId('save-blocked-notice')).toBeNull()
     expect(saveButton).not.toBeDisabled()
@@ -175,7 +170,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
     // "classified deliberately" from "crashed and was caught": only the catch logs.
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      getProfiles.mockResolvedValue({ success: true })
+      fetchProfiles.mockResolvedValue({ success: true })
       renderWithRouter(<ForecastingPage />)
 
       expect(await screen.findByTestId('save-blocked-notice')).toHaveTextContent(
@@ -194,7 +189,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
   it('treats a profile carrying an empty id as an error, not as ready', async () => {
     // `{kind:'ready', profileId:''}` derives a FALSY `defaultProfileId`, so the arm
     // claiming success would emit the old one-message-for-everything save error.
-    getProfiles.mockResolvedValue({ success: true, data: [{ id: '', isDefault: true }] })
+    fetchProfiles.mockResolvedValue({ success: true, data: [{ id: '', isDefault: true }] })
     renderWithRouter(<ForecastingPage />)
 
     expect(await screen.findByTestId('save-blocked-notice')).toHaveTextContent(PROFILE_ERROR_NOTICE)
@@ -209,7 +204,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
     // observable. Asserting only the release (as the first draft of this test did)
     // passes just as happily against a build where the tabs are never locked.
     let release: (v: { success: boolean; error?: string }) => void = () => {}
-    createForecastingProfile.mockReturnValue(
+    saveForecast.mockReturnValue(
       new Promise<{ success: boolean; error?: string }>((resolve) => {
         release = resolve
       })
@@ -232,7 +227,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
 
   it('does not flash the prompt while the profile check is still in flight (AC-2)', async () => {
     // Never resolves: the component stays on the `loading` arm for the whole test.
-    getProfiles.mockReturnValue(new Promise(() => {}))
+    fetchProfiles.mockReturnValue(new Promise(() => {}))
     renderWithRouter(<ForecastingPage />)
 
     await findSaveButton()
@@ -240,7 +235,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('does not tell a user whose profile check FAILED to create a profile (AC-2)', async () => {
-    getProfiles.mockResolvedValue({ success: false, error: 'Authentication required' })
+    fetchProfiles.mockResolvedValue({ success: false, error: 'Authentication required' })
     renderWithRouter(<ForecastingPage />)
 
     const notice = await screen.findByTestId('save-blocked-notice')
@@ -249,7 +244,9 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('treats a THROWN profile fetch as an error, not as "you have no profiles" (AC-2)', async () => {
-    getProfiles.mockRejectedValue(new Error('Buffer is not defined'))
+    // A network failure: `fetch` rejects (until story 83.1 the real-world throw
+    // was the client-side server import's `Buffer is not defined`).
+    fetchProfiles.mockRejectedValue(new TypeError('Failed to fetch'))
     renderWithRouter(<ForecastingPage />)
 
     const notice = await screen.findByTestId('save-blocked-notice')
@@ -278,7 +275,7 @@ describe('a save reports its outcome where the user is looking (AC-5, AC-7)', ()
   })
 
   it('surfaces a rejected save (duplicate name) at the button', async () => {
-    createForecastingProfile.mockResolvedValue({ success: false, error: 'Name already in use' })
+    saveForecast.mockResolvedValue({ success: false, error: 'Name already in use' })
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await findSaveButton())
 
@@ -287,7 +284,7 @@ describe('a save reports its outcome where the user is looking (AC-5, AC-7)', ()
   })
 
   it('surfaces a THROWN save (network failure) at the button', async () => {
-    createForecastingProfile.mockRejectedValue(new Error('Failed to fetch'))
+    saveForecast.mockRejectedValue(new Error('Failed to fetch'))
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await findSaveButton())
 
@@ -295,13 +292,13 @@ describe('a save reports its outcome where the user is looking (AC-5, AC-7)', ()
   })
 
   it('does not attempt a save at all when there is no profile to save to', async () => {
-    getProfiles.mockResolvedValue({ success: true, data: [] })
+    fetchProfiles.mockResolvedValue({ success: true, data: [] })
     renderWithRouter(<ForecastingPage />)
 
     const saveButton = await findSaveButton()
     await waitFor(() => expect(saveButton).toBeDisabled())
     fireEvent.click(saveButton)
 
-    expect(createForecastingProfile).not.toHaveBeenCalled()
+    expect(saveForecast).not.toHaveBeenCalled()
   })
 })

@@ -4,13 +4,25 @@
  * React hook for checking premium feature access.
  * Provides subscription status and access control for premium features.
  *
- * Architecture: React Hook with TanStack Start Server Functions
+ * Architecture: seeded from the SSR session (story UX-1); without a seed, one
+ * same-origin `GET /api/auth/me` (story 83.1).
  * Data Sovereignty: All checks performed server-side, data in DanubeData (Germany - EU)
+ *
+ * ⚠️ Never `import()` a `server/` module here (story 83.1, FR136). The client
+ * check used to load `server/api/data/forecasting` in the browser; in the
+ * production bundle that chunk carried `pg` and failed with `Buffer is not
+ * defined`, so a paid user with no SSR seed was shown the upgrade prompt
+ * (MEASURED, story 83.1 M3). `scripts/check-client-bundle.mjs` now fails the
+ * build gate if server code reaches the client bundle.
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { type SessionSeed, useSessionSeed } from '../context/session-seed'
-import { hasPremiumFeatures } from '../lib/premium/access-statuses'
+import {
+  type SeedSubscriptionStatus,
+  type SessionSeed,
+  useSessionSeed,
+} from '../context/session-seed'
+import { STATUS_ACCESS, hasPremiumFeatures } from '../lib/premium/access-statuses'
 
 // ============================================================================
 // Type Definitions
@@ -64,8 +76,9 @@ const defaultStatus: PremiumAccessStatus = {
  * No seed → the fail-closed loading default (resolved after mount by a client
  * check). A signed-out seed resolves to a not-authenticated, no-access status.
  * Access requires a premium-features status (`hasPremiumFeatures`: active or
- * lifetime — NOT past_due); every other state is fail-closed to no access,
- * matching {@link checkPremiumAccessServer}.
+ * lifetime — NOT past_due); every other state is fail-closed to no access.
+ * The no-seed client re-check resolves through this function too (story 83.1),
+ * so seed and re-check cannot disagree.
  *
  * ⚠️ Its `hasAccess` field and `lib/premium/entitlement.ts`'s `isEntitledSeed`
  * are THE SAME RULE (story 58.2). Since story 78.3 both call the same status
@@ -122,47 +135,35 @@ export function usePremiumAccess(): {
   const [status, setStatus] = useState<PremiumAccessStatus>(() => seedToStatus(seed))
 
   /**
-   * Check premium access by calling server function
+   * Check premium access with the server (`GET /api/auth/me`).
+   *
+   * A readable answer is turned into a {@link SessionSeed} and resolved by
+   * {@link seedToStatus}, the SAME rule as the SSR seed, so the first paint and a
+   * re-check can never disagree (story 83.1). Anything else fails CLOSED.
    */
   const checkAccess = useCallback(async (): Promise<PremiumAccessCheckResult> => {
     try {
       setStatus((prev) => ({ ...prev, isLoading: true, error: null }))
 
-      // Import server function dynamically to avoid circular dependencies
-      const { checkPremiumAccessServer } = await import('../server/api/data/forecasting')
+      const seedFromServer = await fetchSessionSeed()
 
-      // Create request object for server function
-      // In browser environment, use document.cookie; in SSR, this will be undefined
-      // and the server function will handle authentication from context
-      const request = getRequestContext()
-
-      const result = await checkPremiumAccessServer(request)
-
-      if (result.success && result.data) {
-        const newStatus: PremiumAccessStatus = {
-          hasAccess: result.data.hasAccess,
-          subscriptionStatus: result.data.subscriptionStatus,
-          isLoading: false,
-          error: null,
-          // User is authenticated if we successfully got their subscription status
-          // (even if it's 'free', they have a valid session)
-          isAuthenticated: true,
-        }
+      if (seedFromServer.ok) {
+        const newStatus = seedToStatus(seedFromServer.seed)
         setStatus(newStatus)
         return {
-          hasAccess: result.data.hasAccess,
-          subscriptionStatus: result.data.subscriptionStatus,
-          isAuthenticated: true,
+          hasAccess: newStatus.hasAccess,
+          subscriptionStatus: newStatus.subscriptionStatus,
+          isAuthenticated: newStatus.isAuthenticated,
         }
       }
       // Fallback for when server check fails - assume no access
       // Log the error for debugging
-      console.error('Premium access check failed:', result.error)
+      console.error('Premium access check failed:', seedFromServer.error)
       const fallbackStatus: PremiumAccessStatus = {
         hasAccess: false,
         subscriptionStatus: 'free',
         isLoading: false,
-        error: result.error || 'Failed to check premium access',
+        error: seedFromServer.error,
         isAuthenticated: false,
       }
       setStatus(fallbackStatus)
@@ -215,23 +216,61 @@ export function usePremiumAccess(): {
 // ============================================================================
 
 /**
- * Get request context for server functions
- * Creates a Request object with cookies from the browser
- * Safe for SSR - returns a basic request without cookies in server environment
+ * Whether a status read from the `/api/auth/me` JSON is one this app knows.
+ * Derived from `STATUS_ACCESS`, the one status table (story 78.3), never
+ * restated here; an own-key test, so a prototype key is not a status.
  */
-function getRequestContext(): Request {
-  // In TanStack Start, the request is available in the loader/context
-  // For client-side calls, we need to pass a Request with cookies
-  // Check for document to avoid SSR errors
-  const headers: Record<string, string> = {}
+const isKnownStatus = (value: unknown): value is Exclude<SeedSubscriptionStatus, null> =>
+  typeof value === 'string' && Object.keys(STATUS_ACCESS).includes(value)
 
-  if (typeof document !== 'undefined') {
-    headers['cookie'] = document.cookie
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+/**
+ * Ask `GET /api/auth/me` who this is, as a {@link SessionSeed} (story 83.1).
+ *
+ * `{ user: null }` is an AUTHORITATIVE signed-out answer. A non-OK status (the
+ * route answers 503 when the session cannot be resolved), a body that is not
+ * JSON, or a `user` without an id is "could not determine" (`ok: false`). A
+ * network failure rejects. The payload is otherwise unvalidated, as for every
+ * other consumer of this route; an unknown status becomes `null` (no access).
+ */
+async function fetchSessionSeed(): Promise<
+  { ok: true; seed: SessionSeed } | { ok: false; error: string }
+> {
+  const response = await fetch('/api/auth/me', { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    return { ok: false, error: `Failed to check premium access (HTTP ${response.status})` }
   }
-
-  return new Request('http://localhost:5173', {
-    headers,
-  })
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    return { ok: false, error: 'Failed to check premium access (unreadable response)' }
+  }
+  if (!isRecord(body) || !('user' in body)) {
+    return { ok: false, error: 'Failed to check premium access (unexpected response)' }
+  }
+  const { user } = body
+  if (user === null) {
+    return {
+      ok: true,
+      seed: { isAuthenticated: false, userId: null, email: null, subscriptionStatus: null },
+    }
+  }
+  if (!isRecord(user) || typeof user['userId'] !== 'string' || user['userId'] === '') {
+    return { ok: false, error: 'Failed to check premium access (unexpected response)' }
+  }
+  const status = user['subscriptionStatus']
+  return {
+    ok: true,
+    seed: {
+      isAuthenticated: true,
+      userId: user['userId'],
+      email: typeof user['email'] === 'string' ? user['email'] : null,
+      subscriptionStatus: isKnownStatus(status) ? status : null,
+    },
+  }
 }
 
 // ============================================================================
@@ -257,39 +296,5 @@ export function usePremiumRouteAccess(): {
     isLoading: status.isLoading,
     subscriptionStatus: status.subscriptionStatus,
     isAuthenticated: status.isAuthenticated,
-  }
-}
-
-// ============================================================================
-// Server-Side Access Check
-// ============================================================================
-
-/**
- * Server-side function to check premium access from request
- * Used in loaders and server functions
- *
- * @param request - Incoming request
- * @returns Promise resolving to access check result
- */
-export async function checkPremiumAccess(request: Request): Promise<PremiumAccessCheckResult> {
-  try {
-    const { checkPremiumAccessServer } = await import('../server/api/data/forecasting')
-    const result = await checkPremiumAccessServer(request)
-
-    if (result.success && result.data) {
-      return {
-        hasAccess: result.data.hasAccess,
-        subscriptionStatus: result.data.subscriptionStatus,
-        // User is authenticated if we successfully got their subscription status
-        isAuthenticated: true,
-      }
-    }
-    // If check failed, assume no access and not authenticated
-    console.error('Premium access check failed:', result.error)
-    return { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false }
-  } catch (error) {
-    // Log the error for debugging
-    console.error('Premium access check error:', error)
-    return { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false }
   }
 }

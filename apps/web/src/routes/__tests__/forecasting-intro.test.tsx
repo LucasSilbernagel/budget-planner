@@ -40,21 +40,20 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 }))
 
 // The page resolves a default profile and its saved forecasts in a mount effect
-// via dynamic import. These stubs keep the test off the real server functions.
+// through `lib/forecasting/forecast-api.ts` (same-origin `fetch`, story 83.1).
+// These stubs keep the test off the network.
 //
-// ⚠️ They are NOT guards: the component wraps both imports in a try/catch that only
-// `console.error`s (`forecasting.tsx:191-227`), and this suite does not fail on
-// console errors — MEASURED by deleting both `vi.mock` blocks, after which all four
-// tests still pass. Nothing here asserts they were called. Keep them for isolation,
-// but do not read a green run as evidence that the data path works.
-vi.mock('../../server/functions/profiles', () => ({
-  getProfiles: vi.fn(async () => ({ success: true, data: [] })),
-}))
-
-vi.mock('../../server/functions/forecastingProfiles', () => ({
-  getForecastingProfiles: vi.fn(async () => ({ success: true, data: [] })),
-  createForecastingProfile: vi.fn(async () => ({ success: true, data: null })),
-  deleteForecastingProfile: vi.fn(async () => ({ success: true, data: null })),
+// ⚠️ They are NOT guards: the component wraps both calls in a try/catch that only
+// `console.error`s, and this suite does not fail on console errors — MEASURED (on
+// the pre-83.1 server-function mocks) by deleting both `vi.mock` blocks, after
+// which all four tests still passed. Nothing here asserts they were called. Keep
+// them for isolation, but do not read a green run as evidence that the data path
+// works (that is `forecasting-transport-chain.db.test.tsx`).
+vi.mock('../../lib/forecasting/forecast-api', () => ({
+  fetchProfiles: vi.fn(async () => ({ success: true, data: [] })),
+  fetchForecasts: vi.fn(async () => ({ success: true, data: [] })),
+  saveForecast: vi.fn(async () => ({ success: true, data: null })),
+  deleteForecast: vi.fn(async () => ({ success: true })),
 }))
 
 const ForecastingPage = Route.options.component as () => React.ReactElement

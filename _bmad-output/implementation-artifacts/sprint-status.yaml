@@ -1,4 +1,9 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-29ae (**83.1 CODE-REVIEWED -> done**, UNCOMMITTED. Web 3964, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/679. Epic 83 has one story: epic-83 can close at commit.)
+# last_updated: 2026-09-29ad (**83.1 DEV DONE -> review**, UNCOMMITTED. Web 3946, core 1114, db 295/7, e2e 519/4 (+chromium-prod), types 0/0/0, biome 0/679. AC-5 RED on 31e74bf = the Buffer assertion, both paths.)
+# last_updated: 2026-09-29ac (**83.1 dev started -> in-progress**, baseline `31e74bf`; D1-D7 confirmed.)
+# last_updated: 2026-09-29ab (**83.1 CREATED -> ready-for-dev**, epic-83 in-progress. D1-D7 CONFIRMED (Lucas): flat /api/profiles + /api/forecasts (?id= delete), premium re-check reuses /api/auth/me; prod-build e2e with signed cookie + page.route stubs (no DB); fns become userId cores. Path 2 MEASURED at runtime: paid no-seed user sees the upgrade prompt on the prod build.)
+# last_updated: 2026-09-29aa (correct-course 2026-09-29 APPROVED: epic-83 / 83.1 added backlog, FR136, ordered BEFORE 80.2. 80.1 committed `31e74bf`.)
 # last_updated: 2026-09-29z (**80.1 CODE-REVIEWED -> done**, UNCOMMITTED. Web 3855, core 1114, db 295/7, e2e 518/4, types 0/0/0, biome 0/664.)
 # last_updated: 2026-09-29y (**80.1 DEV DONE -> review**, UNCOMMITTED. Web 3849, core 1114, db 295/7, e2e 518/4, types 0/0/0, biome 0. Also fixed: a refused default forecast save no longer demotes the old default.)
 # last_updated: 2026-09-29x (**80.1 created -> ready-for-dev**, epic-80 in-progress. Epic 79 committed `9144e0a`. D0 open: Fact R, forecast server fns are bundled client-side and fail on `Buffer` in Chromium, MEASURED.)
@@ -1108,6 +1113,10 @@ development_status:
   82-2-let-the-web-unit-suite-run-its-files-in-parallel: backlog  # reproduce first; hypothesis: all workers share one SQLite-backed --localstorage-file. CI already runs parallel on Node 20.
   82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: backlog  # inventory 61 specs into critical / integration-able / layout; critical list + layout home agreed with Lucas; may split after inventory.
   epic-82-retrospective: optional
+
+  epic-83: in-progress  # Saved Forecasts That Reach the Server. FR136. From correct-course 2026-09-29 (80.1 Fact R). Order: BEFORE 80.2. Every RED against dist/client, never dev/SSR.
+  83-1-save-list-and-delete-forecasts-through-the-server: done  # Opus review 2026-09-29: 1 decision (keep prod build in every e2e run) + 12 patches, 5 deferred. UNCOMMITTED. Web 3964, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/679, guard GREEN.
+  epic-83-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

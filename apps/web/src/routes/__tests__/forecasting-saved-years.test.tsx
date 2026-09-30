@@ -48,15 +48,13 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-const getProfiles = vi.fn()
-const getForecastingProfiles = vi.fn()
-vi.mock('../../server/functions/profiles', () => ({
-  getProfiles: (...args: unknown[]) => getProfiles(...args),
-}))
-vi.mock('../../server/functions/forecastingProfiles', () => ({
-  getForecastingProfiles: (...args: unknown[]) => getForecastingProfiles(...args),
-  createForecastingProfile: vi.fn(),
-  deleteForecastingProfile: vi.fn(async () => ({ success: true, data: null })),
+const fetchProfiles = vi.fn()
+const fetchForecasts = vi.fn()
+vi.mock('../../lib/forecasting/forecast-api', () => ({
+  fetchProfiles: (...args: unknown[]) => fetchProfiles(...args),
+  fetchForecasts: (...args: unknown[]) => fetchForecasts(...args),
+  saveForecast: vi.fn(),
+  deleteForecast: vi.fn(async () => ({ success: true })),
 }))
 
 const ForecastingPage = Route.options.component as () => React.ReactElement
@@ -97,7 +95,7 @@ beforeEach(() => {
   }
   usePremiumAccess.mockReturnValue({ status })
   useProfileStore.setState({ activeProfileId: PROFILE })
-  getProfiles.mockResolvedValue({
+  fetchProfiles.mockResolvedValue({
     success: true,
     data: [{ id: PROFILE, name: 'Household', isDefault: true }],
   })
@@ -111,7 +109,7 @@ afterEach(() => {
 describe('a saved forecast with an out-of-range years reopens at the default period', () => {
   for (const years of [1e9, 31, 2.5]) {
     it(`years = ${years}`, async () => {
-      getForecastingProfiles.mockResolvedValue({ success: true, data: [savedRow(years)] })
+      fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(years)] })
       renderWithRouter(<ForecastingPage />)
 
       fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
@@ -152,7 +150,7 @@ describe('a saved forecast with an out-of-range years reopens at the default per
   }
 
   it('an in-range saved years is kept (control)', async () => {
-    getForecastingProfiles.mockResolvedValue({ success: true, data: [savedRow(25)] })
+    fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(25)] })
     renderWithRouter(<ForecastingPage />)
 
     fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))

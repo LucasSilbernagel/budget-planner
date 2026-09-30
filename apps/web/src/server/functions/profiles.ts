@@ -132,33 +132,16 @@ export async function createProfile(
 }
 
 /**
- * Get all profiles for the current user
+ * Get the live profiles of `userId`, oldest first.
+ *
+ * ⚠️ A USER-SCOPED CORE since story 83.1 (FR136): the caller has authenticated
+ * `userId` and checked premium access, and `routes/api/profiles.ts` is that caller
+ * (the premium tier boundary of story 13-3, AC-2, is enforced there now). It used
+ * to take the `Request`, and the forecasting page `import()`ed it in the BROWSER,
+ * which bundled `pg` into the client and failed on `Buffer` (story 80.1 Fact R).
  */
-export async function getProfiles(request: Request): Promise<ApiResult<UserProfile[]>> {
+export async function getProfiles(userId: string): Promise<ApiResult<UserProfile[]>> {
   try {
-    // Extract userId from authenticated session
-    const sessionResult = await getCurrentUserSession(request)
-
-    if (!sessionResult.success || !sessionResult.data) {
-      return {
-        success: false,
-        error: sessionResult.error || 'Authentication required',
-      }
-    }
-
-    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
-    // feature, so a status without premium features (`hasPremiumFeatures`: only
-    // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
-    if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
-      return {
-        success: false,
-        error: 'Premium feature: Please upgrade to manage custom profiles',
-      }
-    }
-
-    const userId = sessionResult.data.userId
-
     const profiles = await db
       .select()
       .from(userProfiles)
@@ -358,7 +341,8 @@ export async function updateProfile(
  * ⚠️⚠️ THIS FUNCTION HAS NO PRODUCTION CALLER, and that is not a claim about
  * what "should" call it — story 63.2 measured it with an IMPORT grep
  * (`grep -rn "functions/profiles'" apps/web/src`), which returns only
- * `getProfiles` (`routes/forecasting.tsx`) and `createDefaultProfileForUser`
+ * `getProfiles` (`routes/forecasting.tsx` at the time; since story 83.1
+ * `routes/api/profiles.ts`) and `createDefaultProfileForUser`
  * (`routes/api/webhooks/paddle.ts`, `routes/api/sync/changes.ts`).
  *
  * ⚠️ That grep pattern is the RECORD of how the claim was checked, not a
@@ -543,10 +527,11 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     // The detail goes to the server log; the caller gets a fixed string.
     //
     // ⚠️ SCOPE: only this function's passthrough is closed. The same shape sits in
-    // six sibling functions in this file (`createProfile`, `getProfiles`,
-    // `getProfile`, `updateProfile`, `setDefaultProfile`,
-    // `createDefaultProfileForUser`) and is NOT this story's to fix — recorded so
-    // the next reader knows it was seen, not missed.
+    // five sibling functions in this file (`createProfile`, `getProfile`,
+    // `updateProfile`, `setDefaultProfile`, `createDefaultProfileForUser`) and is
+    // NOT this story's to fix — recorded so the next reader knows it was seen, not
+    // missed. (`getProfiles` still returns the driver text, but since story 83.1 its
+    // only caller, `routes/api/profiles.ts`, logs it and answers a fixed message.)
     logger.error('Profile deletion failed', { profileId, error })
     return {
       success: false,
