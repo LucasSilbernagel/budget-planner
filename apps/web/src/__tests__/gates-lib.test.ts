@@ -14,6 +14,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  E2E_SCREENSHOT_PROJECTS,
   aggregateParts,
   buildGates,
   formatDuration,
@@ -26,6 +27,7 @@ import {
   parseTscDiagnostics,
   parseViteBuild,
   parseVitestJson,
+  screenshotNotice,
   selectGates,
   spawnEnv,
   treeOf,
@@ -536,7 +538,11 @@ describe('buildGates', () => {
     expect(tagged).toBeGreaterThan(100)
   })
 
-  it('the --layout run names every Playwright project, and nothing else', () => {
+  // Story 84.1 (D3): the screenshot projects are declared but run ONLY in CI,
+  // because their baselines are rendered there (CI's DejaVu Sans vs a dev box's
+  // Noto Sans). So every declared project is either in the --layout run or a
+  // screenshot project, never both, and a new project must pick a side here.
+  it('the --layout run names every Playwright project except the CI-only screenshot ones', () => {
     const config = readFileSync(join(__dirname, '../../playwright.config.ts'), 'utf8')
     const declared = [...config.matchAll(/^\s*name: '([^']+)',$/gm)].map((m) => m[1]).sort()
     const withLayout = buildGates({
@@ -545,8 +551,18 @@ describe('buildGates', () => {
       typeCheckScripts: {},
       layout: true,
     }).find((g) => g.id === 'e2e')
-    expect(declared).toHaveLength(5)
-    expect(projectsOf(withLayout).sort()).toEqual(declared)
+    expect(declared).toHaveLength(7)
+    expect(E2E_SCREENSHOT_PROJECTS).toEqual(['screenshots', 'screenshots-paid'])
+    expect([...projectsOf(withLayout), ...E2E_SCREENSHOT_PROJECTS].sort()).toEqual(declared)
+  })
+
+  it('no local e2e run includes a screenshot project, with or without --layout (story 84.1)', () => {
+    for (const layout of [false, true]) {
+      const e2e = buildGates({ root: '/r', runDir: '/d', typeCheckScripts: {}, layout }).find(
+        (g) => g.id === 'e2e'
+      )
+      for (const name of E2E_SCREENSHOT_PROJECTS) expect(projectsOf(e2e)).not.toContain(name)
+    }
   })
 
   it('a bad type-check script names its package', () => {
@@ -667,5 +683,17 @@ describe('layoutNotice (story 82.3 review P4)', () => {
       'e2e ran WITH the @layout tests.',
     ])
     expect(layoutNotice({ layout: false, e2e: false, changedFiles: ['a.tsx'] })).toEqual([])
+  })
+})
+
+describe('screenshotNotice (story 84.1, D3)', () => {
+  it('says the screenshot projects are CI only whenever e2e runs', () => {
+    expect(screenshotNotice({ e2e: true })).toEqual([
+      'screenshots: CI only (baselines are CI-rendered; see e2e/pages.screenshot.spec.ts).',
+    ])
+  })
+
+  it('says nothing when e2e was not selected', () => {
+    expect(screenshotNotice({ e2e: false })).toEqual([])
   })
 })

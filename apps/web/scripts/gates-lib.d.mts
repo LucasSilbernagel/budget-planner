@@ -104,6 +104,10 @@ export function parseArgs(argv: string[]): {
 
 export function treeOf(psTable: string, pid: number): number[]
 
+export const E2E_SCREENSHOT_PROJECTS: string[]
+
+export function screenshotNotice(options: { e2e: boolean }): string[]
+
 export function layoutNotice(options: {
   layout: boolean
   e2e: boolean

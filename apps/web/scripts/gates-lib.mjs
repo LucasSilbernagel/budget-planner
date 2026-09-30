@@ -301,6 +301,15 @@ const E2E_FLOW_PROJECTS = ['chromium', 'chromium-paid', 'chromium-prod']
 const E2E_LAYOUT_PROJECTS = ['chromium-layout', 'chromium-paid-layout']
 
 /**
+ * The screenshot projects (story 84.1, FR137, D3). Declared in
+ * `playwright.config.ts` and run by CI's plain `playwright test`, but in NO local
+ * gate run: their baselines are rendered in CI (`.github/workflows/screenshots.yml`),
+ * and CI resolves `system-ui` to DejaVu Sans where a dev box gets Noto Sans, so a
+ * local comparison would fail on fonts, not on the change.
+ */
+export const E2E_SCREENSHOT_PROJECTS = ['screenshots', 'screenshots-paid']
+
+/**
  * The gate table. Phase A runs one step at a time and WRITES the tree
  * (`packages/*\/dist`, `apps/web/dist`, `src/routeTree.gen.ts`); phase B runs
  * concurrently.
@@ -543,6 +552,18 @@ export function layoutNotice({ layout, e2e, changedFiles }) {
     )
   }
   return lines
+}
+
+/**
+ * The line that says the screenshot projects did not run here (story 84.1, D3),
+ * printed with the layout lines so a GREEN local e2e never reads as covering them.
+ *
+ * @param {{e2e: boolean}} options
+ * @returns {string[]}
+ */
+export function screenshotNotice({ e2e }) {
+  if (!e2e) return []
+  return ['screenshots: CI only (baselines are CI-rendered; see e2e/pages.screenshot.spec.ts).']
 }
 
 /**

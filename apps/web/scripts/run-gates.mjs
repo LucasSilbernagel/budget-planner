@@ -36,6 +36,7 @@ import {
   formatLine,
   layoutNotice,
   parseArgs,
+  screenshotNotice,
   selectGates,
   spawnEnv,
   treeOf,
@@ -328,11 +329,11 @@ async function main() {
     }
   }
 
-  const notice = layoutNotice({
-    layout: options.layout,
-    e2e: gates.some((gate) => gate.id === 'e2e'),
-    changedFiles: changedFiles(),
-  })
+  const e2eSelected = gates.some((gate) => gate.id === 'e2e')
+  const notice = [
+    ...layoutNotice({ layout: options.layout, e2e: e2eSelected, changedFiles: changedFiles() }),
+    ...screenshotNotice({ e2e: e2eSelected }),
+  ]
   console.log(`Gate logs: ${runDir}`)
   console.log(`Mode: ${options.sequential ? 'sequential' : 'phase B concurrent'}`)
   for (const line of notice) console.log(line)
