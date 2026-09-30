@@ -33,9 +33,12 @@ on:
         type: choice
         options: [compare, update]
 
+# Queue, never cancel: an update run cancelled by a compare dispatched right
+# after it loses the baselines (MEASURED in story 84.1: back-to-back compare
+# dispatches cancelled each other).
 concurrency:
   group: screenshots-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
