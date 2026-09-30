@@ -21,9 +21,8 @@
  * transport do once such an op exists, which is exactly the shape the queue-gate
  * defer (`deferred-work.md`, 66.5 review) records.
  *
- * ⚠️ `localStorage` comes from a JSDOM window: the node environment has none
- * unless Node runs with `--localstorage-file`, which dev boxes set and CI does
- * not (see `cross-device-sync.db.test.tsx`).
+ * ⚠️ `localStorage` comes from a JSDOM window: the node environment has none,
+ * on every Node (`src/test/webstorage.ts`).
  *
  * ⚠️ Every test asserts that a request REACHED the route (`served`). Without that
  * positive anchor, an offline service — which sends nothing — satisfies every

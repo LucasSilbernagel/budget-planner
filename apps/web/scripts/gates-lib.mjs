@@ -272,6 +272,18 @@ export function formatLine(result) {
 }
 
 /**
+ * The environment a gate is spawned with: the runner's own, plus the gate's
+ * overrides. So an ambient variable (e.g. NODE_OPTIONS) reaches every gate that
+ * does not set it.
+ *
+ * @param {Record<string, string | undefined>} processEnv
+ * @param {Record<string, string> | undefined} gateEnv
+ */
+export function spawnEnv(processEnv, gateEnv) {
+  return { ...processEnv, ...gateEnv }
+}
+
+/**
  * The gate table. Phase A runs one step at a time and WRITES the tree
  * (`packages/*\/dist`, `apps/web/dist`, `src/routeTree.gen.ts`); phase B runs
  * concurrently.
@@ -286,14 +298,13 @@ export function formatLine(result) {
  * A new phase B gate that reads `apps/web/dist` must go to phase A as well.
  *
  * Every command is the `project-context.md` › Testing Strategy command, with
- * machine-readable reporters added (they change what is printed, not what runs)
- * and, for the web suite, a per-run localStorage file instead of `/tmp/ls.db`.
+ * machine-readable reporters added (they change what is printed, not what runs).
+ * No gate sets NODE_OPTIONS, so an ambient one reaches every gate unchanged.
  *
- * @param {{root: string, runDir: string, typeCheckScripts: Record<string, string>, nodeOptions?: string}} options
+ * @param {{root: string, runDir: string, typeCheckScripts: Record<string, string>}} options
  *   `typeCheckScripts` maps a package dir (relative to root) to its `type-check` script.
- *   `nodeOptions` is the ambient NODE_OPTIONS, kept (appended to) for the web suite.
  */
-export function buildGates({ root, runDir, typeCheckScripts, nodeOptions = '' }) {
+export function buildGates({ root, runDir, typeCheckScripts }) {
   const web = join(root, 'apps/web')
   return [
     {
@@ -365,27 +376,18 @@ export function buildGates({ root, runDir, typeCheckScripts, nodeOptions = '' })
       parse: { from: join(runDir, 'db.json'), fn: parseVitestJson },
     },
     {
-      // ⚠️ `--no-file-parallelism` stays until story 82.2 shows it can go.
-      // `--localstorage-file` is a NODE flag: passed to vitest's CLI it crashes
-      // Node before vitest starts.
+      // Files run in parallel and need no `--localstorage-file` (story 82.2):
+      // `src/test/webstorage.ts` gives each file its own jsdom storage.
       id: 'web',
       phase: 'B',
       cwd: web,
       command: './node_modules/.bin/vitest',
-      args: [
-        ...vitestArgs(join(runDir, 'web.json')),
-        '--config',
-        'vitest.config.ts',
-        '--no-file-parallelism',
-      ],
-      env: {
-        NODE_OPTIONS: [nodeOptions, `--localstorage-file=${join(runDir, 'ls.db')}`]
-          .filter(Boolean)
-          .join(' '),
-      },
-      // 10m00s MEASURED under phase B contention (story 82.1), so 15 min was
-      // too close: a spurious timeout would read like interference.
-      timeoutMs: 25 * MINUTE,
+      args: [...vitestArgs(join(runDir, 'web.json')), '--config', 'vitest.config.ts'],
+      // MEASURED on an 8-core box (story 82.2): ~110 s alone in parallel, 179 s
+      // in phase B, 454 s serial. Vitest uses cores - 1 workers, so a small box
+      // runs near the serial time plus contention: 15 min keeps a slow box from
+      // reporting a timeout that reads like interference.
+      timeoutMs: 15 * MINUTE,
       parse: { from: join(runDir, 'web.json'), fn: parseVitestJson },
     },
     {

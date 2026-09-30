@@ -1,3 +1,5 @@
+// @vitest-environment node
+// No DOM needed: the `components/**` glob would give it jsdom (story 82.2).
 import type { ClientProfile } from '@/hooks/useActiveProfile'
 import { describe, expect, it } from 'vitest'
 import { EMPTY_PROFILE_FORM, validateProfileForm } from '../profile-form'

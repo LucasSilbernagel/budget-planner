@@ -75,12 +75,15 @@ export function verdict(result: {
 export function formatDuration(ms: number): string
 export function formatCounts(summary: Summary | null): string
 export function formatLine(result: GateResult): string
+export function spawnEnv(
+  processEnv: Record<string, string | undefined>,
+  gateEnv: Record<string, string> | undefined
+): Record<string, string | undefined>
 
 export function buildGates(options: {
   root: string
   runDir: string
   typeCheckScripts: Record<string, string>
-  nodeOptions?: string
 }): Gate[]
 
 export function selectGates(gates: Gate[], only: string[] | null): Gate[]

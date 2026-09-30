@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-30l (**82.2 CODE-REVIEWED -> done**, UNCOMMITTED. pnpm gates 429 s all green; e2e is now the slowest gate. Next: commit 82.2, create-story 82.3.)
+# last_updated: 2026-09-30k (**82.2 DEV DONE -> review**, UNCOMMITTED. Web suite parallel, no Node flag; pnpm gates 608s -> 436s; e2e now the slowest gate.)
+# last_updated: 2026-09-30j (**82.2 dev started -> in-progress**, baseline `67ff51f`. D1-D5 confirmed.)
+# last_updated: 2026-09-30i (**82.2 CREATED -> ready-for-dev**. 82.1 committed `67ff51f`. D1 shim = jsdom storage on Node 26, drop both flags; D1-D5 recommended, not confirmed.)
 # last_updated: 2026-09-30h (**82.1 CODE-REVIEWED -> done**, UNCOMMITTED. Fable 3 layers: 24 patches, 0 decisions, 0 deferred, 1 dismissed. Close: pnpm gates all green 608s. Web 4058/259, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/687.)
 # last_updated: 2026-09-30g (**82.1 DEV DONE -> review**, UNCOMMITTED. `pnpm gates` all green 614s vs 786s sequential (1 sample each). Web 4042/259, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/687. F7 flake fixed.)
 # last_updated: 2026-09-30f (**82.1 dev started -> in-progress**, baseline `be8d39e`.)
@@ -1124,7 +1128,7 @@ development_status:
 
   epic-82: in-progress  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
   82-1-run-the-gates-side-by-side: done  # committed runner; D8 (Lucas 2026-09-30): repeated measurement SKIPPED, interference UNMEASURED, --sequential fallback; D1-D8 CONFIRMED 2026-09-30 (D3: all gates every time).
-  82-2-let-the-web-unit-suite-run-its-files-in-parallel: backlog  # reproduce first; hypothesis: all workers share one SQLite-backed --localstorage-file. CI already runs parallel on Node 20.
+  82-2-let-the-web-unit-suite-run-its-files-in-parallel: done  # Fable review 2026-09-30: 14 patch (13 applied, 1 false at premise), 1 deferred, 3 dismissed. UNCOMMITTED. Web suite parallel, no Node flag; shim branches tested on any Node (5 mutation arms red on 26 AND 20). pnpm gates 429 s all green: web 4068/261, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/690.
   82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: backlog  # inventory 61 specs into critical / integration-able / layout; critical list + layout home agreed with Lucas; may split after inventory.
   epic-82-retrospective: optional
 

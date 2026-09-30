@@ -9,6 +9,10 @@
  * is guarded for `node`-environment tests where `document` is undefined.
  */
 
+// ⚠️ FIRST: it sets up Web Storage before the store imports below read it. The
+// blank line after it is a separate import group, so Biome does not sort it last.
+import './src/test/webstorage'
+
 import * as jestDomMatchers from '@testing-library/jest-dom/matchers'
 import { cleanup } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'

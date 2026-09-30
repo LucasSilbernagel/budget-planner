@@ -24,6 +24,7 @@ import {
   parseViteBuild,
   parseVitestJson,
   selectGates,
+  spawnEnv,
   treeOf,
   typeCheckPrograms,
   typeCheckScriptsOf,
@@ -367,12 +368,11 @@ describe('buildGates', () => {
     ])
   })
 
-  it('the web suite keeps --no-file-parallelism and gets a per-run localStorage file', () => {
-    expect(byId['web']?.args).toContain('--no-file-parallelism')
-    expect(byId['web']?.env).toEqual({ NODE_OPTIONS: '--localstorage-file=/run/ls.db' })
-    expect(byId['web']?.timeoutMs).toBe(25 * 60_000)
-    // A NODE flag: on vitest's own CLI it crashes Node before vitest starts.
+  it('the web suite runs its files in parallel, with no localStorage file (story 82.2)', () => {
+    expect(byId['web']?.args).not.toContain('--no-file-parallelism')
     expect(byId['web']?.args?.some((a) => a.includes('localstorage'))).toBe(false)
+    expect(byId['web']?.env).toBeUndefined()
+    expect(byId['web']?.timeoutMs).toBe(15 * 60_000)
   })
 
   it('every vitest gate uses its package-local binary (the root one is another major)', () => {
@@ -401,16 +401,16 @@ describe('buildGates', () => {
     ])
   })
 
-  it('the web suite APPENDS to an ambient NODE_OPTIONS instead of replacing it', () => {
-    const [web] = buildGates({
-      root: '/repo',
-      runDir: '/run',
-      typeCheckScripts: {},
-      nodeOptions: '--max-old-space-size=8192',
-    }).filter((g) => g.id === 'web')
-    expect(web?.env?.['NODE_OPTIONS']).toBe(
-      '--max-old-space-size=8192 --localstorage-file=/run/ls.db'
-    )
+  it('an ambient NODE_OPTIONS reaches every gate unchanged', () => {
+    const ambient = { NODE_OPTIONS: '--max-old-space-size=8192', PATH: '/bin' }
+    for (const gate of gates) {
+      expect(spawnEnv(ambient, gate.env)['NODE_OPTIONS']).toBe('--max-old-space-size=8192')
+    }
+  })
+
+  it('spawnEnv lets a gate override one variable and keeps the rest', () => {
+    expect(spawnEnv({ A: '1', B: '2' }, { B: '3' })).toEqual({ A: '1', B: '3' })
+    expect(spawnEnv({ A: '1' }, undefined)).toEqual({ A: '1' })
   })
 
   it('e2e claims the three Playwright ports so the runner can refuse a stray server', () => {

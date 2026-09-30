@@ -1,3 +1,5 @@
+// @vitest-environment node
+// No DOM needed: the `components/**` glob would give it jsdom (story 82.2).
 /**
  * `/savings` never writes to the balance store (Story 47.1, FR73, AC-8).
  *

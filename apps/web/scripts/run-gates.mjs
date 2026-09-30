@@ -35,6 +35,7 @@ import {
   formatLine,
   parseArgs,
   selectGates,
+  spawnEnv,
   treeOf,
   typeCheckScriptsOf,
   verdict,
@@ -177,7 +178,7 @@ function runProcess({ cwd, command, args, env, timeoutMs, logPath }) {
     const fd = openSync(logPath, 'a')
     const child = spawn(command, args, {
       cwd,
-      env: { ...process.env, ...env },
+      env: spawnEnv(process.env, env),
       stdio: ['ignore', fd, fd],
       detached: true,
     })
@@ -290,7 +291,6 @@ async function main() {
         root: ROOT,
         runDir,
         typeCheckScripts: typeCheckScriptsOf(workspacePackages()),
-        nodeOptions: process.env.NODE_OPTIONS ?? '',
       }),
       options.only
     )

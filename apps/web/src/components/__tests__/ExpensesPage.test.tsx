@@ -1202,9 +1202,9 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
    * mutation instead — sending `false` for a hidden field turns it red (story
    * 71.1, mutation M2).
    *
-   * ⚠️ The planner flag lives in a persisted store and the web gate shares one
-   * `--localstorage-file`, so it is reset to its default (`true`) after EVERY
-   * test rather than left for the next file to inherit.
+   * ⚠️ The planner flag lives in a persisted store, and a file's storage lasts
+   * for the whole file, so it is reset to its default (`true`) after EVERY test
+   * rather than left for the next test to inherit.
    */
   const LABEL = 'This expense ends before I retire'
   const BADGE = '[data-testid="expense-row-ends-before-retirement"]'
@@ -1230,8 +1230,8 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
     useExpenseStore.setState({ expenses: [] })
     showPlanner()
     // `setState` goes through persist's WRITE path (`skipHydration` skips only the
-    // read), so restoring the value would still leave a blob in the shared
-    // `--localstorage-file`. Restore the ABSENCE too — `vitest.setup.ts` precedent.
+    // read), so restoring the value would still leave a blob in the file's
+    // storage. Restore the ABSENCE too — `vitest.setup.ts` precedent.
     localStorage.removeItem(PLANNER_VISIBILITY_STORAGE_KEY)
   })
 

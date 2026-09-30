@@ -1,3 +1,5 @@
+// @vitest-environment node
+// No DOM needed: the `components/**` glob would give it jsdom (story 82.2).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

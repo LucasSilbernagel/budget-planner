@@ -113,8 +113,7 @@ beforeAll(async () => {
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
   // ⚠️ `localStorage` MUST come from the JSDOM window. The node environment has
-  // none unless Node runs with `--localstorage-file` — which dev boxes set and
-  // CI does not, so omitting it passes locally and fails in CI.
+  // none, on every Node (`src/test/webstorage.ts` removes newer Node's own).
   for (const key of [
     'window',
     'document',
@@ -131,10 +130,9 @@ beforeAll(async () => {
   }
   // Persisted stores bind their storage when their module is first evaluated,
   // and `vitest.setup.ts` imports several of them before this hook installs the
-  // JSDOM `localStorage`. What they bound depends on the Node version: on Node
-  // 26 without `--localstorage-file` a DEAD storage (the setup file's own
-  // `setState` then throws); on Node 20 (CI) none at all, so the store has no
-  // `persist` API. Rebind whichever have one.
+  // JSDOM `localStorage`. Under the node environment there was no storage to
+  // bind (`src/test/webstorage.ts`), so a store may have no `persist` API.
+  // Rebind whichever have one.
   const { createJSONStorage } = await import('zustand/middleware')
   const persisted = await Promise.all([
     import('@/stores/incomeStore').then((m) => m.useIncomeStore),

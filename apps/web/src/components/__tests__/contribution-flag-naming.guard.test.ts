@@ -1,3 +1,5 @@
+// @vitest-environment node
+// No DOM needed: the `components/**` glob would give it jsdom (story 82.2).
 /**
  * The stored flag name deliberately does not match its label (Story 47.1, D2, AC-12).
  *
