@@ -22,7 +22,8 @@
     "test": "pnpm -r run test:unit",
     "test:unit": "pnpm -r run test:unit",
     "test:watch": "pnpm -r run test:watch",
-    "test:e2e": "pnpm --filter @budget-planner/web test:e2e"
+    "test:e2e": "pnpm --filter @budget-planner/web test:e2e",
+    "gates": "node apps/web/scripts/run-gates.mjs"
   },
   "engines": {
     "node": ">=20.12.0"

@@ -216,6 +216,21 @@ beforeAll(async () => {
 }, 60_000)
 
 afterAll(async () => {
+  // Let React's queued Scheduler work run while `window` still exists. A commit
+  // made while RTL's `findBy`/`waitFor` had the act environment switched off
+  // queues its passive-effect flush on the real Scheduler (a `setImmediate`),
+  // and that callback's first statement reads `window.event`
+  // (`react-dom-client.development.js:17920`). Unstubbed first, it threw
+  // `ReferenceError: window is not defined` after every test had passed and
+  // vitest exited 1: 4 of 20 isolated runs (story 82.1, deferred-work F7).
+  // One immediate is not enough in general: the Scheduler re-queues itself with a
+  // NEW immediate when a slice runs past 5 ms, and a passive flush can schedule
+  // another commit, so drain several turns, each an immediate (runs after the
+  // ones already queued) and a timer (runs after an immediate queued from one).
+  for (let turn = 0; turn < 5; turn++) {
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
   vi.unstubAllGlobals()
   await pg?.close()
 })

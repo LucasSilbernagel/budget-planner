@@ -1,4 +1,10 @@
 # generated: 2026-06-18
+# last_updated: 2026-09-30h (**82.1 CODE-REVIEWED -> done**, UNCOMMITTED. Fable 3 layers: 24 patches, 0 decisions, 0 deferred, 1 dismissed. Close: pnpm gates all green 608s. Web 4058/259, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/687.)
+# last_updated: 2026-09-30g (**82.1 DEV DONE -> review**, UNCOMMITTED. `pnpm gates` all green 614s vs 786s sequential (1 sample each). Web 4042/259, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/687. F7 flake fixed.)
+# last_updated: 2026-09-30f (**82.1 dev started -> in-progress**, baseline `be8d39e`.)
+# last_updated: 2026-09-30e (82.1 D1-D8 CONFIRMED by Lucas; D3 = all gates every time; D8 = measurement skipped.)
+# last_updated: 2026-09-30d (**82.1 CREATED -> ready-for-dev**, epic-82 in-progress. D1-D7 RECOMMENDED, not yet confirmed. F7 transport-chain flake folded in as Task 1.)
+# last_updated: 2026-09-30c (Batch 16 CLOSED: epic-79 `9144e0a`, epic-80 `65ba8fc`, epic-81 `be8d39e` -> done. Next: epic-82, create-story 82.1.)
 # last_updated: 2026-09-30b (**81.1 CODE-REVIEWED -> done**, UNCOMMITTED. Web 4009, core 1170, e2e 520/4. Epic 81 has one story, so epic-81 can close at commit; batch 16 is then complete.)
 # last_updated: 2026-09-30a (**81.1 DEV DONE -> review**, UNCOMMITTED. Web 4001, core 1156, e2e 520/4.)
 # last_updated: 2026-09-29ak (**81.1 dev started -> in-progress**, D1-D9 confirmed, baseline `65ba8fc`.)
@@ -522,7 +528,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-29
+last_updated: 2026-09-30
 baseline_commit: 932722f  # 2026-09-29 reset to HEAD by sprint-planning for BATCH 16 (was c668e94, set for the now-closed batch 15). Tree clean at reset.
 project: budget-planner
 project_key: NOKEY
@@ -1101,23 +1107,23 @@ development_status:
   epic-78-retrospective: optional
 
   # BATCH 16 (added 2026-09-29 by sprint-planning; epics 79-81 / FR128-FR132, from `planning-artifacts/deferred-work-triage-2026-09-29.md` measured at `932722f` — read its "Decisions" section first). Re-verify each cited line before contexting. Order: 79.1 -> 79.2; 80.1 -> 80.2; 79.3 and 81.1 in any order. 79.3 and 80.x both edit `server/api/sync.ts` (different functions) — rebase whichever lands second.
-  epic-79: in-progress  # Every Sync Edit Ends Somewhere You Can See. FR128/FR129/FR130(1,3,4). FR120 still holds: never drop a retryable op.
+  epic-79: done  # Every Sync Edit Ends Somewhere You Can See. FR128/FR129/FR130(1,3,4). FR120 still holds: never drop a retryable op.
   79-1-keep-a-torn-down-sync-from-touching-the-queue: done
   79-2-tell-the-user-about-an-edit-that-keeps-failing: done  # D1-D6 confirmed 2026-09-29.
   79-3-stop-three-server-side-causes-of-a-permanently-queued-edit: done  # Opus review 2026-09-29: 1 decision (512 KiB limit) + 5 patches, 2 deferred. Web 3837, e2e 518/4.
   epic-79-retrospective: optional
 
-  epic-80: in-progress  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
+  epic-80: done  # No Entry Can Land Under a Deleted Profile. FR131/FR130(2). 76.3 pattern + PGlite limits (blocking REASONED, statement-order test).
   80-1-save-a-forecast-only-under-a-live-profile: done  # Opus review 2026-09-29: 1 decision (strip create arm too) + 7 patches, 2 deferred. Uncommitted. Web 3855, e2e 518/4. D0 = (a) (Lucas): ship as scoped; Fact R HIGH logged; correct-course transport story after
   80-2-put-every-writer-of-the-default-profile-under-the-same-lock: done  # Opus review 2026-09-29: 1 decision (accept erased-account consequence of D1; store entry → MED) + 7 patches, 2 deferred. UNCOMMITTED. Web 3980, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/681, bundle OK.
   epic-80-retrospective: optional
 
-  epic-81: in-progress  # A Forecast Field That Tells You What's Wrong. FR132.
-  81-1-report-a-bad-scenario-input-on-its-own-field: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-30 (3 layers, Opus), UNCOMMITTED. 1 decision (Lucas: R1 event-row parity: badInput reported, an emptied field writes 0) + 9 patches, 4 deferred, 14 dismissed. Frozen close: web 4009/258 exit 0, core 1170, db 295/7, types 0/0/0, biome 0/683, e2e 520/4, bundle OK. Layout at md+ NOT checked (deferred LOW). D1-D9 confirmed by Lucas 2026-09-29.
+  epic-81: done  # A Forecast Field That Tells You What's Wrong. FR132.
+  81-1-report-a-bad-scenario-input-on-its-own-field: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-30 (3 layers, Opus), committed `be8d39e`. 1 decision (Lucas: R1 event-row parity: badInput reported, an emptied field writes 0) + 9 patches, 4 deferred, 14 dismissed. Frozen close: web 4009/258 exit 0, core 1170, db 295/7, types 0/0/0, biome 0/683, e2e 520/4, bundle OK. Layout at md+ NOT checked (deferred LOW). D1-D9 confirmed by Lucas 2026-09-29.
   epic-81-retrospective: optional
 
-  epic-82: backlog  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
-  82-1-run-the-gates-side-by-side: backlog  # committed runner; measure concurrent vs sequential stability (>=5 runs); which gates a story must run = Lucas decision.
+  epic-82: in-progress  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
+  82-1-run-the-gates-side-by-side: done  # committed runner; D8 (Lucas 2026-09-30): repeated measurement SKIPPED, interference UNMEASURED, --sequential fallback; D1-D8 CONFIRMED 2026-09-30 (D3: all gates every time).
   82-2-let-the-web-unit-suite-run-its-files-in-parallel: backlog  # reproduce first; hypothesis: all workers share one SQLite-backed --localstorage-file. CI already runs parallel on Node 20.
   82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: backlog  # inventory 61 specs into critical / integration-able / layout; critical list + layout home agreed with Lucas; may split after inventory.
   epic-82-retrospective: optional
