@@ -104,31 +104,3 @@ export async function openAccountMenu(
   await expect(panel).toBeVisible()
   return panel
 }
-
-/**
- * Whether anything paints over the open panel. `toBeVisible()` cannot see
- * occlusion, so this asks the browser what is actually on top at three points
- * (left, centre, right) of each child of the panel, the way 59.2's More sweep
- * does. Returns a description of every miss; empty means unoccluded.
- */
-export async function panelOcclusion(panel: Locator): Promise<string[]> {
-  return panel.evaluate((el) => {
-    const misses: string[] = []
-    for (const child of [...el.children] as HTMLElement[]) {
-      if (child.tagName === 'HR') continue
-      const r = child.getBoundingClientRect()
-      for (const x of [r.left + 4, r.left + r.width / 2, r.right - 4]) {
-        const y = r.top + r.height / 2
-        const hit = document.elementFromPoint(x, y)
-        if (!hit || !el.contains(hit)) {
-          misses.push(
-            `${child.tagName} at (${Math.round(x)},${Math.round(y)}) is under ${
-              hit?.tagName ?? 'nothing'
-            }.${(hit as HTMLElement | null)?.className ?? ''}`
-          )
-        }
-      }
-    }
-    return misses
-  })
-}

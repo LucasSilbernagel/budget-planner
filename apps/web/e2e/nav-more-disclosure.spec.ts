@@ -1,56 +1,17 @@
 import { type Page, expect, test } from '@playwright/test'
 import {
   ACTIVE_BG,
-  LONG_EMAIL,
   MORE_DETAILS,
   MORE_PANEL,
   MORE_SUMMARY,
   NAV,
   isMoreOpen,
-  mockSignedIn,
   moreBackground,
   moreExpandedInAxTree,
   openMore,
-  panelLabels,
-  readChevron,
-  sweepHeaderRow,
 } from './helpers/nav-more'
-
-/**
- * The "More" disclosure at EVERY viewport (story 59.2, FR90). FREE tier.
- *
- * Until 59.2 the desktop nav dissolved the More panel into the row with
- * `sm:contents`, and hid the trigger with `sm:hidden`. That put a free user's
- * seven destinations in one flat row, and a paid user's eleven in TWO rows at
- * every desktop width, which was measured and could not be closed by shrinking.
- * From story 59.2 until 69.3 the row was Overview · Income · Expenses ·
- * Savings · More at every width, in both tiers; since 69.3 that is the row
- * below `lg` only (`nav-lg-row.spec.ts` covers `lg` and up). The paid-tier half of this file is
- * `nav-more-disclosure.paid.spec.ts`.
- *
- * The disclosure is a native `<details>`/`<summary>` (decision, Lucas
- * 2026-09-21), so every destination stays reachable with JavaScript off. The
- * `javaScriptEnabled: false` block below proves it for the free tier, and
- * `nav-more-disclosure.paid.spec.ts` carries the paid-tier twin.
- *
- * ⚠️ How to locate the trigger, and why `getByRole('button')` finds nothing:
- * see `helpers/nav-more.ts`.
- */
-
-/**
- * ⚠️ 1000px, not 1280px, since story 69.3 (FR110, decision D1). At `lg`
- * (1024px) and up a FREE session has no More at all: Balances and Retirement
- * are on the row (`nav-lg-row.spec.ts`). This file is about the free More
- * DISCLOSURE, so its desktop arm runs at a width that still has one. (1000px,
- * not the widest such width: that is 1023px, which `nav-lg-row.spec.ts`
- * covers. A first draft of this note said 1000 was the widest; it is not.)
- * Playwright's default viewport (1280) is past that line, which is why every
- * desktop test here pins a width.
- */
-const DESKTOP_WIDTHS = [640, 1000] as const
 /** A free desktop width with a More disclosure: below `lg`, not its edge. */
 const DISCLOSURE_WIDTH = 1000
-const PRIMARY = ['Overview', 'Income', 'Expenses', 'Savings'] as const
 const FREE_PANEL = ['Balances', 'Retirement'] as const
 
 async function gotoSettled(page: Page, url = '/'): Promise<void> {
@@ -58,252 +19,6 @@ async function gotoSettled(page: Page, url = '/'): Promise<void> {
   await page.waitForLoadState('networkidle')
   await expect(page.locator(NAV)).toBeVisible()
 }
-
-/**
- * The desktop row, read from its FLEX ITEMS (the outer `<li>`s), never from
- * `nav a`. The anchor query counts the hidden panel rows as well, and it skips
- * the `<summary>`, which is a real row item now.
- */
-async function readRow(page: Page) {
-  return page.evaluate((nav) => {
-    const list = document.querySelector(`${nav} > ul`) as HTMLElement
-    // RENDERED items only (story 69.3): the promoted row copies are in the DOM
-    // at every width and `display:none` below `lg`.
-    const items = ([...list.querySelectorAll(':scope > li')] as HTMLElement[]).filter(
-      (li) => li.getClientRects().length > 0
-    )
-    return {
-      labels: items.map((li) =>
-        (
-          li.querySelector(
-            ':scope > a [data-nav-label], :scope > details > summary [data-nav-label]'
-          )?.textContent ?? ''
-        ).trim()
-      ),
-      tops: [...new Set(items.map((li) => Math.round(li.getBoundingClientRect().top)))],
-      listHeight: list.getBoundingClientRect().height,
-      docOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    }
-  }, NAV)
-}
-
-for (const width of DESKTOP_WIDTHS) {
-  test.describe(`the desktop row at ${width}px`, () => {
-    test.use({ viewport: { width, height: 800 } })
-
-    test(
-      'is exactly the four primary tabs plus More, on ONE row, closed',
-      { tag: '@layout' },
-      async ({ page }) => {
-        await gotoSettled(page)
-        const row = await readRow(page)
-
-        expect(row.labels, 'the desktop row is not the five-item shape').toEqual([
-          ...PRIMARY,
-          'More',
-        ])
-        expect(row.tops, `the ${width}px row wraps onto more than one line`).toHaveLength(1)
-        expect(row.docOverflowX, 'the page scrolls horizontally').toBeLessThanOrEqual(0)
-
-        // Closed by default. The rows are in the DOM (a CSS count still finds
-        // them) but not REACHABLE until opened: role locators exclude them.
-        expect(await isMoreOpen(page)).toBe(false)
-        const nav = page.getByRole('navigation', { name: 'Primary' })
-        await expect(nav.getByRole('link')).toHaveCount(PRIMARY.length)
-        for (const label of FREE_PANEL) {
-          await expect(nav.getByRole('link', { name: label, exact: true })).toHaveCount(0)
-        }
-        // Anti-vacuity for the line above: the hidden rows ARE in the DOM, so the
-        // role-count of 4 is visibility, not absence.
-        expect(await panelLabels(page)).toEqual([...FREE_PANEL])
-      }
-    )
-
-    test(
-      'opens as an overlay: on screen, opaque, unoccluded, and out of flow',
-      { tag: '@layout' },
-      async ({ page }) => {
-        await gotoSettled(page)
-        const before = await readRow(page)
-        await openMore(page)
-
-        const nav = page.getByRole('navigation', { name: 'Primary' })
-        for (const label of FREE_PANEL) {
-          await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible()
-        }
-
-        const after = await readRow(page)
-        // Out of flow: opening the panel must not push the row (or the page) down.
-        expect(after.listHeight, 'the open panel is in flow — it grew the bar').toBe(
-          before.listHeight
-        )
-        expect(
-          after.docOverflowX,
-          'the open panel overflows the page sideways'
-        ).toBeLessThanOrEqual(0)
-
-        const panel = await page.evaluate((sel) => {
-          const el = document.querySelector(sel) as HTMLElement
-          const r = el.getBoundingClientRect()
-          return {
-            position: getComputedStyle(el).position,
-            bg: getComputedStyle(el).backgroundColor,
-            left: r.left,
-            right: r.right,
-            top: r.top,
-            bottom: r.bottom,
-            innerWidth: globalThis.innerWidth,
-            innerHeight: globalThis.innerHeight,
-            overflowX: el.scrollWidth - el.clientWidth,
-          }
-        }, MORE_PANEL)
-        expect(panel.position).toBe('absolute')
-        expect(panel.bg, 'the desktop panel is transparent — content shows through').toBe(
-          'rgb(255, 255, 255)'
-        )
-        expect(panel.left).toBeGreaterThanOrEqual(0)
-        expect(panel.right).toBeLessThanOrEqual(panel.innerWidth)
-        expect(panel.top).toBeGreaterThan(0)
-        expect(panel.bottom).toBeLessThanOrEqual(panel.innerHeight)
-        // `overflow-y-auto` makes the panel a horizontal scroll container that
-        // would silently absorb an overflowing label. Element-level on purpose.
-        expect(panel.overflowX, 'a panel row overflows and is being absorbed').toBeLessThanOrEqual(
-          0
-        )
-
-        // ⚠️ Occlusion is invisible to `toBeVisible()` and to every rect. Probe the
-        // hit-test at each row's centre.
-        const hits = await page.evaluate((sel) => {
-          return [...document.querySelectorAll(`${sel} > li > a`)].map((a) => {
-            const r = a.getBoundingClientRect()
-            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
-            return { label: a.textContent?.trim(), inside: hit !== null && a.contains(hit) }
-          })
-        }, MORE_PANEL)
-        expect(
-          hits.filter((h) => !h.inside),
-          'a panel row is painted over'
-        ).toEqual([])
-      }
-    )
-  })
-}
-
-test(
-  'the header row holds at every desktop width, signed out AND signed in (free)',
-  { tag: '@layout' },
-  async ({ page }) => {
-    // Signed out: the "Sign in" + "Upgrade" cluster every other test measures.
-    await page.setViewportSize({ width: 640, height: 800 })
-    await gotoSettled(page)
-    expect(await sweepHeaderRow(page), 'the signed-out header row broke').toEqual([])
-
-    // Signed in on the FREE tier: avatar only (no email since story 69.2), no
-    // Premium pill. The announced email proves the mocked session landed. See the
-    // paid twin for why this needs `/api/auth/me` mocked (story 59.2 review, D1).
-    await mockSignedIn(page, { subscriptionStatus: 'free' })
-    await page.setViewportSize({ width: 640, height: 800 })
-    await gotoSettled(page)
-    await expect(
-      page.getByRole('status', { name: /account status/i }).getByText(LONG_EMAIL)
-    ).toHaveCount(1)
-    expect(await sweepHeaderRow(page), 'the signed-in (free) header row broke').toEqual([])
-  }
-)
-
-/**
- * The More trigger's disclosure chevron (story 69.1, FR108).
- *
- * Until 69.1 the desktop trigger was the bare word "More": `MoreIcon` is
- * `sm:hidden`, so nothing said it opens anything. The chevron must be VISIBLE
- * (a `display:none` from a stray `sm:hidden` is exactly what jsdom cannot see)
- * and must turn with the panel.
- *
- * ⚠️ It turns on the `<details>` `open` ATTRIBUTE (`group-open:`), not on React
- * state (decision D2, Lucas 2026-09-25). The attribute is what shows the panel,
- * so it is the only source the cue cannot disagree with. The JS-off block below
- * is the test a state-driven cue fails.
- */
-for (const width of DESKTOP_WIDTHS) {
-  test.describe(`the More chevron at ${width}px`, () => {
-    test.use({ viewport: { width, height: 800 } })
-
-    test(
-      'is visible, decorative, and turns with the panel through every close path',
-      { tag: '@layout' },
-      async ({ page }) => {
-        await gotoSettled(page)
-        const closed = await readChevron(page)
-        expect(closed.count, 'the More trigger has no disclosure chevron').toBe(1)
-        expect(closed.visible, `the chevron is hidden at ${width}px`).toBe(true)
-        expect(closed.width, 'the chevron has no box').toBeGreaterThan(0)
-        expect(closed.transform, 'the chevron is rotated while the panel is closed').toBe('none')
-        // An inline 16px SVG can grow the 20px line box; the trigger stays 36px.
-        expect(closed.triggerHeight, 'the chevron grew the trigger').toBe(36)
-        // Still named "More" in the real AX tree: the chevron adds no text.
-        expect(await moreExpandedInAxTree(page), 'the trigger is no longer "More"').toBe(false)
-
-        const chevronA = async () => (await readChevron(page)).a
-
-        // Opened by click, closed by Escape.
-        await openMore(page)
-        await expect.poll(chevronA, { message: 'the chevron did not turn when opened' }).toBe(-1)
-        await page.keyboard.press('Escape')
-        await expect.poll(() => isMoreOpen(page)).toBe(false)
-        await expect.poll(chevronA, { message: 'the chevron stayed turned after Escape' }).toBe(1)
-
-        // Closed by an outside press on inert content.
-        await openMore(page)
-        await expect.poll(chevronA).toBe(-1)
-        await page.mouse.click(5, 780)
-        await expect.poll(() => isMoreOpen(page)).toBe(false)
-        await expect
-          .poll(chevronA, { message: 'the chevron stayed turned after an outside press' })
-          .toBe(1)
-
-        // Closed by navigating from a panel row. (Settings until story 69.2 took
-        // it out of the nav.)
-        await openMore(page)
-        await expect.poll(chevronA).toBe(-1)
-        await page
-          .getByRole('navigation', { name: 'Primary' })
-          .getByRole('link', { name: 'Balances', exact: true })
-          .click()
-        await expect(page).toHaveURL(/\/balance$/)
-        await expect.poll(() => isMoreOpen(page)).toBe(false)
-        await expect
-          .poll(chevronA, { message: 'the chevron stayed turned after navigating' })
-          .toBe(1)
-      }
-    )
-  })
-}
-
-test(
-  'the chevron is display:none on the mobile bar (decision D3)',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 640 })
-    await gotoSettled(page)
-    const chevron = await readChevron(page)
-    expect(chevron.count, 'the More trigger has no disclosure chevron').toBe(1)
-    expect(chevron.visible, 'the desktop chevron leaked onto the mobile bar').toBe(false)
-  }
-)
-
-test.describe('the desktop panel in the dark theme', () => {
-  test.use({ viewport: { width: DISCLOSURE_WIDTH, height: 800 } })
-
-  test('paints its own opaque dark background', { tag: '@layout' }, async ({ page }) => {
-    // Story 61.1 (FR93): the theme follows the device, so emulate the media
-    // query rather than seeding a preference store that no longer exists.
-    await page.emulateMedia({ colorScheme: 'dark' })
-    await gotoSettled(page)
-    await openMore(page)
-    const bg = await page.locator(MORE_PANEL).evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(bg, 'the dark desktop panel lost its background').toBe('rgb(31, 41, 55)')
-  })
-})
 
 test.describe('the disclosure is a disclosure, at desktop width', () => {
   test.use({ viewport: { width: DISCLOSURE_WIDTH, height: 800 } })
@@ -504,24 +219,6 @@ test.describe('the disclosure is a disclosure, at desktop width', () => {
     await page.keyboard.press('Space')
     await expect.poll(() => isMoreOpen(page)).toBe(false)
   })
-
-  test(
-    'the trigger paints an OUTSET focus ring on desktop',
-    { tag: '@layout' },
-    async ({ page }) => {
-      await gotoSettled(page)
-      await page.locator(MORE_SUMMARY).focus()
-      await page.keyboard.press('Shift+Tab')
-      await page.keyboard.press('Tab')
-      const shadow = await page
-        .locator(MORE_SUMMARY)
-        .evaluate((el) => getComputedStyle(el).boxShadow)
-      expect(shadow, 'the desktop trigger shows no focus ring').not.toBe('none')
-      expect(shadow, 'the desktop ring is inset — reserved for the mobile bar').not.toContain(
-        'inset'
-      )
-    }
-  )
 })
 
 /**
@@ -629,39 +326,6 @@ test.describe('with JavaScript disabled', () => {
       await expect(page).toHaveURL(new RegExp(`${path}$`))
     }
   })
-
-  // The case the epic's original AC-3 (drive the cue from `isMoreOpen`) gets
-  // wrong: with JS off React never runs, so state would say "closed" forever
-  // while the native toggle shows the panel.
-  test(
-    `the chevron turns with the NATIVE toggle at ${DISCLOSURE_WIDTH}px`,
-    { tag: '@layout' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: DISCLOSURE_WIDTH, height: 800 })
-      await page.goto('/')
-      const closed = await readChevron(page)
-      expect(closed.count, 'the More trigger has no disclosure chevron').toBe(1)
-      expect(closed.transform).toBe('none')
-      await page.locator(MORE_SUMMARY).click()
-      await expect.poll(() => isMoreOpen(page), 'the native toggle did not open').toBe(true)
-      await expect
-        .poll(async () => (await readChevron(page)).a, {
-          message: 'the chevron points down over an OPEN panel with JavaScript off',
-        })
-        .toBe(-1)
-      expect((await readChevron(page)).visible, 'the chevron is hidden with JavaScript off').toBe(
-        true
-      )
-      // And back: the native toggle closes it, and the chevron follows.
-      await page.locator(MORE_SUMMARY).click()
-      await expect.poll(() => isMoreOpen(page), 'the native toggle did not close').toBe(false)
-      await expect
-        .poll(async () => (await readChevron(page)).a, {
-          message: 'the chevron stayed turned after the native toggle closed the panel',
-        })
-        .toBe(1)
-    }
-  )
 
   test('the server renders the disclosure closed', async ({ page }) => {
     await page.setViewportSize({ width: DISCLOSURE_WIDTH, height: 800 })

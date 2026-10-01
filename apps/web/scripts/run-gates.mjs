@@ -3,7 +3,6 @@
 //   pnpm gates                     # all gates: phase A in order, phase B at once
 //   pnpm gates --sequential        # phase B one at a time (the fallback)
 //   pnpm gates --only core,web     # a subset (phase A comes along when needed)
-//   pnpm gates --layout            # also the @layout e2e tests (CI always runs them)
 //
 // Exit 0 only when every gate is GREEN (see `verdict` in `gates-lib.mjs`),
 // 1 when any gate is not, 2 when the run cannot start (a port is taken, a bad
@@ -34,7 +33,6 @@ import {
   buildGates,
   formatDuration,
   formatLine,
-  layoutNotice,
   parseArgs,
   screenshotNotice,
   selectGates,
@@ -308,7 +306,6 @@ async function main() {
         root: ROOT,
         runDir,
         typeCheckScripts: typeCheckScriptsOf(workspacePackages()),
-        layout: options.layout,
       }),
       options.only
     )
@@ -330,10 +327,7 @@ async function main() {
   }
 
   const e2eSelected = gates.some((gate) => gate.id === 'e2e')
-  const notice = [
-    ...layoutNotice({ layout: options.layout, e2e: e2eSelected, changedFiles: changedFiles() }),
-    ...screenshotNotice({ e2e: e2eSelected }),
-  ]
+  const notice = [...screenshotNotice({ e2e: e2eSelected, changedFiles: changedFiles() })]
   console.log(`Gate logs: ${runDir}`)
   console.log(`Mode: ${options.sequential ? 'sequential' : 'phase B concurrent'}`)
   for (const line of notice) console.log(line)

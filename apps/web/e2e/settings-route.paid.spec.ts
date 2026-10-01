@@ -1,6 +1,6 @@
 import { type Page, expect, test } from '@playwright/test'
 import { expectSignedInAs } from './helpers/account-menu'
-import { LONG_EMAIL, NAV, mockSignedIn, sweepForOverlap, sweepHeaderRow } from './helpers/nav-more'
+import { LONG_EMAIL, NAV, mockSignedIn } from './helpers/nav-more'
 
 /**
  * A SIGNED-IN user with JavaScript off still reaches `/settings` from the
@@ -52,29 +52,6 @@ test.describe('signed in, JavaScript OFF (AC-6)', () => {
       await expect(page).toHaveURL(/\/settings$/)
     })
   }
-
-  // The gear WIDENS the JS-off signed-in cluster (a 28px box and the row's 4px
-  // `sm:gap-1`). It must never cost an overlap, a sideways scroll, or a second
-  // header line. ⚠️ The line was the one it DID cost at first: in the dev pass
-  // a Premium cluster with the gear was a few px too wide for the five-item row
-  // at 640px, and the header wrapped it at 640-642px. The code review sent
-  // that back (decision, Lucas 2026-09-25): the cluster's right padding is
-  // `sm:pr-1 lg:pr-2` now, so it fits. The widths are in the one record
-  // (`nav-responsive-css.spec.ts`), measured by
-  // `nav-intrinsic-width.measure.clusters.paid.spec.ts`. This is the bound:
-  // one header line at EVERY width, not just no overlap.
-  test(
-    'the gear never makes the cluster cover the nav, overflow, or wrap, 640-1400px',
-    { tag: '@layout' },
-    async ({ page }) => {
-      test.setTimeout(180_000)
-      await page.setViewportSize({ width: 1280, height: 800 })
-      await page.goto('/income')
-      await expect(settingsOutsideNav(page)).toHaveCount(1)
-      expect(await sweepForOverlap(page), 'the JS-off cluster covers the nav').toEqual([])
-      expect(await sweepHeaderRow(page), 'the JS-off header row broke').toEqual([])
-    }
-  )
 })
 
 test.describe('signed in, JavaScript ON (AC-6)', () => {

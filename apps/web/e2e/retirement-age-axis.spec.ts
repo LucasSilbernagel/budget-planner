@@ -248,51 +248,6 @@ for (const width of WIDTHS) {
         0
       )
     })
-
-    /**
-     * FLOOR, NOT A GUARD (see the file header): measured identical before and
-     * after this story. It exists to catch a future change to `marginRight` or
-     * to the label, not to certify this one.
-     */
-    test(
-      'FLOOR — the "Retirement" label stays inside the chart card (AC-5)',
-      { tag: '@layout' },
-      async ({ page }) => {
-        await gotoPlanner(page, width)
-        const axis = await readAxis(page)
-
-        expect(axis.refLabel).not.toBeNull()
-        const label = axis.refLabel as { left: number; right: number }
-        expect(label.right).toBeLessThanOrEqual(axis.cardRight)
-        expect(label.left).toBeGreaterThanOrEqual(axis.cardLeft)
-      }
-    )
-
-    /**
-     * FLOOR, NOT A GUARD. Ages are two digits where years-from-now were often
-     * one, but Recharts absorbs that by thinning: measured, 320px went from 10
-     * ticks to 8 and nothing moved. What this does catch is a future
-     * `interval={0}`, which forces every category to render and overlaps them.
-     */
-    test(
-      'FLOOR — tick labels neither overlap nor overflow the card (AC-6)',
-      { tag: '@layout' },
-      async ({ page }) => {
-        await gotoPlanner(page, width)
-        const axis = await readAxis(page)
-
-        for (const tick of axis.ticks) {
-          expect(tick.left).toBeGreaterThanOrEqual(axis.cardLeft)
-          expect(tick.right).toBeLessThanOrEqual(axis.cardRight)
-        }
-
-        for (let i = 1; i < axis.ticks.length; i++) {
-          const previous = axis.ticks[i - 1] as Tick
-          const current = axis.ticks[i] as Tick
-          expect(previous.right).toBeLessThan(current.left)
-        }
-      }
-    )
   })
 }
 
@@ -307,18 +262,6 @@ test('the axis title inside the chart reads "Age" (AC-1)', async ({ page }) => {
   expect(axis.svgTitles).toContain('Age')
   expect(axis.svgTitles).not.toContain('Years from Now')
 })
-
-test(
-  'the axis titles stay off at 320px (AC-1, unchanged by this story)',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await gotoPlanner(page, 320)
-    const axis = await readAxis(page)
-
-    expect(axis.svgTitles).not.toContain('Age')
-    expect(axis.svgTitles).not.toContain('Assets')
-  }
-)
 
 /**
  * ⚠️ AC-3, AND THE DEFECT THIS STORY EXISTS TO PREVENT. Measured against the

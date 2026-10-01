@@ -219,14 +219,12 @@ jobs:
       # retry + 4 workers and disables dev-server reuse (see
       # apps/web/playwright.config.ts).
       #
-      # ⚠️ Story 82.3: this runs EVERY project, including `chromium-layout` and
-      # `chromium-paid-layout` (the `@layout` tests), which local `pnpm gates`
-      # skips without `--layout`. So this step is where layout is always checked,
-      # and it blocks deploy (deploy.yml calls this workflow). Never add a
-      # `--project`/`--grep` here; `gates-lib.test.ts` pins that.
-      #
-      # Story 84.1: it also runs `screenshots` / `screenshots-paid`, which
-      # `pnpm gates` never runs locally (their baselines are CI-rendered).
+      # ⚠️ This runs EVERY project, including `screenshots` / `screenshots-paid`
+      # (story 84.1), which `pnpm gates` never runs locally (their baselines are
+      # CI-rendered). Since story 84.2 deleted the `@layout` projects (FR137),
+      # those screenshots are the only layout-dedicated projects, so this step is
+      # where page layout is checked, and it blocks deploy (deploy.yml calls this workflow). Never
+      # add a `--project`/`--grep` here; `gates-lib.test.ts` pins that.
       - name: Run Playwright tests
         run: pnpm test:e2e
 

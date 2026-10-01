@@ -1,4 +1,12 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-01a (**84.2 DEV DONE -> review**, uncommitted; CI e2e wall after pending push.)
+# last_updated: 2026-09-30w (**84.2 dev started -> in-progress**, baseline `ac09038`. Task 2 HALT: D1-D5 + inventory.)
+# last_updated: 2026-09-30v (**84.2 CREATED -> ready-for-dev** at `ac09038`. D1-D5 recommended, not yet confirmed.)
+# last_updated: 2026-09-30u (**84.1 CODE-REVIEWED -> done**, merged `ac09038`, deploy green. Next: create-story 84.2.)
+# last_updated: 2026-09-30t (**84.1 DEV DONE -> review**; branch 84-1-screenshots unmerged; merge + post-merge CI e2e wall pending.)
+# last_updated: 2026-09-30s (**84.1 dev started -> in-progress**, baseline `09e5630`. Task 1 HALT: D1-D5.)
+# last_updated: 2026-09-30r (**84.1 CREATED -> ready-for-dev**, epic-84 in-progress. D1-D5 recommended, not yet confirmed.)
+# last_updated: 2026-09-30q (correct-course 2026-09-30 APPROVED: epic-84 / 84.1-84.6 added backlog, FR137 (Testing Trophy). epic-82 -> done.)
 # last_updated: 2026-09-30p (**82.3 CODE-REVIEWED -> done**, UNCOMMITTED. pnpm gates 498s -> 314s; epic 82 stories all done.)
 # last_updated: 2026-09-30o (**82.3 DEV DONE -> review**, UNCOMMITTED. pnpm gates 498s -> 293s; layout split.)
 # last_updated: 2026-09-30n (**82.3 in-progress**: Task 0 baseline, Task 1 inventory, then HALT for D1-D5.)
@@ -1130,7 +1138,7 @@ development_status:
   81-1-report-a-bad-scenario-input-on-its-own-field: done  # ✅ CODE-REVIEWED + CLOSED 2026-09-30 (3 layers, Opus), committed `be8d39e`. 1 decision (Lucas: R1 event-row parity: badInput reported, an emptied field writes 0) + 9 patches, 4 deferred, 14 dismissed. Frozen close: web 4009/258 exit 0, core 1170, db 295/7, types 0/0/0, biome 0/683, e2e 520/4, bundle OK. Layout at md+ NOT checked (deferred LOW). D1-D9 confirmed by Lucas 2026-09-29.
   epic-81-retrospective: optional
 
-  epic-82: in-progress  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
+  epic-82: done  # Gates Fast Enough To Run Every Time. FR133-135. From 79.3 review close (Lucas 2026-09-29): gates ~11 min, web unit 5m15s serial + e2e 5m.
   82-1-run-the-gates-side-by-side: done  # committed runner; D8 (Lucas 2026-09-30): repeated measurement SKIPPED, interference UNMEASURED, --sequential fallback; D1-D8 CONFIRMED 2026-09-30 (D3: all gates every time).
   82-2-let-the-web-unit-suite-run-its-files-in-parallel: done  # Fable review 2026-09-30: 14 patch (13 applied, 1 false at premise), 1 deferred, 3 dismissed. UNCOMMITTED. Web suite parallel, no Node flag; shim branches tested on any Node (5 mutation arms red on 26 AND 20). pnpm gates 429 s all green: web 4068/261, core 1170, db 295/7, e2e 520/4, types 8 programs, biome 0/690.
   82-3-keep-e2e-for-the-critical-flows-and-test-the-rest-below-the-browser: done  # Fable review 2026-09-30: 1 decision (untag data claims → P15) + 14 patches applied, 1 deferred, 4 dismissed. UNCOMMITTED. Review close: pnpm gates 314 s, --layout 484 s, all green; web 4087, e2e 223+4 default / 516+4 all. DEV DONE 2026-09-30 (uncommitted, baseline `bc1845a`). D2(ii) @layout split: CI always, `pnpm gates --layout` locally (amends 82.1 D3); workers stay 4 (6 slower); reload specs stay e2e (Lucas). 9 e2e tests moved w/ mutation proof, 1 vacuous unit test fixed, new finance-row-lifecycle flow spec. pnpm gates 498 s → 293 s; --layout 503 s. Web 4078, e2e 201+4 default / 516+4 all.
@@ -1139,6 +1147,15 @@ development_status:
   epic-83: done  # Saved Forecasts That Reach the Server. FR136. From correct-course 2026-09-29 (80.1 Fact R). Order: BEFORE 80.2. Every RED against dist/client, never dev/SSR.
   83-1-save-list-and-delete-forecasts-through-the-server: done  # Opus review 2026-09-29: 1 decision (keep prod build in every e2e run) + 12 patches, 5 deferred. UNCOMMITTED. Web 3964, core 1114, db 295/7, e2e 520/4, types 0/0/0, biome 0/679, guard GREEN.
   epic-83-retrospective: optional
+
+  epic-84: in-progress  # A Test Suite Shaped Like the Testing Trophy. FR137. From correct-course 2026-09-30 (D1-D6 approved by Lucas). Order 84.1 -> 84.2 -> {84.3, 84.4, 84.5} -> 84.6. Supersedes 82.3 D2.
+  84-1-catch-visual-breakage-with-a-few-screenshots: done  # Fable review 2026-09-30: 2 decisions (retries 0 for shots; merge and measure) + 12 patches applied `ac09038`, 2 deferred, 20 dismissed. MERGED to main; deploy 36790751172 success: 536 tests incl. 16 shots (first attempt), e2e step 7m20s (was 7m03s). 4 existing layout defects pinned -> deferred-work.
+  84-2-retire-the-layout-test-projects: done  # REVIEWED 2026-09-30 (Fable): D1 drop chrome-320:115, D2 band equivalence accepted, 9 patches applied; counts now 59 COVERED / 211 DROPPED / 15 pending-fix / 8 HANDED-OFF; gates --sequential green 6m35s (web 4090, e2e 231/4). UNCOMMITTED; CI e2e wall pending push. DEV DONE 2026-10-01 (Opus 5.5), UNCOMMITTED, baseline `ac09038`. 293 @layout: 61 COVERED (two-sided mutation proof, 32 runs) / 210 DROPPED / 14 pending-fix / 8 HANDED-OFF. 285 deleted, 14 specs gone, --layout + layout projects removed. pnpm gates --sequential green 8m45s (web 4089, e2e 231/4); concurrent red on known hydration flake. CI e2e wall after PENDING push. CREATED 2026-09-30 at `ac09038`. 293 @layout tests / 37 files (14 layout-only). D1-D5 recommended (4 outcomes incl. HANDED-OFF; COVERED needs two-sided mutation proof; no new shots; .tsx/.css warning kept; no e2e tags). HALT at Task 2 for Lucas.
+  84-3-test-nav-and-account-chrome-below-the-browser: backlog
+  84-4-test-what-the-server-serves-without-a-browser: backlog
+  84-5-move-the-remaining-page-behaviour-to-integration-tests: backlog
+  84-6-measure-the-new-shape: backlog
+  epic-84-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

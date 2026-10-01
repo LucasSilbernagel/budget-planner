@@ -1,5 +1,4 @@
 import { type Page, expect, test } from '@playwright/test'
-import { MORE_PANEL, MORE_SUMMARY } from './helpers/nav-more'
 import { LG, PLANNER_STORAGE_KEY } from './helpers/nav-width'
 
 /**
@@ -182,110 +181,6 @@ for (const { label, width, height } of [
     })
   })
 }
-
-test.describe('the mobile sheet with the planner hidden (AC-8)', () => {
-  test.use({ viewport: { width: 320, height: 720 } })
-
-  test('holds exactly its other row, still a 44px target', { tag: '@layout' }, async ({ page }) => {
-    await page.addInitScript(
-      (key) =>
-        localStorage.setItem(
-          key,
-          JSON.stringify({ state: { showRetirementPlanner: false }, version: 0 })
-        ),
-      STORAGE_KEY
-    )
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-
-    const nav = page.locator(NAV)
-    await page.locator(MORE_SUMMARY).click()
-
-    const rows = page.locator(`${MORE_PANEL} > li > a`)
-    // One row: Settings left the sheet in story 69.2, Retirement is hidden here.
-    await expect(rows).toHaveCount(1)
-    expect(await rows.allTextContents()).toEqual(['Balances'])
-
-    for (const row of await rows.all()) {
-      const box = await row.boundingBox()
-      expect(box, 'a sheet row has no box').not.toBeNull()
-      expect(
-        (box as { height: number }).height,
-        'a sheet row is under the 44px tap target'
-      ).toBeGreaterThanOrEqual(44)
-      // ⚠️ The height check above is a FLOOR, so a label that wraps to two lines
-      // makes the row TALLER and satisfies it — story 43.2 proved exactly that by
-      // mutation (see `e2e/nav-responsive-css.spec.ts`'s sheet-row test). This
-      // fixture renders the same rows in the planner-hidden (free-tier) shape, so
-      // it needs the same line-count guard or it stays green for the wrong reason
-      // on a wrapped label. Added by 43.2's code review.
-      // ⚠️ Premise currently dormant — story 59.1 removed the last multi-word
-      // sheet label ("Balance Tracking" -> "Balances"), so no label here can wrap
-      // at a space today. Keep the guard; see the fuller note in
-      // `e2e/nav-responsive-css.spec.ts`'s sheet-row test.
-      const lineCount = await row.evaluate((a) => {
-        const label = a.querySelector('[data-nav-label]')
-        const range = document.createRange()
-        if (label) range.selectNodeContents(label)
-        return label ? range.getClientRects().length : -1
-      })
-      const label = (await row.textContent())?.trim() ?? ''
-      expect(lineCount, `sheet row "${label}" wraps to ${lineCount} lines at 320px`).toBe(1)
-    }
-
-    // The bar is unaffected: Retirement never lived there, so `grid-cols-5` and
-    // the root's height reserve are untouched. Measured, not argued (§1.3).
-    // Rendered cells only (story 69.3): the promoted row copies are outer
-    // `<li>`s too, `display:none` below `lg`, and a CSS count includes them.
-    const barCells = nav.locator(':scope > ul > li:visible')
-    await expect(barCells).toHaveCount(5)
-
-    /**
-     * The document must not scroll sideways at 320px in EITHER theme.
-     *
-     * ⚠️⚠️ THIS LOOP HAS BEEN VACUOUS ONCE ALREADY — READ BEFORE CHANGING IT.
-     * Originally it used `page.emulateMedia({ colorScheme })` while the app read
-     * a `.dark` CLASS and consulted no media query, so both iterations measured
-     * the LIGHT theme and the "and dark" half of AC-8 was proven by nothing. It
-     * was then rewritten to toggle the class.
-     *
-     * Story 61.1 (FR93) INVERTED that: `tailwind.config.js` is now
-     * `darkMode: 'media'`, nothing adds a `.dark` class, and the media query is
-     * the only input. So the class toggle became the no-op — and, worse, a SILENT
-     * one, because the old guard asserted `classList.contains('dark')`, which
-     * still passes on a page rendering light.
-     *
-     * The lesson both times is the same: assert a CONSEQUENCE, never the lever.
-     * `body` is `bg-gray-50` light / `bg-gray-900` dark, so the painted canvas is
-     * the thing that cannot lie about which theme rendered.
-     */
-    for (const theme of ['light', 'dark'] as const) {
-      await page.emulateMedia({ colorScheme: theme })
-      await expect
-        .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
-        .toBe(theme === 'dark' ? 'rgb(17, 24, 39)' : 'rgb(249, 250, 251)')
-
-      // Re-assert the geometry per theme, not just the overflow: dark styling
-      // changes borders and backgrounds, which is what could move a box.
-      // ⚠️ TWO count assertions live in this file, in two different tests. Story
-      // 43.3 had to fix BOTH (4 -> 3 -> 2 rows); fixing one and shipping is the
-      // "applied to one of two fixtures" defect 43.2's review recorded.
-      await expect(rows).toHaveCount(1)
-      for (const row of await rows.all()) {
-        const box = await row.boundingBox()
-        expect(
-          (box as { height: number }).height,
-          `a sheet row is under the 44px tap target in ${theme}`
-        ).toBeGreaterThanOrEqual(44)
-      }
-
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-      )
-      expect(overflow, `horizontal overflow at 320px in ${theme}`).toBeLessThanOrEqual(0)
-    }
-  })
-})
 
 test.describe('the /retirement route with the planner hidden (AC-5, AC-6, AC-9)', () => {
   test('renders an explanatory off-state instead of the planner', async ({ page }) => {

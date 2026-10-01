@@ -232,20 +232,6 @@ test('a free visitor with seeded financial data still gets no breakdown at /cate
   await expect(page.getByTestId('breakdown-expense-table')).toHaveCount(0)
 })
 
-test(
-  'the /categories upgrade surface fits a 320px viewport',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await page.setViewportSize({ width: NARROW_WIDTH, height: 720 })
-    const response = await page.goto('/categories')
-    expect(response?.ok(), 'expected /categories to load').toBeTruthy()
-    await page.waitForLoadState('networkidle')
-
-    await expect(page.getByRole('heading').first()).toBeVisible()
-    await assertNoHorizontalOverflow(page, '/categories')
-  }
-)
-
 test('Settings surfaces categories as locked and does not link a free visitor through', async ({
   page,
 }) => {

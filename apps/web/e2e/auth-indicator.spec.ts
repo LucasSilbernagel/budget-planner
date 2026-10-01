@@ -79,23 +79,6 @@ test('login page keeps its card affordances and drops the redundant copyright li
   await expect(page.getByText(/all rights reserved/i)).toHaveCount(0)
 })
 
-test('adds no horizontal overflow at 320px', { tag: '@layout' }, async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 720 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-
-  await expect(page.getByRole('status', { name: /account status/i })).toBeVisible()
-
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }))
-  expect(
-    scrollWidth,
-    `home overflows horizontally with the auth indicator: ${scrollWidth} > ${clientWidth}`
-  ).toBeLessThanOrEqual(clientWidth)
-})
-
 /**
  * The sign-in page (story 41.3, UX-DR51).
  *
@@ -137,59 +120,3 @@ test('drops the "Sign in" affordance on /login while the Overview keeps it', asy
   // redundant chrome, not the affordance the user actually came for.
   await expect(page.getByRole('heading', { name: /^sign in$/i })).toBeVisible()
 })
-
-/**
- * AC-3: the strip must not collapse when its only child is removed.
- *
- * ⚠️ This is the half of the requirement jsdom cannot see — every rect there is
- * `{0,0,0,0}`, so the unit suite's `min-h-[2rem]` is a class token, not a height.
- *
- * ⚠️ Nothing here is compared against a pixel constant. The reading on `/login`
- * is compared against the reading on `/` at the SAME viewport, so whatever the
- * host font does it does to both — the comparison cannot drift the way epic 34's
- * hard-coded 768px budget did.
- */
-for (const viewport of [
-  { width: 320, height: 720, label: '320px' },
-  { width: 1280, height: 800, label: 'desktop' },
-]) {
-  test(
-    `the account strip is the same height on /login as elsewhere at ${viewport.label}`,
-    { tag: '@layout' },
-    async ({ page }) => {
-      await page.setViewportSize({ width: viewport.width, height: viewport.height })
-
-      await page.goto('/')
-      await page.waitForLoadState('networkidle')
-      // The STRIP is the outer row since story 59.3 (see the docblock); the
-      // labelled region inside it is what holds the link.
-      const strip = page.locator('[data-auth-indicator]')
-      const home = page.getByRole('status', { name: /account status/i })
-      // Anti-vacuity: if the link were absent here too, equal heights would prove
-      // nothing about removing it.
-      await expect(home.getByRole('link', { name: /sign in/i })).toBeVisible()
-      const homeBox = await strip.boundingBox()
-
-      await page.goto('/login')
-      await page.waitForLoadState('networkidle')
-      const login = page.getByRole('status', { name: /account status/i })
-      await expect(login).toBeAttached()
-      await expect(login.getByRole('link', { name: /sign in/i })).toHaveCount(0)
-      const loginBox = await strip.boundingBox()
-
-      expect(homeBox, 'the strip has no box on /').not.toBeNull()
-      expect(loginBox, 'the strip has no box on /login').not.toBeNull()
-      // A collapsed strip would measure 0 and would also "equal" a second
-      // collapsed reading, so the floor is asserted as well as the equality.
-      expect(
-        loginBox?.height,
-        `the strip collapsed on /login at ${viewport.label}`
-      ).toBeGreaterThan(0)
-      expect(
-        loginBox?.height,
-        `strip height differs between / and /login at ${viewport.label}: ` +
-          `${loginBox?.height} vs ${homeBox?.height}`
-      ).toBe(homeBox?.height)
-    }
-  )
-}

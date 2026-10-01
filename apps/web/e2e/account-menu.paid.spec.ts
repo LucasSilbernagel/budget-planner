@@ -13,7 +13,6 @@ import {
   mockSessionThatCanEnd,
   mockSignedIn,
   openMore,
-  sweepHeaderRow,
 } from './helpers/nav-more'
 
 /**
@@ -65,27 +64,6 @@ test('the SSR seed paints the account trigger in the first frame', async ({ page
   expect(/aria-label="Account menu"[^>]*aria-controls=/.test(html)).toBe(false)
 })
 
-test(
-  'the paid cluster carries the Premium pill OUTSIDE the trigger, at every width',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await mockSignedIn(page, { subscriptionStatus: 'active' })
-    for (const width of [320, 640, 1024, 1440] as const) {
-      await page.setViewportSize({ width, height: 800 })
-      await page.goto('/')
-      const pill = page.getByRole('status', { name: /account status/i }).getByText('Premium', {
-        exact: true,
-      })
-      await expect(pill, `no Premium pill at ${width}px`).toBeVisible()
-      const insideTrigger = await accountTrigger(page).evaluate(
-        (el, text) => [...el.querySelectorAll('*')].some((n) => n.textContent?.trim() === text),
-        'Premium'
-      )
-      expect(insideTrigger, `the pill was folded into the trigger at ${width}px`).toBe(false)
-    }
-  }
-)
-
 /**
  * ⚠️ Story 69.2 (decision D2, Lucas 2026-09-25) removed the email from the
  * trigger. This file used to hold AC-13 of story 59.3: the trigger email's
@@ -107,18 +85,6 @@ test('the paid trigger carries no email', async ({ page }) => {
   await expectSignedInAs(page, LONG_EMAIL)
   await expect(accountTrigger(page), 'the trigger shows an email').not.toContainText('@')
 })
-
-test(
-  'a paid signed-in cluster keeps the header to ONE row at every desktop width',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await mockSignedIn(page, { subscriptionStatus: 'active' })
-    await page.setViewportSize({ width: 640, height: 800 })
-    await page.goto('/')
-    await expect(accountTrigger(page)).toBeVisible({ timeout: SESSION_SETTLE_MS })
-    expect(await sweepHeaderRow(page), 'the signed-in header row broke').toEqual([])
-  }
-)
 
 test('the four premium routes stay reachable with the account menu open and closed', async ({
   page,
@@ -170,23 +136,3 @@ test('a signed-in user signs out from the paid chrome too, at 2400px', async ({ 
   await expect(accountTrigger(page)).toHaveCount(0, { timeout: SESSION_SETTLE_MS })
   expect(logoutPosts, 'expected exactly one logout POST').toBe(1)
 })
-
-test(
-  'a FREE signed-in cluster on the paid nav also keeps the header to one row',
-  { tag: '@layout' },
-  async ({ page }) => {
-    // The fourth tier x server combination (AC-12): the widest nav (paid) beside
-    // a cluster with no Premium pill. Review found only two of the four were
-    // covered.
-    await mockSignedIn(page, { subscriptionStatus: 'free' })
-    await page.setViewportSize({ width: 640, height: 800 })
-    await page.goto('/')
-    // The seed is PAID, so the free cluster this test is about exists only after
-    // the mocked fetch lands. Gate on the identity, not just on the trigger.
-    await expectSignedInAs(page, LONG_EMAIL)
-    await expect(
-      page.getByRole('status', { name: /account status/i }).getByText('Premium', { exact: true })
-    ).toHaveCount(0)
-    expect(await sweepHeaderRow(page), 'the free-cluster paid header row broke').toEqual([])
-  }
-)

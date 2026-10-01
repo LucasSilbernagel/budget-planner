@@ -21,8 +21,7 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  *
  * ⚠️ That is exactly why the variable is NOT set on the default server. Setting it
  * globally would hand every existing spec a paid session, and the free-tier guards
- * — `chrome-320.spec.ts`'s `BAR_LABELS`/`SHEET_LABELS`, `nav-planner-visibility`'s
- * row counts, `premium-locked.spec.ts`'s entire premise — would quietly start
+ * — `nav-planner-visibility`'s row counts, `premium-locked.spec.ts`'s entire premise — would quietly start
  * asserting against a nav they were never written for. Several would still PASS,
  * which is the dangerous part.
  *
@@ -53,24 +52,20 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  * project builds first and serves the real `dist/`. See
  * `e2e/forecasting-roundtrip.prod.spec.ts` for what is real and what is stubbed.
  *
- * ## Layout tests are their own projects (story 82.3, FR135, D2)
+ * ## No layout-measurement projects (story 84.2, FR137)
  *
- * A test whose claim needs a real layout engine (boxes, overflow, wrapping,
- * computed style, paint, print, viewport-bound composition) carries
- * `{ tag: '@layout' }`. `chromium` / `chromium-paid` exclude those tests and
- * `chromium-layout` / `chromium-paid-layout` run only them, on the SAME servers.
- * `chromium-prod` excludes them too and has no layout twin: a prod-bundle test
- * is a flow test by construction, so a `@layout` tag in a `*.prod.spec.ts`
- * would run NOWHERE. `gates-lib.test.ts` pins that no prod spec carries one.
- * Every other test is in exactly one of the two halves, because `grep` and
- * `grepInvert` use the same pattern.
+ * Story 82.3 split `{ tag: '@layout' }` tests into `chromium-layout` /
+ * `chromium-paid-layout`. Story 84.2 deleted both projects and 285 of those 293
+ * tests (8 behaviour tests were untagged into the default projects for 84.3 /
+ * 84.5): the screenshot projects below are now the only layout-dedicated
+ * projects (a few flow tests still assert rendered layout), and every
+ * claim is listed as COVERED (by a named shot, with mutation proof), DROPPED,
+ * DROPPED-pending-fix or HANDED-OFF in
+ * `_bmad-output/implementation-artifacts/84-2-evidence/inventory.md`.
+ * No project selects by tag any more, and `gates-lib.test.ts` fails on any
+ * `tag:` in a spec.
  *
- * A plain `playwright test` (CI's `pnpm test:e2e`) runs every project, so CI
- * blocks a merge and a deploy on layout. `pnpm gates` runs the layout projects
- * only with `--layout` (see `project-context.md` for when a story must).
- * An untagged layout test is not lost: it runs in the default half, every time.
- *
- * ## Screenshots are their own projects too (story 84.1, FR137)
+ * ## Screenshots are their own projects (story 84.1, FR137)
  *
  *   - `screenshots`       :5173 (free) → only `*.screenshot.spec.ts`
  *   - `screenshots-paid`  :5174 (paid) → only `*.screenshot.paid.spec.ts`
@@ -85,8 +80,6 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  * snapshots at a scratch directory, for a local run against local baselines
  * (story 84.1's mutation proof); never commit what it writes.
  */
-const LAYOUT_TAG = /@layout\b/
-
 /** The screenshot specs (story 84.1): ONLY the two screenshot projects run them. */
 const SCREENSHOT_SPEC = /\.screenshot(\.paid)?\.spec\.ts$/
 
@@ -118,8 +111,8 @@ const paidBaseURL = `http://localhost:${PAID_PORT}`
  * ...options.env}` (playwright `lib/runner/index.js`) — so the ambient shell
  * environment reaches every dev server it launches. A developer who exported
  * `E2E_SESSION_SEED` while debugging would otherwise hand the FREE server an
- * entitled session too, and the free-tier guards (`chrome-320.spec.ts`,
- * `nav-planner-visibility.spec.ts`) would quietly start asserting against a nav
+ * entitled session too, and the free-tier guards (`nav-planner-visibility.spec.ts`,
+ * the free screenshots) would quietly start asserting against a nav
  * they were never written for. Passing an empty string is what closes that:
  * the seam tests `process.env['E2E_SESSION_SEED']` for truthiness, so `''` is
  * inert. (An earlier revision of this file spread `process.env` in by hand and
@@ -207,14 +200,6 @@ export default defineConfig({
       // here, against the free server, and their paid assertions would fail for a
       // reason that looks nothing like "wrong server".
       testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/, SCREENSHOT_SPEC],
-      grepInvert: LAYOUT_TAG,
-      use: { ...devices['Desktop Chrome'] },
-    },
-    // Story 82.3 (D2): the same free server, only the `@layout` tests.
-    {
-      name: 'chromium-layout',
-      testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/, SCREENSHOT_SPEC],
-      grep: LAYOUT_TAG,
       use: { ...devices['Desktop Chrome'] },
     },
     // Story 84.1 (FR137): the same free server, only `*.screenshot.spec.ts`.
@@ -241,14 +226,6 @@ export default defineConfig({
             name: 'chromium-paid',
             testMatch: /\.paid\.spec\.ts$/,
             testIgnore: SCREENSHOT_SPEC,
-            grepInvert: LAYOUT_TAG,
-            use: { ...devices['Desktop Chrome'], baseURL: paidBaseURL },
-          },
-          {
-            name: 'chromium-paid-layout',
-            testMatch: /\.paid\.spec\.ts$/,
-            testIgnore: SCREENSHOT_SPEC,
-            grep: LAYOUT_TAG,
             use: { ...devices['Desktop Chrome'], baseURL: paidBaseURL },
           },
           // Story 84.1: the paid server, only `*.screenshot.paid.spec.ts`.
@@ -263,7 +240,6 @@ export default defineConfig({
           {
             name: 'chromium-prod',
             testMatch: /\.prod\.spec\.ts$/,
-            grepInvert: LAYOUT_TAG,
             use: { ...devices['Desktop Chrome'], baseURL: prodBaseURL },
           },
         ]),

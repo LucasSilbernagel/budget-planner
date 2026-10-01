@@ -27,109 +27,21 @@ const CANVAS_DARK = 'rgb(17, 24, 39)' // gray-900
 const bodyBackground = (page: import('@playwright/test').Page) =>
   page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
-test(
-  'a dark-preference device paints dark on the FIRST frame, with no bootstrap script',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await page.emulateMedia({ colorScheme: 'dark' })
+test('a LIVE change of the device preference is followed without a reload (AC-7)', async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/')
+  await expect.poll(() => bodyBackground(page)).toBe(CANVAS_LIGHT)
 
-    // Capture the canvas colour exactly at DOMContentLoaded — stylesheets are
-    // parsed by then, but React has not hydrated. Story 7-3 needed a blocking
-    // <head> script to make this true; a media query needs nothing, which is the
-    // whole point of the mechanism change (AC-4). This measures the paint, not the
-    // intent: if the `.dark body` rule had been left as a class selector when
-    // `darkMode` moved to `media`, the canvas would still read light here while
-    // every `dark:` utility went dark.
-    await page.addInitScript(() => {
-      document.addEventListener('DOMContentLoaded', () => {
-        ;(window as unknown as { __bgAtDCL?: string }).__bgAtDCL = getComputedStyle(
-          document.body
-        ).backgroundColor
-      })
-    })
+  // No reload, no navigation — the OS preference simply changes under the open
+  // page, which is what a user flipping their system theme does.
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect.poll(() => bodyBackground(page)).toBe(CANVAS_DARK)
 
-    await page.goto('/')
-
-    const bgAtFirstPaint = await page.evaluate(
-      () => (window as unknown as { __bgAtDCL?: string }).__bgAtDCL ?? ''
-    )
-    expect(bgAtFirstPaint, 'the canvas was not dark at DOMContentLoaded — a flash of light').toBe(
-      CANVAS_DARK
-    )
-  }
-)
-
-test(
-  'a light-preference device paints light on the first frame',
-  { tag: '@layout' },
-  async ({ page }) => {
-    // The control arm. Without it, a page that painted dark unconditionally would
-    // satisfy the case above.
-    await page.emulateMedia({ colorScheme: 'light' })
-    await page.goto('/')
-    await expect.poll(() => bodyBackground(page)).toBe(CANVAS_LIGHT)
-  }
-)
-
-test(
-  'a client-side navigation does not flash the wrong theme (AC-4)',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await page.emulateMedia({ colorScheme: 'dark' })
-    await page.goto('/')
-    await expect.poll(() => bodyBackground(page)).toBe(CANVAS_DARK)
-
-    // Watch for any light frame during and after an in-app navigation. The old
-    // mechanism could flash here: the <head> bootstrap ran once per DOCUMENT load,
-    // so a SPA route change was reconciled only by a mount effect.
-    //
-    // ⚠️ THIS IS A CONTROL, NOT AN INDEPENDENT GUARD — an earlier version of this
-    // comment called it "the test that makes it observable", which overstates it.
-    // The observer samples only when the DOM mutates, and under `darkMode: 'media'`
-    // the body rule is a pure media query whose value cannot change across a SPA
-    // navigation at all. It can therefore only fail if a JS-driven class mechanism
-    // is reintroduced — worth having for exactly that, but it cannot fail
-    // independently of the first-paint case above.
-    const sawLight: string[] = []
-    await page.exposeFunction('__recordCanvas', (colour: string) => {
-      if (colour !== CANVAS_DARK) sawLight.push(colour)
-    })
-    await page.evaluate(() => {
-      const record = (window as unknown as { __recordCanvas: (c: string) => void }).__recordCanvas
-      new MutationObserver(() => record(getComputedStyle(document.body).backgroundColor)).observe(
-        document.documentElement,
-        { attributes: true, childList: true, subtree: true }
-      )
-    })
-
-    await page.getByRole('link', { name: 'Expenses' }).first().click()
-    await page.waitForURL('**/expenses')
-    await expect.poll(() => bodyBackground(page)).toBe(CANVAS_DARK)
-
-    expect(
-      sawLight,
-      `the canvas left dark during a client-side navigation: ${sawLight.join(', ')}`
-    ).toHaveLength(0)
-  }
-)
-
-test(
-  'a LIVE change of the device preference is followed without a reload (AC-7)',
-  { tag: '@layout' },
-  async ({ page }) => {
-    await page.emulateMedia({ colorScheme: 'light' })
-    await page.goto('/')
-    await expect.poll(() => bodyBackground(page)).toBe(CANVAS_LIGHT)
-
-    // No reload, no navigation — the OS preference simply changes under the open
-    // page, which is what a user flipping their system theme does.
-    await page.emulateMedia({ colorScheme: 'dark' })
-    await expect.poll(() => bodyBackground(page)).toBe(CANVAS_DARK)
-
-    await page.emulateMedia({ colorScheme: 'light' })
-    await expect.poll(() => bodyBackground(page)).toBe(CANVAS_LIGHT)
-  }
-)
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect.poll(() => bodyBackground(page)).toBe(CANVAS_LIGHT)
+})
 
 test('the Settings page no longer offers a dark-mode control (AC-2)', async ({ page }) => {
   await page.goto('/settings')

@@ -297,7 +297,8 @@ pnpm --filter web dev
 |-----------|------|-------|---------|
 | **Unit Tests** | Vitest | Mathematical modules | Continuous structural validation |
 | **Mock Testing** | Mock Service Worker (MSW) | Network requests | Intercept Paddle calls |
-| **E2E Tests** | Playwright | UI interactions | Multi-currency flow simulations |
+| **E2E Tests** | Playwright | Critical user flows only (FR137) | Multi-currency flow simulations |
+| **Screenshots** | Playwright | Layout at 320/768/1280, light/dark | CI-environment baselines |
 
 **Test Modules:**
 - Retirement horizons calculations

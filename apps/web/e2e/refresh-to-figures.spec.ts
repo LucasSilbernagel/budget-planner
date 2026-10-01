@@ -306,23 +306,6 @@ function seedOverview() {
   )
 }
 
-/**
- * A Playwright bounding box.
- *
- * ⚠️ Spelled out rather than derived. The first version wrote
- * `Awaited<ReturnType<typeof page.locator>['boundingBox']>`, which indexes the LOCATOR
- * type to get the METHOD's type — not its return type — so the map's values were typed
- * as a function signature and three `.height`/`.width`/`.y` reads below were type
- * errors. Nothing caught it: `apps/web/tsconfig.app.json` includes only `src/**`, so
- * NO tsconfig in this repo covers `e2e/`, and all 32 specs are unchecked by the gate.
- */
-interface BoundingBox {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
 /** What {@link armFigureObserver} leaves on `window`. */
 interface FigureReading {
   /** `performance.now()` at the first real figure, or `null` if it never arrived. */
@@ -413,33 +396,6 @@ async function delayFirstScript(page: Page, ms: number): Promise<{ count: number
     return route.continue()
   })
   return delayed
-}
-
-/**
- * Hold the lazily-imported chart chunk for `ms`, and return the live count of
- * requests actually held.
- *
- * ⚠️ The glob matches on BOTH servers on purpose: Vite's dev module URL carries
- * `HomeChartCanvases.tsx`, and the production chunk is named
- * `HomeChartCanvases-<hash>.js` because Rollup names a chunk after a module in
- * it. Story 38.2's review recorded the cost of getting this wrong from the other
- * side: its abort glob matched a DEV-ONLY virtual module and would have matched
- * nothing against a production build, silently turning every "pending" reading
- * into a resolved one.
- *
- * ⚠️ The count is the mechanism check (38.2 review, RF4). A footprint comparison
- * in which nothing was actually held compares the resolved box against itself and
- * passes trivially.
- */
-async function holdChartChunk(page: Page, ms: number): Promise<{ count: number }> {
-  const held = { count: 0 }
-  // ⚠️ AWAITED — see delayFirstScript.
-  await page.route('**/*HomeChartCanvases*', async (route) => {
-    held.count++
-    await new Promise((resolve) => setTimeout(resolve, ms))
-    return route.continue()
-  })
-  return held
 }
 
 /**
@@ -692,76 +648,6 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
     // than a test that the instrument was broken.
     expect(reading.observerRan, 'the observer never ran, so it proved nothing').toBe(true)
   })
-
-  test(
-    'FOOTPRINT: deferring the charts changes no box, on EVERY deferred surface (AC-11)',
-    { tag: '@layout' },
-    async ({ page }) => {
-      // Long enough that every measurement below finishes while the chunk is still
-      // in flight — the pending state is held open, not raced.
-      const held = await holdChartChunk(page, 8000)
-
-      await page.goto('about:blank')
-      await page.goto('/', { waitUntil: 'commit' })
-      await expect(page.getByTestId('overview-net-worth')).toHaveText(EXPECTED_NET_WORTH, {
-        timeout: COLD_COMPILE_TIMEOUT_MS,
-      })
-
-      // ⚠️ ALL THREE deferred surfaces, not one. Code review found this test measuring
-      // only the left pie's testid — and the surface it skipped, the bar chart, is the
-      // one sized by a COMPUTED inline style (`categoryChartHeight(data.length)`) rather
-      // than a fixed class, i.e. the one most able to drift. The pie-labels test in this
-      // same change preaches the rule: "Asserting only [0] would let one pie stand in
-      // for two — the per-surface blind spot stories 30-4b, 33.3, 34.1b and 34.2 each hit."
-      // Story UX-3 renamed the left pie's testid from `breakdown-pie-income` to
-      // `breakdown-pie-expense-ratio` (it no longer shows income categories).
-      const SURFACES = [
-        'breakdown-pie-expense-ratio',
-        'breakdown-pie-expense',
-        'category-bar-flows',
-      ] as const
-
-      const pending = new Map<string, BoundingBox | null>()
-      for (const testId of SURFACES) {
-        const block = page.getByTestId(testId)
-        await expect(block, `${testId} is not on the page`).toBeVisible()
-        pending.set(testId, await block.boundingBox())
-      }
-
-      // Anti-vacuity, first half: the charts genuinely have not arrived yet.
-      await expect(page.locator('.recharts-responsive-container')).toHaveCount(0)
-
-      // Now let them land.
-      await expect(page.locator('.recharts-responsive-container').first()).toBeVisible({
-        timeout: 30_000,
-      })
-
-      expect(
-        held.count,
-        'the chart chunk was never held — nothing was measured pending'
-      ).toBeGreaterThanOrEqual(1)
-
-      for (const testId of SURFACES) {
-        const resolved = await page.getByTestId(testId).boundingBox()
-        const before = pending.get(testId)
-        // A SAME-ELEMENT before/after comparison, never a pixel constant — the
-        // host-independent shape `loading-state-footprint.spec.ts:6-18` established.
-        // Whatever the font does, it does to both readings.
-        console.log(
-          `[footprint] ${testId} pending=${JSON.stringify(before)} resolved=${JSON.stringify(
-            resolved
-          )}`
-        )
-        expect(before, `${testId}: no pending box`).not.toBeNull()
-        expect(resolved, `${testId}: no resolved box`).not.toBeNull()
-        expect(resolved?.height, `${testId} changed height when the chart landed`).toBe(
-          before?.height
-        )
-        expect(resolved?.width, `${testId} changed width when the chart landed`).toBe(before?.width)
-        expect(resolved?.y, `${testId} MOVED when the chart landed`).toBe(before?.y)
-      }
-    }
-  )
 
   /**
    * The numbers the story reports. Gated because the default `pnpm test:e2e` boots

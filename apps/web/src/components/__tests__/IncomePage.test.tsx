@@ -145,8 +145,9 @@ describe('IncomePage delete confirmation', () => {
 
   // Moved from `e2e/confirm-dialog.spec.ts` (story 82.3): the page wires
   // ConfirmDialog's dismissal to ABORT, on every dismissal path. Whether the
-  // backdrop really covers the viewport corner is a layout claim, kept in a real
-  // engine by `responsive-320.spec.ts` › "dismissal still works" (@layout).
+  // backdrop really covers the viewport corner is a layout claim. Its real-engine
+  // test (`responsive-320.spec.ts` › "dismissal still works") was DROPPED by
+  // story 84.2 (FR137: no modal screenshot pins it, accepted D2).
   it('Escape aborts the delete — the row remains', async () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)

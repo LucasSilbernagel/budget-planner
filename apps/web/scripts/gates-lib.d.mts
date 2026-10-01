@@ -84,7 +84,6 @@ export function buildGates(options: {
   root: string
   runDir: string
   typeCheckScripts: Record<string, string>
-  layout?: boolean
 }): Gate[]
 
 export function selectGates(gates: Gate[], only: string[] | null): Gate[]
@@ -99,17 +98,10 @@ export function parseArgs(argv: string[]): {
   sequential: boolean
   only: string[] | null
   help: boolean
-  layout: boolean
 }
 
 export function treeOf(psTable: string, pid: number): number[]
 
 export const E2E_SCREENSHOT_PROJECTS: string[]
 
-export function screenshotNotice(options: { e2e: boolean }): string[]
-
-export function layoutNotice(options: {
-  layout: boolean
-  e2e: boolean
-  changedFiles: string[]
-}): string[]
+export function screenshotNotice(options: { e2e: boolean; changedFiles?: string[] }): string[]

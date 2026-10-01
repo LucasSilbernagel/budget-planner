@@ -10,7 +10,7 @@
  * (a failed or flaky count), the values are edited in the real shape, and say so.
  */
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -19,7 +19,6 @@ import {
   buildGates,
   formatDuration,
   formatLine,
-  layoutNotice,
   parseArgs,
   parseBiome,
   parseBundleCheck,
@@ -477,33 +476,17 @@ describe('buildGates', () => {
     expect(byId['e2e']?.env?.['PLAYWRIGHT_BASE_URL']).toBe('')
   })
 
-  // Story 82.3 (D2): the `@layout` projects run in CI on every push, and here
-  // only with `--layout`. The selection is by project NAME, so a renamed project
-  // must fail this file rather than silently drop out of the gate.
+  // The selection is by project NAME, so a renamed project must fail this file
+  // rather than silently drop out of the gate. Story 84.2 (FR137) removed the
+  // `@layout` projects and `--layout`: the local e2e gate is the flow projects.
   const projectsOf = (gate: (typeof gates)[number] | undefined) =>
     (gate?.args ?? []).filter((a) => a.startsWith('--project=')).map((a) => a.slice(10))
 
-  it('e2e runs the flow projects and NOT the layout ones by default (story 82.3)', () => {
+  it('e2e runs the flow projects (story 82.3; the layout ones are gone since 84.2)', () => {
     expect(projectsOf(byId['e2e'])).toEqual(['chromium', 'chromium-paid', 'chromium-prod'])
   })
 
-  it('--layout adds the two layout projects to the same e2e run (story 82.3)', () => {
-    const withLayout = buildGates({
-      root: '/repo',
-      runDir: '/run',
-      typeCheckScripts: {},
-      layout: true,
-    }).find((g) => g.id === 'e2e')
-    expect(projectsOf(withLayout)).toEqual([
-      'chromium',
-      'chromium-paid',
-      'chromium-prod',
-      'chromium-layout',
-      'chromium-paid-layout',
-    ])
-  })
-
-  it('CI runs every Playwright project, so layout always blocks a merge and a deploy', () => {
+  it('CI runs every Playwright project, so the screenshots always block a merge and a deploy', () => {
     const ci = readFileSync(join(__dirname, '../../../../.github/workflows/ci.yml'), 'utf8')
     const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'))
     expect(ci).toMatch(/^\s*run: pnpm test:e2e$/m)
@@ -524,62 +507,52 @@ describe('buildGates', () => {
     expect(runsOn('screenshots.yml', 'screenshots')).toBe(ci)
   })
 
-  it('CI never sets PLAYWRIGHT_BASE_URL (it drops the paid, prod and paid-layout projects)', () => {
+  it('CI never sets PLAYWRIGHT_BASE_URL (it drops the paid and prod projects)', () => {
     const ci = readFileSync(join(__dirname, '../../../../.github/workflows/ci.yml'), 'utf8')
     expect(ci).not.toMatch(/PLAYWRIGHT_BASE_URL/)
   })
 
-  it('every e2e tag is exactly @layout, no title carries it, and no prod spec is tagged (82.3 P5/P8)', () => {
+  // Story 84.2 (FR137, D5): the `@layout` split is gone and nothing selects
+  // e2e tests by tag any more, so a `tag:` in a spec is a leftover or a new
+  // selection mechanism that no project knows about. Either way, name the file.
+  it('no e2e spec carries a Playwright tag (story 84.2, D5)', () => {
     const dir = join(__dirname, '../../e2e')
-    const specs = readdirSync(dir).filter((f) => f.endsWith('.spec.ts'))
-    expect(specs.length).toBeGreaterThan(50)
-    let tagged = 0
-    for (const file of specs) {
-      const text = readFileSync(join(dir, file), 'utf8')
-      for (const m of text.matchAll(/tag:\s*(['"`])([^'"`]*)\1/g)) {
-        expect(m[2], `${file}: unknown tag`).toBe('@layout')
-        tagged++
-      }
-      // The tag reaches grep through `details.tag`; one in a title would be
-      // matched too (grep reads titles), silently moving a test or a block.
-      expect(text.replace(/tag:\s*'@layout'/g, ''), `${file}: '@layout' outside a tag`).not.toMatch(
-        /['"`][^'"`\n]*@layout/
-      )
-      if (file.endsWith('.prod.spec.ts')) {
-        expect(text, `${file}: a prod test is excluded from every layout run`).not.toMatch(/tag:/)
-      }
-    }
-    expect(tagged).toBeGreaterThan(100)
+    // Recursive, and every extension Playwright's default testMatch picks up
+    // (84.2 review): `e2e/flows/x.spec.ts` or `e2e/x.test.ts` runs in CI too.
+    // Files only: the screenshot baseline DIRECTORIES are named after their
+    // specs (`__screenshots__/pages.screenshot.spec.ts/`).
+    const specs = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter(
+      (f) => /\.(spec|test)\.[cm]?[jt]sx?$/.test(f) && statSync(join(dir, f)).isFile()
+    )
+    expect(specs.length).toBeGreaterThan(20)
+    // A string/array literal or a CONSTANT_CASE identifier (`tag: LAYOUT`), not
+    // any value: `page.evaluate` results carry `tag: el?.tagName` keys.
+    const tagged = specs.filter((file) =>
+      /\btag:\s*(['"`\[]|[A-Z_][A-Z0-9_]*\b)/.test(readFileSync(join(dir, file), 'utf8'))
+    )
+    expect(tagged, 'spec(s) still carry a Playwright tag').toEqual([])
   })
 
   // Story 84.1 (D3): the screenshot projects are declared but run ONLY in CI,
   // because their baselines are rendered there (CI's DejaVu Sans vs a dev box's
-  // Noto Sans). So every declared project is either in the --layout run or a
+  // Noto Sans). So every declared project is either in the local e2e run or a
   // screenshot project, never both, and a new project must pick a side here.
-  it('the --layout run names every Playwright project except the CI-only screenshot ones', () => {
+  it('the local e2e run names every Playwright project except the CI-only screenshot ones', () => {
     const config = readFileSync(join(__dirname, '../../playwright.config.ts'), 'utf8')
     const declared = [...config.matchAll(/^\s*name: '([^']+)',$/gm)].map((m) => m[1]).sort()
-    const withLayout = buildGates({
-      root: '/repo',
-      runDir: '/run',
-      typeCheckScripts: {},
-      layout: true,
-    }).find((g) => g.id === 'e2e')
-    expect(declared).toHaveLength(7)
+    expect(declared).toHaveLength(5)
+    // No project partitions the suite by title/tag any more (84.2 review): a
+    // re-added `grep:` plus an `@word` in a title would split it again silently.
+    expect(config).not.toMatch(/\bgrep(Invert)?:/)
     expect(E2E_SCREENSHOT_PROJECTS).toEqual(['screenshots', 'screenshots-paid'])
-    expect([...projectsOf(withLayout), ...E2E_SCREENSHOT_PROJECTS].sort()).toEqual(declared)
+    expect([...projectsOf(byId['e2e']), ...E2E_SCREENSHOT_PROJECTS].sort()).toEqual(declared)
   })
 
-  it('no local e2e run includes a screenshot project, with or without --layout (story 84.1)', () => {
-    for (const layout of [false, true]) {
-      const e2e = buildGates({ root: '/r', runDir: '/d', typeCheckScripts: {}, layout }).find(
-        (g) => g.id === 'e2e'
-      )
-      // Non-empty first: an e2e gate with NO --project flag runs EVERY project,
-      // screenshot ones included, and would pass the not.toContain below.
-      expect(projectsOf(e2e).length).toBeGreaterThan(0)
-      for (const name of E2E_SCREENSHOT_PROJECTS) expect(projectsOf(e2e)).not.toContain(name)
-    }
+  it('no local e2e run includes a screenshot project (story 84.1)', () => {
+    // Non-empty first: an e2e gate with NO --project flag runs EVERY project,
+    // screenshot ones included, and would pass the not.toContain below.
+    expect(projectsOf(byId['e2e']).length).toBeGreaterThan(0)
+    for (const name of E2E_SCREENSHOT_PROJECTS) expect(projectsOf(byId['e2e'])).not.toContain(name)
   })
 
   it('a bad type-check script names its package', () => {
@@ -627,14 +600,12 @@ describe('typeCheckScriptsOf', () => {
 
 describe('parseArgs', () => {
   it('flags', () => {
-    expect(parseArgs([])).toEqual({ sequential: false, only: null, help: false, layout: false })
+    expect(parseArgs([])).toEqual({ sequential: false, only: null, help: false })
     expect(parseArgs(['--sequential', '--only', 'core,web'])).toEqual({
       sequential: true,
       only: ['core', 'web'],
       help: false,
-      layout: false,
     })
-    expect(parseArgs(['--layout']).layout).toBe(true)
     expect(parseArgs(['--only=e2e']).only).toEqual(['e2e'])
     expect(parseArgs(['-h']).help).toBe(true)
   })
@@ -643,9 +614,8 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--only', 'core', '--only', 'web'])).toThrow(/--only given twice/)
   })
 
-  it('--layout with an --only that leaves out e2e is an error, not a no-op (82.3 P7)', () => {
-    expect(() => parseArgs(['--only', 'web', '--layout'])).toThrow(/--layout needs the e2e gate/)
-    expect(parseArgs(['--only', 'e2e', '--layout']).layout).toBe(true)
+  it('--layout is gone (story 84.2): it is an unknown argument, not a silent no-op', () => {
+    expect(() => parseArgs(['--layout'])).toThrow(/Unknown argument: --layout/)
   })
 
   it('an empty --only and an unknown flag are errors', () => {
@@ -678,39 +648,37 @@ describe('treeOf (the process tree a stop must reach)', () => {
   })
 })
 
-describe('layoutNotice (story 82.3 review P4)', () => {
-  it('says the layout half was skipped, and warns when a .tsx/.css file changed', () => {
-    expect(layoutNotice({ layout: false, e2e: true, changedFiles: ['README.md'] })).toEqual([
-      'e2e ran WITHOUT the @layout tests (CI runs them).',
-    ])
+describe('screenshotNotice (story 84.1, D3; 84.2, D4)', () => {
+  const CI_ONLY =
+    'screenshots: CI only (baselines are CI-rendered; see e2e/pages.screenshot.spec.ts).'
+
+  it('says the screenshot projects are CI only whenever e2e runs', () => {
+    expect(screenshotNotice({ e2e: true, changedFiles: ['README.md'] })).toEqual([CI_ONLY])
+  })
+
+  it('treats omitted changedFiles as no changes (84.2 review)', () => {
+    expect(screenshotNotice({ e2e: true })).toEqual([CI_ONLY])
+  })
+
+  // Story 84.2 (D4): the warning `layoutNotice` gave (82.3 review P4) survives,
+  // pointed at the only layout-dedicated projects left: the CI screenshots.
+  it('warns when the tree changes a .tsx/.css file, since only CI checks layout now', () => {
     expect(
-      layoutNotice({
-        layout: false,
+      screenshotNotice({
         e2e: true,
-        changedFiles: ['apps/web/src/components/HomePage.tsx', 'apps/web/src/styles/app.css'],
+        changedFiles: [
+          'apps/web/src/components/HomePage.tsx',
+          'apps/web/src/styles/app.css',
+          'x.ts',
+        ],
       })
     ).toEqual([
-      'e2e ran WITHOUT the @layout tests (CI runs them).',
-      '⚠ 2 changed .tsx/.css file(s): this story must run `pnpm gates --layout` (project-context.md).',
-    ])
-  })
-
-  it('says nothing when layout ran or e2e was not selected', () => {
-    expect(layoutNotice({ layout: true, e2e: true, changedFiles: ['a.tsx'] })).toEqual([
-      'e2e ran WITH the @layout tests.',
-    ])
-    expect(layoutNotice({ layout: false, e2e: false, changedFiles: ['a.tsx'] })).toEqual([])
-  })
-})
-
-describe('screenshotNotice (story 84.1, D3)', () => {
-  it('says the screenshot projects are CI only whenever e2e runs', () => {
-    expect(screenshotNotice({ e2e: true })).toEqual([
-      'screenshots: CI only (baselines are CI-rendered; see e2e/pages.screenshot.spec.ts).',
+      CI_ONLY,
+      '⚠ 2 changed .tsx/.css file(s): layout is checked only by the CI screenshots; run `gh workflow run screenshots.yml --ref <branch> -f mode=compare` before merging.',
     ])
   })
 
   it('says nothing when e2e was not selected', () => {
-    expect(screenshotNotice({ e2e: false })).toEqual([])
+    expect(screenshotNotice({ e2e: false, changedFiles: ['a.tsx'] })).toEqual([])
   })
 })
