@@ -1,4 +1,6 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-01p (**85.1 CREATED -> in-progress**; epic-85 -> in-progress.)
+# last_updated: 2026-10-01o (correct-course 2026-10-01 APPROVED: **Epic 85 / FR138 added, backlog**; 85.1 shards -> 85.2 flakes. Next: create-story 85.1.)
 # last_updated: 2026-10-01n (**84.6 DEV DONE -> review**; N=4 deploy samples, median 7m01s. Next: code review 84.6.)
 # last_updated: 2026-10-01m (84.6 measured + recorded; waiting on Lucas push + 2 deploy dispatches for Task 2.)
 # last_updated: 2026-10-01l (**84.6 -> in-progress**, dev started; HALT at Task 0 for D1-D4.)
@@ -1168,6 +1170,11 @@ development_status:
   84-5-move-the-remaining-page-behaviour-to-integration-tests: done  # REVIEWED 2026-10-01 (Fable): 33 patches handled (31 applied, 2 verified no-change), 3 deferred, 10 dismissed; final tree concurrent red only on forecasting-seed.paid:118 (known family), --sequential ALL GREEN 3m17s (web 4219/279, e2e 21). UNCOMMITTED, baseline `ac8d255`. CI e2e wall: 84.6 after push. DEV DONE 2026-10-01 (Opus 5.5), UNCOMMITTED, baseline `ac8d255`. D1-D8 confirmed, D3 = perf config. 98 in scope: 38 MOVED / 56 MOVED-EXISTING / 4 DROPPED (69 two-sided arms, inventory.py OK, controls C0-C3 green). e2e listed 135 -> 37 (21 flows + 16 shots, flows.md). refresh-to-figures MEASUREMENT -> apps/web/perf/ (manual, run once). gates --sequential ALL GREEN 3m19s (web 4210/277, e2e 21); concurrent red on forecasting-seed.paid:118 (kept F5, known family; alone 3/3) + a gates-lib size floor (fixed). Next: code review 84.5. CREATED 2026-10-01 at `53000e1`. 82 listed + 16 orphans (age-axis, pie-labels, responsive-320 sorts) = 98 in scope; F3 + F5 ×2 kept. D1-D8 recommended, not yet confirmed (D3 refresh-to-figures = Lucas). Recharts renders in jsdom with explicit size (MEASURED).
   84-6-measure-the-new-shape: done  # REVIEWED 2026-10-01 (Fable): APPROVE WITH PATCHES, 0 HIGH / 2 MED / 5 LOW, all 7 applied; P1 classifier false positive (favicon-assets) -> web integration 162/279 (58%), 148/262 (56%) at 09e5630; hand-check now at both refs 0 wrong. No code changed. DEV DONE 2026-10-01 (Opus 5.5): N=4 deploy samples (89994b2 + 3764905 push + 2 dispatches): deploy median 7m01s (6m35s-8m07s; 2 dispatch runs include the migrate job push deploys skip, push-only median 6m59.5s; baseline 9m43s), unit job critical 4/4 (median 4m22s), e2e job median 2m29s (37 tests). Web files 58% integration. Local gates concurrent RED 3/3 on forecasting-seed.paid:118, --sequential GREEN 3m45s. Next step proposed (Lucas decides): 2 web-vitest shards, REASONED deploy ~5m15s. Next: code review 84.6. CREATED 2026-10-01 at `89994b2`. D1-D4 recommended, not confirmed. MEASURED: only 1 deploy at final shape (36918189745: wall 7m24s, unit job 4m47s = critical path, e2e 2m29s, 37 tests, 2 flaky); web vitest 171.6s->248.5s (262->279 files). D1 = how to get >=3 deploy samples (Lucas triggers).
   epic-84-retrospective: optional
+
+  epic-85: in-progress  # Deploys That Finish Fast and Pass the First Time. FR138. From correct-course 2026-10-01 (84.6 next-bottleneck; Lucas: both, shards first). Order 85.1 -> 85.2.
+  85-1-split-the-unit-tests-across-two-ci-jobs: in-progress  # CREATED + dev started 2026-10-01 at `fbdd574` on branch 85-1-unit-shards. MEASURED: branch protection LIVE (requires `Unit tests (Vitest)`); validator :116 pins job set; 84.6 collector picks first /Unit/ job. Tasks 5-6 HALT for Lucas.
+  85-2-make-the-critical-flows-pass-on-the-first-attempt: backlog
+  epic-85-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 
