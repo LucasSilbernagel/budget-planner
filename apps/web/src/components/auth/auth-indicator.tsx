@@ -250,8 +250,9 @@ export function AuthIndicator() {
       // (`planning-artifacts/ux-evaluation-global-nav-2026-09-21.md`, §4).
       //
       // ⚠️ This must stay ONE root element. `__root.tsx`'s desktop row is
-      // `justify-between` over exactly two children (the nav and this), and
-      // `e2e/helpers/nav-width.ts` asserts that count before measuring.
+      // `justify-between` over exactly two children (the nav and this).
+      // (`e2e/helpers/nav-width.ts` asserted that count; stories 84.2/84.3
+      // deleted it with the width tests.)
       //
       // Everything that described the strip moved here with the chrome:
       //
@@ -549,9 +550,9 @@ const ACCOUNT_TRIGGER_CLASS =
  * `z-40` matches the nav's desktop panel (`GlobalNav.tsx`, `SHEET_PANEL_CLASS`),
  * where it WAS measured to be load-bearing (without it, positioned content on
  * `/pricing` and `/forecasting` painted over that panel). ⚠️ For THIS panel it
- * is a precaution, not a proven need: removing it leaves the occlusion sweep in
- * `e2e/account-menu.spec.ts` green on all six routes at 320px and 1280px
- * (mutation-measured, story 59.3). No mechanism is offered for why the two
+ * is a precaution, not a proven need: removing it left the occlusion sweep that
+ * was in `e2e/account-menu.spec.ts` green on all six routes at 320px and 1280px
+ * (mutation-measured, story 59.3; the sweep was dropped by story 84.2). No mechanism is offered for why the two
  * panels differ — an earlier version of this note guessed at one, which was an
  * inference, not a measurement. Keep the token: it costs nothing, and the nav's
  * panel shows what this page can do to an overlay. `Modal` (z-50) stays above it.

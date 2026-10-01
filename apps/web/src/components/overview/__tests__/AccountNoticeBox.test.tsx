@@ -6,8 +6,9 @@
  * bootstrap plus the `[data-dismiss-account-notice='1']` rule in `global.css` —
  * is NOT testable here. Those are covered by
  * `lib/overview/__tests__/no-flash-account-notice-script.dom.test.ts` (the
- * bootstrap's behaviour) and `e2e/overview-account-notice.spec.ts` (the first
- * frame in a real browser, with the CSS rule live). What this file owns is the
+ * bootstrap's behaviour) and `src/__tests__/pre-paint-suppression.dom.test.tsx`
+ * (the `<head>` wiring and the CSS rule's selector; the real first frame is the
+ * D2 loss of story 84.3). What this file owns is the
  * React half: the affordance, the write, the effect-gated render, and the
  * fail-open behaviour.
  *
@@ -86,9 +87,9 @@ describe('AccountNoticeBox — not yet dismissed', () => {
    * records that a class resolving to values something else already set is a
    * silent no-op that "still passes lint, type-check and class-token
    * assertions" — which is exactly what these assertions are. What actually
-   * proves the border renders, in both themes, is
+   * proved the border renders, in both themes, was
    * `e2e/overview-account-notice.spec.ts`'s "reads as its own block" block,
-   * which measures real computed values in a browser.
+   * dropped by story 84.2; the `overview-*` screenshots show it now.
    *
    * The WIDTH class and the COLOUR classes are all required and all pinned: a
    * Tailwind colour utility sets no width, so `border-gray-300` alone renders
@@ -115,8 +116,8 @@ describe('AccountNoticeBox — not yet dismissed', () => {
 
   /**
    * ⚠️ WCAG 2.2 SC 2.5.8. jsdom cannot measure a box, so this asserts the
-   * size FLOOR is declared; `e2e/overview-account-notice.spec.ts` measures the
-   * real rendered rect. Story 51.2's review found a desktop target-size defect
+   * size FLOOR is declared; `e2e/overview-account-notice.spec.ts` measured the
+   * real rendered rect until story 84.2 dropped it (FR137). Story 51.2's review found a desktop target-size defect
    * that every unit gate passed, which is why both layers exist.
    */
   it('declares a >=24px pointer target on the close button (SC 2.5.8)', () => {
@@ -209,8 +210,9 @@ describe('AccountNoticeBox — returning user', () => {
    * a post-paint effect. Reproduced in a real browser: the node re-attached
    * with `display: "block"` while `<html>` carried no attribute.
    *
-   * This is the unit-level half; `e2e/overview-account-notice.spec.ts` drives
-   * the real SPA navigation.
+   * Its e2e twin (a real SPA navigation) was retired by story 84.3; the CSS
+   * rule that makes the mark hide the box is pinned in
+   * `src/__tests__/pre-paint-suppression.dom.test.tsx`.
    */
   it('marks <html> on dismiss so a later remount cannot paint the box (AC-4)', () => {
     render(<AccountNoticeBox />)

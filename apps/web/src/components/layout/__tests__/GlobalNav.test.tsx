@@ -18,9 +18,11 @@ import { GlobalNav } from '../GlobalNav'
  *
  * The active-route assertions rely on `renderWithRouter`'s `path` seed: TanStack
  * Router `<Link>` derives active state from the current location, which the
- * throwaway in-memory router exposes. (The one-click cross-section navigation
- * and the hydrated active state on the real route tree are additionally proven
- * in e2e/global-nav.spec.ts.)
+ * throwaway in-memory router exposes. (Since story 84.3 retired
+ * `e2e/global-nav.spec.ts`, the row copies' active state (seeded path) and the
+ * close on a pathname change (a navigable router) are in
+ * `GlobalNav.behaviour.test.tsx`. A real one-click cross-section navigation is
+ * not tested below the browser.)
  *
  * Nodes render asynchronously through RouterProvider, so every assertion awaits
  * `findBy*` first (mirrors the Footer suite).
@@ -55,9 +57,9 @@ import { GlobalNav } from '../GlobalNav'
  *
  * Where openness DOES matter, this file uses jest-dom's `toBeVisible()`, which
  * respects `details[open]`. That is the story 59.2 block at the bottom. What a
- * user can actually reach is a rendered fact, asserted in
- * `e2e/nav-more-disclosure.spec.ts`, `e2e/chrome-320.spec.ts` and
- * `e2e/nav-responsive-css.spec.ts`.
+ * user can actually reach was a rendered fact, asserted in e2e specs that
+ * stories 84.2/84.3 retired (FR137). What is pinned now: the server HTML
+ * (`GlobalNav.ssr.dom.test.tsx`) and the 320/768/1280 screenshots.
  */
 const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
   [/^overview$/i, '/'],
@@ -84,8 +86,8 @@ const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...
  *    (`sheetOf` / `rowCopiesOf`), never resolved with `getAllBy…()[0]`, which
  *    picks a copy by DOM order and asserts nothing about which one.
  *
- * Which copy a user actually sees at which width is a RENDERED fact:
- * `e2e/nav-lg-row{,.paid}.spec.ts`.
+ * Which copy a user actually sees at which width is a RENDERED fact, pinned
+ * only by the screenshots since stories 84.2/84.3 (FR137).
  */
 const PROMOTED_COPIES = MORE_DESTINATIONS.length
 
@@ -120,7 +122,8 @@ const tokens = (el: Element): string[] => [...el.classList]
  * 69.1). The icon tests require `sm:hidden`; the chevron must NOT have it.
  * ⚠️ Never make those tests pass by adding `sm:hidden` to the chevron: it hides
  * the chevron at every width it exists for, and jsdom (no stylesheet) cannot
- * tell. `e2e/nav-more-disclosure.spec.ts` is what proves it visible.
+ * tell. The 768/1280 screenshots are what show it now (story 84.2 dropped the
+ * e2e visibility test).
  */
 const ICON_SVG = 'svg:not([data-disclosure-chevron])'
 
@@ -131,7 +134,8 @@ const ICON_SVG = 'svg:not([data-disclosure-chevron])'
  * may be `max-sm:`-scoped; colour may not.
  * ⚠️ Corrected by story 69.3: this used to say it would beat the unprefixed
  * `hover:` states. It would not (`:hover` is 0-2-0, a media-scoped class 0-1-0;
- * measured for `max-lg:` in `e2e/nav-lg-row{,.paid}.spec.ts`). The guard stays
+ * measured for `max-lg:` in `e2e/nav-lg-row{,.paid}.spec.ts`, since deleted).
+ * The guard stays
  * for the non-hover case, the unprefixed active treatment included.
  *
  * ⚠️ Matched by PROPERTY FAMILY, not by palette name. An earlier version listed
@@ -205,7 +209,7 @@ describe('GlobalNav', () => {
   // account menu signed in, a gear link signed out). The count above cannot
   // say WHICH destination went; this says it by route, so a rename or a
   // swap cannot pass it. The route to /settings that replaced this one is
-  // asserted in `auth-indicator.test.tsx` and `e2e/settings-route.spec.ts`.
+  // asserted in `auth-indicator.test.tsx` and `auth-indicator.ssr.dom.test.tsx`.
   it('carries no link to /settings, in any form', async () => {
     renderWithRouter(<GlobalNav />, { path: '/settings' })
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -377,8 +381,8 @@ describe('GlobalNav', () => {
   /**
    * Story 69.1 (FR108): the desktop disclosure chevron. TOKEN-LEVEL ONLY —
    * jsdom applies no stylesheet, so nothing here can prove the chevron is
-   * visible or that it turns. `e2e/nav-more-disclosure{,.paid}.spec.ts` does,
-   * including with JavaScript off. This pins the tokens those proofs rely on.
+   * visible or that it turns. The e2e proofs (incl. JavaScript off) were dropped
+   * by story 84.2 (FR137). This pins the tokens they relied on.
    */
   it('carries one desktop-only chevron that turns on the `open` attribute', async () => {
     renderWithRouter(<GlobalNav />)
@@ -675,8 +679,8 @@ describe('GlobalNav', () => {
     // Story 69.3: these two are behind More only BELOW `lg`, so More's active
     // treatment is `max-lg:`-scoped on their routes. The unprefixed token would
     // light More at `lg` too, beside the row anchor that is the real "you are
-    // here" there (AC-8 mutation iii). e2e reads the computed colour at both
-    // widths (`nav-lg-row{,.paid}.spec.ts`).
+    // here" there (AC-8 mutation iii). e2e read the computed colour at both
+    // widths until stories 84.2/84.3 retired those specs.
     it.each(MORE_DESTINATIONS)('is active below lg only on %s (%s)', async (_label, href) => {
       renderWithRouter(<GlobalNav />, { path: href })
       const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -730,7 +734,9 @@ describe('GlobalNav', () => {
  * The pre-paint half of the feature (the `<head>` script + the CSS rule that
  * suppress the entry BEFORE React runs) is deliberately NOT asserted here —
  * jsdom applies no stylesheet, so an assertion of it would be measuring a class
- * string, not a style. It is measured in `e2e/nav-planner-visibility.spec.ts`.
+ * string, not a style. Since story 84.3 the chain (script in `<head>`, CSS rule,
+ * selector matching the server-rendered entries) is pinned in
+ * `src/__tests__/pre-paint-suppression.dom.test.tsx`; the paint is not.
  */
 describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
   const hidePlanner = () => usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
@@ -891,10 +897,10 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
  * is rendered at all, at every width.
  *
  * ⚠️ Geometry is NOT asserted here and cannot be: jsdom loads no Tailwind and
- * computes no layout. The 11-anchor desktop row and 7-row sheet are measured for
- * real in `e2e/nav-tier-aware.paid.spec.ts`, against a server booted with a paid
- * seed. Neither half proves the other: this file proves the nav RENDERS the
- * destinations, that spec proves the CSS SURVIVES them.
+ * computes no layout. The desktop row and sheet were measured for real in
+ * `e2e/nav-tier-aware.paid.spec.ts` until stories 84.2/84.3 (FR137); the
+ * `paid-header-*` screenshots pin the row now. This file proves the nav
+ * RENDERS the destinations, not that the CSS SURVIVES them.
  */
 describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
   const seedWith = (overrides: Partial<SessionSeed> = {}): SessionSeed => ({

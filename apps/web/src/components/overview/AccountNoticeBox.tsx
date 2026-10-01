@@ -65,7 +65,7 @@ import {
  * a border colour at zero width — and why, before this story picked gray-300, a
  * light-mode colour assertion could not tell `border-default` from preflight.
  * Tailwind 4's preflight uses `currentColor` instead, so re-measure on upgrade.
- * `e2e/overview-account-notice.spec.ts` measures both themes.
+ * `e2e/overview-account-notice.spec.ts` measured both themes until story 84.2.
  *
  * ⚠️ THE TWO <p> TEXT NODES ARE PINNED BY AN SSR HTML SUBSTRING ASSERTION.
  * `e2e/loading-state.spec.ts`'s "SEO fence" asserts the server response

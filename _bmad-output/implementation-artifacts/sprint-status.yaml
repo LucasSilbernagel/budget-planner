@@ -544,7 +544,7 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 baseline_commit: 932722f  # 2026-09-29 reset to HEAD by sprint-planning for BATCH 16 (was c668e94, set for the now-closed batch 15). Tree clean at reset.
 project: budget-planner
 project_key: NOKEY
@@ -1150,8 +1150,8 @@ development_status:
 
   epic-84: in-progress  # A Test Suite Shaped Like the Testing Trophy. FR137. From correct-course 2026-09-30 (D1-D6 approved by Lucas). Order 84.1 -> 84.2 -> {84.3, 84.4, 84.5} -> 84.6. Supersedes 82.3 D2.
   84-1-catch-visual-breakage-with-a-few-screenshots: done  # Fable review 2026-09-30: 2 decisions (retries 0 for shots; merge and measure) + 12 patches applied `ac09038`, 2 deferred, 20 dismissed. MERGED to main; deploy 36790751172 success: 536 tests incl. 16 shots (first attempt), e2e step 7m20s (was 7m03s). 4 existing layout defects pinned -> deferred-work.
-  84-2-retire-the-layout-test-projects: done  # REVIEWED 2026-09-30 (Fable): D1 drop chrome-320:115, D2 band equivalence accepted, 9 patches applied; counts now 59 COVERED / 211 DROPPED / 15 pending-fix / 8 HANDED-OFF; gates --sequential green 6m35s (web 4090, e2e 231/4). UNCOMMITTED; CI e2e wall pending push. DEV DONE 2026-10-01 (Opus 5.5), UNCOMMITTED, baseline `ac09038`. 293 @layout: 61 COVERED (two-sided mutation proof, 32 runs) / 210 DROPPED / 14 pending-fix / 8 HANDED-OFF. 285 deleted, 14 specs gone, --layout + layout projects removed. pnpm gates --sequential green 8m45s (web 4089, e2e 231/4); concurrent red on known hydration flake. CI e2e wall after PENDING push. CREATED 2026-09-30 at `ac09038`. 293 @layout tests / 37 files (14 layout-only). D1-D5 recommended (4 outcomes incl. HANDED-OFF; COVERED needs two-sided mutation proof; no new shots; .tsx/.css warning kept; no e2e tags). HALT at Task 2 for Lucas.
-  84-3-test-nav-and-account-chrome-below-the-browser: backlog
+  84-2-retire-the-layout-test-projects: done  # REVIEWED 2026-09-30 (Fable): D1 drop chrome-320:115, D2 band equivalence accepted, 9 patches applied; counts now 59 COVERED / 211 DROPPED / 15 pending-fix / 8 HANDED-OFF; gates --sequential green 6m35s (web 4090, e2e 231/4). COMMITTED `3db4602`, pushed; deploy 36807338772 success, CI e2e step 3m59s (was 7m20s after 84.1). DEV DONE 2026-10-01 (Opus 5.5), UNCOMMITTED, baseline `ac09038`. 293 @layout: 61 COVERED (two-sided mutation proof, 32 runs) / 210 DROPPED / 14 pending-fix / 8 HANDED-OFF. 285 deleted, 14 specs gone, --layout + layout projects removed. pnpm gates --sequential green 8m45s (web 4089, e2e 231/4); concurrent red on known hydration flake. CI e2e wall after PENDING push. CREATED 2026-09-30 at `ac09038`. 293 @layout tests / 37 files (14 layout-only). D1-D5 recommended (4 outcomes incl. HANDED-OFF; COVERED needs two-sided mutation proof; no new shots; .tsx/.css warning kept; no e2e tags). HALT at Task 2 for Lucas.
+  84-3-test-nav-and-account-chrome-below-the-browser: done  # REVIEWED 2026-10-01 (Fable): 1 decision (final table accepted), 13 patches applied (HIGH: hydration harness blind at the root, fixed + designed-RED controls), 2 deferred, 11 dismissed. 68 tests: MOVED 44 / MOVED-EXISTING 21 / DROPPED 3; proofs re-run (50, long-lived servers ~19 s each), C1-C6 green. e2e listed 251 -> 183. pnpm gates green 4m30s (web 4130, e2e 163/4). UNCOMMITTED, baseline `3db4602`. CI e2e wall after: pending push.
   84-4-test-what-the-server-serves-without-a-browser: backlog
   84-5-move-the-remaining-page-behaviour-to-integration-tests: backlog
   84-6-measure-the-new-shape: backlog

@@ -51,12 +51,14 @@ import { describe, expect, it } from 'vitest'
  */
 
 const AUTH_INDICATOR = resolve(__dirname, '../../components/auth/auth-indicator.tsx')
-const AUTH_INDICATOR_SPEC = resolve(__dirname, '../../../e2e/auth-indicator.spec.ts')
+// Story 84.3 moved the /login card test below the browser, and its comment with
+// it: it was `e2e/auth-indicator.spec.ts` until then.
+const LOGIN_PAGE_TEST = resolve(__dirname, '../../routes/__tests__/login-page.test.tsx')
 
 /**
  * Read and whitespace-normalize a pinned file.
  *
- * ⚠️ These paths cross directories (one reaches into `e2e/`), so a rename two
+ * ⚠️ These paths cross directories (one reaches into `routes/`), so a rename two
  * folders away breaks the UNIT suite. Without this wrapper that surfaces as a
  * bare `ENOENT` naming neither the story nor the reason, which is a failure
  * mode a long way from its cause.
@@ -179,8 +181,8 @@ describe('AC-7 guard: the sign-in-page rule comment states the shipped rule', ()
   })
 })
 
-describe('AC-7 guard: the /login e2e comment states the shipped rule', () => {
-  const spec = normalize(AUTH_INDICATOR_SPEC)
+describe('AC-7 guard: the /login card test comment states the shipped rule', () => {
+  const spec = normalize(LOGIN_PAGE_TEST)
 
   it('no longer claims the strip renders a Sign in link on the login route', () => {
     // Story 21-2 wrote this to explain why its heading assertion is role-scoped.

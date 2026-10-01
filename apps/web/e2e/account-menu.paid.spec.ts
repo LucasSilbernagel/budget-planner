@@ -1,115 +1,23 @@
 import { expect, test } from '@playwright/test'
-import {
-  SESSION_SETTLE_MS,
-  accountTrigger,
-  expectSignedInAs,
-  openAccountMenu,
-} from './helpers/account-menu'
-import {
-  LONG_EMAIL,
-  MORE_PANEL,
-  MORE_SUMMARY,
-  isMoreOpen,
-  mockSessionThatCanEnd,
-  mockSignedIn,
-  openMore,
-} from './helpers/nav-more'
+import { SESSION_SETTLE_MS, accountTrigger, openAccountMenu } from './helpers/account-menu'
+import { mockSessionThatCanEnd } from './helpers/nav-more'
 
 /**
- * The account menu for a PAID session (story 59.3, FR99).
+ * Sign out end to end for a PAID session (story 59.3, FR99): critical flow F4
+ * of FR137, at the widest viewport.
  *
  * ⚠️ `.paid.spec.ts` is load-bearing: only the `chromium-paid` project (:5174,
  * booted with an entitled `E2E_SESSION_SEED`) runs this file. Rename it and it
- * silently measures the FREE nav. See `playwright.config.ts`.
+ * silently measures the FREE chrome. See `playwright.config.ts`.
  *
- * Two things only this server can show:
- *  - the trigger in the FIRST painted frame, from the SSR seed, rather than
- *    after the post-mount `/api/auth/me`;
- *  - the account menu beside a paid user's nav, which since story 58.2 is the
- *    SOLE route to Forecasting, Profiles, Report and Categories.
- *
- * `mockSignedIn()` is still needed: the seed paints the signed-in cluster, but
- * the post-mount fetch resolves signed-OUT on this server too and would unmount
- * the trigger (the 59.2 review's finding D1).
+ * Moved below the browser in story 84.3: the email-free trigger and the
+ * premium routes beside an open menu (`auth-indicator.test.tsx`,
+ * `nav-account-row.test.tsx`), and the COMPONENT half of the first paint:
+ * given an entitled seed, the server HTML holds the collapsed trigger
+ * (`auth-indicator.ssr.dom.test.tsx`). The SERVER half, the root loader
+ * turning `E2E_SESSION_SEED` into that seed, is exercised by flow F5
+ * (`tier-aware-surfaces.paid`, `forecasting-seed.paid`) and is 84.4's to pin.
  */
-
-const PREMIUM_ROUTES: readonly [label: string, path: string][] = [
-  ['Forecasting', '/forecasting'],
-  ['Profiles', '/profiles'],
-  ['Report', '/report'],
-  ['Categories', '/categories'],
-]
-
-test('the SSR seed paints the account trigger in the first frame', async ({ page }) => {
-  // No mock and no hydration: the raw HTML the server sends. The strip's
-  // authenticated branch, and with it the trigger, must already be there, or a
-  // paying user sees the cluster appear late on every page load.
-  const response = await page.request.get('/')
-  const html = await response.text()
-  expect(html).toContain('aria-label="Account menu"')
-  expect(html).toContain('e2e-paid@example.test')
-  // Closed in the first frame: the panel is rendered only while open.
-  expect(html).not.toContain('Sign out')
-  // ⚠️ Scoped to the trigger's own tag. A bare `toContain('aria-expanded=
-  // "false"')` would be satisfied by any other collapsed control on the page
-  // (review finding), so it is matched in the same element as the label,
-  // in either attribute order.
-  expect(
-    /aria-expanded="false"[^>]*aria-label="Account menu"|aria-label="Account menu"[^>]*aria-expanded="false"/.test(
-      html
-    ),
-    'the trigger is not server-rendered in the collapsed state'
-  ).toBe(true)
-  // And no dangling IDREF while closed.
-  expect(/aria-label="Account menu"[^>]*aria-controls=/.test(html)).toBe(false)
-})
-
-/**
- * ⚠️ Story 69.2 (decision D2, Lucas 2026-09-25) removed the email from the
- * trigger. This file used to hold AC-13 of story 59.3: the trigger email's
- * MEASURED visible width at 320-1152px, hidden for a Premium user below 660px.
- * That table and its test were deleted with the email rather than kept as
- * history, because a width record that outlives its element reads like current
- * fact. The trigger's absence of any email is asserted below and in
- * `auth-indicator.test.tsx`.
- */
-// One assertion, not a viewport loop (69.2 code review): `textContent` does not
-// change with the viewport, so looping widths around it proved the same thing
-// four times. What changes with the viewport (one row) is swept elsewhere.
-test('the paid trigger carries no email', async ({ page }) => {
-  await mockSignedIn(page, { subscriptionStatus: 'active' })
-  await page.setViewportSize({ width: 640, height: 800 })
-  await page.goto('/')
-  // Gate FIRST: the SSR seed paints a signed-in cluster with the SEED's email
-  // in the first frame, so wait for the MOCKED identity to be announced.
-  await expectSignedInAs(page, LONG_EMAIL)
-  await expect(accountTrigger(page), 'the trigger shows an email').not.toContainText('@')
-})
-
-test('the four premium routes stay reachable with the account menu open and closed', async ({
-  page,
-}) => {
-  // Since story 58.2 the nav is a paying user's ONLY route to these four, with
-  // no Overview card, no /settings tile and no footer fallback. A new
-  // disclosure in the same bar must not cost any of them.
-  await mockSignedIn(page, { subscriptionStatus: 'active' })
-  await page.setViewportSize({ width: 1280, height: 800 })
-  for (const [label, path] of PREMIUM_ROUTES) {
-    await page.goto('/')
-    // With the account menu OPEN: pressing More closes it and opens the nav
-    // panel, so the destination is one further click away, never lost.
-    await openAccountMenu(page, { acrossHydration: true })
-    await page.locator(MORE_SUMMARY).click()
-    await expect(accountTrigger(page)).toHaveAttribute('aria-expanded', 'false')
-    await expect.poll(() => isMoreOpen(page)).toBe(true)
-    await page.locator(`${MORE_PANEL} >> role=link[name="${label}"]`).click()
-    await expect(page).toHaveURL(new RegExp(`${path}$`))
-
-    // And with it closed, from the new page.
-    await openMore(page)
-    await expect(page.locator(`${MORE_PANEL} >> role=link[name="${label}"]`)).toBeVisible()
-  }
-})
 
 test('a signed-in user signs out from the paid chrome too, at 2400px', async ({ page }) => {
   // AC-1 says every tier and every width from 320 to 2400. The free server

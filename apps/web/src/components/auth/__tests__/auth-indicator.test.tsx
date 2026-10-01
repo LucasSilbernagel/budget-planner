@@ -313,8 +313,8 @@ describe('AuthIndicator', () => {
   // Story 59.2 (code review). On the desktop row this strip is a flex item beside
   // the nav. Without `sm:min-w-0` its minimum is its content width, so the nav
   // wrapped to 2-3 rows beside a long email instead (measured). Class TOKENS,
-  // because jsdom computes no layout. The rendered row is pinned in the
-  // signed-in e2e sweeps (`nav-more-disclosure{,.paid}.spec.ts`).
+  // because jsdom computes no layout. The signed-in e2e sweeps that pinned the
+  // rendered row were dropped by story 84.2 (FR137).
   //
   // Story 59.3 moved the row chrome to a new OUTER row. Story 69.2 took the
   // email out of the chrome altogether (decision D2), so there was nothing left
@@ -456,7 +456,7 @@ describe('AuthIndicator — SSR seed (story UX-1)', () => {
  *
  * ⚠️ WHAT THIS BLOCK CANNOT PROVE. jsdom computes no layout — every rect is
  * `{0,0,0,0}` — so nothing here shows the strip does not COLLAPSE. That half of
- * AC-3 is measured in `e2e/auth-indicator.spec.ts`. What these tests do pin is
+ * AC-3 was measured in e2e and dropped by story 84.2. What these tests do pin is
  * the structural half: the labelled `role="status"` region survives with its
  * height-reserving wrapper intact, and only its children change.
  */
@@ -675,9 +675,9 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
  * jsdom, where every query would still find it (story 59.2's silent greens).
  *
  * ⚠️ jsdom computes no layout and applies no media queries. Everything about
- * SIZE, the mobile panel direction and occlusion is measured in
- * `e2e/account-menu.spec.ts` / `.paid.spec.ts`. Here: structure, ARIA,
- * behaviour, and class TOKENS.
+ * SIZE, the mobile panel direction and occlusion was measured in e2e and
+ * dropped by story 84.2. Here: structure, ARIA, behaviour, and class TOKENS;
+ * the first-frame HTML is in `auth-indicator.ssr.dom.test.tsx`.
  */
 describe('AuthIndicator — account menu (story 59.3)', () => {
   const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
@@ -1069,8 +1069,8 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
  * sign-in page keeps the empty strip story 41.3 gave it.
  *
  * Class TOKENS for size: jsdom has no layout. The rendered box, the width it
- * costs at 640px and its reachability at 320/1280px are e2e
- * (`e2e/settings-route.spec.ts`, `e2e/nav-responsive-css.spec.ts`).
+ * costs at 640px and its reachability at 320/1280px were e2e until stories
+ * 84.2/84.3; its server-rendered link is in `auth-indicator.ssr.dom.test.tsx`.
  */
 describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
   const gear = () => screen.queryByRole('link', { name: 'Settings' })
@@ -1157,9 +1157,8 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
  * React 19's `renderToString` emits the anchor INSIDE `<noscript>`, and a
  * CLIENT render leaves the `<noscript>` EMPTY (no child elements). So this file
  * can prove the client half, that the element is there and holds no LIVE
- * second gear with JavaScript on. The server half (a visible, working link
- * with JavaScript off) is a rendered fact, proven in
- * `e2e/settings-route.paid.spec.ts`.
+ * second gear with JavaScript on. The server half (the link inside
+ * `<noscript>`) is pinned in `auth-indicator.ssr.dom.test.tsx` since story 84.3.
  */
 describe('AuthIndicator — the signed-in JS-off Settings gear (story 69.3, D3)', () => {
   it('renders a <noscript> in the signed-in cluster, holding no live link', async () => {

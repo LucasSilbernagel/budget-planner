@@ -112,7 +112,8 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * ⚠️ CORRECTED by story 69.3, and the rule above STANDS for a different reason.
  * The HOVER half of the reasoning is wrong: a `:hover` utility is 0-2-0 and a
  * media-scoped class 0-1-0, so hover wins whatever the emit order. MEASURED
- * for `max-lg:` at 800px (`e2e/nav-lg-row{,.paid}.spec.ts`: hovering the active
+ * for `max-lg:` at 800px (`e2e/nav-lg-row{,.paid}.spec.ts`, since deleted by
+ * stories 84.2/84.3; the measurement stands: hovering the active
  * More gives the same `bg-gray-100` under the `max-lg:` and the unprefixed
  * treatment); `max-sm:` is the same mechanism, not separately measured. What a
  * variant-scoped colour CAN beat is an unprefixed NON-hover colour of equal
@@ -195,8 +196,9 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * card, no `/settings` tile and no footer link. The dissolve used to keep the
  * desktop destinations reachable with JavaScript broken or not yet hydrated. A
  * React-only disclosure would have lost that. The native toggle works with
- * zero JavaScript, so it keeps it. `e2e/nav-more-disclosure{,.paid}.spec.ts`
- * prove it with `javaScriptEnabled: false`.
+ * zero JavaScript, so it keeps it. Since story 84.3 that is pinned below the
+ * browser: `GlobalNav.ssr.dom.test.tsx` checks every destination is a real
+ * link in the server HTML, inside a `<details>` the server renders closed.
  *
  * ⚠️⚠️ EVERY ICON CARRIES `sm:hidden`. Icons are a mobile-only concern, and
  * the suite was provably blind to losing the token: measured, icons without
@@ -502,7 +504,8 @@ const PROMOTED_SHEET_CELL_CLASS = 'max-sm:min-w-0 lg:hidden'
  * docblock forbids for `max-sm:`. That rule is about hover: a `:hover` utility
  * is 0-2-0 and a media-scoped class is 0-1-0, so hover still wins here exactly
  * as it does over the unprefixed `ACTIVE_CLASS`. Measured in
- * `e2e/nav-lg-row.spec.ts` (hover on the active trigger at 800px).
+ * `e2e/nav-lg-row.spec.ts` (hover on the active trigger at 800px; that test
+ * was dropped by story 84.2, FR137).
  */
 /** The More cell. `sm:relative`: the desktop dropdown hangs from it. */
 const MORE_CELL_CLASS = 'max-sm:min-w-0 sm:relative'
@@ -567,8 +570,9 @@ const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none sm:pr-2 [&
  * state says "closed" forever while the native toggle shows the panel), a click
  * before hydration, and find-in-page until `onToggle` lands. A state-driven
  * chevron would point down over an open panel in the FAIL-OPEN case this
- * `<details>` exists for. `e2e/nav-more-disclosure.spec.ts` proves the JS-off
- * case ("the chevron turns with the NATIVE toggle").
+ * `<details>` exists for. `e2e/nav-more-disclosure.spec.ts` proved the JS-off
+ * case ("the chevron turns with the NATIVE toggle") until story 84.2 dropped
+ * it (FR137); no test pins the rotation's render now.
  *
  * `max-sm:hidden`: a desktop-only ELEMENT (composition rule above), the mirror of
  * the icons' `sm:hidden`. Below `sm` the ellipsis `MoreIcon` is the cue and the
@@ -613,8 +617,9 @@ const MORE_CHEVRON_CLASS = `${DISCLOSURE_CHEVRON_CLASS} ml-1 inline-block align-
  * in the DOM paints OVER it. `elementFromPoint` on the open panel's rows landed
  * on `/pricing`'s plan cards and `/forecasting`'s page header, at 640px and at
  * 1280px, while those rows had perfect rects and passed `toBeVisible()`.
- * `e2e/nav-more-disclosure.paid.spec.ts` sweeps 13 routes for it at the top of
- * each page, which is not every scroll position or overlay state. 40, not 50:
+ * `e2e/nav-more-disclosure.paid.spec.ts` swept 13 routes for it at the top of
+ * each page (not every scroll position or overlay state) until story 84.2
+ * dropped the sweep (FR137). 40, not 50:
  * `Modal` (z-50, rendered later) must stay above it, and at >= 640px the
  * `InstallPrompt` banner sits at the bottom of the screen, nowhere near a
  * dropdown hanging off the top bar. Below `sm` the stacking comes from the
@@ -837,8 +842,9 @@ export function GlobalNav() {
    * was attached. The panel is then visibly open with `isMoreOpen === false`, so
    * the Escape and outside-press listeners above are never armed. (It self-heals
    * on the next summary click, but only on that click.) Reading the DOM once on
-   * mount closes the gap. `e2e/nav-more-disclosure.spec.ts` holds every script
-   * back to put the click in that window.
+   * mount closes the gap. `GlobalNav.ssr.dom.test.tsx` opens the server HTML's
+   * `<details>` and lets its `toggle` fire BEFORE hydrating, to put the click
+   * in that window (story 84.3; the e2e original held every script back).
    */
   useEffect(() => {
     if (detailsRef.current?.open) setIsMoreOpen(true)
@@ -969,8 +975,9 @@ export function GlobalNav() {
       // (`__root.tsx`). This token still keeps the NAV from being the thing
       // that gives way. The e2e suite has no real
       // session, so it only ever measured the signed-out "Sign in" cluster and
-      // was blind to this. `e2e/nav-more-disclosure.paid.spec.ts` now mocks
-      // `/api/auth/me` to render a signed-in cluster, and pins it.
+      // was blind to this. `e2e/nav-more-disclosure.paid.spec.ts` mocked
+      // `/api/auth/me` to render a signed-in cluster and pinned it, until story
+      // 84.2 dropped the width tests; `GlobalNav.test.tsx` pins the token.
       className="sm:shrink-0 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-50 max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
       {/* `flex-wrap` at >= 640px: INERT since story 59.2, and kept on purpose.
@@ -987,8 +994,9 @@ export function GlobalNav() {
           what would catch a regression; a nav that outgrows the viewport ON
           ITS OWN still overflows the document sideways. The measured headroom
           lives there, in ONE place; do not restate it here.
-          `responsive-320.spec.ts` and `global-nav.spec.ts` both sweep 320px
-          only.
+          `responsive-320.spec.ts` and `global-nav.spec.ts` swept 320px only,
+          and neither sweep survives stories 84.2/84.3 (FR137); the 320px
+          screenshots are what is left.
 
           ⚠️ This comment carried its own copy of the "row wants 778px …
           clearing only at 800px" figures until story 43.3. It was the THIRD copy
@@ -1126,7 +1134,7 @@ export function GlobalNav() {
             // `.group[open] .group-open\:…` matches ANY open `.group` ancestor.
             className="group max-sm:h-full"
           >
-            {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable — Enter and Space dispatch this same click (e2e/nav-more-disclosure.spec.ts and global-nav.spec.ts prove it at 1280px and 320px); a keydown handler would double-toggle */}
+            {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable — Enter and Space dispatch this same click (platform behaviour; no test pins it since story 84.3 D4); a keydown handler would double-toggle */}
             <summary
               ref={triggerRef}
               // ⚠️ Once hydrated, React owns the toggle, and the native one is
@@ -1135,9 +1143,9 @@ export function GlobalNav() {
               // Escape and outside-press listeners it gates) arrives only after
               // the async `toggle` event and a paint. A press in that window
               // was ignored. Driving the state from the click gives the timing
-              // the old `<button>` had. `e2e/nav-more-disclosure.spec.ts` pins it
-              // deterministically ("an outside press in the SAME task…"), which
-              // fails 5/5 without this handler. Keyboard activation of a `<summary>`
+              // the old `<button>` had. `GlobalNav.behaviour.test.tsx` pins it
+              // ("an outside press in the SAME task…"; its e2e original failed
+              // 5/5 without this handler). Keyboard activation of a `<summary>`
               // dispatches this same `click`, so Enter and Space still work.
               // Before hydration, and with JavaScript off, no handler is
               // attached and the native toggle does the work. That is the whole

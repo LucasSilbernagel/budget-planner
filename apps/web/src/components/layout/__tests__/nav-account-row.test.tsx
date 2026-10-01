@@ -1,4 +1,4 @@
-import { renderWithRouter, screen, userEvent, within } from '@/test/utils'
+import { act, fireEvent, renderWithRouter, screen, userEvent, waitFor, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SessionSeedProvider } from '../../../context/session-seed'
@@ -39,8 +39,9 @@ import { GlobalNav } from '../GlobalNav'
  * closed-details rule, so `getAllByRole('link')` still resolves all six.
  * Before 59.2 the reason was that jsdom applies no media queries. The number is
  * the same and the reason is not. "Fixing" these to 4 would turn correct tests
- * red. Which destinations a user can actually reach is a rendered fact, asserted
- * in `e2e/nav-more-disclosure.spec.ts` and `e2e/chrome-320.spec.ts`. (It was
+ * red. Which destinations a user can actually reach is a rendered fact; since
+ * stories 84.2/84.3 only the screenshots and the server HTML
+ * (`GlobalNav.ssr.dom.test.tsx`) pin it. (It was
  * EIGHT until story 43.3 removed `/net-worth-projection`; the count tracks the
  * nav.)
  *
@@ -243,5 +244,134 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     // No gear for a signed-in user: the menu is their route, so the cluster
     // holds exactly one link to /settings (the one inside the open panel).
     expect(document.querySelectorAll('a[href="/settings"]')).toHaveLength(1)
+  })
+})
+
+/**
+ * Two disclosures, one bar (UX record 2026-09-21, §5.4; story 84.3 moved this
+ * here from `e2e/account-menu{,.paid}.spec.ts`). Each closes the other when the
+ * user PRESSES the other's trigger, in both orders, and focus lands on what was
+ * pressed. Each disclosure's own outside-press rule is what does it: the other
+ * trigger is outside it. Width was a variable only in the browser (which
+ * trigger is visible); the rule below is the same at every width.
+ */
+describe('Nav + account row, two disclosures (story 59.3)', () => {
+  const FREE_USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' }
+
+  function renderSignedIn(subscriptionStatus: 'free' | 'active') {
+    const user = { ...FREE_USER, subscriptionStatus }
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/auth/me')) {
+        return Promise.resolve(new Response(JSON.stringify({ user }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+    renderWithRouter(
+      <SessionSeedProvider seed={{ isAuthenticated: true, ...user }}>
+        <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
+          <GlobalNav />
+          <AuthIndicator />
+        </div>
+      </SessionSeedProvider>
+    )
+  }
+
+  /**
+   * A mouse press on the More `<summary>`, as a browser delivers it.
+   * ⚠️ user-event does not move focus to a `<summary>` on mousedown (its
+   * focusable set omits it; a browser focuses it), so `user.click(summary)`
+   * leaves focus where it was and the press is not the one a user makes. The
+   * browser order is reproduced by hand: pointerdown, focus, pointerup, click.
+   */
+  const pressSummary = async () => {
+    const { summary } = more()
+    await act(async () => {
+      fireEvent.pointerDown(summary)
+      fireEvent.mouseDown(summary)
+      summary.focus()
+      fireEvent.pointerUp(summary)
+      fireEvent.mouseUp(summary)
+      fireEvent.click(summary)
+    })
+  }
+
+  const more = () => {
+    const nav = screen.getByRole('navigation', { name: /primary/i })
+    return {
+      details: nav.querySelector('details') as HTMLDetailsElement,
+      summary: nav.querySelector('details > summary') as HTMLElement,
+      panel: nav.querySelector('details > ul') as HTMLElement,
+    }
+  }
+
+  it('pressing one trigger closes the other, in both orders, and focus lands on the pressed one', async () => {
+    renderSignedIn('free')
+    const user = userEvent.setup()
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+
+    // Nav More open -> press the account trigger.
+    await pressSummary()
+    await waitFor(() => expect(more().details.open).toBe(true))
+    await user.click(trigger)
+    await waitFor(() => expect(more().details.open, 'More stayed open').toBe(false))
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveFocus()
+
+    // Account menu open -> press More.
+    await pressSummary()
+    await waitFor(() =>
+      expect(trigger, 'the account menu stayed open').toHaveAttribute('aria-expanded', 'false')
+    )
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull()
+    await waitFor(() => expect(more().details.open, 'More did not open').toBe(true))
+    expect(more().summary).toHaveFocus()
+  })
+
+  /**
+   * Accepted, not a defect (story 59.2 review): a keyboard user can Tab past the
+   * open nav panel, so no pointer event tells the nav the account menu opened.
+   * Both are then open, and ONE Escape must close both without a focus fight.
+   * No pointer events here: `fireEvent.click` and Enter on a button are what a
+   * keyboard produces.
+   */
+  it('by keyboard both can be open at once, and ONE Escape closes both with focus on the account trigger', async () => {
+    renderSignedIn('free')
+    const user = userEvent.setup()
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+
+    fireEvent.click(more().summary)
+    await waitFor(() => expect(more().details.open).toBe(true))
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(more().details.open, 'the keyboard case this test is about did not arise').toBe(true)
+
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => expect(more().details.open, 'More stayed open after Escape').toBe(false))
+    expect(trigger, 'the nav yanked focus to More').toHaveFocus()
+  })
+
+  it('a paid user’s four premium routes stay one press away with the account menu open', async () => {
+    renderSignedIn('active')
+    const user = userEvent.setup()
+    const trigger = await screen.findByRole('button', { name: 'Account menu' })
+
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await pressSummary()
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'))
+    await waitFor(() => expect(more().details.open).toBe(true))
+
+    for (const [label, href] of [
+      ['Forecasting', '/forecasting'],
+      ['Profiles', '/profiles'],
+      ['Report', '/report'],
+      ['Categories', '/categories'],
+    ] as const) {
+      const link = within(more().panel).getByRole('link', { name: label })
+      expect(link, `${label} is not reachable in the open panel`).toBeVisible()
+      expect(link).toHaveAttribute('href', href)
+    }
   })
 })

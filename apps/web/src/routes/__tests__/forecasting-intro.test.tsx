@@ -11,7 +11,8 @@
  * ⚠️ CORRECTED 2026-09-21 (`forecast-3` review): this header used to say the
  * entitled surface is "unreachable in Playwright". That was true when written and
  * is now STALE — story 58.2 shipped a dev-only session seed (`E2E_SESSION_SEED`)
- * and `nav-tier-aware.paid.spec.ts` / `tier-aware-surfaces.paid.spec.ts` do render
+ * and `tier-aware-surfaces.paid.spec.ts` (and `nav-tier-aware.paid.spec.ts` until
+ * story 84.3) render
  * a paid session. What remains true is narrower and is the reason this file still
  * matters: those specs assert NAV anchors only and never navigate into the page,
  * so nothing in e2e asserts this route's header or intro. If you add paid-session

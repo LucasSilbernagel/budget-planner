@@ -65,7 +65,7 @@ export async function expectSignedInAs(page: Page, email: string): Promise<void>
  * IDREF), so this returns a locator that matches nothing — `toHaveCount(0)`
  * then means "closed", which is what callers assert. It is not an error state.
  */
-export async function accountPanel(page: Page): Promise<Locator> {
+async function accountPanel(page: Page): Promise<Locator> {
   const id = await accountTrigger(page).getAttribute('aria-controls')
   return id === null ? page.locator('[data-account-panel-absent]') : page.locator(`[id="${id}"]`)
 }

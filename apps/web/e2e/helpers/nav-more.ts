@@ -10,8 +10,12 @@
  *   implicit-role map has `DETAILS → group` and no entry for `SUMMARY`, so the
  *   trigger has no role as far as Playwright is concerned. That holds open or
  *   closed, with JavaScript on or off. The real accessibility tree is fine:
- *   Chromium exposes `DisclosureTriangle "More"` with `expanded`. Read that
- *   through `moreExpandedInAxTree` below when the SEMANTICS are the claim.
+ *   Chromium exposes `DisclosureTriangle "More"` with `expanded`. (The AX-tree
+ *   reader that used to live here went with story 84.3. What is pinned below
+ *   the browser is OUR share of those semantics, not Chromium's derivation:
+ *   no hand-rolled ARIA (`GlobalNav.test.tsx` › 'carries no hand-rolled
+ *   ARIA') and a `<summary>` that is the `<details>`'s first child
+ *   (`GlobalNav.ssr.dom.test.tsx`).)
  * - `aria-expanded` / `aria-controls` are gone. The platform supplies the
  *   expanded state natively, and the story forbids re-adding them by hand.
  * - The old structural path `nav > ul > li > ul` misses the panel, because a
@@ -24,16 +28,14 @@
  */
 import { type Page, expect } from '@playwright/test'
 
-export const NAV = 'nav[aria-label="Primary"]'
+const NAV = 'nav[aria-label="Primary"]'
 /** The More trigger: the `<summary>` of the nav's one `<details>`. */
 export const MORE_SUMMARY = `${NAV} details > summary`
 /** The disclosure element itself — its `open` property is the state. */
-export const MORE_DETAILS = `${NAV} details`
-/** The panel list holding the More destinations (the sheet below 640px). */
-export const MORE_PANEL = `${NAV} details > ul`
+const MORE_DETAILS = `${NAV} details`
 
 /** Whether the disclosure is open, read from the DOM `open` property. */
-export async function isMoreOpen(page: Page): Promise<boolean> {
+async function isMoreOpen(page: Page): Promise<boolean> {
   return page.locator(MORE_DETAILS).evaluate((el) => (el as HTMLDetailsElement).open)
 }
 
@@ -44,40 +46,6 @@ export async function openMore(page: Page): Promise<void> {
 }
 
 /**
- * The trigger's expanded state as the REAL accessibility tree reports it.
- *
- * Reads Chromium's AX tree over CDP, because neither Playwright's role engine
- * nor an attribute read can see it: the summary carries no `aria-expanded`, and
- * Playwright gives it no role. Returns `null` if no `DisclosureTriangle "More"`
- * node exists OR it exposes no `expanded` state, so neither can pass silently.
- */
-export async function moreExpandedInAxTree(page: Page): Promise<boolean | null> {
-  const cdp = await page.context().newCDPSession(page)
-  try {
-    const { nodes } = (await cdp.send('Accessibility.getFullAXTree')) as {
-      nodes: {
-        ignored?: boolean
-        role?: { value?: string }
-        name?: { value?: string }
-        properties?: { name: string; value: { value?: unknown } }[]
-      }[]
-    }
-    const trigger = nodes.find(
-      (n) => !n.ignored && n.role?.value === 'DisclosureTriangle' && n.name?.value === 'More'
-    )
-    if (!trigger) return null
-    // ⚠️ A node that exposes NO expanded state is `null` too, not `false`.
-    // Otherwise a closed-state `toBe(false)` would pass on a node that has lost
-    // its disclosure semantics entirely (story 59.2 code review).
-    const expanded = trigger.properties?.find((p) => p.name === 'expanded')
-    if (!expanded || typeof expanded.value.value !== 'boolean') return null
-    return expanded.value.value
-  } finally {
-    await cdp.detach()
-  }
-}
-
-/**
  * A long, realistic email. Until story 69.2 it was long enough that the account
  * cluster could not fit beside the row at 640px without truncating. Since 69.2
  * the chrome shows no email (it is only ANNOUNCED, by the status region), so
@@ -85,7 +53,7 @@ export async function moreExpandedInAxTree(page: Page): Promise<boolean | null> 
  * the `:5174` seed's `e2e-paid@example.test`, which is what makes the gate able
  * to tell the two apart.
  */
-export const LONG_EMAIL = 'alexandra.montgomery-whitfield@example.test'
+const LONG_EMAIL = 'alexandra.montgomery-whitfield@example.test'
 
 /**
  * Hold the stubbed `/api/auth/me` for this many ms before fulfilling it.
@@ -160,21 +128,3 @@ export async function mockSessionThatCanEnd(
   })
   return session
 }
-
-/** The More trigger's computed background: green-50 is the active treatment. */
-export async function moreBackground(page: Page): Promise<string> {
-  // Park the pointer off the nav, so `hover:` cannot be what is measured.
-  await page.mouse.move(1, 700)
-  const bg = await page.evaluate((sel) => {
-    const summary = document.querySelector(sel) as HTMLElement | null
-    // A missing OR unrendered trigger is an error, never a colour: returning
-    // null made every "More is NOT active" assertion pass with no More on
-    // screen at all (story 69.3 code review).
-    return summary?.checkVisibility() ? getComputedStyle(summary).backgroundColor : null
-  }, MORE_SUMMARY)
-  if (bg === null) throw new Error('moreBackground: the More trigger is not rendered')
-  return bg
-}
-
-/** `bg-green-50`, the active treatment (`GlobalNav.tsx` `ACTIVE_CLASS`). */
-export const ACTIVE_BG = 'rgb(240, 253, 244)'
