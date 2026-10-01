@@ -37,7 +37,10 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
+import type { ReactNode } from 'react'
 import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } from '../../stores'
+import { useCurrencyStore } from '../../stores/currencyStore'
+import { FENCED_EMPTY_COPY, type GatedPath } from '../../test/fenced-copy'
 import { BalancePage } from '../BalancePage'
 import { ExpensesPage } from '../ExpensesPage'
 import { HomePage } from '../HomePage'
@@ -337,6 +340,169 @@ describe('the remaining gated pages, pending → resolved (AC-5)', () => {
         ).not.toBeInTheDocument()
       }
       expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
+    })
+  }
+})
+
+/**
+ * Positive controls for the server-response fence (story 84.4, FR137; was
+ * `e2e/loading-state.spec.ts` › "positive controls").
+ *
+ * `served-pages.served.test.ts` asserts each page's SERVER response does NOT
+ * contain a "confident zero" phrase. `not.toContain` passes just as happily on
+ * a string the app never emits, so a copy edit ("+ Add income" → "+ Add an
+ * income source") would silently disarm the fence. These arms make every
+ * fenced phrase falsifiable from the other side: resolved and empty, the page
+ * really renders it. Both sides read ONE table, `src/test/fenced-copy.ts`
+ * (84.4 review), so they cannot drift apart.
+ *
+ * ⚠️ With the product's `$`/USD on, because the fence is `$0.00` with its
+ * symbol, while this file otherwise pins the currency-less baseline.
+ */
+const GATED_PAGES = [
+  { path: '/', Page: HomePage, marker: 'overview-net-worth' },
+  { path: '/income', Page: IncomePage, marker: 'period-total-amount' },
+  { path: '/expenses', Page: ExpensesPage, marker: 'period-total-amount' },
+  { path: '/savings', Page: SavingsPage, marker: 'savings-leftover-summary' },
+  { path: '/balance', Page: BalancePage, marker: 'stat-net-worth' },
+] as const satisfies readonly { path: GatedPath; Page: () => ReactNode; marker: string }[]
+
+describe('positive controls: every fenced phrase is the resolved empty copy', () => {
+  beforeEach(() => {
+    __resetStoresHydratedForTests()
+    resolvedFreeTier()
+    clearStores()
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+  })
+
+  for (const { path, Page } of GATED_PAGES) {
+    it(`${path} really renders every phrase its fence claims to exclude`, () => {
+      const { container } = render(<Page />)
+      // Resolved first, or this reads the very state it is the control for.
+      expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
+
+      const text = container.textContent ?? ''
+      for (const phrase of FENCED_EMPTY_COPY[path]) {
+        expect(
+          text.includes(phrase),
+          `${path} never renders "${phrase}": the matching fence is guarding nothing`
+        ).toBe(true)
+      }
+    })
+  }
+})
+
+/**
+ * Every gated page leaves the pending state WITH DATA (story 84.4, FR137; was
+ * `e2e/loading-state.spec.ts` › "every gated page resolves"). The hydration
+ * half of that e2e test is the F1 sweep, `e2e/hydration.spec.ts`, which
+ * stays.
+ *
+ * ⚠️ The wildcard is the real check: a per-page skeleton list misses a section
+ * whose skeleton nobody listed (story 51.1 found one by code review). It runs
+ * BEFORE the named marker so an inverted gate (51.1's M4: the leftover-summary
+ * skeleton shown AFTER hydration) is reported at the sweep, where the surviving
+ * skeleton is named, not at a marker that happens to share the gate.
+ *
+ * ⚠️ "With data" is asserted, not assumed (84.4 review): every store the page
+ * reads is seeded, and the page's resolved-EMPTY copy must be absent, or a
+ * seed that misses a store makes this arm an empty-state test under another
+ * name (the first version seeded savings + income only, so `/expenses` and
+ * `/balance` resolved EMPTY).
+ */
+describe('every gated page resolves with data', () => {
+  beforeEach(() => {
+    __resetStoresHydratedForTests()
+    resolvedFreeTier()
+    clearStores()
+    seedSavings()
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          userId: 0,
+          name: 'Salary',
+          amount: 500_000,
+          frequency: 'monthly',
+          categoryId: null,
+          sortOrder: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          userId: 0,
+          name: 'Rent',
+          amount: 150_000,
+          frequency: 'monthly',
+          categoryId: null,
+          sortOrder: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          type: 'investment',
+          name: 'ISA',
+          currentBalance: 800_000,
+          monthlyContribution: 10_000,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: '55555555-5555-4555-8555-555555555555',
+          type: 'debt',
+          name: 'Mortgage',
+          currentBalance: 15_000_000,
+          monthlyContribution: 50_000,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        // Every type the page summarizes: without an `asset`, "Other Assets"
+        // reads `$0.00` with data (MEASURED, 84.4 review).
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          type: 'asset',
+          name: 'Car',
+          currentBalance: 1_200_000,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+  })
+
+  for (const { path, Page, marker } of GATED_PAGES) {
+    it(`${path} clears every skeleton and its status region`, () => {
+      const { container } = render(<Page />)
+
+      expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
+      const leftovers = [...container.querySelectorAll('[data-testid$="-skeleton"]')].map((el) =>
+        el.getAttribute('data-testid')
+      )
+      expect(leftovers, `${path} still shows skeletons`).toEqual([])
+      expect(screen.getByTestId(marker)).toBeInTheDocument()
+
+      const text = container.textContent ?? ''
+      for (const phrase of FENCED_EMPTY_COPY[path]) {
+        expect(
+          text.includes(phrase),
+          `${path} resolved to its EMPTY copy ("${phrase}"): the seed misses a store this page reads`
+        ).toBe(false)
+      }
     })
   }
 })

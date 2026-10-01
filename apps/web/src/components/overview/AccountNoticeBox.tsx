@@ -68,7 +68,8 @@ import {
  * `e2e/overview-account-notice.spec.ts` measured both themes until story 84.2.
  *
  * ⚠️ THE TWO <p> TEXT NODES ARE PINNED BY AN SSR HTML SUBSTRING ASSERTION.
- * `e2e/loading-state.spec.ts`'s "SEO fence" asserts the server response
+ * `src/__tests__/served-pages.served.test.ts`'s "SEO fence" (story 84.4; was
+ * `e2e/loading-state.spec.ts`) asserts the server response
  * contains the literal `>No account needed · Optional sync is EU-hosted · No
  * bank connection.</p>` — closing tags, not bare phrases, because an earlier
  * version matched the `<meta name="description">` in the head while the body

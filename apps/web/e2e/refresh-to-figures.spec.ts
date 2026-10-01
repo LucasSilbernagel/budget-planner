@@ -16,7 +16,7 @@ import { type Page, expect, test } from '@playwright/test'
  * when you assert on that with a locator: the new "client navigation does not
  * re-enter pending" test used auto-retrying `toHaveCount(0)` against a one-frame
  * flash, so reverting the fix left it passing 19/19. And
- * `loading-state.spec.ts:8-11`: "asserting on a raced `getByTestId()` right after
+ * `loading-state.spec.ts:8-11` (deleted by story 84.4): "asserting on a raced `getByTestId()` right after
  * `goto` is flake, not a test."
  *
  * So the timestamp comes from a {@link MutationObserver} armed in
@@ -42,7 +42,7 @@ import { type Page, expect, test } from '@playwright/test'
  *   here for a slow host to trip.
  * - **Env-gated** (`REFRESH_TO_FIGURES=1`): the 11-sample medians at 1x and 4x CPU
  *   that produced the numbers in the story. Gated for the same reason
- *   `pwa.spec.ts:70-76` gates its built-server block: the default `pnpm test:e2e`
+ *   `pwa.spec.ts:70-76` gated its built-server block (until story 84.4): the default `pnpm test:e2e`
  *   boots `pnpm dev` (`playwright.config.ts:35`), and a refresh-to-figures time
  *   measured against a Vite dev server is a number about Vite, not about the app.
  *

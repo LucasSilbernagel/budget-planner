@@ -14,7 +14,8 @@ import { getDocPage } from '../../content/docs'
  * `Route` is the ONLY export in this file. A non-route export here is left
  * un-code-split by the router plugin and warned about at every `pnpm dev`
  * (BUG-C, story 39-1) — `DocNotFound` lives in `components/docs/` for that
- * reason, and `e2e/docs-not-found.spec.ts` guards the wiring below.
+ * reason, and `src/__tests__/served-pages.served.test.ts` (was
+ * `e2e/docs-not-found.spec.ts` until story 84.4) guards the wiring below.
  */
 export const Route = createFileRoute('/docs/$docId')({
   loader: ({ params }) => {

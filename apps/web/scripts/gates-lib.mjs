@@ -325,6 +325,15 @@ export const E2E_SCREENSHOT_PROJECTS = ['screenshots', 'screenshots-paid']
  * temp file + rename (MEASURED unchanged across a full e2e run, story 82.1). The
  * bundle check DOES read `dist`, so it runs in phase A, before e2e starts.
  * A new phase B gate that reads `apps/web/dist` must go to phase A as well.
+ * ⚠️ Since story 84.4 the `web` gate is a phase B WRITER too: its served-app
+ * harness (`src/test/served-app.ts`) boots two in-process Vite dev servers
+ * (one per `*.served.test.ts` file) alongside e2e's two `pnpm dev` servers, so
+ * four route generators and four vite-plugin-pwa dev instances may touch
+ * `src/routeTree.gen.ts`, `.tanstack/` and `dev-dist/` at once. The harness
+ * keeps its OWN dep cache (`node_modules/.vite-served-app`; sharing
+ * `node_modules/.vite` made the e2e servers re-optimize mid-test, MEASURED at
+ * 84.4). Nothing in phase B asserts on `dev-dist/`, so a half-written dev
+ * `sw.js` is noise today; a dev e2e that asserts the SW would need to know.
  *
  * Every command is the `project-context.md` › Testing Strategy command, with
  * machine-readable reporters added (they change what is printed, not what runs).

@@ -15,8 +15,9 @@ import {
  * Favicon asset guards (story 40.2, AC-3/AC-4/AC-5).
  *
  * WHY THIS EXISTS. Before 40.2 nothing in the repo could tell a REGENERATED
- * raster from a STALE one. `e2e/favicon.spec.ts` asserts the five <link> hrefs
- * resolve 2xx with an `image/*` content type; `e2e/pwa.spec.ts` asserts the
+ * raster from a STALE one. `served-headers-and-assets.served.test.ts` (story
+ * 84.4; was `e2e/favicon.spec.ts` / `e2e/pwa.spec.ts`) asserts the five <link>
+ * hrefs resolve 2xx with an `image/*` content type and asserts the
  * manifest's icon SIZES; `src/server/__tests__/node-adapter.test.ts` asserts
  * MIME mapping against synthetic four-byte fixtures it writes itself; and the
  * retired-brand sweep does not scan binaries at all. Every one of those stays

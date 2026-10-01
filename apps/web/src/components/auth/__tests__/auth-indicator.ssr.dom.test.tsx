@@ -220,3 +220,93 @@ describe('AuthIndicator — hydrating the signed-in cluster (story 69.3 review)'
     }
   })
 })
+
+/**
+ * `/login` hydrates cleanly with the strip's route-dependent branch (story
+ * 41.3; moved below the browser by story 84.4, FR137, from
+ * `e2e/hydration.spec.ts` › "/login hydrates cleanly now that the account
+ * strip is route-dependent").
+ *
+ * On `/login` the signed-out strip renders NO "Sign in" link. That branch runs
+ * on the server as well as the client, so both must agree about the route or
+ * the subtree is discarded. Here the server render and the hydration each
+ * read the location from their own router at `/login`, as the app's do.
+ * Nested under a wrapper with a sibling, with a designed-RED control (84.3's
+ * HIGH: a mismatch directly under the hydration root goes unreported).
+ */
+async function hydrateSignedOutAt(path: string, withMismatch: boolean) {
+  renderingOnClient = false
+  const container = document.createElement('div')
+  const server = await makeRouter(SIGNED_OUT, path, withMismatch)
+  container.innerHTML = `<div>${renderToString(
+    <RouterProvider router={server} />
+  )}<p>after</p></div>`
+  document.body.appendChild(container)
+  renderingOnClient = true
+  const clientRouter = await makeRouter(SIGNED_OUT, path, withMismatch)
+
+  const recoverable: string[] = []
+  let root: ReturnType<typeof hydrateRoot> | undefined
+  await act(async () => {
+    root = hydrateRoot(
+      container,
+      <div>
+        <RouterProvider router={clientRouter} />
+        <p>after</p>
+      </div>,
+      { onRecoverableError: (error) => recoverable.push(String(error)) }
+    )
+  })
+  renderingOnClient = false
+  return {
+    container,
+    recoverable,
+    cleanup: () => {
+      act(() => root?.unmount())
+      container.remove()
+    },
+  }
+}
+
+describe('AuthIndicator — hydrating the signed-out strip on /login (story 41.3)', () => {
+  it('reports a mismatch when the server and client trees differ (control)', async () => {
+    const { recoverable, cleanup } = await hydrateSignedOutAt('/login', true)
+    try {
+      expect(recoverable.length, 'the harness cannot see a hydration mismatch').toBeGreaterThan(0)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('hydrates with no mismatch and offers no "Sign in" link on /login', async () => {
+    const { container, recoverable, cleanup } = await hydrateSignedOutAt('/login', false)
+    try {
+      // Preconditions: the strip and its labelled region rendered.
+      const row = container.querySelector('[data-auth-indicator]')
+      expect(row, 'the account strip did not render').not.toBeNull()
+      const region = row?.querySelector('[role="status"]')
+      expect(region, 'the account status region did not render').not.toBeNull()
+
+      expect(recoverable, `recoverable errors: ${recoverable.join(' | ')}`).toEqual([])
+      expect(
+        [...container.querySelectorAll('a')].filter((a) => /sign in/i.test(a.textContent ?? '')),
+        'the strip offered "Sign in" on /login'
+      ).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('offers "Sign in" on / (contrast: the branch is route-dependent)', async () => {
+    const { container, recoverable, cleanup } = await hydrateSignedOutAt('/', false)
+    try {
+      expect(recoverable).toEqual([])
+      const region = container.querySelector('[data-auth-indicator] [role="status"]')
+      expect(
+        [...(region?.querySelectorAll('a') ?? [])].some((a) => /sign in/i.test(a.textContent ?? ''))
+      ).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+})

@@ -187,7 +187,8 @@ describe('AccountNoticeBox — returning user', () => {
    * mismatch. Every other test in this file stays green through that bug.
    *
    * ⚠️ This also mirrors, at unit level, the SSR "SEO fence" in
-   * `e2e/loading-state.spec.ts`: the assertion is on the CLOSING TAG, not a
+   * `src/__tests__/served-pages.served.test.ts` (was `e2e/loading-state.spec.ts`
+   * until story 84.4): the assertion is on the CLOSING TAG, not a
    * bare phrase, because the pillars sentence also opens the page's
    * `<meta name="description">` — a bare `toContain` would match the head while
    * the body copy was gone. Do not relax it to a plain phrase.

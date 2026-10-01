@@ -157,7 +157,7 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
                "No account needed" box painting. Necessary for a different reason:
                the dismissal is per-browser localStorage, so the SERVER cannot know
                it and must render the box present (which the SEO fence in
-               `e2e/loading-state.spec.ts` also requires); the component's own read
+               `src/__tests__/served-pages.served.test.ts` also requires); the component's own read
                is in an effect, i.e. after first paint.
 
             ⚠️ There used to be a THIRD, the theme bootstrap (story 7-3, AC-4).

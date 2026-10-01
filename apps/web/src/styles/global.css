@@ -198,7 +198,7 @@
      above. There the blocker is `skipHydration: true` stores. Here it is
      simpler and harder: the dismissal is per-browser localStorage, so the
      SERVER cannot know it. The server must render the box present — and
-     `e2e/loading-state.spec.ts`'s SEO fence independently REQUIRES that the
+     `src/__tests__/served-pages.served.test.ts`'s SEO fence independently REQUIRES that the
      copy survive in the server response — so the box is always in the SSR HTML
      and `AccountNoticeBox`'s own read is in an effect, i.e. after first paint.
      Without this rule the box paints and then vanishes on every page load for a

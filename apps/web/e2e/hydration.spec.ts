@@ -19,6 +19,12 @@ import { type Page, expect, test } from '@playwright/test'
  * response can falsify it. The unit-level counterpart lives in
  * `src/stores/__tests__/store-selector-hydration.dom.test.tsx`.
  *
+ * Flow F1 (FR137): story 84.4 kept only the route sweep and the rehydrated
+ * figures here. `/login` moved to `components/auth/__tests__/auth-indicator.ssr.dom.test.tsx`,
+ * the pending-markup case to `__tests__/served-pages.served.test.ts` (server
+ * bytes) + `components/__tests__/overview-pending-hydration.dom.test.tsx`
+ * (hydration), and the empty-storage control was dropped (84-4-evidence/inventory.md).
+ *
  * ## ⚠️ Two traps this file is built around — both measured, both mutation-armed
  *
  * 1. **The seed decides whether these tests can fail at all.** Seeding only
@@ -234,113 +240,6 @@ test.describe('hydration', () => {
       ).toEqual([])
     })
   }
-
-  /**
-   * Story 41.3 made the account strip's markup ROUTE-DEPENDENT for the first
-   * time: on `/login` its unauthenticated branch renders nothing. That branch
-   * runs on the server as well as the client, so the two must agree about the
-   * route or the root subtree is discarded — and `/login` is not in
-   * STORE_BACKED_ROUTES, so nothing above covered it.
-   *
-   * The read is `useRouterState`, whose location store is seeded from
-   * `history.location` at router construction, before React's first render
-   * (`GlobalNav.tsx` documents why that makes it as hydration-safe as the
-   * `activeProps` this app already ships). This test is what turns that argument
-   * into evidence on the one route where the two renders could disagree.
-   */
-  test('/login hydrates cleanly now that the account strip is route-dependent', async ({
-    page,
-  }) => {
-    const hydrationErrors = collectHydrationErrors(page)
-
-    await page.addInitScript(seedAllStores)
-    const response = await page.goto('/login')
-
-    expect(response?.status(), '/login did not return 200').toBe(200)
-
-    // Both halves are preconditions. A hydration-clean result means nothing if
-    // the strip never mounted, and it means nothing about story 41.3 unless the
-    // route-dependent branch is the one that rendered.
-    //
-    // ⚠️ The count is asserted AFTER the page settles, deliberately. Raised in
-    // code review as a possible auto-pass — the worry being that `toHaveCount(0)`
-    // could succeed during the loading branch, which has no link either, and so
-    // hold even against a route-blind strip. Checked by mutation rather than
-    // argued: with `!isOnLoginPage` removed, this test fails right here with
-    // `Received: 1`, because the SSR seed resolves the session server-side and
-    // the link is in the server HTML from the first byte. The ordering was never
-    // load-bearing — but a reader should not have to re-run that mutation to
-    // find out, so the assertion now sits where it plainly cannot race.
-    //
-    // ⚠️ Story 59.3 split the strip in two: the outer row
-    // (`[data-auth-indicator]`) carries the chrome and the height reserve, and
-    // the labelled region is a child of it, because the new account-menu
-    // trigger cannot sit inside a live region. On `/login` the signed-out
-    // region has no children, so its width is 0 and Playwright calls it
-    // hidden. The precondition is unchanged in meaning: the region is present,
-    // and the strip it lives in is on screen.
-    const indicator = page.getByRole('status', { name: /account status/i })
-    await expect(indicator).toBeAttached()
-    await expect(page.locator('[data-auth-indicator]')).toBeVisible()
-
-    await page.waitForLoadState('networkidle')
-
-    await expect(indicator.getByRole('link', { name: /sign in/i })).toHaveCount(0)
-
-    expect(
-      hydrationErrors,
-      `hydration errors on /login:\n${hydrationErrors.join('\n---\n')}`
-    ).toEqual([])
-  })
-
-  /**
-   * Negative control. With no persisted data the server render and the client
-   * render agree trivially, so a clean result here proves the detector is not
-   * simply always-green for a reason unrelated to the defect — it is the
-   * populated case above that has to do the work.
-   */
-  test('the Overview hydrates cleanly with empty storage (negative control)', async ({ page }) => {
-    const hydrationErrors = collectHydrationErrors(page)
-
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-
-    expect(hydrationErrors, hydrationErrors.join('\n---\n')).toEqual([])
-    await expect(page.getByTestId('overview-net-worth')).toHaveText('$0.00')
-  })
-
-  /**
-   * Story 38.2 added skeletons to the pending render, which means the markup
-   * React now hydrates on these routes is DIFFERENT markup — placeholders where
-   * figures used to be. This case pins that the substitution did not reintroduce
-   * the very mismatch 38.1 removed, in this file rather than only in the story's
-   * own spec: the server must serve a skeleton, the client must hydrate that
-   * markup, and no hydration error may result.
-   *
-   * ⚠️ Added in code review. 38.2's AC-4 asked for pending-state coverage HERE and
-   * the implementation put it all in `loading-state.spec.ts` instead — met in
-   * substance, missed in letter.
-   */
-  test('the pending markup 38.2 introduced hydrates without a mismatch', async ({ page }) => {
-    const hydrationErrors = collectHydrationErrors(page)
-
-    await page.addInitScript(seedAllStores)
-    const response = await page.goto('/')
-    expect(response?.status()).toBe(200)
-
-    // What the server actually sent is a placeholder, not a figure.
-    const html = await response?.text()
-    expect(html).toContain('overview-net-worth-skeleton')
-    expect(html).not.toContain('$0.00')
-
-    // ...and that markup hydrated into the real figure, cleanly.
-    await expect(page.getByTestId('overview-net-worth')).toHaveText('-$139,000.00')
-    await page.waitForLoadState('networkidle')
-    expect(
-      hydrationErrors,
-      `hydration errors on the pending markup:\n${hydrationErrors.join('\n---\n')}`
-    ).toEqual([])
-  })
 
   /**
    * The figures still resolve after rehydration. Guards against "fixing" the
