@@ -13,6 +13,15 @@ Configure these three checks (the job `name:` values from `ci.yml`) as required:
 - `Unit tests (Vitest)`
 - `E2E tests (Playwright)`
 
+Since story 85.1, `Unit tests (Vitest)` is an **aggregator**: the tests run in
+the `unit-shards` matrix job (`Unit tests (Vitest) shard 1/2`, `… 2/2`), and
+`unit-tests` only reports their combined result. Do **not** require the shard
+checks here (their names change with the shard count), and do not remove the
+aggregator's `if: always()` or loosen its exact `success` test: GitHub counts a
+**skipped** required check as passing, so an aggregator that is skipped after a
+failed shard, or that accepts a cancelled one, lets a red PR merge.
+`scripts/validate-deploy-workflow.py` pins this.
+
 ## Apply via GitHub UI
 
 Settings → Branches → Add branch ruleset (or "Add rule") for `main`:
@@ -69,7 +78,8 @@ Renaming any of those three jobs therefore breaks **two** things at once: the
 required status checks listed above silently stop matching (a rule that requires
 a check which no longer exists blocks merges), and the deploy gate's job graph
 changes. If you rename one, update this file *and* re-select the check in the
-branch protection rule.
+branch protection rule. (Story 85.1 added a fourth job, `unit-shards`, without
+renaming any of the three; see the aggregator note above.)
 
 Note that when `ci.yml` runs *inside* `deploy.yml` its checks report under a
 different context string from the standalone run — GitHub prefixes a called
