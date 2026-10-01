@@ -765,7 +765,8 @@ describe('documentation content accuracy (story 10-4)', () => {
   it('uses no markdown table — a bare <table> overflows the 320px floor', () => {
     // `MarkdownRenderer` renders a bare <table> inside `prose` with no
     // overflow-x wrapper, so a factor table would push the page into horizontal
-    // overflow and fail `e2e/responsive-320.spec.ts`. No other doc or legal page
+    // overflow at 320px (which `e2e/responsive-320.spec.ts` caught until stories
+    // 84.2/84.5; no test measures it now, so this guard is the net). No other doc or legal page
     // uses one; this page must not be the first.
     const page = howTotals()
     // Leading-pipe form: | a | b |
@@ -1258,8 +1259,8 @@ describe('documentation content accuracy (story 10-4)', () => {
 
   it('the mortgage page uses no markdown table (36.3, AC-8)', () => {
     // Same rationale as the how-totals guard above: `MarkdownRenderer` emits a
-    // bare <table> inside `prose` with no overflow-x wrapper, which would fail
-    // `e2e/responsive-320.spec.ts`. A payment-vs-principal comparison is the
+    // bare <table> inside `prose` with no overflow-x wrapper, which overflows at
+    // 320px (no test measures it since 84.2/84.5). A payment-vs-principal comparison is the
     // most natural shape for this page, which is exactly why it needs its own
     // guard rather than relying on the one scoped to how-totals.
     const page = mortgage()

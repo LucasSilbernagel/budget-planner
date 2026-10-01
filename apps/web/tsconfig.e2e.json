@@ -18,7 +18,9 @@
   ],
   "include": [
     "e2e/**/*",
+    "perf/**/*",
     "playwright.config.ts",
+    "playwright.perf.config.ts",
     "src/stores/retirementPlannerStore.ts",
     "src/lib/premium/benefits.ts"
   ],

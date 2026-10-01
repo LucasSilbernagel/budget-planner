@@ -440,8 +440,9 @@ describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', 
  * `vitest.setup.ts` never imports `global.css`, so no Tailwind utility exists
  * in this environment at all. A `getComputedStyle(th).textAlign` assertion
  * would read `""` before AND after the fix — a guard that cannot fail. The
- * computed-style proof lives in `e2e/report-print.spec.ts`, where the real
- * stylesheet loads.
+ * computed-style proof lived in `e2e/report-print.spec.ts`, where the real
+ * stylesheet loads; story 84.5 replaced it with the rule pins in
+ * `src/__tests__/print-rules.dom.test.tsx`, and the painted result is unpinned.
  *
  * ⚠️ Pins BOTH SIDES to `text-left`, not just the rows. A rows-only check would
  * stay green if a later edit centered the COLUMN header instead — the same

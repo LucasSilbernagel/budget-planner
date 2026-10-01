@@ -18,6 +18,7 @@ import {
   PLANNER_VISIBILITY_STORAGE_KEY,
   usePlannerVisibilityStore,
 } from '../stores/plannerVisibilityStore'
+import { type CssRule, cssRules } from '../test/css-rules'
 
 /**
  * The pre-paint suppression chain, below the browser (story 84.3, D2; FR137).
@@ -45,51 +46,6 @@ import {
 const WEB = resolve(__dirname, '..', '..')
 const GLOBAL_CSS = readFileSync(resolve(WEB, 'src/styles/global.css'), 'utf-8')
 const ROOT_SOURCE = readFileSync(resolve(WEB, 'src/routes/__root.tsx'), 'utf-8')
-
-interface CssRule {
-  selector: string
-  body: string
-  /** The at-rule preludes enclosing the rule, outermost first (e.g. `@layer base`). */
-  atRules: string[]
-}
-
-/**
- * Every style rule in `global.css`, with the at-rules that enclose it.
- *
- * A brace-aware walk, not a flat regex (84.3 code review, MEASURED): a flat
- * `selector { body }` match cannot see an enclosing `@media`, so a rule moved
- * into `@media print` or `@media (min-width: 640px)` parsed identically and
- * every assertion below stayed green while the 320px first frame flashed.
- * Comments are removed first; strings in this file hold no braces.
- */
-function cssRules(css: string): CssRule[] {
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, '')
-  const rules: CssRule[] = []
-  const stack: string[] = []
-  let prelude = ''
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]
-    if (ch === '{') {
-      const head = prelude.trim()
-      prelude = ''
-      if (head.startsWith('@')) {
-        stack.push(head)
-        continue
-      }
-      const close = text.indexOf('}', i)
-      rules.push({ selector: head, body: text.slice(i + 1, close), atRules: [...stack] })
-      i = close
-    } else if (ch === '}') {
-      stack.pop()
-      prelude = ''
-    } else if (ch === ';' && prelude.trim().startsWith('@')) {
-      prelude = '' // a statement at-rule such as `@tailwind base;`
-    } else {
-      prelude += ch
-    }
-  }
-  return rules
-}
 
 /** The ONE rule whose selector starts with `prefix`. */
 function ruleStartingWith(prefix: string): CssRule {

@@ -245,3 +245,34 @@ describe('loading state: the server response (was e2e loading-state, story 38.2)
     }
   })
 })
+
+/**
+ * The Overview's served HTML carries NO chart library (was e2e
+ * refresh-to-figures AC-10, story 38.3, NFR9; moved by story 84.5).
+ *
+ * ⚠️ This exists because story 38.3's mutation M9 refuted that story's own
+ * prediction: hoisting a lazy chart boundary out of the `!hydrated` mount gate
+ * made the SERVER render chart markup while the client's first render showed
+ * the Suspense fallback, and `e2e/hydration.spec.ts` stayed GREEN (React treats
+ * a Suspense boundary that resolves differently on each side as ordinary
+ * Suspense, not a mismatch). `overview-critical-path.guard.test.ts` cannot see
+ * it either: it walks STATIC imports, and the chart import is dynamic. So the
+ * served bytes are asserted directly: the chart library must not reach the
+ * response at all, which is both the hydration fence and the critical-path one.
+ */
+describe('the Overview response keeps the chart library off the critical path', () => {
+  it('/ serves no "recharts" anywhere in the document (was e2e refresh-to-figures:595)', async () => {
+    const response = await app.get('/')
+    expect(response.status).toBe(200)
+    // Positive control: a real document came back, so a zero below is not the
+    // silence of an empty body.
+    expect(response.body.length, 'no SSR body was returned').toBeGreaterThan(1000)
+    expect(response.body).toContain('data-testid="overview-net-worth"')
+
+    const hits = response.body.match(/recharts/g)?.length ?? 0
+    expect(
+      hits,
+      `the served / contains ${hits} "recharts" occurrence(s): a chart rendered on the server puts the chart library back on the critical path`
+    ).toBe(0)
+  })
+})

@@ -194,8 +194,9 @@ describe('Modal', () => {
  * are inert strings on `class`, `getComputedStyle().overflow` reads `visible`,
  * and every rect / `scrollHeight` / `clientHeight` is 0. These tests therefore
  * prove CLASS TOKENS, DOM STRUCTURE and INLINE STYLES only — the geometry
- * (does it actually fit, does it actually scroll) is proven in Playwright at
- * 320x480 in `e2e/responsive-320.spec.ts`.
+ * (does it actually fit, does it actually scroll) was proven in Playwright at
+ * 320x480 in `e2e/responsive-320.spec.ts`, which stories 84.2/84.5 (FR137)
+ * deleted; no test measures it now.
  */
 describe('Modal viewport fit (story 31.3)', () => {
   function Body() {

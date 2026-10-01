@@ -30,7 +30,7 @@ import { type Page, expect } from '@playwright/test'
 
 const NAV = 'nav[aria-label="Primary"]'
 /** The More trigger: the `<summary>` of the nav's one `<details>`. */
-export const MORE_SUMMARY = `${NAV} details > summary`
+const MORE_SUMMARY = `${NAV} details > summary`
 /** The disclosure element itself — its `open` property is the state. */
 const MORE_DETAILS = `${NAV} details`
 

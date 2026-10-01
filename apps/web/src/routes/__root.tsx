@@ -219,7 +219,8 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
               leaving the 96px reserve against the 56.75px bar strands the footer
               above 39.25px of dead space while BOTH clearance guards pass more
               comfortably than before. `e2e/chrome-320.spec.ts` and
-              `e2e/pwa-install.spec.ts` assert the gap two-sided now.
+              `e2e/pwa-install.spec.ts` asserted the gap two-sided until
+              stories 84.2/84.5 (FR137) deleted them.
               ⚠️⚠️ THE RESERVE MUST BE MIXED rem+px, NOT PURE rem, AND CODE
               REVIEW CAUGHT WHY. The bar's height is `2.625rem + 14.75px`: the
               spacing tokens (`py-2` + `h-6` + `gap-0.5` = 2.625rem) scale with

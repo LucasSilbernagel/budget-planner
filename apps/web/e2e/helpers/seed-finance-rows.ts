@@ -4,6 +4,12 @@ import type { Page } from '@playwright/test'
  * Shared adversarial finance-row seed (extracted from `responsive-320.spec.ts`
  * by story 42.2).
  *
+ * ⚠️ Since story 84.5 (FR137) its only importers are the screenshot specs
+ * (`pages.screenshot.spec.ts`, `nav.screenshot.paid.spec.ts`). Every other spec
+ * this file names below (`responsive-320`, `table-scroll-affordance`,
+ * `premium-locked`, `categories-premium`) was deleted by stories 84.2/84.5; the
+ * notes about them are history, kept for why the seed looks the way it does.
+ *
  * ⚠️ EXTRACTED RATHER THAN COPIED, deliberately. `src/test/responsive-table-tokens.ts:5-10`
  * records that divergent copies of a guard fixture mean the WEAKEST copy
  * defines the protection. Both `responsive-320.spec.ts` (which asserts these
@@ -22,7 +28,7 @@ import type { Page } from '@playwright/test'
 // four name inputs has a `maxLength`. `overflow-wrap: break-word` does NOT
 // reduce min-content width, so an auto-layout table sizes to this whole run —
 // which is exactly the failure mode this seed has to produce.
-export const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspaces'.repeat(3)
+const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspaces'.repeat(3)
 
 /**
  * Seed all four finance stores plus categories and currency (symbol mode, the
@@ -55,7 +61,7 @@ export const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspace
  *
  * They stay because they cost nothing and because a future story that gives e2e
  * a way to seed an entitled session would want them back. ⚠️ They do NOT protect
- * anything today: `categories-premium.spec.ts` has its OWN file-local
+ * anything: `categories-premium.spec.ts` (deleted by 84.5) had its OWN file-local
  * `seedCategorizedRows`, so this seed has no effect on that suite's assertions
  * (an earlier version of this comment claimed otherwise — code review 33.3).
  * Do not read their presence as evidence that this sweep exercises the Category

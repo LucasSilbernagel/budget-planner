@@ -212,8 +212,10 @@ export function assertHasMobileTapTarget(button: HTMLElement, label: string): vo
  *
  * ⚠️ jsdom COMPUTES NO LAYOUT, so this cannot prove the icon has a box. An
  * `h-0 w-0` glyph passes here. The rendered-box floors (>= 24px desktop for WCAG
- * 2.2 SC 2.5.8, >= 44px below `sm`) are asserted in Playwright —
- * `e2e/responsive-320.spec.ts`. Read a pass here as "an aria-hidden SVG with real
+ * 2.2 SC 2.5.8, >= 44px below `sm`) were asserted in Playwright by
+ * `e2e/responsive-320.spec.ts`, deleted by stories 84.2/84.5 (FR137); since then
+ * no test measures the box, and the CI screenshots see only the pages they
+ * shoot (`e2e/pages.screenshot.spec.ts`; no `/savings` or `/expenses` shot). Read a pass here as "an aria-hidden SVG with real
  * path geometry is this button's only content", never as "the icon is visible" —
  * an `h-0 w-0` glyph passes everything here.
  */

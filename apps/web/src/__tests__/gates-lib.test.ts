@@ -524,7 +524,12 @@ describe('buildGates', () => {
     const specs = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter(
       (f) => /\.(spec|test)\.[cm]?[jt]sx?$/.test(f) && statSync(join(dir, f)).isFile()
     )
-    expect(specs.length).toBeGreaterThan(20)
+    // Non-vacuity: the walk found the suite. Since story 84.5 e2e is the closed
+    // D4 flow list (13 files at 84.5: 11 flow specs + 2 screenshot specs); the
+    // floor of 10 leaves room for a flow file to merge, and the smoke spec must
+    // exist wherever it lives under `e2e/`.
+    expect(specs.length).toBeGreaterThanOrEqual(10)
+    expect(specs.some((file) => /(^|\/)smoke\.spec\.ts$/.test(file))).toBe(true)
     // A string/array literal or a CONSTANT_CASE identifier (`tag: LAYOUT`), not
     // any value: `page.evaluate` results carry `tag: el?.tagName` keys.
     const tagged = specs.filter((file) =>

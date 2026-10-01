@@ -13,9 +13,11 @@
  * Recharts is therefore replaced with prop-capturing stubs, and the assertion is
  * made on what each `<Pie>` was HANDED.
  *
- * ⚠️ This pins the PROP, not the paint. That a real browser paints nothing is
- * `e2e/breakdown-pie-labels.spec.ts`'s job — and it has to be, because Recharts
- * only renders pie labels after its sector animation finishes.
+ * ⚠️ This pins the PROP, not the paint. That the REAL chart library paints no
+ * label is `HomePage.pie-paint.dom.test.tsx`'s job (story 84.5: Recharts renders
+ * in jsdom with a sized container; it replaced `e2e/breakdown-pie-labels.spec.ts`),
+ * which also has to handle the trap that pie labels appear only after the sector
+ * animation finishes.
  *
  * ⚠️ Kept in its own file because `vi.mock('recharts')` is module-scoped: doing
  * it in the main HomePage suite would silently convert every test there into a
@@ -24,8 +26,8 @@
  * ⚠️ Known gap, closed elsewhere: `matchMedia` does not exist in jsdom, so
  * `useIsNarrowViewport()` is permanently `false` here and only the DESKTOP
  * branch is ever exercised. A regression to `label={isNarrow}` would pass every
- * assertion below while painting labels at 320px — that is what the 320px case
- * in `e2e/breakdown-pie-labels.spec.ts` exists to catch.
+ * assertion below while painting labels at 320px — that is what the NARROW case
+ * in `HomePage.pie-paint.dom.test.tsx` (which stubs `matchMedia`) exists to catch.
  *
  * ⚠️ **Every capture below must be `await`ed, and that is not a style choice.**
  * Story 38.3 moved `<Pie>` behind `React.lazy(() => import('../HomeChartCanvases'))`
@@ -43,6 +45,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } from '../../stores'
 import { useCategoryStore } from '../../stores/categoryStore'
+import { useCurrencyStore } from '../../stores/currencyStore'
 
 interface CapturedPie {
   label: unknown
@@ -219,6 +222,43 @@ describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () 
     for (const [index, formatter] of captured.tooltipFormatters.entries()) {
       const [rendered] = formatter(0, 'Groceries')
       expect(rendered, `tooltipFormatters[${index}]`).not.toContain('NaN')
+    }
+  })
+})
+
+/**
+ * What the hover tooltip READS (was `e2e/breakdown-pie-labels.spec.ts:360` and
+ * `:412`; moved by story 84.5, FR137).
+ *
+ * The e2e original hovered a point on the donut and read the tooltip: the slice
+ * name, a `$` figure and a `%` share, on BOTH pies, including the expense-ratio
+ * pie whose LEGEND shows percentages only (story UX-3 review, Correction 2).
+ * Each pie's `<Tooltip>` formatter carries its OWN 100% denominator, so the two
+ * are told apart here by the share each one computes for the same value.
+ *
+ * ⚠️ Hover hit-testing on the donut is the named D2 loss (platform).
+ */
+describe('pie tooltip content (was e2e, story 84.5)', () => {
+  it('each pie reads the slice as a $ amount AND its own share (was e2e :360, :412)', async () => {
+    const pinned = useCurrencyStore.getState()
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+    try {
+      render(<HomePage />)
+      await waitFor(() => expect(captured.pies).toHaveLength(2))
+
+      // Rent, annually (the default duration): 200,000c × 12 = 2,400,000c.
+      // Expense pie total = (200,000 + 60,000) × 12 = 3,120,000c -> 76.9%.
+      // Ratio pie total = INCOME = (500,000 + 120,000) × 12 = 7,440,000c -> 32.3%.
+      // ⚠️ `captured.tooltipFormatters` also holds the category BAR chart's
+      // tooltip, which formats the amount alone (`HomeChartCanvases.tsx`), so
+      // the two pie readings are asserted as members, each with its own share.
+      const readings = captured.tooltipFormatters.map((format) => format(2_400_000, 'Rent'))
+      expect(readings.map(([amount]) => amount)).toEqual(
+        expect.arrayContaining(['$24,000.00 (76.9%)', '$24,000.00 (32.3%)'])
+      )
+      for (const [, name] of readings) expect(name, 'the tooltip names the slice').toBe('Rent')
+    } finally {
+      useCurrencyStore.setState({ mode: pinned.mode, currency: pinned.currency })
     }
   })
 })

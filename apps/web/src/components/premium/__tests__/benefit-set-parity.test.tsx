@@ -310,9 +310,9 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     mockFreeTier()
     render(<HomePage />)
 
-    // SEQUENCE on this surface too. The e2e cannot carry it: `premium-locked.spec.ts`
-    // builds its node list as `[sync-box, ...gates]`, which forces sync first by
-    // construction, so even sync losing its lead position is invisible there.
+    // SEQUENCE on this surface too. The e2e could not carry it: the retired
+    // `premium-locked.spec.ts` (story 84.5) built its node list as
+    // `[sync-box, ...gates]`, forcing sync first by construction.
     const stack = screen.getByRole('heading', { name: 'Premium Features' }).nextElementSibling
     expect(stack, 'the Premium Features stack must follow its heading').not.toBeNull()
     const rendered = [...(stack?.children ?? [])].map((box) => box.textContent ?? '')

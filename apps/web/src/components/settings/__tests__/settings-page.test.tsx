@@ -112,9 +112,10 @@ describe('SettingsPage', () => {
     // ⚠️ WHAT THIS DOES NOT CATCH, stated precisely so the next reader does not
     // over-trust it: a dark-mode control RENAMED to "Appearance" or "Theme" would
     // still satisfy both the throw-on-empty above and the `/dark mode/i` filter
-    // below, and the absence would read as success. Renames are guarded by the
-    // e2e case in `e2e/theme-dark-mode.spec.ts` plus the deletion of the component
-    // file itself, not here.
+    // below, and the absence would read as success. A rename is guarded only by
+    // the deletion of the component file itself. (The e2e case that used to sit
+    // beside this, `e2e/theme-dark-mode.spec.ts`, was moved here by story 84.5;
+    // it matched the same `/dark mode/i` and could not catch a rename either.)
     const switches = screen.getAllByRole('switch')
 
     // Story 7-3 DECISION 2 pinned exactly ONE dark-mode switch here. Story 61.1
@@ -125,6 +126,10 @@ describe('SettingsPage', () => {
       /dark mode/i.test(el.getAttribute('aria-label') ?? el.textContent ?? '')
     )
     expect(darkModeSwitches).toHaveLength(0)
+    // Nor as a button or a checkbox (was e2e theme-dark-mode:46): the control
+    // that was deleted is not allowed back in a different role either.
+    expect(screen.queryByRole('button', { name: /dark mode/i })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: /dark mode/i })).toBeNull()
   })
 
   // Story 17-2: the "Clear local data" control is for EVERY user, unlike the
@@ -171,6 +176,9 @@ describe('SettingsPage', () => {
     expect(
       screen.getByRole('button', { name: 'Custom Categories — premium, locked' })
     ).toBeInTheDocument()
+    // …and NOT a way through (was e2e categories-premium:235): a locked button
+    // beside a live link would let a free visitor straight into the manager.
+    expect(screen.queryByRole('link', { name: /custom categories/i })).toBeNull()
   })
 
   it('links an active Premium user from Settings to category management (30.4b)', () => {

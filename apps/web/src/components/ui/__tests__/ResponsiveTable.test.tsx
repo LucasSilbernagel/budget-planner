@@ -30,8 +30,8 @@ import { describe, expect, it } from 'vitest'
  * would false-match `overflow-hidden`. jsdom computes no layout, so these
  * constants can only be proven structurally here: these cases assert that the
  * module DECLARES the right classes, never that anything fits, stacks or hides.
- * Those are geometry claims and only `e2e/responsive-320.spec.ts` can make
- * them. Read an AC number in a title below as "the class this AC needs is
+ * Those are geometry claims: `e2e/responsive-320.spec.ts` made them until
+ * stories 84.2/84.5 (FR137) deleted it. Read an AC number in a title below as "the class this AC needs is
  * present", not "this AC holds".
  */
 
@@ -205,7 +205,7 @@ describe('ResponsiveTable class layer', () => {
       // beside the "Actions" label in the ~200px a 320px row leaves for the
       // cell. `flex-col` puts the label on its own line and hands the full
       // width to the buttons. Reverting this is what `e2e/responsive-320.spec.ts`
-      // catches as an overflow; this pins it one layer earlier.
+      // caught as an overflow until story 84.2/84.5; this token pin is what is left.
       expect(tokens(RESPONSIVE_ACTIONS_CELL_CLASS)).toContain('max-sm:flex-col')
     })
 

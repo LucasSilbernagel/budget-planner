@@ -1179,10 +1179,11 @@ export function HomePage() {
                 spaced sibling and pick up a 12px margin — leaving an undimmed
                 strip across the top of the open dialog. ⚠️ Measured for EVERY gate
                 during story 33.2, not just the first: with the wrapper the overlay
-                is y=0/full-height from all four, and `e2e/premium-locked.spec.ts`
-                now opens the prompt from each one rather than only from the
-                first — until 33.2 it opened gate 0 only, so a missing wrapper on a
-                later box would have shipped undetected. Story 41.1 re-measured it
+                is y=0/full-height from all four. Until 33.2 the e2e check opened
+                gate 0 only, so a missing wrapper on a later box would have shipped
+                undetected. Since story 84.5 the STRUCTURE is pinned for every gate
+                by `HomePage.test.tsx` › "every gate's upgrade dialog stays inside
+                the gate's OWN wrapper" (the e2e overlay measurement was retired). Story 41.1 re-measured it
                 from all FIVE, sync included.
 
                 Sync's wrapper also carries `data-testid="premium-benefit-sync"`.
@@ -1647,8 +1648,8 @@ function LockedTileContent({
  *   - LOCKED: `PremiumFeatureGate` puts `aria-label={`${featureName} — premium,
  *     locked`}` on the button (`PremiumFeatureGate.tsx:110`). Per accname an
  *     `aria-label` REPLACES the content, so this subtree contributes nothing.
- *     The locked queries (`HomePage.test.tsx:123`, `e2e/premium-locked.spec.ts:65`)
- *     ride on the `featureName` prop alone.
+ *     The locked queries (`HomePage.test.tsx:123`; until story 84.5 also
+ *     `e2e/premium-locked.spec.ts:65`) ride on the `featureName` prop alone.
  *   - UNLOCKED: the `<a>` carries no `aria-label`, so its name is its CONTENTS —
  *     the title span AND the subtitle span, concatenated. The name therefore
  *     changes whenever the subtitle changes (story 57.1 did exactly that). Its

@@ -814,8 +814,9 @@ describe('RetirementAccumulationPlanner — income period basis', () => {
  * All money fields here share a single `currencyField` render helper, so one
  * onChange covers them; these prove the wiring reaches each field and that the
  * non-money numeric fields beside them were not swept up. ⚠️ There is no e2e net
- * on this route — `e2e/money-input-sanitization.spec.ts` covers /income,
- * /expenses, /savings and /balance, not /retirement. These are the only guard.
+ * on any money field since story 84.5 (FR137) retired
+ * `e2e/money-input-sanitization.spec.ts`, which never covered /retirement anyway.
+ * These are the only guard here.
  */
 describe('RetirementAccumulationPlanner money inputs reject non-numeric characters', () => {
   beforeEach(resetStores)

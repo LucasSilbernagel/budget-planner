@@ -640,7 +640,9 @@ describe('IncomePage form controls have a visible focus ring', () => {
  * ⚠️ These are STRUCTURE and CLASS assertions, not layout proofs. jsdom
  * computes no layout (every width is 0), so nothing here can show that anything
  * fits, stacks or hides; a width assertion would pass vacuously. The geometry
- * proofs live in `e2e/responsive-320.spec.ts`. Titles below say "declares"
+ * proofs lived in `e2e/responsive-320.spec.ts` until stories 84.2/84.5 (FR137)
+ * deleted it; the CI screenshots (`income-320-light`, `income-768-light`,
+ * `income-1280-dark`) are the only layout check on this page now. Titles below say "declares"
  * rather than "does" for exactly that reason.
  *
  * Every class check asserts TOKEN membership, never a substring of `className`:
@@ -1090,6 +1092,26 @@ describe('IncomePage — sort by column (34.2)', () => {
     expect(header('Name')).toHaveAttribute('aria-sort', 'none')
   })
 
+  it('a header click RESUMES the cycle from a sort chosen on the mobile control (was e2e mobile-table-sort:275)', async () => {
+    // ⚠️ THE SHARED-STATE-MACHINE CLAIM, not just a shared value. The `desc`
+    // state comes from the `<select>`, never from two header clicks, so the
+    // header's FIRST activation must clear it (`nextSortState(desc) -> null`).
+    // A header that kept its own cycle would go to `ascending` here. Both
+    // surfaces are in the jsdom DOM at once; the viewport switch the e2e
+    // original drove is CSS (`max-sm:hidden`), the named D2 loss.
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+
+    await user.selectOptions(sortControl(), 'name:desc')
+    expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
+    expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
+
+    await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none')
+    expect(sortControl().value).toBe('manual')
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+  })
+
   describe('Category is a sort target only for entitled users (AC-5)', () => {
     it('offers Category as a mobile sort option ONLY for an entitled user (48.1 AC-7)', async () => {
       // ⚠️ EXACT ARRAYS on BOTH tiers. `queryByRole('option', { name: /Category/ })`
@@ -1295,5 +1317,83 @@ describe('IncomePage — sort by column (34.2)', () => {
     for (const name of ['Name', 'Amount', 'Frequency']) {
       assertHasFocusRing(within(header(name)).getByRole('button', { name }), name)
     }
+  })
+})
+
+/**
+ * Money-field behaviour a value-only assertion cannot see (was
+ * `e2e/money-input-sanitization.spec.ts`, story 28-1; moved by story 84.5).
+ *
+ * ⚠️ jsdom DOES reproduce the caret jump (MEASURED at 84.5 Task 1): with the
+ * `onChange` reduced to `sanitizeMoneyInput(e.target.value)` (no caret write),
+ * React's controlled-value restore moves the caret from 3 to 8 here, exactly as
+ * Chromium did. So the selection is asserted, not just the string.
+ */
+describe('IncomePage money field: caret, focus and magnitude (story 28-1)', () => {
+  beforeEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+  })
+
+  async function openAmount(user: ReturnType<typeof userEvent.setup>): Promise<HTMLInputElement> {
+    renderWithProviders(<IncomePage />)
+    await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
+    return within(screen.getByRole('dialog')).getByTestId('income-amount-input') as HTMLInputElement
+  }
+
+  it('rejecting a character mid-string keeps the caret and focus (was e2e money-input-sanitization:58)', async () => {
+    const user = userEvent.setup()
+    const amount = await openAmount(user)
+
+    await user.click(amount)
+    await user.keyboard('12abc34')
+    expect(amount).toHaveValue('1234')
+    expect(amount).toHaveFocus()
+
+    await user.clear(amount)
+    await user.keyboard('1,234.56')
+    amount.setSelectionRange(3, 3)
+
+    await user.keyboard('x')
+    expect(amount).toHaveValue('1,234.56')
+    // The caret stays where the rejected character was — NOT at the end (8).
+    expect(amount.selectionStart).toBe(3)
+
+    // …and a legal character still inserts at that same position.
+    await user.keyboard('9')
+    expect(amount).toHaveValue('1,2934.56')
+    expect(amount.selectionStart).toBe(4)
+  })
+
+  it('a stray leading separator cannot rescale the amount, and submit rejects it (was e2e money-input-sanitization:92)', async () => {
+    const user = userEvent.setup()
+    const amount = await openAmount(user)
+
+    await user.click(amount)
+    await user.keyboard('1000')
+    await user.tab()
+    expect(amount).toHaveValue('1,000.00')
+
+    // Caret to the very start, fumble a '.'. This used to yield ".1,00000" -> $0.10.
+    await user.click(amount)
+    amount.setSelectionRange(0, 0)
+    await user.keyboard('.')
+    await user.tab()
+    // Pinned EXACTLY (84.5 code review: `not.toHaveValue('0.10')` passed for any
+    // other wrong value). MEASURED: the malformed `.1,000.00` blurs to `0.00`,
+    // i.e. it is read as no amount, never rescaled to 0.10; submit rejects it.
+    expect(amount).toHaveValue('0.00')
+
+    // And it must be REJECTED, not saved as some other number.
+    const dialog = screen.getByRole('dialog')
+    await user.type(within(dialog).getByTestId('income-name-input'), 'Salary')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
+    expect(within(dialog).getByTestId('income-amount-error')).toHaveTextContent(
+      'Please enter a valid positive amount'
+    )
+    expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 })

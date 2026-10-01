@@ -605,4 +605,27 @@ describe('the seed survives the rehydration race (62.1 AC-9)', () => {
       `server html length ${serverHtml.length}, client html length ${clientHtml.length}`
     ).toEqual([])
   })
+
+  /**
+   * ⚠️ DESIGNED-RED CONTROL for the test above (84.5 code review; the 84.3 HIGH:
+   * React 19 reports NO error for a mismatch directly under the hydration root,
+   * so "no recoverable error" proves nothing unless this harness is shown to
+   * HEAR one). The probe reads the store with `getState()`, bypassing the
+   * hydration snapshot, so it renders 0 rows on the server and the filled count
+   * on the client, NESTED inside the subject's tree as a real mismatch would be.
+   */
+  it('CONTROL: the same harness reports a nested mismatch when one exists', async () => {
+    function MismatchProbe() {
+      return (
+        <section>
+          <div>
+            <span>{useIncomeStore.getState().incomeSources.length} rows</span>
+          </div>
+          <ScenarioBuilder onSave={vi.fn()} />
+        </section>
+      )
+    }
+    const { recoverable } = await hydrateAfterStoresFill(<MismatchProbe />)
+    expect(recoverable.length, 'the harness could not hear a designed mismatch').toBeGreaterThan(0)
+  })
 })

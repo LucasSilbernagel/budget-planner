@@ -9,8 +9,9 @@
  * NFR9 demands a MEASURED before/after. A wall-clock millisecond figure is not
  * reproducible by a second person — it is a property of the machine that took it.
  * This number is a property of the BUILD: same commit in, same bytes out, on any
- * host. So M1 carries the improvement claim and M2 (`e2e/refresh-to-figures.spec.ts`)
- * carries only the user-facing one.
+ * host. So M1 carries the improvement claim and M2 (`perf/refresh-to-figures.spec.ts`,
+ * manual, `playwright.perf.config.ts`; `e2e/` until story 84.5) carries only the
+ * user-facing one.
  *
  * ## Why these assets and not others
  *

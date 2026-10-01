@@ -400,8 +400,8 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
 
     // ⚠️ NOT clicked: jsdom does not implement navigation, so clicking a real
     // `<a href>` emits `Not implemented: navigation` to stderr. The anchor has no
-    // `onClick`, so "no second dialog" holds by construction; the navigation is
-    // proved in `e2e/categories-premium.spec.ts`.
+    // `onClick`, so "no second dialog" holds by construction; that the click is a
+    // navigation nothing intercepts is the 41.2 test below (story 84.5).
 
     // Still exactly one dialog: `Modal` does not inert the background
     // (Modal.tsx:38-40), so a nested dialog stays forbidden even though story
@@ -422,6 +422,60 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
     expect(within(locked).getByRole('link')).toHaveAttribute('href', '/pricing')
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
   })
+
+  /**
+   * The locked picker's click is a REAL navigation that nothing intercepts (was
+   * `e2e/categories-premium.spec.ts:266`, story 41.2; moved by story 84.5).
+   *
+   * The e2e original followed the link and checked that the entry modal, its
+   * scroll lock and its focus did not come along. A plain `<a href>` gives all
+   * three by construction, because the browser loads a NEW document. What our
+   * code can break is the plain-ness: an `onClick` that calls `preventDefault()`
+   * (a router `Link`, or a handler opening a nested dialog) keeps the user on
+   * the form.
+   *
+   * ⚠️ The witness is jsdom's own anchor activation: it runs only for a click
+   * whose default action was NOT prevented, and jsdom reports it as
+   * "Not implemented: navigation" on the console. That depends on Vitest's jsdom
+   * environment forwarding jsdom's VirtualConsole errors to `console.error`; if
+   * that ever stops, this test goes RED (0 navigations), never silently green. A window-level listener cannot
+   * see this click (the `Modal` card's `onClick` calls `stopPropagation()`,
+   * `Modal.tsx:357`; MEASURED: 0 events reached a window listener), so the console is the reliable signal here.
+   *
+   * ⚠️ The document load, and the scroll and focus state after it, are the named
+   * D2 loss (platform).
+   */
+  for (const { Page, prefix, addButton } of [
+    { Page: ExpensesPage, prefix: 'expense', addButton: '+ Add Expense' },
+    { Page: IncomePage, prefix: 'income', addButton: '+ Add Income Source' },
+  ] as const) {
+    it(`41.2: the ${prefix} form's locked picker is a navigation nothing intercepts (was e2e categories-premium:266)`, async () => {
+      const user = userEvent.setup()
+      free()
+      render(<Page />)
+      await user.click(screen.getByRole('button', { name: addButton }))
+      const link = within(screen.getByTestId(`${prefix}-category-locked`)).getByRole('link')
+      expect(link).toHaveAttribute('href', '/pricing')
+
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await user.click(link)
+        const navigations = consoleError.mock.calls.filter((args) =>
+          String(args[0]).includes('Not implemented: navigation')
+        )
+        expect(
+          navigations,
+          'the browser default (navigate to /pricing) must not be prevented'
+        ).toHaveLength(1)
+      } finally {
+        consoleError.mockRestore()
+      }
+
+      // …and the click opened nothing on the way: no second dialog, no prompt.
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+      expect(screen.queryByRole('dialog', { name: /go premium/i })).toBeNull()
+    })
+  }
 
   it('a free user can still add an expense, uncategorized, with no required field added', async () => {
     const user = userEvent.setup()

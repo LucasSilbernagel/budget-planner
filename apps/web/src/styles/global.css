@@ -31,7 +31,9 @@
      the class, the canvas would stay light while every `dark:` utility went
      dark, and the app would render dark cards on a white page.
 
-     ⚠️ THE GUARD IS `e2e/theme-dark-mode.spec.ts`, WHICH READS `document.body`.
+     ⚠️ THE GUARD WAS `e2e/theme-dark-mode.spec.ts`, WHICH READ `document.body`;
+     since story 84.5 it is `src/__tests__/theme-media.guard.test.ts`, which pins
+     this rule under the media query (the painted canvas is unpinned).
      Measured by mutation, because the obvious guess is wrong: reverting this rule
      to `.dark body` leaves `e2e/theme-page-coverage.spec.ts` ENTIRELY GREEN. That
      sweep asserts `.surface-sunken` / `.surface`, which are `dark:` UTILITIES —

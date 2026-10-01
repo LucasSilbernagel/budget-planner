@@ -994,9 +994,9 @@ export function GlobalNav() {
           what would catch a regression; a nav that outgrows the viewport ON
           ITS OWN still overflows the document sideways. The measured headroom
           lives there, in ONE place; do not restate it here.
-          `responsive-320.spec.ts` and `global-nav.spec.ts` swept 320px only,
-          and neither sweep survives stories 84.2/84.3 (FR137); the 320px
-          screenshots are what is left.
+          `responsive-320.spec.ts` and `global-nav.spec.ts` swept 320px only;
+          stories 84.2/84.3 removed those sweeps and 84.5 deleted the last of
+          `responsive-320.spec.ts` (FR137); the 320px screenshots are what is left.
 
           ⚠️ This comment carried its own copy of the "row wants 778px …
           clearing only at 800px" figures until story 43.3. It was the THIRD copy

@@ -105,3 +105,34 @@ describe('ProfilesPage gating', () => {
     expect(screen.queryByRole('button', { name: /new profile/i })).not.toBeInTheDocument()
   })
 })
+
+/**
+ * The header carries no switcher dropdown (was
+ * `e2e/profiles-card-switcher.paid.spec.ts:141`, story 63.1 FR96; moved by story
+ * 84.5). The profile CARDS are the switcher; the deleted dropdown's trigger had
+ * `aria-haspopup` and its menu read "Switch Profile".
+ *
+ * ⚠️ Scoped to the header, located by its content and positively controlled, as
+ * the e2e original was: a page-wide `[aria-haspopup]` count would pin an
+ * unrelated global invariant, and a locator matching nothing would pass for the
+ * wrong reason.
+ */
+describe('ProfilesPage header (story 63.1)', () => {
+  it('carries no switcher dropdown beside "+ New Profile"', () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    render(<ProfilesPage />)
+
+    const newProfile = screen.getByRole('button', { name: '+ New Profile' })
+    const heading = screen.getByRole('heading', { level: 1, name: 'Profiles' })
+    // The header row is the nearest element holding BOTH.
+    let header: HTMLElement | null = newProfile.parentElement
+    while (header && !header.contains(heading)) header = header.parentElement
+    expect(header, 'the header row holding the heading and the action').not.toBeNull()
+    // …and it IS the header, not a page-wide ancestor (84.5 code review): it
+    // must not reach the profile list below it.
+    expect(header).not.toContainElement(screen.getByTestId('profile-list'))
+
+    expect(header?.querySelectorAll('[aria-haspopup]')).toHaveLength(0)
+    expect(screen.queryByText('Switch Profile', { exact: true })).toBeNull()
+  })
+})

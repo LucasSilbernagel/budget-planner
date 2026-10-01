@@ -296,9 +296,9 @@ describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
     // `Error: Not implemented: navigation (except hash changes)` to stderr —
     // noise that a fail-on-console-error config would turn red. The click added
     // nothing anyway: with no `onClick` on the anchor, "no dialog opens" already
-    // follows from the element being an `<a>` with an href. The NAVIGATION
-    // itself is proved in `e2e/categories-premium.spec.ts`, which is the only
-    // layer that can prove it.
+    // follows from the element being an `<a>` with an href. That the click is a
+    // navigation nothing intercepts is pinned in `category-assignment.test.tsx`
+    // (story 84.5); the document load itself is a browser behaviour.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 

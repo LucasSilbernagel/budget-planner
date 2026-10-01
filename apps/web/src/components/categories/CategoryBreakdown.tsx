@@ -164,10 +164,11 @@ export function CategoryBreakdown(): ReactElement {
       aria-labelledby={headingId}
       className="surface rounded-lg shadow-md p-4 sm:p-6"
     >
-      {/* ⚠️ NOT the literal "Categories": `categories-premium.spec.ts` asserts
-          a `^categories$` heading has count 0 on the free branch, and a
-          colliding heading would turn that spec into a landmine the moment
-          session seeding exists. */}
+      {/* ⚠️ NOT the literal "Categories": `e2e/categories-premium.spec.ts`
+          asserted a `^categories$` heading was absent on the free branch (until
+          story 84.5 moved its claims to `CategoriesPage.test.tsx`, which keys on
+          test ids instead), and a colliding heading would make any such
+          heading-absence check meaningless. */}
       <h2 id={headingId} className="text-xl font-semibold text-subheading">
         Category breakdown
       </h2>

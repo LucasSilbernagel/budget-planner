@@ -904,6 +904,20 @@ describe('SavingsPage money inputs reject non-numeric characters', () => {
     expect(targetInput).toHaveValue('5,000.00')
   })
 
+  it('never lets a typed letter into the TARGET amount field (was e2e money-input-sanitization:130)', async () => {
+    // The e2e original typed into the target field; the test below covers the
+    // current balance only, and each field wires its own `onChange`.
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+
+    await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
+    const targetInput = screen.getByTestId('savings-target-amount-input')
+    await user.type(targetInput, '9abc9')
+
+    expect(targetInput).toHaveValue('99')
+    expect(targetInput).toHaveFocus()
+  })
+
   it('never lets a typed letter into the current balance field', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
@@ -2057,8 +2071,9 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
  * pin is the only guard there is. Do not "simplify" it away.
  *
  * ⚠️ jsdom COMPUTES NO LAYOUT, so the checks below are class-token DECLARATION
- * checks and nothing more. The rendered floor is measured in
- * `e2e/responsive-320.spec.ts`. ⚠️ **The story predicted a mutation green here
+ * checks and nothing more. The rendered floor was measured in
+ * `e2e/responsive-320.spec.ts` until stories 84.2/84.5 deleted it (FR137); no
+ * test measures it now. ⚠️ **The story predicted a mutation green here
  * and red there, and no such mutation exists** — arms M8 and M8b both came back
  * green on BOTH halves, because every token these tests pin is also one the
  * rendered box depends on, and the arbitrary-value CSS is emitted from
@@ -2199,8 +2214,8 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
     // zero-sized glyph: jsdom computes no layout, and the Playwright test
     // measures the BUTTON, which is 44px from `min-h` no matter what the icon
     // does. So `h-0 w-0` would ship the affordance invisible with every gate
-    // green. This is the hazard `responsive-320.spec.ts:466-473` records for
-    // the row-action icons; the same pin belongs here.
+    // green. This is the hazard the (since deleted) `responsive-320.spec.ts`
+    // recorded for the row-action icons; the same pin belongs here.
     const iconTokens = [...icon.classList]
     expect(iconTokens).toContain('h-3')
     expect(iconTokens).toContain('w-3')
@@ -2237,7 +2252,9 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
     assertHasMobileTapTarget(disclosure(), 'the leftover breakdown disclosure')
     // ⚠️ Without a flex display the min-height still applies but the text and
     // the glyph do not centre in the box. The class-token helper above cannot
-    // see that and neither can jsdom; `e2e/responsive-320.spec.ts` can.
+    // see that and neither can jsdom (the e2e that could, `responsive-320.spec.ts`,
+    // was deleted by stories 84.2/84.5; no test measures it now, and there is
+    // no `/savings` screenshot).
     expect(tokensOf(disclosure())).toContain('inline-flex')
   })
 

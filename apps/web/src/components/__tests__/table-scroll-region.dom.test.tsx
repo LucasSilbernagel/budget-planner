@@ -131,9 +131,9 @@ describe('table scroll region', () => {
       })
 
       it('nests no second scroll container (AC-7)', () => {
-        // A nested `overflow-x-auto` double-counts in `responsive-320.spec.ts`'s
-        // wrapper sweep and silently redirects `categories-premium.spec.ts`'s
-        // bare `document.querySelector`.
+        // A nested `overflow-x-auto` double-counted in the wrapper sweeps of the
+        // e2e specs stories 84.2/84.5 retired, and any bare
+        // `document.querySelector('div.overflow-x-auto')` still picks the wrong one.
         const { container } = page.render()
         const wrappers = container.querySelectorAll('div.overflow-x-auto')
         for (const w of wrappers) {

@@ -1,4 +1,4 @@
-import { act, renderWithProviders, screen, within } from '@/test/utils'
+import { act, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { Profiler, type ProfilerOnRenderCallback } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -14,6 +14,7 @@ import {
   TABLE_SORT_VERSION,
   useTableSortStore,
 } from '../../stores/tableSortStore'
+import { renderAfterReload } from '../../test/reload-chain'
 import { BalancePage } from '../BalancePage'
 import { ExpensesPage } from '../ExpensesPage'
 import { IncomePage } from '../IncomePage'
@@ -679,5 +680,117 @@ describe('no first-paint flash from manual order into the persisted sort (AC-10)
 
     expect(orders.length).toBeGreaterThan(0)
     expect(orders[0]).toEqual(MANUAL_ORDER)
+  })
+})
+
+/**
+ * A sort SURVIVES a page load (was `e2e/table-sort-persistence.spec.ts` and
+ * `e2e/mobile-table-sort.spec.ts:260`, story 84.5; FR137).
+ *
+ * The tests above seed the stored blob BY HAND, so none of them can see the
+ * WRITE half: a `partialize` that stores nothing leaves every one of them green.
+ * These start from a real header click or a real mobile-control choice and cross
+ * the reload chain (`test/reload-chain.tsx`): stores back to their initial state,
+ * storage the only carrier, `StoreHydration` the only reader.
+ *
+ * ⚠️ The browser re-reading storage on a real reload is the named D2 loss.
+ */
+describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
+  function nameHeader(): HTMLElement {
+    return screen.getByRole('columnheader', { name: 'Name' })
+  }
+  async function clickName(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await user.click(within(nameHeader()).getByRole('button', { name: 'Name' }))
+  }
+
+  it('a header sort survives (was e2e table-sort-persistence:120, :161)', async () => {
+    const user = userEvent.setup()
+    seedIncome()
+    renderWithProviders(<IncomePage />)
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+
+    await clickName(user)
+    expect(renderedOrder()).toEqual(BY_NAME_ASC)
+
+    await renderAfterReload(<IncomePage />)
+
+    // Nothing was activated after the reload: the order and the token can only
+    // have come out of storage.
+    expect(renderedOrder()).toEqual(BY_NAME_ASC)
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
+  })
+
+  it('the DIRECTION survives, not just the column (was e2e table-sort-persistence:141)', async () => {
+    const user = userEvent.setup()
+    seedIncome()
+    renderWithProviders(<IncomePage />)
+    await clickName(user)
+    await clickName(user)
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'descending')
+
+    await renderAfterReload(<IncomePage />)
+
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'descending')
+    expect(renderedOrder()).toEqual([...BY_NAME_ASC].reverse())
+  })
+
+  it('a CLEARED sort stays cleared while a sibling table keeps its sort (was e2e table-sort-persistence:176)', async () => {
+    // ⚠️ The SIBLING is the falsifier, as in the e2e original: with nothing
+    // persisted at all, "cleared" and "never stored" look identical on Income
+    // alone. Expenses carries the half that needs storage to work.
+    const user = userEvent.setup()
+    seedIncome()
+    seedExpenses()
+    const income = renderWithProviders(<IncomePage />)
+    await clickName(user)
+    await clickName(user)
+    await clickName(user)
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'none')
+    income.unmount()
+
+    renderWithProviders(<ExpensesPage />)
+    await clickName(user)
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
+
+    await renderAfterReload(<ExpensesPage />)
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
+
+    await renderAfterReload(<IncomePage />)
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'none')
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+  })
+
+  it('a sort chosen from the MOBILE control survives (was e2e mobile-table-sort:260)', async () => {
+    const user = userEvent.setup()
+    seedIncome()
+    renderWithProviders(<IncomePage />)
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Sort income sources' }),
+      'amount:desc'
+    )
+    const sorted = renderedOrder()
+    expect(sorted).not.toEqual(MANUAL_ORDER)
+
+    await renderAfterReload(<IncomePage />)
+
+    expect(incomeSortControlValue()).toBe('amount:desc')
+    expect(renderedOrder()).toEqual(sorted)
+  })
+
+  it('a stored payload that is not a sort at all opens in manual order (was e2e table-sort-persistence:252)', async () => {
+    // The e2e original's exact payload: a bare string where a `{ key, direction }`
+    // object belongs, at the CURRENT version so `migrate` never sees it.
+    seedIncome()
+    localStorage.setItem(
+      TABLE_SORT_STORAGE_KEY,
+      JSON.stringify({ state: { sorts: { income: 'amount' } }, version: TABLE_SORT_VERSION })
+    )
+
+    await renderAfterReload(<IncomePage />)
+
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'none')
+    expect(renderedOrder()).toEqual(MANUAL_ORDER)
+    expect(screen.getAllByRole('button', { name: /^Edit / }).length).toBeGreaterThan(0)
   })
 })

@@ -48,9 +48,10 @@ import type { useCurrencyPreferences } from '../stores/currencyStore'
  * hoist and `e2e/hydration.spec.ts` stayed GREEN 9/9: React treats a `Suspense`
  * boundary that resolves differently on the server and on the client as ordinary
  * Suspense behaviour, not as a hydration mismatch, so no `pageerror` fires. The
- * detector that DOES catch it is the SSR-response fence in
- * `e2e/refresh-to-figures.spec.ts` ("the SSR response carries NO chart library"),
- * which was added because M9 refuted the story's own prediction.
+ * detector that DOES catch it is the SSR-response fence, added because M9
+ * refuted the story's own prediction: since story 84.5 it is
+ * `src/__tests__/served-pages.served.test.ts` › "/ serves no "recharts" anywhere
+ * in the document" (it was `e2e/refresh-to-figures.spec.ts`).
  *
  * ## ⚠️ Footprint: the box belongs to the CALLER, deliberately
  *

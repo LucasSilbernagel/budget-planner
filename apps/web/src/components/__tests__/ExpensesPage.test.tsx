@@ -328,8 +328,9 @@ describe('ExpensesPage edit modal prefills a grouped, locale-aware amount', () =
  * Mobile card presentation (story 31.2, UX-DR36).
  *
  * See `IncomePage.test.tsx` for the full rationale — one `<table>` in the DOM,
- * CSS-only switching, class-TOKEN assertions, and the 320px geometry proofs
- * deferred to `e2e/responsive-320.spec.ts` because jsdom computes no layout.
+ * CSS-only switching, class-TOKEN assertions. jsdom computes no layout, and since
+ * stories 84.2/84.5 deleted `e2e/responsive-320.spec.ts` no test measures this
+ * page's 320px geometry (there is no `/expenses` screenshot).
  */
 describe('ExpensesPage mobile card presentation (story 31.2)', () => {
   beforeEach(() => {

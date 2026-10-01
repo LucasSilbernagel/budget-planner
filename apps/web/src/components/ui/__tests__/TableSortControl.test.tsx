@@ -22,8 +22,9 @@ import { TableSortControl } from '../TableSortControl'
  * layout, so it cannot see the one thing most likely to break this control: a
  * `<select>`'s intrinsic width is set by its longest `<option>`, which on
  * `/savings` puts the unconstrained box at exactly the card interior under CI's
- * font. That is measured and pinned in `e2e/mobile-table-sort.spec.ts`; a green
- * run of THIS file says nothing about any width.
+ * font. That was measured and pinned in `e2e/mobile-table-sort.spec.ts`, which
+ * stories 84.2/84.5 (FR137) deleted; a green run of THIS file says nothing about
+ * any width, and no screenshot shoots `/savings`.
  */
 
 type Key = 'name' | 'amount' | 'category'

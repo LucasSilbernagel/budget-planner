@@ -82,9 +82,9 @@ import type { ReactNode } from 'react'
  * a sideways-scrolling *document* at 320px — which is the exact UX-DR9
  * violation this work exists to remove. Containment wins.
  *
- * So `e2e/responsive-320.spec.ts`'s per-wrapper assertion is the primary guard;
- * its document-level assertion is the escape hatch for overflow that bypasses
- * the wrapper entirely.
+ * So `e2e/responsive-320.spec.ts`'s per-wrapper assertion was the primary guard
+ * and its document-level assertion the escape hatch for overflow that bypasses
+ * the wrapper entirely, until stories 84.2/84.5 (FR137) deleted it.
  *
  * ⚠️ Story 42.2 (UX-DR46) did NOT change this decision — it is still live, and
  * this constant is still exactly `overflow-x-auto`. What 42.2 added is a
@@ -195,7 +195,8 @@ export const RESPONSIVE_THEAD_CLASS = 'surface-inset max-sm:hidden'
  * no card fallback, and the four-column free-tier `/income` and `/expenses`
  * tables do not fit their `overflow-x-auto` wrapper at `px-6`. Measured on
  * `/income` at a 768px viewport (656px of wrapper client width), with the
- * long-name/12-digit-amount seed `e2e/categories-premium.spec.ts` uses:
+ * long-name/12-digit-amount seed `e2e/categories-premium.spec.ts` used (deleted
+ * by story 84.5):
  *
  * | build                          | Noto Sans (dev) | DejaVu Sans (CI) |
  * | ------------------------------ | --------------- | ---------------- |
@@ -294,7 +295,7 @@ export const RESPONSIVE_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-basel
  * 320px viewport leaves about 200px of inner cell width once the page, section,
  * card and cell padding are subtracted, and the "Actions" label was consuming
  * roughly a quarter of it. Stacking reclaims that width; `e2e/responsive-320.spec.ts`
- * is what proves the result actually fits.
+ * proved the result fits until stories 84.2/84.5 (FR137) deleted it.
  *
  * `max-sm:items-center` is retained and still does real work under `flex-col`,
  * where it centres the button group on the cross axis. */

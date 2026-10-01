@@ -33,40 +33,40 @@ import { type Page, expect, test } from '@playwright/test'
  * additionally rejects `$0.00`, so a skeleton, an empty render, or a genuinely
  * empty store can never satisfy the metric.
  *
- * ## Two arms, and why they are split
+ * ## Manual only, outside every suite (story 84.5, D3, Lucas 2026-10-01)
  *
- * - **Always-on** (this file's default): deterministic, relative, server-agnostic
- *   assertions that keep the harness honest — the observer fired, the value is
- *   real, an injected delay MOVES the number, and an unseeded page never records.
- *   No absolute millisecond threshold is asserted anywhere, so there is nothing
- *   here for a slow host to trip.
- * - **Env-gated** (`REFRESH_TO_FIGURES=1`): the 11-sample medians at 1x and 4x CPU
- *   that produced the numbers in the story. Gated for the same reason
- *   `pwa.spec.ts:70-76` gated its built-server block (until story 84.4): the default `pnpm test:e2e`
- *   boots `pnpm dev` (`playwright.config.ts:35`), and a refresh-to-figures time
- *   measured against a Vite dev server is a number about Vite, not about the app.
+ * This file is the MEASUREMENT: the 11-sample medians at 1x and 4x CPU that
+ * produced NFR9's numbers, with the throttle and cache controls. It lives in
+ * `apps/web/perf/` and runs ONLY through `playwright.perf.config.ts`, which the
+ * default `playwright test` (every gate, every CI run) never loads. It ran in no
+ * gate before either: it was env-gated inside `e2e/`, and the four always-on
+ * tests beside it checked the INSTRUMENT, not the app. Those were dropped; the
+ * one app claim among them ("the SSR response carries NO chart library") moved to
+ * `src/__tests__/served-pages.served.test.ts`.
  *
- * ⚠️ **Never turn M2 into a CI assertion.** CI runs `workers: 1`, `retries: 2` on a
- * shared runner against the dev server. The repo already carries the lesson that a
- * flaky gate invites re-running until green.
+ * Run it against a production build you started yourself (a number measured
+ * against a Vite dev server is a number about Vite, not about the app):
+ *
+ *   pnpm --filter web build
+ *   cd apps/web && DATABASE_URL='' PORT=8080 node server-entry.mjs   # leave running
+ *   cd apps/web && PLAYWRIGHT_BASE_URL=http://localhost:8080 \
+ *     ./node_modules/.bin/playwright test --config playwright.perf.config.ts
+ *
+ * (Exactly what ran at story 84.5's close: `84-5-evidence/perf-run.log`.)
+ *
+ * ⚠️ **Never turn M2 into a CI assertion.** A shared CI runner's timings are a
+ * property of the runner, and the repo already carries the lesson that a flaky
+ * gate invites re-running until green.
  */
 
 /**
- * Discarded loads before the sensitivity control's baseline, and how many baseline
- * samples it then takes. Both absorb the dev server's on-demand compile — see the
- * comment in that test.
- */
-/**
- * Budget for a wait that may be the first request to a cold dev server, which pays
- * Vite's on-demand compile of the whole route graph. NOT a performance budget — no
+ * Budget for a WAIT (a first load can be slow, e.g. a cold server or a throttled
+ * CPU). NOT a performance budget — no
  * assertion in this file compares against it.
  */
 const COLD_COMPILE_TIMEOUT_MS = 60_000
 
-const WARMUP_LOADS = 2
-const BASELINE_SAMPLES = 3
-
-/** Sample count for the env-gated measurement arm. Odd, so the median is a real reading. */
+/** Sample count per condition. Odd, so the median is a real reading. */
 const SAMPLES = 11
 
 /**
@@ -372,33 +372,6 @@ function armFigureObserver() {
 }
 
 /**
- * Delay the FIRST script request by `ms`, let every other request through, and
- * return the live count of requests actually delayed.
- *
- * ⚠️ The RETURN VALUE is the mechanism check, and it exists because of story 38.2's
- * review finding RF4: the first version of the footprint spec's guard re-read the
- * DOM after measuring, and disabling the blocker left it passing 5/5 because every
- * read finished inside the pre-hydration window anyway. **A timing-dependent guard
- * against a timing bug is not a guard.** Count what was actually delayed.
- */
-async function delayFirstScript(page: Page, ms: number): Promise<{ count: number }> {
-  const delayed = { count: 0 }
-  // ⚠️ AWAITED. `page.route()` resolves once interception is installed; discarding
-  // the promise let `goto` race ahead of it, leaving `count` at 0 and failing the
-  // anti-vacuity assertion nondeterministically — a flaky red in a file whose header
-  // warns that a flaky gate invites re-running until green.
-  await page.route('**/*', async (route) => {
-    if (route.request().resourceType() === 'script' && delayed.count === 0) {
-      delayed.count++
-      await new Promise((resolve) => setTimeout(resolve, ms))
-      return route.continue()
-    }
-    return route.continue()
-  })
-  return delayed
-}
-
-/**
  * A named measurement condition. `network: null` means unthrottled transport.
  *
  * ⚠️ **The loopback condition flatters a byte saving into invisibility, and that
@@ -475,12 +448,10 @@ async function applyCondition(page: Page, condition: Condition): Promise<void> {
 async function measureOnce(page: Page): Promise<FigureReading> {
   await page.goto('about:blank')
   await page.goto('/', { waitUntil: 'commit' })
-  // A WAIT, not the measurement. The number is already recorded in-page by then.
-  // A WAIT, not the measurement — but its timeout must outlast a COLD Vite compile,
-  // which the 5s default does not. Measured: on a cold dev server (cache cleared) the
-  // first load of `/` blew the default and failed this file's first test at ~5.1s,
-  // while the figure itself was fine. The number is already recorded in-page by the
-  // time this resolves, so a longer wait cannot inflate it.
+  // A WAIT, not the measurement: the number is already recorded in-page by the
+  // time this resolves, so a longer timeout cannot inflate it. (It was sized for a
+  // cold Vite dev server, where the 5 s default failed at ~5.1 s, when this file
+  // still ran in `e2e/`.)
   await expect(page.getByTestId('overview-net-worth')).toHaveText(EXPECTED_NET_WORTH, {
     timeout: COLD_COMPILE_TIMEOUT_MS,
   })
@@ -511,160 +482,13 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
     await page.addInitScript(armFigureObserver)
   })
 
-  test('the instrument records an OBSERVED timestamp for the real figure', async ({ page }) => {
-    const reading = await measureOnce(page)
-    assertHonest(reading)
-    // Sanity, not a budget: a navigation cannot complete before it starts.
-    expect(reading.at as number).toBeGreaterThan(0)
-    console.log(
-      `[refresh-to-figures] seed=${JSON.stringify(SEED_SIZE)} figure=${reading.text} t=${(
-        reading.at as number
-      ).toFixed(1)}ms`
-    )
-  })
-
-  test('SENSITIVITY CONTROL: an injected delay moves the number', async ({ page }) => {
-    // ⚠️ WARM-UP AND A MIN-OF-N BASELINE, AND NEITHER IS OPTIONAL.
-    //
-    // Against the dev server the first loads of `/` pay Vite's on-demand compile of
-    // the route graph. Measuring `baseline` cold and `delayed` warm makes the
-    // subtraction `(warm + DELAY_MS) - cold`, which goes NEGATIVE. That is measured,
-    // not feared: code review predicted it, the full suite then failed on it, and a
-    // deliberate cold-server reproduction (Vite cache cleared) recorded
-    // `baseline=3232.7ms delayed=2510.3ms moved=-722.4ms`.
-    //
-    // One warm-up load was NOT enough — Vite keeps compiling across later requests.
-    // So: warm up, then take several baseline samples and keep the MINIMUM. A cold
-    // outlier can only INFLATE a baseline, and an inflated baseline is exactly what
-    // shrinks `moved` below the floor, so the minimum is the conservative estimator —
-    // it biases against the assertion rather than towards it.
-    for (let i = 0; i < WARMUP_LOADS; i++) {
-      await measureOnce(page)
-    }
-
-    const baselineSamples: number[] = []
-    for (let i = 0; i < BASELINE_SAMPLES; i++) {
-      const sample = await measureOnce(page)
-      assertHonest(sample)
-      baselineSamples.push(sample.at as number)
-    }
-    const baselineAt = Math.min(...baselineSamples)
-
-    const DELAY_MS = 1500
-    const delayed = await delayFirstScript(page, DELAY_MS)
-    const slowed = await measureOnce(page)
-    assertHonest(slowed)
-
-    // Count the mechanism first. If nothing was actually delayed, the comparison
-    // below is meaningless however it comes out.
-    expect(
-      delayed.count,
-      'no script request was delayed — the control proves nothing'
-    ).toBeGreaterThanOrEqual(1)
-
-    // Deliberately generous: the point is that the instrument tracks real elapsed
-    // time, not that it tracks it to the millisecond. A metric that cannot show a
-    // 1.5s regression cannot show an improvement either.
-    const moved = (slowed.at as number) - baselineAt
-    console.log(
-      `[control:sensitivity] baseline=${baselineAt.toFixed(1)}ms ` +
-        `(min of ${BASELINE_SAMPLES}: ${baselineSamples.map((v) => v.toFixed(0)).join(', ')}) ` +
-        `delayed=${(slowed.at as number).toFixed(1)}ms moved=+${moved.toFixed(1)}ms ` +
-        `(injected ${DELAY_MS}ms into ${delayed.count} script request)`
-    )
-    // ⚠️ THE CONTROL MUST STATE ITS OWN PRECONDITION, and this first assertion is
-    // why. Mutation M12 set `DELAY_MS = 0` and this test still PASSED, because the
-    // threshold below is derived from the very constant the mutation zeroed:
-    // `moved > 0 * 0.6` is satisfied by any drift at all. The control could not
-    // fail in the one way it most needed to — the same shape as story 38.2's M12,
-    // where an SEO fence matched the `<meta>` description and so could never fire.
-    expect(
-      DELAY_MS,
-      'the injected delay is too small for the comparison below to mean anything'
-    ).toBeGreaterThanOrEqual(1000)
-
-    // Deliberately generous: the point is that the instrument tracks real elapsed
-    // time, not that it tracks it to the millisecond. A metric that cannot show a
-    // 1.5s regression cannot show an improvement either.
-    expect(
-      moved,
-      `a ${DELAY_MS}ms delay moved the measurement by only ${moved.toFixed(1)}ms`
-    ).toBeGreaterThan(DELAY_MS * 0.6)
-  })
-
-  test('the SSR response carries NO chart library (AC-10)', async ({ page }) => {
-    // ⚠️ THIS TEST EXISTS BECAUSE MUTATION M9 REFUTED THE STORY'S OWN PREDICTION.
-    // M9 hoisted a lazy chart boundary OUT of the `!hydrated` mount gate, so the
-    // server rendered chart markup and the client's first render rendered the
-    // Suspense fallback. `e2e/hydration.spec.ts` was predicted to go red. It
-    // stayed GREEN, 9/9 — React treats a Suspense boundary that resolves
-    // differently on the server and the client as ordinary Suspense behaviour,
-    // not as a hydration mismatch, so no `pageerror` ever fires. Nothing in the
-    // suite caught it.
-    //
-    // So the property has to be asserted directly: the chart library must not
-    // reach the SSR response at all. That is both the hydration fence AND the
-    // critical-path fence, and unlike the hydration detector it cannot be
-    // satisfied by silence.
-    //
-    // ⚠️ Asserted through `response.text()`, never a shell `grep`. The `/`
-    // response contains NUL bytes inside the serialized router payload, so GNU
-    // grep classifies it as binary and prints nothing without `-a` — exit 1 and
-    // no output, indistinguishable from a genuine zero.
-    const response = await page.goto('/', { waitUntil: 'commit' })
-    const html = (await response?.text()) ?? ''
-    expect(html.length, 'no SSR body was returned').toBeGreaterThan(1000)
-    const hits = html.match(/recharts/g)?.length ?? 0
-    expect(
-      hits,
-      `the SSR response for / contains ${hits} "recharts" occurrence(s). A chart rendered on the server means the chart library is back on the critical path, and — because Suspense hides it from the hydration detector — nothing else in this suite would tell you.`
-    ).toBe(0)
-  })
-
-  test('VALUE CONTROL: an unseeded page never records a figure', async ({ page }) => {
-    // Undo the seed from beforeEach — this visitor genuinely has no data.
-    await page.addInitScript(() => localStorage.clear())
-
-    await page.goto('about:blank')
-    await page.goto('/', { waitUntil: 'commit' })
-    // Wait for the page to resolve to its real empty state before reading.
-    await expect(page.getByTestId('overview-net-worth')).toHaveText('$0.00', {
-      timeout: COLD_COMPILE_TIMEOUT_MS,
-    })
-
-    const reading = await page.evaluate(
-      () => (window as unknown as { __figure: FigureReading }).__figure
-    )
-    console.log(
-      `[control:value] unseeded page resolved to $0.00; recorded=${String(reading.at)} ` +
-        `observerRan=${String(reading.observerRan)}`
-    )
-    expect(
-      reading.at,
-      `the metric was satisfied by "${reading.text}" — a skeleton or a zero must never count`
-    ).toBeNull()
-    // The observer DID run (the skeleton→$0.00 swap is a mutation); it simply
-    // refused to record. That distinction is what makes this a control rather
-    // than a test that the instrument was broken.
-    expect(reading.observerRan, 'the observer never ran, so it proved nothing').toBe(true)
-  })
-
-  /**
-   * The numbers the story reports. Gated because the default `pnpm test:e2e` boots
-   * `pnpm dev`; run it against a production build you started yourself:
-   *
-   *   pnpm --filter web build
-   *   PORT=8080 node apps/web/server-entry.mjs
-   *   cd apps/web && REFRESH_TO_FIGURES=1 PLAYWRIGHT_BASE_URL=http://localhost:8080 \
-   *     ./node_modules/.bin/playwright test e2e/refresh-to-figures.spec.ts --workers=1 --reporter=line
-   */
+  /** The numbers the story reports. Recipe: this file's header. */
   test.describe('MEASUREMENT', () => {
-    test.skip(
-      process.env['REFRESH_TO_FIGURES'] !== '1',
-      'set REFRESH_TO_FIGURES=1 and point PLAYWRIGHT_BASE_URL at a production build'
-    )
-
     test('medians under each named condition, with the throttle control', async ({ page }) => {
+      expect(
+        process.env['PLAYWRIGHT_BASE_URL'],
+        'set PLAYWRIGHT_BASE_URL to a production build you started (recipe: this file header)'
+      ).toBeTruthy()
       test.setTimeout(900_000)
 
       // AC-2 pins 1280x720 and says "name it, do not rely on it being implied" —
@@ -684,7 +508,9 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
         const sorted = [...readings].sort((a, b) => a - b)
         medians.set(condition.name, median(readings))
         console.log(
-          `[M2] ${condition.name} | n=${SAMPLES} median=${median(readings).toFixed(1)}ms ` +
+          `[M2] ${condition.name} | seed=${JSON.stringify(SEED_SIZE)} n=${SAMPLES} median=${median(
+            readings
+          ).toFixed(1)}ms ` +
             `min=${(sorted[0] as number).toFixed(1)}ms ` +
             `max=${(sorted[sorted.length - 1] as number).toFixed(1)}ms ` +
             `all=[${sorted.map((v) => v.toFixed(0)).join(', ')}]`

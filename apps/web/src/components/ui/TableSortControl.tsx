@@ -41,15 +41,16 @@ import { RESPONSIVE_ACTION_BUTTON_CLASS } from './ResponsiveTable'
  * interior **exactly**, i.e. zero headroom. So the guard is real and worth
  * keeping, but what it buys today is that the box tracks its CONTAINER rather
  * than the longest label; one extra character in an option would otherwise tip
- * `/savings` over. That mechanism is what
- * `mobile-table-sort.spec.ts`'s "sized by its container" test pins, because an
+ * `/savings` over. That mechanism was what
+ * `mobile-table-sort.spec.ts`'s "sized by its container" test pinned, because an
  * assertion for an overflow nothing currently produces could never fail.
  *
  * Every rect in jsdom is `{0,0,0,0}`, so the unit suite is green whatever this
- * does. The overflow floor is still held by `e2e/mobile-table-sort.spec.ts` and
- * the eight `responsive-320.spec.ts` finance-table tests, whose document-level
- * check reaches this control precisely because it sits OUTSIDE
- * `div.overflow-x-auto` — the table wrapper's scroll container cannot absorb
+ * does. ⚠️ Since stories 84.2/84.5 (FR137) no test measures the overflow floor:
+ * `e2e/mobile-table-sort.spec.ts` and the `responsive-320.spec.ts` finance-table
+ * tests are deleted, and the CI screenshots shoot `/income` at 320px but not
+ * `/savings`, where this control is widest. It sits OUTSIDE
+ * `div.overflow-x-auto`, so the table wrapper's scroll container cannot absorb
  * it.
  *
  * ## ⚠️ MODULE SCOPE, NOT DEFINED INSIDE A PAGE BODY
@@ -72,7 +73,8 @@ import { RESPONSIVE_ACTION_BUTTON_CLASS } from './ResponsiveTable'
  * failed to render.
  *
  * ⚠️ THE VALUE IS `'manual'`; THE LABEL IS NOT. The token is a state name and is
- * pinned by `e2e/responsive-320.spec.ts` (`selectOption('manual')`), so story
+ * pinned by every page suite's mobile-control tests (`selectOptions(…, 'manual')`;
+ * `e2e/responsive-320.spec.ts` until story 84.5), so story
  * 48.2 deliberately renamed only the user-visible label. Until 48.2 that label
  * read "Manual order", which was accurate while rows could be arranged by hand
  * with the move controls; with those gone there is no manual arrangement to

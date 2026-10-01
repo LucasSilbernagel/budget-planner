@@ -21,7 +21,7 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  *
  * ⚠️ That is exactly why the variable is NOT set on the default server. Setting it
  * globally would hand every existing spec a paid session, and the free-tier guards
- * — `premium-locked.spec.ts`'s entire premise, the free screenshots — would quietly start
+ * — the free screenshots, and every free-tier flow — would quietly start
  * asserting against a nav they were never written for. Several would still PASS,
  * which is the dangerous part.
  *
@@ -111,8 +111,8 @@ const paidBaseURL = `http://localhost:${PAID_PORT}`
  * ...options.env}` (playwright `lib/runner/index.js`) — so the ambient shell
  * environment reaches every dev server it launches. A developer who exported
  * `E2E_SESSION_SEED` while debugging would otherwise hand the FREE server an
- * entitled session too, and the free-tier guards (`premium-locked.spec.ts`,
- * the free screenshots) would quietly start asserting against a nav
+ * entitled session too, and the free-tier tests (the free flows and
+ * screenshots) would quietly start asserting against a nav
  * they were never written for. Passing an empty string is what closes that:
  * the seam tests `process.env['E2E_SESSION_SEED']` for truthiness, so `''` is
  * inert. (An earlier revision of this file spread `process.env` in by hand and

@@ -81,8 +81,13 @@ const AMENDED_FILES = [
   'src/components/ui/SortableColumnHeader.tsx',
   'src/components/ui/ResponsiveTable.tsx',
   'src/hooks/useTableSort.ts',
-  'e2e/responsive-320.spec.ts',
-  'e2e/table-sort-persistence.spec.ts',
+  // `e2e/responsive-320.spec.ts` and `e2e/table-sort-persistence.spec.ts` were
+  // here too. Story 84.5 (FR137) moved their tests below the browser and DELETED
+  // both files, so they can re-assert nothing. Their claims now live in Vitest,
+  // so those suites are scanned instead (84.5 code review): a retired claim must
+  // stay falsifiable somewhere a sort test could re-introduce it.
+  'src/components/__tests__/table-sort-persistence.dom.test.tsx',
+  'src/components/__tests__/IncomePage.test.tsx',
 ] as const
 
 /**

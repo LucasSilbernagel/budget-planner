@@ -26,8 +26,8 @@ import {
  * explanatory panel instead, and (story 71.1, FR113) hides the expense form's
  * ends-before-retirement question and its row badge. It deletes nothing: marked
  * expenses keep `endsBeforeRetirement` and show it again when the planner is
- * back (pinned by the 71.1 block in `components/__tests__/ExpensesPage.test.tsx`
- * and `e2e/ends-before-retirement.spec.ts`). The planner's own saved plan
+ * back (pinned by the 71.1 block in `components/__tests__/ExpensesPage.test.tsx`;
+ * `e2e/ends-before-retirement.spec.ts` until story 84.5). The planner's own saved plan
  * (`retirementPlannerStore`, since story 44.1) and the shared
  * income/expense/balance stores it reads are untouched either way (pinned by
  * `__tests__/planner-visibility-data-safety.test.tsx`, which drives this switch

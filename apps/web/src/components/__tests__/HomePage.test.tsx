@@ -15,7 +15,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderWithRouter } from '@/test/utils'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type SessionSeed, SessionSeedProvider } from '../../context/session-seed'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -26,6 +27,7 @@ import {
   useOverviewDurationStore,
   useSavingsStore,
 } from '../../stores'
+import { renderAfterReload } from '../../test/reload-chain'
 
 const usePremiumAccess = vi.fn()
 
@@ -2278,5 +2280,101 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
     // arm 5 implements that rejected design and turns them red.
     expect(PREMIUM_BENEFIT_IDS).toHaveLength(5)
     expect(Object.keys(OVERVIEW_BENEFITS).sort()).toEqual([...PREMIUM_BENEFIT_IDS].sort())
+  })
+})
+
+/**
+ * Overview behaviour that used to be e2e-only (story 84.5, FR137).
+ *
+ * `e2e/overview-duration.spec.ts:155`, `e2e/premium-locked.spec.ts`. What stays
+ * in a browser only (named D2 losses): the overlay's painted box (y=0, full
+ * height) and real page scrolling. What moves is the STRUCTURE the overlay's
+ * position depends on and the state machine behind the scroll lock.
+ */
+describe('Overview: was e2e (story 84.5)', () => {
+  afterEach(() => {
+    useIncomeStore.setState({ incomeSources: [] })
+    useOverviewDurationStore.setState({ duration: 'annually' })
+    document.body.style.overflow = ''
+  })
+
+  it('the chosen duration survives the reload chain (was e2e overview-duration:155)', async () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
+    render(<HomePage />)
+    const select = () =>
+      screen.getByRole('combobox', { name: /show income and expenses per/i }) as HTMLSelectElement
+    expect(select().value).toBe('annually')
+
+    fireEvent.change(select(), { target: { value: 'monthly' } })
+    expect(select().value).toBe('monthly')
+
+    await renderAfterReload(<HomePage />)
+
+    // The default is Annually, so `monthly` can only have come out of storage.
+    expect(select().value).toBe('monthly')
+    expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
+  })
+
+  it("every gate's upgrade dialog stays inside the gate's OWN wrapper (was e2e premium-locked:27)", async () => {
+    // ⚠️ `Modal` renders in normal flow (no portal) and a locked
+    // `PremiumFeatureGate` returns a FRAGMENT of <button> + dialog. Placed
+    // straight into the `space-y-3` stack, the overlay becomes a spaced sibling,
+    // takes the stack's top margin and leaves an undimmed strip (HomePage.tsx's
+    // comment above the stack). The e2e original measured the overlay box; this
+    // pins the structure that box depends on, for EVERY gate, not just sync.
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    renderWithRouter(<HomePage />)
+    const gates = await screen.findAllByTestId('premium-gate-locked')
+    expect(gates).toHaveLength(GATED_COUNT)
+
+    const stack = gates[0]?.closest('.space-y-3') as HTMLElement
+    expect(stack, 'the benefit stack must be found, or every check below is vacuous').not.toBeNull()
+
+    for (const gate of gates) {
+      fireEvent.click(gate)
+      const dialog = await screen.findByRole('dialog', { name: /go premium/i })
+      const overlay = dialog.parentElement as HTMLElement
+      const wrapper = overlay.parentElement as HTMLElement
+      // The overlay's parent is the gate's wrapper: not the stack itself, and
+      // holding THIS gate's button.
+      expect(wrapper).not.toBe(stack)
+      expect(wrapper.parentElement).toBe(stack)
+      expect(wrapper).toContainElement(gate)
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    }
+  })
+
+  it('two open gate dialogs close one at a time and release the scroll lock (was e2e premium-locked:101)', async () => {
+    // ⚠️ `Modal.test.tsx` proves the stack with two Modals mounted by hand; this
+    // proves the OVERVIEW can actually REACH a two-dialog state, which is the
+    // e2e original's whole point (story 41.1 review: before the fix one Escape
+    // closed both and left `overflow: hidden` behind). `.focus()` stands in for a
+    // browser-chrome round trip returning focus to the page, which the dialog's
+    // Tab trap does not intercept.
+    const user = userEvent.setup()
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    renderWithRouter(<HomePage />)
+    const gates = await screen.findAllByTestId('premium-gate-locked')
+
+    await user.click(gates[0] as HTMLElement)
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+
+    act(() => (gates[1] as HTMLElement).focus())
+    await user.keyboard('{Enter}')
+    expect(
+      screen.getAllByRole('dialog'),
+      'the two-dialog state must actually be reachable, or this test proves nothing'
+    ).toHaveLength(2)
+
+    await user.keyboard('{Escape}')
+    expect(screen.getAllByRole('dialog'), 'one Escape must not close both dialogs').toHaveLength(1)
+    expect(document.body.style.overflow, 'the lock must hold while a dialog is still open').toBe(
+      'hidden'
+    )
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryAllByRole('dialog')).toHaveLength(0)
+    expect(document.body.style.overflow, 'the scroll lock must be released').toBe('')
   })
 })
