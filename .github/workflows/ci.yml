@@ -179,12 +179,14 @@ jobs:
       - name: Run web unit tests (shard ${{ matrix.shard }}/2)
         run: cd apps/web && ./node_modules/.bin/vitest run --config vitest.config.ts --shard=${{ matrix.shard }}/2
 
+      # `!cancelled()` so a web failure in shard 1 still reports core and db
+      # (85.1 review P9); the validator pins this exact `if:`.
       - name: Run core unit tests
-        if: matrix.shard == 1
+        if: ${{ !cancelled() && matrix.shard == 1 }}
         run: pnpm --filter @budget-planner/core test:unit
 
       - name: Run db unit tests
-        if: matrix.shard == 1
+        if: ${{ !cancelled() && matrix.shard == 1 }}
         run: pnpm --filter @budget-planner/db test:unit
 
   unit-tests:
