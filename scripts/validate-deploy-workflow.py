@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover
 
 # Overridable so story 85.1's broken-ci.yml fixtures can prove each check RED.
 # Not `CI`: GitHub Actions sets CI=true on every runner.
-CI = os.environ.get("VALIDATE_CI_PATH", ".github/workflows/ci.yml")
+CI = os.environ.get("VALIDATE_CI_PATH") or ".github/workflows/ci.yml"
 DEPLOY = ".github/workflows/deploy.yml"
 ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
 DEPLOYED_TAGS_HELPER = ".github/scripts/rapids_deployed_tags.py"
@@ -113,7 +113,49 @@ def needs_of(jobs: dict, name: str) -> list[str]:
 
 SHARD_RESULT_ENV = "${{ needs.unit-shards.result }}"
 SHARD_RESULT_TEST = 'test "${SHARDS_RESULT}" = "success"'
-SHARD_ARG = re.compile(r"--shard=\$\{\{ matrix\.shard \}\}/(\d+)(?!\S)")
+AGGREGATOR_RUN = ['echo "unit-shards result: ${SHARDS_RESULT}"', SHARD_RESULT_TEST]
+# The sharded package and the command CI runs for it. CI calls the binary
+# directly (so --shard reaches Vitest), so the package's own script must be
+# exactly what CI runs minus the flag, or CI and `pnpm test:unit` drift apart.
+SHARDED_PACKAGE = "apps/web"
+SHARDED_SCRIPT = "vitest run --config vitest.config.ts"
+SHARD_ONE_IF = "${{ !cancelled() && matrix.shard == 1 }}"
+SETUP_ACTIONS = ("actions/checkout@", "pnpm/action-setup@", "actions/setup-node@")
+INSTALL_RUN = "pnpm install --frozen-lockfile"
+
+
+def _dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _str(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def workspace_test_packages() -> dict[str, str]:
+    """{directory: package name} for every pnpm workspace package with a
+    `test:unit` script, from the globs in pnpm-workspace.yaml (85.1 review P5).
+    A malformed file or package.json yields fewer packages, which the caller's
+    floor check reports, never a traceback (P6)."""
+    try:
+        globs = _list(_dict(yaml.safe_load(read("pnpm-workspace.yaml"))).get("packages"))
+    except (OSError, yaml.YAMLError):
+        globs = []
+    packages: dict[str, str] = {}
+    for pattern in globs:
+        for path in sorted(glob.glob(f"{_str(pattern)}/package.json")):
+            try:
+                package = json.loads(read(path))
+            except (OSError, json.JSONDecodeError):
+                continue
+            scripts = _dict(_dict(package).get("scripts"))
+            if "test:unit" in scripts:
+                packages[os.path.dirname(path)] = _str(_dict(package).get("name"))
+    return packages
 
 
 def check_unit_shards(ci_jobs: dict) -> None:
@@ -124,11 +166,17 @@ def check_unit_shards(ci_jobs: dict) -> None:
     and GitHub treats a SKIPPED required check as passing. So the aggregator
     must run `if: always()` and must pass ONLY on an explicit 'success' from the
     shards: `!= 'failure'` would pass a cancelled or skipped shard run.
+
+    Both jobs are pinned by EXACT shape, not by substrings (85.1 review): a
+    step `if: false`, an earlier `exit`, a `|| true`, a path filter, an extra
+    `pnpm test:unit` step or a matrix `exclude` each passed the first version.
+    Every malformed shape is a FAIL line, never a traceback.
     """
     print("\n== the unit tests are sharded, and the required check aggregates them (85.1) ==")
-    shards = ci_jobs.get("unit-shards") or {}
-    agg = ci_jobs.get("unit-tests") or {}
+    shards = _dict(ci_jobs.get("unit-shards"))
+    agg = _dict(ci_jobs.get("unit-tests"))
 
+    # --- the aggregator: the required check -----------------------------------
     check(agg.get("name") == "Unit tests (Vitest)",
           "the aggregator keeps the required check name `Unit tests (Vitest)`")
     agg_needs = agg.get("needs", [])
@@ -138,66 +186,91 @@ def check_unit_shards(ci_jobs: dict) -> None:
           "the aggregator runs `if: always()` (a skipped required check counts as passing)")
     check("timeout-minutes" in agg and "timeout-minutes" in shards,
           "the aggregator and the shards both have a timeout")
-    agg_steps = agg.get("steps", []) or []
-    check(len(agg_steps) == 1 and "uses" not in agg_steps[0],
-          "the aggregator is one run step: no checkout, no install")
-    agg_step = agg_steps[0] if agg_steps else {}
-    check((agg_step.get("env") or {}).get("SHARDS_RESULT") == SHARD_RESULT_ENV,
-          "the aggregator reads needs.unit-shards.result")
-    agg_code = [line.strip() for line in code_only(agg_step.get("run", "") or "").split("\n") if line.strip()]
-    # EXACT last line: the shell exits with this test's status, and only the
+    # Job-level keys that can change what its one step does or whether it counts.
+    check(not {"defaults", "env", "strategy", "container", "services", "continue-on-error"} & set(agg),
+          "the aggregator job has no defaults, env, strategy, container or continue-on-error")
+    agg_steps = _list(agg.get("steps"))
+    agg_step = _dict(agg_steps[0]) if len(agg_steps) == 1 else {}
+    # No `if:` (a skipped step leaves the job green), no `shell:`, no `uses:`.
+    check(len(agg_steps) == 1 and isinstance(agg_steps[0], dict)
+          and set(agg_step) <= {"name", "env", "run"},
+          "the aggregator is ONE run step with no if, shell, uses or continue-on-error")
+    check(_dict(agg_step.get("env")) == {"SHARDS_RESULT": SHARD_RESULT_ENV},
+          "the aggregator's only input is needs.unit-shards.result")
+    agg_code = [line.strip() for line in code_only(_str(agg_step.get("run"))).split("\n") if line.strip()]
+    # EXACT script: nothing before the test can exit or rebind, and only the
     # literal word success passes (cancelled, skipped and failure all fail).
-    check(bool(agg_code) and agg_code[-1] == SHARD_RESULT_TEST
-          and not any("exit 0" in line or "|| true" in line for line in agg_code),
-          "the aggregator passes ONLY when the shards' result is exactly 'success'")
+    check(agg_code == AGGREGATOR_RUN,
+          "the aggregator's script is exactly: echo the result, then `test … = \"success\"`")
 
-    strategy = shards.get("strategy") or {}
-    matrix = (strategy.get("matrix") or {}).get("shard")
+    # --- the matrix ------------------------------------------------------------
+    strategy = _dict(shards.get("strategy"))
+    matrix = _dict(strategy.get("matrix"))
+    shard_list = _list(matrix.get("shard"))
+    count = len(shard_list)
     check(strategy.get("fail-fast") is False, "one failing shard does not cancel the other")
-    shard_steps = shards.get("steps", []) or []
-    sharded = [s for s in shard_steps if SHARD_ARG.search(s.get("run", "") or "")]
-    counts = {int(SHARD_ARG.search(s["run"]).group(1)) for s in sharded}
-    check(isinstance(matrix, list) and len(counts) == 1
-          and matrix == list(range(1, next(iter(counts)) + 1)),
-          "the matrix lists every shard 1..N of the --shard=i/N it passes (none dropped)")
-    for name in ("unit-shards", "unit-tests"):
-        job = ci_jobs.get(name) or {}
-        check(not job.get("continue-on-error")
-              and not any(s.get("continue-on-error") for s in job.get("steps", []) or []),
-              f"no continue-on-error in {name}")
-    actions = [str(s.get("uses", "")) for s in shard_steps]
-    check(any(a.startswith("pnpm/action-setup") for a in actions)
-          and any(a.startswith("actions/setup-node") for a in actions)
-          and any((s.get("run") or "").strip() == "pnpm install --frozen-lockfile" for s in shard_steps),
-          "each shard sets up pnpm + Node and installs from the lockfile")
+    # include/exclude can add or DROP shards while `shard:` still reads [1, 2].
+    check(set(matrix) == {"shard"}, "the matrix has only the shard axis (no include, exclude or expression)")
+    check(count >= 2 and shard_list == list(range(1, count + 1)),
+          "the matrix lists shards 1..N with N >= 2")
+    check(shards.get("name") == f"Unit tests (Vitest) shard ${{{{ matrix.shard }}}}/{count}",
+          "the shard job's name carries the same N as the matrix")
+    check(not {"if", "defaults", "continue-on-error"} & set(shards),
+          "the shard job has no if, defaults or continue-on-error")
 
-    # Every workspace package with a `test:unit` script runs exactly once across
-    # the shards: in the sharded step, or in an unsharded step pinned to shard 1.
-    # A new package with tests that no step names fails here, not silently.
-    packages: dict[str, str] = {}
-    for path in sorted(glob.glob("apps/*/package.json") + glob.glob("packages/*/package.json")):
-        try:
-            package = json.loads(read(path))
-        except (OSError, json.JSONDecodeError):
+    # --- the steps: exactly the expected set, each in its exact form ----------
+    packages = workspace_test_packages()
+    check(all(packages.values()),
+          "every workspace package with test:unit has a name (a nameless one could not be --filter'ed)")
+    check(len(packages) >= 3 and SHARDED_PACKAGE in packages,
+          f"the workspace scan found the test packages ({', '.join(packages) or 'none'})")
+    try:
+        root_script = _dict(_dict(json.loads(read("package.json"))).get("scripts")).get("test:unit")
+    except (OSError, json.JSONDecodeError):
+        root_script = None
+    check(root_script == "pnpm -r run test:unit",
+          "root test:unit is `pnpm -r run test:unit` (the workspace set the scan mirrors)")
+    try:
+        sharded_script = _dict(_dict(json.loads(read(f"{SHARDED_PACKAGE}/package.json"))).get("scripts")).get("test:unit")
+    except (OSError, json.JSONDecodeError):
+        sharded_script = None
+    check(sharded_script == SHARDED_SCRIPT,
+          f"{SHARDED_PACKAGE}'s test:unit is `{SHARDED_SCRIPT}`, which CI runs plus --shard")
+
+    sharded_run = (f"cd {SHARDED_PACKAGE} && ./node_modules/.bin/{SHARDED_SCRIPT} "
+                   f"--shard=${{{{ matrix.shard }}}}/{count}")
+    expected = {sharded_run: None, INSTALL_RUN: None}
+    expected.update({f"pnpm --filter {name} test:unit": SHARD_ONE_IF
+                     for directory, name in packages.items() if directory != SHARDED_PACKAGE and name})
+    seen: dict[str, int] = {}
+    unexpected: list[str] = []
+    actions: list[str] = []
+    for step in _list(shards.get("steps")):
+        step = _dict(step)
+        label = _str(step.get("name")) or "?"
+        if not set(step) <= {"name", "uses", "with", "run", "if"}:
+            unexpected.append(f"{label}: {sorted(set(step) - {'name', 'uses', 'with', 'run', 'if'})}")
+        if "uses" in step:
+            actions.append(_str(step.get("uses")))
+            if "if" in step or "run" in step:
+                unexpected.append(f"{label}: a setup action with if/run")
             continue
-        if isinstance(package.get("scripts"), dict) and "test:unit" in package["scripts"]:
-            packages[os.path.dirname(path)] = package.get("name", "")
-    check(len(packages) >= 3, f"the package scan found the test packages ({', '.join(packages)})")
-    for directory, package_name in packages.items():
-        runs = 0
-        for step in shard_steps:
-            run = code_only(step.get("run", "") or "")
-            if not (re.search(rf"(^|\s)cd {re.escape(directory)}(\s|$)", run)
-                    or re.search(rf"--filter {re.escape(package_name)} test:unit(\s|$)", run)):
-                continue
-            step_if = " ".join(str(step.get("if", "")).split())
-            if SHARD_ARG.search(run):
-                runs += 1 if not step_if else 99
-            elif step_if == "matrix.shard == 1":
-                runs += 1
-            else:
-                runs += 99  # unconditional and unsharded: it runs in every shard
-        check(runs == 1, f"{directory} ({package_name}) runs exactly once across the shards")
+        run = " ".join(code_only(_str(step.get("run"))).split())
+        step_if = " ".join(str(step["if"]).split()) if "if" in step else None
+        if run in expected and expected[run] == step_if:
+            seen[run] = seen.get(run, 0) + 1
+        else:
+            unexpected.append(f"{label}: `{run}` if={step_if}")
+    check(sorted(a.split("@")[0] + "@" for a in actions) == sorted(SETUP_ACTIONS),
+          "each shard checks out and sets up pnpm + Node, once each")
+    check(not unexpected,
+          "every shard step is setup, install, the sharded run or a shard-1 package run, in its exact form"
+          + (f" (unexpected: {'; '.join(unexpected)})" if unexpected else ""))
+    for run in expected:
+        check(seen.get(run) == 1, f"the shard job runs `{run}` exactly once")
+    web_step = next((_dict(s) for s in _list(shards.get("steps"))
+                     if " ".join(code_only(_str(_dict(s).get("run"))).split()) == sharded_run), {})
+    check(f"/{count})" in _str(web_step.get("name")), "the sharded step's name carries the same N as the matrix")
 
 
 def main() -> int:
@@ -206,6 +279,11 @@ def main() -> int:
     raw = open(DEPLOY, encoding="utf-8").read()
 
     print("\n== ci.yml: story 4-15's contract is preserved ==")
+    # 85.1 review P7: the fixture override must never be silent, or active in CI.
+    if CI != ".github/workflows/ci.yml":
+        print(f"  NOTE  validating ci.yml from the VALIDATE_CI_PATH override: {CI}")
+    check(CI == ".github/workflows/ci.yml" or os.environ.get("GITHUB_ACTIONS") != "true",
+          "the VALIDATE_CI_PATH fixture override is not active in CI")
     # Story 85.1: `unit-shards` is new; the three REQUIRED check names (lint,
     # unit-tests, e2e-tests job names) are unchanged.
     check(set(ci["jobs"]) == {"lint", "unit-shards", "unit-tests", "e2e-tests"},
