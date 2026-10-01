@@ -187,6 +187,10 @@ jobs:
         if: matrix.shard == 1
         run: pnpm --filter @budget-planner/db test:unit
 
+      - name: FORCED FAILURE (85.1 control, never merge)
+        if: matrix.shard == 2
+        run: exit 1
+
   unit-tests:
     # The REQUIRED status check (BRANCH_PROTECTION.md). It only reports the
     # shards' combined result. `always()` so a failed shard makes it FAIL rather
