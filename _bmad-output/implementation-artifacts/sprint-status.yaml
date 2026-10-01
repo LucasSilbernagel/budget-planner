@@ -1,4 +1,5 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-01q (85.1 PR #12 merged; AC 4 proven; collecting N>=3 push deploys.)
 # last_updated: 2026-10-01p (**85.1 CREATED -> in-progress**; epic-85 -> in-progress.)
 # last_updated: 2026-10-01o (correct-course 2026-10-01 APPROVED: **Epic 85 / FR138 added, backlog**; 85.1 shards -> 85.2 flakes. Next: create-story 85.1.)
 # last_updated: 2026-10-01n (**84.6 DEV DONE -> review**; N=4 deploy samples, median 7m01s. Next: code review 84.6.)
@@ -1172,7 +1173,7 @@ development_status:
   epic-84-retrospective: optional
 
   epic-85: in-progress  # Deploys That Finish Fast and Pass the First Time. FR138. From correct-course 2026-10-01 (84.6 next-bottleneck; Lucas: both, shards first). Order 85.1 -> 85.2.
-  85-1-split-the-unit-tests-across-two-ci-jobs: in-progress  # CREATED + dev started 2026-10-01 at `fbdd574` on branch 85-1-unit-shards. MEASURED: branch protection LIVE (requires `Unit tests (Vitest)`); validator :116 pins job set; 84.6 collector picks first /Unit/ job. Tasks 5-6 HALT for Lucas.
+  85-1-split-the-unit-tests-across-two-ci-jobs: in-progress  # PR #12 squash-merged `f2324e7` 2026-10-01: forced-fail control MEASURED (aggregator failure + BLOCKED at `f12dbc6`; success + CLEAN at `98f2d55`); CI shards 140/139 web files, core+db shard 1 only. Deploy samples: 1 = `f2324e7`. CREATED + dev started 2026-10-01 at `fbdd574` on branch 85-1-unit-shards. MEASURED: branch protection LIVE (requires `Unit tests (Vitest)`); validator :116 pins job set; 84.6 collector picks first /Unit/ job. Tasks 5-6 HALT for Lucas.
   85-2-make-the-critical-flows-pass-on-the-first-attempt: backlog
   epic-85-retrospective: optional
 
