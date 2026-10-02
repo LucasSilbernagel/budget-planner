@@ -423,6 +423,10 @@ export class SynchronizationService {
   // every point after an `await` checks it: a torn-down service sends nothing,
   // arms no timer, writes no state and touches no queue. See `destroy()`.
   private destroyed = false
+  // Bumped by every `clearQueue()` (story 86.1). A sync compares it with the value
+  // it started with: if it moved, every op that sync sent was cleared under it, so
+  // its refusals and conflicts are no longer this device's to report. See `sync()`.
+  private queueClears = 0
   private retryTimeout: ReturnType<typeof setTimeout> | null = null
   // Consecutive failed attempts per queued op id (story 79.2). In memory only:
   // the count never travels with the op, so no queue or server shape changes.
@@ -694,6 +698,60 @@ export class SynchronizationService {
     if (this.destroyed) {
       throw new Error('Sync service destroyed: cannot queue an operation')
     }
+  }
+
+  /**
+   * Empty the queue THIS service writes, in memory and in storage, and forget
+   * everything derived from it (story 86.1, FR139).
+   *
+   * "Clear local data" and account deletion used to clear storage through a fresh
+   * `createSyncQueue(userId)`, which left this service's in-memory queue intact;
+   * every queue write is a whole-queue write from memory, so the next one (a new
+   * edit, an in-flight push's removal) put the cleared ops back. Clearing the SAME
+   * instance runs behind any queued mutation (`serialize`), so nothing written
+   * after it can carry a cleared op.
+   *
+   * The service stays alive and the pull cursor is kept (decision D1). ⚠️ That
+   * does NOT keep the account's server rows out of the cleared stores (code
+   * review 86.1, D-1, accepted): `purgeLocalFinancialData` resets the profile
+   * store, the active-profile change makes `useSync` request a full re-pull, and
+   * the account's synced rows come back. What never comes back is a CLEARED EDIT:
+   * a sync in flight learns of the clear through `queueClears`, stops sending the
+   * rest of its batch, and reports nothing about the ops it had sent.
+   *
+   * Rejects on a destroyed service (and the queue rejects once closed), so a
+   * caller can fall back to clearing storage directly.
+   */
+  async clearQueue(): Promise<void> {
+    if (this.destroyed) {
+      throw new Error('Sync service destroyed: cannot clear its queue')
+    }
+    // Bumped BEFORE the await: a sync that resumes once this call has been made
+    // must treat its batch as cleared, even if the clear itself is still queued
+    // behind that sync's own removal.
+    this.queueClears++
+    await this.queue.clear()
+    if (this.destroyed) {
+      return
+    }
+    // No retry timer to cancel: `runRetry` first narrows to ops still queued, so
+    // with the queue empty it sends nothing (mutation-checked, story 86.1).
+    this.state.pendingOperations = []
+    this.state.failedOperations = []
+    this.state.conflictOperations = []
+    // The refused-op history names cleared payloads too (75.2's capped record).
+    this.state.rejectedOperations = []
+    // A failure the cleared ops caused is no longer this device's (code review
+    // P-1). Left alone while a sync runs: that sync sets its own outcome.
+    this.state.lastError = undefined
+    if (!this.isProcessing && this.state.status === SyncStatus.FAILED) {
+      this.state.status = SyncStatus.COMPLETED
+    }
+    // Re-derives the escalated view from the (now empty) queue, and prunes the
+    // 79.2 failure counts to the queued ids, i.e. empties them: no separate
+    // `.clear()` is needed (code review P-2).
+    this.refreshEscalated()
+    this.notifyStatusCallbacks()
   }
 
   /** What `sync()` returns once the service is destroyed (story 79.1). */
@@ -1321,6 +1379,8 @@ export class SynchronizationService {
     }
 
     this.isProcessing = true
+    // Story 86.1: see `queueClears`. Captured before the batch is read.
+    const queueClearsAtStart = this.queueClears
 
     if (!this.state.isOnline) {
       this.isProcessing = false
@@ -1419,6 +1479,11 @@ export class SynchronizationService {
         if (this.destroyed) {
           break
         }
+        // Cleared mid-batch (story 86.1, code review D-2): every op still to come
+        // was cleared, and a cleared edit is never sent. Already-sent ops stand.
+        if (this.queueClears !== queueClearsAtStart) {
+          break
+        }
 
         // Re-check connectivity before each operation: if the device went
         // offline mid-batch, stop sending. Remaining operations stay in the
@@ -1486,6 +1551,31 @@ export class SynchronizationService {
       // `destroy()`).
       if (this.destroyed) {
         return this.destroyedSyncResult(startTime)
+      }
+
+      // Cleared during this sync (story 86.1, decision D2): every op it sent was
+      // queued before the clear, so the clear removed it, and nothing it learned
+      // about them is this device's to report. Dropped BEFORE the sweeps below
+      // (code review P-3), which read the CURRENT queue: an op queued after the
+      // clear must not be swept up as a follow-up of a cleared refused create.
+      // Ops the server accepted stay in `successfullyProcessed` (they landed).
+      const dropOutcomesOfClearedBatch = (): void => {
+        for (const bucket of [
+          failedOperations,
+          unclassifiedFailedOperations,
+          conflictOperations,
+          authBlockedOperations,
+          tierBlockedOperations,
+          rejectedOperations,
+        ]) {
+          bucket.length = 0
+        }
+        failedCount = 0
+        conflictCount = 0
+        this.state.lastError = undefined
+      }
+      if (this.queueClears !== queueClearsAtStart) {
+        dropOutcomesOfClearedBatch()
       }
 
       // A permanently refused CREATE takes its row's other queued ops with it
@@ -1635,6 +1725,15 @@ export class SynchronizationService {
       // any write that had not started; no state, notification or timer follows.
       if (this.destroyed) {
         return this.destroyedSyncResult(startTime)
+      }
+
+      // Cleared during the removal awaits above (story 86.1, D2): the same rule,
+      // applied again because the clear can land while they are pending. A
+      // refusal is not reverted or named, and no failure or conflict is recorded.
+      // `recordableRejectedOps` aliases `rejectedOperations` (or is already `[]`
+      // when the discard threw), so emptying the bucket empties it too.
+      if (this.queueClears !== queueClearsAtStart) {
+        dropOutcomesOfClearedBatch()
       }
 
       // Update state

@@ -32,6 +32,7 @@
  * is pre-launch with no real users carrying one.
  */
 
+import { getSyncPurgeHandle } from '@/lib/sync/purgeHandle'
 import { useBalanceStore } from '@/stores/balanceStore'
 import { useCategoryStore } from '@/stores/categoryStore'
 import { useExpenseStore } from '@/stores/expenseStore'
@@ -126,11 +127,31 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
   // Zustand stores alone leaves these behind, so erase them too (AC-5). Free /
   // unauthenticated users have no session and no queue, so skip this entirely
   // when no userId is supplied (Story 17-2) — never key it on `undefined`.
+  //
+  // Story 86.1 (FR139): clear it THROUGH the live sync service when one is
+  // running for this user. A fresh `createSyncQueue(userId).clear()` empties
+  // storage only; the live service keeps its queue in memory and writes the
+  // whole of it back on its next write (a new edit, an in-flight push's removal),
+  // which put the cleared payloads back. The fresh queue remains the fallback:
+  // no live service (free user, sync not mounted), another user's service, or a
+  // service already torn down (its `clearQueue` rejects).
   if (userId) {
-    try {
-      await createSyncQueue(userId).clear()
-    } catch (error) {
-      console.error('purgeLocalFinancialData: failed to clear the sync queue', error)
+    const live = getSyncPurgeHandle(userId)
+    let cleared = false
+    if (live) {
+      try {
+        await live.clearQueue()
+        cleared = true
+      } catch (error) {
+        console.error('purgeLocalFinancialData: the live sync queue could not be cleared', error)
+      }
+    }
+    if (!cleared) {
+      try {
+        await createSyncQueue(userId).clear()
+      } catch (error) {
+        console.error('purgeLocalFinancialData: failed to clear the sync queue', error)
+      }
     }
   }
 }

@@ -402,7 +402,12 @@ export class SyncQueue {
   }
 
   /**
-   * Clear all operations from the queue
+   * Clear all operations from the queue, in storage AND in this instance's memory.
+   *
+   * ⚠️ Clearing a FRESH instance for a user whose live service is running empties
+   * storage only: the live instance still holds the ops in memory and writes
+   * them back on its next mutation (story 86.1). Clear through the live service
+   * (`SynchronizationService.clearQueue()`) whenever one exists.
    */
   async clear(): Promise<void> {
     return this.serialize(async () => {

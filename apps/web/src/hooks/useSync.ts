@@ -38,6 +38,7 @@ import {
   findLocalRow,
   reportRefusedServerChanges,
 } from '../lib/sync/applyServerChanges'
+import { registerSyncPurgeHandle } from '../lib/sync/purgeHandle'
 import {
   addRefusalNotices,
   reconcileNotSyncedNotices,
@@ -387,6 +388,14 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     // and a sync sees nothing to send. Queued ops already carry their own
     // profileId, so this does not depend on profile reconciliation.
     const service = syncServiceRef.current
+    // Story 86.1 (FR139): "Clear local data" and account deletion clear THIS
+    // service's queue, not just its storage key (see `lib/sync/purgeHandle.ts`).
+    // Registered with the service, not with the push bridge, which waits for
+    // profile reconciliation while this queue is already loaded.
+    const unregisterPurgeHandle = registerSyncPurgeHandle({
+      userId,
+      clearQueue: () => service.clearQueue(),
+    })
     service
       .initialize()
       .then(() => {
@@ -475,6 +484,9 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
 
     // Cleanup on unmount
     return () => {
+      // First, so a purge that runs from here on falls back to clearing storage
+      // directly instead of calling a service that is being destroyed (86.1).
+      unregisterPurgeHandle()
       unsubscribe()
       unsubscribeChanges()
       unsubscribeRefusedRows()

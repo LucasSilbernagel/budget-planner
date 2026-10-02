@@ -1,4 +1,12 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-02h (**86.1 REVIEWED -> done**, uncommitted.)
+# last_updated: 2026-10-02g (**87.2 CREATED -> ready-for-dev**; depends on 87.1.)
+# last_updated: 2026-10-02f (**87.1 CREATED -> ready-for-dev**; epic-87 in-progress.)
+# last_updated: 2026-10-02e (**86.2 CREATED -> ready-for-dev**.)
+# last_updated: 2026-10-02d (**86.1 DEV DONE -> review**.)
+# last_updated: 2026-10-02c (**86.1 -> in-progress**.)
+# last_updated: 2026-10-02b (**86.1 CREATED -> ready-for-dev**; epic-86 in-progress.)
+# last_updated: 2026-10-02 (**BATCH 17 added by sprint-planning**: epics 86-89, 8 stories backlog; baseline reset to `383dce4`. Next: create-story 86.1.)
 # last_updated: 2026-10-01zb (**85.2 DONE, epic-85 DONE**; PR #15 `0d3cf65`.)
 # last_updated: 2026-10-01za (**85.2 DEV DONE -> review**; 0 flakes in 3/3 deploys.)
 # last_updated: 2026-10-01z (85.2 deploy samples 1-2 recorded; this commit = sample 3.)
@@ -570,8 +578,8 @@
 #   - See: 4-2-validation-report-2026-06-22.md for complete analysis
 
 generated: 2026-06-18
-last_updated: 2026-10-01
-baseline_commit: 932722f  # 2026-09-29 reset to HEAD by sprint-planning for BATCH 16 (was c668e94, set for the now-closed batch 15). Tree clean at reset.
+last_updated: 2026-10-02
+baseline_commit: 383dce4  # 2026-10-02 reset to HEAD by sprint-planning for BATCH 17 (was 932722f, set for batch 16). Tree clean at reset.
 project: budget-planner
 project_key: NOKEY
 tracking_system: file-system
@@ -1187,6 +1195,27 @@ development_status:
   85-1-split-the-unit-tests-across-two-ci-jobs: done  # PR #13 merged `d67b8e4` (all checks green; validator 315/315 in CI). CODE-REVIEWED 2026-10-01 (Opus 5.5, 3 layers): 0 decision / 13 patch (2 HIGH validator bypasses) / 0 defer / 2 dismissed; ALL 13 APPLIED on branch `85-1-review-patches` (validator 315/315, 33/33 broken copies RED); -> done once that PR is green. DEV DONE 2026-10-01: N=3 push deploys median 5m04s (5m03s-6m01s) vs 6m59.5s (-1m55s); unit max-shard median 2m22s; critical now e2e 2/3. Next: code review. PR #12 squash-merged `f2324e7` 2026-10-01: forced-fail control MEASURED (aggregator failure + BLOCKED at `f12dbc6`; success + CLEAN at `98f2d55`); CI shards 140/139 web files, core+db shard 1 only. Deploy samples: 1 = `f2324e7` (run 36934976998, success), 2 = `eb639e3` (run 36935503575), 3 = this commit. CREATED + dev started 2026-10-01 at `fbdd574` on branch 85-1-unit-shards. MEASURED: branch protection LIVE (requires `Unit tests (Vitest)`); validator :116 pins job set; 84.6 collector picks first /Unit/ job. Tasks 5-6 HALT for Lucas.
   85-2-make-the-critical-flows-pass-on-the-first-attempt: done  # CODE-REVIEWED 2026-10-01 (Opus 5.5, 3 layers): 17 patches applied, PR #15 merged `0d3cf65` (green, 37 passed 0 flaky). 2 deferred (Biome transient-file race; hydration:251 watch). DEV DONE 2026-10-01: N=3 push deploys 0 flaky / 0 failed (was 1-2 flaky per deploy); deploy median 4m54s. Next: code review. DEV 2026-10-01 (branch 85-2-flow-flakes): causes MEASURED (A Vite runtime re-optimize of workbox-window reloads pages on cold .vite = CI flakes; B dev slowness under load); fixed; concurrent gates 5/5 GREEN, --sequential GREEN. PR #14 squash-merged `e679518` (all 5 checks green). Deploy samples: 1 = `e679518` (run 36952496404), 2 = `7521c1b` (run 36952933480), 3 = this commit.  CREATED 2026-10-01 at `d67b8e4`. MEASURED: 3 of 6 first-attempt failures are an unexpected navigation (ERR_ABORTED on goto, context destroyed); every dev page registers a real dev SW (autoUpdate) from a dev-dist/ shared by both servers; webServer stdout not visible in CI. H1-H4 to measure; HALT at Task 2 for the fix choice.
   epic-85-retrospective: optional
+
+  # ── BATCH 17 (added 2026-10-02 by sprint-planning; source deferred-work-triage-2026-10-02.md; FR139-143) ──
+  epic-86: in-progress  # Your Data Stays With Your Account on a Shared Browser. FR139, FR140. Order 86.1 -> 86.2. Do FIRST (cross-account data class).
+  86-1-clearing-data-clears-it-for-good-even-while-sync-is-running: done  # REVIEWED 2026-10-02 (Fable, 3 layers): D-1 ACCEPTED (paid clear refills the stores from the server via the profile-reset re-pull; D1 text corrected, deferred), D-2 FIXED (push loop stops on clear), P-1..P-5 applied, F-1/F-2 deferred. Review-round mutations all RED (R4b exposed a redundant aliased line, removed). Gates CONCURRENT ALL GREEN 3m27s (core 1185, web 4220, e2e 21). UNCOMMITTED. DEV DONE 2026-10-02 (Opus 5.5), UNCOMMITTED, baseline `383dce4`. 5 integration claims RED on main -> GREEN; 9 mutations RED on their claims (retry-cancel removed as unpinned). pnpm gates CONCURRENT ALL GREEN 3m14s (core 1178, web 4220, e2e 21). Baseline concurrent was RED on account-menu.paid:22 (pre-existing), sequential green. Next: code review. CREATED 2026-10-02 at `383dce4`. D1-D3 CONFIRMED by Lucas 2026-10-02 (as recommended): D1 (a) clear through the LIVE service via a handle registered at service creation (b = destroy+recreate re-pulls from a null cursor, data back in ~30 s); D2 suppress revert/notice for a refusal landing after the clear; D3 account deletion same path. READ-only facts F1-F9; RED on main is the dev's first job.
+  86-2-only-my-profiles-reach-my-account: ready-for-dev  # CREATED 2026-10-02 on `383dce4` + 86.1 uncommitted. NEW at context: the free->paid seed (`needsSeeding`) uploads another account's SYNCED rows too (same root cause as N2), and reconcileActiveProfile keeps another account's profile active. D1-D4 CONFIRMED by Lucas 2026-10-02 (as recommended): D1 widen to the seed; D2 drop another account's data on mount (plain setState, its queue key untouched); D3 no re-keyed store; D4 placeholder rows stay adoptable.
+  epic-86-retrospective: optional
+
+  epic-87: in-progress  # Sign-In and Upgrade Are Proved End to End. FR141 (FR137 amendment: F9/F10 join D4, Lucas 2026-10-02). 87.1 and 87.2 independent.
+  87-1-a-real-sign-in-from-email-request-to-signed-in-page-f9: ready-for-dev  # CREATED 2026-10-02 at `383dce4`. No e2e server has a DB; every sign-in step needs one; tokens are stored HASHED so 'read the token from the DB' is impossible. D1-D4 CONFIRMED by Lucas 2026-10-02 (as recommended; dependency APPROVED): D1 PGlite over the wire (NEW devDependency @electric-sql/pglite-socket 0.2.11, peer pglite 0.5.8 = ours; MEASURED on npm); D2 dev-only file outbox + guard test; D3 seed the user row; D4 new `chromium-db` project on :5176 (87.2 reuses it).
+  87-2-an-upgrade-from-pricing-to-premium-access-f10: ready-for-dev  # CREATED 2026-10-02 at `383dce4`. ⚠️ DEPENDS ON 87.1 (chromium-db, PGlite socket, outbox). Real flow differs from the epic AC: checkout is not auth-gated, the WEBHOOK creates the account, the buyer then signs in, so 'premium without a reload' does not exist for a new buyer. D1-D4 CONFIRMED by Lucas 2026-10-02 (as recommended): D1 new-buyer flow + amend epic AC; D2 stub Paddle.js via page.route; D3 test signs the webhook with a fake secret, inline email (no Paddle API); D4 annual plan only.
+  epic-87-retrospective: optional
+
+  epic-88: backlog  # Big Numbers Fit, Narrow Screens Don't Scroll Sideways. FR142. Order 88.1 -> 88.2 -> 88.3; each needs a screenshots.yml update dispatch + push by Lucas.
+  88-1-large-figures-fit-their-cards-at-every-width: backlog
+  88-2-retirement-fits-a-320-px-screen: backlog
+  88-3-three-new-screenshots-for-the-most-cited-dropped-claims: backlog
+  epic-88-retrospective: optional
+
+  epic-89: backlog  # A Style Policy That Grants Only What It Needs. FR143. One story (spike + decision).
+  89-1-find-out-what-style-src-really-needs-then-set-it: backlog
+  epic-89-retrospective: optional
 
   epic-58-retrospective: skipped  # Skipped per Lucas 2026-09-21, consistent with every epic since 20 except 23. Both stories (58-1 `8bed8c8`, 58-2 `3a48d83`) done, 3-layer code-reviewed, committed; tree clean at close.
 

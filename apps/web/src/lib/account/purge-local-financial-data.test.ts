@@ -16,6 +16,10 @@
  *  - the util is best-effort: a throw in one store does NOT abort the rest or the
  *    queue clear, and the util never rejects (it runs after the server already
  *    irreversibly deleted the account).
+ *  - story 86.1: when a live sync service is registered for that user, the queue
+ *    is cleared THROUGH it (its in-memory queue would otherwise write the cleared
+ *    ops back); the fresh `createSyncQueue` is only the fallback. The end-to-end
+ *    proof with a real service is `__tests__/purge-live-queue.test.tsx`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -75,6 +79,7 @@ vi.mock('@/stores/categoryStore', () => ({
 }))
 vi.mock('@budget-planner/core/sync', () => ({ createSyncQueue: h.createSyncQueue }))
 
+import { registerSyncPurgeHandle } from '@/lib/sync/purgeHandle'
 import { purgeLocalFinancialData } from './purge-local-financial-data'
 
 beforeEach(() => {
@@ -83,7 +88,12 @@ beforeEach(() => {
   h.createSyncQueue.mockReturnValue({ clear: h.queueClear })
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
-afterEach(() => vi.restoreAllMocks())
+let unregister: (() => void) | null = null
+afterEach(() => {
+  unregister?.()
+  unregister = null
+  vi.restoreAllMocks()
+})
 
 describe('purgeLocalFinancialData', () => {
   it('resets + clears all seven financial stores and the user-scoped sync queue', async () => {
@@ -155,6 +165,64 @@ describe('purgeLocalFinancialData', () => {
     // No session → no per-user queue → createSyncQueue must never be called.
     expect(h.createSyncQueue).not.toHaveBeenCalled()
     expect(h.queueClear).not.toHaveBeenCalled()
+  })
+
+  // Story 86.1 (FR139): the live service's own queue, with the fresh queue as fallback.
+  describe('with a live sync service registered (story 86.1)', () => {
+    it('clears the queue THROUGH the live service for that user, not a fresh queue', async () => {
+      const clearQueue = vi.fn().mockResolvedValue(undefined)
+      unregister = registerSyncPurgeHandle({ userId: 'user-9', clearQueue })
+
+      await purgeLocalFinancialData('user-9')
+
+      expect(clearQueue).toHaveBeenCalledTimes(1)
+      expect(h.createSyncQueue).not.toHaveBeenCalled()
+    })
+
+    it("falls back to a fresh queue when the live service is ANOTHER user's", async () => {
+      const clearQueue = vi.fn().mockResolvedValue(undefined)
+      unregister = registerSyncPurgeHandle({ userId: 'someone-else', clearQueue })
+
+      await purgeLocalFinancialData('user-9')
+
+      expect(clearQueue).not.toHaveBeenCalled()
+      expect(h.createSyncQueue).toHaveBeenCalledWith('user-9')
+      expect(h.queueClear).toHaveBeenCalledTimes(1)
+    })
+
+    it('falls back to a fresh queue, and never rejects, when the live clear fails (a torn-down service)', async () => {
+      const clearQueue = vi.fn().mockRejectedValue(new Error('Sync service destroyed'))
+      unregister = registerSyncPurgeHandle({ userId: 'user-9', clearQueue })
+
+      await expect(purgeLocalFinancialData('user-9')).resolves.toBeUndefined()
+
+      expect(clearQueue).toHaveBeenCalledTimes(1)
+      expect(h.createSyncQueue).toHaveBeenCalledWith('user-9')
+      expect(h.queueClear).toHaveBeenCalledTimes(1)
+    })
+
+    it('with no userId never touches the live service', async () => {
+      const clearQueue = vi.fn().mockResolvedValue(undefined)
+      unregister = registerSyncPurgeHandle({ userId: 'user-9', clearQueue })
+
+      await purgeLocalFinancialData()
+
+      expect(clearQueue).not.toHaveBeenCalled()
+      expect(h.createSyncQueue).not.toHaveBeenCalled()
+    })
+
+    it('an old registration cannot unregister a newer one', async () => {
+      const old = vi.fn().mockResolvedValue(undefined)
+      const next = vi.fn().mockResolvedValue(undefined)
+      const unregisterOld = registerSyncPurgeHandle({ userId: 'user-9', clearQueue: old })
+      unregister = registerSyncPurgeHandle({ userId: 'user-9', clearQueue: next })
+      unregisterOld()
+
+      await purgeLocalFinancialData('user-9')
+
+      expect(next).toHaveBeenCalledTimes(1)
+      expect(old).not.toHaveBeenCalled()
+    })
   })
 
   it('with an empty-string userId also skips the sync queue', async () => {
