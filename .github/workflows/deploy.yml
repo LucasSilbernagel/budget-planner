@@ -54,7 +54,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
   IMAGE_NAME: budget-planner-web
   # Pinned deliberately: the `migrate` job's safety depends on `rapids
   # apply`/`update`/`rm` behaving exactly as expected, and the `deploy` job's on

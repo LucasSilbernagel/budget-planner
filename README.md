@@ -106,7 +106,7 @@ Note that `apps/web` runs Vitest 3 while the root and the other packages run Vit
 ### Prerequisites
 
 - **Node.js 20.12+.**
-  The repository pins Node 20 via `.nvmrc`, and every workspace declares `engines.node: ">=20.12.0"`.
+  The repository pins Node 24 via `.nvmrc`, and every workspace declares `engines.node: ">=24.0.0"`.
 - **pnpm 10.34.3.**
   The version is pinned by the `packageManager` field in the root `package.json`, which is the single source of truth for both local installs and CI.
   `pnpm-lock.yaml` is `lockfileVersion: 9.0`, so pnpm 8 and older will fail `pnpm install --frozen-lockfile`.
@@ -209,7 +209,7 @@ Use `pnpm --filter <package> type-check` instead, or `pnpm type-check:all` for e
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs on pull requests into `main`, on Node 20, in three jobs.
+`.github/workflows/ci.yml` runs on pull requests into `main`, on Node 24, in three jobs.
 Pushes to `main` run the same jobs through `.github/workflows/deploy.yml`, which calls `ci.yml` as a reusable workflow:
 
 1. **Lint** - `pnpm biome check .` and `pnpm validate:tsconfig`.

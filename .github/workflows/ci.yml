@@ -52,10 +52,10 @@ permissions:
   contents: read
 
 env:
-  # Pin Node to match local dev: .nvmrc (Node 20, engines >=20.12.0).
+  # Pin Node to match local dev: .nvmrc (Node 24, engines >=24.0.0).
   # pnpm version is NOT pinned here - it comes from the `packageManager` field
   # in package.json (pnpm@10.34.3), which pnpm/action-setup reads automatically.
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
 
 jobs:
   lint:
