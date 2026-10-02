@@ -45,9 +45,11 @@ const readIncomeStorage = (page: Page) =>
 
 test.describe('Clear local data (story 17-2)', () => {
   test('wipes seeded local data and the wipe persists across a reload', async ({ page }) => {
-    // 60 s, not the default 30 s (story 85.2, MEASURED under concurrent
-    // `pnpm gates`: 28.9–31.2 s, timing out at the 30 s cap). Several full DEV page loads, each hydrating
-    // slowly while the web Vitest gate runs alongside. `85-2-evidence/causes.md`.
+    // 60 s, not the default 30 s (story 85.2, MEASURED): it timed out at the
+    // 30 s cap in 1 of 2 concurrent `pnpm gates` runs and took 29.1 s in the
+    // other; with the cap lifted and the web Vitest gate alongside, 22.2–24.9 s
+    // (3 runs). Several full DEV page loads, each hydrating slowly under load.
+    // `85-2-evidence/causes.md`.
     test.setTimeout(60_000)
     // 1. Seed real financial data and confirm it landed in localStorage.
     await page.goto('/income')

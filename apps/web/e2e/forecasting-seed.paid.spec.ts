@@ -126,8 +126,9 @@ test.describe('a fresh scenario seeds from the user own finances (62.1)', () => 
 
     // 15 s, not the default 5 s (story 85.2, MEASURED): the heading is server
     // rendered, but the seed needs client hydration, which in this DEV build took
-    // 5.5–9.6 s after the heading while the web Vitest gate ran alongside (3.4 s
+    // up to 9.2 s after the heading while the web Vitest gate ran alongside (3.4 s
     // idle). The initial-sync gate was ruled out (same timings with it disabled).
+    // With this poll back at 5 s, concurrent `pnpm gates` failed here 2 of 2.
     // `85-2-evidence/causes.md`, Cause B.
     await expect
       .poll(() => inputValues(page), {
