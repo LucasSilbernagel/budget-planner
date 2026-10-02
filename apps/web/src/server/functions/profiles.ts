@@ -65,7 +65,7 @@ export async function createProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a status without premium features (`hasPremiumFeatures`: only
     // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
     if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
       return {
         success: false,
@@ -184,7 +184,7 @@ export async function getProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a status without premium features (`hasPremiumFeatures`: only
     // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
     if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
       return {
         success: false,
@@ -246,7 +246,7 @@ export async function updateProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a status without premium features (`hasPremiumFeatures`: only
     // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
     if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
       return {
         success: false,
@@ -381,7 +381,7 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a status without premium features (`hasPremiumFeatures`: only
     // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
     if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
       return {
         success: false,
@@ -562,7 +562,7 @@ export async function setDefaultProfile(
     // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
     // feature, so a status without premium features (`hasPremiumFeatures`: only
     // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts / financial.ts — not merely hidden in the UI.
+    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
     if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
       return {
         success: false,

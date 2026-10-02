@@ -3,7 +3,7 @@
  *
  * The request-driven profile functions must reject any session whose
  * `subscriptionStatus` is not `active` (free / past_due / canceled), mirroring
- * `forecastingProfiles.ts` / `financial.ts`, so custom profiles is enforced at
+ * `forecastingProfiles.ts`, so custom profiles is enforced at
  * the tier boundary server-side — not merely hidden in the UI. The guard fires
  * after the auth check and before any DB work, so an unauthenticated caller
  * still gets the auth error, not the premium error.

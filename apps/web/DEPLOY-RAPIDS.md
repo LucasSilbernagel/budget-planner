@@ -192,9 +192,10 @@ Once the service is live, confirm on the **deployed** instance (verify the
 **hydrated** response, not just SSR HTML — Story 4-11 lesson):
 
 - [ ] SSR pages render.
-- [ ] `/api/calculations/*` (5-12), `/api/webhooks/paddle` (5-3), `/api/sync/*`
-      (4-18/5-15) all execute server-side. (`/api/auth/paddle/*` was the dead
-      OAuth stub — deleted by 5-3's AC-1; no longer exists.)
+- [ ] `/api/webhooks/paddle` (5-3) and `/api/sync/*` (4-18/5-15) execute
+      server-side. (`/api/auth/paddle/*` was the dead OAuth stub — deleted by
+      5-3's AC-1; `/api/calculations/*` (5-12) had no caller and was deleted
+      2026-10-02.)
 - [ ] The global security-headers middleware (`apps/web/src/start.ts`, 5-8
       AC-14) is present on a **live** response (confirms `start.ts` is bundled +
       executed by this runtime). *Verified locally during AC-1 boot;
