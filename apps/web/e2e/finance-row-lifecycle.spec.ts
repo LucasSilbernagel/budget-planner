@@ -80,6 +80,10 @@ for (const { path, trigger, addTitle, editTitle, fields } of PAGES) {
   test(`${path}: add, edit and delete a row through the UI, each surviving a reload`, async ({
     page,
   }) => {
+    // 60 s, not the default 30 s (story 85.2, MEASURED under concurrent
+    // `pnpm gates`: /income 33.8–35.3 s, /expenses 33.1–35.9 s; /savings 20.8 s, /balance 16.9 s). Several full DEV page loads, each hydrating
+    // slowly while the web Vitest gate runs alongside. `85-2-evidence/causes.md`.
+    test.setTimeout(60_000)
     const [nameField, amountField] = fields
     await page.goto(path)
     await page.waitForLoadState('networkidle')

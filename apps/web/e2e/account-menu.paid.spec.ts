@@ -20,6 +20,11 @@ import { mockSessionThatCanEnd } from './helpers/nav-more'
  */
 
 test('a signed-in user signs out from the paid chrome too, at 2400px', async ({ page }) => {
+  // 60 s, not the default 30 s (story 85.2, MEASURED under concurrent
+  // `pnpm gates`: 24.4–26.5 s, and it failed the cold-cache control). Full DEV
+  // page loads hydrating slowly while the web Vitest gate runs alongside.
+  // `85-2-evidence/causes.md`.
+  test.setTimeout(60_000)
   // AC-1 says every tier and every width from 320 to 2400. The free server
   // covers the sign-out click at 1280; this covers the paid seam and the widest
   // viewport, where the header is capped by `max-w-6xl` rather than the window.

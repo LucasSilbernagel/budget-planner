@@ -97,6 +97,15 @@ export default defineConfig({
       devOptions: { enabled: true, type: 'module', suppressWarnings: true },
     }),
   ],
+  // Story 85.2 (FR138). `workbox-window` is reached only at RUNTIME
+  // (`RegisterSW.tsx` → `virtual:pwa-register` in dev), so Vite's start-up scan
+  // missed it. The first page to register the dev service worker made Vite
+  // optimize it on the fly and FULL-RELOAD every open page, once per dev server,
+  // on any cold `node_modules/.vite`. That is CI on every run: the reload landed
+  // mid-test and caused the e2e flakes `retries: 1` hid (85.2 `causes.md`).
+  // Pre-bundling it at start-up removes the reload. The e2e dev servers fail the
+  // run if any OTHER dependency does this (`e2e/helpers/dev-server-dep-guard.mjs`).
+  optimizeDeps: { include: ['workbox-window'] },
   resolve: {
     // Array form so order is deterministic: more-specific `find`s must precede
     // less-specific ones (rollup/plugin-alias uses the first match).

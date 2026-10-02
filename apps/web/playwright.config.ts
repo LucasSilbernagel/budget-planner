@@ -123,7 +123,12 @@ const devServer = (port: number, sessionSeed: string) => ({
   // `--strictPort` so a busy port FAILS instead of silently sliding to the next
   // one — a paid server that quietly booted on 5175 would leave every paid spec
   // hitting the free server on 5174's fallback and passing against 7 anchors.
-  command: `pnpm dev --port ${port} --strictPort`,
+  //
+  // Run through `dev-server-dep-guard.mjs` (story 85.2): it still runs exactly
+  // `pnpm dev --port <port> --strictPort`, and also records any mid-run dependency
+  // re-optimization, which reloads every open page. `globalTeardown` fails the
+  // run on one.
+  command: `node e2e/helpers/dev-server-dep-guard.mjs ${port}`,
   url: `http://localhost:${port}`,
   reuseExistingServer: !process.env['CI'],
   timeout: 120_000,
@@ -171,8 +176,15 @@ const screenshotDir = process.env['SCREENSHOT_DIR']
   ? resolve(process.cwd(), process.env['SCREENSHOT_DIR'])
   : undefined
 
+// The teardown below ignores dep-reload logs older than this run (a reused local
+// server never goes through the wrapper). Set once in the main process; workers
+// and the teardown inherit it.
+process.env['E2E_RUN_STARTED_AT'] ??= String(Date.now())
+
 export default defineConfig({
   testDir: './e2e',
+  // Story 85.2: fails the run if a dev server re-optimized a dependency mid-run.
+  globalTeardown: './e2e/global-teardown.ts',
   // One render environment (CI), so no `{platform}` or `{projectName}` in the
   // path: the shot names are unique and explicit (`overview-320-dark.png`).
   snapshotPathTemplate: screenshotDir
