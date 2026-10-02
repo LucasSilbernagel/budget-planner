@@ -27,6 +27,7 @@ import {
   applyHeadersToNextResult,
   isCanonicalHttpsRequest,
   isConfirmedHttps,
+  paddleEnvironmentFromProcessEnv,
 } from './server/middleware/security-headers'
 
 /**
@@ -64,7 +65,12 @@ const securityHeadersMiddleware = createMiddleware({ type: 'request' }).server(
     // getRouter → router.options.ssr.nonce) AND to the CSP header below, so both
     // carry the identical value for this request.
     const nonce = generateCspNonce()
-    return runWithCspNonce(nonce, () => applyHeadersToNextResult(next, { isDev, isHttps, nonce }))
+    // The Paddle stylesheet host `style-src-elem` grants (story 89.1): the sandbox
+    // CDN only for a deployment explicitly configured for sandbox.
+    const paddleEnvironment = paddleEnvironmentFromProcessEnv()
+    return runWithCspNonce(nonce, () =>
+      applyHeadersToNextResult(next, { isDev, isHttps, nonce, paddleEnvironment })
+    )
   }
 )
 
