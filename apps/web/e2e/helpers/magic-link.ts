@@ -12,10 +12,11 @@
  * as 87.1 recorded them.
  */
 import { type BrowserContext, type Page, expect } from '@playwright/test'
+import { SESSION_SETTLE_MS } from './account-menu'
 import { readOutbox } from './db-harness'
 
 export interface SignInResult {
-  /** This address's outbox links, read now (oldest first). */
+  /** How many outbox links this address has, read now. */
   linksFor: () => number
   /** How many links this address had before the request. */
   before: number
@@ -65,11 +66,13 @@ export async function signInWithEmailedLink(
   )
 
   // 3. Open it: the interstitial names the account and does NOT sign in yet.
+  // Steps 3-4 are page loads on a possibly cold dev server (F10 measured a
+  // network-gated wait at 8.8 s under concurrent gates): the settle budget.
   await page.goto(link.toString())
   await expect(
     page.getByText(`You're about to sign in as ${email}.`),
     `${step(2)}: the link did not open the confirm interstitial (token rejected on GET?)`
-  ).toBeVisible()
+  ).toBeVisible({ timeout: SESSION_SETTLE_MS })
   expect(
     (await context.cookies()).some((cookie) => cookie.name === 'session'),
     `${step(2)}: opening the link must not sign in before the confirm`
@@ -80,7 +83,7 @@ export async function signInWithEmailedLink(
   await expect(
     page,
     `${step(3)}: confirming did not sign in (redirected to the invalid-or-expired page?)`
-  ).toHaveURL(/^https?:\/\/[^/?#]+\/$/)
+  ).toHaveURL(/^https?:\/\/[^/?#]+\/$/, { timeout: SESSION_SETTLE_MS })
 
   return { linksFor, before }
 }

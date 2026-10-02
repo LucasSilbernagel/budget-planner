@@ -275,11 +275,17 @@ const DEV_SERVERS: ReadonlyArray<readonly [number, DevServerEnv]> = [
         PADDLE_LIFETIME_PRICE_ID: FAKE_PADDLE.lifetimePriceId,
         // No request leaves this server for the internet (AC 4): Node (>= 24)
         // sends fetch/http through the proxy, which refuses. Loopback is
-        // exempt (the database socket is plain TCP anyway).
+        // exempt (the database socket is plain TCP anyway). The lowercase
+        // names too: Node 24 PREFERS them (MEASURED in the 87.2 review: an
+        // ambient `no_proxy=*` or `no_proxy=example.com` let a fetch out
+        // despite the uppercase set here), and the shell's env merges in.
         NODE_USE_ENV_PROXY: '1',
         HTTP_PROXY: NO_OUTBOUND_PROXY,
         HTTPS_PROXY: NO_OUTBOUND_PROXY,
         NO_PROXY: 'localhost,127.0.0.1,::1',
+        http_proxy: NO_OUTBOUND_PROXY,
+        https_proxy: NO_OUTBOUND_PROXY,
+        no_proxy: 'localhost,127.0.0.1,::1',
       },
     },
   ],

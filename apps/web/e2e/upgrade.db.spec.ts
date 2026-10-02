@@ -76,6 +76,11 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
   await page.goto('/pricing')
   const config = await checkoutConfig
   expect(config.status(), 'step 1: /api/paddle/checkout-config refused the visitor').toBe(200)
+  // Positive anchor first, so the absence below cannot pass on an unrendered nav.
+  await expect(
+    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/income"]').first(),
+    'step 1: the primary nav did not render'
+  ).toBeAttached()
   await expect(
     page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/report"]'),
     'step 1: the visitor must start on the FREE nav (a control for step 10)'
@@ -204,5 +209,10 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     stub.calls.filter((call) => call.method === 'Environment.set').map((call) => call.args[0]),
     'step 11: Paddle.js must run in the sandbox environment'
   ).toEqual(['sandbox'])
+  // The token the browser got is the obvious fake (AC 4), not an ambient one.
+  expect(
+    stub.calls.filter((call) => call.method === 'Initialize').map((call) => call.args[0]),
+    'step 11: Paddle.js must be initialized with the fake client token'
+  ).toEqual([expect.objectContaining({ token: FAKE_PADDLE.clientToken })])
   expect(linksFor() - before, 'the flow sent more than one link').toBe(1)
 })
