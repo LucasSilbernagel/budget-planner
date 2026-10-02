@@ -64,7 +64,8 @@
       "**/test-results",
       "**/test-results/**",
       "**/playwright-report",
-      "**/playwright-report/**"
+      "**/playwright-report/**",
+      "**/*.timestamp-*.mjs"
     ]
   },
   "overrides": [
