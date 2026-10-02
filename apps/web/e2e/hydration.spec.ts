@@ -252,6 +252,13 @@ test.describe('hydration', () => {
     await page.addInitScript(seedAllStores)
     await page.goto('/')
 
-    await expect(page.getByTestId('overview-net-worth')).toHaveText('-$139,000.00')
+    // 15 s, not the default 5 s (story 85.2 follow-up, MEASURED): the figure is
+    // empty until the client hydrates, which in this DEV build took 9.5–10.5 s
+    // after `goto` with the web Vitest gate running alongside (3.5 s idle). It
+    // failed at 5 s in 2 of 15 local concurrent `pnpm gates` runs, never in CI.
+    // `85-2-evidence/review/hydration-251-timing.txt`.
+    await expect(page.getByTestId('overview-net-worth')).toHaveText('-$139,000.00', {
+      timeout: 15_000,
+    })
   })
 })
