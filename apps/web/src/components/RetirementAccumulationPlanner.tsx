@@ -1559,8 +1559,13 @@ function RetirementAccumulationPlannerInner() {
             <OutputRow
               label="Saved per year"
               value={formatAmount(solved.result.savedPerYearCents)}
+              amount
             />
-            <OutputRow label="Total saved" value={formatAmount(solved.input.currentSavedCents)} />
+            <OutputRow
+              label="Total saved"
+              value={formatAmount(solved.input.currentSavedCents)}
+              amount
+            />
             <OutputRow
               label="Months to retirement"
               value={String(solved.result.monthsToRetirement)}
@@ -1576,10 +1581,12 @@ function RetirementAccumulationPlannerInner() {
             <OutputRow
               label="Nest egg at retirement"
               value={formatAmount(solved.result.projectedNestEggCents ?? 0)}
+              amount
             />
             <OutputRow
               label="Required nest egg"
               value={formatAmount(solved.result.requiredNestEggCents ?? 0)}
+              amount
             />
             {/* Restored in review: the retired form's "Gap to Goal" was the one
                 output in its progress panel with no equivalent here — the outputs
@@ -1598,6 +1605,7 @@ function RetirementAccumulationPlannerInner() {
                       (solved.result.requiredNestEggCents ?? 0) - solved.input.currentSavedCents
                     )
               }
+              amount
             />
           </dl>
           {model === 'perpetual' && (
@@ -1742,15 +1750,28 @@ function RetirementAccumulationPlannerInner() {
  * longest word and the gap needs more than the 206 px a row gets at 320 px.
  * As one unbreakable string it overran the panel and pushed the page to 324 px.
  * With a break opportunity after each group separator it wraps there
- * (`$1,511,` / `148,001.20`), never inside a group. Non-money values
- * (`422`, `Already covered`) have no group separator and render unchanged.
+ * (`$1,511,` / `148,001.20`), never inside a group.
+ *
+ * Only rows passed `amount` (a `formatAmount` string, `GroupedAmount`'s
+ * contract) get the treatment. The counts and the `toFixed(1)` years are plain
+ * ASCII strings: in a locale whose group separator is `.` (EUR → de-DE, BRL →
+ * pt-BR) `GroupedAmount` would read `35.2`'s decimal point as a group separator
+ * and allow a break at `35.` / `2` (code review of 88.2).
  */
-function OutputRow({ label, value }: { label: string; value: string }) {
+function OutputRow({
+  label,
+  value,
+  amount = false,
+}: {
+  label: string
+  value: string
+  amount?: boolean
+}) {
   return (
     <div className="flex justify-between items-baseline gap-4">
       <dt className="text-sm text-green-700 dark:text-green-300">{label}</dt>
       <dd className="font-semibold text-green-800 dark:text-green-200">
-        <GroupedAmount text={value} />
+        {amount ? <GroupedAmount text={value} /> : value}
       </dd>
     </div>
   )

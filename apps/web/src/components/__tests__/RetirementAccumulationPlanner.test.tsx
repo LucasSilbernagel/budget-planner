@@ -236,6 +236,38 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     }
   })
 
+  /**
+   * Code review of 88.2: in EUR (de-DE) the group separator is `.`, so a plain
+   * `toFixed(1)` years value (`0.0`) would get a `<wbr>` at its DECIMAL point if
+   * it went through `GroupedAmount`. Only the money rows may carry breaks, and
+   * those break after the `.` group separator, not the `,` decimal one.
+   */
+  it('in EUR only the money values get break opportunities, after the "." group separator (story 88.2 review)', async () => {
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    await fillReachableCase(user)
+
+    const outputs = within(screen.getByTestId('accumulation-outputs'))
+    const dd = (label: string) => outputs.getByText(label).nextElementSibling as HTMLElement
+    for (const label of [
+      'Months to retirement',
+      'Years to retirement',
+      'Earliest retirement age',
+    ]) {
+      expect(dd(label).querySelectorAll('wbr'), label).toHaveLength(0)
+    }
+    expect(dd('Years to retirement').textContent).toBe('0.0')
+    const total = dd('Total saved')
+    expect(total.textContent).toMatch(/^1\.000\.000,00\s€$/)
+    const breaks = [...total.querySelectorAll('wbr')]
+    expect(breaks).toHaveLength(2)
+    for (const wbr of breaks) {
+      expect(wbr.previousSibling?.textContent).toMatch(/\d\.$/)
+    }
+  })
+
   it('recomputes the required nest egg when the model toggles (AC-3)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
