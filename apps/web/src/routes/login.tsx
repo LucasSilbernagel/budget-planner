@@ -28,7 +28,10 @@ export const Route = createFileRoute('/login')({
   // user has nothing to do on a sign-IN form, and leaving them on it risks them
   // re-entering their email against an already-authenticated session. Reuses the
   // same server-only resolver the root loader seeds the first paint with, so an
-  // authenticated visitor never sees the form flash before bouncing to `/`. A
+  // authenticated visitor never sees the form flash before bouncing to `/`.
+  // During SSR this shares the root loader's lookup (one per request, see
+  // `server/api/auth/session-lookup-once.ts`); a client navigation here is its
+  // own request, so it always checks the session fresh. A
   // `null` seed (resolver errored/unverified) is treated as signed-out — fail
   // open to the form rather than trap an uncertain session on a redirect loop.
   beforeLoad: async () => {
