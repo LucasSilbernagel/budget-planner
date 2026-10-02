@@ -23,6 +23,7 @@ import {
 import type { FinanceType } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
 import {
   FieldLabel,
@@ -527,7 +528,12 @@ export function BalancePage() {
                 at `md` gave each card 120px at 768px and clipped three of the four
                 figures. 4-up therefore starts at `lg` (1024px → 168px needed, 200px
                 available); `md` keeps the 2-up layout, and 1-up holds at the 320px
-                floor. */}
+                floor.
+                ⚠️ Those numbers assumed a 12-character figure. With 10-digit
+                figures (the screenshot seed) every band still clipped, so since
+                story 88.1 each figure is a `GroupedAmount`: it wraps between digit
+                groups when it does not fit, and the breakpoints stay as measured
+                (88.1 D3). */}
             <div className="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="surface-inset p-4 lg:px-3 rounded-lg">
                 <p className="text-muted text-sm">Total Investments</p>
@@ -536,7 +542,7 @@ export function BalancePage() {
                   data-testid="stat-total-investments"
                 >
                   {hydrated ? (
-                    formatAmount(totalInvestments)
+                    <GroupedAmount text={formatAmount(totalInvestments)} />
                   ) : (
                     <PendingFigure testId="stat-total-investments-skeleton" />
                   )}
@@ -559,7 +565,7 @@ export function BalancePage() {
                   data-testid="stat-total-savings"
                 >
                   {hydrated ? (
-                    formatAmount(totalSavings)
+                    <GroupedAmount text={formatAmount(totalSavings)} />
                   ) : (
                     <PendingFigure testId="stat-total-savings-skeleton" />
                   )}
@@ -577,7 +583,7 @@ export function BalancePage() {
                   data-testid="stat-total-assets"
                 >
                   {hydrated ? (
-                    formatAmount(totalAssets)
+                    <GroupedAmount text={formatAmount(totalAssets)} />
                   ) : (
                     <PendingFigure testId="stat-total-assets-skeleton" />
                   )}
@@ -590,7 +596,7 @@ export function BalancePage() {
                   data-testid="stat-total-debts"
                 >
                   {hydrated ? (
-                    formatAmount(totalDebts)
+                    <GroupedAmount text={formatAmount(totalDebts)} />
                   ) : (
                     <PendingFigure testId="stat-total-debts-skeleton" />
                   )}
@@ -615,7 +621,7 @@ export function BalancePage() {
                   }`}
                 >
                   {hydrated ? (
-                    formatAmount(netWorth)
+                    <GroupedAmount text={formatAmount(netWorth)} />
                   ) : (
                     <PendingFigure testId="stat-net-worth-skeleton" />
                   )}
