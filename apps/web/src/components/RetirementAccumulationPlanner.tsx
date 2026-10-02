@@ -41,6 +41,7 @@ import {
 } from '../stores/retirementPlannerStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import RetirementTimelineChart from './RetirementTimelineChart'
+import { GroupedAmount } from './ui/GroupedAmount'
 
 /**
  * Share of current income used to seed a desired-retirement-income default.
@@ -1733,12 +1734,24 @@ function RetirementAccumulationPlannerInner() {
   )
 }
 
-/** A single label / value row in the outputs list. */
+/**
+ * A single label / value row in the outputs list.
+ *
+ * The value is a `GroupedAmount` (story 88.2, FR142): a 10-digit figure
+ * (`$1,511,148,001.20`, 169 px bold under CI's DejaVu Sans) plus the label's
+ * longest word and the gap needs more than the 206 px a row gets at 320 px.
+ * As one unbreakable string it overran the panel and pushed the page to 324 px.
+ * With a break opportunity after each group separator it wraps there
+ * (`$1,511,` / `148,001.20`), never inside a group. Non-money values
+ * (`422`, `Already covered`) have no group separator and render unchanged.
+ */
 function OutputRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between items-baseline gap-4">
       <dt className="text-sm text-green-700 dark:text-green-300">{label}</dt>
-      <dd className="font-semibold text-green-800 dark:text-green-200">{value}</dd>
+      <dd className="font-semibold text-green-800 dark:text-green-200">
+        <GroupedAmount text={value} />
+      </dd>
     </div>
   )
 }

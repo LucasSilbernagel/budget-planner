@@ -198,6 +198,44 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     )
   })
 
+  /**
+   * Story 88.2 (FR142): at 320 px under CI's font the seed's 10-digit outlook
+   * figures (`$1,511,148,001.20`, 169 px) could not fit their row beside the
+   * label, and "Still to accumulate" pushed the page to 324 px. Each value is
+   * now a `GroupedAmount`, so it can wrap after a group separator and nowhere
+   * else. jsdom has no layout: this pins the break opportunities and the exact
+   * text, not "it fits" (that is the `retirement-320-light` screenshot's job).
+   */
+  it('every outlook value can break only after a group separator, with its text unchanged (story 88.2)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    await fillReachableCase(user)
+
+    const values = [...screen.getByTestId('accumulation-outputs').querySelectorAll('dl dd')]
+    expect(values.map((dd) => dd.textContent)).toEqual([
+      '18,000.00',
+      '1,000,000.00',
+      '0',
+      '0.0',
+      '40',
+      '1,000,000.00',
+      '540,000.00',
+      'Already covered',
+    ])
+    for (const dd of values) {
+      const text = dd.textContent ?? ''
+      // One `<wbr>` per digit-flanked comma, each straight after that comma.
+      const separators = text.match(/\d,(?=\d)/g)?.length ?? 0
+      const breaks = [...dd.querySelectorAll('wbr')]
+      expect(breaks, text).toHaveLength(separators)
+      for (const wbr of breaks) {
+        expect(wbr.previousSibling?.textContent, text).toMatch(/\d,$/)
+        expect(wbr.nextSibling?.textContent, text).toMatch(/^\d/)
+      }
+    }
+  })
+
   it('recomputes the required nest egg when the model toggles (AC-3)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
