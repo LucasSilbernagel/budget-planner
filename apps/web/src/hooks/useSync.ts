@@ -38,6 +38,7 @@ import {
   applyServerChangesToStores,
   findLocalRow,
   reportRefusedServerChanges,
+  stampSyncedOwner,
 } from '../lib/sync/applyServerChanges'
 import { registerSyncPurgeHandle } from '../lib/sync/purgeHandle'
 import {
@@ -461,6 +462,13 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       reportRefusedServerChanges
     )
 
+    // Story 86.3: mark each row the server just accepted as this account's, so
+    // nothing this session pushed looks like a free-tier row to the next account
+    // that signs in here before a pull has brought it back.
+    const unsubscribeSynced = syncServiceRef.current.onOperationsSynced((operations) => {
+      stampSyncedOwner(operations, userId)
+    })
+
     // Story 75.2 (FR119): an op the server PERMANENTLY refused has left the
     // queue. Name the entry to the user and REVERT it on this device (decision,
     // Lucas 2026-09-28) — see `lib/sync/refusedEdits.ts` for why each case
@@ -491,6 +499,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       unsubscribe()
       unsubscribeChanges()
       unsubscribeRefusedRows()
+      unsubscribeSynced()
       unsubscribeRejected()
       // Notices name THIS account's entries. The store is module-level, so
       // without this a sign-out → sign-in as another paid user in the same tab
@@ -639,6 +648,11 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
    * be uploaded into B's account. A profile made here before the bridge
    * registered carries a placeholder (`'temp-user'`) or B's own id, and still
    * uploads (`lib/sync/accountOwner.ts`).
+   *
+   * Story 86.3: a profile the previous account PUSHED carries its id from the
+   * moment the push was accepted (`stampSyncedOwner`), so it is never uploaded
+   * here; before, it kept `'temp-user'` until a pull, and its create hit the
+   * primary key A's row holds (23505, kept queued for ever).
    */
   const uploadMissingProfiles = useCallback(
     async (profileIds: string[]): Promise<void> => {

@@ -151,6 +151,10 @@ function cashflowPayload(entity: Record<string, unknown>, userId: string): Recor
  * item carries a free-tier `userId` (often `0`); the payload MUST carry the
  * authenticated session uuid instead, which the server also re-verifies against
  * the session. Only the columns the server validates per entity are forwarded.
+ *
+ * The local row gets the session uuid too, but only once the server ACCEPTS the
+ * op (story 86.3, `stampSyncedOwner` in `applyServerChanges.ts`), never here: a
+ * row whose push never lands stays a placeholder, adoptable by the next account.
  */
 export function toServerPayload(
   entityType: SyncEntityType,

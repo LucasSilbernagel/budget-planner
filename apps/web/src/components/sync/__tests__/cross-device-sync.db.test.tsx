@@ -13,9 +13,11 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
+/** Who the session cookie names (story 86.3 switches accounts on one browser). */
+const session = vi.hoisted(() => ({ userId: '11111111-1111-4111-8111-111111111111' }))
 
 // The real package entry refuses to load under jsdom (it has a `window`), so
 // mock it from the schema module alone.
@@ -40,7 +42,7 @@ const USER = '11111111-1111-4111-8111-111111111111'
 vi.mock('@/server/api/auth/paddle', () => ({
   getCurrentUserSession: vi.fn(async () => ({
     success: true,
-    data: { userId: USER, subscriptionStatus: 'lifetime', isAuthenticated: true },
+    data: { userId: session.userId, subscriptionStatus: 'lifetime', isAuthenticated: true },
   })),
 }))
 
@@ -55,10 +57,15 @@ let resetSyncStore: typeof import('@/hooks/useSync').resetSyncStore
 let useIncomeStore: typeof import('@/stores/incomeStore').useIncomeStore
 let useProfileStore: typeof import('@/stores/profileStore').useProfileStore
 let ActiveSync: typeof import('../ActiveSync').ActiveSync
+let useProfileManager: typeof import('@/hooks/useActiveProfile').useProfileManager
 
 // vitest runs with cwd = apps/web.
 const MIGRATIONS = resolve(process.cwd(), '../../packages/db/migrations')
 const requests: string[] = []
+/** Every op `/api/sync/batch` did not apply, with how the server answered. */
+const batchFailures: string[] = []
+/** Every statement PostgreSQL refused, as `SQLSTATE message`. */
+const dbErrors: string[] = []
 // When true, /api/sync/batch behaves like production BEFORE the profileId fix:
 // every op comes back as a permanent (non-retryable) server failure.
 let serverRejectsPushes = false
@@ -74,7 +81,27 @@ async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise
         { status: 200 }
       )
     }
-    return batchPOST({ request })
+    const { operations } = (await request.clone().json()) as {
+      operations: { type: string; entityType: string; entityId: string; profileId?: string }[]
+    }
+    const response = await batchPOST({ request })
+    const body = (await response.clone().json()) as {
+      failedCount?: number
+      rejections?: unknown[]
+    }
+    if (!response.ok || (body.failedCount ?? 0) > 0) {
+      const outcome = !response.ok
+        ? `HTTP ${response.status}`
+        : body.rejections?.length
+          ? 'refused'
+          : 'failed with no rejection (kept queued)'
+      for (const op of operations) {
+        batchFailures.push(
+          `${op.type} ${op.entityType} ${op.entityId} (profile ${op.profileId}): ${outcome}`
+        )
+      }
+    }
+    return response
   }
   if (url.pathname === '/api/sync/changes') {
     return changesGET({ request })
@@ -100,6 +127,25 @@ beforeAll(async () => {
       }
     }
   }
+  // Record what the database refused (story 86.3: the 23505 a re-upload hits),
+  // inside a transaction as well as out of one.
+  const recording = <Q extends (...args: never[]) => Promise<unknown>>(query: Q): Q =>
+    (async (...args: Parameters<Q>) => {
+      try {
+        return await query(...args)
+      } catch (error) {
+        const { code, message } = error as { code?: string; message?: string }
+        dbErrors.push(`${code} ${message}`)
+        throw error
+      }
+    }) as Q
+  pg.query = recording(pg.query.bind(pg))
+  const transaction = pg.transaction.bind(pg)
+  pg.transaction = ((callback: Parameters<typeof pg.transaction>[0]) =>
+    transaction((tx) => {
+      tx.query = recording(tx.query.bind(tx))
+      return callback(tx)
+    })) as typeof pg.transaction
   const db = drizzle(pg)
   holder.db = db
   // An account that predates story 5-3: no profile row yet.
@@ -160,6 +206,7 @@ beforeAll(async () => {
   ;({ useIncomeStore } = await import('@/stores/incomeStore'))
   ;({ useProfileStore } = await import('@/stores/profileStore'))
   ;({ ActiveSync } = await import('../ActiveSync'))
+  ;({ useProfileManager } = await import('@/hooks/useActiveProfile'))
 }, 60_000)
 
 afterAll(async () => {
@@ -342,4 +389,231 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
       { timeout: 15_000 }
     )
   }, 90_000)
+})
+
+// ---------------------------------------------------------------------------
+// Story 86.3: two ACCOUNTS on one browser (not two devices of one account).
+// ---------------------------------------------------------------------------
+
+const ACCOUNT_A = '86386386-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const ACCOUNT_B = '86386386-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const ACCOUNT_C = '86386386-cccc-4ccc-8ccc-cccccccccccc'
+
+/** The ops in `userId`'s persisted push queue, as `type entityType entityId`. */
+function queued(userId: string): string[] {
+  const ops = JSON.parse(localStorage.getItem(`bp-sync-queue-${userId}`) ?? '[]') as {
+    type: string
+    entityType: string
+    entityId: string
+  }[]
+  return ops.map((op) => `${op.type} ${op.entityType} ${op.entityId}`)
+}
+
+/** Sign-out is a document load (`lib/account/sign-out.ts`): every store is KEPT. */
+function signOut(): void {
+  rtl.cleanup()
+  resetSyncStore()
+}
+
+/** The local income row called `name` (`addIncomeSource` returns nothing). */
+function incomeNamed(name: string): { id: string } {
+  const row = useIncomeStore.getState().incomeSources.find((r) => r.name === name)
+  if (!row) {
+    throw new Error(`no local income row named ${name}`)
+  }
+  return row
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms))
+}
+
+/** `userId`'s server default profile id (the first pull backfills it). */
+async function serverDefaultProfile(userId: string): Promise<string | undefined> {
+  const rows = await pg.query<{ id: string }>(
+    'select id from "userProfiles" where "userId" = $1 and "isDefault" = true and "isDeleted" = false',
+    [userId]
+  )
+  return rows.rows[0]?.id
+}
+
+describe('two accounts on one browser (story 86.3, real engine, real routes, real PostgreSQL)', () => {
+  beforeAll(async () => {
+    const db = holder.db as ReturnType<typeof drizzle>
+    await db.insert(users).values([
+      {
+        id: ACCOUNT_A,
+        email: 'a863@example.test',
+        paddleId: 'ctm_a863',
+        subscriptionStatus: 'lifetime',
+      },
+      {
+        id: ACCOUNT_B,
+        email: 'b863@example.test',
+        paddleId: 'ctm_b863',
+        subscriptionStatus: 'lifetime',
+      },
+      {
+        id: ACCOUNT_C,
+        email: 'c863@example.test',
+        paddleId: 'ctm_c863',
+        subscriptionStatus: 'lifetime',
+      },
+    ])
+  })
+
+  afterEach(() => {
+    session.userId = USER
+  })
+
+  it('AC 2: what A pushed and never pulled back is A’s, so B neither lands on it nor re-uploads it', async () => {
+    // A signs in on a fresh browser and syncs.
+    freshDevice()
+    session.userId = ACCOUNT_A
+    rtl.render(<ActiveSync userId={ACCOUNT_A} />)
+    await rtl.waitFor(
+      () => {
+        const { profiles, activeProfileId } = useProfileStore.getState()
+        expect(profiles.find((p) => p.id === activeProfileId)?.userId).toBe(ACCOUNT_A)
+      },
+      { timeout: 15_000 }
+    )
+    const aDefault = await serverDefaultProfile(ACCOUNT_A)
+    expect(aDefault).toBeDefined()
+    // Let the reconcile re-pull and the profile upload settle before A's edits.
+    await sleep(500)
+    const pullsBeforeEdits = requests.filter((r) => r.startsWith('GET')).length
+
+    // A makes a profile on the Profiles page and adds an income row; both push.
+    const manager = rtl.renderHook(() => useProfileManager())
+    const side = manager.result.current.createProfile({
+      name: 'Side',
+      isDefault: false,
+      currency: 'NONE',
+      userId: 'temp-user',
+    })
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'A salary', amount: 300_000, frequency: 'monthly' })
+    const aIncome = incomeNamed('A salary')
+    await rtl.waitFor(
+      async () => {
+        const profile = await pg.query<{ userId: string }>(
+          'select "userId" from "userProfiles" where id = $1',
+          [side.id]
+        )
+        expect(profile.rows).toEqual([{ userId: ACCOUNT_A }])
+        const income = await pg.query<{ userId: string }>(
+          'select "userId" from "incomeSources" where id = $1',
+          [aIncome.id]
+        )
+        expect(income.rows).toEqual([{ userId: ACCOUNT_A }])
+        // The client processed the responses: nothing of A's is still queued,
+        expect(queued(ACCOUNT_A)).toEqual([])
+        // and the accepted pushes marked both local rows as A's (86.3, AC 1).
+        expect(useProfileStore.getState().profiles.find((p) => p.id === side.id)?.userId).toBe(
+          ACCOUNT_A
+        )
+        expect(
+          useIncomeStore.getState().incomeSources.find((r) => r.id === aIncome.id)?.userId
+        ).toBe(ACCOUNT_A)
+      },
+      { timeout: 15_000 }
+    )
+    // Precondition: A signs out before any pull brought those rows back.
+    expect(requests.filter((r) => r.startsWith('GET')).length).toBe(pullsBeforeEdits)
+    signOut()
+
+    // B signs in on the same browser.
+    session.userId = ACCOUNT_B
+    batchFailures.length = 0
+    dbErrors.length = 0
+    rtl.render(<ActiveSync userId={ACCOUNT_B} />)
+    await rtl.waitFor(
+      () => expect(useProfileStore.getState().profiles.map((p) => p.userId)).toContain(ACCOUNT_B),
+      { timeout: 15_000 }
+    )
+    const bDefault = await serverDefaultProfile(ACCOUNT_B)
+    expect(bDefault).toBeDefined()
+    // Long enough for the profile upload's push (`syncSoon`, 2 s debounce) and
+    // the seed to go out and come back.
+    await sleep(3500)
+
+    const { profiles, activeProfileId } = useProfileStore.getState()
+    expect.soft(profiles.map((p) => p.id)).not.toContain(side.id)
+    expect.soft(activeProfileId).toBe(bDefault)
+    expect.soft(useIncomeStore.getState().incomeSources.map((r) => r.id)).not.toContain(aIncome.id)
+    expect.soft(queued(ACCOUNT_B)).toEqual([])
+    expect.soft(batchFailures).toEqual([])
+    expect.soft(dbErrors).toEqual([])
+
+    // B's own edit lands in B's account, under B's profile.
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'B salary', amount: 200_000, frequency: 'monthly' })
+    const bIncome = incomeNamed('B salary')
+    const landed = async () =>
+      (
+        await pg.query<{ userId: string; profileId: string }>(
+          'select "userId", "profileId" from "incomeSources" where id = $1',
+          [bIncome.id]
+        )
+      ).rows
+    await rtl
+      .waitFor(async () => expect(await landed()).toHaveLength(1), { timeout: 6000 })
+      .catch(() => undefined)
+    expect.soft(await landed()).toEqual([{ userId: ACCOUNT_B, profileId: bDefault }])
+    // A's rows are untouched on the server.
+    const aRows = await pg.query<{ userId: string }>(
+      'select "userId" from "userProfiles" where id = $1 union all select "userId" from "incomeSources" where id = $2',
+      [side.id, aIncome.id]
+    )
+    expect(aRows.rows).toEqual([{ userId: ACCOUNT_A }, { userId: ACCOUNT_A }])
+  }, 60_000)
+
+  it('AC 5: what A never pushed is still adopted by the next account, and marked as theirs once it lands', async () => {
+    // Made on the free tier (no push bridge): never pushed.
+    freshDevice()
+    const manager = rtl.renderHook(() => useProfileManager())
+    const local = manager.result.current.createProfile({
+      name: 'Local',
+      isDefault: false,
+      currency: 'NONE',
+      userId: 'temp-user',
+    })
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Free salary', amount: 100_000, frequency: 'monthly' })
+    const freeIncome = incomeNamed('Free salary')
+    manager.unmount()
+
+    session.userId = ACCOUNT_C
+    rtl.render(<ActiveSync userId={ACCOUNT_C} />)
+    // Both creates SUCCEED under C (D4 adoption).
+    await rtl.waitFor(
+      async () => {
+        const profile = await pg.query<{ userId: string }>(
+          'select "userId" from "userProfiles" where id = $1',
+          [local.id]
+        )
+        expect(profile.rows).toEqual([{ userId: ACCOUNT_C }])
+        const income = await pg.query<{ userId: string }>(
+          'select "userId" from "incomeSources" where id = $1',
+          [freeIncome.id]
+        )
+        expect(income.rows).toEqual([{ userId: ACCOUNT_C }])
+        expect(queued(ACCOUNT_C)).toEqual([])
+      },
+      { timeout: 20_000 }
+    )
+    // ...and the local rows now say so.
+    await rtl.waitFor(() => {
+      expect(useProfileStore.getState().profiles.find((p) => p.id === local.id)?.userId).toBe(
+        ACCOUNT_C
+      )
+      expect(
+        useIncomeStore.getState().incomeSources.find((r) => r.id === freeIncome.id)?.userId
+      ).toBe(ACCOUNT_C)
+    })
+  }, 60_000)
 })

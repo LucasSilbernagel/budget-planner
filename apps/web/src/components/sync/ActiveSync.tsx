@@ -71,6 +71,13 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
   // backlog seed gate on this so neither runs while config.profileId is still the
   // un-reconciled bootstrap placeholder. Reactive: re-runs the gated effects when
   // reconciliation flips it true.
+  //
+  // ⚠️ Any truthy owner opens it, `'temp-user'` included (deliberately unchanged
+  // by story 86.3). A Profiles-page profile the PREVIOUS account pushed no longer
+  // reaches here as `'temp-user'`: the accepted push stamps that account's id on
+  // it (`stampSyncedOwner`), so `dropAnotherAccountsLocalData` removes it first.
+  // What still can is one whose push never landed or whose response was never
+  // processed: the accepted D4 adoption (deferred-work, 86.3).
   const activeProfileReconciled = useProfileStore((s) => {
     const active = s.profiles.find((p) => p.id === s.activeProfileId)
     return active !== undefined && Boolean(active.userId)
