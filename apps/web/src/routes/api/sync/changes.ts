@@ -105,8 +105,8 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     }
   }
 
-  // Active profile travels in a header (set by `features/api/client.ts:236`), scoping the
-  // profile-scoped entity reads. Optional — absent = all profiles for the user.
+  // Active profile travels in a header (set by `fetchServerChangesWithMeta` in
+  // `features/api/client.ts`), scoping the profile-scoped entity reads. Optional — absent = all profiles for the user.
   const profileId = request.headers.get('x-profile-id') || undefined
 
   // 4) Fetch the delta, strictly scoped to the SESSION user id.

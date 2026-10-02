@@ -112,9 +112,9 @@ export async function syncBatch(request: Request): Promise<BatchSyncResponse> {
  * It was already superseded: push moved over HTTP in story 5-15 precisely so the
  * client never imports server/DB code, and the live transport is
  * `sendSyncOperation` in `features/api/client.ts`, wired into the core service as
- * `config.processOperation`. Both `routes/api/sync/batch.ts:11` and
- * `features/api/client.ts:263` describe this function as the OLD direct import
- * they replaced. Nothing imported it; no test referenced it.
+ * `config.processOperation`. Both `routes/api/sync/batch.ts:11` and the
+ * `sendSyncOperation` doc in `features/api/client.ts` describe this function as
+ * the OLD direct import they replaced. Nothing imported it; no test referenced it.
  *
  * Do not reinstate it — re-adding a direct client import of this module is the
  * `@budget-planner/db`-in-the-client-bundle hazard that 5-12, 4-18 and 5-15 each
