@@ -27,7 +27,7 @@ permissions:
 # Kept in lockstep with deploy.yml's NODE_VERSION so a repo-wide Node bump does
 # not silently leave this weekly job on an older runtime.
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
 
 jobs:
   check:

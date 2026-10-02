@@ -14,7 +14,7 @@
 # which binds $PORT (default 8080) on 0.0.0.0 and serves SSR + /api/* + the
 # static dist/client/ assets.
 
-FROM node:20-slim AS base
+FROM node:24-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
