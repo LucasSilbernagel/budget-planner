@@ -301,7 +301,7 @@ export function spawnEnv(processEnv, gateEnv) {
  * `@layout` projects and `--layout`: layout is pinned by the screenshot
  * projects below, in CI only.
  */
-const E2E_FLOW_PROJECTS = ['chromium', 'chromium-paid', 'chromium-prod']
+const E2E_FLOW_PROJECTS = ['chromium', 'chromium-paid', 'chromium-prod', 'chromium-db']
 
 /**
  * The screenshot projects (story 84.1, FR137, D3). Declared in
@@ -435,16 +435,19 @@ export function buildGates({ root, runDir, typeCheckScripts }) {
       id: 'e2e',
       phase: 'B',
       needsBuild: true,
-      ports: [5173, 5174, 5175],
+      // :5176 is `chromium-db`'s dev server and :55432 its PGlite socket
+      // (story 87.1; the values are `e2e/helpers/db-harness.ts`'s, pinned
+      // equal by gates-lib.test.ts).
+      ports: [5173, 5174, 5175, 5176, 55432],
       cwd: web,
       command: './node_modules/.bin/playwright',
-      // ONE Playwright run: two runs would race for the same three server ports.
+      // ONE Playwright run: two runs would race for the same server ports.
       // The screenshot projects are never named here (E2E_SCREENSHOT_PROJECTS).
       args: ['test', '--reporter=line,json', ...e2eProjects.map((name) => `--project=${name}`)],
       env: {
         PLAYWRIGHT_JSON_OUTPUT_FILE: join(runDir, 'e2e.json'),
-        // An ambient PLAYWRIGHT_BASE_URL drops all three webServers and the
-        // paid/prod projects (playwright.config.ts), so the gate would pass on
+        // An ambient PLAYWRIGHT_BASE_URL drops every webServer and the
+        // paid/prod/db projects (playwright.config.ts), so the gate would pass on
         // fewer tests against some other server. The config tests truthiness.
         PLAYWRIGHT_BASE_URL: '',
       },

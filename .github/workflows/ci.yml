@@ -260,8 +260,9 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm --filter @budget-planner/web exec playwright install-deps chromium
 
-      # Playwright boots the app itself: two `pnpm dev` servers (free and paid
-      # seams) and, since story 83.1, a PRODUCTION build served by
+      # Playwright boots the app itself: three `pnpm dev` servers (free and paid
+      # seams, and since story 87.1 the `chromium-db` :5176 one backed by a
+      # PGlite database on :55432, also started by Playwright) and, since story 83.1, a PRODUCTION build served by
       # `node server-entry.mjs` for the `chromium-prod` project (`*.prod.spec.ts`,
       # no database). GitHub Actions sets CI=true automatically, which enables one
       # retry + 4 workers and disables dev-server reuse (see

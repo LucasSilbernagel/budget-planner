@@ -1,5 +1,12 @@
 import { resolve } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
+import {
+  DB_SERVER_PORT,
+  E2E_DATABASE_URL,
+  E2E_DB_PORT,
+  MAIL_OUTBOX,
+  SEEDED_USER,
+} from './e2e/helpers/db-harness'
 import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
 
 /**
@@ -52,6 +59,21 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  * project builds first and serves the real `dist/`. See
  * `e2e/forecasting-roundtrip.prod.spec.ts` for what is real and what is stubbed.
  *
+ * ## A fourth server, the only one with a DATABASE (story 87.1, F9)
+ *
+ *   - `chromium-db` :5176, `pnpm dev` + `DATABASE_URL` + the mail outbox
+ *                                          → only `*.db.spec.ts`.
+ *
+ * A real sign-in touches the database at every step (rate limits, the user
+ * lookup, the login token, the session). The database is a PGlite with the
+ * real migration chain, served over the Postgres wire on :55432 by
+ * `e2e/helpers/pglite-server.mjs`, which Playwright starts as its own
+ * `webServer` (fresh every run, never reused) and stops with the run. Only
+ * :5176 is handed its `DATABASE_URL`; every other server gets `''`. The
+ * magic-link email lands in a dev-only outbox file (`E2E_MAIL_OUTBOX`, guarded
+ * by `server/email/mailer-outbox-dev-seam.guard.test.ts` and the bundle check).
+ * Story 87.2 (F10) reuses this project.
+ *
  * ## No layout-measurement projects (story 84.2, FR137)
  *
  * Story 82.3 split `{ tag: '@layout' }` tests into `chromium-layout` /
@@ -82,6 +104,8 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  */
 /** The screenshot specs (story 84.1): ONLY the two screenshot projects run them. */
 const SCREENSHOT_SPEC = /\.screenshot(\.paid)?\.spec\.ts$/
+/** The database specs (story 87.1): ONLY `chromium-db` runs them. */
+const DB_SPEC = /\.db\.spec\.ts$/
 
 const externalBaseURL = process.env['PLAYWRIGHT_BASE_URL']
 const baseURL = externalBaseURL || 'http://localhost:5173'
@@ -104,7 +128,7 @@ const PAID_PORT = 5174
 const paidBaseURL = `http://localhost:${PAID_PORT}`
 
 /**
- * Shared by both dev servers so the two entries cannot drift apart.
+ * Shared by every dev server so the entries cannot drift apart.
  *
  * ⚠️ `env` MUST be passed for BOTH servers, including the free one. Playwright
  * merges rather than replaces — `{...DEFAULT_ENVIRONMENT_VARIABLES, ...process.env,
@@ -119,7 +143,7 @@ const paidBaseURL = `http://localhost:${PAID_PORT}`
  * claimed it was required to preserve PATH/HOME — that was wrong on both counts,
  * and code review caught it.)
  */
-const devServer = (port: number, sessionSeed: string) => ({
+const devServer = (port: number, env: DevServerEnv) => ({
   // `--strictPort` so a busy port FAILS instead of silently sliding to the next
   // one — a paid server that quietly booted on 5175 would leave every paid spec
   // hitting the free server on 5174's fallback and passing against 7 anchors.
@@ -130,10 +154,32 @@ const devServer = (port: number, sessionSeed: string) => ({
   // run on one.
   command: `node e2e/helpers/dev-server-dep-guard.mjs ${port}`,
   url: `http://localhost:${port}`,
-  reuseExistingServer: !process.env['CI'],
+  // The database server (:5176) is NEVER reused, like its PGlite (`dbServer`):
+  // a stray :5176 (another worktree, a hand-run `pnpm dev`) carries whatever
+  // DATABASE_URL / outbox / SITE_URL it was started with, and F9 would fail
+  // for a reason that says nothing about sign-in (87.1 review).
+  reuseExistingServer: env.databaseUrl ? false : !process.env['CI'],
   timeout: 120_000,
-  env: { E2E_SESSION_SEED: sessionSeed },
+  // Every variable a dev server's behaviour hangs on is passed EXPLICITLY, for
+  // the merge reason above: an ambient `DATABASE_URL` must not reach :5173 or
+  // :5174 (story 87.1), and an ambient `EMAIL_API_KEY` would make the mailer
+  // call Brevo from a test instead of taking its development branch.
+  env: {
+    E2E_SESSION_SEED: env.sessionSeed,
+    DATABASE_URL: env.databaseUrl ?? '',
+    E2E_MAIL_OUTBOX: env.mailOutbox ?? '',
+    EMAIL_API_KEY: '',
+    ...(env.siteUrl ? { SITE_URL: env.siteUrl } : {}),
+  },
 })
+
+interface DevServerEnv {
+  sessionSeed: string
+  databaseUrl?: string
+  mailOutbox?: string
+  /** The origin the magic-link email's link is built from (`getSiteUrl`). */
+  siteUrl?: string
+}
 
 const PROD_PORT = 5175
 const prodBaseURL = `http://127.0.0.1:${PROD_PORT}`
@@ -165,6 +211,10 @@ const prodServer = {
     SESSION_SECRET: PROD_E2E_SESSION_SECRET,
     DATABASE_URL: '',
     E2E_SESSION_SEED: '',
+    // Story 87.1: no test may reach Brevo, whatever the shell exports, and no
+    // ambient outbox path (the production build drops that branch anyway).
+    EMAIL_API_KEY: '',
+    E2E_MAIL_OUTBOX: '',
   },
 }
 
@@ -182,13 +232,49 @@ const screenshotDir = process.env['SCREENSHOT_DIR']
 // Only the main process's value matters (it runs the teardown).
 process.env['E2E_RUN_STARTED_AT'] = String(Date.now())
 
+const dbBaseURL = `http://localhost:${DB_SERVER_PORT}`
+
 // The dev servers below, by port. The teardown checks exactly these (via the
 // env), so it can't drift from what is started (85.2 review P10).
-const DEV_SERVERS: ReadonlyArray<readonly [number, string]> = [
+const DEV_SERVERS: ReadonlyArray<readonly [number, DevServerEnv]> = [
   // The free server is explicitly handed an EMPTY seed — see `devServer`.
-  [5173, ''],
-  [PAID_PORT, PAID_SESSION_SEED],
+  [5173, { sessionSeed: '' }],
+  [PAID_PORT, { sessionSeed: PAID_SESSION_SEED }],
+  // Story 87.1: no seed (F9 signs in for real), the PGlite database, the
+  // outbox, and links that point back at THIS server, not :5173.
+  [
+    DB_SERVER_PORT,
+    {
+      sessionSeed: '',
+      databaseUrl: E2E_DATABASE_URL,
+      mailOutbox: MAIL_OUTBOX,
+      siteUrl: dbBaseURL,
+    },
+  ],
 ]
+
+/**
+ * The PGlite database for `chromium-db` (story 87.1, D1). Listed FIRST so it
+ * is up before :5176 starts (Playwright starts the servers in order).
+ * `reuseExistingServer: false`: every run gets a fresh, migrated, seeded
+ * database, so no rate-limit bucket or token survives from an earlier run,
+ * and a stray one on the port fails the start instead of being reused.
+ */
+const dbServer = {
+  command: 'node e2e/helpers/pglite-server.mjs',
+  port: E2E_DB_PORT,
+  reuseExistingServer: false,
+  timeout: 60_000,
+  env: {
+    E2E_DB_PORT: String(E2E_DB_PORT),
+    E2E_DB_SEED_EMAIL: SEEDED_USER.email,
+    E2E_DB_SEED_PADDLE_ID: SEEDED_USER.paddleId,
+    E2E_MAIL_OUTBOX: MAIL_OUTBOX,
+    // It reads neither; blanked so no ambient value is even present (merge).
+    DATABASE_URL: '',
+    EMAIL_API_KEY: '',
+  },
+}
 process.env['E2E_DEV_SERVER_PORTS'] = externalBaseURL
   ? ''
   : DEV_SERVERS.map(([port]) => port).join(',')
@@ -223,7 +309,7 @@ export default defineConfig({
       // Excluded, not merely unlisted: without this the paid specs would ALSO run
       // here, against the free server, and their paid assertions would fail for a
       // reason that looks nothing like "wrong server".
-      testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/, SCREENSHOT_SPEC],
+      testIgnore: [/\.paid\.spec\.ts$/, /\.prod\.spec\.ts$/, DB_SPEC, SCREENSHOT_SPEC],
       use: { ...devices['Desktop Chrome'] },
     },
     // Story 84.1 (FR137): the same free server, only `*.screenshot.spec.ts`.
@@ -266,10 +352,19 @@ export default defineConfig({
             testMatch: /\.prod\.spec\.ts$/,
             use: { ...devices['Desktop Chrome'], baseURL: prodBaseURL },
           },
+          // Story 87.1 (F9; 87.2's F10 joins it): the :5176 server, the only
+          // one with a database. Dropped with PLAYWRIGHT_BASE_URL too: an
+          // external server has neither the PGlite database nor the outbox.
+          // Every other project selects by `testMatch` or ignores `DB_SPEC`.
+          {
+            name: 'chromium-db',
+            testMatch: DB_SPEC,
+            use: { ...devices['Desktop Chrome'], baseURL: dbBaseURL },
+          },
         ]),
   ],
   // Auto-start the dev servers unless an external base URL was provided.
   webServer: externalBaseURL
     ? undefined
-    : [...DEV_SERVERS.map(([port, seed]) => devServer(port, seed)), prodServer],
+    : [dbServer, ...DEV_SERVERS.map(([port, env]) => devServer(port, env)), prodServer],
 })
