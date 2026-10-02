@@ -114,3 +114,65 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
 
   return { ok: problems.length === 0, problems }
 }
+
+/**
+ * Dev-only test seams that a production build must not contain AT ALL, server
+ * included (story 87.1, AC 4). Each is gated on the build-time
+ * `import.meta.env.DEV` literal, so a production build deletes the branch and
+ * the variable name with it; finding the name in `dist/` means the gate was
+ * weakened. `source` (relative to the app root) is the positive control: the
+ * marker must still be in the source, or its absence from the build proves
+ * nothing.
+ */
+export const DEV_ONLY_SEAMS = Object.freeze([
+  Object.freeze({ marker: 'E2E_MAIL_OUTBOX', source: 'src/server/email/mailer.ts' }),
+])
+
+/**
+ * Check that no file in `<distRoot>/client` or `<distRoot>/server` carries a
+ * dev-only seam's marker.
+ *
+ * @returns `{ ok, problems }`, as `checkClientBundle`.
+ */
+export function checkDevSeamsAbsent(distRoot, appRoot, seams = DEV_ONLY_SEAMS) {
+  const problems = []
+  for (const { marker, source } of seams) {
+    let text = ''
+    try {
+      text = readFileSync(join(appRoot, source), 'utf8')
+    } catch (error) {
+      problems.push(
+        `positive control: cannot read ${source}: ${error instanceof Error ? error.message : error}`
+      )
+      continue
+    }
+    if (!text.includes(marker)) {
+      problems.push(
+        `positive control: marker "${marker}" not found in ${source}; its absence from the build would prove nothing`
+      )
+    }
+  }
+
+  const files = [
+    ...listFiles(join(distRoot, 'client'), problems),
+    ...listFiles(join(distRoot, 'server'), problems),
+  ]
+  if (files.length === 0) {
+    problems.push(`positive control: no file under ${distRoot}/client or ${distRoot}/server`)
+  }
+  for (const file of files) {
+    const bytes = readFileSync(file)
+    for (const { marker } of seams) {
+      if (bytes.includes(marker)) {
+        problems.push(
+          `dev-only seam "${marker}" in ${relative(
+            distRoot,
+            file
+          )}: a production build can reach it`
+        )
+      }
+    }
+  }
+
+  return { ok: problems.length === 0, problems }
+}

@@ -13,7 +13,12 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { SERVER_ONLY_MARKERS, checkClientBundle } from '../../scripts/client-bundle-guard-lib.mjs'
+import {
+  DEV_ONLY_SEAMS,
+  SERVER_ONLY_MARKERS,
+  checkClientBundle,
+  checkDevSeamsAbsent,
+} from '../../scripts/client-bundle-guard-lib.mjs'
 
 const roots: string[] = []
 
@@ -112,4 +117,60 @@ describe('checkClientBundle', () => {
       expect(problems).toEqual([expect.stringMatching(/^cannot read directory .*locked: /)])
     }
   )
+})
+
+/**
+ * Dev-only test seams must be ABSENT from the whole production build, server
+ * included (story 87.1, AC 4): a production server that still carried the
+ * `E2E_MAIL_OUTBOX` branch could be made to write working sign-in links to a
+ * file. The positive control is the SOURCE: a marker that no longer appears in
+ * its source file would make "absent from the build" vacuous.
+ */
+describe('checkDevSeamsAbsent (story 87.1, AC 4)', () => {
+  const SEAM = { marker: 'E2E_MAIL_OUTBOX', source: 'src/mailer.ts' }
+  /** An app root whose seam source carries the marker, as the real one does. */
+  function app(sourceText = "if (import.meta.env.DEV && process.env['E2E_MAIL_OUTBOX']) {}") {
+    return dist({ 'src/mailer.ts': sourceText })
+  }
+
+  it('the real seam list names the mail outbox, in the mailer', () => {
+    expect(DEV_ONLY_SEAMS).toContainEqual({
+      marker: 'E2E_MAIL_OUTBOX',
+      source: 'src/server/email/mailer.ts',
+    })
+  })
+
+  it('passes a build where neither client nor server carries the marker', () => {
+    const root = dist({ ...SERVER, ...CLEAN_CLIENT })
+    expect(checkDevSeamsAbsent(root, app(), [SEAM])).toEqual({ ok: true, problems: [] })
+  })
+
+  it.each(['server/assets/mailer-abc.js', 'client/assets/index-abc.js'])(
+    'fails when %s carries the marker, and names it',
+    (file) => {
+      const root = dist({ ...SERVER, ...CLEAN_CLIENT, [file]: "process.env['E2E_MAIL_OUTBOX']" })
+      expect(checkDevSeamsAbsent(root, app(), [SEAM])).toEqual({
+        ok: false,
+        problems: [`dev-only seam "E2E_MAIL_OUTBOX" in ${file}: a production build can reach it`],
+      })
+    }
+  )
+
+  it('positive control: fails when the source no longer carries the marker', () => {
+    const root = dist({ ...SERVER, ...CLEAN_CLIENT })
+    const { ok, problems } = checkDevSeamsAbsent(root, app('renamed'), [SEAM])
+    expect(ok).toBe(false)
+    expect(problems).toEqual([
+      expect.stringMatching(
+        /^positive control: marker "E2E_MAIL_OUTBOX" not found in src\/mailer\.ts/
+      ),
+    ])
+  })
+
+  it('positive control: fails when there is no build to scan', () => {
+    const empty = dist({ 'nothing.txt': '' })
+    const { ok, problems } = checkDevSeamsAbsent(empty, app(), [SEAM])
+    expect(ok).toBe(false)
+    expect(problems).toEqual([expect.stringMatching(/^positive control: no file under /)])
+  })
 })

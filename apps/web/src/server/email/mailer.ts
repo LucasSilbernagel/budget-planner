@@ -89,6 +89,18 @@ export async function sendMagicLinkEmail(to: string, link: string): Promise<stri
         to,
         magicLink: link,
       })
+      // Story 87.1 (flow F9, decision D2): the e2e mail outbox. The sign-in
+      // e2e reads the link from this file, because the token is stored hashed
+      // and cannot be read back from the database. Gated on the BUILD-TIME
+      // `import.meta.env.DEV` literal, evaluated first: a production build
+      // deletes this branch, the variable name and the fs import with it
+      // (pinned by `mailer-outbox-dev-seam.guard.test.ts`, proven against the
+      // real build by `scripts/check-client-bundle.mjs`). Never a way to send
+      // mail: Brevo is still not called.
+      if (import.meta.env.DEV && process.env['E2E_MAIL_OUTBOX']) {
+        const { appendFile } = await import('node:fs/promises')
+        await appendFile(process.env['E2E_MAIL_OUTBOX'], `${JSON.stringify({ to, link })}\n`)
+      }
       return undefined
     }
     throw new Error(

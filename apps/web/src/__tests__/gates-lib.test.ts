@@ -175,7 +175,7 @@ describe('parsers', () => {
     const e2e = buildGates({ root: '/r', runDir: '/d', typeCheckScripts: {} }).find(
       (g) => g.id === 'e2e'
     )
-    expect(e2e?.parse.fn(report(['chromium', 'chromium-paid']))).toMatchObject({
+    expect(e2e?.parse.fn(report(['chromium', 'chromium-paid', 'chromium-prod']))).toMatchObject({
       emptyProjects: 1,
     })
   })
@@ -468,8 +468,21 @@ describe('buildGates', () => {
     expect(spawnEnv({ A: '1' }, undefined)).toEqual({ A: '1' })
   })
 
-  it('e2e claims the three Playwright ports so the runner can refuse a stray server', () => {
-    expect(byId['e2e']?.ports).toEqual([5173, 5174, 5175])
+  it('e2e claims every Playwright server port so the runner can refuse a stray server', () => {
+    // :5176 is the `chromium-db` dev server and :55432 its PGlite socket (story 87.1).
+    expect(byId['e2e']?.ports).toEqual([5173, 5174, 5175, 5176, 55432])
+  })
+
+  it('the e2e ports match the db harness constants (story 87.1), so they cannot drift', () => {
+    // Read as text: `e2e/` is outside this test program (TS6307 on an import).
+    const harness = readFileSync(join(__dirname, '../../e2e/helpers/db-harness.ts'), 'utf8')
+    const constant = (name: string) =>
+      Number(harness.match(new RegExp(`export const ${name} = (\\d+)$`, 'm'))?.[1])
+    expect(constant('DB_SERVER_PORT')).toBe(5176)
+    expect(constant('E2E_DB_PORT')).toBe(55432)
+    for (const name of ['DB_SERVER_PORT', 'E2E_DB_PORT']) {
+      expect(byId['e2e']?.ports).toContain(constant(name))
+    }
   })
 
   it('e2e blanks an ambient PLAYWRIGHT_BASE_URL (it would drop every webServer)', () => {
@@ -483,7 +496,12 @@ describe('buildGates', () => {
     (gate?.args ?? []).filter((a) => a.startsWith('--project=')).map((a) => a.slice(10))
 
   it('e2e runs the flow projects (story 82.3; the layout ones are gone since 84.2)', () => {
-    expect(projectsOf(byId['e2e'])).toEqual(['chromium', 'chromium-paid', 'chromium-prod'])
+    expect(projectsOf(byId['e2e'])).toEqual([
+      'chromium',
+      'chromium-paid',
+      'chromium-prod',
+      'chromium-db',
+    ])
   })
 
   it('CI runs every Playwright project, so the screenshots always block a merge and a deploy', () => {
@@ -545,7 +563,7 @@ describe('buildGates', () => {
   it('the local e2e run names every Playwright project except the CI-only screenshot ones', () => {
     const config = readFileSync(join(__dirname, '../../playwright.config.ts'), 'utf8')
     const declared = [...config.matchAll(/^\s*name: '([^']+)',$/gm)].map((m) => m[1]).sort()
-    expect(declared).toHaveLength(5)
+    expect(declared).toHaveLength(6)
     // No project partitions the suite by title/tag any more (84.2 review): a
     // re-added `grep:` plus an `@word` in a title would split it again silently.
     expect(config).not.toMatch(/\bgrep(Invert)?:/)

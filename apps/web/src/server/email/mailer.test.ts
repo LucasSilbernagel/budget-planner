@@ -7,6 +7,9 @@
  * on a silent failure). All sends are MSW-intercepted — no real email (NFR8).
  */
 
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { server } from '@/mocks/server'
 import { resetConfig } from '@budget-planner/config'
 import { http, HttpResponse } from 'msw'
@@ -117,6 +120,65 @@ describe('sendMagicLinkEmail', () => {
       server.use(http.post(BREVO_URL, () => HttpResponse.json({ messageId: 42 }, { status: 201 })))
       await expect(sendMagicLinkEmail('user@example.com', LINK)).resolves.toBeUndefined()
     })
+  })
+})
+
+describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
+  const outboxDir = () => mkdtempSync(join(tmpdir(), 'mail-outbox-'))
+
+  /** No API key, development: the mailer's no-key branch. */
+  function devWithoutKey(outbox: string) {
+    vi.stubEnv('EMAIL_API_KEY', '')
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('E2E_MAIL_OUTBOX', outbox)
+    resetConfig()
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    resetConfig()
+  })
+
+  it('appends { to, link } as one JSON line per email, and never calls Brevo', async () => {
+    const outbox = join(outboxDir(), 'outbox.jsonl')
+    devWithoutKey(outbox)
+    let brevoCalls = 0
+    server.use(
+      http.post(BREVO_URL, () => {
+        brevoCalls += 1
+        return HttpResponse.json({}, { status: 201 })
+      })
+    )
+
+    await sendMagicLinkEmail('one@example.test', 'http://localhost:5176/verify?token=a')
+    await sendMagicLinkEmail('two@example.test', 'http://localhost:5176/verify?token=b')
+
+    const lines = readFileSync(outbox, 'utf8').trim().split('\n')
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      { to: 'one@example.test', link: 'http://localhost:5176/verify?token=a' },
+      { to: 'two@example.test', link: 'http://localhost:5176/verify?token=b' },
+    ])
+    expect(brevoCalls).toBe(0)
+  })
+
+  it('writes nothing when E2E_MAIL_OUTBOX is unset (ordinary local development)', async () => {
+    const dir = outboxDir()
+    devWithoutKey('')
+    await expect(
+      sendMagicLinkEmail('one@example.test', 'http://localhost:5173/x')
+    ).resolves.toBeUndefined()
+    expect(readdirSync(dir)).toEqual([])
+  })
+
+  it('still throws outside development, outbox set or not (that branch is unchanged)', async () => {
+    const outbox = join(outboxDir(), 'outbox.jsonl')
+    devWithoutKey(outbox)
+    vi.stubEnv('NODE_ENV', 'production')
+    resetConfig()
+    await expect(sendMagicLinkEmail('one@example.test', 'https://x.test/y')).rejects.toThrow(
+      'EMAIL_API_KEY is not configured'
+    )
+    expect(existsSync(outbox)).toBe(false)
   })
 })
 

@@ -125,7 +125,7 @@ function descendants(pid) {
     if (!psWarned) {
       psWarned = true
       console.error(
-        `WARNING: cannot list processes (${error.message}). Playwright's servers may survive a stop: check ports 5173-5175.`
+        `WARNING: cannot list processes (${error.message}). Playwright's servers may survive a stop: check ports 5173-5176 and 55432.`
       )
     }
     return []
