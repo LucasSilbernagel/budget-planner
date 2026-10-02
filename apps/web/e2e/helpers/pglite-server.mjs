@@ -18,7 +18,8 @@
  * Configured by the environment `playwright.config.ts` passes it:
  *   E2E_DB_PORT, E2E_DB_SEED_EMAIL, E2E_DB_SEED_PADDLE_ID, E2E_MAIL_OUTBOX
  *
- * ⚠️ Plain `.mjs`, not TypeScript: CI runs Node 20, which cannot run `.ts`.
+ * Plain `.mjs`, not TypeScript: written when CI ran Node 20, which cannot run
+ * `.ts`. CI is on Node 24 now (PR #22); `.mjs` still needs no loader.
  * The migration loader mirrors `src/test/pglite-migrated.ts` (the drizzle-kit
  * journal in index order, split on `--> statement-breakpoint`).
  */

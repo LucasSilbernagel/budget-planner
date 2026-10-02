@@ -7,7 +7,7 @@
  * on a silent failure). All sends are MSW-intercepted — no real email (NFR8).
  */
 
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { server } from '@/mocks/server'
@@ -124,7 +124,12 @@ describe('sendMagicLinkEmail', () => {
 })
 
 describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
-  const outboxDir = () => mkdtempSync(join(tmpdir(), 'mail-outbox-'))
+  const dirs: string[] = []
+  const outboxDir = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mail-outbox-'))
+    dirs.push(dir)
+    return dir
+  }
 
   /** No API key, development: the mailer's no-key branch. */
   function devWithoutKey(outbox: string) {
@@ -137,6 +142,7 @@ describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     resetConfig()
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   })
 
   it('appends { to, link } as one JSON line per email, and never calls Brevo', async () => {
@@ -162,12 +168,14 @@ describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
   })
 
   it('writes nothing when E2E_MAIL_OUTBOX is unset (ordinary local development)', async () => {
-    const dir = outboxDir()
+    // The real check is that the send RESOLVES: a gate that ignored the empty
+    // value would call `appendFile('')`, which rejects with ENOENT (87.1
+    // review: a readdir of a directory the mailer was never told about could
+    // not fail).
     devWithoutKey('')
     await expect(
       sendMagicLinkEmail('one@example.test', 'http://localhost:5173/x')
     ).resolves.toBeUndefined()
-    expect(readdirSync(dir)).toEqual([])
   })
 
   it('still throws outside development, outbox set or not (that branch is unchanged)', async () => {

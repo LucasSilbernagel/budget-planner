@@ -79,7 +79,7 @@ test('F9: request a magic link, follow it, confirm, and land signed in', async (
   await expect(
     page,
     'step 4: confirming did not sign in (redirected to the invalid-or-expired page?)'
-  ).toHaveURL(/^[^?]*\/$/)
+  ).toHaveURL(/^https?:\/\/[^/?#]+\/$/)
 
   // 5. Signed in: the account chrome and the PAID nav, from the real session.
   await expectSignedInAs(page, email)

@@ -154,7 +154,11 @@ const devServer = (port: number, env: DevServerEnv) => ({
   // run on one.
   command: `node e2e/helpers/dev-server-dep-guard.mjs ${port}`,
   url: `http://localhost:${port}`,
-  reuseExistingServer: !process.env['CI'],
+  // The database server (:5176) is NEVER reused, like its PGlite (`dbServer`):
+  // a stray :5176 (another worktree, a hand-run `pnpm dev`) carries whatever
+  // DATABASE_URL / outbox / SITE_URL it was started with, and F9 would fail
+  // for a reason that says nothing about sign-in (87.1 review).
+  reuseExistingServer: env.databaseUrl ? false : !process.env['CI'],
   timeout: 120_000,
   // Every variable a dev server's behaviour hangs on is passed EXPLICITLY, for
   // the merge reason above: an ambient `DATABASE_URL` must not reach :5173 or
@@ -207,8 +211,10 @@ const prodServer = {
     SESSION_SECRET: PROD_E2E_SESSION_SECRET,
     DATABASE_URL: '',
     E2E_SESSION_SEED: '',
-    // Story 87.1: no test may reach Brevo, whatever the shell exports.
+    // Story 87.1: no test may reach Brevo, whatever the shell exports, and no
+    // ambient outbox path (the production build drops that branch anyway).
     EMAIL_API_KEY: '',
+    E2E_MAIL_OUTBOX: '',
   },
 }
 
