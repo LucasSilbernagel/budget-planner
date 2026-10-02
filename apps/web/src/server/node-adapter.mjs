@@ -20,6 +20,154 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname, join, normalize, relative, sep } from 'node:path'
 import { Readable, pipeline } from 'node:stream'
+import { constants as zlibConstants, createBrotliCompress, createGzip } from 'node:zlib'
+
+/**
+ * Response compression. Production measured 2026-10-02: nothing on the request
+ * path compresses (no `content-encoding` from the app or the Envoy edge), so the
+ * 521 KB entry chunk went out raw where gzip makes it 159 KB.
+ *
+ * Static assets are compressed ONCE at build time (`scripts/precompress.mjs`
+ * writes `.br` / `.gz` siblings) and picked here by `Accept-Encoding`. Responses
+ * from the Start handler (SSR HTML, `/api/*` JSON) are compressed on the fly.
+ */
+
+/** @typedef {'br' | 'gzip'} Encoding */
+
+/**
+ * Bodies smaller than this are sent as-is: below ~1 KB the encoding overhead
+ * and CPU outweigh the bytes saved.
+ */
+export const MIN_COMPRESS_BYTES = 1024
+
+/**
+ * Extensions `scripts/precompress.mjs` writes `.br` / `.gz` siblings for, and
+ * the only ones whose siblings the adapter will serve. Images and fonts are
+ * already compressed formats.
+ */
+export const PRECOMPRESSED_EXTENSIONS = new Set([
+  '.js',
+  '.mjs',
+  '.css',
+  '.html',
+  '.json',
+  '.svg',
+  '.txt',
+  '.xml',
+  '.webmanifest',
+  '.wasm',
+])
+
+/** @type {Record<Encoding, string>} */
+const ENCODING_SUFFIX = { br: '.br', gzip: '.gz' }
+
+/**
+ * Pick the response encoding from an `Accept-Encoding` header: brotli when the
+ * client accepts it at least as strongly as gzip, else gzip, else none. A `q=0`
+ * refuses a coding; `*` covers any coding not named. A missing header means
+ * identity (what every client that cannot decode gets).
+ *
+ * @param {string | string[] | undefined} header
+ * @returns {Encoding | null}
+ */
+export function negotiateEncoding(header) {
+  const raw = Array.isArray(header) ? header.join(',') : header
+  if (!raw) {
+    return null
+  }
+  /** @type {Map<string, number>} */
+  const weights = new Map()
+  for (const part of raw.split(',')) {
+    const [name, ...params] = part.trim().toLowerCase().split(';')
+    if (!name) {
+      continue
+    }
+    let q = 1
+    for (const param of params) {
+      const [key, value] = param.trim().split('=')
+      if (key === 'q') {
+        const parsed = Number(value)
+        q = Number.isFinite(parsed) ? parsed : 0
+      }
+    }
+    weights.set(name.trim(), q)
+  }
+  /** @param {string} name */
+  const weight = (name) => weights.get(name) ?? weights.get('*') ?? 0
+  const br = weight('br')
+  const gzip = weight('gzip')
+  if (br > 0 && br >= gzip) {
+    return 'br'
+  }
+  if (gzip > 0) {
+    return 'gzip'
+  }
+  return null
+}
+
+/**
+ * Whether a response with this content type is worth compressing on the fly.
+ * `text/event-stream` is excluded: an encoder would hold events back.
+ *
+ * @param {string | null} contentType
+ * @returns {boolean}
+ */
+export function isCompressibleType(contentType) {
+  if (!contentType) {
+    return false
+  }
+  const type = (contentType.split(';')[0] ?? '').trim().toLowerCase()
+  if (type === 'text/event-stream') {
+    return false
+  }
+  return (
+    type.startsWith('text/') ||
+    type === 'application/json' ||
+    type === 'application/javascript' ||
+    type === 'application/xml' ||
+    type === 'application/manifest+json' ||
+    type === 'image/svg+xml' ||
+    type.endsWith('+json') ||
+    type.endsWith('+xml')
+  )
+}
+
+/**
+ * Add `Accept-Encoding` to a `Vary` value, keeping what is already there.
+ *
+ * @param {string | number | string[] | undefined} existing
+ * @returns {string}
+ */
+function withVaryAcceptEncoding(existing) {
+  const current = Array.isArray(existing) ? existing.join(', ') : existing ? String(existing) : ''
+  const names = current
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+  if (names.includes('*') || names.some((name) => name.toLowerCase() === 'accept-encoding')) {
+    return current
+  }
+  return [...names, 'Accept-Encoding'].join(', ')
+}
+
+/**
+ * A streaming encoder for an on-the-fly response. Every write is flushed so a
+ * streamed SSR document still reaches the browser chunk by chunk instead of
+ * waiting in the encoder's buffer. Brotli runs at quality 5, not the default
+ * 11, which is built for one-off static compression and far too slow per
+ * request.
+ *
+ * @param {Encoding} encoding
+ */
+function createEncoder(encoding) {
+  if (encoding === 'br') {
+    return createBrotliCompress({
+      flush: zlibConstants.BROTLI_OPERATION_FLUSH,
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
+    })
+  }
+  return createGzip({ flush: zlibConstants.Z_SYNC_FLUSH })
+}
 
 /**
  * Content types for the asset extensions the client build emits. Anything not
@@ -101,6 +249,10 @@ function cacheControlFor(pathname) {
  * @property {string} contentType resolved MIME type
  * @property {string} cacheControl Cache-Control header value
  * @property {number} size byte length (for Content-Length)
+ * @property {boolean} compressible whether the type has precompressed siblings,
+ *   so the response varies by `Accept-Encoding`
+ * @property {Partial<Record<Encoding, { filePath: string, size: number }>>} variants
+ *   precompressed siblings that exist and are not older than the file itself
  */
 
 /**
@@ -151,11 +303,33 @@ export async function resolveStaticAsset(pathname, clientDir) {
   const resolvedPathname = `/${relative(root, candidate).split(sep).join('/')}`
   const cacheControl = cacheControlFor(resolvedPathname)
 
+  const compressible = PRECOMPRESSED_EXTENSIONS.has(extname(candidate).toLowerCase())
+  /** @type {StaticAsset['variants']} */
+  const variants = {}
+  if (compressible) {
+    for (const encoding of /** @type {Encoding[]} */ (['br', 'gzip'])) {
+      const variantPath = candidate + ENCODING_SUFFIX[encoding]
+      try {
+        const variantStats = await stat(variantPath)
+        // A sibling older than its file was compressed from a previous build's
+        // bytes (e.g. `sw.js`, which keeps its name across builds): serving it
+        // would ship stale content, so fall back to the file itself.
+        if (variantStats.isFile() && variantStats.mtimeMs >= stats.mtimeMs) {
+          variants[encoding] = { filePath: variantPath, size: variantStats.size }
+        }
+      } catch {
+        // No sibling for this encoding.
+      }
+    }
+  }
+
   return {
     filePath: candidate,
     contentType: contentTypeFor(extname(candidate)),
     cacheControl,
     size: stats.size,
+    compressible,
+    variants,
   }
 }
 
@@ -225,11 +399,15 @@ export function toWebRequest(nodeReq, options = {}) {
  * multiple Set-Cookie values into one comma-joined string, which corrupts
  * cookies (notably the signed session cookie from stories 5-7/5-8).
  *
+ * When `encoding` is given and the response is compressible text of unknown or
+ * at least `MIN_COMPRESS_BYTES` length, the body is compressed on the fly.
+ *
  * @param {import('node:http').ServerResponse} nodeRes
  * @param {Response} webResponse
+ * @param {Encoding | null} [encoding] the client's negotiated encoding
  * @returns {Promise<void>}
  */
-export async function applyWebResponse(nodeRes, webResponse) {
+export async function applyWebResponse(nodeRes, webResponse, encoding = null) {
   nodeRes.statusCode = webResponse.status
 
   const setCookies =
@@ -244,6 +422,32 @@ export async function applyWebResponse(nodeRes, webResponse) {
     nodeRes.setHeader('set-cookie', setCookies)
   }
 
+  if (webResponse.body && isEligibleForCompression(webResponse)) {
+    nodeRes.setHeader('vary', withVaryAcceptEncoding(nodeRes.getHeader('vary')))
+    if (encoding) {
+      const source = Readable.fromWeb(/** @type {any} */ (webResponse.body))
+      // Most responses (Start's `json()` included) carry no content-length, so
+      // read until MIN_COMPRESS_BYTES before deciding: a tiny body such as
+      // `/api/health`'s 15 bytes would otherwise GROW when encoded.
+      const head = await readHead(source, MIN_COMPRESS_BYTES)
+      if (head.ended) {
+        const body = Buffer.concat(head.chunks)
+        nodeRes.setHeader('content-length', body.length)
+        nodeRes.end(body)
+        return
+      }
+      // The encoded length is unknown up front; Node falls back to chunked.
+      nodeRes.removeHeader('content-length')
+      nodeRes.setHeader('content-encoding', encoding)
+      const encoder = createEncoder(encoding)
+      for (const chunk of head.chunks) {
+        encoder.write(chunk)
+      }
+      pipeline(source, encoder, nodeRes, onStreamDone)
+      return
+    }
+  }
+
   if (webResponse.body) {
     // `pipeline` (not `.pipe`) so the source stream is destroyed when the client
     // aborts mid-response — a bare `.pipe` leaks the open handle / keeps pulling.
@@ -251,6 +455,73 @@ export async function applyWebResponse(nodeRes, webResponse) {
   } else {
     nodeRes.end()
   }
+}
+
+/**
+ * Whether a handler response may be compressed: compressible type, not already
+ * encoded, not forbidden by `no-transform`, a status that carries a full body,
+ * and not known to be under `MIN_COMPRESS_BYTES`.
+ *
+ * @param {Response} webResponse
+ * @returns {boolean}
+ */
+function isEligibleForCompression(webResponse) {
+  const { headers, status } = webResponse
+  if (status === 204 || status === 206 || status === 304) {
+    return false
+  }
+  if (headers.has('content-encoding') || !isCompressibleType(headers.get('content-type'))) {
+    return false
+  }
+  if (/\bno-transform\b/i.test(headers.get('cache-control') ?? '')) {
+    return false
+  }
+  const length = headers.get('content-length')
+  return length === null || Number(length) >= MIN_COMPRESS_BYTES
+}
+
+/**
+ * Read from `source` until at least `min` bytes arrived or it ended. On a
+ * non-ended result the stream is left paused with the rest unread, for the
+ * caller to pipe on.
+ *
+ * @param {Readable} source
+ * @param {number} min
+ * @returns {Promise<{ chunks: Uint8Array[], ended: boolean }>}
+ */
+function readHead(source, min) {
+  return new Promise((resolve, reject) => {
+    /** @type {Uint8Array[]} */
+    const chunks = []
+    let size = 0
+    const cleanup = () => {
+      source.off('data', onData)
+      source.off('end', onEnd)
+      source.off('error', onError)
+    }
+    /** @param {Uint8Array} chunk */
+    const onData = (chunk) => {
+      chunks.push(chunk)
+      size += chunk.length
+      if (size >= min) {
+        cleanup()
+        source.pause()
+        resolve({ chunks, ended: false })
+      }
+    }
+    const onEnd = () => {
+      cleanup()
+      resolve({ chunks, ended: true })
+    }
+    /** @param {Error} error */
+    const onError = (error) => {
+      cleanup()
+      reject(error)
+    }
+    source.on('data', onData)
+    source.on('end', onEnd)
+    source.on('error', onError)
+  })
 }
 
 /**
@@ -272,18 +543,26 @@ function onStreamDone(err) {
  * @param {import('node:http').ServerResponse} nodeRes
  * @param {StaticAsset} asset
  * @param {boolean} isHead
+ * @param {Encoding | null} encoding the client's negotiated encoding
  */
-function serveStaticFile(nodeRes, asset, isHead) {
+function serveStaticFile(nodeRes, asset, isHead, encoding) {
+  const variant = encoding ? asset.variants[encoding] : undefined
   nodeRes.statusCode = 200
   nodeRes.setHeader('content-type', asset.contentType)
   nodeRes.setHeader('cache-control', asset.cacheControl)
-  nodeRes.setHeader('content-length', asset.size)
+  if (asset.compressible) {
+    nodeRes.setHeader('vary', 'Accept-Encoding')
+  }
+  if (variant && encoding) {
+    nodeRes.setHeader('content-encoding', encoding)
+  }
+  nodeRes.setHeader('content-length', variant ? variant.size : asset.size)
   if (isHead) {
     nodeRes.end()
     return
   }
   // `pipeline` destroys the file stream on client abort / write error (no fd leak).
-  pipeline(createReadStream(asset.filePath), nodeRes, onStreamDone)
+  pipeline(createReadStream(variant ? variant.filePath : asset.filePath), nodeRes, onStreamDone)
 }
 
 /**
@@ -299,6 +578,7 @@ export function createRequestListener({ fetchHandler, clientDir }) {
   return async function listener(nodeReq, nodeRes) {
     try {
       const method = nodeReq.method ?? 'GET'
+      const encoding = negotiateEncoding(nodeReq.headers['accept-encoding'])
       if (method === 'GET' || method === 'HEAD') {
         // `URL` resolves any `..` segments, so static matching uses the
         // normalized pathname (query string excluded).
@@ -321,13 +601,13 @@ export function createRequestListener({ fetchHandler, clientDir }) {
         const { pathname } = new URL(requestTarget, 'http://localhost')
         const asset = await resolveStaticAsset(pathname, clientDir)
         if (asset) {
-          serveStaticFile(nodeRes, asset, method === 'HEAD')
+          serveStaticFile(nodeRes, asset, method === 'HEAD', encoding)
           return
         }
       }
 
       const webResponse = await fetchHandler(toWebRequest(nodeReq))
-      await applyWebResponse(nodeRes, webResponse)
+      await applyWebResponse(nodeRes, webResponse, method === 'HEAD' ? null : encoding)
     } catch (error) {
       // Never leak internals to the client; surface to container logs.
       console.error('[server-entry] request handling failed:', error)
