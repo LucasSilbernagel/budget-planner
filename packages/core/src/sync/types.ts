@@ -629,6 +629,16 @@ export type ChangesPulledCallback = (changes: ServerChange[]) => void
 export type OperationsRejectedCallback = (operations: SyncOperation[]) => void
 
 /**
+ * Callback invoked with the operations the server ACCEPTED in one sync (story
+ * 86.3). Fired once per sync, only when at least one op was accepted, and never
+ * by a service destroyed while the push was in flight. Includes an accepted op
+ * whose removal from the queue then failed: the server committed it, it is only
+ * re-sent (and acknowledged again). The web layer uses it to mark each pushed
+ * row as the session's at once, instead of waiting for the next pull.
+ */
+export type OperationsSyncedCallback = (operations: SyncOperation[]) => void
+
+/**
  * Result of a pull (server → client) operation (Story 4-18).
  */
 export interface PullResult {

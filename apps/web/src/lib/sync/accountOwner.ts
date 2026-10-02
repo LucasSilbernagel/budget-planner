@@ -17,13 +17,17 @@
  * another account and must never be uploaded into, shown in, or made active in
  * this one.
  *
- * ⚠️ The limit (86.2 D4): a row of A's that was never PULLED BACK carries a
- * placeholder too, whether it was never pushed (offline, refused) or pushed and
- * not yet re-pulled (a successful push never restamps the local row; only the
- * next pull does, up to one poll interval later). Such a row is indistinguishable
- * from a free-tier row, and so is a profile made on the Profiles page
- * (`'temp-user'`) in that window. That residual is recorded in deferred-work.md,
- * not fixed here.
+ * A row this session PUSHES is stamped with the session's id as soon as the
+ * server accepts it (story 86.3, `stampSyncedOwner` in `applyServerChanges.ts`),
+ * not only by the next pull, so another account never sees it as a placeholder.
+ *
+ * ⚠️ The limit (86.2 D4, narrowed by 86.3): a row of A's still carries a
+ * placeholder when it was never pushed (offline, bridge not registered, kept
+ * queued) or when the server committed its push but this device never processed
+ * the response (sign-out or teardown mid-request, a dropped connection). Such a
+ * row is indistinguishable from a free-tier row, and so is a profile made on the
+ * Profiles page (`'temp-user'`) in that state. That residual is recorded in
+ * deferred-work.md, not fixed here.
  *
  * Imports nothing, so any module (stores included) may use it.
  */
@@ -31,8 +35,12 @@
 /** The `userId` values a never-synced row carries, as strings. */
 const PLACEHOLDER_OWNERS: ReadonlySet<string> = new Set(['', '0', 'temp-user'])
 
+/** Whether `userId` is a never-synced placeholder (or absent): no account's yet. */
+export function isPlaceholderOwner(userId: unknown): boolean {
+  return PLACEHOLDER_OWNERS.has(String(userId ?? ''))
+}
+
 /** Whether `userId` names a real account other than `sessionUserId`. */
 export function isOwnedByAnotherAccount(userId: unknown, sessionUserId: string): boolean {
-  const owner = String(userId ?? '')
-  return !PLACEHOLDER_OWNERS.has(owner) && owner !== sessionUserId
+  return !isPlaceholderOwner(userId) && String(userId) !== sessionUserId
 }

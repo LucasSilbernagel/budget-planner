@@ -26,6 +26,7 @@ import type {
   ConflictResult,
   ConflictType,
   OperationsRejectedCallback,
+  OperationsSyncedCallback,
   ProcessOperationResult,
   PullResult,
   RefusedServerChange,
@@ -412,6 +413,7 @@ export class SynchronizationService {
   private conflictCallbacks: Set<ConflictCallback> = new Set()
   private changesPulledCallbacks: Set<ChangesPulledCallback> = new Set()
   private operationsRejectedCallbacks: Set<OperationsRejectedCallback> = new Set()
+  private operationsSyncedCallbacks: Set<OperationsSyncedCallback> = new Set()
   private serverChangesRefusedCallbacks: Set<ServerChangesRefusedCallback> = new Set()
   private autoSyncTimer: ReturnType<typeof setInterval> | null = null
   private isProcessing = false
@@ -687,6 +689,7 @@ export class SynchronizationService {
     this.conflictCallbacks.clear()
     this.changesPulledCallbacks.clear()
     this.operationsRejectedCallbacks.clear()
+    this.operationsSyncedCallbacks.clear()
     this.serverChangesRefusedCallbacks.clear()
   }
 
@@ -904,6 +907,43 @@ export class SynchronizationService {
         callback([...operations])
       } catch (error) {
         this.log('Operations-rejected callback error:', error)
+      }
+    }
+  }
+
+  /**
+   * Subscribe to the operations the server ACCEPTED (story 86.3). Fired once per
+   * sync with that sync's accepted ops, and not at all when none was accepted.
+   *
+   * ⚠️ Fired AFTER the teardown checks: a service destroyed while the push was in
+   * flight reports nothing (story 79.1), and the next session re-sends the op and
+   * learns its outcome again. An op accepted before a queue clear (story 86.1) IS
+   * reported: it landed. So is an accepted op whose removal from the queue
+   * failed: the server committed it, and the re-send is acknowledged as already
+   * applied. The web layer marks each accepted row as the session's.
+   * @param callback - The callback function
+   * @returns Unsubscribe function to remove the callback
+   */
+  onOperationsSynced(callback: OperationsSyncedCallback): () => void {
+    if (this.operationsSyncedCallbacks.size >= MAX_CALLBACKS) {
+      this.log(
+        `WARNING: Maximum callbacks (${MAX_CALLBACKS}) reached. Possible memory leak - forgot to unsubscribe?`
+      )
+    }
+    this.operationsSyncedCallbacks.add(callback)
+    return () => this.operationsSyncedCallbacks.delete(callback)
+  }
+
+  /**
+   * Notify all operations-synced callbacks. Each gets its own copy, and one
+   * throwing callback cannot stop the others or the sync.
+   */
+  private notifyOperationsSyncedCallbacks(operations: SyncOperation[]): void {
+    for (const callback of this.operationsSyncedCallbacks) {
+      try {
+        callback([...operations])
+      } catch (error) {
+        this.log('Operations-synced callback error:', error)
       }
     }
   }
@@ -1785,6 +1825,12 @@ export class SynchronizationService {
 
       this.notifyStatusCallbacks()
 
+      // Story 86.3: what the server accepted, past every teardown check above.
+      // Not narrowed by the removal's outcome (see `onOperationsSynced`).
+      if (successfullyProcessed.length > 0) {
+        this.notifyOperationsSyncedCallbacks(successfullyProcessed)
+      }
+
       if (recordableRejectedOps.length > 0) {
         this.notifyOperationsRejectedCallbacks(recordableRejectedOps)
       }
@@ -2646,6 +2692,7 @@ export type {
   PullResult,
   ChangesPulledCallback,
   OperationsRejectedCallback,
+  OperationsSyncedCallback,
 }
 
 export {

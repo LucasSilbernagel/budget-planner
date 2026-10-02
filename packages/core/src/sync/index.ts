@@ -41,6 +41,7 @@ export type {
   FetchServerChangesFn,
   ChangesPulledCallback,
   OperationsRejectedCallback,
+  OperationsSyncedCallback,
   RefusedServerChange,
   ServerChangesRefusedCallback,
   ServerRowVerdict,

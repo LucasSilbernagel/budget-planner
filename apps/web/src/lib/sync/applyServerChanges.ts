@@ -14,7 +14,9 @@
  * gap (DN1): there is no longer a numeric/string id split to bridge.
  *
  * NOTE: a locally created row carries the free-tier `userId` (`0`) while a pulled
- * row carries the server's uuid `userId`. The value is NOT only cosmetic:
+ * row carries the server's uuid `userId`, and so, since story 86.3, does a row
+ * whose push the server accepted ({@link stampSyncedOwner}). The value is NOT
+ * only cosmetic:
  * `seedLocalData.needsSeeding` compares `String(row.userId ?? '')` with the session
  * uuid to decide whether a row is already server-backed, so a pulled row's uuid is
  * what keeps it from being re-created. Since story 78.2 the income/expense client
@@ -61,7 +63,7 @@
  * can move it. See `__tests__/refused-row-cursor.test.ts`.
  */
 
-import type { ServerChange, SyncEntityType } from '@budget-planner/core'
+import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core'
 import type { RefusedServerChange } from '@budget-planner/core/sync'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCategoryStore } from '../../stores/categoryStore'
@@ -71,7 +73,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { stampMissingSortOrder } from '../ordering'
 import { cascadeProfileRowRemoval } from '../profile-cascade'
-import { isOwnedByAnotherAccount } from './accountOwner'
+import { isOwnedByAnotherAccount, isPlaceholderOwner } from './accountOwner'
 
 /** Minimal structural view of a Zustand vanilla store used here. */
 interface StoreApi {
@@ -134,6 +136,77 @@ export function findLocalRow(
     id: string
   })[]
   return rows.find((row) => row.id === id)
+}
+
+/**
+ * Mark the rows this session pushed as its own, the moment the server accepts
+ * them (story 86.3). `hooks/useSync.ts` subscribes it to core's
+ * `onOperationsSynced`.
+ *
+ * A row made in a paid session carries a placeholder owner (`0`, `'temp-user'`
+ * or none, `accountOwner.ts`) until a pull replaces it with the server's row, up
+ * to one poll interval later. Signing out inside that window used to leave it
+ * looking like a free-tier row: the next account on this browser adopted it,
+ * landed on a profile it could not write to, and re-uploaded ids another account
+ * holds (23505 / "Profile not found", kept queued, for ever).
+ *
+ * Only `create` and `update` (86.3 D3): an accepted one means the server holds
+ * that id under the session's user (both paths are scoped by `userId`
+ * server-side). A delete leaves nothing to stamp. A create acknowledged because
+ * the id is already tombstoned is stamped too: usually the next pull removes the
+ * row, but not when an earlier pull let the queued create win over that
+ * tombstone (LWW) and moved the cursor past it. The row then stays on this device
+ * with no server row either way, a pre-existing ghost (deferred-work, 86.3
+ * review); the stamp only changes which owner it shows.
+ *
+ * Changes ONLY `userId`, and only on a row that is still here and still carries
+ * a placeholder: a row a pull already restamped, or one carrying any other real
+ * id, is left alone, and a row deleted locally since is not brought back. A plain
+ * `setState`, never a store action, which would queue a sync op per row.
+ */
+export function stampSyncedOwner(
+  operations: readonly SyncOperation[],
+  sessionUserId: string
+): void {
+  const idsByType = new Map<SyncEntityType, Set<string>>()
+  for (const operation of operations) {
+    if (operation.type !== 'create' && operation.type !== 'update') {
+      continue
+    }
+    // An op queued under another id (a leftover of another session) proves
+    // nothing about the session's account.
+    if (operation.userId !== sessionUserId) {
+      continue
+    }
+    const ids = idsByType.get(operation.entityType) ?? new Set<string>()
+    ids.add(String(operation.entityId))
+    idsByType.set(operation.entityType, ids)
+  }
+  for (const [entityType, ids] of idsByType) {
+    const binding = ENTITY_BINDINGS[entityType]
+    if (!binding) {
+      continue
+    }
+    const { store, collection } = binding
+    try {
+      const current = (store.getState()[collection] as Record<string, unknown>[] | undefined) ?? []
+      let changed = false
+      const next = current.map((row) => {
+        const id = row['id']
+        if (typeof id === 'string' && ids.has(id) && isPlaceholderOwner(row['userId'])) {
+          changed = true
+          return { ...row, userId: sessionUserId }
+        }
+        return row
+      })
+      if (changed) {
+        store.setState({ [collection]: next })
+      }
+    } catch (error) {
+      // One store's write failing (quota) must not stop the others.
+      console.error('[stampSyncedOwner] could not mark synced rows', error)
+    }
+  }
 }
 
 /**
