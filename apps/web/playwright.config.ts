@@ -177,9 +177,21 @@ const screenshotDir = process.env['SCREENSHOT_DIR']
   : undefined
 
 // The teardown below ignores dep-reload logs older than this run (a reused local
-// server never goes through the wrapper). Set once in the main process; workers
-// and the teardown inherit it.
-process.env['E2E_RUN_STARTED_AT'] ??= String(Date.now())
+// server never goes through the wrapper). Always this load's own time, never an
+// inherited value: a stale or empty one would count old logs (85.2 review P9).
+// Only the main process's value matters (it runs the teardown).
+process.env['E2E_RUN_STARTED_AT'] = String(Date.now())
+
+// The dev servers below, by port. The teardown checks exactly these (via the
+// env), so it can't drift from what is started (85.2 review P10).
+const DEV_SERVERS: ReadonlyArray<readonly [number, string]> = [
+  // The free server is explicitly handed an EMPTY seed — see `devServer`.
+  [5173, ''],
+  [PAID_PORT, PAID_SESSION_SEED],
+]
+process.env['E2E_DEV_SERVER_PORTS'] = externalBaseURL
+  ? ''
+  : DEV_SERVERS.map(([port]) => port).join(',')
 
 export default defineConfig({
   testDir: './e2e',
@@ -259,10 +271,5 @@ export default defineConfig({
   // Auto-start the dev servers unless an external base URL was provided.
   webServer: externalBaseURL
     ? undefined
-    : [
-        // The free server is explicitly handed an EMPTY seed — see `devServer`.
-        devServer(5173, ''),
-        devServer(PAID_PORT, PAID_SESSION_SEED),
-        prodServer,
-      ],
+    : [...DEV_SERVERS.map(([port, seed]) => devServer(port, seed)), prodServer],
 })
