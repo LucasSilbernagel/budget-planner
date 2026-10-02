@@ -124,8 +124,16 @@ test.describe('a fresh scenario seeds from the user own finances (62.1)', () => 
     // upgrade prompt.
     await expect(page.getByRole('heading', { name: 'Scenario Builder' })).toBeVisible()
 
+    // 15 s, not the default 5 s (story 85.2, MEASURED): the heading is server
+    // rendered, but the seed needs client hydration, which in this DEV build took
+    // 5.5–9.6 s after the heading while the web Vitest gate ran alongside (3.4 s
+    // idle). The initial-sync gate was ruled out (same timings with it disabled).
+    // `85-2-evidence/causes.md`, Cause B.
     await expect
-      .poll(() => inputValues(page), { message: 'builder never seeded the user rows' })
+      .poll(() => inputValues(page), {
+        message: 'builder never seeded the user rows',
+        timeout: 15_000,
+      })
       .toContain('Lucas Consulting')
 
     const values = await inputValues(page)
