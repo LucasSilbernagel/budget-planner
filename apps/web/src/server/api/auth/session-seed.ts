@@ -91,7 +91,10 @@ export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
       const { getRequest, setResponseHeader } = await import('@tanstack/react-start/server')
       const { getCurrentUserSession } = await import('./paddle')
 
-      const result = await getCurrentUserSession(getRequest())
+      const { lookupSessionOnce } = await import('./session-lookup-once')
+
+      // Once per request: see `session-lookup-once.ts`.
+      const result = await lookupSessionOnce(getRequest(), getCurrentUserSession)
 
       if (!result.success) {
         // Resolver errored — unverified, not authoritative. Return null so the
