@@ -1,7 +1,8 @@
 /**
- * The `chromium-db` project's fixed facts (story 87.1, F9), in ONE place:
- * `playwright.config.ts` boots the database and the `:5176` dev server from
- * them, and `sign-in.db.spec.ts` reads the outbox and signs in with them.
+ * The `chromium-db` project's fixed facts (story 87.1, F9; story 87.2, F10),
+ * in ONE place: `playwright.config.ts` boots the database and the `:5176` dev
+ * server from them, and the `*.db.spec.ts` flows read the outbox, sign in and
+ * sign webhooks with them.
  */
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -31,6 +32,30 @@ export const SEEDED_USER = {
  * database server at start, so it holds only this run's links.
  */
 export const MAIL_OUTBOX = join(tmpdir(), 'budget-planner-e2e', 'mail-outbox.jsonl')
+
+/**
+ * The `:5176` server's Paddle configuration (story 87.2, decision D3): every
+ * value an OBVIOUS FAKE, so no real Paddle credential exists in the repo or
+ * CI. `sandbox`, so `assertPaddleProductionConfig()` exempts the dev server
+ * and `/api/paddle/checkout-config` serves it. The webhook secret is what the
+ * F10 spec signs its `subscription.created` with.
+ */
+export const FAKE_PADDLE = {
+  environment: 'sandbox',
+  apiKey: 'e2e-fake-paddle-api-key-not-real',
+  clientToken: 'test_e2e_fake_client_token_not_real',
+  webhookSecret: 'e2e-fake-webhook-secret-not-real',
+  monthlyPriceId: 'pri_e2e_fake_monthly',
+  annualPriceId: 'pri_e2e_fake_annual',
+  lifetimePriceId: 'pri_e2e_fake_lifetime',
+} as const
+
+/**
+ * The `:5176` server's HTTP(S) proxy: port 9 (discard) on loopback, where
+ * nothing listens, so every outbound request is refused locally (story 87.2,
+ * AC 4: no request leaves for `*.paddle.com`). Not a port anything opens.
+ */
+export const NO_OUTBOUND_PROXY = 'http://127.0.0.1:9'
 
 export interface OutboxEntry {
   to: string

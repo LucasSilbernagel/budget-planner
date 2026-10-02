@@ -4,7 +4,9 @@ import {
   DB_SERVER_PORT,
   E2E_DATABASE_URL,
   E2E_DB_PORT,
+  FAKE_PADDLE,
   MAIL_OUTBOX,
+  NO_OUTBOUND_PROXY,
   SEEDED_USER,
 } from './e2e/helpers/db-harness'
 import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
@@ -72,7 +74,14 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  * :5176 is handed its `DATABASE_URL`; every other server gets `''`. The
  * magic-link email lands in a dev-only outbox file (`E2E_MAIL_OUTBOX`, guarded
  * by `server/email/mailer-outbox-dev-seam.guard.test.ts` and the bundle check).
- * Story 87.2 (F10) reuses this project.
+ *
+ * Story 87.2 (F10, the upgrade) runs on the same server, which is also given
+ * a complete, OBVIOUSLY FAKE Paddle configuration (`FAKE_PADDLE`: sandbox,
+ * fake client token, fake price ids, a fake webhook secret the test signs
+ * with) and no way out to the internet: its outbound HTTP(S) goes through a
+ * proxy on a closed local port (`NO_OUTBOUND_PROXY`), so even a regression
+ * that made the webhook call Paddle's customer API could not reach Paddle.
+ * The browser half (Paddle.js) is stubbed by the spec (`helpers/paddle-stub.ts`).
  *
  * ## No layout-measurement projects (story 84.2, FR137)
  *
@@ -170,6 +179,7 @@ const devServer = (port: number, env: DevServerEnv) => ({
     E2E_MAIL_OUTBOX: env.mailOutbox ?? '',
     EMAIL_API_KEY: '',
     ...(env.siteUrl ? { SITE_URL: env.siteUrl } : {}),
+    ...env.extra,
   },
 })
 
@@ -179,6 +189,8 @@ interface DevServerEnv {
   mailOutbox?: string
   /** The origin the magic-link email's link is built from (`getSiteUrl`). */
   siteUrl?: string
+  /** Any further variables, set explicitly (story 87.2: Paddle, the proxy). */
+  extra?: Record<string, string>
 }
 
 const PROD_PORT = 5175
@@ -249,6 +261,26 @@ const DEV_SERVERS: ReadonlyArray<readonly [number, DevServerEnv]> = [
       databaseUrl: E2E_DATABASE_URL,
       mailOutbox: MAIL_OUTBOX,
       siteUrl: dbBaseURL,
+      // Story 87.2 (F10): EVERY Paddle variable, explicitly, so no ambient
+      // (shell or `.env`) Paddle value can reach this server (merge, above).
+      // All fakes; `PADDLE_ENVIRONMENT` is `sandbox` (AC 4).
+      extra: {
+        PADDLE_ENVIRONMENT: FAKE_PADDLE.environment,
+        PADDLE_API_KEY: FAKE_PADDLE.apiKey,
+        PADDLE_CLIENT_TOKEN: FAKE_PADDLE.clientToken,
+        PADDLE_WEBHOOK_SECRET: FAKE_PADDLE.webhookSecret,
+        PADDLE_WEBHOOK_MAX_AGE_SECONDS: '300',
+        PADDLE_MONTHLY_PRICE_ID: FAKE_PADDLE.monthlyPriceId,
+        PADDLE_ANNUAL_PRICE_ID: FAKE_PADDLE.annualPriceId,
+        PADDLE_LIFETIME_PRICE_ID: FAKE_PADDLE.lifetimePriceId,
+        // No request leaves this server for the internet (AC 4): Node (>= 24)
+        // sends fetch/http through the proxy, which refuses. Loopback is
+        // exempt (the database socket is plain TCP anyway).
+        NODE_USE_ENV_PROXY: '1',
+        HTTP_PROXY: NO_OUTBOUND_PROXY,
+        HTTPS_PROXY: NO_OUTBOUND_PROXY,
+        NO_PROXY: 'localhost,127.0.0.1,::1',
+      },
     },
   ],
 ]
@@ -352,7 +384,7 @@ export default defineConfig({
             testMatch: /\.prod\.spec\.ts$/,
             use: { ...devices['Desktop Chrome'], baseURL: prodBaseURL },
           },
-          // Story 87.1 (F9; 87.2's F10 joins it): the :5176 server, the only
+          // Story 87.1 (F9) and 87.2 (F10): the :5176 server, the only
           // one with a database. Dropped with PLAYWRIGHT_BASE_URL too: an
           // external server has neither the PGlite database nor the outbox.
           // Every other project selects by `testMatch` or ignores `DB_SPEC`.
